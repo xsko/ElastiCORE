@@ -19,14 +19,20 @@ ElastiCORE는 도메인 모델과 업무 규칙을 짧은 DSL로 받아 Spring B
 
 ---
 
-## 3단계로 내 프로젝트에
+## 5단계로 내 프로젝트에
 
-**① `build.gradle`** - 플러그인 한 줄과 선택 두 줄
+**① `build.gradle`** - Spring Boot 프로젝트에 플러그인과 설정 두 줄, 그리고 생성된 코드가 쓰는 의존성
 
 ```gradle
 plugins {
+    id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x 도 됩니다 - 버전을 읽어 맞춰 생성
+    id 'io.spring.dependency-management' version '1.1.7'
     id 'io.elasticore' version '3.0.261015-alpha1'
+}
+
+repositories {
+    mavenCentral()
 }
 
 elasticore {
@@ -36,10 +42,20 @@ elasticore {
 
 dependencies {
     implementation 'io.elasticore:elasticore-base:3.0.261015-alpha1'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261015-alpha1'  // Boot 3 이면 ...springboot3
-    // + spring-boot-starter-webmvc, -data-jpa, -validation, springdoc-openapi
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261015-alpha1'
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    runtimeOnly 'com.h2database:h2'               // 바로 실행해 볼 메모리 DB
 }
 ```
+
+Spring Boot 3 이면 (3.5.16 에서 확인): `io.elasticore.springboot3:elasticore-springboot3`, `spring-boot-starter-web`,
+springdoc `2.8.17`.
 
 **② `src/main/resources/blueprint/shop/`** - 도메인 설정과 업무를 적습니다
 
@@ -68,13 +84,13 @@ entity:
       price:     money(10.2)! @min(0.01, 'price must be positive')
 ```
 
-**③ 빌드**
+**③ 생성**
 
 ```bash
-./gradlew build
+./gradlew elcore3
 ```
 
-컴파일 전에 생성이 먼저 돌고, 이런 것이 생깁니다:
+`src/main/java/com/acme/shop/` 아래에 이런 것이 생깁니다:
 
 ```
 domain/model/Product.java               JPA 엔티티
@@ -83,12 +99,31 @@ application/ProductService.java         내 코드를 쓰는 곳 (한 번만 생
 application/dto/ProductDTO.java         요청·응답 (+ 400 검증)
 application/dto/ProductSrchDTO.java     검색 조건 - 이름 LIKE, 페이지, 정렬 (요청이 말하지 않으면 이름순)
 adapter/in/web/ProductController.java   REST API + OpenAPI 문서
-infrastructure/persistence/...          리포지터리 포트와 어댑터
+domain/repository/...                   리포지터리 포트
+infrastructure/persistence/...          그 JPA 어댑터
 ```
 
-`POST /api/shop/product/search`, `GET /api/shop/product/{id}`, … 가 바로 동작하고, 누구나 읽고 관리자만 고칩니다
-(`@access(read=public)`). 처음이라면 [`elasticore-sample-petstore`](elasticore-project/elasticore-sample-petstore/)를
-실행해 `/dsl-guide.html` 에서 업무마다 DSL과 생성된 코드를 나란히 보세요.
+**④ 내 작업** - 모델이 말하지 않는 것
+
+- **애플리케이션 클래스**: `com.acme.shop` 이나 그 위 패키지에 `@SpringBootApplication` 클래스를 둡니다. 그래야
+  Spring 이 생성된 클래스를 찾습니다. Spring Initializr 로 만든 프로젝트에는 이미 있습니다.
+- **업무 로직**은 `ProductService.java` 에 씁니다. 한 번만 생성되고 그 뒤로는 내 파일이라, 다시 생성해도 건드리지
+  않고(로그에 `SKIP(user-owned)`) 모델이 가진 파일만 새로 씁니다.
+- **로그인**: 상품을 바꾸려면 `ADMIN` 역할이 필요합니다(`@access(read=public)`: 읽기는 누구나, 나머지는 관리자).
+  로그인 처리에서 `SessionCurrentUser.signIn(request, userId, "ADMIN")` 을 부르고, Spring Security 를 쓰면 대신
+  `CurrentUser` 빈을 등록합니다.
+
+**⑤ 실행**
+
+```bash
+./gradlew bootRun
+```
+
+`POST /api/shop/product/search`, `GET /api/shop/product/{id}` 는 누구나 호출할 수 있고, 로그인 없이 상품을 만들면
+401 "Sign in to create Product", 가격 0 은 400 "price must be positive" 로 답합니다. 이후 변경은 모델에서 시작합니다:
+`./gradlew build` 와 `bootRun` 은 컴파일 전에 `elcore3` 를 먼저 돌리므로 코드가 모델보다 뒤처지지 않습니다.
+처음이라면 [`elasticore-sample-petstore`](elasticore-project/elasticore-sample-petstore/)를 실행해 `/dsl-guide.html`
+에서 업무마다 DSL과 생성된 코드를 나란히 보세요.
 
 ---
 
@@ -363,8 +398,9 @@ processManager:                              config:
 
 ## 시작하기 (설치)
 
-내 프로젝트는 **Java 17 이상**. ElastiCORE 는 Gradle 플러그인까지 Maven Central 에 있습니다. 내 프로젝트의
-`settings.gradle` 에는 플러그인을, `build.gradle` 에는 의존성을 Maven Central 에서 받도록 적습니다:
+내 프로젝트는 **Java 17 이상**, Spring Boot 4 이면 **Gradle 8.14 이상**(Boot 4 Gradle 플러그인의 요구)입니다.
+ElastiCORE 는 Gradle 플러그인까지 Maven Central 에 있습니다. 위 `build.gradle` 이 의존성을 Maven Central 에서
+받으니, 플러그인도 받도록 내 프로젝트의 `settings.gradle` 에 적습니다:
 
 ```gradle
 // settings.gradle
@@ -376,14 +412,7 @@ pluginManagement {
 }
 ```
 
-```gradle
-// build.gradle
-repositories {
-    mavenCentral()
-}
-```
-
-그다음 위 "3단계"를 따릅니다. 소스에서 직접 빌드하려면 이 저장소를 받아 `./gradlew publishToMavenLocal` 을
+그다음 위 "5단계"를 따릅니다. 소스에서 직접 빌드하려면 이 저장소를 받아 `./gradlew publishToMavenLocal` 을
 실행하고(JDK 17~22, 컴파일에 쓰는 JDK 8·17 툴체인이 없으면 내려받습니다) 두 목록의 맨 앞에 `mavenLocal()` 을 넣습니다.
 
 ## 문서

@@ -23,14 +23,20 @@ team's own rules — and the model stays as it is.
 
 ---
 
-## Into your project in three steps
+## Into your project in five steps
 
-**① `build.gradle`** — one plugin line and two optional lines
+**① `build.gradle`** — a Spring Boot project, the plugin with its two settings, and what the generated code uses
 
 ```gradle
 plugins {
+    id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x works too - the version is read and followed
+    id 'io.spring.dependency-management' version '1.1.7'
     id 'io.elasticore' version '3.0.261015-alpha1'
+}
+
+repositories {
+    mavenCentral()
 }
 
 elasticore {
@@ -40,10 +46,20 @@ elasticore {
 
 dependencies {
     implementation 'io.elasticore:elasticore-base:3.0.261015-alpha1'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261015-alpha1'  // ...springboot3 on Boot 3
-    // + spring-boot-starter-webmvc, -data-jpa, -validation, springdoc-openapi
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261015-alpha1'
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    runtimeOnly 'com.h2database:h2'               // an in-memory database to try it with
 }
 ```
+
+On Spring Boot 3 (checked with 3.5.16): `io.elasticore.springboot3:elasticore-springboot3`, `spring-boot-starter-web`
+and springdoc `2.8.17`.
 
 **② `src/main/resources/blueprint/shop/`** — the domain's settings and its business
 
@@ -72,13 +88,13 @@ entity:
       price:     money(10.2)! @min(0.01, 'price must be positive')
 ```
 
-**③ Build**
+**③ Generate**
 
 ```bash
-./gradlew build
+./gradlew elcore3
 ```
 
-Generation runs before compilation and produces:
+The code appears under `src/main/java/com/acme/shop/`:
 
 ```
 domain/model/Product.java               JPA entity
@@ -87,13 +103,31 @@ application/ProductService.java         where your code goes (generated once, yo
 application/dto/ProductDTO.java         request and response (+ 400 validation)
 application/dto/ProductSrchDTO.java     search: name LIKE, paging, sorting (by name unless asked otherwise)
 adapter/in/web/ProductController.java   REST API + OpenAPI docs
-infrastructure/persistence/...          repository port and adapter
+domain/repository/...                   repository port
+infrastructure/persistence/...          its JPA adapter
 ```
 
-`POST /api/shop/product/search`, `GET /api/shop/product/{id}`, … work right away; anyone may read, only an
-administrator may change (`@access(read=public)`). New here? Run
-[`elasticore-sample-petstore`](elasticore-project/elasticore-sample-petstore/) and open `/dsl-guide.html` to see,
-business area by business area, the DSL next to the code it generated.
+**④ Your part** — what the model does not say
+
+- **An application class**: `@SpringBootApplication` in `com.acme.shop` or a package above it, so that Spring finds the
+  generated classes. Spring Initializr writes one.
+- **Your business logic**, in `ProductService.java`. It is generated once and is yours afterwards: generating again
+  leaves it alone (`SKIP(user-owned)` in the log) and rewrites only the files the model owns.
+- **Signing in.** Changing a product needs the `ADMIN` role (`@access(read=public)`: anyone reads, everything else is
+  for the administrator). Your sign-in calls `SessionCurrentUser.signIn(request, userId, "ADMIN")`; with Spring
+  Security, register a `CurrentUser` bean instead.
+
+**⑤ Run**
+
+```bash
+./gradlew bootRun
+```
+
+`POST /api/shop/product/search` and `GET /api/shop/product/{id}` answer anyone; creating a product without signing in
+answers 401 "Sign in to create Product", and a price of 0 answers 400 "price must be positive". From here on a change
+starts in the model: `./gradlew build` and `bootRun` run `elcore3` before compiling, so the code never lags behind the
+model. New here? Run [`elasticore-sample-petstore`](elasticore-project/elasticore-sample-petstore/) and open
+`/dsl-guide.html` to see, business area by business area, the DSL next to the code it generated.
 
 ---
 
@@ -365,8 +399,9 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 
 ## Getting started (install)
 
-**Java 17 or later** for your project. ElastiCORE is on Maven Central, the Gradle plugin included, so name Maven
-Central for plugins in your project's `settings.gradle` and for dependencies in its `build.gradle`:
+**Java 17 or later** for your project, and with Spring Boot 4 **Gradle 8.14 or later** (what Boot 4's Gradle plugin
+requires). ElastiCORE is on Maven Central, the Gradle plugin included. The `build.gradle` above names Maven Central for
+dependencies; name it for plugins too, in your project's `settings.gradle`:
 
 ```gradle
 // settings.gradle
@@ -378,14 +413,7 @@ pluginManagement {
 }
 ```
 
-```gradle
-// build.gradle
-repositories {
-    mavenCentral()
-}
-```
-
-Then follow the three steps above. To build it from source instead, run `./gradlew publishToMavenLocal` in a clone of
+Then follow the five steps above. To build it from source instead, run `./gradlew publishToMavenLocal` in a clone of
 this repository — on a JDK 17 to 22; the build downloads the JDK 8 and 17 toolchains it compiles with if the machine
 lacks them — and put `mavenLocal()` first in both lists.
 
