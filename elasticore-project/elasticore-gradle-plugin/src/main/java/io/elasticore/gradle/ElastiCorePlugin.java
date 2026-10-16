@@ -2,6 +2,7 @@ package io.elasticore.gradle;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskProvider;
@@ -51,7 +52,8 @@ public class ElastiCorePlugin implements Plugin<Project> {
 
         TaskProvider<JavaExec> elcore = project.getTasks().register("elcore", JavaExec.class, task -> {
             task.setGroup(GROUP);
-            task.setDescription("Generates sources from the blueprint DSL");
+            task.setDescription("Generates sources through the 2.x generator, or starts the setup wizard"
+                    + " where there is no blueprint");
             task.setClasspath(tools);
             task.getMainClass().set(EXTRACTOR);
 
@@ -72,12 +74,40 @@ public class ElastiCorePlugin implements Plugin<Project> {
         // one: a browser model coexists with whatever the server is written
         // in, so it gets its own task instead of a language a project has to
         // choose between. Registered always, run only when asked for.
-        project.getTasks().register("elcore3ts", JavaExec.class, task -> {
+        TaskProvider<JavaExec> elcore3ts = project.getTasks().register("elcore3ts", JavaExec.class, task -> {
             task.setGroup(GROUP);
-            task.setDescription("Generates the TypeScript client model");
+            task.setDescription("Generates the TypeScript client model through the 3.0 rule engine");
             task.setClasspath(tools);
             task.getMainClass().set(RULE_ENGINE);
             task.systemProperty("elasticore.rules.ts", "true");
+        });
+
+        // The names a project types. There has been one task per engine -
+        // elcore for 2.x, elcore3 for the rule engine - so the command a guide
+        // gave depended on knowing which engine a declaration selects, and the
+        // engine's version showed in it. The build already knows: it is how
+        // compilation decides what to wait for. elcoreGen asks the same
+        // question; the engine tasks stay as they are for the builds and the
+        // guides that name them.
+        TaskProvider<Task> elcoreGen = project.getTasks().register("elcoreGen", task -> {
+            task.setGroup(GROUP);
+            task.setDescription("Generates sources from the blueprint, through the generator this build declares");
+        });
+        project.getTasks().register("elcoreGenTs", task -> {
+            task.setGroup(GROUP);
+            task.setDescription("Generates the TypeScript client model");
+            task.dependsOn(elcore3ts);
+        });
+
+        // Generation that writes nothing: what elcore -Pmode=valid has done for
+        // 2.x, for either engine and as a task of its own. Spelt only as a
+        // property, the mode was one an engine could ignore - and the rule
+        // engine did, writing the files a check had been asked for.
+        TaskProvider<JavaExec> elcoreValidate = project.getTasks().register("elcoreValidate", JavaExec.class, task -> {
+            task.setGroup(GROUP);
+            task.setDescription("Checks the sources against the blueprint without writing; fails where generation"
+                    + " would change them");
+            task.setClasspath(tools);
         });
 
         // The arguments are settled here, while the build is being configured,
@@ -85,30 +115,59 @@ public class ElastiCorePlugin implements Plugin<Project> {
         // is the one thing the configuration cache refuses, so the lazier
         // version of this was the less compatible one.
         project.afterEvaluate(evaluated -> {
+            // A build that declared an architecture, a language or rules is on
+            // the rule engine; one that declared nothing is on the generator
+            // it always had.
+            boolean ruleEngine = declaresRules(extension);
+
             elcore.configure(task -> {
                 arguments(task, evaluated, extension);
-
-                // Where the sources go, which the extractor takes as an
-                // argument rather than a property. Only for a single module:
-                // in a multi-module run each module's own root is derived from
-                // the blueprint it holds, and one path here would send them all
-                // to the same tree.
-                if (modulesOf(evaluated, extension).isEmpty()) {
-                    task.args(new File(evaluated.getProjectDir(), "src/main/java").getAbsolutePath());
-                }
+                sourceRoot(task, evaluated, extension);
             });
             elcore3.configure(task -> arguments(task, evaluated, extension));
-            evaluated.getTasks().named("elcore3ts", JavaExec.class,
-                    task -> arguments(task, evaluated, extension));
+            elcore3ts.configure(task -> arguments(task, evaluated, extension));
+
+            // A listing of the rules is the rule engine's to give, whichever
+            // generator the build is on: the extractor does not know the
+            // switch, and would generate where a listing was asked for.
+            boolean listing = evaluated.hasProperty("listRules");
+            elcoreGen.configure(task -> task.dependsOn(ruleEngine || listing ? elcore3 : elcore));
+            elcoreValidate.configure(task -> {
+                task.getMainClass().set(ruleEngine ? RULE_ENGINE : EXTRACTOR);
+                arguments(task, evaluated, extension);
+                if (!ruleEngine) sourceRoot(task, evaluated, extension);
+                // Last, so that what the command line passed through above
+                // cannot make the check something else: -Pmode a run that
+                // writes, -PlistRules a listing that compares nothing and passes.
+                task.systemProperty("mode", "valid");
+                task.systemProperty("elasticore.rules.list", "false");
+            });
+            // Asked for in the same build as generation - elcoreValidate build -
+            // the check reads the tree as it was, not as generation left it.
+            elcore.configure(task -> task.mustRunAfter(elcoreValidate));
+            elcore3.configure(task -> task.mustRunAfter(elcoreValidate));
+            elcore3ts.configure(task -> task.mustRunAfter(elcoreValidate));
 
             if (Boolean.TRUE.equals(extension.getGenerateBeforeCompile().get())) {
                 // Whichever task this project actually runs. A build that
                 // declared an architecture or a language is on the rule
                 // engine, and waiting for the other generator would let
                 // compilation start against a tree nothing had written.
-                dependOnGeneration(evaluated, declaresRules(extension) ? elcore3 : elcore);
+                dependOnGeneration(evaluated, ruleEngine ? elcore3 : elcore);
             }
         });
+    }
+
+    /**
+     * Where the 2.x extractor writes, which it takes as an argument rather
+     * than a property. Only for a single module: in a multi-module run each
+     * module's own root is derived from the blueprint it holds, and one path
+     * here would send them all to the same tree.
+     */
+    private void sourceRoot(JavaExec task, Project project, ElastiCoreExtension extension) {
+        if (modulesOf(project, extension).isEmpty()) {
+            task.args(new File(project.getProjectDir(), "src/main/java").getAbsolutePath());
+        }
     }
 
     /**

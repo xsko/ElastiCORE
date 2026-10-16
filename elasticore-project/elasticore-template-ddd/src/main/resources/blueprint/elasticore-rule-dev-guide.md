@@ -645,7 +645,7 @@ public enum OrderStatus {
 
 ### 무엇이 어디로 가나 — 한 번에 확인
 
-`./gradlew elcore3 -PlistRules`를 실행하면 파일 종류(`target`)마다 실행되는 규칙 목록이 나옵니다. 위 다섯 개 규칙 이름(`acme-example`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`)이 각자의 `target` 아래 보이면 연결된 것입니다.
+`./gradlew elcoreGen -PlistRules`를 실행하면 파일 종류(`target`)마다 실행되는 규칙 목록이 나옵니다. 위 다섯 개 규칙 이름(`acme-example`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`)이 각자의 `target` 아래 보이면 연결된 것입니다.
 
 ---
 
@@ -974,7 +974,7 @@ public class AcmeRules implements CodeRules {
 | 증상 | 확인할 것 |
 |---|---|
 | `Rule set class '…' is not on the generator's classpath` | 루트 `build.gradle`의 `rules` 클래스 이름, `elasticore project(':acme-rules')` |
-| 규칙이 도는지 모르겠다 | `./gradlew elcore3 -PlistRules` — 파일 종류별로 실행되는 규칙이 나옵니다. 우리 규칙 이름이 보이면 연결된 것 |
+| 규칙이 도는지 모르겠다 | `./gradlew elcoreGen -PlistRules` — 파일 종류별로 실행되는 규칙이 나옵니다. 우리 규칙 이름이 보이면 연결된 것 |
 | 결과가 안 보인다 | 개발자가 고친 파일인지(2장 끝), `target`이 맞는지(4장 표, 6장 표). 7장 테스트에서 `println`으로 결과 확인 |
 | 생성 코드가 이상하다 | 7장처럼 `engine.run(...).render()`를 출력해서 규칙만 따로 확인 |
 

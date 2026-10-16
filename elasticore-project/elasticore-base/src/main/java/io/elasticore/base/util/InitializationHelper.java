@@ -606,7 +606,7 @@ public class InitializationHelper {
         System.out.println("3. Do NOT annotate your application class with @ElastiCore. The two");
         System.out.println("   paths generate the same files from different rules; a project on a");
         System.out.println("   bundle uses the plugin's task alone.");
-        System.out.println("4. Run './gradlew elcore3', then './gradlew build'");
+        System.out.println("4. Run './gradlew elcoreGen', then './gradlew build'");
     }
 
     private void printExitMessage() {

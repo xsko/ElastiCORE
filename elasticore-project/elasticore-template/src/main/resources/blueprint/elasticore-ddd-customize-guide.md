@@ -52,7 +52,7 @@ DSL(yml) ──▶ Spec ──▶ 규칙들 ──▶ 스켈레톤(.tmpl) ──
 
 ### 파일 종류(target) — 헥사고날 ERP에서
 
-생성 로그(`./gradlew elcore3`)의 각 줄 첫 단어가 target입니다: `entity  src/main/java/.../Partner.java  WROTE`.
+생성 로그(`./gradlew elcoreGen`)의 각 줄 첫 단어가 target입니다: `entity  src/main/java/.../Partner.java  WROTE`.
 
 | target | 예 (ERP) | 누구 것 | 클래스 어노테이션을 그리는 규칙 |
 |---|---|---|---|
@@ -69,7 +69,7 @@ DSL(yml) ──▶ Spec ──▶ 규칙들 ──▶ 스켈레톤(.tmpl) ──
 | `mapper`, `repository`, `repositoryHelper`, `outbox…` | `ErpMapper.java`, `PartnerRepository.java` … | 생성기 | 없음 |
 
 "없음"인 파일에는 클래스 어노테이션을 붙일 수 없습니다(붙여도 아무 일도 일어나지 않음).
-"once"인 파일은 엔티티가 아니라 **도메인 단위**로 만들어집니다. 그 파일의 규칙은 `(DomainSpec d)`를 받고, 여러 개 중 어느 파일인지는 `ctx(d).artifactName()`으로 압니다 (`(EntitySpec e)`로 쓰면 돌지 않고 경고가 나옵니다). 전체 target 목록은 `./gradlew elcore3 -PlistRules`(3장)에 나옵니다.
+"once"인 파일은 엔티티가 아니라 **도메인 단위**로 만들어집니다. 그 파일의 규칙은 `(DomainSpec d)`를 받고, 여러 개 중 어느 파일인지는 `ctx(d).artifactName()`으로 압니다 (`(EntitySpec e)`로 쓰면 돌지 않고 경고가 나옵니다). 전체 target 목록은 `./gradlew elcoreGen -PlistRules`(3장)에 나옵니다.
 Kotlin에서는 `entity`·`dto`·`srchdto`를 `kt-entity-file`·`kt-dto-file`·`kt-srchdto-file` (tail 90)이 그립니다.
 
 ### 루트와 멤버
@@ -206,7 +206,7 @@ dependencies {
 ### 지금 어떤 규칙이 도는지 보기: `-PlistRules`
 
 ```bash
-./gradlew elcore3 -PlistRules
+./gradlew elcoreGen -PlistRules
 ```
 
 5~7장을 마친 뒤에는 이렇게 나옵니다 (지금은 `acme-` 줄이 없습니다):
@@ -246,7 +246,7 @@ dependencies {
 
 > **이 장은 방법만 보세요. ERP 예제에는 적용하지 마세요.** ERP에는 공통 오류 처리기가 없어서, 끄면 404·409·422 응답이 모두 500이 됩니다.
 
-1. `./gradlew elcore3 -PlistRules`에서 그 파일(target `apiErrors`)을 만드는 규칙을 찾습니다:
+1. `./gradlew elcoreGen -PlistRules`에서 그 파일(target `apiErrors`)을 만드는 규칙을 찾습니다:
    ```
      apiErrors
           10 once  spring-api-errors                    ApiErrorRules
@@ -730,7 +730,7 @@ public class TopicOutboxPublisher implements OutboxPublisher {
       requireTopic: true        # 우리 규칙의 설정: 이벤트가 있는 루트는 @topic 필수
 ```
 
-확인해 보기: `SalesOrder`의 `@topic(erp.sales)`를 잠깐 지우고 `./gradlew elcore3`를 실행하면:
+확인해 보기: `SalesOrder`의 `@topic(erp.sales)`를 잠깐 지우고 `./gradlew elcoreGen`을 실행하면:
 
 ```
 [acme] SalesOrder declares events but no @topic - add @topic(...) to its meta.

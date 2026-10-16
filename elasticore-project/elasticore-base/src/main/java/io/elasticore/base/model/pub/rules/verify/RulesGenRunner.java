@@ -28,15 +28,22 @@ import java.util.Map;
 
 /**
  * Source generation through the 3.0 rule pipeline. Driven by the elcore3
- * gradle task, alongside - never replacing - the existing elcore task.
+ * gradle task - which elcoreGen runs in a build that declares an
+ * architecture, a language or rules - alongside, never replacing, the
+ * existing elcore task.
  *
- *   ./gradlew elcore3 [-Pdomain=content] [-Pv3] [-Pforce]
+ *   ./gradlew elcoreGen [-Pdomain=content] [-Pv3] [-Pforce]
+ *   ./gradlew elcoreValidate
  *
  * Modes:
  *   default : compatibility mode - the 2.x templates, output verified
  *             byte-identical by elcoreRulesCheck
  *   -Pv3    : clean mode - the v3 templates (used-imports only,
  *             rule-emitted class annotations, per-entity method selection)
+ *   -Pmode=valid : validation - everything is generated in memory and
+ *             compared with what is on disk; nothing is written, rewritten
+ *             or removed, and the run fails where generation would change
+ *             a file (what elcore -Pmode=valid does for 2.x)
  *
  * File safety mirrors 2.x writeSrcCode: a file carrying the generate-once
  * marker is never touched, and a file whose //ecd: hash shows developer
@@ -99,13 +106,38 @@ public final class RulesGenRunner {
     private int failed = 0;
     private final List<String> notes = new ArrayList<String>();
 
+    /**
+     * -Pmode=valid: every artifact is rendered and compared with the file on
+     * disk, and nothing is written, rewritten or removed - no directory made,
+     * no guide copied, no side-car refreshed.
+     *
+     * Before this the mode was passed to the rule engine and read by nothing
+     * in it, so a check that was asked to write nothing wrote everything
+     * generation would have: the command a guide offers for a CI gate was a
+     * regeneration under a name that promised the opposite.
+     */
+    private final boolean validate;
+
+    /** Validation: files generation would create, rewrite or remove. Each fails the run. */
+    private int wouldCreate = 0;
+    private int wouldRewrite = 0;
+    private int wouldRemove = 0;
+
+    /**
+     * Validation: files the generator manages that were edited by hand and no
+     * longer say what the DSL does. Generation skips them, so it cannot bring
+     * them in line - the reason a check fails on them, as 2.x's does.
+     */
+    private int userModified = 0;
+
     private RulesGenRunner(String projectRoot, boolean v3, boolean force,
-                           boolean kotlin, boolean typescript) {
+                           boolean kotlin, boolean typescript, boolean validate) {
         this.projectRoot = projectRoot;
         this.v3 = v3;
         this.force = force;
         this.kotlin = kotlin;
         this.typescript = typescript;
+        this.validate = validate;
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
@@ -235,18 +267,34 @@ public final class RulesGenRunner {
     }
 
     public static void main(String[] args) {
+        int status = run(args);
+        if (status != 0) System.exit(status);
+    }
+
+    /**
+     * One run, answered with its exit status instead of by ending the JVM:
+     * while every failure called System.exit from inside, a test could not
+     * see a run fail - and a failing validation is the answer a test of it
+     * has to read.
+     */
+    static int run(String[] args) {
         // The value types this engine writes and the 2.x generator does not
         // (Instant, UUID, short ...): on for this run, off after it, so a 2.x
         // generation in the same JVM resolves them as it always did.
         io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(true);
+        // Validation is a switch the model loaders read as well - a remote
+        // model is taken from its cache rather than fetched into it - and it
+        // is this run's, not the JVM's.
+        boolean validating = io.elasticore.base.util.ConsoleLog.isValidationMode();
         try {
-            generateAll(args);
+            return generateAll(args);
         } finally {
             io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(false);
+            io.elasticore.base.util.ConsoleLog.setValidationMode(validating);
         }
     }
 
-    private static void generateAll(String[] args) {
+    private static int generateAll(String[] args) {
         String basePath = System.getProperty("elasticore.base.path");
         if (basePath == null) basePath = System.getProperty("user.dir");
 
@@ -258,6 +306,25 @@ public final class RulesGenRunner {
         boolean force = Boolean.getBoolean("elasticore.rules.force");
         boolean kotlin = Boolean.getBoolean("elasticore.rules.kt");
         boolean typescript = Boolean.getBoolean("elasticore.rules.ts");
+
+        // -Pmode reaches this engine as it reaches the 2.x extractor. valid is
+        // validation (see the field). clean is the extractor's removal of what
+        // it generated, which this engine has no use for - it removes what the
+        // DSL no longer produces as part of generating - and generating in its
+        // place, as it used to, wrote files under a name that promised the
+        // opposite. Refused before anything is touched.
+        String mode = System.getProperty("mode");
+        if ("clean".equals(mode)) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] -Pmode=clean is a mode of the 2.x generator,"
+                    + " not of the rule engine - nothing was written or removed. Generation removes the files the"
+                    + " DSL no longer produces itself (REMOVED in its log); delete a file to have it generated anew.");
+            return 1;
+        }
+        boolean validate = "valid".equals(mode);
+        if (validate) io.elasticore.base.util.ConsoleLog.setValidationMode(true);
+        // The warnings this run finds, apart from any an earlier run in the
+        // same JVM left counted.
+        int dslWarningsBefore = io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_WARN");
 
         // A build that declared a language gets the switch derived from it
         // rather than set beside it. The two used to be spelled separately -
@@ -290,12 +357,17 @@ public final class RulesGenRunner {
                 + (typescript ? "typescript" : kotlin ? "kotlin"
                         : v3 ? "v3 (clean)" : "compatible"));
         System.out.println("[elcore3] project   : " + basePath);
+        if (validate) {
+            System.out.println("[elcore3] validate  : compared with what is on disk - nothing is written");
+        }
 
         // The guides go beside the model here as well as in ModelExtractor.
         // A project on a bundle is the one meeting these documents for the
         // first time, and until now it was the only one that never received
         // them - both rule-engine sample modules had an empty blueprint root.
-        if (!Boolean.getBoolean("elasticore.rules.list")) {
+        // Not while validating, which writes nothing - the extractor's
+        // validation leaves them too.
+        if (!Boolean.getBoolean("elasticore.rules.list") && !validate) {
             io.elasticore.base.util.GuideDeployer.deployTo(
                     basePath + "/src/main/resources/blueprint", basePath);
         }
@@ -316,8 +388,7 @@ public final class RulesGenRunner {
                 : BlueprintLoader.load(basePath + "/src/main/resources/blueprint");
         if (loader.isEmpty()) {
             System.out.println("[elcore3] no blueprint domain found");
-            System.exit(1);
-            return;
+            return 1;
         }
 
         // The checks the other entry point has always run, and this one
@@ -347,17 +418,17 @@ public final class RulesGenRunner {
                 RuleCatalog.standard().rulesOf(name);
             } catch (IllegalArgumentException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + e.getMessage());
-                System.exit(1);
+                return 1;
             } catch (LinkageError e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] Rule set '" + name + "' cannot be loaded: " + e
                         + (e instanceof UnsupportedClassVersionError
                                 ? " - it is compiled for a newer Java than the generator runs on."
                                 : " - a class it uses is not on the generator's classpath; add it to the rules module's dependencies."));
-                System.exit(1);
+                return 1;
             }
         }
 
-        RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
+        RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript, validate);
         runner.moduleRoots = loader.moduleRoots();
         List<ECoreModel> allModels = loader.allModels();
 
@@ -377,7 +448,7 @@ public final class RulesGenRunner {
         }
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
-        if (Boolean.getBoolean("elasticore.rules.list")) return;
+        if (Boolean.getBoolean("elasticore.rules.list")) return 0;
         runner.writeOrmXml();
         if (domainFilter == null && runner.succeeded()) runner.removeStale();
         runner.printSummary();
@@ -388,38 +459,47 @@ public final class RulesGenRunner {
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                 "[elcore3] DSL validation warnings:", "  ", true);
 
-        // The schema every domain contributes to, written beside the model it
-        // describes. Every domain is loaded regardless of the filter, so the
-        // file reflects the whole project and is safe to regenerate - the same
-        // guarantee the extractor gives it.
-        writeSchema(loader, basePath, modulePaths);
+        // The side-cars are left as they are while validating, as the
+        // extractor's validation leaves schema.yml: they describe the model,
+        // nobody edits them, and a stale one is not a difference in the
+        // sources a build compiles.
+        if (!validate) {
+            // The schema every domain contributes to, written beside the model it
+            // describes. Every domain is loaded regardless of the filter, so the
+            // file reflects the whole project and is safe to regenerate - the same
+            // guarantee the extractor gives it.
+            writeSchema(loader, basePath, modulePaths);
 
-        // The context map beside it, where a domain declared itself a context.
-        if (contextMap.declared()) writeContextMap(contextMap, schemaRootOf(basePath, modulePaths));
+            // The context map beside it, where a domain declared itself a context.
+            if (contextMap.declared()) writeContextMap(contextMap, schemaRootOf(basePath, modulePaths));
 
-        // The Ossie semantic model, where a project asked for it. Beside the
-        // schema because it is the same kind of thing: a side-car describing
-        // the whole model, regenerated with it, never edited.
-        if (io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.requested(allModels)) {
-            io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.export(
-                    new ArrayList<io.elasticore.base.ECoreModelContext>(loader.contexts().values()),
-                    schemaRootOf(basePath, modulePaths));
+            // The Ossie semantic model, where a project asked for it. Beside the
+            // schema because it is the same kind of thing: a side-car describing
+            // the whole model, regenerated with it, never edited.
+            if (io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.requested(allModels)) {
+                io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.export(
+                        new ArrayList<io.elasticore.base.ECoreModelContext>(loader.contexts().values()),
+                        schemaRootOf(basePath, modulePaths));
+            }
         }
 
         // A generation error used to be a line in the log the build walked
         // past. It is the build's answer now: the sources a compile is about
         // to run on are not the ones the model describes.
-        if (!runner.succeeded()) {
-            System.exit(1);
-        }
+        boolean broken = !runner.succeeded();
         // A project's model check that refused the model: every file was
         // still generated, so all of its findings were said in this one run.
         java.util.List<String> refused = io.elasticore.base.model.pub.rules.ModelCheck.failures();
-        if (!refused.isEmpty()) {
+        if (!broken && !refused.isEmpty()) {
             io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the model check failed (" + refused.size() + "):");
             for (String r : refused) io.elasticore.base.util.ConsoleLog.printWarn("  " + r);
-            System.exit(1);
+            broken = true;
         }
+        if (validate) {
+            return runner.verdict(
+                    io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_WARN") - dslWarningsBefore, broken);
+        }
+        return broken ? 1 : 0;
     }
 
     /** context-map.md: the bounded contexts and what crosses between them, drawn in Mermaid. */
@@ -2003,6 +2083,12 @@ public final class RulesGenRunner {
         int eol = existing.indexOf('\n');
         String stamp = existing.startsWith("//ecd:") && eol > 0
                 ? existing.substring(0, eol).replace("\r", "") + "\n" : null;
+        if (synced != null && stamp != null && validate) {
+            wouldRewrite++;
+            System.out.println(String.format("[elcore3] %s: the table annotations differ from the DSL - generation"
+                    + " would bring them in line and leave the rest of the file as it is", out.relativePath()));
+            return;
+        }
         if (synced != null && stamp != null && writeWithStamp(file, stamp, synced)) {
             String message = String.format("[elcore3] %s: table annotations brought in line with the DSL"
                     + " - the rest of the file, your own annotations included, is as it was", out.relativePath());
@@ -2178,6 +2264,12 @@ public final class RulesGenRunner {
             // Nothing in it is the developer's yet - the first run that wrote
             // it failed or ran in another mode - so the file is simply written
             // again, still generate-once, rather than left for a hand fix.
+            if (validate) {
+                wouldRewrite++;
+                System.out.println("[elcore3] " + out.relativePath() + ": constructor is out of date and the file was"
+                        + " never edited - generation would write it again with (" + expected.get(0) + ")");
+                return;
+            }
             if (rewriteOwned(file, wouldWrite)) {
                 String msg = out.relativePath() + ": constructor was out of date and the file was never edited"
                         + " - written again with (" + expected.get(0) + ")";
@@ -2441,6 +2533,16 @@ public final class RulesGenRunner {
                 // unreadable: write it again
             }
         }
+        if (validate) {
+            if (file.isFile()) {
+                wouldRewrite++;
+                System.out.println(label + "  WOULD WRITE");
+            } else {
+                wouldCreate++;
+                System.out.println(label + "  WOULD WRITE(new)");
+            }
+            return;
+        }
         File dir = file.getParentFile();
         if (dir != null && !dir.exists()) dir.mkdirs();
         try {
@@ -2481,6 +2583,30 @@ public final class RulesGenRunner {
                     System.out.println("  " + relative(file) + "  UNCHANGED");
                     continue;
                 }
+            }
+            if (validate) {
+                // elasticore-orm.xml beside a developer's orm.xml is written
+                // on every run; compared here, so that the same content again
+                // is not counted as a change.
+                String onDisk = null;
+                if (file.isFile()) {
+                    try {
+                        onDisk = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+                    } catch (IOException e) {
+                        onDisk = null;
+                    }
+                }
+                if (onDisk != null && equalsIgnoringLineEndings(onDisk, xml)) {
+                    unchanged++;
+                    System.out.println("  " + relative(file) + "  UNCHANGED");
+                } else if (file.isFile()) {
+                    wouldRewrite++;
+                    System.out.println("  " + relative(file) + "  WOULD WRITE");
+                } else {
+                    wouldCreate++;
+                    System.out.println("  " + relative(file) + "  WOULD WRITE(new)");
+                }
+                continue;
             }
             File dir = file.getParentFile();
             if (dir != null && !dir.exists()) dir.mkdirs();
@@ -2564,7 +2690,10 @@ public final class RulesGenRunner {
                 if (version == null || !version.trim().startsWith("3")) continue;
                 String rel = relative(f);
                 if (neverEdited(st)) {
-                    if (f.delete()) {
+                    if (validate) {
+                        wouldRemove++;
+                        System.out.println("  " + rel + "  WOULD REMOVE(the DSL no longer produces it)");
+                    } else if (f.delete()) {
                         removed++;
                         System.out.println("  " + rel + "  REMOVED(the DSL no longer produces it)");
                     }
@@ -2573,6 +2702,9 @@ public final class RulesGenRunner {
                             + " and it has been edited - delete it, or move what you wrote.";
                     io.elasticore.base.util.ConsoleLog.printWarn(message);
                     notes.add(message);
+                    // Generation leaves it, so it stays a difference until
+                    // someone acts on the message.
+                    if (validate) userModified++;
                 }
             }
         }
@@ -2656,6 +2788,11 @@ public final class RulesGenRunner {
                 // controller calling a save that @readonly has since removed -
                 // and break the build on nothing the developer did. So it
                 // follows the DSL until the first edit makes it theirs.
+                if (validate) {
+                    wouldRewrite++;
+                    System.out.println(label + "  WOULD REGENERATE(owned, never edited)");
+                    return;
+                }
                 System.out.println(label + "  REGENERATED(owned, never edited)");
             } else if (st != null && st.getStatus() == HashUtils.NO_ECD) {
                 // No hash line: not a file ElastiCORE wrote, or one whose
@@ -2673,6 +2810,15 @@ public final class RulesGenRunner {
                 return;
             }
             if (st != null && st.getStatus() == HashUtils.MODIFIED && !force) {
+                // Edited by hand, and still the generator's to manage: one that
+                // no longer says what the DSL does is a difference generation
+                // leaves in place, which is what a check is for.
+                if (validate && !(st.getPreSourceContent() != null
+                        && equalsIgnoringLineEndings(st.getPreSourceContent(), content))) {
+                    userModified++;
+                    System.out.println(label + "  USER-MODIFIED(differs from the DSL; -Pforce to overwrite)");
+                    return;
+                }
                 skipped++;
                 System.out.println(label + "  SKIP(user-modified; -Pforce to overwrite)");
                 return;
@@ -2683,6 +2829,18 @@ public final class RulesGenRunner {
                 System.out.println(label + "  UNCHANGED");
                 return;
             }
+        }
+
+        // What would be written, said and left: no directory is made either.
+        if (validate) {
+            if (file.isFile()) {
+                wouldRewrite++;
+                System.out.println(label + "  WOULD WRITE");
+            } else {
+                wouldCreate++;
+                System.out.println(label + "  WOULD WRITE(new)");
+            }
+            return;
         }
 
         File dir = file.getParentFile();
@@ -2787,9 +2945,15 @@ public final class RulesGenRunner {
 
     private void printSummary() {
         System.out.println();
-        System.out.println("=== elcore3: " + wrote + " written / "
-                + unchanged + " unchanged / " + skipped + " skipped / "
-                + failed + " failed ===");
+        if (validate) {
+            System.out.println("=== elcore3 validate: " + (wouldCreate + wouldRewrite) + " would be written / "
+                    + wouldRemove + " would be removed / " + unchanged + " unchanged / " + skipped + " skipped / "
+                    + userModified + " user-modified / " + failed + " failed ===");
+        } else {
+            System.out.println("=== elcore3: " + wrote + " written / "
+                    + unchanged + " unchanged / " + skipped + " skipped / "
+                    + failed + " failed ===");
+        }
         for (String n : notes) {
             System.out.println("  " + n);
         }
@@ -2803,5 +2967,37 @@ public final class RulesGenRunner {
     /** Whether the run produced everything it was asked for. */
     private boolean succeeded() {
         return failed == 0;
+    }
+
+    /**
+     * What a validation run answers: 0 when generation would change nothing
+     * and nothing is wrong, 1 otherwise. Worded as the extractor's validation
+     * words it, so a project that moves between the engines reads one report.
+     */
+    private int verdict(int dslWarnings, boolean broken) {
+        int pending = wouldCreate + wouldRewrite + wouldRemove;
+        if (pending == 0 && userModified == 0 && dslWarnings == 0 && !broken) {
+            io.elasticore.base.util.ConsoleLog.printInfo("[VALID] Validation PASSED: All generated files are up-to-date.");
+            return 0;
+        }
+        if (pending > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + wouldRewrite + " stale file(s), "
+                    + wouldCreate + " new file(s) pending"
+                    + (wouldRemove > 0 ? ", " + wouldRemove + " the DSL no longer produces" : "") + ".");
+        }
+        if (userModified > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + userModified
+                    + " user-modified file(s) differ from DSL.");
+        }
+        if (dslWarnings > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] DSL Validation: " + dslWarnings + " warning(s) found.");
+        }
+        if (broken) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: the run itself failed - see above.");
+        }
+        if (pending > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Run './gradlew elcoreGen' to regenerate.");
+        }
+        return 1;
     }
 }

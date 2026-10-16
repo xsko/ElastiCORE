@@ -74,7 +74,7 @@ DSL 이 잘못되면 생성기가 **한 문장으로** 무엇이 틀렸고 어�
 - 파일 위치: `src/main/resources/blueprint/{domain}/`
 - 파일 확장자: `.yml`
 - 파일 구성: 모델 타입별 분리 권장 (entity.yml, dto.yml 등)
-- 빌드 명령: `./gradlew build` 또는 `./gradlew elcore`
+- 빌드 명령: `./gradlew build` 또는 `./gradlew elcoreGen` (생성만), `./gradlew elcoreValidate` (쓰지 않고 검사)
 - 환경설정: `env.yml` (상세는 elasticore-env-guide.md 참조)
 
 ---
@@ -480,7 +480,7 @@ HTTP/1.1 422
 | `still has the stub that throws` | 예전에 만든 행위 클래스에 예외를 던지는 틀이 남아 이동을 덮음 | 틀을 지우세요 |
 
 경고는 `elcore3` 출력 끝의 `[elcore3] DSL validation warnings:` 아래에 모여 나옵니다. 빌드는 멈추지 않으므로
-생성 후 이 목록을 꼭 확인하세요. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
+생성 후 이 목록을 꼭 확인하세요. `./gradlew elcoreValidate` 는 경고가 하나라도 있으면 실패하므로, CI 에서는 이것으로 막습니다. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
 `PurchaseOrder is not abstract and does not override ship()` 같은 컴파일 오류로 이어집니다.
 
 ---

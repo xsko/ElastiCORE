@@ -1,5 +1,54 @@
 ## 3.0.261016
 
+### New Features (생성·검사 태스크)
+
+#### `elcoreGen`·`elcoreValidate`·`elcoreGenTs`
+- Gradle 플러그인에 세 태스크를 더했다. `./gradlew elcoreGen` 은 이 빌드가 고른 생성기를 돌린다 - `elasticore { }` 에
+  `architecture`·`language`·`rules` 중 하나라도 있으면 3.0 규칙 엔진(`elcore3`), 없으면 2.x 생성기(`elcore`).
+  `compileJava` 가 무엇을 기다릴지 정하는 기준과 같다. 이전에는 엔진마다 명령이 달라(`elcore`·`elcore3`) 어느 엔진인지
+  알아야 했고, 명령 이름에 엔진 버전이 들어 있었다
+- `./gradlew elcoreValidate` 는 생성과 똑같이 만들어 보되 아무것도 쓰지 않는다. 생성이 바꿀 파일(새 파일, DSL 이 바뀐
+  파일, 지워질 파일, 손대지 않아 다시 쓸 한 번 생성 파일)이 있거나, 생성기가 관리하는 파일을 손으로 고쳐 DSL 과 다르거나,
+  DSL 경고가 있으면 실패한다(exit 1). 2.x 생성기의 `-Pmode=valid` 를 두 엔진 모두에 태스크로 만든 것이다. 같은 실행에
+  생성이 있어도 검사가 먼저 돈다 (`./gradlew elcoreValidate build`). 판정 표는 `elasticore-rule-guide.md` 의 "검사"
+- `./gradlew elcoreGenTs` 는 TypeScript 클라이언트 생성(`elcore3ts`)
+- `-PlistRules` 를 주면 `elcoreGen` 은 선언이 없는 빌드에서도 규칙 엔진으로 목록만 보여 준다 - 2.x 생성기는 이
+  스위치를 몰라 생성해 버린다. `elcoreValidate` 에는 `-Pmode`·`-PlistRules` 가 먹지 않는다 - 검사가 쓰는 실행이나
+  아무것도 비교하지 않는 목록으로 바뀌지 않게
+- `elcore`·`elcore3`·`elcore3ts` 는 그대로다. 아무것도 선언하지 않은 프로젝트의 생성 결과도 그대로
+- 가이드의 명령을 `elcoreGen`·`elcoreValidate` 로 바꿨다. README 는 이 태스크가 든 버전이 Maven Central 에 나온 뒤에
+  바꾼다 - README 는 받을 수 있는 버전의 명령을 적는다
+- 관련 파일: `ElastiCorePlugin.java`, `ElastiCorePluginTest.java`, `InitializationHelper.java`, `elasticore-rule-guide.md`,
+  `elasticore-dev-guide.md`, `elasticore-env-guide.md`, `elasticore-dsl-guide.md`, `elasticore-annotation-guide.md`,
+  `elasticore-ddd-customize-guide.md`, `elasticore-rule-dev-guide.md`
+
+### Bug Fixes (3.0 규칙 엔진의 `-Pmode`)
+
+#### `elcore3 -Pmode=valid` 가 검사하지 않고 파일을 쓰던 문제
+- 플러그인은 `-Pmode` 를 규칙 엔진에도 넘겼지만 규칙 엔진은 읽지 않아서, `./gradlew elcore3 -Pmode=valid` 가 쓰지 않고
+  비교하는 대신 생성을 그대로 했다 (3.0.261015-alpha1 에서 실행해 확인: 지운 파일이 `WROTE` 로 다시 생겼다). 이제 규칙
+  엔진도 `-Pmode=valid` 를 검사로 읽는다 - 파일·디렉터리를 만들거나 지우지 않고, 가이드 복사와 `schema.yml`·
+  `context-map.md`·`semantic_model.yml` 갱신도 하지 않는다. 파일마다 `WOULD WRITE`·`WOULD WRITE(new)`·
+  `WOULD REGENERATE(owned, never edited)`·`WOULD REMOVE(...)`·`USER-MODIFIED(...)` 로 보여 주고, 끝에 2.x 와 같은
+  `[VALID] Validation PASSED` / `FAILED` 를 낸다
+- `-Pmode=clean` 도 생성을 그대로 했다. 2.x 생성기의 모드라 규칙 엔진은 이제 아무것도 쓰거나 지우지 않고 실패한다
+  (DSL 이 더는 만들지 않는 생성 파일은 생성이 직접 지운다)
+- 관련 파일: `RulesGenRunner.java`, `ValidationModeTest.java`(신규)
+
+### Documentation (검증 모드)
+
+#### `elasticore-dev-guide.md` 의 검증 표
+- 생성기가 관리하는 파일을 손으로 고친 경우를 "스킵 - 통과" 로 적었지만, 2.x 의 `-Pmode=valid` 는 그 파일을
+  `[WARN] User-Modified Files:` 로 보여 주고 실패한다. 표를 실제 출력으로 고치고, DSL 경고(실패)와 한 번만 생성되는
+  파일(검사하지 않음)을 더했다 (2.x 생성기로 행마다 실행해 확인)
+- 관련 파일: `elasticore-dev-guide.md`
+
+#### `elasticore-annotation-guide.md` 의 `@fk` 검사
+- 대상 엔티티·필드가 없으면 DSL 경고가 나고 검증이 실패한다고 적었지만, 어느 생성기도 그 경고를 내지 않는다
+  (2.x 생성기와 3.0 규칙 엔진 모두 실행해 확인 - 검사하는 코드가 호출되지 않는다). 사실대로 고쳤다. 검사를 켜면
+  지금 생성되는 2.x 모델의 생성이 실패하게 되므로(2.x 는 DSL 경고에서 멈춘다) 이번에는 문서만 고쳤다
+- 관련 파일: `elasticore-annotation-guide.md`
+
 ### Documentation (README 의 시작하기)
 
 #### 시작하기를 실제 작업 순서로, build.gradle 은 그대로 동작하게

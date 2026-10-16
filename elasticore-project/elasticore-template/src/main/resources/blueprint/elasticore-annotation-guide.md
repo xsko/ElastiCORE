@@ -326,9 +326,9 @@ Article:
 ```
 
 ##### DSL Validation
-- Target entity가 존재하지 않으면 `DSL_WARN` 경고
-- `Target.field` 명시 시 해당 필드가 존재하지 않으면 `DSL_WARN` 경고
-- `./gradlew elcore -Pmode=valid` 시 빌드 실패로 보고됨
+- 대상 엔티티(`Target`)나 필드(`Target.field`)가 없어도 생성기는 경고하지 않습니다 - 2.x 생성기와 3.0 규칙 엔진 모두
+  같고, `elcoreValidate` 도 그 때문에 실패하지 않습니다. `@fk` 는 메타데이터라 생성 코드에도 드러나지 않으므로
+  대상 이름은 직접 확인하세요 (`schema.yml` 에는 적은 그대로 `@fk(...)` 로 남습니다)
 
 ##### @fk vs @manytoone 비교
 

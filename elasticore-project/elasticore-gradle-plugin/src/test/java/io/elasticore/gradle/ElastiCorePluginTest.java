@@ -49,6 +49,136 @@ public class ElastiCorePluginTest {
         // TypeScript is a second output, not a language to choose, so its
         // task is registered always - running it stays opt-in.
         assertTrue(output.contains("elcore3ts "), output);
+        // And the names a project types, whichever engine it is on.
+        assertTrue(output.contains("elcoreGen "), output);
+        assertTrue(output.contains("elcoreGenTs "), output);
+        assertTrue(output.contains("elcoreValidate "), output);
+    }
+
+    @Test
+    @DisplayName("elcoreGen runs the 2.x generator in a build that declares nothing")
+    public void elcoreGenRunsTheExtractorByDefault() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }");
+
+        String output = run("elcoreGen", "--dry-run").getOutput();
+
+        // The exact forms, as in compileDependsOnGeneration: ":elcore" alone
+        // is also found in ":elcore3".
+        assertTrue(output.contains(":elcore SKIPPED"), output);
+        assertTrue(!output.contains(":elcore3 SKIPPED"), output);
+    }
+
+    @Test
+    @DisplayName("elcoreGen runs the rule engine in a build that declares an architecture")
+    public void elcoreGenFollowsTheDeclaration() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }");
+
+        String output = run("elcoreGen", "--dry-run").getOutput();
+
+        // The question compilation asks, asked once: a command that picked
+        // the other engine would generate a tree compilation does not wait for.
+        assertTrue(output.contains(":elcore3 SKIPPED"), output);
+        assertTrue(!output.contains(":elcore SKIPPED"), output);
+    }
+
+    @Test
+    @DisplayName("a listing of the rules goes to the rule engine, also where the build declares nothing")
+    public void aListingGoesToTheRuleEngine() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }");
+
+        String output = run("elcoreGen", "-PlistRules", "--dry-run").getOutput();
+
+        // The extractor does not know -PlistRules: it would generate where a
+        // listing was asked for.
+        assertTrue(output.contains(":elcore3 SKIPPED"), output);
+        assertTrue(!output.contains(":elcore SKIPPED"), output);
+    }
+
+    @Test
+    @DisplayName("-PlistRules cannot turn the check into a listing that passes")
+    public void validationIsNotAListing() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }",
+                VALIDATE_REPORTER);
+
+        String reported = reportOf(run("reportValidate", "-PlistRules"));
+
+        assertTrue(reported.contains("elasticore.rules.list=false"), reported);
+        assertTrue(!reported.contains("elasticore.rules.list=true"), reported);
+    }
+
+    @Test
+    @DisplayName("elcoreGenTs runs the TypeScript generation")
+    public void elcoreGenTsRunsTheClientModel() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }");
+
+        String output = run("elcoreGenTs", "--dry-run").getOutput();
+        assertTrue(output.contains(":elcore3ts SKIPPED"), output);
+    }
+
+    @Test
+    @DisplayName("elcoreValidate checks with the 2.x extractor where the build declares nothing")
+    public void validationUsesTheExtractorByDefault() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }", VALIDATE_REPORTER);
+
+        String reported = reportOf(run("reportValidate"));
+
+        assertTrue(reported.startsWith("io.elasticore.base.extract.ModelExtractor|"), reported);
+        assertTrue(reported.contains("mode=valid"), reported);
+        // The extractor takes the source root as an argument, as for elcore.
+        assertTrue(reported.replace('\\', '/').contains("src/main/java"), reported);
+    }
+
+    @Test
+    @DisplayName("elcoreValidate checks with the rule engine where the build declares an architecture")
+    public void validationFollowsTheDeclaration() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }",
+                VALIDATE_REPORTER);
+
+        String reported = reportOf(run("reportValidate"));
+
+        assertTrue(reported.startsWith("io.elasticore.base.model.pub.rules.verify.RulesGenRunner|"), reported);
+        assertTrue(reported.contains("mode=valid"), reported);
+        assertTrue(reported.contains("elasticore.architecture=hexagonal"), reported);
+    }
+
+    @Test
+    @DisplayName("a -Pmode on the command line cannot turn the check into a run that writes")
+    public void validationKeepsItsMode() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }",
+                VALIDATE_REPORTER);
+
+        String reported = reportOf(run("reportValidate", "-Pmode=clean"));
+
+        assertTrue(reported.contains("mode=valid"), reported);
+        assertTrue(!reported.contains("mode=clean"), reported);
+    }
+
+    @Test
+    @DisplayName("checked beside a build, the check reads the tree before generation writes it")
+    public void validationRunsBeforeGeneration() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { architecture = 'hexagonal' }");
+
+        String output = run("compileJava", "elcoreValidate", "--dry-run").getOutput();
+
+        int check = output.indexOf(":elcoreValidate SKIPPED");
+        int generation = output.indexOf(":elcore3 SKIPPED");
+        assertTrue(check >= 0 && generation >= 0, output);
+        // After generation it would compare the tree with itself and pass.
+        assertTrue(check < generation, output);
     }
 
     @Test
@@ -311,6 +441,16 @@ public class ElastiCorePluginTest {
             + "    doLast {\n"
             + "        def elcore = tasks.getByName('elcore')\n"
             + "        println '<<<' + elcore.systemProperties.collect { k, v -> k + '=' + v }.join(';') + '>>>'\n"
+            + "    }\n"
+            + "}";
+
+    /** The same for elcoreValidate: its main class, its properties and its arguments. */
+    private static final String VALIDATE_REPORTER =
+            "tasks.register('reportValidate') {\n"
+            + "    doLast {\n"
+            + "        def v = tasks.getByName('elcoreValidate')\n"
+            + "        def props = v.systemProperties.collect { k, val -> k + '=' + val }.join(';')\n"
+            + "        println '<<<' + v.mainClass.get() + '|' + props + '|' + v.args.join(';') + '>>>'\n"
             + "    }\n"
             + "}";
 

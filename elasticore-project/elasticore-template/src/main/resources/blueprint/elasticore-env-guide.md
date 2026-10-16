@@ -515,7 +515,7 @@ elasticore {
 dependencies { elasticore project(':acme-rules') }
 ```
 
-지금 도는 규칙과 순서는 `./gradlew elcore3 -PlistRules` 로 봅니다. 자세한 것은 `elasticore-ddd-customize-guide.md`.
+지금 도는 규칙과 순서는 `./gradlew elcoreGen -PlistRules` 로 봅니다. 자세한 것은 `elasticore-ddd-customize-guide.md`.
 
 ### 주의: 이 설정은 규칙엔진이 읽습니다
 
@@ -694,8 +694,8 @@ namespace:
 - 생성된 Java 파일의 `package` 선언에는 순수 패키지명만 사용 (prefix 제거됨)
 
 **사용 조건:**
-- `./gradlew elcore` 실행 시 `-Delasticore.modules=...` 시스템 프로퍼티가 설정된
-  **멀티 모듈 모드**에서만 동작
+- `./gradlew elcoreGen` 실행 시 `elasticore.modules` 시스템 프로퍼티가 설정된
+  **멀티 모듈 모드**에서만 동작 (Gradle 플러그인은 blueprint 를 가진 하위 모듈로 이 값을 채움)
 - `모듈명`은 `elasticore.modules`에 전달된 경로의 마지막 디렉토리명과 일치해야 함
   (예: `C:/.../app-admin` → 모듈명 `app-admin`)
 - 싱글 모듈 프로젝트에서는 prefix가 있어도 현재 모듈에 생성됨 (하위 호환)
@@ -817,9 +817,10 @@ elasticore:
 이를 통해 대규모 프로젝트에서 하나의 도메인만 수정했을 때 빠르게 재생성하거나,
 원격 DSL URL 갱신을 특정 도메인만 대상으로 수행할 수 있다.
 
-### 12.1 Gradle 설정 필수 단계
+### 12.1 Gradle 설정
 
-사용자의 프로젝트 `build.gradle` 파일의 `elcore` 태스크에서 `-Pdomain` 옵션을 전달해야 한다.
+Gradle 플러그인(`id 'io.elasticore'`)을 쓰면 `-Pdomain` 은 그대로 전달되므로 할 일이 없다.
+플러그인 없이 `elcore` 태스크를 직접 정의한 프로젝트는 그 태스크에서 `-Pdomain` 옵션을 전달해야 한다.
 기존 `-Pmode` 포워딩과 동일한 패턴으로 다음 3줄을 추가한다:
 
 ```groovy
@@ -838,21 +839,23 @@ task elcore(type: JavaExec) {
 
 **단일 도메인 처리:**
 ```bash
-./gradlew elcore -Pdomain=hr
+./gradlew elcoreGen -Pdomain=hr
 ```
 `hr` 도메인만 `env.yml`을 로드하고 DSL을 갱신하며, Java 소스를 재생성한다.
 
 **다중 도메인 처리 (콤마 구분):**
 ```bash
-./gradlew elcore -Pdomain=hr,bbs
+./gradlew elcoreGen -Pdomain=hr,bbs
 ```
 `hr`과 `bbs` 도메인만 처리한다.
 
 **Validation 모드와 조합:**
 ```bash
-./gradlew elcore -Pmode=valid -Pdomain=hr
+./gradlew elcoreValidate -Pdomain=hr
 ```
 `hr` 도메인만 DSL 검증을 실행하고, 검증 오류 시 빌드 실패한다.
+
+직접 정의한 `elcore` 태스크라면 `./gradlew elcore -Pdomain=hr`, `./gradlew elcore -Pmode=valid -Pdomain=hr` 이다.
 
 ### 12.3 동작 세부
 
@@ -872,7 +875,7 @@ task elcore(type: JavaExec) {
 ```
 [DomainFilter] Skipping remote resource (no cache): <url>
 ```
-필요하면 `-Pdomain` 없이 full elcore 를 한 번 실행해 캐시를 초기화한 뒤 다시 필터 모드로 전환한다.
+필요하면 `-Pdomain` 없이 전체 생성(`./gradlew elcoreGen`)을 한 번 실행해 캐시를 초기화한 뒤 다시 필터 모드로 전환한다.
 
 ### 12.4 schema.yml 동작
 
@@ -882,7 +885,7 @@ task elcore(type: JavaExec) {
 
 **대형 프로젝트 빠른 개발 사이클:**
 - 여러 도메인 중 `hr` 도메인만 수정하고 엔티티 추가
-- `./gradlew elcore -Pdomain=hr`로 빠르게 생성
+- `./gradlew elcoreGen -Pdomain=hr`로 빠르게 생성
 - 다른 도메인의 코드는 건드리지 않음
 
 **원격 DSL 선택적 갱신:**
@@ -891,7 +894,7 @@ task elcore(type: JavaExec) {
 - 불필요한 네트워크 I/O와 시간 절약
 
 **멀티 모듈 프로젝트:**
-- `./gradlew elcore -Pdomain=account,order`로 특정 도메인만 처리
+- `./gradlew elcoreGen -Pdomain=account,order`로 특정 도메인만 처리
 - 결과적으로 여러 모듈에 코드가 생성될 수 있음
 - 나머지 모듈의 도메인은 완전히 스킵됨
 

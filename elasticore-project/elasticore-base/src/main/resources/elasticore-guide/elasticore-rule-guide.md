@@ -1395,7 +1395,17 @@ elasticore {
 }
 ```
 
-`elcore` 와 `elcore3` 태스크가 생기고, `compileJava` 는 생성을 기다립니다.
+다음 태스크가 생기고, `compileJava` 는 생성을 기다립니다:
+
+| 태스크 | 하는 일 |
+|---|---|
+| `elcoreGen` | 생성. 이 빌드가 고른 생성기를 돌립니다 - `elasticore { }` 에 `architecture`·`language`·`rules` 중 하나라도 있으면 3.0 규칙 엔진(`elcore3`), 없으면 2.x 생성기(`elcore`) |
+| `elcoreValidate` | 검사. 생성과 똑같이 만들어 보되 아무것도 쓰지 않고, 생성이 바꿀 파일이 있으면 실패합니다 (아래 "검사") |
+| `elcoreGenTs` | TypeScript 클라이언트 생성 (`elcore3ts`) |
+
+`elcore`·`elcore3`·`elcore3ts` 도 그대로 있습니다 - `elcoreGen` 은 그중 이 빌드의 것을 고를 뿐입니다. 고르는 기준은
+`build.gradle` 의 선언뿐이라, `env.yml` 의 `publisher.rules` 에만 번들을 적은 프로젝트는 `elcoreGen` 이 2.x 생성기를
+돌립니다 - `elasticore { }` 에 선언하거나 `elcore3` 를 직접 실행하세요.
 
 **`elasticore { }` 블록을 쓰지 않으면 아무것도 달라지지 않습니다.** 규칙
 프로퍼티가 하나도 전달되지 않고, 생성기는 원래 가던 길을 그대로 갑니다.
@@ -1420,10 +1430,40 @@ elasticore {
 #### 기존 스위치
 
 `-Pdomain=shop`, `-Pmode=valid`, `-Pforce`, `-Pv3`, `-Pkt`, `-Pts` 모두 그대로
-전달됩니다. 플러그인을 도입한다고 명령어가 바뀌지 않습니다.
+전달됩니다 (`./gradlew elcoreGen -Pdomain=shop`). 플러그인을 도입한다고 명령어가 바뀌지 않습니다.
 
 `-PlistRules` 는 생성하지 않고, 도메인마다 지금 선택된 규칙을 파일 종류(target)별로 실행 순서대로
-보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다.
+보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다. 규칙 엔진의 기능이라
+`./gradlew elcoreGen -PlistRules` 는 선언이 없는 빌드에서도 규칙 엔진으로 목록만 보여 줍니다.
+
+#### 검사 (`elcoreValidate`)
+
+```bash
+./gradlew elcoreValidate        # 쓰지 않고 비교 - 생성이 바꿀 파일이 있으면 실패 (exit 1)
+```
+
+생성과 똑같이 만들어 보고 지금 파일과 비교합니다. **아무것도 쓰지 않습니다** - 파일·디렉터리를 만들거나 지우지
+않고, 가이드 복사와 `schema.yml`·`context-map.md`·`semantic_model.yml` 갱신도 하지 않습니다. 2.x 생성기의
+`-Pmode=valid` 를 두 엔진 모두에 태스크로 만든 것이고, 3.0 규칙 엔진도 이제 `-Pmode=valid` 를 같은 뜻으로 읽습니다.
+파일마다 생성이 할 일이 나옵니다:
+
+| 생성 로그 | 검사 로그 | 검사 |
+|---|---|---|
+| `WROTE` (없는 파일) | `WOULD WRITE(new)` | 실패 |
+| `WROTE` (DSL 이 바뀐 파일) | `WOULD WRITE` | 실패 |
+| `REGENERATED(owned, never edited)` | `WOULD REGENERATE(owned, never edited)` | 실패 |
+| `REMOVED(the DSL no longer produces it)` | `WOULD REMOVE(the DSL no longer produces it)` | 실패 |
+| `SKIP(user-modified; -Pforce to overwrite)` | `USER-MODIFIED(differs from the DSL; -Pforce to overwrite)` | 실패 - 생성이 건너뛰므로 생성으로는 맞춰지지 않음 |
+| `SKIP(user-owned)`, `SKIP(no ElastiCORE header - yours)` | 같음 | 통과 - 개발자 파일 |
+| `UNCHANGED` | `UNCHANGED` | 통과 |
+
+DSL 경고(`[elcore3] DSL validation warnings:`)가 있어도 실패합니다 - 생성은 경고를 보여 주고 계속하지만, 검사는
+2.x 의 `-Pmode=valid` 처럼 실패로 답합니다. 끝에 `[VALID] Validation PASSED: ...` 또는
+`[VALID] Validation FAILED: ...` 가 나옵니다.
+
+CI 에서는 빌드 앞에 둡니다: `./gradlew elcoreValidate build`. 한 번에 실행해도 검사가 생성보다 먼저 돌아서,
+생성이 고치기 전의 파일을 봅니다. TypeScript 클라이언트는 `./gradlew elcoreGenTs -Pmode=valid` 로 같은 검사를 합니다. `-Pmode=clean` 은 2.x 생성기의 모드라 3.0 규칙 엔진은 아무것도 쓰거나 지우지
+않고 실패합니다 (DSL 이 더는 만들지 않는 생성 파일은 생성이 직접 지웁니다).
 
 #### 프로젝트의 규칙 더하기
 
@@ -1571,6 +1611,8 @@ task elcore3(type: JavaExec) {
 ./gradlew elcore3 -Pdomain=shop   # 도메인 한정
 ./gradlew elcore3 -Pforce         # 수정된 파일도 덮어쓰기
 ```
+
+샘플 모듈에서는 규칙 엔진을 직접 부르려고 `elcore3` 를 씁니다. 프로젝트에서는 `elcoreGen` 이 같은 스위치를 받습니다.
 
 > **언어와 규칙 선택은 서로 다른 스위치입니다.**
 > env.yml의 `publisher.rules`는 *어떤 규칙을 쓸지*만 정하고,
