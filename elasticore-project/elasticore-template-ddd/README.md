@@ -4,8 +4,10 @@ The domain-model reading of the pipeline, kept where a compiler can check it.
 
 ## What this module is for
 
-`elasticore-template` proves the Java rules by regenerating the 2.x sources
-byte for byte, and has no `publisher.rules` configured on purpose - so it
+`elasticore-template` proves the Java rules by generating its 2.x sources
+through the rule engine and comparing them with the committed ones (see the
+compatibility checks in `CONTRIBUTING.md`), and has no `publisher.rules`
+configured on purpose - so it
 never exercises the DDD bundle. `elasticore-template-kt` compiles Kotlin, and
 composes a different set. Neither can say whether the DDD rules produce a Java
 project that still builds.

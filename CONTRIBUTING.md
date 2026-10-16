@@ -44,8 +44,8 @@ build` at the root is enough to know.
 
 This renders the sample's artifacts through the rule engine, in memory - seven
 kinds of artifact, an entity by its field block - and compares each with the
-2.x output in the repository (the hash line, line endings and trailing blanks
-aside):
+2.x output in the repository (the hash line, the wording of the generated-once
+marker, line endings and trailing blank lines aside):
 
 ```
 === RulesCheck summary: 150 MATCH / 0 DIFF / 2 ACCEPTED / 0 SKIP ===

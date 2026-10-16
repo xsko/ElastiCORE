@@ -408,8 +408,8 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 - **Checked on every change**: on each pull request CI builds every module, then compares the rule engine's output
   with 2.x's — per artifact (`150 MATCH / 0 DIFF / 2 ACCEPTED`, an entity by its fields) and over all 229 files 2.x
   generates for the reference project (`0 differ / 0 missing / 0 extra`: the four files a 2.x bug fix changes are
-  accepted by name, one more differs only in import order). Each file's first line (its content hash and time), line
-  endings and trailing blanks are left out.
+  accepted by name, one more differs only in import order). Each file's first line (its content hash and time), the
+  wording of the generated-once marker, line endings and trailing blanks are not compared.
 - **Checked by running**: access answers over HTTP, the SQL of business measures against a real database, every column
   of the semantic model against database metadata.
 - **Measured**: adding a searchable field is one DSL line and 39 changed lines of generated code in 9 files; generated

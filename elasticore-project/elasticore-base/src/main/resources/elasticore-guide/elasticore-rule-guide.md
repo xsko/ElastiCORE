@@ -67,7 +67,7 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 
 | 번들 | 무엇을 생성하나 |
 |---|---|
-| `jpa-springboot` | 2.x 파이프라인과 **바이트 단위로 동일한** 출력 |
+| `jpa-springboot` | 2.x 파이프라인과 **같은** 출력 (이력에 적은 2.x 버그 수정 제외 - `elcoreRulesCheck`·`elcoreTreeCheck` 가 비교) |
 | `jpa-springboot-v3` | 정리된 출력 — 실제 사용하는 import만, 규칙이 만드는 클래스 애노테이션 |
 | `jpa-springboot-kt` | Kotlin 출력 |
 | `ddd-springboot` | v3 + 애그리거트 경계 — 루트만 repository/service/controller, 값 객체 불변, 도메인 이벤트 |
@@ -1343,7 +1343,7 @@ v3에 자기 스켈레톤이 없는 타깃은 호환 스켈레톤으로 떨어�
 # 1. 단위 테스트
 ./gradlew :elasticore-project:elasticore-base:test
 
-# 2. 2.x 출력과 바이트 단위 동일한가 (호환 모드)
+# 2. 2.x 출력과 같은가 (호환 모드)
 ./gradlew elcoreRulesCheck -Pstrict
 
 # 3. 생성 -> 컴파일 -> 실행 (Kotlin + TypeScript)
