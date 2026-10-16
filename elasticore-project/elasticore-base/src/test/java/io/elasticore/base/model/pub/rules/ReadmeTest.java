@@ -33,12 +33,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class ReadmeTest {
 
+    /** The front page in each language: the Korean one carries the same snippets and links. */
+    private static final String[] FRONT_PAGES = {"README.md", "README.ko.md"};
+
     @Test
     @DisplayName("every path the front page points at exists")
     public void theLinksResolve() throws IOException {
         List<String> broken = new ArrayList<String>();
 
-        for (String doc : new String[]{"README.md", "CONTRIBUTING.md"}) {
+        for (String doc : new String[]{"README.md", "README.ko.md", "CONTRIBUTING.md"}) {
             File file = new File(repositoryRoot(), doc);
             assertTrue(file.isFile(), doc + " is linked from the project and must exist");
 
@@ -64,20 +67,26 @@ public class ReadmeTest {
         // The README installs from Maven Central, where a snapshot never is.
         assertTrue(!declared.endsWith("-SNAPSHOT"),
                 "elasticoreReleasedVersion is the last release, never a snapshot: " + declared);
-        String readme = read(new File(repositoryRoot(), "README.md"));
-
         List<String> stale = new ArrayList<String>();
-        Matcher coordinate = Pattern.compile("io\\.elasticore:[a-z0-9-]+:([0-9][^'\"\\s]*)").matcher(readme);
-        while (coordinate.find()) {
-            if (!coordinate.group(1).equals(declared)) stale.add(coordinate.group(0));
-        }
+        for (String doc : FRONT_PAGES) {
+            String readme = read(new File(repositoryRoot(), doc));
 
-        // The plugin line spells its version differently - id then version -
-        // so the coordinate pattern never sees it, and an audit found exactly
-        // that shape of gap: a pin this test did not know it was missing.
-        Matcher plugin = Pattern.compile("id 'io\\.elasticore' version '([^']+)'").matcher(readme);
-        while (plugin.find()) {
-            if (!plugin.group(1).equals(declared)) stale.add(plugin.group(0));
+            // The runtime libraries have groups of their own -
+            // io.elasticore.springboot4 - which a pattern for io.elasticore
+            // alone passed over: the runtime pin was the one never checked.
+            Matcher coordinate = Pattern.compile("io\\.elasticore(?:\\.[a-z0-9]+)*:[a-z0-9-]+:([0-9][^'\"\\s]*)")
+                    .matcher(readme);
+            while (coordinate.find()) {
+                if (!coordinate.group(1).equals(declared)) stale.add(doc + ": " + coordinate.group(0));
+            }
+
+            // The plugin line spells its version differently - id then version -
+            // so the coordinate pattern never sees it, and an audit found exactly
+            // that shape of gap: a pin this test did not know it was missing.
+            Matcher plugin = Pattern.compile("id 'io\\.elasticore' version '([^']+)'").matcher(readme);
+            while (plugin.find()) {
+                if (!plugin.group(1).equals(declared)) stale.add(doc + ": " + plugin.group(0));
+            }
         }
 
         // Copying a version that no longer resolves is the first thing a new
@@ -92,19 +101,22 @@ public class ReadmeTest {
     public void theBundlesExist() throws IOException {
         Set<String> known = new LinkedHashSet<String>(RuleCatalog.standard().bundleNames());
         Set<String> sets = RuleCatalog.standard().setNames();
-        String readme = read(new File(repositoryRoot(), "README.md"));
 
         List<String> unknown = new ArrayList<String>();
-        // Backticked words in the bundle table shape: the naming is distinctive
-        // enough to find without parsing markdown, which would be a parser
-        // nobody trusts the verdict of.
-        Matcher named = Pattern.compile("`([a-z0-9]+(?:-[a-z0-9]+)+)`").matcher(readme);
-        while (named.find()) {
-            String word = named.group(1);
-            boolean looksLikeABundle = word.contains("springboot") || word.startsWith("ts-")
-                    || word.startsWith("ddd-") || word.startsWith("hex");
-            if (looksLikeABundle && !known.contains(word) && !sets.contains(word)) {
-                unknown.add(word);
+        for (String doc : FRONT_PAGES) {
+            String readme = read(new File(repositoryRoot(), doc));
+
+            // Backticked words in the bundle table shape: the naming is distinctive
+            // enough to find without parsing markdown, which would be a parser
+            // nobody trusts the verdict of.
+            Matcher named = Pattern.compile("`([a-z0-9]+(?:-[a-z0-9]+)+)`").matcher(readme);
+            while (named.find()) {
+                String word = named.group(1);
+                boolean looksLikeABundle = word.contains("springboot") || word.startsWith("ts-")
+                        || word.startsWith("ddd-") || word.startsWith("hex");
+                if (looksLikeABundle && !known.contains(word) && !sets.contains(word)) {
+                    unknown.add(doc + ": " + word);
+                }
             }
         }
 

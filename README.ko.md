@@ -54,8 +54,11 @@ dependencies {
 }
 ```
 
-Spring Boot 3 이면 (3.5.16 에서 확인): `io.elasticore.springboot3:elasticore-springboot3`, `spring-boot-starter-web`,
-springdoc `2.8.17`.
+Spring Initializr(Spring Web, Spring Data JPA, Validation, Lombok, H2)로 시작했다면 그 `build.gradle` 은 그대로
+두고(함께 생성된 테스트가 그 파일의 테스트 의존성을 씁니다) 빠진 것만 더합니다: `io.elasticore` 플러그인 줄,
+`elasticore` 블록, ElastiCORE 의존성 두 줄과 springdoc. Spring Boot 3 이면 (3.5.16 에서 확인): Boot 플러그인 `3.5.16`,
+`…springboot4` 대신 `io.elasticore.springboot3:elasticore-springboot3`, `-webmvc` 대신 `spring-boot-starter-web`,
+springdoc `3.0.3` 대신 `2.8.17`.
 
 **② `src/main/resources/blueprint/shop/`** - 도메인 설정과 업무를 적습니다
 
@@ -98,7 +101,7 @@ application/ProductCoreService.java     CRUD·검색·권한 검사 (다시 생�
 application/ProductService.java         내 코드를 쓰는 곳 (한 번만 생성, 그 뒤로 내 파일)
 application/dto/ProductDTO.java         요청·응답 (+ 400 검증)
 application/dto/ProductSrchDTO.java     검색 조건 - 이름 LIKE, 페이지, 정렬 (요청이 말하지 않으면 이름순)
-adapter/in/web/ProductController.java   REST API + OpenAPI 문서
+adapter/in/web/ProductController.java   REST API + OpenAPI 문서 (이것도 한 번만 생성)
 domain/repository/...                   리포지터리 포트
 infrastructure/persistence/...          그 JPA 어댑터
 ```
@@ -106,12 +109,13 @@ infrastructure/persistence/...          그 JPA 어댑터
 **④ 내 작업** - 모델이 말하지 않는 것
 
 - **애플리케이션 클래스**: `com.acme.shop` 이나 그 위 패키지에 `@SpringBootApplication` 클래스를 둡니다. 그래야
-  Spring 이 생성된 클래스를 찾습니다. Spring Initializr 로 만든 프로젝트에는 이미 있습니다.
-- **업무 로직**은 `ProductService.java` 에 씁니다. 한 번만 생성되고 그 뒤로는 내 파일이라, 다시 생성해도 건드리지
-  않고(로그에 `SKIP(user-owned)`) 모델이 가진 파일만 새로 씁니다.
+  Spring 이 생성된 클래스를 찾습니다. Spring Initializr 는 group 과 artifact 로 정한 패키지에 만들어 줍니다
+  (`com.acme` + `shop` 이면 `com.acme.shop`).
+- **업무 로직**은 `ProductService.java` 에 씁니다. 컨트롤러처럼 한 번만 생성되는 파일이라, 고치기 전까지는 모델을
+  따라 다시 생성되고, 한 번 고치면 그 뒤로는 다시 생성해도 건드리지 않습니다(로그에 `SKIP(user-owned)`).
 - **로그인**: 상품을 바꾸려면 `ADMIN` 역할이 필요합니다(`@access(read=public)`: 읽기는 누구나, 나머지는 관리자).
-  로그인 처리에서 `SessionCurrentUser.signIn(request, userId, "ADMIN")` 을 부르고, Spring Security 를 쓰면 대신
-  `CurrentUser` 빈을 등록합니다.
+  로그인 처리에서 `SessionCurrentUser.signIn(request, userId, "ADMIN")` 을 부르고(패키지는 Boot 4 에서도
+  `io.elasticore.springboot3.security`), Spring Security 를 쓰면 대신 `CurrentUser` 빈을 등록합니다.
 
 **⑤ 실행**
 

@@ -58,8 +58,11 @@ dependencies {
 }
 ```
 
-On Spring Boot 3 (checked with 3.5.16): `io.elasticore.springboot3:elasticore-springboot3`, `spring-boot-starter-web`
-and springdoc `2.8.17`.
+Starting from Spring Initializr (Spring Web, Spring Data JPA, Validation, Lombok, H2)? Keep its `build.gradle`, whose
+test lines its generated test needs, and add what it lacks: the `io.elasticore` plugin line, the `elasticore` block,
+the two ElastiCORE dependencies and springdoc. On Spring Boot 3 (checked with 3.5.16): the Boot
+plugin `3.5.16`, `io.elasticore.springboot3:elasticore-springboot3` in place of `…springboot4`,
+`spring-boot-starter-web` in place of `-webmvc`, and springdoc `2.8.17` in place of `3.0.3`.
 
 **② `src/main/resources/blueprint/shop/`** — the domain's settings and its business
 
@@ -102,7 +105,7 @@ application/ProductCoreService.java     CRUD, search, access checks (regenerated
 application/ProductService.java         where your code goes (generated once, yours afterwards)
 application/dto/ProductDTO.java         request and response (+ 400 validation)
 application/dto/ProductSrchDTO.java     search: name LIKE, paging, sorting (by name unless asked otherwise)
-adapter/in/web/ProductController.java   REST API + OpenAPI docs
+adapter/in/web/ProductController.java   REST API + OpenAPI docs (generated once too)
 domain/repository/...                   repository port
 infrastructure/persistence/...          its JPA adapter
 ```
@@ -110,12 +113,13 @@ infrastructure/persistence/...          its JPA adapter
 **④ Your part** — what the model does not say
 
 - **An application class**: `@SpringBootApplication` in `com.acme.shop` or a package above it, so that Spring finds the
-  generated classes. Spring Initializr writes one.
-- **Your business logic**, in `ProductService.java`. It is generated once and is yours afterwards: generating again
-  leaves it alone (`SKIP(user-owned)` in the log) and rewrites only the files the model owns.
+  generated classes. Spring Initializr writes one in the package of its group and artifact (`com.acme` and `shop` give
+  `com.acme.shop`).
+- **Your business logic**, in `ProductService.java`. Like the controller it is generated once: it follows the model
+  until you edit it, and from then on generating again leaves it alone (`SKIP(user-owned)` in the log).
 - **Signing in.** Changing a product needs the `ADMIN` role (`@access(read=public)`: anyone reads, everything else is
-  for the administrator). Your sign-in calls `SessionCurrentUser.signIn(request, userId, "ADMIN")`; with Spring
-  Security, register a `CurrentUser` bean instead.
+  for the administrator). Your sign-in calls `SessionCurrentUser.signIn(request, userId, "ADMIN")` (package
+  `io.elasticore.springboot3.security`, on Boot 4 too); with Spring Security, register a `CurrentUser` bean instead.
 
 **⑤ Run**
 
