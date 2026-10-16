@@ -28,9 +28,16 @@ The same ones CI runs:
 
 ```bash
 ./gradlew build
+git diff --exit-code -- elasticore-project/elasticore-template/src/main/java
 ./gradlew :elasticore-project:elasticore-template:elcoreRulesCheck -Pstrict
 ./gradlew :elasticore-project:elasticore-template:elcoreTreeCheck
 ```
+
+`build` regenerates the template - the reference project - with the 2.x
+generator, and `git diff` must find it exactly as committed. The two checks
+after it compare the rule engine with that 2.x generator, so on their own they
+pass a change that moves both alike, such as one to a model loader they share;
+the committed tree is what holds 2.x's output in place.
 
 `elcoreTreeCheck` compares every file 2.x generates for the template with the
 rule engine's, and must report `0 differ / 0 missing / 0 extra`.

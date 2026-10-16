@@ -404,11 +404,11 @@ processManager:                              config:
 ## 믿을 수 있는 출력
 
 - 모듈 전체에서 **자동 테스트 1,400개 이상**이 매 빌드에서 돕니다. 예제 프로젝트들은 생성 → 컴파일 → 실행까지 합니다.
-- **변경마다 검사**: 풀 리퀘스트마다 CI 가 모든 모듈을 빌드한 뒤 규칙 엔진의 출력을 2.x 출력과 비교합니다 -
-  산출물별로(`150 MATCH / 0 DIFF / 2 ACCEPTED`, 엔티티는 필드 부분), 그리고 기준 프로젝트에서 2.x 가 만드는 229개
-  파일 전부(`0 differ / 0 missing / 0 extra`: 2.x 버그 수정으로 달라지는 4개는 이름을 정해 허용, 1개는 import 순서만
-  다름). 각 파일의 첫 줄(내용 해시·시각), 한 번만 생성되는 파일 표시 주석의 표기, 줄바꿈 문자, 끝 공백은 비교하지
-  않습니다.
+- **변경마다 검사**: 풀 리퀘스트마다 CI 가 모든 모듈을 빌드합니다. 이때 2.x 생성기가 기준 프로젝트를 다시 생성하는데,
+  커밋된 그대로여야 합니다. 그다음 규칙 엔진의 출력을 2.x 출력과 비교합니다 - 산출물별로(`150 MATCH / 0 DIFF /
+  2 ACCEPTED`, 엔티티는 필드 부분), 그리고 기준 프로젝트에서 2.x 가 만드는 229개 파일 전부(`0 differ / 0 missing /
+  0 extra`: 2.x 버그 수정으로 달라지는 4개는 이름을 정해 허용, 1개는 import 순서만 다름). 이 두 비교는 각 파일의 첫
+  줄(내용 해시·시각), 한 번만 생성되는 파일 표시 주석의 표기, 줄바꿈 문자, 끝 공백을 보지 않습니다.
 - **동작으로 확인**: 권한 응답은 HTTP로, 업무 지표의 SQL은 실제 DB로, 시맨틱 모델의 모든 컬럼은 DB 메타데이터로 대조.
 - **측정**: 검색 필드 하나를 더하면 DSL 은 1줄, 생성 코드는 9개 파일에서 39줄이 바뀌고, 같은 DSL 로 두 번 생성하면
   130개 파일 중 달라지는 파일이 없습니다(각 파일 첫 줄의 해시·시각 제외) - [변경 증폭 벤치마크](docs/benchmarks/change-amplification.ko.md).
@@ -420,12 +420,14 @@ processManager:                              config:
 
 - **3.0 은 정식 출시 전(pre-release)입니다.** 이력에 적은 버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum 을
   빼면 2.x 가 만들던 코드는 그대로입니다: `elasticore` 블록에 `architecture`·`language`·`rules` 를 적지 않은 프로젝트는
-  2.x 생성기가 생성하고, 규칙 엔진의 `jpa-springboot` 번들(레이어드 Java)은 풀 리퀘스트마다 그 출력과 비교됩니다.
+  2.x 생성기가 생성하고, 그 생성기가 만든 기준 프로젝트는 커밋된 그대로여야 하며, 규칙 엔진의 `jpa-springboot`
+  번들(레이어드 Java)은 그 출력과 비교됩니다 - 둘 다 풀 리퀘스트마다.
 - v3 번들의 출력은 정식 출시 전까지 바뀔 수 있습니다 - `jpa-springboot-v3`(레이어드, `-Pv3`), DDD, 헥사고날, Kotlin,
   TypeScript. 바뀔 때마다 그 이유를
   [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
 - **3.0 은 첫 정식 릴리스부터 3년간 지원합니다**: 생성기, Gradle 플러그인, 두 런타임 라이브러리의 버그·보안 수정을
-  `release/3.0` 브랜치에서 `3.0.YYMMDD` 버전으로 냅니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
+  `release/3.0` 브랜치에서 `3.0.YYMMDD` 버전으로 내고, 그때 Spring 팀이 오픈소스로 지원하는 Spring Boot 3·4 버전에서
+  테스트합니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
   그 전까지는 다음 사전 릴리스(pre-release)에서 고칩니다. 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
 
 ## 시작하기 (설치)

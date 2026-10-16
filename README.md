@@ -405,11 +405,12 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 ## Output you can trust
 
 - **More than 1,400 automated tests** across the modules run on every build. The sample projects are generated, compiled and run.
-- **Checked on every change**: on each pull request CI builds every module, then compares the rule engine's output
-  with 2.x's — per artifact (`150 MATCH / 0 DIFF / 2 ACCEPTED`, an entity by its fields) and over all 229 files 2.x
-  generates for the reference project (`0 differ / 0 missing / 0 extra`: the four files a 2.x bug fix changes are
-  accepted by name, one more differs only in import order). Each file's first line (its content hash and time), the
-  wording of the generated-once marker, line endings and trailing blanks are not compared.
+- **Checked on every change**: on each pull request CI builds every module, which regenerates the reference project
+  with 2.x's generator and must leave it exactly as committed. Then it compares the rule engine's output with 2.x's —
+  per artifact (`150 MATCH / 0 DIFF / 2 ACCEPTED`, an entity by its fields) and over all 229 files 2.x generates for
+  the reference project (`0 differ / 0 missing / 0 extra`: the four files a 2.x bug fix changes are accepted by name,
+  one more differs only in import order). These two comparisons leave out each file's first line (its content hash
+  and time), the wording of the generated-once marker, line endings and trailing blanks.
 - **Checked by running**: access answers over HTTP, the SQL of business measures against a real database, every column
   of the semantic model against database metadata.
 - **Measured**: adding a searchable field is one DSL line and 39 changed lines of generated code in 9 files; generated
@@ -423,13 +424,14 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 
 - **3.0 is in pre-release.** What 2.x generated stays as it was, apart from the bug fixes the history lists and, on
   Spring Boot 4, enums written for Jackson 3: a project whose `elasticore` block declares no `architecture`,
-  `language` or `rules` runs 2.x's generator, and the rule engine's `jpa-springboot` bundle (layered Java) is compared
-  with it on every pull request.
+  `language` or `rules` runs 2.x's generator, whose output for the reference project is held to the committed tree,
+  and the rule engine's `jpa-springboot` bundle (layered Java) is compared with it — both on every pull request.
 - The v3 bundles — `jpa-springboot-v3` (layered, `-Pv3`), DDD, hexagonal, Kotlin, TypeScript — may still change
   between pre-releases; each change is listed with its reason in the
   [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) (in Korean).
 - **3.0 is supported for three years from its first stable release**: bug and security fixes to the generator, the
-  Gradle plugin and both runtime libraries, released from the `release/3.0` branch as `3.0.YYMMDD` versions
+  Gradle plugin and both runtime libraries, released from the `release/3.0` branch as `3.0.YYMMDD` versions and
+  tested on the Spring Boot 3 and 4 versions the Spring team still supports as open source at the time
   ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). Until then, fixes come in the next pre-release. How a
   release is made: [RELEASING.md](RELEASING.md).
 

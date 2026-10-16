@@ -63,6 +63,31 @@
 - 관련 파일: `README.md`, `README.ko.md`, `BRANCHING.md`, `CONTRIBUTING.md`, `docs/comparison.md`, `docs/comparison.ko.md`,
   `elasticore-rule-guide.md`, `elasticore-template-ddd/README.md`
 
+### Improvements (호환 검사)
+
+#### CI 가 2.x 기준 트리가 커밋된 그대로인지도 확인한다
+- 두 호환 검사(`elcoreRulesCheck`, `elcoreTreeCheck`)는 규칙 엔진을 같은 빌드의 2.x 생성기와 비교한다. 둘이 함께 쓰는
+  코드(모델 로더 등)를 바꿔 두 생성기가 똑같이 달라지면 두 검사는 통과하고, 2.x 생성기를 쓰는 프로젝트의 코드는
+  바뀐다
+- CI 와 릴리스 워크플로가 빌드 직후, 빌드가 다시 생성한 기준 프로젝트(`elasticore-project/elasticore-template/src/main/java`)
+  가 커밋된 그대로인지 `git diff` 로 확인한다. 다르면 바뀐 파일 목록을 실행 요약에 남기고 실패한다
+- 로컬에서 확인했다: 템플릿을 빌드해도 트리는 그대로이고, 파일 하나를 바꾸면 이 단계가 실패한다. 기준 트리 248개
+  파일은 저장소에 LF 로 들어 있고 2.x 생성기는 OS 의 줄바꿈으로 쓰므로 Linux CI 에서도 같다
+- CONTRIBUTING.md, BRANCHING.md, RELEASING.md 의 검사 목록과 README 의 "믿을 수 있는 출력"·"현재 상태" 가 이 검사를
+  말한다
+- 관련 파일: `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `CONTRIBUTING.md`, `BRANCHING.md`, `RELEASING.md`,
+  `README.md`, `README.ko.md`
+
+### Documentation (지원 범위와 릴리스)
+
+#### 3.0 수정이 맞추는 Spring Boot 버전, 풀 리퀘스트로 하는 릴리스, 서명 키 만료
+- 3.0 의 수정은 그 시점에 Spring 팀이 오픈소스로 지원하는 Spring Boot 3·4 버전에서 빌드하고 테스트한다
+- `main`·`release/**` 은 CI 가 통과한 풀 리퀘스트로만 바뀐다. 그래서 RELEASING.md 의 버전 커밋과 다음 `-SNAPSHOT`
+  커밋도 풀 리퀘스트로 넣고, 태그는 그 머지가 `main` 에 만든 커밋에 단다
+- 릴리스 서명 키는 2029-10-14 에 만료된다. 3.0 지원이 그 뒤까지 가므로, 그 전에 기한을 늘리고 공개 키를 키 서버에
+  다시 올리고 다시 내보낸 비밀 키를 `SIGNING_KEY` 에 넣는다고 적었다
+- 관련 파일: `README.md`, `README.ko.md`, `BRANCHING.md`, `RELEASING.md`
+
 ## 3.0.261015-alpha1
 
 ### New Features (첫 공개)
