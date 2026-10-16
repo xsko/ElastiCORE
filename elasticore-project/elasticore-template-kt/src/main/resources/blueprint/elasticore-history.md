@@ -88,6 +88,19 @@
   다시 올리고 다시 내보낸 비밀 키를 `SIGNING_KEY` 에 넣는다고 적었다
 - 관련 파일: `README.md`, `README.ko.md`, `BRANCHING.md`, `RELEASING.md`
 
+### Improvements (README 검사)
+
+#### README 의 시작하기를 테스트가 실제로 생성해 본다
+- 지금까지 README 는 링크·버전·번들 이름만 검사했고(`ReadmeTest`), 그 안의 DSL 은 아무도 돌리지 않았다. 더는 읽히지
+  않는 블록, 처음 실행에서 만나는 경고, README 가 약속하고 생성기는 더 쓰지 않는 파일이 모두 빌드를 통과했다
+- `ReadmeQuickStartTest` 가 README.md·README.ko.md 의 시작하기에서 build.gradle 의 `architecture`·`language` 와 Spring
+  Boot 버전, env.yml, model/entity.yml 을 꺼내 ② 가 말하는 대로 새 프로젝트에 넣고, 플러그인이 하듯 생성한다. DSL
+  경고나 경고 줄이 하나라도 있거나 ③ 에 적은 파일이 하나라도 없으면 실패한다. ④ 가 부르라는 로그인 메서드
+  (`SessionCurrentUser.signIn`)가 런타임 라이브러리에 있는지도 본다
+- README 를 일부러 세 가지로 틀리게 해 세 검사가 모두 이유를 말하며 실패하는 것을 확인했다: 어디에도 없는 타입의
+  필드(DSL 경고 3개), 생성되지 않는 파일, 이름을 바꾼 로그인 메서드
+- 관련 파일: `ReadmeQuickStartTest.java`
+
 ## 3.0.261015-alpha1
 
 ### New Features (첫 공개)
