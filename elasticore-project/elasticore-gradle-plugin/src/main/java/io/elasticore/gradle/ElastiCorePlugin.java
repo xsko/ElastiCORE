@@ -127,18 +127,41 @@ public class ElastiCorePlugin implements Plugin<Project> {
             elcore3.configure(task -> arguments(task, evaluated, extension));
             elcore3ts.configure(task -> arguments(task, evaluated, extension));
 
-            // A listing of the rules is the rule engine's to give, whichever
-            // generator the build is on: the extractor does not know the
-            // switch, and would generate where a listing was asked for.
+            // The rule engine's own switches - the v3 templates, Kotlin,
+            // TypeScript, the listing of the rules - go to the rule engine,
+            // whichever generator the build is on: the extractor knows none of
+            // them, and would generate 2.x Java where they asked for something
+            // else. A listing is no check, so it does not decide elcoreValidate.
+            boolean engineSwitch = evaluated.hasProperty("v3") || evaluated.hasProperty("kt")
+                    || evaluated.hasProperty("ts");
             boolean listing = evaluated.hasProperty("listRules");
-            elcoreGen.configure(task -> task.dependsOn(ruleEngine || listing ? elcore3 : elcore));
+            elcoreGen.configure(task -> task.dependsOn(ruleEngine || engineSwitch || listing ? elcore3 : elcore));
+
+            TaskProvider<JavaExec> checked = ruleEngine || engineSwitch ? elcore3 : elcore;
             elcoreValidate.configure(task -> {
-                task.getMainClass().set(ruleEngine ? RULE_ENGINE : EXTRACTOR);
-                arguments(task, evaluated, extension);
-                if (!ruleEngine) sourceRoot(task, evaluated, extension);
-                // Last, so that what the command line passed through above
-                // cannot make the check something else: -Pmode a run that
-                // writes, -PlistRules a listing that compares nothing and passes.
+                // The engine task as the build left it, so that what a build
+                // put on it - a house style's elasticore.style.*, jvm arguments,
+                // the Java it runs on - is what the check runs with too: without
+                // the style it would read every file as different, without the
+                // toolchain a rules module built for a newer Java would not load.
+                JavaExec engine = checked.get();
+                task.setClasspath(engine.getClasspath());
+                task.getMainClass().set(engine.getMainClass());
+                task.getJavaLauncher().set(engine.getJavaLauncher());
+                task.setJvmArgs(engine.getJvmArgs());
+                task.getJvmArgumentProviders().addAll(engine.getJvmArgumentProviders());
+                if (engine.getMaxHeapSize() != null) task.setMaxHeapSize(engine.getMaxHeapSize());
+                task.setArgs(engine.getArgs());
+                task.getArgumentProviders().addAll(engine.getArgumentProviders());
+                // Not the environment: reading it here would take the whole
+                // inherited environment into both tasks, and with the
+                // configuration cache the environment of the run that stored
+                // the entry. The generator reads no environment variable.
+                task.setWorkingDir(engine.getWorkingDir());
+                task.systemProperties(engine.getSystemProperties());
+                // Last, so that what the command line passed through cannot
+                // make the check something else: -Pmode a run that writes,
+                // -PlistRules a listing that compares nothing and passes.
                 task.systemProperty("mode", "valid");
                 task.systemProperty("elasticore.rules.list", "false");
             });

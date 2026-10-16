@@ -130,6 +130,21 @@ public final class RulesGenRunner {
      */
     private int userModified = 0;
 
+    /**
+     * Validation: files of the developer's that generation says it cannot
+     * bring in line - a constructor out of date, table annotations it cannot
+     * rewrite, a base not extended. Each is a message today and a compile
+     * error or a silent gap after it, so a check that passed them would pass
+     * a tree the build then rejects.
+     */
+    private int handFix = 0;
+
+    /** -PlistRules: the rules said, nothing generated (never while validating). */
+    private boolean listing;
+
+    /** A validation that could not compare - so a check reading only the [VALID] lines still sees it fail. */
+    private static final String RUN_FAILED = "[VALID] Validation FAILED: the run itself failed - see above.";
+
     private RulesGenRunner(String projectRoot, boolean v3, boolean force,
                            boolean kotlin, boolean typescript, boolean validate) {
         this.projectRoot = projectRoot;
@@ -253,6 +268,19 @@ public final class RulesGenRunner {
                 || r.equals("jpa-value-object-boundary") || r.equals("jpa-service-access");
     }
 
+    /**
+     * The domains -Pdomain names, or null when it names none: comma-separated
+     * names, each compared whole, as the 2.x extractor compares them.
+     */
+    static java.util.Set<String> domainNames(String filter) {
+        if (filter == null) return null;
+        java.util.Set<String> names = new java.util.LinkedHashSet<String>();
+        for (String name : filter.split(",")) {
+            if (!name.trim().isEmpty()) names.add(name.trim());
+        }
+        return names.isEmpty() ? null : names;
+    }
+
     /** Where an artifact of the language being generated goes. */
     private ArtifactTarget target(String packageName, String className) {
         if (typescript) {
@@ -298,9 +326,11 @@ public final class RulesGenRunner {
         String basePath = System.getProperty("elasticore.base.path");
         if (basePath == null) basePath = System.getProperty("user.dir");
 
-        // What an earlier run in this JVM found is not this run's to report.
+        // What an earlier run in this JVM found is not this run's to report -
+        // the DSL warnings included, which a validation counts.
         io.elasticore.base.model.pub.rules.ModelCheck.reset();
         io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
+        io.elasticore.base.util.ConsoleLog.clear();
 
         boolean v3 = Boolean.getBoolean("elasticore.rules.v3");
         boolean force = Boolean.getBoolean("elasticore.rules.force");
@@ -322,9 +352,9 @@ public final class RulesGenRunner {
         }
         boolean validate = "valid".equals(mode);
         if (validate) io.elasticore.base.util.ConsoleLog.setValidationMode(true);
-        // The warnings this run finds, apart from any an earlier run in the
-        // same JVM left counted.
-        int dslWarningsBefore = io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_WARN");
+        // A listing compares nothing: asked for with a validation, it would
+        // have answered for it - and passed.
+        boolean listing = Boolean.getBoolean("elasticore.rules.list") && !validate;
 
         // A build that declared a language gets the switch derived from it
         // rather than set beside it. The two used to be spelled separately -
@@ -347,7 +377,10 @@ public final class RulesGenRunner {
                 || declaredArchitecture == RulesConfig.Architecture.HEXAGONAL) {
             v3 = true;
         }
-        String domainFilter = System.getProperty("elasticore.domain");
+        // -Pdomain, read as the extractor reads it: names separated by commas,
+        // each matched whole. A substring match took -Pdomain=orders for the
+        // domain order too.
+        java.util.Set<String> domains = domainNames(System.getProperty("elasticore.domain"));
 
         // A multi-module project keeps its blueprints per module, and names
         // those modules the same way the 2.x extractor is told about them.
@@ -367,7 +400,7 @@ public final class RulesGenRunner {
         // them - both rule-engine sample modules had an empty blueprint root.
         // Not while validating, which writes nothing - the extractor's
         // validation leaves them too.
-        if (!Boolean.getBoolean("elasticore.rules.list") && !validate) {
+        if (!listing && !validate) {
             io.elasticore.base.util.GuideDeployer.deployTo(
                     basePath + "/src/main/resources/blueprint", basePath);
         }
@@ -388,6 +421,10 @@ public final class RulesGenRunner {
                 : BlueprintLoader.load(basePath + "/src/main/resources/blueprint");
         if (loader.isEmpty()) {
             System.out.println("[elcore3] no blueprint domain found");
+            if (validate) {
+                io.elasticore.base.util.ConsoleLog.printWarn(
+                        "[VALID] Validation FAILED: no blueprint domain found - nothing was checked.");
+            }
             return 1;
         }
 
@@ -418,12 +455,14 @@ public final class RulesGenRunner {
                 RuleCatalog.standard().rulesOf(name);
             } catch (IllegalArgumentException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + e.getMessage());
+                if (validate) io.elasticore.base.util.ConsoleLog.printWarn(RUN_FAILED);
                 return 1;
             } catch (LinkageError e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] Rule set '" + name + "' cannot be loaded: " + e
                         + (e instanceof UnsupportedClassVersionError
                                 ? " - it is compiled for a newer Java than the generator runs on."
                                 : " - a class it uses is not on the generator's classpath; add it to the rules module's dependencies."));
+                if (validate) io.elasticore.base.util.ConsoleLog.printWarn(RUN_FAILED);
                 return 1;
             }
         }
@@ -439,18 +478,19 @@ public final class RulesGenRunner {
         for (String w : contextMap.warnings()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", w);
         for (String p : contextMap.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] context: " + p);
         runner.contextMap = contextMap;
+        runner.listing = listing;
 
         for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
             String domainDirName = loader.domainDirNameOf(en.getKey());
-            if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
+            if (domains != null && !domains.contains(domainDirName)) continue;
             runner.domainRoot = loader.moduleRootOf(en.getKey());
             runner.generate(domainDirName, loader.modelsOf(en.getKey()), allModels);
         }
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
-        if (Boolean.getBoolean("elasticore.rules.list")) return 0;
+        if (listing) return 0;
         runner.writeOrmXml();
-        if (domainFilter == null && runner.succeeded()) runner.removeStale();
+        if (domains == null && runner.succeeded()) runner.removeStale();
         runner.printSummary();
 
         // What the DSL validation found, said where the person who can fix it
@@ -458,6 +498,13 @@ public final class RulesGenRunner {
         // to get them stored and never shown.
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                 "[elcore3] DSL validation warnings:", "  ", true);
+        // And apart from them, what the generator decided where the DSL left
+        // it the choice - a reference left out of a DTO because its access is
+        // narrower, one handler for an event named twice. A model keeps these
+        // on purpose, so a validation does not count them; a warning says a
+        // part of the DSL is not applied, and is counted.
+        io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans("DSL_NOTE",
+                "[elcore3] DSL notes - what the generator decided:", "  ", false);
 
         // The side-cars are left as they are while validating, as the
         // extractor's validation leaves schema.yml: they describe the model,
@@ -496,8 +543,8 @@ public final class RulesGenRunner {
             broken = true;
         }
         if (validate) {
-            return runner.verdict(
-                    io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_WARN") - dslWarningsBefore, broken);
+            return runner.verdict(io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_WARN"),
+                    io.elasticore.base.util.ConsoleLog.getAccumulatedCount("DSL_NOTE"), broken);
         }
         return broken ? 1 : 0;
     }
@@ -585,7 +632,7 @@ public final class RulesGenRunner {
             if (!generatedModels.add(model)) continue;
             packageModuleMap = model.getNamespaceModuleRedirectMap();
             currentModel = model;
-            if (Boolean.getBoolean("elasticore.rules.list")) {
+            if (listing) {
                 listRules(domainDirName);
                 continue;
             }
@@ -2011,6 +2058,7 @@ public final class RulesGenRunner {
                 + " have it generated anew.", out.relativePath(), base, base, base);
         io.elasticore.base.util.ConsoleLog.printWarn(message);
         notes.add(message);
+        if (validate) handFix++;
     }
 
     private void warnIfClassAnnotationsDrifted(ArtifactTarget out, File file, String wouldWrite) {
@@ -2038,6 +2086,7 @@ public final class RulesGenRunner {
                     + " to generate the whole entity here again, or undo the DSL change.", out.relativePath(), base);
             io.elasticore.base.util.ConsoleLog.printWarn(message);
             notes.add(message);
+            if (validate) handFix++;
             return;
         }
         java.util.List<String> would = classAnnotationsOf(wouldWrite, cls);
@@ -2100,6 +2149,7 @@ public final class RulesGenRunner {
                 out.relativePath(), String.join(System.lineSeparator() + "    ", expected));
         System.out.println(message);
         notes.add(message);
+        if (validate) handFix++;
     }
 
     /**
@@ -2285,6 +2335,7 @@ public final class RulesGenRunner {
             notes.add(msg);
             io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + msg);
         }
+        if (validate && drifted) handFix++;
     }
 
     /**
@@ -2679,11 +2730,15 @@ public final class RulesGenRunner {
                 // class is theirs and kept, and removing its parent breaks it.
                 if (stillExtended(f)) continue;
                 HashUtils.Response st = readStatus(f);
-                if (st == null || st.getOldEcdLine() == null || st.getStatus() == HashUtils.UNTRACKED
+                if (st == null || st.getStatus() == HashUtils.UNTRACKED
                         || st.getStatus() == HashUtils.NO_ECD) continue;
+                // An edited file's status carries no stamp line, so the edited
+                // ones were passed over without a word: read it from the file.
+                String stampLine = st.getOldEcdLine() != null ? st.getOldEcdLine() : firstLine(f);
+                if (stampLine == null || stampLine.indexOf("//ecd:") < 0) continue;
                 String version;
                 try {
-                    version = HashUtils.getVersion(st.getOldEcdLine());
+                    version = HashUtils.getVersion(stampLine);
                 } catch (RuntimeException e) {
                     continue;
                 }
@@ -2710,6 +2765,21 @@ public final class RulesGenRunner {
         }
         if (removed > 0) {
             notes.add(removed + " generated file(s) the DSL no longer produces were removed.");
+        }
+    }
+
+    /** The first line of a file, or null when it cannot be read. */
+    private static String firstLine(File f) {
+        java.io.BufferedReader r = null;
+        try {
+            r = new java.io.BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8));
+            return r.readLine();
+        } catch (IOException e) {
+            return null;
+        } finally {
+            if (r != null) {
+                try { r.close(); } catch (IOException ignore) { }
+            }
         }
     }
 
@@ -2948,7 +3018,7 @@ public final class RulesGenRunner {
         if (validate) {
             System.out.println("=== elcore3 validate: " + (wouldCreate + wouldRewrite) + " would be written / "
                     + wouldRemove + " would be removed / " + unchanged + " unchanged / " + skipped + " skipped / "
-                    + userModified + " user-modified / " + failed + " failed ===");
+                    + userModified + " user-modified / " + handFix + " to fix by hand / " + failed + " failed ===");
         } else {
             System.out.println("=== elcore3: " + wrote + " written / "
                     + unchanged + " unchanged / " + skipped + " skipped / "
@@ -2970,13 +3040,28 @@ public final class RulesGenRunner {
     }
 
     /**
-     * What a validation run answers: 0 when generation would change nothing
-     * and nothing is wrong, 1 otherwise. Worded as the extractor's validation
-     * words it, so a project that moves between the engines reads one report.
+     * What a validation run answers: 0 when the tree is what the DSL describes
+     * and generation would not fail, 1 otherwise - with a FAILED line for each
+     * reason. Worded as the extractor's validation words it where the two have
+     * the same reason, so a project that moves between the engines reads one
+     * report.
+     *
+     * A DSL warning is counted: it says a part of the DSL is not applied - a
+     * password not hashed, a lifecycle left out - which is a tree that differs
+     * from what the DSL describes, although generation goes on. A DSL note is
+     * not: it is the generator saying what it decided, which a model keeps on
+     * purpose - counted, a note made a sample that had just been generated
+     * fail its check. A model file that could not be read is counted: part of
+     * the model was compared with nothing.
      */
-    private int verdict(int dslWarnings, boolean broken) {
+    private int verdict(int dslWarnings, int dslNotes, boolean broken) {
         int pending = wouldCreate + wouldRewrite + wouldRemove;
-        if (pending == 0 && userModified == 0 && dslWarnings == 0 && !broken) {
+        int unread = io.elasticore.base.util.ConsoleLog.countStoredLogkey("VALIDATION_LOAD_ERROR");
+        if (dslNotes > 0) {
+            io.elasticore.base.util.ConsoleLog.printInfo("[VALID] " + dslNotes
+                    + " DSL note(s), listed above - what the generator decided; not counted.");
+        }
+        if (pending == 0 && userModified == 0 && handFix == 0 && unread == 0 && dslWarnings == 0 && !broken) {
             io.elasticore.base.util.ConsoleLog.printInfo("[VALID] Validation PASSED: All generated files are up-to-date.");
             return 0;
         }
@@ -2989,11 +3074,20 @@ public final class RulesGenRunner {
             io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + userModified
                     + " user-modified file(s) differ from DSL.");
         }
+        if (handFix > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + handFix
+                    + " file(s) of yours need a hand fix - see the messages above.");
+        }
+        if (unread > 0) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + unread
+                    + " model file(s) could not be read - see LOAD ERROR above.");
+        }
         if (dslWarnings > 0) {
-            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] DSL Validation: " + dslWarnings + " warning(s) found.");
+            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: " + dslWarnings
+                    + " DSL warning(s) - see the list above.");
         }
         if (broken) {
-            io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Validation FAILED: the run itself failed - see above.");
+            io.elasticore.base.util.ConsoleLog.printWarn(RUN_FAILED);
         }
         if (pending > 0) {
             io.elasticore.base.util.ConsoleLog.printWarn("[VALID] Run './gradlew elcoreGen' to regenerate.");

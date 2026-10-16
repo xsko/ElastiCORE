@@ -853,7 +853,10 @@ task elcore(type: JavaExec) {
 ```bash
 ./gradlew elcoreValidate -Pdomain=hr
 ```
-`hr` 도메인만 DSL 검증을 실행하고, 검증 오류 시 빌드 실패한다.
+`hr` 도메인의 생성 파일만 비교하고, 다르면 빌드 실패한다. DSL 은 모든 도메인을 읽으므로, 읽을 때 나오는 경고
+(예: `string(100) @unique!` 처럼 어노테이션 뒤에 붙은 `!`)는 다른 도메인 것이라도 검증을 실패시킨다. 도메인 이름은 통째로
+같아야 고르고(`-Pdomain=orders` 는 `order` 를 고르지 않는다), 쉼표 뒤에는 공백을 넣지 않는다(`hr,bbs` - 2.x 생성기는
+`hr, bbs` 의 ` bbs` 를 고르지 않는다).
 
 직접 정의한 `elcore` 태스크라면 `./gradlew elcore -Pdomain=hr`, `./gradlew elcore -Pmode=valid -Pdomain=hr` 이다.
 

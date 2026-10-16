@@ -135,7 +135,8 @@ public class ServiceAccessRules implements CodeRules {
     void nested(EntitySpec e, FieldSpec f) {
         if (!nestsGuarded(e, f)) return;
         ctx(e).removeField(f);
-        io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
+        // A decision said, not a fault of the DSL: a model keeps it on purpose (see RulesGenRunner, DSL_NOTE).
+        io.elasticore.base.util.ConsoleLog.storeLog("DSL_NOTE", String.format(
                 "[%s] %s.%s is left out: %s is read under @access(read=%s), and a DTO carrying it would show it"
                         + " to whoever reads %s. Its identity stays.",
                 e.domainClassName(), e.getName(), f.name(), simple(f.typeName()), nestedReadLevel(e, f), e.getName()));

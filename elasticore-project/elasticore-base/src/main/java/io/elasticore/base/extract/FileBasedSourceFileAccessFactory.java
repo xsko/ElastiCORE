@@ -40,7 +40,10 @@ public class FileBasedSourceFileAccessFactory implements SourceFileAccessFactory
 
     @Override
     public String getFilePath(String qualifiedClassName) {
-        File f = getFile(qualifiedClassName ,true);
+        // Validation writes nothing, a directory included: asking where a file
+        // goes made its package directory, so a check of a missing file left
+        // an empty one behind.
+        File f = getFile(qualifiedClassName, !ConsoleLog.isValidationMode());
         return f.getAbsolutePath();
     }
 
@@ -105,7 +108,7 @@ public class FileBasedSourceFileAccessFactory implements SourceFileAccessFactory
 
     @Override
     public Reader getReader(String qualifiedClassName) throws IOException {
-        File f = getFile(qualifiedClassName ,true);
+        File f = getFile(qualifiedClassName, !ConsoleLog.isValidationMode());
         return new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8);
     }
 

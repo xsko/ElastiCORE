@@ -9,8 +9,9 @@
 ```
 
 `elcoreGen`·`elcoreValidate` 는 Gradle 플러그인(`id 'io.elasticore'`)의 태스크입니다 - `elasticore { }` 에
-`architecture`·`language`·`rules` 가 있으면 3.0 규칙 엔진, 없으면 2.x 생성기를 씁니다. 플러그인 없이 `elcore`
-태스크를 직접 정의한 프로젝트는 `./gradlew elcore`, `./gradlew elcore -Pmode=valid` 로 같은 일을 합니다.
+`architecture`·`language`·`rules` 가 있거나 규칙 엔진의 스위치(`-Pv3`·`-Pkt`·`-Pts`)를 주면 3.0 규칙 엔진, 아니면 2.x
+생성기를 씁니다. 플러그인 없이 `elcore` 태스크를 직접 정의한 프로젝트는 `./gradlew elcore`,
+`./gradlew elcore -Pmode=valid` 로 같은 일을 합니다.
 
 - `@ElastiCore` 어노테이션 프로세서가 `src/main/resources/blueprint/{domain}/` 하위 YAML 모델 파일을 로드
 - 모드별 퍼블리셔(Entity, DTO, Repository, Service, Controller)가 Java 소스를 생성
@@ -19,20 +20,31 @@
 
 ### Validation 모드 (`elcoreValidate`, `-Pmode=valid`)
 
-빌드 전 생성 코드 정합성을 검증합니다. 실제 파일을 쓰지 않고 현재 DSL과 기존 생성 코드를 비교합니다.
-2.x 생성기의 출력은 다음과 같습니다:
+빌드 전 생성 코드 정합성을 검증합니다. 실제 파일을 쓰지 않고(디렉터리도, `testCode` 의 서비스 테스트도) 현재 DSL과
+기존 생성 코드를 비교합니다. 2.x 생성기의 출력은 다음과 같습니다:
 
 | 상태 | 출력 | 빌드 |
 |------|------|------|
 | DSL 변경 후 미생성 (stale) | `[ERROR] Validation Failed - Stale Generated Files:` + diff | 실패 (exit 1) |
-| 새 파일 미생성 | `[WARN] New Files Pending Generation:` | 실패 (exit 1) |
+| 새 파일 미생성 (서비스 테스트 포함) | `[WARN] New Files Pending Generation:` | 실패 (exit 1) |
 | 생성기가 관리하는 파일을 손으로 고침 | `[WARN] User-Modified Files:` + diff | 실패 (exit 1) |
-| DSL 경고 | 경고 목록 + `[VALID] DSL Validation: N warning(s) found.` | 실패 (exit 1) |
+| 생성 파일에 보존 블록(`// !----` ~ `----!`)을 넣음 | `[WARN] User-Modified Files:` 에 `(custom code block)` | 실패 (exit 1) |
+| DSL 경고 | 경고 목록 + `[VALID] DSL Validation: N warning(s) found.` | 실패 (exit 1) - 2.x 는 생성도 DSL 경고에서 멈춥니다 |
+| 읽지 못한 YAML 파일 | `LOAD ERROR` + `[VALID] Validation FAILED: N model file(s) could not be read ...` | 실패 (exit 1) |
+| DSL 파일을 찾지 못함 | `[VALID] Validation FAILED: no model DSL found - nothing was checked.` | 실패 (exit 1) |
+| 실행 중 오류 | 오류 + `[VALID] Validation FAILED: the run itself failed - see above.` | 실패 (exit 1) |
 | 한 번만 생성되는 파일 (사용자 관리) | 없음 - 검사하지 않음 | 통과 |
+| 들여쓰기·공백·줄 순서만 다른 파일 | `[OK] Validated Files: N` 에 셈 - 같은 것으로 봄 | 통과 |
 | 정상 (일치) | `[OK] Validated Files: N` | 통과 |
 
-마지막 줄은 `[VALID] Validation PASSED: ...` 또는 `[VALID] Validation FAILED: ...` 입니다. 3.0 규칙 엔진은 파일마다
-`WOULD WRITE`·`USER-MODIFIED` 등으로 보여 주고 같은 기준으로 판정합니다 (`elasticore-rule-guide.md` 의 "검사").
+통과하면 `[VALID] Validation PASSED: ...` 가 나옵니다. 실패하면 이유마다 `[VALID] Validation FAILED: ...` 또는
+`[VALID] DSL Validation: ...` 줄이 나오고, 끝에 `[VALID] Run './gradlew elcore' to regenerate.` 가 붙습니다 (DSL 경고만
+있어도).
+
+3.0 규칙 엔진은 파일마다 `WOULD WRITE`·`USER-MODIFIED` 등으로 보여 줍니다 (`elasticore-rule-guide.md` 의 "검사").
+기준이 다른 곳: 3.0 은 줄 끝과 파일 앞뒤 공백만 무시하므로 들여쓰기만 바꾼 생성 파일도 실패이고(생성이 다시 씀 -
+`WOULD WRITE`), 보존 블록이 있는 파일은 생성이 그대로 두므로 통과입니다. DSL 경고는 두 엔진 모두 실패로 세지만, 3.0 이
+따로 보여 주는 노트(생성기가 내린 결정)는 세지 않습니다.
 
 - 원격 리소스(HTTP) 다운로드를 스킵하고 로컬 캐시만 사용
 - CI/CD 파이프라인에서 `./gradlew elcoreValidate` 를 빌드 전 단계로 활용 가능 (`./gradlew elcoreValidate build`)

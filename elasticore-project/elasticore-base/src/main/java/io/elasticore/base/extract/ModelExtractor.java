@@ -410,6 +410,13 @@ public class ModelExtractor {
             }
         }
 
+        // As in a single module: a check that found no model compared nothing.
+        if (domainSrcPathMap.isEmpty() && ConsoleLog.isValidationMode()) {
+            ConsoleLog.printWarn("Not found model DSL file in " + modulePaths);
+            ConsoleLog.storeLog("VALIDATION_NO_MODEL", modulePaths);
+            return;
+        }
+
         ConsoleLog.print("[INFO] Multi-module mode: " + modules.length + " module(s)");
         ConsoleLog.print("[INFO] Environment files:");
         ConsoleLog.print("--------------------------------------");
@@ -495,7 +502,15 @@ public class ModelExtractor {
 
         if (dirList == null || dirList.size() == 0) {
             ConsoleLog.printWarn("Not found model DSL file in " + rootDir);
-            
+
+            // A check with no model has compared nothing. It used to go on to
+            // the setup wizard and then pass; it is said instead, and main
+            // fails the run.
+            if (ConsoleLog.isValidationMode()) {
+                ConsoleLog.storeLog("VALIDATION_NO_MODEL", rootDir);
+                return;
+            }
+
             // Check if this is an uninitialized ElastiCORE project and offer initialization
             if (!io.elasticore.base.util.InitializationHelper.isInitialized()) {
                 ConsoleLog.printInfo("ElastiCORE environment not found. Starting initialization...");
@@ -612,6 +627,60 @@ public class ModelExtractor {
 
     }
 
+    /**
+     * Single-module validation: generates in memory against the tree, writes
+     * nothing, and ends the run - non-zero when anything differs.
+     * The factory is null when the extractor is to find the source root itself.
+     */
+    private static void validate(ModelExtractor extractor, SourceFileAccessFactory factory, long startTime)
+            throws FileNotFoundException {
+        ConsoleLog.setValidationMode(true);
+        ConsoleLog.printInfo("[VALID] Validation mode: checking generated code without writing...");
+        extractor.extract(factory);
+        failIfNothingWasChecked();
+
+        // Flush any DSL warnings whose domain prefix did not match a published domain
+        ConsoleLog.printRemainingAsOrphans("DSL_WARN",
+                "[WARN] DSL Validation Warnings (unmatched domain):", "  ", true);
+
+        int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
+        int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
+        int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
+        int dslWarnCount = ConsoleLog.getAccumulatedCount("DSL_WARN");
+        int unreadCount = ConsoleLog.countStoredLogkey("VALIDATION_LOAD_ERROR");
+        long endTime = System.currentTimeMillis();
+        long executionTime = endTime - startTime;
+
+        if (diffCount > 0 || newCount > 0 || userModCount > 0 || dslWarnCount > 0 || unreadCount > 0) {
+            if (diffCount > 0 || newCount > 0) {
+                ConsoleLog.printWarn("[VALID] Validation FAILED: " + diffCount + " stale file(s), " + newCount + " new file(s) pending. (Execution time: " + executionTime + "ms)");
+            }
+            if (userModCount > 0) {
+                ConsoleLog.printWarn("[VALID] Validation FAILED: " + userModCount + " user-modified file(s) differ from DSL. (Execution time: " + executionTime + "ms)");
+            }
+            if (unreadCount > 0) {
+                ConsoleLog.printWarn("[VALID] Validation FAILED: " + unreadCount + " model file(s) could not be read - see LOAD ERROR above.");
+            }
+            if (dslWarnCount > 0) {
+                ConsoleLog.printWarn("[VALID] DSL Validation: " + dslWarnCount + " warning(s) found. (Execution time: " + executionTime + "ms)");
+            }
+            ConsoleLog.printWarn("[VALID] Run './gradlew elcore' to regenerate.");
+            ConsoleLog.clear();
+            System.exit(1);
+        } else {
+            ConsoleLog.printInfo("[VALID] Validation PASSED: All generated files are up-to-date. (Execution time: " + executionTime + "ms)");
+            ConsoleLog.clear();
+        }
+    }
+
+    /** A validation that found no model has compared nothing: said, and the run fails. */
+    private static void failIfNothingWasChecked() {
+        if (ConsoleLog.countStoredLogkey("VALIDATION_NO_MODEL") == 0) return;
+        ConsoleLog.printWarn("[VALID] Validation FAILED: no model DSL found - nothing was checked.");
+        ConsoleLog.clear();
+        System.exit(1);
+    }
+
     public static void main(String[] args) {
 
         String mode = System.getProperty("mode");
@@ -651,6 +720,7 @@ public class ModelExtractor {
                 }
 
                 extractor.extractMultiModule(modulePaths);
+                if ("valid".equals(mode)) failIfNothingWasChecked();
 
                 // Flush any DSL warnings whose domain prefix did not match a published domain
                 ConsoleLog.printRemainingAsOrphans("DSL_WARN",
@@ -662,14 +732,18 @@ public class ModelExtractor {
                     int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
                     int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
                     int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
+                    int unreadCount = ConsoleLog.countStoredLogkey("VALIDATION_LOAD_ERROR");
                     long endTime = System.currentTimeMillis();
                     long executionTime = endTime - startTime;
-                    if (diffCount > 0 || newCount > 0 || userModCount > 0 || dslWarnCount > 0) {
+                    if (diffCount > 0 || newCount > 0 || userModCount > 0 || dslWarnCount > 0 || unreadCount > 0) {
                         if (diffCount > 0 || newCount > 0) {
                             ConsoleLog.printWarn("[VALID] Validation FAILED: " + diffCount + " stale file(s), " + newCount + " new file(s) pending. (" + executionTime + "ms)");
                         }
                         if (userModCount > 0) {
                             ConsoleLog.printWarn("[VALID] Validation FAILED: " + userModCount + " user-modified file(s) differ from DSL. (" + executionTime + "ms)");
+                        }
+                        if (unreadCount > 0) {
+                            ConsoleLog.printWarn("[VALID] Validation FAILED: " + unreadCount + " model file(s) could not be read - see LOAD ERROR above.");
                         }
                         if (dslWarnCount > 0) {
                             ConsoleLog.printWarn("[VALID] DSL Validation: " + dslWarnCount + " warning(s) found. (" + executionTime + "ms)");
@@ -707,43 +781,17 @@ public class ModelExtractor {
                     extractor.deleteGenSource(srcTargetPath);
                 }
                 else if("valid".equals(mode)) {
-                    ConsoleLog.setValidationMode(true);
-                    ConsoleLog.printInfo("[VALID] Validation mode: checking generated code without writing...");
-                    extractor.extract(new FileBasedSourceFileAccessFactory(srcTargetPath));
-
-                    // Flush any DSL warnings whose domain prefix did not match a published domain
-                    ConsoleLog.printRemainingAsOrphans("DSL_WARN",
-                            "[WARN] DSL Validation Warnings (unmatched domain):", "  ", true);
-
-                    int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
-                    int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
-                    int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
-                    int dslWarnCount = ConsoleLog.getAccumulatedCount("DSL_WARN");
-                    long endTime = System.currentTimeMillis();
-                    long executionTime = endTime - startTime;
-
-                    if (diffCount > 0 || newCount > 0 || userModCount > 0 || dslWarnCount > 0) {
-                        if (diffCount > 0 || newCount > 0) {
-                            ConsoleLog.printWarn("[VALID] Validation FAILED: " + diffCount + " stale file(s), " + newCount + " new file(s) pending. (Execution time: " + executionTime + "ms)");
-                        }
-                        if (userModCount > 0) {
-                            ConsoleLog.printWarn("[VALID] Validation FAILED: " + userModCount + " user-modified file(s) differ from DSL. (Execution time: " + executionTime + "ms)");
-                        }
-                        if (dslWarnCount > 0) {
-                            ConsoleLog.printWarn("[VALID] DSL Validation: " + dslWarnCount + " warning(s) found. (Execution time: " + executionTime + "ms)");
-                        }
-                        ConsoleLog.printWarn("[VALID] Run './gradlew elcore' to regenerate.");
-                        ConsoleLog.clear();
-                        System.exit(1);
-                    } else {
-                        ConsoleLog.printInfo("[VALID] Validation PASSED: All generated files are up-to-date. (Execution time: " + executionTime + "ms)");
-                        ConsoleLog.clear();
-                        return;
-                    }
+                    validate(extractor, new FileBasedSourceFileAccessFactory(srcTargetPath), startTime);
+                    return;
                 }
                 else {
                     extractor.extract(new FileBasedSourceFileAccessFactory(srcTargetPath));
                 }
+            } else if ("valid".equals(mode)) {
+                // Without a source root the extractor finds its own, as below.
+                // The check used to take that branch - generation - and write.
+                validate(extractor, null, startTime);
+                return;
             } else {
                 extractor.extract(null);
             }
@@ -768,6 +816,13 @@ public class ModelExtractor {
 
 
         } catch (Throwable e) {
+            // A check that broke has checked nothing, and its answer is the exit
+            // status: it used to print the trace and pass.
+            if ("valid".equals(mode)) {
+                e.printStackTrace();
+                ConsoleLog.printWarn("[VALID] Validation FAILED: the run itself failed - see above.");
+                System.exit(1);
+            }
             // Check if this is an initialization-related error
             if (e instanceof FileNotFoundException || e.getMessage().contains("Not found model DSL file")) {
                 FileNotFoundException fnfe = (FileNotFoundException) e;

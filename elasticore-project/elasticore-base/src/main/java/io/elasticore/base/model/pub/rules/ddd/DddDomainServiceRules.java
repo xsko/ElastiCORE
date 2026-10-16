@@ -173,7 +173,8 @@ public class DddDomainServiceRules implements CodeRules,
             }
             if (!handled.add(pkgOfEvent + "." + eventClass)) {
                 if (warn) {
-                    io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
+                    // One handler for the two names: a decision said (see RulesGenRunner, DSL_NOTE).
+                    io.elasticore.base.util.ConsoleLog.storeLog("DSL_NOTE", String.format(
                             "[%s] processManager %s: %s is named twice in 'on'; it gets one handler.",
                             d.getName(), pm.name(), event));
                 }

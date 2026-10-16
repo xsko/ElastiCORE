@@ -1582,7 +1582,8 @@ CurrentUser.runAsSystem(() -> customers.save(admin));
 
 다른 엔티티의 **행 전체**(중첩 DTO)는 그 엔티티의 읽기 수준이 `public` 일 때만 DTO 에 실립니다.
 `read=owner` 인 고객을 주문 DTO 가 통째로 담으면 주문을 읽는 사람에게 고객 정보가 보이므로, 빌드가
-그 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음).
+그 필드를 빼고 그렇게 했다고 알립니다 (식별자 `customerId` 는 남음). 생성기가 내린 결정이라 경고가 아니라 노트
+(`[elcore3] DSL notes - what the generator decided:`)로 나오고, 검사(`elcoreValidate`)는 세지 않습니다.
 
 `@access` 문법 오류(`read=owners`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
 애플리케이션이 시작하지 않습니다. 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로

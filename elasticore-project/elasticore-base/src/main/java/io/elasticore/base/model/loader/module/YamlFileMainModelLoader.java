@@ -321,6 +321,12 @@ public class YamlFileMainModelLoader implements MainModelLoader {
             return FileSource.builder().filepath(f.getAbsolutePath()).infoMap(map).build();
         } catch (Throwable e) {
             ConsoleLog.printWarn(" * LOAD ERROR: "+f.getAbsolutePath());
+            // Generation goes on without the file, as it always has. A check
+            // must not: whatever the file declares was compared with nothing,
+            // and the check passed.
+            if (ConsoleLog.isValidationMode()) {
+                ConsoleLog.storeLog("VALIDATION_LOAD_ERROR", f.getAbsolutePath());
+            }
             e.printStackTrace();
             return FileSource.builder().filepath(f.getAbsolutePath()).error(e).build();
         }

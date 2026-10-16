@@ -127,6 +127,8 @@ task elcore3clean(type: Delete) {
 	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io'),
 			fileTree('src/main/ts') { include '*.ts' }
 }
+// A check asked for in the same run reads the tree before it is cleared.
+elcore3clean.mustRunAfter 'elcoreValidate'
 
 // The plugin registers both generators and gives each one the classpath, the
 // project path, the declaration above and the -P pass-throughs. The language

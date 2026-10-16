@@ -378,8 +378,19 @@ public class ServiceTestPublisher extends SrcFilePublisher {
             // Replace src/main/java with src/test/java
             String testPath = originalPath.replace("src/main/java", "src/test/java").replace("src\\main\\java", "src\\test\\java");
             
-            // Create the test directory structure
             java.io.File testFile = new java.io.File(testPath);
+
+            // Validation writes nothing. A test that is not there yet is one
+            // generation would write - said like any other missing file,
+            // where the check used to write it and pass.
+            if (io.elasticore.base.util.ConsoleLog.isValidationMode()) {
+                if (!(testFile.exists() && testFile.length() > 10)) {
+                    io.elasticore.base.util.ConsoleLog.storeLog("VALIDATION_NEW", testPath);
+                }
+                return;
+            }
+
+            // Create the test directory structure
             java.io.File testDir = testFile.getParentFile();
             if (testDir != null && !testDir.exists()) {
                 testDir.mkdirs();

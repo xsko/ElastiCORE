@@ -476,11 +476,14 @@ HTTP/1.1 422
 | `states names status, which is not an enum of the model` | 필드 타입이 enum 이 아님 (`string` 등) | 생명주기 생략 |
 | `states.status.ship: '...' is not FROM -> TO` | `->` 가 없음 | 그 이동만 생략 |
 | `states.status.delete: '...' is not a list of states` | `delete:` 에 `->` 를 쓰거나 비움 | 삭제 검사 생략 |
-| `has @default and states.status.initial` | 상태 필드에 `@default` 도 있음 | `initial` 이 이김 |
+| `has @default and states.status.initial` | 상태 필드에 `@default` 도 있음 | `initial` 이 이김 - 둘이 같은 상태면 경고가 아니라 노트 |
 | `still has the stub that throws` | 예전에 만든 행위 클래스에 예외를 던지는 틀이 남아 이동을 덮음 | 틀을 지우세요 |
 
 경고는 `elcore3` 출력 끝의 `[elcore3] DSL validation warnings:` 아래에 모여 나옵니다. 빌드는 멈추지 않으므로
-생성 후 이 목록을 꼭 확인하세요. `./gradlew elcoreValidate` 는 경고가 하나라도 있으면 실패하므로, CI 에서는 이것으로 막습니다. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
+생성 후 이 목록을 꼭 확인하세요. `./gradlew elcoreValidate` 는 이 경고가 하나라도 있으면 실패하므로, CI 에서는 이것으로
+막습니다. `@default` 와 `initial` 이 같은 상태를 말할 때의 `has @default and states.status.initial` 처럼 생성기가 내린
+결정을 알리기만 하는 것은 경고가 아니라 노트로, `[elcore3] DSL notes - what the generator decided:` 아래에 따로 나오고
+검사에서 세지 않습니다. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
 `PurchaseOrder is not abstract and does not override ship()` 같은 컴파일 오류로 이어집니다.
 
 ---
@@ -979,7 +982,7 @@ processManager:
   - 상대 컨텍스트의 규칙이 이벤트 클래스를 만들지 않을 때 (예: `jpa-springboot-v3` 만 쓰는 컨텍스트, `publisher.suppress`
     로 `ddd-event` 를 끈 컨텍스트 — `ddd-event` 가 든 ddd·헥사고날 번들이어야 함)
   - 멤버 엔티티(다른 루트에 속한 것)나 키가 없는 엔티티의 `@event` 는 이벤트를 만들지 않으므로 받을 수 없습니다.
-- 같은 이벤트를 두 번 적으면 핸들러는 하나만 생기고 DSL 경고. 엔티티가 하나도 없는 컨텍스트는 아무것도 생성되지 않으므로
+- 같은 이벤트를 두 번 적으면 핸들러는 하나만 생기고 그렇게 했다는 노트(`DSL notes`)가 나옵니다. 엔티티가 하나도 없는 컨텍스트는 아무것도 생성되지 않으므로
   (DSL 경고) 받는 쪽에도 자기 엔티티가 하나는 있어야 합니다.
 - 전달은 Spring 의 애플리케이션 이벤트라서 **같은 애플리케이션 안**(모듈러 모놀리스)에서 이루어집니다. 컨텍스트를 따로
   배포한다면 내보내는 쪽은 Outbox(`outbox: true`)로 브로커에 보내고, 받는 쪽은 그 메시지를 직접 구독해야 합니다 — 이

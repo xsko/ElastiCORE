@@ -50,12 +50,32 @@ public class DddStateRules implements CodeRules {
             boolean ok = usable(e, m, null, !DddBehaviorRules.splits(e));
             if (m.initial() == null || !ok) continue;
             if (f.hasDsl("default")) {
-                io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
+                // Which of the two wins, said. Naming the same state it is a
+                // decision (a note, see RulesGenRunner, DSL_NOTE); naming
+                // another, the @default is not applied - a warning.
+                io.elasticore.base.util.ConsoleLog.storeLog(
+                        sameState(f.dslValue("default"), m.initial()) ? "DSL_NOTE" : "DSL_WARN", String.format(
                         "[%s] %s.%s has @default and states.%s.initial; the initial state (%s) is the one kept.",
                         e.domainClassName(), e.getName(), f.name(), f.name(), m.initial()));
             }
             ctx(e).field(f).initial("%s.%s", simple(f.typeName()), m.initial());
         }
+    }
+
+    /**
+     * Whether a field's @default names the state the lifecycle starts in:
+     * STATE or Type.STATE, quoted or not. Anything else - a code value, another
+     * state - is read as another state, the cautious answer.
+     */
+    static boolean sameState(String defaultValue, String initial) {
+        if (defaultValue == null || initial == null) return false;
+        String v = defaultValue.trim();
+        if (v.length() >= 2 && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
+            v = v.substring(1, v.length() - 1).trim();
+        }
+        int dot = v.lastIndexOf('.');
+        if (dot >= 0) v = v.substring(dot + 1);
+        return v.equals(initial.trim());
     }
 
     /**

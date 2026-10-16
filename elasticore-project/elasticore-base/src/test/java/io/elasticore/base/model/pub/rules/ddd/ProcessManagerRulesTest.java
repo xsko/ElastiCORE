@@ -26,6 +26,7 @@ public class ProcessManagerRulesTest {
     @AfterEach
     public void clearWarnings() {
         ConsoleLog.clearKey("DSL_WARN");
+        ConsoleLog.clearKey("DSL_NOTE");
     }
 
     /** billing, whose own Receipt raises Issued and whose process manager reacts to the given events. */
@@ -203,8 +204,10 @@ public class ProcessManagerRulesTest {
                 .foreignEvent("shop:OrderPlaced", "com.acme.shop.domain.event.OrderPlacedEvent")
                 .foreignEvent("shop:OrderPlacedEvent", "com.acme.shop.domain.event.OrderPlacedEvent"), SourceCode.TemplateSet.V3);
         assertEquals(java.indexOf("public void on("), java.lastIndexOf("public void on("), java);
-        assertEquals(1, ConsoleLog.countByPrefix("DSL_WARN",
+        // A decision said, not a fault of the DSL: a note, which a validation does not count.
+        assertEquals(1, ConsoleLog.countByPrefix("DSL_NOTE",
                 "[billing] processManager Receipting: shop:OrderPlacedEvent is named twice in 'on'; it gets one handler."));
+        assertEquals(0, ConsoleLog.countByPrefix("DSL_WARN", "[billing] processManager Receipting: shop:OrderPlacedEvent"));
     }
 
     @Test

@@ -124,6 +124,8 @@ task elcore3clean(type: Delete) {
 	description = 'Removes previously generated sources'
 	delete fileTree(generated), fileTree('src/test/java/io')
 }
+// A check asked for in the same run reads the tree before it is cleared.
+elcore3clean.mustRunAfter 'elcoreValidate'
 
 // The plugin registers elcore3 and gives it the classpath, the project path,
 // the declaration above and the -P pass-throughs. What is left here is what is

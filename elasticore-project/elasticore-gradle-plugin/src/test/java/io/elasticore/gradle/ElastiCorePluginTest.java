@@ -99,6 +99,99 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("the rule engine's own switches go to the rule engine, also where the build declares nothing")
+    public void aRuleEngineSwitchGoesToTheRuleEngine() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }", VALIDATE_REPORTER);
+
+        // -Pkt asked for Kotlin; the extractor knows no such switch and would
+        // write 2.x Java instead - and a check of that tree checks the wrong one.
+        for (String flag : new String[]{"-Pkt", "-Pts", "-Pv3"}) {
+            String output = run("elcoreGen", flag, "--dry-run").getOutput();
+            assertTrue(output.contains(":elcore3 SKIPPED"), flag + "\n" + output);
+            assertTrue(!output.contains(":elcore SKIPPED"), flag + "\n" + output);
+        }
+        String reported = reportOf(run("reportValidate", "-Pkt"));
+        assertTrue(reported.startsWith("io.elasticore.base.model.pub.rules.verify.RulesGenRunner|"), reported);
+        assertTrue(reported.contains("elasticore.rules.kt=true"), reported);
+    }
+
+    @Test
+    @DisplayName("a language alone puts elcoreGen on the rule engine")
+    public void aLanguageAloneChoosesTheRuleEngine() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { language = 'kotlin' }");
+
+        String output = run("elcoreGen", "--dry-run").getOutput();
+        assertTrue(output.contains(":elcore3 SKIPPED"), output);
+        assertTrue(!output.contains(":elcore SKIPPED"), output);
+    }
+
+    @Test
+    @DisplayName("the check runs with what the build put on the generator it checks")
+    public void validationTakesTheEnginesSettings() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }",
+                "tasks.named('elcore3') { systemProperty 'elasticore.style.indent', 'tab' }",
+                VALIDATE_REPORTER);
+
+        // A house style set on elcore3 and missing from the check would make
+        // every file read as different from what generation writes.
+        String reported = reportOf(run("reportValidate"));
+        assertTrue(reported.contains("elasticore.style.indent=tab"), reported);
+        assertTrue(reported.contains("mode=valid"), reported);
+    }
+
+    @Test
+    @DisplayName("and with the jvm arguments and the working directory of that generator")
+    public void validationTakesTheEnginesJvm() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { architecture = 'hexagonal' }",
+                "tasks.named('elcore3') { jvmArgs '-Xss4m'; workingDir = file('gen-work') }",
+                "tasks.register('reportValidateJvm') {\n"
+                        + "    doLast {\n"
+                        + "        def v = tasks.getByName('elcoreValidate')\n"
+                        + "        println '<<<' + v.jvmArgs.join(' ') + '|' + v.workingDir.name + '>>>'\n"
+                        + "    }\n"
+                        + "}");
+
+        String reported = reportOf(run("reportValidateJvm"));
+        assertTrue(reported.contains("-Xss4m"), reported);
+        assertTrue(reported.endsWith("|gen-work"), reported);
+    }
+
+    @Test
+    @DisplayName("in a multi-module build the check sweeps the modules generation sweeps")
+    public void validationSweepsTheModules() throws IOException {
+        writeSettings("multi", "core-domain", "app-report");
+        blueprintIn("core-domain");
+        writeBuild("plugins { id 'io.elasticore' }", VALIDATE_REPORTER);
+        moduleBuild("core-domain");
+        moduleBuild("app-report");
+
+        String reported = reportOf(run("reportValidate"));
+        assertTrue(reported.contains("elasticore.modules="), reported);
+        assertTrue(reported.contains("core-domain"), reported);
+        assertTrue(!reported.contains("app-report"), reported);
+    }
+
+    @Test
+    @DisplayName("the new tasks keep the configuration cache")
+    public void theConfigurationCacheIsKept() throws IOException {
+        writeSettings("single");
+        // The cache stores the resolved classpath; a local jar of the framework
+        // keeps that resolution off the network (the plugin then adds no
+        // coordinate of its own - aDeclaredFrameworkIsLeftAlone).
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { architecture = 'hexagonal' }",
+                "dependencies { elasticore files('elasticore-base-local.jar') }");
+
+        String output = run("elcoreGen", "elcoreValidate", "elcoreGenTs", "--dry-run", "--configuration-cache").getOutput();
+        assertTrue(output.contains("Configuration cache entry stored"), output);
+    }
+
+    @Test
     @DisplayName("-PlistRules cannot turn the check into a listing that passes")
     public void validationIsNotAListing() throws IOException {
         writeSettings("single");

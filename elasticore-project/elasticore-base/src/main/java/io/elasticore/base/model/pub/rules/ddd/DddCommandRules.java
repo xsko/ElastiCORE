@@ -320,10 +320,14 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         return out;
     }
 
-    /** A command takes values; an entity is named by its identity instead. */
+    /**
+     * A command takes values; an entity is named by its identity instead.
+     * Entities alone, a list of them included: a list of plain values - tags:
+     * List<string> - is a value too, and was warned about as though it were not.
+     */
     private static void warnEntityParams(EntitySpec e, CommandSpec cmd) {
         for (FieldSpec p : cmd.params()) {
-            if (!p.isEntityRef() && !p.isList()) continue;
+            if (!p.isEntityRef()) continue;
             if (WARNED.add(e.domainName() + "." + e.getName() + "." + cmd.name() + "." + p.name())) {
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
                         "[%s] %s.%s(%s): a command parameter is a value - pass the other aggregate's"
