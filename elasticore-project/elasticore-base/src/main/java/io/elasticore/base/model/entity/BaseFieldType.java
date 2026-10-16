@@ -86,7 +86,7 @@ public enum BaseFieldType {
 
     /**
      * Whether the types only the 3.0 rule engine knows are resolved. The rule
-     * engine turns this on while it loads and generates (RulesGenRunner.main)
+     * engine turns this on while it loads and generates (RulesGenRunner.run)
      * and off again after, so the 2.x generator - the annotation processor,
      * elcore - keeps resolving them as it always did.
      */

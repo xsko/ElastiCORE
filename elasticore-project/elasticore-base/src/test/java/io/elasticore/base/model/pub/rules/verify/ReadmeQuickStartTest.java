@@ -15,7 +15,9 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,7 +58,7 @@ public class ReadmeQuickStartTest {
     public void theSignInCallTheQuickStartNamesExists() throws IOException {
         for (String page : new String[]{"README.md", "README.ko.md"}) {
             String readme = read(new File(root(), page));
-            Matcher call = Pattern.compile("`([A-Z][A-Za-z]+)\\.([a-z][A-Za-z]+)\\(request").matcher(readme);
+            Matcher call = Pattern.compile("`([A-Z][A-Za-z]+)\\.([a-z][A-Za-z]+)\\(request, userId, \"").matcher(readme);
             Matcher pkg = Pattern.compile("`(io\\.elasticore\\.springboot3(?:\\.[a-z]+)+)`").matcher(readme);
             assertTrue(call.find(), page + " names no sign-in call - has step 4 changed shape?");
             assertTrue(pkg.find(), page + " names no package for the sign-in call - has step 4 changed shape?");
@@ -67,9 +69,13 @@ public class ReadmeQuickStartTest {
                     + pkg.group(1).replace('.', '/') + "/" + call.group(1) + ".java");
             assertTrue(source.isFile(), page + " tells the reader to call " + call.group(1) + "." + call.group(2)
                     + " in " + pkg.group(1) + ", which does not exist: " + source);
-            assertTrue(read(source).contains("public static void " + call.group(2) + "("),
-                    page + " tells the reader to call " + call.group(1) + "." + call.group(2) + ", which "
-                            + source.getName() + " no longer declares");
+
+            // The call as step 4 writes it: a request, an id and role names.
+            Pattern declared = Pattern.compile("public\\s+static\\s+\\S+\\s+" + call.group(2)
+                    + "\\s*\\(\\s*HttpServletRequest\\s+\\w+\\s*,\\s*Object\\s+\\w+\\s*,\\s*String\\s*\\.\\.\\.\\s*\\w+\\s*\\)");
+            assertTrue(declared.matcher(read(source)).find(), page + " tells the reader to call "
+                    + call.group(1) + "." + call.group(2) + "(request, userId, \"ADMIN\"), which "
+                    + source.getName() + " no longer declares");
         }
     }
 
@@ -89,17 +95,24 @@ public class ReadmeQuickStartTest {
         File project = Files.createTempDirectory("elcore-readme").toFile();
         projects.add(project);
         File dir = new File(project, "src/main/resources/blueprint/" + domain);
-        assertTrue(new File(dir, "model").mkdirs());
+        assertTrue(new File(dir, "model").mkdirs(), "could not make " + new File(dir, "model"));
         Files.write(new File(dir, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
         Files.write(new File(dir, "model/entity.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
 
-        String log = generate(project, architecture, language, springBoot);
+        StringBuilder log = new StringBuilder();
+        int status = generate(project, architecture, language, springBoot, log);
+        String setup = page + "'s quick start (" + architecture + ", " + language + ", Spring Boot " + springBoot + ")";
+        if (status != 0) {
+            fail(setup + " made the generator stop with " + status + "\n--- generator output ---\n" + log);
+        }
 
         List<String> problems = new ArrayList<String>();
         int warnings = ConsoleLog.getAccumulatedCount("DSL_WARN") + ConsoleLog.countStoredLogkey("DSL_WARN");
         if (warnings > 0) problems.add(warnings + " DSL warning(s)");
-        for (String line : log.split("\n")) {
-            if (line.contains(ConsoleLog.RED)) problems.add("warned: " + line.replace(ConsoleLog.RED, "").replace(ConsoleLog.RESET, "").trim());
+        for (String line : log.toString().split("\n")) {
+            if (line.contains(ConsoleLog.RED)) {
+                problems.add("warned: " + line.replace(ConsoleLog.RED, "").replace(ConsoleLog.RESET, "").trim());
+            }
         }
 
         // Step 3: "The code appears under `src/main/java/...`:" and a list of
@@ -123,44 +136,58 @@ public class ReadmeQuickStartTest {
         }
         assertTrue(listed > 0, page + " lists no generated file under " + where.group(1));
 
-        assertTrue(problems.isEmpty(), page + "'s quick start (" + architecture + ", " + language
-                + ", Spring Boot " + springBoot + ") does not hold: " + problems + "\n--- generator output ---\n" + log);
+        assertTrue(problems.isEmpty(), setup + " does not hold: " + problems + "\n--- generator output ---\n" + log);
     }
 
-    /** One generation of the project, with what the plugin would pass and nothing left behind. */
-    private static String generate(File project, String architecture, String language, String springBoot)
-            throws Exception {
-        String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
-                "elasticore.springBoot", "elasticore.modules", "elasticore.domain", "mode"};
-        String[] values = {project.getAbsolutePath(), architecture, language, springBoot, null, null, null};
-        String[] saved = new String[keys.length];
+    /**
+     * One generation of the project, with what the plugin would pass and nothing else: every elasticore property
+     * another test may have left is set aside for the run and put back after it.
+     */
+    private static int generate(File project, String architecture, String language, String springBoot,
+                                StringBuilder log) throws Exception {
+        Map<String, String> saved = new LinkedHashMap<String, String>();
+        for (String key : System.getProperties().stringPropertyNames()) {
+            if (key.startsWith("elasticore.") || key.equals("mode")) saved.put(key, System.getProperty(key));
+        }
         PrintStream out = System.out;
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         ConsoleLog.clear();
+        int status;
+        ReflectiveOperationException resetFailure = null;
         try {
-            for (int i = 0; i < keys.length; i++) {
-                saved[i] = System.getProperty(keys[i]);
-                if (values[i] == null) System.clearProperty(keys[i]);
-                else System.setProperty(keys[i], values[i]);
-            }
+            for (String key : saved.keySet()) System.clearProperty(key);
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            System.setProperty("elasticore.architecture", architecture);
+            System.setProperty("elasticore.language", language);
+            System.setProperty("elasticore.springBoot", springBoot);
             System.setOut(new PrintStream(captured, true, "UTF-8"));
-            RulesGenRunner.main(new String[0]);
+            status = RulesGenRunner.run(new String[0]);
         } finally {
             System.setOut(out);
-            for (int i = 0; i < keys.length; i++) {
-                if (saved[i] == null) System.clearProperty(keys[i]);
-                else System.setProperty(keys[i], saved[i]);
+            for (String key : System.getProperties().stringPropertyNames()) {
+                if (key.startsWith("elasticore.") || key.equals("mode")) System.clearProperty(key);
             }
-            java.lang.reflect.Field tmp = io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
-            tmp.setAccessible(true);
-            tmp.set(null, null);
+            for (Map.Entry<String, String> en : saved.entrySet()) System.setProperty(en.getKey(), en.getValue());
+            try {
+                java.lang.reflect.Field tmp = io.elasticore.base.model.core.BaseECoreModelContext.class
+                        .getDeclaredField("tmpCtx");
+                tmp.setAccessible(true);
+                tmp.set(null, null);
+            } catch (ReflectiveOperationException e) {
+                resetFailure = e;
+            }
             SpecFactory.valueObjectsInDto(false);
             SpecFactory.rootsSplitByDefault(false);
             SpecFactory.commandOnlyRoots(false);
         }
-        String log = new String(captured.toByteArray(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-        out.print(log);
-        return log;
+        // Reached only when the run itself did not throw, so this cannot hide its failure.
+        if (resetFailure != null) {
+            throw new AssertionError("could not reset the model context the generator leaves behind", resetFailure);
+        }
+        String text = new String(captured.toByteArray(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        out.print(text);
+        log.append(text);
+        return status;
     }
 
     /** The fenced block of the given language whose first line starts with the marker, without its fences. */
@@ -222,7 +249,7 @@ public class ReadmeQuickStartTest {
 
     @AfterAll
     static void clean() throws IOException {
-        String temp = new File(System.getProperty("java.io.tmpdir")).getCanonicalPath();
+        String temp = new File(System.getProperty("java.io.tmpdir")).getCanonicalPath() + File.separator;
         for (File project : projects) {
             // Only what this test made: a folder it created under the temp directory.
             if (!project.getCanonicalPath().startsWith(temp) || !project.getName().startsWith("elcore-readme")) continue;

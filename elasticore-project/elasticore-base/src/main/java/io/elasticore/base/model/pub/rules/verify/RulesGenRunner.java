@@ -235,18 +235,29 @@ public final class RulesGenRunner {
     }
 
     public static void main(String[] args) {
+        int status = run(args);
+        if (status != 0) System.exit(status);
+    }
+
+    /**
+     * One generation, and the answer a build acts on: 0, or 1 when the build
+     * has to stop. main exits with it. A test calls this instead, so that a
+     * model the generator refuses fails the test with the generator's own
+     * explanation, rather than ending the JVM every other test runs in.
+     */
+    static int run(String[] args) {
         // The value types this engine writes and the 2.x generator does not
         // (Instant, UUID, short ...): on for this run, off after it, so a 2.x
         // generation in the same JVM resolves them as it always did.
         io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(true);
         try {
-            generateAll(args);
+            return generateAll(args);
         } finally {
             io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(false);
         }
     }
 
-    private static void generateAll(String[] args) {
+    private static int generateAll(String[] args) {
         String basePath = System.getProperty("elasticore.base.path");
         if (basePath == null) basePath = System.getProperty("user.dir");
 
@@ -316,8 +327,7 @@ public final class RulesGenRunner {
                 : BlueprintLoader.load(basePath + "/src/main/resources/blueprint");
         if (loader.isEmpty()) {
             System.out.println("[elcore3] no blueprint domain found");
-            System.exit(1);
-            return;
+            return 1;
         }
 
         // The checks the other entry point has always run, and this one
@@ -347,13 +357,13 @@ public final class RulesGenRunner {
                 RuleCatalog.standard().rulesOf(name);
             } catch (IllegalArgumentException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + e.getMessage());
-                System.exit(1);
+                return 1;
             } catch (LinkageError e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] Rule set '" + name + "' cannot be loaded: " + e
                         + (e instanceof UnsupportedClassVersionError
                                 ? " - it is compiled for a newer Java than the generator runs on."
                                 : " - a class it uses is not on the generator's classpath; add it to the rules module's dependencies."));
-                System.exit(1);
+                return 1;
             }
         }
 
@@ -377,7 +387,7 @@ public final class RulesGenRunner {
         }
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
-        if (Boolean.getBoolean("elasticore.rules.list")) return;
+        if (Boolean.getBoolean("elasticore.rules.list")) return 0;
         runner.writeOrmXml();
         if (domainFilter == null && runner.succeeded()) runner.removeStale();
         runner.printSummary();
@@ -410,7 +420,7 @@ public final class RulesGenRunner {
         // past. It is the build's answer now: the sources a compile is about
         // to run on are not the ones the model describes.
         if (!runner.succeeded()) {
-            System.exit(1);
+            return 1;
         }
         // A project's model check that refused the model: every file was
         // still generated, so all of its findings were said in this one run.
@@ -418,8 +428,9 @@ public final class RulesGenRunner {
         if (!refused.isEmpty()) {
             io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the model check failed (" + refused.size() + "):");
             for (String r : refused) io.elasticore.base.util.ConsoleLog.printWarn("  " + r);
-            System.exit(1);
+            return 1;
         }
+        return 0;
     }
 
     /** context-map.md: the bounded contexts and what crosses between them, drawn in Mermaid. */

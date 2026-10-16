@@ -426,9 +426,10 @@ processManager:                              config:
   TypeScript. 바뀔 때마다 그 이유를
   [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
 - **3.0 은 첫 정식 릴리스부터 3년간 지원합니다**: 생성기, Gradle 플러그인, 두 런타임 라이브러리의 버그·보안 수정을
-  `release/3.0` 브랜치에서 `3.0.YYMMDD` 버전으로 내고, 그때 Spring 팀이 오픈소스로 지원하는 Spring Boot 3·4 버전에서
-  테스트합니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
-  그 전까지는 다음 사전 릴리스(pre-release)에서 고칩니다. 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
+  `release/3.0` 브랜치에서 `3.0.YYMMDD` 버전으로 냅니다. 테스트는 그때 Spring 팀이 오픈소스로 지원하는 Spring Boot 4
+  버전에서, Spring Boot 3 런타임 라이브러리는 마지막 오픈소스 Spring Boot 3 릴리스인 3.5.16 에서 합니다
+  ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). 첫 정식 릴리스 전까지는 다음 사전 릴리스(pre-release)에서
+  고칩니다. 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
 
 ## 시작하기 (설치)
 

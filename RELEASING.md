@@ -19,23 +19,23 @@ as a pre-release. What is published:
 1. On `main` (or a `release/*` branch), everything passes:
    ```bash
    ./gradlew build
-   git diff --exit-code -- elasticore-project/elasticore-template/src/main/java   # 2.x reference tree as committed
+   git status --short -- elasticore-project/elasticore-template/src/main/java     # must print nothing
    ./gradlew :elasticore-project:elasticore-template:elcoreRulesCheck -Pstrict   # 0 DIFF
    ./gradlew :elasticore-project:elasticore-template:elcoreTreeCheck             # 0 differ / missing / extra
    ```
-2. One commit names the version everywhere:
+2. On a branch of its own - `main` takes changes only through pull requests (`BRANCHING.md`) - one commit names the
+   version everywhere (`git switch -c version/3.0.261020` before committing):
    - `elasticoreVersion` and `elasticoreReleasedVersion` in `gradle.properties`, both the release version
    - the install snippets that carry the previous release (`git grep -n <previous version>` finds them in the
      READMEs and the guides; the build refreshes the guides' copies in the template `blueprint/` folders)
    - the `## {version}` heading in `elasticore-history.md` - and its three copies in the template `blueprint/`
      folders, by hand: the build does not copy the history
-3. `main` takes changes only through pull requests (`BRANCHING.md`), so the version commit goes on a branch of its
-   own. Merge its pull request once CI passes, then tag the commit the merge made on `main` and push the tag - the
-   workflow refuses a tag whose commit is on no branch yet:
+3. Push the branch, open its pull request and merge it once CI passes. Then tag the commit the merge made on `main` -
+   the pull request names it - and push the tag; the workflow refuses a tag whose commit is on no branch:
    ```bash
-   git switch -c version/3.0.261020 && git push origin version/3.0.261020   # open a pull request, merge it
-   git switch main && git pull
-   git tag -a v3.0.261020 -m "ElastiCORE 3.0.261020"
+   git push origin version/3.0.261020        # then open the pull request and merge it
+   git fetch origin
+   git tag -a v3.0.261020 -m "ElastiCORE 3.0.261020" <the commit the merge made on main>
    git push origin v3.0.261020
    ```
 4. The workflow waits for approval when the `release` environment asks for one. It stops unless the tag and both
