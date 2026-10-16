@@ -419,8 +419,8 @@ processManager:                              config:
   (이력에 적은 버그 수정 제외).
 - 나머지 번들(DDD, 헥사고날, Kotlin, TypeScript)의 출력은 정식 출시 전까지 바뀔 수 있고, 바뀔 때마다 그 이유를
   [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
-- 지원 버전은 [SECURITY.md](SECURITY.md), 브랜치와 릴리스는 [BRANCHING.md](BRANCHING.md)·[RELEASING.md](RELEASING.md)
-  에 있습니다.
+- **3.0 은 첫 정식 릴리스부터 3년간 지원합니다**: `release/3.0` 브랜치에서 버그·보안 수정
+  ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
 
 ## 시작하기 (설치)
 

@@ -424,7 +424,8 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 - The other bundles — DDD, hexagonal, Kotlin, TypeScript — may still change between pre-releases; each change is
   listed with its reason in the
   [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md).
-- Supported versions: [SECURITY.md](SECURITY.md). Branches and releases: [BRANCHING.md](BRANCHING.md),
+- **3.0 is supported for three years from its first stable release**: bug and security fixes on the `release/3.0`
+  branch ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). How a release is made:
   [RELEASING.md](RELEASING.md).
 
 ## Getting started (install)

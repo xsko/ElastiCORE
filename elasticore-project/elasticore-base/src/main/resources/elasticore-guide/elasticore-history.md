@@ -31,6 +31,16 @@
   이력에 적는다. 지원 버전은 SECURITY.md, 브랜치와 릴리스는 BRANCHING.md·RELEASING.md 로 안내한다
 - 관련 파일: `README.md`, `README.ko.md`
 
+### Documentation (지원 기간)
+
+#### 3.0 은 첫 정식 릴리스부터 3년간 지원한다
+- 3.0 은 첫 정식 릴리스(`-alpha`·`-beta`·`-rc` 가 붙지 않은 첫 버전)부터 3년간 `release/3.0` 브랜치에서 버그·보안
+  수정을 받는다. 끝나는 날짜는 그 릴리스가 나올 때 BRANCHING.md 에 적는다
+- `release/3.0` 은 첫 정식 릴리스에서 만든다고 고쳐 적었다. 이전에는 "첫 3.0 릴리스" 라고만 적어, 정식 출시 전
+  버전(3.0.261015-alpha1)에서 만들어야 하는 것처럼 읽혔다
+- README 의 "현재 상태" 와 SECURITY.md 의 지원 버전 표가 같은 내용을 말한다
+- 관련 파일: `README.md`, `README.ko.md`, `SECURITY.md`, `BRANCHING.md`
+
 ## 3.0.261015-alpha1
 
 ### New Features (첫 공개)

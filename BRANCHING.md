@@ -6,8 +6,14 @@ This repository holds the 3.x line. The 2.x line (2.2) is maintained outside it;
 | Branch | Line | What goes in |
 |---|---|---|
 | `main` | 3.x mainline | Features and fixes through pull requests |
-| `release/3.0` | 3.0 maintenance | Cut from `main` at the first 3.0 release. Bug fixes only; tags `v3.0.YYMMDD` |
+| `release/3.0` | 3.0 maintenance | Cut from `main` at the first stable 3.0 release (no `-alpha`, `-beta` or `-rc`). Bug and security fixes only; tags `v3.0.YYMMDD` |
 | `feature/*`, `fix/*` | - | Branched from the line they change; a 3.0 fix branches from `release/3.0` |
+
+## Support
+
+**3.0 is supported for three years from its first stable release**: bug and security fixes on `release/3.0`.
+The end date is written here when that release is out. Supported versions and how to report a vulnerability:
+[SECURITY.md](SECURITY.md).
 
 ## Rules
 

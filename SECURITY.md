@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 3.x | Yes - security fixes and features |
+| 3.x (`main`) | Yes - features, bug fixes and security fixes |
+| 3.0 (`release/3.0`) | Bug fixes and security fixes for **3 years from the first stable 3.0 release** |
 | 2.2 | Security fixes only |
 | older | No |
 
@@ -36,4 +37,5 @@ in scope as much as one in the generator or the runtime library - for example:
 
 [한국어] 보안 문제는 **공개 이슈로 올리지 말고** GitHub 저장소의 **Security → Report a vulnerability** 로
 비공개 보고해 주세요. 생성기와 런타임뿐 아니라 **생성된 코드**의 문제(남의 행을 읽는 권한 검사, 응답에
-나오는 비밀번호, 검색으로 주입되는 쿼리 등)도 대상입니다. 3.x 는 보안 수정과 기능, 2.2 는 보안 수정만 지원합니다.
+나오는 비밀번호, 검색으로 주입되는 쿼리 등)도 대상입니다. 3.x 는 기능과 버그·보안 수정, 3.0 은 첫 정식 릴리스부터
+3년간 버그·보안 수정(`release/3.0`), 2.2 는 보안 수정만 지원합니다.
