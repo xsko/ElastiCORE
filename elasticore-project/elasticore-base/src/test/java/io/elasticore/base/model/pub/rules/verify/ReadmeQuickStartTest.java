@@ -58,7 +58,7 @@ public class ReadmeQuickStartTest {
     public void theSignInCallTheQuickStartNamesExists() throws IOException {
         for (String page : new String[]{"README.md", "README.ko.md"}) {
             String readme = read(new File(root(), page));
-            Matcher call = Pattern.compile("`([A-Z][A-Za-z]+)\\.([a-z][A-Za-z]+)\\(request, userId, \"").matcher(readme);
+            Matcher call = Pattern.compile("`([A-Z][A-Za-z]+)\\.([a-z][A-Za-z]+)\\(request,\\s*\\w+,\\s*\"").matcher(readme);
             Matcher pkg = Pattern.compile("`(io\\.elasticore\\.springboot3(?:\\.[a-z]+)+)`").matcher(readme);
             assertTrue(call.find(), page + " names no sign-in call - has step 4 changed shape?");
             assertTrue(pkg.find(), page + " names no package for the sign-in call - has step 4 changed shape?");
@@ -100,8 +100,13 @@ public class ReadmeQuickStartTest {
         Files.write(new File(dir, "model/entity.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
 
         StringBuilder log = new StringBuilder();
-        int status = generate(project, architecture, language, springBoot, log);
         String setup = page + "'s quick start (" + architecture + ", " + language + ", Spring Boot " + springBoot + ")";
+        int status;
+        try {
+            status = generate(project, architecture, language, springBoot, log);
+        } catch (RuntimeException e) {
+            throw new AssertionError(setup + " made the generator throw " + e + "\n--- generator output ---\n" + log, e);
+        }
         if (status != 0) {
             fail(setup + " made the generator stop with " + status + "\n--- generator output ---\n" + log);
         }
@@ -164,6 +169,10 @@ public class ReadmeQuickStartTest {
             status = RulesGenRunner.run(new String[0]);
         } finally {
             System.setOut(out);
+            // Kept whatever the run did, so a run that throws still shows what it said.
+            String text = new String(captured.toByteArray(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            out.print(text);
+            log.append(text);
             for (String key : System.getProperties().stringPropertyNames()) {
                 if (key.startsWith("elasticore.") || key.equals("mode")) System.clearProperty(key);
             }
@@ -184,9 +193,6 @@ public class ReadmeQuickStartTest {
         if (resetFailure != null) {
             throw new AssertionError("could not reset the model context the generator leaves behind", resetFailure);
         }
-        String text = new String(captured.toByteArray(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-        out.print(text);
-        log.append(text);
         return status;
     }
 

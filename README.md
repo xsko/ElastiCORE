@@ -431,7 +431,7 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
   [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) (in Korean).
 - **3.0 is supported for three years from its first stable release**: bug and security fixes to the generator, the
   Gradle plugin and both runtime libraries, released from the `release/3.0` branch as `3.0.YYMMDD` versions. They are
-  tested on the Spring Boot 4 versions the Spring team still supports as open source at the time, and the Spring
+  tested on a Spring Boot 4 version the Spring team still supports as open source at the time, and the Spring
   Boot 3 runtime library on 3.5.16, the last open-source Spring Boot 3 release ([SECURITY.md](SECURITY.md),
   [BRANCHING.md](BRANCHING.md)). Until that first stable release, fixes come in the next pre-release. How a release is
   made: [RELEASING.md](RELEASING.md).

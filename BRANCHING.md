@@ -15,7 +15,7 @@ This repository holds the 3.x line. The 2.x line (2.2) is maintained outside it;
 
 **3.0 is supported for three years from its first stable release**: bug and security fixes to `elasticore-base`,
 the Gradle plugin (`io.elasticore`), `elasticore-springboot3` and `elasticore-springboot4`, released from
-`release/3.0` as `3.0.YYMMDD` versions. A fix is built and tested on the Spring Boot 4 versions the Spring team
+`release/3.0` as `3.0.YYMMDD` versions. A fix is built and tested on a Spring Boot 4 version the Spring team
 still supports as open source when the fix is made, and `elasticore-springboot3` on 3.5.16 - the last open-source
 Spring Boot 3 release, since open-source support for 3.5 ended on 2026-06-30. The end date is written here when that
 release is out. Until then, fixes come in the next pre-release from `main`. Supported versions and how to report a
