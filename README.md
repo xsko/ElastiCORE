@@ -7,12 +7,15 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x%20%7C%204.x-green.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Business rules in a few lines of YAML. Code in the language, architecture and Spring Boot version you choose — the same code every time.**
+**For business systems that have to last: the business rules in a few lines of YAML, the Spring Boot code generated
+from them — the same code every time.**
 
-ElastiCORE takes your domain model and business rules as a short DSL and generates the Spring Boot application:
-JPA entities, DTOs, services, REST APIs, access checks, state transitions, and a TypeScript client for the screens.
-Generation is **assembled from rulesets**, so you can switch the language, switch the architecture, or plug in your
-team's own rules — and the model stays as it is.
+ElastiCORE takes your domain model and business rules — who may do what, how an order moves along, how a value is
+decided — as a short DSL, and generates the Spring Boot application: JPA entities, DTOs, services, REST APIs, access
+checks, state transitions, and a TypeScript client for the screens. The rules stay in one place, which a developer or
+an AI assistant changes and a reviewer reads; the build carries them into every layer. Generation is **assembled from
+rulesets**, so you can switch the language, the architecture or the Spring Boot version, or plug in your team's own
+rules — and the model stays as it is.
 
 ```
   blueprint/shop/model/*.yml  ──►  Java  · Kotlin  · TypeScript
@@ -20,6 +23,12 @@ team's own rules — and the model stays as it is.
                                    Spring Boot 3 · Spring Boot 4
                                    + your team's rules (ruleset)
 ```
+
+**Built for** business systems that live for years and pass through many hands — orders, billing, contracts, back
+offices — where access rules and lifecycles must hold at every entry point, and every developer and every AI
+assistant must produce the same structure. **Not for** a UI-first application, or logic that does not fit a
+declarative model ([how it compares](docs/comparison.md)). What is checked, and what is still pre-release:
+[Output you can trust](#output-you-can-trust).
 
 ---
 
@@ -284,8 +293,8 @@ shows the result of every step for someone writing their first rule.
 
 ## In the age of AI coding
 
-AI coding tools write code fast. The problem comes next — who reviews thousands of lines, and how do you make the
-next change keep the same rules?
+AI coding tools write code fast, and for a prototype that is enough. A business system that will be changed for years
+meets the next problem — who reviews thousands of lines, and how do you make the next change keep the same rules?
 
 | AI alone | ElastiCORE + AI |
 |---|---|
@@ -395,11 +404,28 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 ## Output you can trust
 
 - **More than 1,400 automated tests** across the modules run on every build. The sample projects are generated, compiled and run.
-- **Compatibility check**: the rule engine's output compared byte for byte with 2.x's (`150 MATCH / 0 DIFF`).
+- **Checked on every change**: on each pull request CI builds every module and compares the rule engine's output with
+  2.x's byte for byte — file by file (`150 MATCH / 0 DIFF`) and over the whole reference project (0 differ / 0 missing
+  / 0 extra).
 - **Checked by running**: access answers over HTTP, the SQL of business measures against a real database, every column
   of the semantic model against database metadata.
-- **Measured**: how much generated code one line of DSL moves, and whether two generations are identical —
+- **Measured**: adding a searchable field is one DSL line and 39 generated lines in 9 files; generated twice from the
+  same DSL, 0 of 130 files differ (apart from each file's stamp line) —
   [change amplification benchmark](docs/benchmarks/change-amplification.md).
+- **Signed releases** on Maven Central, under the Apache License 2.0.
+- **The generated code is in the security scope**: an access check that lets a user read someone else's rows, or a
+  password in a response, is a vulnerability to report like one in the generator ([SECURITY.md](SECURITY.md)).
+
+### Status
+
+- **3.0 is in pre-release.** What 2.x generated stays as it was: a project that declares no `architecture`,
+  `language` or `rules` runs 2.x's generator, and the rule engine's layered Java bundle is held to 2.x's output by the
+  checks above — bug fixes the history lists excepted.
+- The other bundles — DDD, hexagonal, Kotlin, TypeScript — may still change between pre-releases; each change is
+  listed with its reason in the
+  [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md).
+- Supported versions: [SECURITY.md](SECURITY.md). Branches and releases: [BRANCHING.md](BRANCHING.md),
+  [RELEASING.md](RELEASING.md).
 
 ## Getting started (install)
 

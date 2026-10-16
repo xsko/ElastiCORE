@@ -4,11 +4,13 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.elasticore/elasticore-base.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)
 
-**업무 규칙은 YAML 몇 줄로. 코드는 원하는 언어·구조·Spring Boot 버전으로, 매번 똑같이.**
+**오래 운영할 업무 시스템을 위해: 업무 규칙은 YAML 몇 줄로, Spring Boot 코드는 거기서 생성 - 매번 똑같이.**
 
-ElastiCORE는 도메인 모델과 업무 규칙을 짧은 DSL로 받아 Spring Boot 애플리케이션을 생성합니다 - JPA 엔티티, DTO,
-서비스, REST API, 권한 검사, 상태 전이, 그리고 화면용 TypeScript 클라이언트까지. 생성 방식은 **규칙(ruleset)으로
-조립**되어 있어서, 언어를 바꾸고 구조를 바꾸고 우리 팀의 규칙을 끼워 넣어도 모델은 그대로입니다.
+ElastiCORE는 도메인 모델과 업무 규칙(누가 무엇을 하는지, 주문이 어떻게 진행되는지, 값이 어떻게 정해지는지)을 짧은
+DSL로 받아 Spring Boot 애플리케이션을 생성합니다 - JPA 엔티티, DTO, 서비스, REST API, 권한 검사, 상태 전이, 그리고
+화면용 TypeScript 클라이언트까지. 업무 규칙은 개발자나 AI 도구가 고치고 리뷰어가 읽는 한 곳에 남고, 빌드가 그 규칙을
+모든 계층에 반영합니다. 생성 방식은 **규칙(ruleset)으로 조립**되어 있어서, 언어·구조·Spring Boot 버전을 바꾸거나
+우리 팀의 규칙을 끼워 넣어도 모델은 그대로입니다.
 
 ```
   blueprint/shop/model/*.yml  ──►  Java  · Kotlin  · TypeScript
@@ -16,6 +18,12 @@ ElastiCORE는 도메인 모델과 업무 규칙을 짧은 DSL로 받아 Spring B
                                    Spring Boot 3 · Spring Boot 4
                                    + 우리 팀 규칙 (ruleset)
 ```
+
+**이런 시스템을 위해 만들었습니다.** 주문, 정산, 계약, 백오피스처럼 여러 사람의 손을 거치며 몇 년씩 운영되는 업무
+시스템 - 권한과 생명주기가 모든 진입점에서 지켜져야 하고, 어느 개발자가 쓰든 어느 AI 도구가 쓰든 같은 구조가 나와야
+하는 곳입니다. 화면이 대부분인 애플리케이션이나 선언형 모델에 맞지 않는 로직에는 맞지 않습니다
+([다른 도구와 비교](docs/comparison.ko.md)). 무엇을 검사하고 무엇이 아직 정식 출시 전인지는
+[믿을 수 있는 출력](#믿을-수-있는-출력)에 있습니다.
 
 ---
 
@@ -285,8 +293,8 @@ ElastiCORE 자신의 Java·Kotlin·TypeScript·DDD·헥사고날 생성도 모�
 
 ## AI 코딩 시대에
 
-AI 코딩 도구는 코드를 빨리 씁니다. 그 다음이 문제입니다 - 수천 줄을 누가 검토하고, 다음에 고칠 때도 같은 규칙을
-지키게 할 것인가.
+AI 코딩 도구는 코드를 빨리 쓰고, 시제품이라면 그것으로 충분합니다. 몇 년을 고쳐 가며 운영할 업무 시스템에는 그
+다음이 문제입니다 - 수천 줄을 누가 검토하고, 다음에 고칠 때도 같은 규칙을 지키게 할 것인가.
 
 | AI만으로 | ElastiCORE + AI |
 |---|---|
@@ -395,10 +403,24 @@ processManager:                              config:
 ## 믿을 수 있는 출력
 
 - 모듈 전체에서 **자동 테스트 1,400개 이상**이 매 빌드에서 돕니다. 예제 프로젝트들은 생성 → 컴파일 → 실행까지 합니다.
-- **호환 검사**: 규칙 엔진의 출력을 2.x 출력과 바이트 단위로 비교 (`150 MATCH / 0 DIFF`).
+- **변경마다 검사**: 풀 리퀘스트마다 CI 가 모든 모듈을 빌드하고, 규칙 엔진의 출력을 2.x 출력과 바이트 단위로
+  비교합니다 - 파일별로(`150 MATCH / 0 DIFF`), 그리고 기준 프로젝트 전체로(0 differ / 0 missing / 0 extra).
 - **동작으로 확인**: 권한 응답은 HTTP로, 업무 지표의 SQL은 실제 DB로, 시맨틱 모델의 모든 컬럼은 DB 메타데이터로 대조.
-- **측정**: DSL 한 줄이 생성 코드를 얼마나 움직이는지, 두 번 생성하면 똑같은지 -
-  [변경 증폭 벤치마크](docs/benchmarks/change-amplification.ko.md).
+- **측정**: 검색 필드 하나를 더하면 DSL 1줄에 생성 코드 9개 파일 39줄이 바뀌고, 같은 DSL 로 두 번 생성하면 130개 파일
+  중 달라지는 파일이 없습니다(각 파일 첫 줄의 해시·시각 제외) - [변경 증폭 벤치마크](docs/benchmarks/change-amplification.ko.md).
+- **서명된 배포**: Maven Central 에 서명해 배포합니다. 라이선스는 Apache License 2.0 입니다.
+- **생성된 코드도 보안 신고 대상**: 남의 행을 읽게 하는 권한 검사, 응답에 나오는 비밀번호도 생성기의 결함처럼
+  신고받습니다 ([SECURITY.md](SECURITY.md)).
+
+### 현재 상태
+
+- **3.0 은 정식 출시 전(pre-release)입니다.** 2.x 가 만들던 코드는 그대로입니다: `architecture`·`language`·`rules` 를
+  적지 않은 프로젝트는 2.x 생성기로 돌고, 규칙 엔진의 레이어드 Java 번들은 위의 검사로 2.x 출력에 묶여 있습니다
+  (이력에 적은 버그 수정 제외).
+- 나머지 번들(DDD, 헥사고날, Kotlin, TypeScript)의 출력은 정식 출시 전까지 바뀔 수 있고, 바뀔 때마다 그 이유를
+  [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
+- 지원 버전은 [SECURITY.md](SECURITY.md), 브랜치와 릴리스는 [BRANCHING.md](BRANCHING.md)·[RELEASING.md](RELEASING.md)
+  에 있습니다.
 
 ## 시작하기 (설치)
 
