@@ -58,9 +58,9 @@ dependencies {
 }
 ```
 
-Starting from Spring Initializr (Spring Web, Spring Data JPA, Validation, Lombok, H2)? Keep its `build.gradle`, whose
-test lines its generated test needs, and add what it lacks: the `io.elasticore` plugin line, the `elasticore` block,
-the two ElastiCORE dependencies and springdoc. On Spring Boot 3 (checked with 3.5.16): the Boot
+Starting from Spring Initializr (Spring Web, Spring Data JPA, Validation, Lombok, H2; its default Boot 4.1.1 works
+too)? Keep its `build.gradle`, whose test lines its generated test needs, and add what it lacks: the `io.elasticore`
+plugin line, the `elasticore` block, the two ElastiCORE dependencies and springdoc. On Spring Boot 3 (checked with 3.5.16): the Boot
 plugin `3.5.16`, `io.elasticore.springboot3:elasticore-springboot3` in place of `…springboot4`,
 `spring-boot-starter-web` in place of `-webmvc`, and springdoc `2.8.17` in place of `3.0.3`.
 

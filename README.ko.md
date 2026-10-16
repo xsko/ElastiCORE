@@ -54,8 +54,8 @@ dependencies {
 }
 ```
 
-Spring Initializr(Spring Web, Spring Data JPA, Validation, Lombok, H2)로 시작했다면 그 `build.gradle` 은 그대로
-두고(함께 생성된 테스트가 그 파일의 테스트 의존성을 씁니다) 빠진 것만 더합니다: `io.elasticore` 플러그인 줄,
+Spring Initializr(Spring Web, Spring Data JPA, Validation, Lombok, H2. 기본값인 Boot 4.1.1 도 됩니다)로 시작했다면 그
+`build.gradle` 은 그대로 두고(함께 생성된 테스트가 그 파일의 테스트 의존성을 씁니다) 빠진 것만 더합니다: `io.elasticore` 플러그인 줄,
 `elasticore` 블록, ElastiCORE 의존성 두 줄과 springdoc. Spring Boot 3 이면 (3.5.16 에서 확인): Boot 플러그인 `3.5.16`,
 `…springboot4` 대신 `io.elasticore.springboot3:elasticore-springboot3`, `-webmvc` 대신 `spring-boot-starter-web`,
 springdoc `3.0.3` 대신 `2.8.17`.

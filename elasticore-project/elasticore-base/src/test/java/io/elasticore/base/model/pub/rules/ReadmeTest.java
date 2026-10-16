@@ -74,7 +74,7 @@ public class ReadmeTest {
             // The runtime libraries have groups of their own -
             // io.elasticore.springboot4 - which a pattern for io.elasticore
             // alone passed over: the runtime pin was the one never checked.
-            Matcher coordinate = Pattern.compile("io\\.elasticore(?:\\.[a-z0-9]+)*:[a-z0-9-]+:([0-9][^'\"\\s]*)")
+            Matcher coordinate = Pattern.compile("io\\.elasticore(?:\\.[a-z0-9]+)*:[a-z0-9-]+:([0-9][^'\"\\s`]*)")
                     .matcher(readme);
             while (coordinate.find()) {
                 if (!coordinate.group(1).equals(declared)) stale.add(doc + ": " + coordinate.group(0));
@@ -105,6 +105,7 @@ public class ReadmeTest {
         List<String> unknown = new ArrayList<String>();
         for (String doc : FRONT_PAGES) {
             String readme = read(new File(repositoryRoot(), doc));
+            int checked = 0;
 
             // Backticked words in the bundle table shape: the naming is distinctive
             // enough to find without parsing markdown, which would be a parser
@@ -114,10 +115,26 @@ public class ReadmeTest {
                 String word = named.group(1);
                 boolean looksLikeABundle = word.contains("springboot") || word.startsWith("ts-")
                         || word.startsWith("ddd-") || word.startsWith("hex");
-                if (looksLikeABundle && !known.contains(word) && !sets.contains(word)) {
-                    unknown.add(doc + ": " + word);
+                if (!looksLikeABundle) continue;
+                checked++;
+                if (!known.contains(word) && !sets.contains(word)) unknown.add(doc + ": " + word);
+            }
+
+            // The names a reader copies into env.yml - publisher: rules: [a, b, ...] -
+            // sit inside one longer code span, where the pattern above never looks:
+            // until this list was read, the test found nothing on either page.
+            Matcher list = Pattern.compile("rules:\\s*\\[([^\\]]*)\\]").matcher(readme);
+            while (list.find()) {
+                for (String item : list.group(1).split(",")) {
+                    String word = item.trim();
+                    if (!word.matches("[a-z0-9]+(?:-[a-z0-9]+)+")) continue;   // the closing ellipsis
+                    checked++;
+                    if (!known.contains(word) && !sets.contains(word)) unknown.add(doc + ": " + word);
                 }
             }
+
+            // A check with nothing to check passes forever.
+            assertTrue(checked > 0, doc + " names no bundle this test can find - has the way it writes them changed?");
         }
 
         assertTrue(unknown.isEmpty(),
