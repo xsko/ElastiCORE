@@ -1,18 +1,21 @@
 # ElastiCORE branches and releases
 
 This repository holds the 3.x line. The 2.x line (2.2) is maintained outside it;
-3.x still generates the 2.x output byte for byte (see the compatibility checks in `CONTRIBUTING.md`).
+3.x still generates the 2.x output, apart from the bug fixes the history lists (see the compatibility checks in
+`CONTRIBUTING.md`).
 
 | Branch | Line | What goes in |
 |---|---|---|
 | `main` | 3.x mainline | Features and fixes through pull requests |
 | `release/3.0` | 3.0 maintenance | Cut from `main` at the first stable 3.0 release (no `-alpha`, `-beta` or `-rc`). Bug and security fixes only; tags `v3.0.YYMMDD` |
-| `feature/*`, `fix/*` | - | Branched from the line they change; a 3.0 fix branches from `release/3.0` |
+| `feature/*`, `fix/*` | - | Branched from the line they change; a 3.0 fix branches from `release/3.0` once it exists, from `main` before that |
 
 ## Support
 
-**3.0 is supported for three years from its first stable release**: bug and security fixes on `release/3.0`.
-The end date is written here when that release is out. Supported versions and how to report a vulnerability:
+**3.0 is supported for three years from its first stable release**: bug and security fixes to `elasticore-base`,
+the Gradle plugin (`io.elasticore`), `elasticore-springboot3` and `elasticore-springboot4`, released from
+`release/3.0` as `3.0.YYMMDD` versions. The end date is written here when that release is out. Until then, fixes
+come in the next pre-release from `main`. Supported versions and how to report a vulnerability:
 [SECURITY.md](SECURITY.md).
 
 ## Rules

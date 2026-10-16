@@ -34,7 +34,7 @@ What ElastiCORE puts together, and no single tool below does:
 6. **The meaning of the data is exported too.** An [Apache Ossie](https://github.com/apache/ossie) semantic model -
    joins, what a code means, what "revenue" is as SQL - so BI tools and AI agents read the business definitions
    instead of guessing them.
-7. **Same DSL, same code.** Generation is deterministic and measured: 2.x and 3.0 output compared byte for byte, and
+7. **Same DSL, same code.** Generation is deterministic and measured: 2.x and 3.0 output compared on every pull request, and
    a [benchmark](benchmarks/change-amplification.md) of how much code one DSL line moves.
 
 ## In one table

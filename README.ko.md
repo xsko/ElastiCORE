@@ -9,8 +9,8 @@
 ElastiCORE는 도메인 모델과 업무 규칙(누가 무엇을 하는지, 주문이 어떻게 진행되는지, 값이 어떻게 정해지는지)을 짧은
 DSL로 받아 Spring Boot 애플리케이션을 생성합니다 - JPA 엔티티, DTO, 서비스, REST API, 권한 검사, 상태 전이, 그리고
 화면용 TypeScript 클라이언트까지. 업무 규칙은 개발자나 AI 도구가 고치고 리뷰어가 읽는 한 곳에 남고, 빌드가 그 규칙을
-모든 계층에 반영합니다. 생성 방식은 **규칙(ruleset)으로 조립**되어 있어서, 언어·구조·Spring Boot 버전을 바꾸거나
-우리 팀의 규칙을 끼워 넣어도 모델은 그대로입니다.
+서버의 모든 계층에, `./gradlew elcore3ts` 가 TypeScript 클라이언트에 반영합니다. 생성 방식은 **규칙(ruleset)으로
+조립**되어 있어서, 언어·구조·Spring Boot 버전을 바꾸거나 우리 팀의 규칙을 끼워 넣어도 모델은 그대로입니다.
 
 ```
   blueprint/shop/model/*.yml  ──►  Java  · Kotlin  · TypeScript
@@ -21,9 +21,9 @@ DSL로 받아 Spring Boot 애플리케이션을 생성합니다 - JPA 엔티티,
 
 **이런 시스템을 위해 만들었습니다.** 주문, 정산, 계약, 백오피스처럼 여러 사람의 손을 거치며 몇 년씩 운영되는 업무
 시스템 - 권한과 생명주기가 모든 진입점에서 지켜져야 하고, 어느 개발자가 쓰든 어느 AI 도구가 쓰든 같은 구조가 나와야
-하는 곳입니다. 화면이 대부분인 애플리케이션이나 선언형 모델에 맞지 않는 로직에는 맞지 않습니다
-([다른 도구와 비교](docs/comparison.ko.md)). 무엇을 검사하고 무엇이 아직 정식 출시 전인지는
-[믿을 수 있는 출력](#믿을-수-있는-출력)에 있습니다.
+하는 곳입니다. 화면이 대부분인 애플리케이션, 영속이 관계형이나 JPA 가 아닌 시스템, 선언형 모델로 나타내기 어려운
+로직에는 적합하지 않습니다 ([다른 도구와 비교](docs/comparison.ko.md)). 무엇을 검사하고 무엇이 아직 정식 출시
+전인지는 [믿을 수 있는 출력](#믿을-수-있는-출력)에 있습니다.
 
 ---
 
@@ -199,7 +199,7 @@ unitCost:  money(10.2)!  @min(0.01, 'price must be positive')  @terms(price, 가
 
 - 같은 DSL 로 Java 나 Kotlin 을, Boot 3 나 Boot 4 용으로 생성합니다.
 - 생성기를 통째로 다시 쓴 2.x → 3.0 에서도 출력을 재현했습니다. 기준 프로젝트에서 2.x 가 만드는 229개 파일 중
-  224개가 바이트 단위로 같고, 1개는 import 순서만 다르며, 4개는 이력에 적은 2.x 버그 수정만큼 다릅니다.
+  224개가 같고, 1개는 import 순서만 다르며, 4개는 이력에 적은 2.x 버그 수정만큼 다릅니다.
 
 ---
 
@@ -283,7 +283,7 @@ ElastiCORE 자신의 Java·Kotlin·TypeScript·DDD·헥사고날 생성도 모�
 
 - **Spring Boot 3 → 4**: Boot 플러그인 버전을 올리면 생성 코드가 따라갑니다 (Jackson 3 의 enum 직렬화처럼, 바꾸지 않으면
   오류 없이 응답이 달라지는 곳까지). Boot 3·4 예제 프로젝트가 모두 생성·컴파일·테스트됩니다.
-- **2.x 에서 3.0**: 아무것도 바꾸지 않으면 2.x 와 **같은 코드**입니다 - 150개 파일을 바이트 단위로 비교해 확인합니다
+- **2.x 에서 3.0**: 아무것도 바꾸지 않으면 2.x 와 **같은 코드**입니다 - 기준 프로젝트에서 2.x 가 만드는 229개 파일을 풀 리퀘스트마다 비교해 확인합니다
   ([이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적은 버그 수정 제외).
   새 기능은 쓸 때만 켜집니다.
 - **고친 코드는 지켜집니다**: 다시 생성되는 파일과 한 번만 생성되는 파일(서비스 확장, 컨트롤러 등)이 나뉘어 있고,
@@ -403,24 +403,28 @@ processManager:                              config:
 ## 믿을 수 있는 출력
 
 - 모듈 전체에서 **자동 테스트 1,400개 이상**이 매 빌드에서 돕니다. 예제 프로젝트들은 생성 → 컴파일 → 실행까지 합니다.
-- **변경마다 검사**: 풀 리퀘스트마다 CI 가 모든 모듈을 빌드하고, 규칙 엔진의 출력을 2.x 출력과 바이트 단위로
-  비교합니다 - 파일별로(`150 MATCH / 0 DIFF`), 그리고 기준 프로젝트 전체로(0 differ / 0 missing / 0 extra).
+- **변경마다 검사**: 풀 리퀘스트마다 CI 가 모든 모듈을 빌드한 뒤 규칙 엔진의 출력을 2.x 출력과 비교합니다 -
+  산출물별로(`150 MATCH / 0 DIFF / 2 ACCEPTED`, 엔티티는 필드 부분), 그리고 기준 프로젝트에서 2.x 가 만드는 229개
+  파일 전부(`0 differ / 0 missing / 0 extra`: 2.x 버그 수정으로 달라지는 4개는 이름을 정해 허용, 1개는 import 순서만
+  다름). 각 파일의 첫 줄(내용 해시·시각), 줄 끝 문자, 줄 끝 공백은 비교하지 않습니다.
 - **동작으로 확인**: 권한 응답은 HTTP로, 업무 지표의 SQL은 실제 DB로, 시맨틱 모델의 모든 컬럼은 DB 메타데이터로 대조.
-- **측정**: 검색 필드 하나를 더하면 DSL 1줄에 생성 코드 9개 파일 39줄이 바뀌고, 같은 DSL 로 두 번 생성하면 130개 파일
-  중 달라지는 파일이 없습니다(각 파일 첫 줄의 해시·시각 제외) - [변경 증폭 벤치마크](docs/benchmarks/change-amplification.ko.md).
+- **측정**: 검색 필드 하나를 더하면 DSL 은 1줄, 생성 코드는 9개 파일에서 39줄이 바뀌고, 같은 DSL 로 두 번 생성하면
+  130개 파일 중 달라지는 파일이 없습니다(각 파일 첫 줄의 해시·시각 제외) - [변경 증폭 벤치마크](docs/benchmarks/change-amplification.ko.md).
 - **서명된 배포**: Maven Central 에 서명해 배포합니다. 라이선스는 Apache License 2.0 입니다.
 - **생성된 코드도 보안 신고 대상**: 남의 행을 읽게 하는 권한 검사, 응답에 나오는 비밀번호도 생성기의 결함처럼
   신고받습니다 ([SECURITY.md](SECURITY.md)).
 
 ### 현재 상태
 
-- **3.0 은 정식 출시 전(pre-release)입니다.** 2.x 가 만들던 코드는 그대로입니다: `architecture`·`language`·`rules` 를
-  적지 않은 프로젝트는 2.x 생성기로 돌고, 규칙 엔진의 레이어드 Java 번들은 위의 검사로 2.x 출력에 묶여 있습니다
-  (이력에 적은 버그 수정 제외).
-- 나머지 번들(DDD, 헥사고날, Kotlin, TypeScript)의 출력은 정식 출시 전까지 바뀔 수 있고, 바뀔 때마다 그 이유를
-  [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
-- **3.0 은 첫 정식 릴리스부터 3년간 지원합니다**: `release/3.0` 브랜치에서 버그·보안 수정
-  ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
+- **3.0 은 정식 출시 전(pre-release)입니다.** 이력에 적은 버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum 을
+  빼면 2.x 가 만들던 코드는 그대로입니다: `elasticore` 블록에 `architecture`·`language`·`rules` 를 적지 않은 프로젝트는
+  2.x 생성기가 생성하고, 규칙 엔진의 `jpa-springboot` 번들(레이어드 Java)은 풀 리퀘스트마다 그 출력과 비교됩니다.
+- v3 번들 - `jpa-springboot-v3`(레이어드, `-Pv3`), DDD, 헥사고날, Kotlin, TypeScript - 의 출력은 정식 출시 전까지 바뀔
+  수 있고, 바뀔 때마다 그 이유를 [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에
+  적습니다.
+- **3.0 은 첫 정식 릴리스부터 3년간 지원합니다**: 생성기, Gradle 플러그인, 두 런타임 라이브러리의 버그·보안 수정을
+  `release/3.0` 브랜치에서 `3.0.YYMMDD` 버전으로 냅니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
+  그 전까지는 다음 사전 릴리스(pre-release)에서 고칩니다. 릴리스 방법은 [RELEASING.md](RELEASING.md) 에 있습니다.
 
 ## 시작하기 (설치)
 

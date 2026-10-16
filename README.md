@@ -13,9 +13,9 @@ from them — the same code every time.**
 ElastiCORE takes your domain model and business rules — who may do what, how an order moves along, how a value is
 decided — as a short DSL, and generates the Spring Boot application: JPA entities, DTOs, services, REST APIs, access
 checks, state transitions, and a TypeScript client for the screens. The rules stay in one place, which a developer or
-an AI assistant changes and a reviewer reads; the build carries them into every layer. Generation is **assembled from
-rulesets**, so you can switch the language, the architecture or the Spring Boot version, or plug in your team's own
-rules — and the model stays as it is.
+an AI assistant changes and a reviewer reads; the build carries them into every layer of the server, and
+`./gradlew elcore3ts` into the TypeScript client. Generation is **assembled from rulesets**, so you can switch the
+language, the architecture or the Spring Boot version, or plug in your team's own rules — and the model stays as it is.
 
 ```
   blueprint/shop/model/*.yml  ──►  Java  · Kotlin  · TypeScript
@@ -26,9 +26,9 @@ rules — and the model stays as it is.
 
 **Built for** business systems that live for years and pass through many hands — orders, billing, contracts, back
 offices — where access rules and lifecycles must hold at every entry point, and every developer and every AI
-assistant must produce the same structure. **Not for** a UI-first application, or logic that does not fit a
-declarative model ([how it compares](docs/comparison.md)). What is checked, and what is still pre-release:
-[Output you can trust](#output-you-can-trust).
+assistant must produce the same structure. **Not for** a UI-first application, a system whose persistence is not
+relational or not JPA, or logic that does not fit a declarative model ([how it compares](docs/comparison.md)). What is
+checked, and what is still pre-release: [Output you can trust](#output-you-can-trust).
 
 ---
 
@@ -197,7 +197,7 @@ Compared with JHipster, Context Mapper, Sculptor, Spring Modulith, Amplication, 
 
 Your business rules outlive the language and the framework: the same DSL generates Java or Kotlin, for Boot 3 or
 Boot 4, and survived a complete rewrite of the generator (2.x → 3.0): of the 229 files 2.x generates for the
-reference project, 224 are byte-identical, one differs only in import order, and four differ by a 2.x bug fix the
+reference project, 224 are identical, one differs only in import order, and four differ by a 2.x bug fix the
 history lists.
 
 ---
@@ -283,9 +283,10 @@ shows the result of every step for someone writing their first rule.
 - **Spring Boot 3 → 4**: raise the Boot plugin's version and the generated code follows — including the places that
   would otherwise change a response without an error, such as Jackson 3's enum serialization. Boot 3 and Boot 4
   sample projects are both generated, compiled and tested.
-- **2.x → 3.0**: change nothing and you get **the same code** as 2.x — checked byte for byte over 150 files — apart
-  from bug fixes the [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)
-  lists. New capabilities switch on only when you use them.
+- **2.x → 3.0**: change nothing and you get **the same code** as 2.x — compared on every pull request over the 229
+  files 2.x generates for the reference project — apart from bug fixes the
+  [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) lists.
+  New capabilities switch on only when you use them.
 - **Your edits are kept**: regenerated files and generate-once files (service extensions, controllers, …) are kept
   apart, and a file you edited is recognised by its content hash and never overwritten.
 
@@ -293,8 +294,8 @@ shows the result of every step for someone writing their first rule.
 
 ## In the age of AI coding
 
-AI coding tools write code fast, and for a prototype that is enough. A business system that will be changed for years
-meets the next problem — who reviews thousands of lines, and how do you make the next change keep the same rules?
+AI coding tools write code fast, and for a prototype that is enough. For a business system that will be changed for
+years, the problem comes next — who reviews thousands of lines, and how do you make the next change keep the same rules?
 
 | AI alone | ElastiCORE + AI |
 |---|---|
@@ -404,13 +405,15 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 ## Output you can trust
 
 - **More than 1,400 automated tests** across the modules run on every build. The sample projects are generated, compiled and run.
-- **Checked on every change**: on each pull request CI builds every module and compares the rule engine's output with
-  2.x's byte for byte — file by file (`150 MATCH / 0 DIFF`) and over the whole reference project (0 differ / 0 missing
-  / 0 extra).
+- **Checked on every change**: on each pull request CI builds every module, then compares the rule engine's output
+  with 2.x's — per artifact (`150 MATCH / 0 DIFF / 2 ACCEPTED`, an entity by its fields) and over all 229 files 2.x
+  generates for the reference project (`0 differ / 0 missing / 0 extra`: the four files a 2.x bug fix changes are
+  accepted by name, one more differs only in import order). Each file's first line (its content hash and time), line
+  endings and trailing blanks are left out.
 - **Checked by running**: access answers over HTTP, the SQL of business measures against a real database, every column
   of the semantic model against database metadata.
-- **Measured**: adding a searchable field is one DSL line and 39 generated lines in 9 files; generated twice from the
-  same DSL, 0 of 130 files differ (apart from each file's stamp line) —
+- **Measured**: adding a searchable field is one DSL line and 39 changed lines of generated code in 9 files; generated
+  twice from the same DSL, 0 of 130 files differ (each file's first line, its content hash and time, aside) —
   [change amplification benchmark](docs/benchmarks/change-amplification.md).
 - **Signed releases** on Maven Central, under the Apache License 2.0.
 - **The generated code is in the security scope**: an access check that lets a user read someone else's rows, or a
@@ -418,15 +421,17 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 
 ### Status
 
-- **3.0 is in pre-release.** What 2.x generated stays as it was: a project that declares no `architecture`,
-  `language` or `rules` runs 2.x's generator, and the rule engine's layered Java bundle is held to 2.x's output by the
-  checks above — bug fixes the history lists excepted.
-- The other bundles — DDD, hexagonal, Kotlin, TypeScript — may still change between pre-releases; each change is
-  listed with its reason in the
-  [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md).
-- **3.0 is supported for three years from its first stable release**: bug and security fixes on the `release/3.0`
-  branch ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). How a release is made:
-  [RELEASING.md](RELEASING.md).
+- **3.0 is in pre-release.** What 2.x generated stays as it was, apart from the bug fixes the history lists and, on
+  Spring Boot 4, enums written for Jackson 3: a project whose `elasticore` block declares no `architecture`,
+  `language` or `rules` runs 2.x's generator, and the rule engine's `jpa-springboot` bundle (layered Java) is compared
+  with it on every pull request.
+- The v3 bundles — `jpa-springboot-v3` (layered, `-Pv3`), DDD, hexagonal, Kotlin, TypeScript — may still change
+  between pre-releases; each change is listed with its reason in the
+  [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) (in Korean).
+- **3.0 is supported for three years from its first stable release**: bug and security fixes to the generator, the
+  Gradle plugin and both runtime libraries, released from the `release/3.0` branch as `3.0.YYMMDD` versions
+  ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)). Until then, fixes come in the next pre-release. How a
+  release is made: [RELEASING.md](RELEASING.md).
 
 ## Getting started (install)
 

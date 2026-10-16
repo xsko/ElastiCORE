@@ -42,8 +42,10 @@ build` at the root is enough to know.
 
 ### `elcoreRulesCheck -Pstrict` — the compatibility gate
 
-This regenerates the whole sample tree through the rule engine and compares it
-**byte for byte** against the 2.x output committed in the repository:
+This renders the sample's artifacts through the rule engine, in memory - seven
+kinds of artifact, an entity by its field block - and compares each with the
+2.x output in the repository (the hash line, line endings and trailing blanks
+aside):
 
 ```
 === RulesCheck summary: 150 MATCH / 0 DIFF / 2 ACCEPTED / 0 SKIP ===
