@@ -347,6 +347,22 @@ public final class EntitySpec {
         return derivingEntities.contains(entityName);
     }
 
+    private final java.util.Set<String> referencingEntities = new java.util.HashSet<String>();
+
+    /**
+     * Registers an entity of the model that names rows of other aggregates by
+     * their identity - itself, or through the members it owns.
+     */
+    public EntitySpec knownReferencing(String entityName) {
+        referencingEntities.add(entityName);
+        return this;
+    }
+
+    /** Whether that entity checks the rows it names - and so has requireReferences(). */
+    public boolean references(String entityName) {
+        return referencingEntities.contains(entityName);
+    }
+
     /** Declares a business command; its parameters are parsed like fields. */
     public EntitySpec addCommand(String name, List<Field> params) {
         List<FieldSpec> specs = new ArrayList<FieldSpec>();

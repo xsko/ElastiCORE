@@ -413,7 +413,8 @@ public class ShopModelTest {
 
         String errors = java("adapter/in/web/PtshopApiErrors.java");
         assertTrue(errors.contains("new ErrorMessages(messageSource.getIfUnique(), \"i18n/ptshop-messages\")"), errors);
-        assertTrue(errors.contains("messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())"), errors);
+        assertTrue(errors.contains("String code = ex.getCode();"), errors);
+        assertTrue(errors.contains("messages.text(code, ex.getMessage(), ex.getArgs())"), errors);
 
         String support = read("src/main/ts/apiSupport.ts");
         assertTrue(support.contains("get code(): string | undefined"), support);

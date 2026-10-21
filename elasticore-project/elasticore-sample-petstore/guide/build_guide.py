@@ -140,8 +140,10 @@ G_AUTH = method(JAVA + 'application/CustomerCoreService.java', 'public Optional<
 G_LINE = method(JAVA + 'domain/model/OrderLineBase.java', 'public void derive(')
 G_ORDER_DERIVE = method(JAVA + 'domain/model/PurchaseOrderBase.java', 'public void derive(')
 G_PLACE = method(JAVA + 'domain/model/PurchaseOrder.java', 'public void place(')
-G_ACCOUNT = method(JAVA + 'adapter/in/web/shop/AccountController.java', 'public CustomerDTO signUp(') + '\n\n' + \
-    method(JAVA + 'adapter/in/web/shop/AccountController.java', 'public ResponseEntity<CustomerDTO> signIn(')
+G_ACCOUNT = method(JAVA + 'adapter/in/web/shop/AccountController.java', 'public CustomerDTO signUp(')
+G_SIGNIN = method(JAVA + 'adapter/in/web/CustomerController.java', 'public CustomerDTO signIn(') + '\n\n' + \
+    method(JAVA + 'adapter/in/web/CustomerController.java', 'public ResponseEntity<Void> signOut(') + '\n\n' + \
+    method(JAVA + 'adapter/in/web/CustomerController.java', 'public CustomerDTO me(')
 
 ORDER_BLOCK = block(ENTITY, 'PurchaseOrder')
 SECTIONS = []
@@ -319,12 +321,12 @@ page.append('''
     ('집 주소 필수', '<code>homeAddress: Address! @Embedded</code> + Address 의 <code>street1: string(50)!</code> …', '주소 없음 → 400 "homeAddress: …"'),
     ('비밀번호는 해시로만, 돌려주지 않음', '<code>password: string(255)! @password</code>', '응답에 password 없음, DB 에는 PBKDF2 해시'),
     ('스스로 관리자가 될 수 없다', '<code>role: UserRole @default(UserRole.USER) @access(admin)</code>', '<code>"role":"A"</code> 로 보내도 <code>U</code>'),
-    ('가입하면 바로 로그인', '<b>손으로</b> - <code>AccountController.signUp</code>', '가입 응답의 세션으로 <code>/account/me</code> 200'),
+    ('가입하면 바로 로그인', '<b>손으로</b> - <code>AccountController.signUp</code>', '가입 응답의 세션으로 <code>/customer/me</code> 200'),
 ]) + '''
       ''' + code('customer') + '''
       <div class="two">
         <div><p class="label">생성: 가입·수정 때 역할 보호와 해시</p>''' + code('gen-customer', 'java') + '''</div>
-        <div><p class="label">손으로: 가입·로그인 (세션 시작)</p>''' + code('gen-account', 'java') + '''</div>
+        <div><p class="label">손으로: 가입하고 바로 로그인 (세션 시작)</p>''' + code('gen-account', 'java') + '''</div>
       </div>
       <div class="gap"><b>DSL 로 못 하는 것:</b> 비밀번호 최소 길이·복잡도. 지금은 한 글자 비밀번호도 가입됩니다(확인함).
         <code>@length(min=8, max=255)</code> 를 붙여도 <code>string(255)</code> 의 최대 길이만 생성되고 최소 길이는 <b>조용히 무시</b>됩니다 - 고칠 대상입니다.
@@ -336,20 +338,25 @@ SECTIONS.append(src('gen-account', '// adapter/in/web/shop/AccountController (�
 
 # ---- 4 sign in ---------------------------------------------------------------------------------
 page.append('''
-      <h2 id="signin">4. 로그인·로그아웃 ''' + cov('hand') + '''</h2>
+      <h2 id="signin">4. 로그인·로그아웃 ''' + cov('all') + '''</h2>
       <p class="biz">고객은 로그인 ID 와 비밀번호로 로그인하고, 로그아웃합니다. 화면은 접속할 때 "지금 누구인지" 를 묻습니다.</p>
 ''' + rules([
     ('ID 와 비밀번호가 맞아야', '<code>login … @login</code> + <code>password … @password</code> → 생성 <code>authenticate(login, password)</code>', '틀린 비밀번호·없는 ID 모두 401 (같은 시간이 걸리게 - 어느 쪽인지 알리지 않음)'),
-    ('로그인 유지', '<b>손으로</b> - <code>/account/signin</code> 이 세션에 고객 ID·역할을 넣음', '200, 이후 요청은 그 고객으로'),
-    ('로그아웃', '<b>손으로</b> - <code>/account/signout</code>', '204, 이후 <code>/account/me</code> 401'),
-    ('지금 누구인가', '<b>손으로</b> - <code>/account/me</code>', '방문자 401, 고객 200'),
+    ('로그인 유지', '같은 두 줄 → 생성 <code>POST /customer/signin</code>: 세션에 고객 ID 와 역할(<code>role</code> 필드)을 넣음', '200, 이후 요청은 그 고객으로'),
+    ('로그아웃', '생성 <code>POST /customer/signout</code>', '204, 이후 <code>/customer/me</code> 401'),
+    ('지금 누구인가', '생성 <code>GET /customer/me</code>', '방문자 401, 고객 200'),
     ('로그인 안 했으면 방문자', '런타임 <code>SessionCurrentUser</code> (요청 밖에서는 아무도 아님)', '-'),
 ]) + '''
-      ''' + code('gen-auth', 'java') + '''
-      <div class="gap"><b>손으로 쓴 이유:</b> DSL 은 "누가 로그인 ID 이고 무엇이 비밀번호인지" 는 말하지만, <b>로그인 API(세션 시작·종료·현재 사용자)</b> 를
-        만들라는 문법이 없습니다. 이 샘플에서 손으로 쓴 유일한 컨트롤러입니다. 개선 후보: <code>env.yml</code> 의 <code>auth: session</code> 한 줄로 생성.</div>
+      <div class="two">
+        <div><p class="label">생성: 비밀번호 확인</p>''' + code('gen-auth', 'java') + '''</div>
+        <div><p class="label">생성: 로그인 API (CustomerController)</p>''' + code('gen-signin', 'java') + '''</div>
+      </div>
+      <div class="gap"><b>로그인 API 는 생성됩니다:</b> <code>@login</code> 과 <code>@password</code> 가 있고 <code>@expose</code> 된 엔티티의 컨트롤러에
+        <code>signin</code>·<code>signout</code>·<code>me</code> 가 붙습니다. 화면은 생성된 TS 클라이언트의 <code>signIn</code>·<code>signOut</code>·<code>me</code> 를 씁니다.
+        Spring Security 처럼 로그인을 따로 하는 앱은 <code>env.yml</code> 의 <code>config: signin: false</code> 로 끕니다.</div>
 ''')
 SECTIONS.append(src('gen-auth', '// CustomerCoreService (생성) - @login + @password\n' + G_AUTH))
+SECTIONS.append(src('gen-signin', '// CustomerController (생성) - @login + @password + @expose\n' + G_SIGNIN))
 
 # ---- 5 profile ---------------------------------------------------------------------------------
 page.append('''
@@ -388,7 +395,7 @@ page.append('''
     ('카드 필수, 카드 번호 필수', '<code>creditCard: CreditCard! @Embedded</code>, <code>creditCardNumber: string(30)!</code>', '카드 없음·번호 없음 → 400'),
     ('카드 번호는 돌려주지 않는다', '<code>creditCardNumber … @writeonly</code>', '주문 응답·조회에 번호 없음 (종류·만료일만)'),
     ('단가 = 주문 당시 가격', '<code>unitCost: money(10.2) @snapshot(item.unitCost)</code>', '<code>"unitCost":0.01</code> 을 보내도 10.00. 나중에 품목 가격이 바뀌어도 그대로'),
-    ('없는 품목은 주문 불가', '(<code>@snapshot</code> 이 확인)', '422 "OrderLine.item 99999 does not exist"'),
+    ('없는 품목은 주문 불가', '(생성된 참조 확인 <code>requireReferences</code>)', '404 "Item 99999 does not exist"'),
     ('소계·합계', '<code>subTotal … @compute(unitCost * quantity)</code><br><code>totalWithoutVat … @compute(sum(lines.subTotal))</code>', '2 × 10.00 + 10.00 = 30.00'),
     ('상태·금액은 요청으로 못 정함', '<code>states:</code>, <code>@behavior</code>, <code>@compute</code> → 읽기 전용', '<code>"status":"SHP","total":1</code> 을 보내도 PLC · 30.94'),
     ('새 주문은 접수 상태', '<code>states: status: initial: PLACED</code>', 'PLC'),
@@ -408,7 +415,7 @@ page.append('''
         <li>요청 형식 <span class="tag gen">생성</span><em>DTO 검증: 줄 1개 이상, 수량 ≥ 1, 카드 필수 → 실패면 400</em></li>
         <li>누가 <span class="tag gen">생성</span><em><code>create=user</code>: 로그인 안 했으면 401, 주인 = 로그인한 고객</em></li>
         <li>DTO → 엔티티 <span class="tag gen">생성</span><em>품목·수량·주소·카드만 옮김 (가격·상태·합계는 읽기 전용)</em></li>
-        <li>파생 값 <span class="tag gen">생성</span><em><code>derive()</code>: 줄 단가 스냅샷 → 소계 → 합계 (없는 품목 422)</em></li>
+        <li>파생 값 <span class="tag gen">생성</span><em><code>requireReferences()</code>: 없는 품목 404, <code>derive()</code>: 줄 단가 스냅샷 → 소계 → 합계</em></li>
         <li>가격 정책 <span class="tag hand">손으로</span><em><code>place()</code>: 주문일, 기본 배송지, VAT, 할인, 반올림, <code>raisePlaced()</code></em></li>
         <li>불변식 <span class="tag gen">생성</span><em>저장 직전 다시 확인: 줄이 없으면 "the cart is empty"</em></li>
         <li>저장·이벤트 <span class="tag gen">생성</span><em>상태 PLACED 로 저장, 커밋 때 접수 이벤트</em></li>
@@ -444,7 +451,7 @@ page.append('''
       <p class="biz">고객은 자기 주문을 <b>배송 전(접수 상태)</b> 에만 취소할 수 있습니다. 화면은 취소할 수 있을 때만 버튼을 보입니다.</p>
 ''' + rules([
     ('자기 주문만', '<code>cancel=owner</code>', '남의 주문 → 404'),
-    ('접수 상태에서만', '<code>states: status: cancel: PLACED -> CANCELLED</code>', '두 번째 취소·배송 후 취소 → 422 "cannot cancel when status is SHIPPED; it must be [PLACED]"'),
+    ('접수 상태에서만', '<code>states: status: cancel: PLACED -> CANCELLED</code>', '두 번째 취소·배송 후 취소 → 409 "cannot cancel when status is SHIPPED; it must be [PLACED]"'),
     ('취소되면 알린다', '<code>@event(… Cancelled)</code>', '<code>PurchaseOrderCancelledEvent</code>'),
     ('버튼은 할 수 있을 때만', '(생성) TypeScript <code>Orders.canCancel(order)</code>', '서버의 <code>canCancel()</code> 과 같은 판단'),
 ]) + '''
@@ -458,7 +465,7 @@ page.append('''
       <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자뿐입니다.</p>
 ''' + rules([
     ('관리자만', '<code>@access</code> 에 ship 을 적지 않음', '고객 → 403 "ship PurchaseOrder is for the administrator"'),
-    ('접수 상태에서만', '<code>states: status: ship: PLACED -> SHIPPED</code>', '취소된 주문 배송 → 422'),
+    ('접수 상태에서만', '<code>states: status: ship: PLACED -> SHIPPED</code>', '취소된 주문 배송 → 409'),
     ('배송되면 알린다', '<code>@event(… Shipped)</code>', '<code>PurchaseOrderShippedEvent</code>'),
     ('버튼은 할 수 있을 때만', '(생성) TypeScript <code>Orders.canShip(order)</code>', '-'),
     ('주문은 고칠 수 없다', '<code>@editable</code> 이 아닌 루트 → 수정 API 없음', 'PUT → 405'),
@@ -514,10 +521,10 @@ page.append('''
           <tr><td>400</td><td>요청이 틀림 - DSL 의 검증, 잘못된 검색, 필수 값 누락</td><td>"lines: the cart is empty", "No property 'nope'…", "A required value is missing."</td></tr>
           <tr><td>401</td><td>로그인 필요</td><td>"Sign in to create PurchaseOrder"</td></tr>
           <tr><td>403</td><td>이 사람에게 허락되지 않음</td><td>"ship PurchaseOrder is for the administrator"</td></tr>
-          <tr><td>404</td><td>없음 - 또는 남의 것</td><td>남의 주문·고객 정보</td></tr>
+          <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음</td><td>남의 주문·고객 정보, "Item 99999 does not exist"</td></tr>
           <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT</td></tr>
-          <tr><td>409</td><td>저장된 데이터와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제</td></tr>
-          <tr><td>422</td><td>도메인이 거절</td><td>"cannot cancel when status is SHIPPED…", "OrderLine.item 99999 does not exist"</td></tr>
+          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when status is SHIPPED…"</td></tr>
+          <tr><td>422</td><td>도메인의 다른 규칙이 거절 (불변식)</td><td>-</td></tr>
         </tbody>
       </table>
 
@@ -527,7 +534,7 @@ page.append('''
         <tbody>
           <tr><td><code>domain/model/PurchaseOrder.java</code></td><td>가격 정책 <code>place()</code>: VAT·할인·반올림, 기본 배송지, 주문일</td><td>설정 값을 쓰는 계산·기본값 규칙 문법 없음</td></tr>
           <tr><td><code>application/PurchaseOrderService.java</code></td><td>요율을 설정에서 읽고, 처음 저장될 때 <code>place()</code></td><td>위와 같음</td></tr>
-          <tr><td><code>adapter/in/web/shop/AccountController.java</code></td><td>가입 후 로그인, 로그인, 로그아웃, 현재 사용자</td><td>로그인 API 생성 문법 없음</td></tr>
+          <tr><td><code>adapter/in/web/shop/AccountController.java</code></td><td>가입하고 바로 로그인</td><td>가입과 로그인을 한 요청으로 묶는 것은 화면의 선택 (로그인·로그아웃·me 는 생성)</td></tr>
           <tr><td><code>DemoAccounts.java</code></td><td>데모 계정 admin/admin, user/user</td><td>기준·데모 데이터 문법 없음 (<code>data.sql</code> 도 손으로)</td></tr>
           <tr><td><code>OrderLine.java</code>, <code>CustomerService.java</code>, <code>PetstoreApplication.java</code></td><td>빈 클래스, <code>Clock</code> 빈</td><td>-</td></tr>
           <tr><td><code>web/src/*.ts</code> (540줄)</td><td>화면</td><td>화면은 DSL 의 대상이 아님. 생성된 TS 클라이언트(타입·API·검증·라벨·<code>canX</code>)를 씀</td></tr>
@@ -550,9 +557,9 @@ page.append('''
           <tr><td>2</td><td>업무 용어 - 주문 = 구매·order</td><td><b>완료</b> - <a href="#metrics"><code>@terms</code></a></td><td>Ossie <code>ai_context.synonyms</code></td></tr>
           <tr><td>3</td><td>가격 정책 - 설정 값으로 계산</td><td>손으로 <code>place()</code></td><td><code>policy:</code> - <code>vat: total * config(vat-rate) / 100</code> 같은 계산</td></tr>
           <tr><td>4</td><td>기본값 규칙 - 배송지 = 집 주소, 주문일 = 오늘</td><td>손으로</td><td><code>@default(customer.homeAddress)</code>, <code>@default(today)</code></td></tr>
-          <tr><td>5</td><td>로그인 API</td><td>손으로 컨트롤러</td><td><code>auth: session</code> 한 줄로 가입·로그인·로그아웃·me 생성</td></tr>
+          <tr><td>5</td><td>로그인 API</td><td><b>완료</b> - <a href="#signin"><code>@login</code> + <code>@password</code></a></td><td>signin·signout·me 와 TS 클라이언트 생성. 가입 후 자동 로그인은 손으로</td></tr>
           <tr><td>6</td><td>비밀번호 최소 길이</td><td><code>@length(min=8)</code> 이 조용히 무시됨 (버그)</td><td>최소 길이 생성 + <code>@password(min=8)</code></td></tr>
-          <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 422 와 업무 문구</td></tr>
+          <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 409 와 업무 문구</td></tr>
           <tr><td>8</td><td>기준·데모 데이터</td><td><code>data.sql</code>, <code>DemoAccounts</code></td><td><code>data:</code> 블록 (가입과 같은 규칙 - 해시 등 - 을 거쳐 넣음)</td></tr>
           <tr><td>9</td><td>기본 정렬</td><td>화면이 지정</td><td><code>@expose(20, sort=orderDate desc)</code></td></tr>
         </tbody>

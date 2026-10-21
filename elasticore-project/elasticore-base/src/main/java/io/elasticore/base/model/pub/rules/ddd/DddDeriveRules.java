@@ -29,7 +29,8 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *
  * @snapshot copies a value from the row a reference points at, once - a
  * later price change leaves the line as it was sold. A reference to a row
- * that does not exist is refused (422). @compute is worked out again every
+ * that does not exist is refused (code reference.*, which the API answers
+ * 404). @compute is worked out again every
  * time: a * b, a + b, a - b over the entity's own fields or numbers, or
  * sum(members.field) over a collection of the aggregate.
  *
@@ -142,9 +143,9 @@ public class DddDeriveRules implements CodeRules {
             if (id != null) {
                 body.add(String.format("if (this.%s == null && this.%s != null) {", target, id.name()));
                 body.add(String.format("    val source = lookup.find(%s::class.java, this.%s) as %s?", type, id.name(), type));
-                body.add(String.format("        ?: throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s.%s \" + this.%s + \" does not exist\", this.%s.toString())",
-                        missingCode(e, relation), e.getName(), relation, id.name(), id.name()));
-                recordMissing(e, relation);
+                body.add(String.format("        ?: throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s \" + this.%s + \" does not exist\", this.%s.toString())",
+                        DddReferenceRules.missingCode(e, relation), type, id.name(), id.name()));
+                DddReferenceRules.recordMissing(e, relation, type);
                 body.add(String.format("    this.%s = source.%s", target, source));
                 body.add("}");
             } else {
@@ -156,9 +157,9 @@ public class DddDeriveRules implements CodeRules {
                 body.add(String.format("if (this.%s == null && this.%s != null) {", target, id.name()));
                 body.add(String.format("    %s source = (%s) lookup.find(%s.class, this.%s);", type, type, type, id.name()));
                 body.add("    if (source == null)");
-                body.add(String.format("        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s.%s \" + this.%s + \" does not exist\", String.valueOf(this.%s));",
-                        missingCode(e, relation), e.getName(), relation, id.name(), id.name()));
-                recordMissing(e, relation);
+                body.add(String.format("        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s \" + this.%s + \" does not exist\", String.valueOf(this.%s));",
+                        DddReferenceRules.missingCode(e, relation), type, id.name(), id.name()));
+                DddReferenceRules.recordMissing(e, relation, type);
                 body.add(String.format("    this.%s = source.%s;", target, getter));
                 body.add("}");
             } else {
@@ -347,15 +348,5 @@ public class DddDeriveRules implements CodeRules {
             out.append(s);
         }
         return out.toString();
-    }
-
-    /** The message code of a derived value's source that does not exist: reference.<Entity>.<relation>. */
-    private static String missingCode(EntitySpec e, String relation) {
-        return "reference." + e.getName() + "." + relation;
-    }
-
-    private static void recordMissing(EntitySpec e, String relation) {
-        io.elasticore.base.model.pub.rules.ErrorCatalog.record(missingCode(e, relation),
-                e.getName() + "." + relation + " {0} does not exist");
     }
 }

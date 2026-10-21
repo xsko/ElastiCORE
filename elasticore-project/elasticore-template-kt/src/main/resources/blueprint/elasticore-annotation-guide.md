@@ -306,7 +306,7 @@ onHand: int! @min(0, '재고는 음수가 될 수 없다')
 쓰면 됩니다. `@invariant` 는 **두 필드 이상을 비교하는 규칙**에만 씁니다.
 
 #### @minsize(n, '메시지') / @maxsize(n, '메시지') - 컬렉션 개수
-컬렉션이 담을 멤버 수. DTO 에는 `@Size(min=n, message=...)`, DDD 루트에는 저장 시점 검사(422)가 됩니다.
+컬렉션이 담을 멤버 수. DTO 에는 `@Size(min=n, message=...)` (n 이 1 이상이면 `@NotNull` 도 - 목록을 아예 보내지 않아도 400), DDD 루트에는 저장 시점 검사(422)가 됩니다.
 최소 개수는 컬렉션이 아예 없을 때(null)도 위반입니다.
 ```yaml
 lines: List<SalesOrderLine> @OneToMany(mappedBy="order") @minsize(1, '수주에는 품목이 하나 이상 있어야 한다')
@@ -1853,14 +1853,28 @@ Customer:
     role: UserRole @default(UserRole.USER) @access(admin)   # 가입자가 스스로 관리자가 될 수 없음
 ```
 
-로그인 처리 (세션 기본값):
+로그인은 **생성됩니다** (세션 기본값, 3.0.261021 부터). `@login` 과 `@password` 가 있고 `@expose` 된 엔티티의
+컨트롤러에 세 엔드포인트가 붙습니다:
+
+| 요청 | 답 |
+|---|---|
+| `POST /api/shop/customer/signin` `{"login": "...", "password": "..."}` (키는 두 필드의 이름) | 200 고객 (비밀번호 없음), 세션 시작. 틀리면 401 `Wrong login or password` |
+| `POST /api/shop/customer/signout` | 204, 세션 끝 |
+| `GET /api/shop/customer/me` | 200 로그인한 고객, 방문자는 401 |
+
+세션에는 행의 키와 **역할**이 들어갑니다. 역할은 `@role` 을 붙인 필드, 없으면 `role` 이라는 필드의 값입니다
+(enum 이면 상수 이름 - `UserRole.ADMIN` 이면 `ADMIN`, `adminRole` 과 비교). 역할 필드가 없으면 모두 일반 사용자입니다.
+TypeScript 클라이언트에도 `signIn(login, password)`, `signOut()`, `me()` (방문자면 null) 가 생깁니다.
+
+손으로 세션을 다룰 때 (가입하고 바로 로그인 같은 것):
 
 ```java
 SessionCurrentUser.signIn(request, customer.getCustomerId(), customer.getRole().name());
 SessionCurrentUser.signOut(request);
 ```
 
-Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈을 등록하면 됩니다.
+Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈을 등록하고, 생성되는 로그인 API 는
+`env.yml` 의 `config: signin: false` 로 끕니다 (`authenticate` 는 남음).
 
 ## @password / @login — 자격 증명 (v3)
 
@@ -1871,8 +1885,9 @@ password: string(255)! @password      # 해시 길이를 담을 만큼 (PBKDF2 �
 
 - 요청으로 받은 비밀번호는 **모든 쓰기 경로에서 해시로만** 저장 (기본 PBKDF2-SHA256, `PasswordHasher` 빈으로 교체).
 - 응답·검색·DTO 복사에 나오지 않음 (`@writeonly` 와 같음), TypeScript 에서 optional.
-- `@login` 과 `@password` 가 함께 있으면 CoreService·유스케이스에 `authenticate(login, password)` 생성.
+- `@login` 과 `@password` 가 함께 있으면 CoreService·유스케이스에 `authenticate(login, password)` 와 `me()` 생성.
   없는 로그인도 같은 해시 비용을 치러 응답 시간으로 계정 존재를 알 수 없음.
+- 그 엔티티가 `@expose` 면 컨트롤러에 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표).
 
 ## @snapshot / @compute — 파생 값 (DDD 룰셋)
 
@@ -1891,7 +1906,7 @@ PurchaseOrder:
 - 둘 다 요청으로 쓸 수 없는 필드입니다 (DTO 에서 읽기 전용, 매퍼가 쓰지 않음 - `@editable` 엔티티에서도).
 - `@compute` 가 다른 `@compute` 를 쓰면 그 필드를 먼저 선언하세요 (거꾸로면 빌드 경고).
 - `@snapshot` 은 값이 비었을 때만 채웁니다 - 이후 상품 가격이 바뀌어도 주문 줄은 그대로.
-  참조한 행이 없으면 422 (`OrderLine.item 99 does not exist`).
+  참조한 행이 없으면 404 (`Item 99 does not exist`, 코드 `reference.OrderLine.item`).
 - `@compute` 는 저장할 때마다 다시 계산합니다. 피연산자 중 하나가 null 이면 결과도 null.
 - **`@formula` 와 다릅니다**: `@formula("...")` 는 DB 가 계산하는 Hibernate SQL 식입니다.
 

@@ -153,6 +153,60 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 관련 파일: `OssieSql.java`, `OssieSemanticModelExporter.java`, `OssieSqlTest.java`, `OssieFormulaDialectTest.java`,
   `OssieExportTest.java`, `elasticore-rule-guide.md`(dialect 단락), `dsl-guide.html`(펫스토어 안내 페이지의 예)
 
+### New Features (로그인 API 생성)
+
+#### `@login` + `@password` 엔티티에 signin·signout·me 가 생성된다
+- 펫스토어를 Claude Code 와 agent kit 으로 세 번(Java hexagonal, Java ddd, Kotlin hexagonal) 새로 만들게 했더니 셋 다,
+  그리고 저장소의 펫스토어 샘플도 같은 로그인 컨트롤러(로그인·로그아웃·지금 누구인지)를 손으로 썼다. 세 에이전트 모두
+  `SessionCurrentUser` 의 사용법을 찾으려고 jar 를 `javap` 로 열었다
+- `@login` 과 `@password` 가 있고 `@expose` 된 엔티티의 컨트롤러에 `POST /signin` (`{"<login 필드>", "<password 필드>"}`,
+  틀리면 401 `Wrong <login> or password`), `POST /signout` (204), `GET /me` (방문자 401) 가 붙는다. 세션에는 행의 키와
+  역할(`@role` 필드, 없으면 `role` 필드 - enum 이면 상수 이름)이 들어간다. CoreService·유스케이스에 `me()`,
+  TypeScript 클라이언트에 `signIn`·`signOut`·`me()`(방문자면 null)
+- 로그인을 따로 하는 애플리케이션(Spring Security)은 `env.yml` 의 `config: signin: false` 로 끈다. v3 번들의 출력이
+  기본으로 바뀌는 변경이다(3.0 출시 전): `@login` 을 쓰는 프로젝트의 컨트롤러에 엔드포인트 세 개가 더해진다.
+  `jpa-springboot`(2.x 호환)에는 `jpa-service-access` 가 없어 바뀌지 않는다
+- 펫스토어 샘플의 `AccountController` 는 가입하고 바로 로그인하는 것만 남겼다. 화면(`web/src/shop.ts`)은 생성된
+  `CustomerApi.signIn/signOut/me` 를 쓴다
+- 확인: `SignInAndReferencesTest`(Java·Kotlin·TypeScript·`signin: false`), 펫스토어 `ShopFlowTest` 15개(생성된
+  `/customer/signin`, `/customer/me`), `webBuild` 타입 검사, `elasticore-template-kt` 의 `AgentController` 컴파일·테스트
+- 관련 파일: `ServiceAccessRules.java`(`signInControl`, `me`, `signsIn`, `roleField`), `HexUseCaseRules.java`,
+  `TypeScriptApiRules.java`, `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`, `elasticore-env-guide.md`
+
+### Improvements (오류 응답 - 상태 충돌 409, 없는 참조 404)
+
+#### 생명주기가 거절한 명령은 409, 요청이 가리킨 행이 없으면 404
+- 세 에이전트 모두 생성된 `XxxApiErrors` 를 고쳐 "배송된 주문 취소"를 422 에서 409 로 바꿨다. RFC 9110 의 409 가
+  "대상의 현재 상태와 충돌"이므로 그쪽이 맞다. 다른 불변식 위반은 그대로 422 다
+- `apiErrors` 템플릿(Java, Kotlin)의 `refused(...)`: 코드가 `state.` 로 시작하면 409 (제목 코드 `state`, "Not allowed in
+  this state"), `reference.` 로 시작하면 404, 나머지는 422. 공통 코드에 `error.state.title` 을 더했다
+- `XxxApiErrors` 는 한 번만 생성되므로 **이미 있는 프로젝트는 422 그대로**다. 파일을 지우고 다시 생성하거나 `refused` 를
+  고친다. 펫스토어 샘플은 다시 생성하고 테스트를 409·404 로 바꿨다(`petstore-messages_ko.properties` 에 새 제목)
+- 관련 파일: `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ErrorCatalog.java`, `ShopFlowTest.java`, `ShopModelTest.java`,
+  `elasticore-rule-guide.md`, `elasticore-dsl-guide.md`, `elasticore-annotation-guide.md`, `elasticore-ddd-customize-guide.md`
+
+### Improvements (DDD 번들 - 참조한 행이 있는지 저장 전에 확인)
+
+#### `requireReferences(lookup)` - 없는 id 를 가리키는 참조는 404 로 거절
+- 다른 애그리거트를 id 로 참조하는 필드(`loan.memberId`, 주문 줄의 `itemId`)에 없는 id 를 보내면 외래 키 위반이 409
+  "Conflicts with stored data" 로 나갔다. 그래서 도서 대출 레시피와 펫스토어를 만든 세 에이전트가 모두 저장 전에
+  `entityManager.find` 로 확인하는 코드를 손으로 썼다
+- 그런 참조가 있는 엔티티(직접, 또는 소유한 멤버를 통해)에 `requireReferences(Lookup)` 이 생기고, CoreService 가 생성·
+  수정·일괄 수정·조건 수정에서 `beforeSave` 전에 부른다. 없으면 `InvariantViolationException("reference.<Entity>.<relation>",
+  "<Target> 99 does not exist")` - API 는 404. `@snapshot` 이 원본 행을 못 찾을 때도 같은 코드·문구(전에는
+  "OrderLine.item 99 does not exist", 422)
+- 생성되는 Kotlin 서비스 테스트(`testCode`)는 모의 `entityManager.find` 가 요청한 클래스의 모의 객체를 돌려주게 한다(lenient)
+- 관련 파일: `DddReferenceRules.java`(`requireReferences`, `-service`, `-test`), `DddDeriveRules.java`, `DddRepositoryPortRules.java`,
+  `EntitySpec.java`(`knownReferencing`), `SpecFactory.java`(`registerReferencing`), `SignInAndReferencesTest.java`
+
+### Bug Fixes (DTO - 최소 개수)
+
+#### `@minsize(1)` 컬렉션을 아예 보내지 않으면 400 (전에는 엔티티 불변식의 422)
+- `@Size` 는 null 을 통과시키므로 `lines` 를 뺀 주문이 DTO 검증을 지나 저장 시점 불변식에서 422 가 났다. 빈 배열은 400
+  이었다(채점 에이전트가 찾음)
+- 정리된 출력(v3)에서 `@minsize(n)` 의 n 이 1 이상이면 DTO 필드에 같은 메시지의 `@NotNull` 을 더한다. 2.x 호환 출력은 그대로
+- 관련 파일: `DtoBaseRules.java`, `SignInAndReferencesTest.java`, `ShopFlowTest.java`, `elasticore-annotation-guide.md`
+
 ## 3.0.261020-alpha2
 
 ### Bug Fixes (생성기)

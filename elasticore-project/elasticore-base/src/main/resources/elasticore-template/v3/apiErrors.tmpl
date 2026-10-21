@@ -32,11 +32,12 @@ import java.util.Map;
  * Each refusal the generated services make gets the status that says which
  * one it was, as an RFC 9457 problem body:
  *
- *   404  the row is not there
+ *   404  the row is not there, or a row the request refers to is not
  *   409  a create named a taken identifier, the version sent is stale, a
- *        unique value is taken, or a row still referenced was deleted
+ *        unique value is taken, a row still referenced was deleted, or the
+ *        row's state does not allow the step (ship a cancelled order)
  *   400  a value breaks its constraint
- *   422  the aggregate refuses to be put in that state (an invariant)
+ *   422  the aggregate refuses for another of its rules (an invariant)
  *
  * Every body carries a "code" a client can branch on. Its title and detail
  * are said in the request's language (Accept-Language): looked up by code in
@@ -191,10 +192,21 @@ public class ${className} {
      */
     @ExceptionHandler(InvariantViolationException.class)
     public ProblemDetail refused(InvariantViolationException ex) {
-        ProblemDetail body = problem(HttpStatus.UNPROCESSABLE_ENTITY, "refused", "Refused by the domain",
-                messages.text(ex.getCode(), ex.getMessage(), ex.getArgs()));
+        String code = ex.getCode();
+        String detail = messages.text(code, ex.getMessage(), ex.getArgs());
+        ProblemDetail body;
+        if (code != null && code.startsWith("state.")) {
+            // A step the row's state does not allow (ship a cancelled order): it conflicts
+            // with the row as it is now (RFC 9110, 409).
+            body = problem(HttpStatus.CONFLICT, "state", "Not allowed in this state", detail);
+        } else if (code != null && code.startsWith("reference.")) {
+            // A row the request refers to is not there (a line's item that does not exist).
+            body = problem(HttpStatus.NOT_FOUND, "not-found", "Not found", detail);
+        } else {
+            body = problem(HttpStatus.UNPROCESSABLE_ENTITY, "refused", "Refused by the domain", detail);
+        }
         // The rule that refused: state.Order.status.ship, invariant.Order.total-ge-0 ...
-        if (ex.getCode() != null) body.setProperty("code", ex.getCode());
+        if (code != null) body.setProperty("code", code);
         return body;
     }
 

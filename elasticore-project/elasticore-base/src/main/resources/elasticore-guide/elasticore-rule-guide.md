@@ -403,7 +403,7 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
 엔티티의 `states:` 가 상태 필드와 명령마다의 이동을 선언하면, 명령은 **추상 메서드가 아니라
 `XxxBase` 의 구체 메서드**로 생성됩니다. 문법은 `elasticore-dsl-guide.md` 의 "생명주기" 를 보세요.
 
-- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` (422): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
+- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
   코드는 `state.PurchaseOrder.status.ship` 이고 요청 언어로 번역할 수 있습니다 (아래 "오류 코드와 다국어").
 - 대상 상태와 같은 이름의 이벤트가 `@event` 에 있으면 발행합니다 (`SHIPPED` -> `raiseShipped()`).
 - `canShip()` 이 함께 생기고, TypeScript 클라이언트에도 `canShip(dto)` 가 생깁니다 (버튼 표시용).
@@ -413,11 +413,11 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
   DSL 경고(`... names SHIPED, which OrderStatus does not have (it has ...)`) 후 생명주기를 생략합니다.
 - 나가는 이동이 없는 상태는 끝 상태입니다. `moveXxx` 의 Javadoc 에 시작·이동·끝·도달하지 않는 상태가 정리됩니다.
 - 같은 명령이 두 생명주기(두 enum 필드)에 있으면 그 명령은 모든 생명주기의 시작 상태를 먼저 확인(`requireXxx`)한 뒤
-  함께 이동합니다. 하나라도 아니면 422 이고 아무 필드도 바뀌지 않습니다. `canX()` 는 조건의 AND.
+  함께 이동합니다. 하나라도 아니면 409 이고 아무 필드도 바뀌지 않습니다. `canX()` 는 조건의 AND.
 
 #### 파생 값 (`ddd-derive`)
 
-`@snapshot(item.unitCost)` 은 참조한 행의 값을 **한 번** 복사하고(없는 행이면 422),
+`@snapshot(item.unitCost)` 은 참조한 행의 값을 **한 번** 복사하고(없는 행이면 404),
 `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` 는 매번 계산합니다.
 엔티티에 `derive(lookup)` 이 생기고 CoreService 가 생성·수정·일괄 수정·조건 수정·명령 뒤 저장 전에
 `entity.derive(entityManager::find)` 를 부릅니다. 멤버가 먼저 계산되므로 합계는 최신 줄을 더합니다.
@@ -860,7 +860,9 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 | 수정에 보낸 `version` 이 행의 것과 다름 | 거절 (`ObjectOptimisticLockingFailureException`) | 409 |
 | 수정이 보낸 값이 제약 위반 (`@Size` 등) | 거절 (`ConstraintViolationException`). 보낸 필드만 검사 | 400 |
 | 없는 행 수정 | `EntityNotFoundException` | 404 |
-| 불변식 위반 | `InvariantViolationException` (`IllegalStateException` 하위) | 422 |
+| 요청이 가리킨 행이 없음 - 다른 애그리거트를 id 로 참조 (`loan.memberId`, 주문 줄의 `itemId`) | `InvariantViolationException`, 코드 `reference.<Entity>.<relation>` (DDD 번들, 저장 전 `requireReferences`) | 404 - `Member 99 does not exist` |
+| 지금 상태로는 할 수 없는 명령·삭제 (`states:`) | `InvariantViolationException`, 코드 `state.…` | 409 |
+| 다른 불변식 위반 | `InvariantViolationException` (`IllegalStateException` 하위) | 422 |
 | 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다) | 400, 409 - 던진 메시지가 `detail` 로 나간다 |
 | 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
 | 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
@@ -900,7 +902,7 @@ generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Sprin
 
 | 응답 | `title` | `detail` |
 |---|---|---|
-| 422 (생명주기·불변식·참조 없음) | O | O (규칙의 코드로) |
+| 409 (생명주기), 404 (참조한 행 없음), 422 (불변식) | O | O (규칙의 코드로) |
 | 409·400 의 데이터베이스 거절 (`stale`, `required`, `unique`, `referenced`, `conflict`) | O | O (`error.<code>`) |
 | 400 필드 검증 (`@Valid`, 서비스 측 검증 모두) | O | 필드 메시지 O (`<제약>.<필드>`, 예 `Size.lines`) |
 | 404·409(이미 있음)·401·403·기타 400 | O | X — 예외 메시지(영어, 식별자 포함) 그대로 |
@@ -911,11 +913,15 @@ Pet Store 에서 배송된 주문을 취소하면 (`ShopFlowTest` 로 확인):
 POST /api/petstore/purchaseOrder/{id}/cancel
 Accept-Language: ko
 
-HTTP/1.1 422
-{ "title": "처리할 수 없는 요청",
+HTTP/1.1 409
+{ "title": "지금 상태에서는 할 수 없는 요청",
   "detail": "주문 상태가 SHIPPED이면 취소할 수 없습니다 (가능한 상태: [PLACED])",
-  "code": "state.PurchaseOrder.status.cancel", "status": 422 }
+  "code": "state.PurchaseOrder.status.cancel", "status": 409 }
 ```
+
+3.0.261021 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 둘 다 422). 오류 처리기는
+generate-once 라 **이미 있는 프로젝트의 `<도메인>ApiErrors` 는 422 그대로**입니다 - 새 응답을 원하면 그 파일을
+지우고 빌드하거나(손댄 곳이 없을 때), `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고칩니다.
 
 `Accept-Language` 가 없거나 번역이 없는 언어면
 `"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"` 입니다.
@@ -924,11 +930,11 @@ HTTP/1.1 422
 
 | 코드 | 언제 | 값 (`{0}`, `{1}`) |
 |---|---|---|
-| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
+| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
 | `state.<Entity>.<field>.<command>` | 생명주기: 시작 상태가 아닌데 명령이 옴 (`states:`) | 지금 상태, 가능한 상태 |
 | `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | - |
 | `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | - |
-| `reference.<Entity>.<relation>` | `@snapshot` 등이 참조한 행이 없음 | 식별자 |
+| `reference.<Entity>.<relation>` | 요청이 id 로 가리킨 행이 없음 - 다른 애그리거트 참조(저장 전 확인), `@snapshot` 의 원본 (404) | 식별자 |
 
 **번역하는 법**
 
@@ -939,10 +945,11 @@ HTTP/1.1 422
 
 ```properties
 # src/main/resources/i18n/petstore-messages_ko.properties
-error.refused.title=처리할 수 없는 요청
+error.state.title=지금 상태에서는 할 수 없는 요청
 state.PurchaseOrder.status.cancel=주문 상태가 {0}이면 취소할 수 없습니다 (가능한 상태: {1})
 invariant.PurchaseOrder.lines.minsize=장바구니가 비어 있습니다
 Size.lines=장바구니가 비어 있습니다
+NotNull.lines=장바구니가 비어 있습니다
 ```
 
 찾는 순서: classpath 의 `messages_<언어>.properties` -> 도메인 번들과 그 옆 번역 ->

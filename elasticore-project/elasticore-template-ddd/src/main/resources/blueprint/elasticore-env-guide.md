@@ -421,13 +421,16 @@ config:
 config:
   referenceColumn: short   # 다른 애그리거트 참조 컬럼: customer_id (기본: 2.x 식 customer_customer_id)
   adminRole: ADMIN         # @access 의 admin 수준이 확인하는 역할 이름 (기본 ADMIN)
+  signin: false            # @login + @password 엔티티의 signin·signout·me API 를 만들지 않음 (기본: 만듦)
 ```
 
 - `referenceColumn: short` - DDD 번들의 식별자 참조(`customerId`)가 쓰는 컬럼 이름을 필드 이름 그대로
   (`customer_id`) 만듭니다. **새 프로젝트용** 입니다: 이미 있는 DB 의 컬럼 이름이 바뀌므로 2.x 에서
   옮겨오는 프로젝트는 그대로 두거나 마이그레이션과 함께 켭니다.
 - `adminRole` - `SessionCurrentUser.signIn(request, id, "ADMIN")` 처럼 로그인 때 넣은 역할 중 이 이름이
-  있으면 관리자입니다.
+  있으면 관리자입니다. 생성되는 `signin` 은 엔티티의 `role` 필드(또는 `@role` 필드) 값을 넣습니다.
+- `signin: false` - 로그인을 따로 하는 애플리케이션(Spring Security 의 폼 로그인 등)에서 생성되는 로그인 API 를
+  끕니다. `authenticate(login, password)` 와 `me()` 는 서비스에 그대로 남습니다.
 
 ## 7. apiPath 설정
 

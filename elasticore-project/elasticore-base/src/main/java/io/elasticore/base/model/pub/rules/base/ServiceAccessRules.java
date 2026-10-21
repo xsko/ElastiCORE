@@ -422,6 +422,157 @@ public class ServiceAccessRules implements CodeRules {
              .append("    }");
         }
         c.addMethod(m.toString());
+        me(e, c, kt);
+    }
+
+    /**
+     * Who is signed in: the row whose key the session holds - read past the
+     * entity's read level, since anyone signed in may see themselves.
+     */
+    private void me(EntitySpec e, SourceCode c, boolean kt) {
+        if (!hasMe(e)) return;
+        String keyType = idType(e.pkFields().get(0).typeName());
+        String entity = e.getName();
+        String dto = entity + "DTO";
+        String repo = orDefault(c.varValue("cmdRef"), "repository");
+        String mapper = orDefault(c.varValue("mapperName"), e.domainClassName() + "Mapper");
+        StringBuilder m = new StringBuilder();
+        m.append("    /** The ").append(entity).append(" signed in now - the row the session's identity names - or empty for a visitor. */\n");
+        if (kt) {
+            m.append("    open fun me(): Optional<").append(dto).append("> {\n")
+             .append("        val id = currentUser.id() ?: return Optional.empty()\n")
+             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.`as`(id, ")
+             .append(keyType).append("::class.javaObjectType)).map { ").append(mapper).append(".toDTO(it) }\n")
+             .append("    }");
+        } else {
+            m.append("    public Optional<").append(dto).append("> me() {\n")
+             .append("        Object id = currentUser.id();\n")
+             .append("        if (id == null) return Optional.empty();\n")
+             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.as(id, ")
+             .append(keyType).append(".class)).map(row -> ").append(mapper).append(".toDTO(row));\n")
+             .append("    }");
+        }
+        c.addMethod(m.toString());
+    }
+
+    /**
+     * Whether the API signs in through this entity: a @login and a @password,
+     * exposed, one key, and not turned off with {@code config: signin: false}
+     * (an application that signs in its own way - Spring Security's form, say).
+     */
+    public static boolean signsIn(EntitySpec e) {
+        if (!hasMe(e) || !e.hasMeta("expose")) return false;
+        String off = e.config("signin");
+        return off == null || !"false".equalsIgnoreCase(off.trim());
+    }
+
+    /** Whether the service has me(): an entity that signs in (@login, @password) with one key of a type a session holds. */
+    public static boolean hasMe(EntitySpec e) {
+        return loginField(e) != null && e.pkFields().size() == 1 && idType(e.pkFields().get(0).typeName()) != null;
+    }
+
+    /** The field the signed-in user's role is read from: the one marked @role, else one named role. */
+    public static FieldSpec roleField(EntitySpec e) {
+        for (FieldSpec f : e.fields()) {
+            if (f.hasDsl("role")) return f;
+        }
+        for (FieldSpec f : e.fields()) {
+            if ("role".equals(f.name()) && !f.isList()) return f;
+        }
+        return null;
+    }
+
+    /**
+     * The three endpoints a sign-in needs, next to the entity's own:
+     *
+     * <pre>
+     *   POST /api/shop/customer/signin   {"login": "...", "password": "..."}  -> 200 the customer, 401
+     *   POST /api/shop/customer/signout                                       -> 204
+     *   GET  /api/shop/customer/me                                            -> 200 the customer, 401
+     * </pre>
+     *
+     * The session holds the row's key and its role (the @role field, or one
+     * named role); the generated services read them through CurrentUser.
+     * Every project wrote this controller by hand before.
+     */
+    @Rule(value = "spring-signin-control", target = "control", order = 31)
+    void signInControl(EntitySpec e) {
+        if (!signsIn(e)) return;
+        SourceCode c = ctx(e);
+        boolean kt = c.syntax() == Syntax.KOTLIN;
+        String entity = e.getName();
+        String dto = entity + "DTO";
+        String service = e.varName() + "Service";
+        String login = loginField(e);
+        String password = null;
+        for (FieldSpec f : e.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+        }
+        FieldSpec pk = e.pkFields().get(0);
+        FieldSpec role = roleField(e);
+        String body = entity + "SignIn";
+        String req = "jakarta.servlet.http.HttpServletRequest";
+        String session = RT + "SessionCurrentUser";
+        String refused = RT + "NotSignedInException";
+        StringBuilder m = new StringBuilder();
+        if (kt) {
+            String roles = role == null ? ""
+                    : e.isKnownEnum(simple(role.typeName())) ? ", signedIn." + role.name() + "?.name"
+                    : ", signedIn." + role.name() + "?.toString()";
+            m.append("    /** What signin is sent: the ").append(login).append(" and the password. */\n")
+             .append("    class ").append(body).append("(var ").append(login).append(": String? = null, var ")
+             .append(password).append(": String? = null)\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": sign in - 401 when the ").append(login)
+             .append(" or the password is wrong\")\n")
+             .append("    @PostMapping(\"/signin\")\n")
+             .append("    fun signIn(@RequestBody credentials: ").append(body).append(", request: ").append(req).append("): ").append(dto).append(" {\n")
+             .append("        val signedIn = ").append(service).append(".authenticate(credentials.").append(login)
+             .append(", credentials.").append(password).append(")\n")
+             .append("            .orElseThrow { ").append(refused).append("(\"Wrong ").append(login).append(" or password\") }\n")
+             .append("        ").append(session).append(".signIn(request, signedIn.").append(pk.name()).append(roles).append(")\n")
+             .append("        return signedIn\n")
+             .append("    }\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": sign out\")\n")
+             .append("    @PostMapping(\"/signout\")\n")
+             .append("    fun signOut(request: ").append(req).append("): ResponseEntity<Void> {\n")
+             .append("        ").append(session).append(".signOut(request)\n")
+             .append("        return ResponseEntity.noContent().build()\n")
+             .append("    }\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": the one signed in - 401 for a visitor\")\n")
+             .append("    @GetMapping(\"/me\")\n")
+             .append("    fun me(): ").append(dto).append(" =\n")
+             .append("        ").append(service).append(".me().orElseThrow { ").append(refused).append("(\"Sign in first\") }");
+        } else {
+            String roles = role == null ? ""
+                    : e.isKnownEnum(simple(role.typeName()))
+                    ? String.format(", signedIn.%s() == null ? null : signedIn.%s().name()", getterName(role.name()), getterName(role.name()))
+                    : String.format(", signedIn.%s() == null ? null : String.valueOf(signedIn.%s())", getterName(role.name()), getterName(role.name()));
+            m.append("    /** What signin is sent: the ").append(login).append(" and the password. */\n")
+             .append("    public record ").append(body).append("(String ").append(login).append(", String ").append(password).append(") {\n")
+             .append("    }\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": sign in - 401 when the ").append(login)
+             .append(" or the password is wrong\")\n")
+             .append("    @PostMapping(\"/signin\")\n")
+             .append("    public ").append(dto).append(" signIn(@RequestBody ").append(body).append(" credentials, ").append(req).append(" request) {\n")
+             .append("        ").append(dto).append(" signedIn = ").append(service).append(".authenticate(credentials.").append(login)
+             .append("(), credentials.").append(password).append("())\n")
+             .append("                .orElseThrow(() -> new ").append(refused).append("(\"Wrong ").append(login).append(" or password\"));\n")
+             .append("        ").append(session).append(".signIn(request, signedIn.").append(getterName(pk.name())).append("()").append(roles).append(");\n")
+             .append("        return signedIn;\n")
+             .append("    }\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": sign out\")\n")
+             .append("    @PostMapping(\"/signout\")\n")
+             .append("    public ResponseEntity<Void> signOut(").append(req).append(" request) {\n")
+             .append("        ").append(session).append(".signOut(request);\n")
+             .append("        return ResponseEntity.noContent().build();\n")
+             .append("    }\n\n")
+             .append("    @Operation(summary = \"").append(entity).append(": the one signed in - 401 for a visitor\")\n")
+             .append("    @GetMapping(\"/me\")\n")
+             .append("    public ").append(dto).append(" me() {\n")
+             .append("        return ").append(service).append(".me().orElseThrow(() -> new ").append(refused).append("(\"Sign in first\"));\n")
+             .append("    }");
+        }
+        c.addMethod(m.toString());
     }
 
     /** The @login field's name when the entity also has exactly one @password, else null. */

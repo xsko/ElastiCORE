@@ -238,6 +238,7 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
         mocks.add("");
         mocks.add("    @Mock");
         mocks.add("    private lateinit var entityManager: jakarta.persistence.EntityManager");
+        c.var("entityManagerMock", "true");
         c.varLines("mockDeclarationList", mocks);
 
         // Any identifier of the key's type: the matcher is registered by

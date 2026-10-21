@@ -291,6 +291,15 @@ public class DtoBaseRules implements CodeRules {
         return sb.toString();
     }
 
+    /** Whether a declared lower bound (@minsize) asks for one member or more. */
+    private static boolean atLeastOne(String bound) {
+        try {
+            return bound != null && Integer.parseInt(bound.trim()) >= 1;
+        } catch (NumberFormatException notANumber) {
+            return false;
+        }
+    }
+
     /** @Size carries min and max together, separated by " , " as in 2.x. */
     private void size(EntitySpec e, FieldSpec f) {
         int minLength = f.minLength();
@@ -301,6 +310,13 @@ public class DtoBaseRules implements CodeRules {
         String maxSize = f.dslValueAny("maxsize");
         String[] minBound = minSize == null ? null : Bound.split(minSize);
         String[] maxBound = maxSize == null ? null : Bound.split(maxSize);
+        // A collection that must hold a member is required as well: @Size lets a missing list
+        // through, and the request then reached the entity's invariant (422) instead of 400.
+        if (!ctx(e).compatible() && f.isList() && !f.required() && minBound != null && atLeastOne(minBound[0])) {
+            ctx(e).field(f).ensure(minBound[1] == null
+                    ? AnnoCode.of(VALIDATION, "NotNull")
+                    : AnnoCode.raw(String.format(VALIDATION, "NotNull"), "@NotNull(message=%s)", RuleText.quote(minBound[1])));
+        }
         // Clean output only: the compatible one keeps 2.x's reading of the DSL.
         if (!ctx(e).compatible() && ((minBound != null && minBound[1] != null) || maxBound != null)) {
             StringBuilder sb = new StringBuilder();

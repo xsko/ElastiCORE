@@ -37,7 +37,7 @@ class ShopFlowTest {
     }
 
     private MockHttpSession signIn(String login, String password) throws Exception {
-        MvcResult r = mvc.perform(json(post("/api/petstore/account/signin"),
+        MvcResult r = mvc.perform(json(post("/api/petstore/customer/signin"),
                         "{\"login\":\"" + login + "\",\"password\":\"" + password + "\"}"))
                 .andExpect(status().isOk()).andReturn();
         return (MockHttpSession) r.getRequest().getSession(false);
@@ -88,7 +88,7 @@ class ShopFlowTest {
 
     @Test
     void aWrongPasswordIsRefused() throws Exception {
-        mvc.perform(json(post("/api/petstore/account/signin"), "{\"login\":\"user\",\"password\":\"nope\"}"))
+        mvc.perform(json(post("/api/petstore/customer/signin"), "{\"login\":\"user\",\"password\":\"nope\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -131,12 +131,17 @@ class ShopFlowTest {
         mvc.perform(json(post("/api/petstore/purchaseOrder"),
                         "{\"lines\":[{\"itemId\":1000,\"quantity\":0}]," + CARD + "}").session(user))
                 .andExpect(status().isBadRequest());
+        // No lines at all is the same empty cart: 400, not the entity's 422.
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{" + CARD + "}").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("lines"));
+        // An item that does not exist: 404, said by a code a program can branch on.
         mvc.perform(json(post("/api/petstore/purchaseOrder"),
                         "{\"lines\":[{\"itemId\":99999,\"quantity\":1}]," + CARD + "}").session(user))
-                .andExpect(status().isUnprocessableContent())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("reference.OrderLine.item"))
                 // The id as written: a number passed to a message is not grouped (99,999).
-                .andExpect(jsonPath("$.detail").value("OrderLine.item 99999 does not exist"));
+                .andExpect(jsonPath("$.detail").value("Item 99999 does not exist"));
     }
 
     @Test
@@ -155,20 +160,20 @@ class ShopFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SHP"));
 
-        // Shipped: too late to cancel - said by a code a program can branch on.
+        // Shipped: too late to cancel - 409, the order's state conflicts - said by a code a program can branch on.
         mvc.perform(post("/api/petstore/purchaseOrder/" + id + "/cancel").session(user))
-                .andExpect(status().isUnprocessableContent())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("state.PurchaseOrder.status.cancel"))
                 .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"));
 
         // And in the caller's language, from i18n/petstore-messages_ko.properties.
         mvc.perform(post("/api/petstore/purchaseOrder/" + id + "/cancel").session(user).header("Accept-Language", "ko"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.title").value("처리할 수 없는 요청"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("지금 상태에서는 할 수 없는 요청"))
                 .andExpect(jsonPath("$.detail").value("주문 상태가 SHIPPED이면 취소할 수 없습니다 (가능한 상태: [PLACED])"));
     }
 
-    /** states: delete - an order is deleted only once cancelled; a shipped one stays (422). */
+    /** states: delete - an order is deleted only once cancelled; a shipped one stays (409). */
     @Test
     void onlyACancelledOrderIsDeleted() throws Exception {
         MockHttpSession user = signIn("user", "user");
@@ -176,7 +181,7 @@ class ShopFlowTest {
         String shipped = placeOrder(user, 1004);
         mvc.perform(post("/api/petstore/purchaseOrder/" + shipped + "/ship").session(admin)).andExpect(status().isOk());
         mvc.perform(delete("/api/petstore/purchaseOrder/" + shipped).session(admin))
-                .andExpect(status().isUnprocessableContent())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("state.PurchaseOrder.status.delete"))
                 .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"));
         mvc.perform(get("/api/petstore/purchaseOrder/" + shipped).session(admin)).andExpect(status().isOk());
@@ -231,14 +236,14 @@ class ShopFlowTest {
     @Test
     void aNewCustomerSignsUpAsAUserAndThePasswordIsNeverShown() throws Exception {
         MockHttpSession session = signUp("luke");
-        mvc.perform(get("/api/petstore/account/me").session(session))
+        mvc.perform(get("/api/petstore/customer/me").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.login").value("luke"))
                 .andExpect(jsonPath("$.role").value("U"))
                 .andExpect(jsonPath("$.password").doesNotExist());
         signIn("luke", "force-1234");
 
-        Long id = ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/petstore/account/me").session(session))
+        Long id = ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/petstore/customer/me").session(session))
                 .andReturn().getResponse().getContentAsString(), "$.customerId")).longValue();
         mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + id + ",\"telephone\":\"+82 10 1234 5678\",\"role\":\"A\"}").session(session))
                 .andExpect(status().isOk())

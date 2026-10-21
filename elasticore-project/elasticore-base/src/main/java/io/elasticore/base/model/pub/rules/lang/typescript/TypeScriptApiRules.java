@@ -172,6 +172,31 @@ public class TypeScriptApiRules implements CodeRules {
                         String.format("The %s command: %s decides, and answers with what it became.", cmd.name(), e.getName()));
             }
         }
+
+        // Signing in, as the controller serves it where the DSL marks @login and @password.
+        if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) {
+            String login = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.loginField(e);
+            String password = "password";
+            for (FieldSpec f : e.fields()) {
+                if (f.hasDsl("password")) password = f.name();
+            }
+            method(c, "signIn", syntax.parameter("string", login) + ", " + syntax.parameter("string", password), dto,
+                    String.format("request<%s>('POST', BASE + '/signin', { %s, %s })", dto, login, password),
+                    "Signs in: the session cookie is set and the " + e.getName() + " answered; ApiError 401 when the "
+                            + login + " or the password is wrong.");
+            method(c, "signOut", "", "void", "request<void>('POST', BASE + '/signout')",
+                    "Signs out: the session ends.");
+            c.varLine("methodList", "/** The %s signed in now, or null for a visitor. */", e.getName())
+             .varLine("methodList", "export async function me(): Promise<%s | null> {", dto)
+             .varLine("methodList", "    try {")
+             .varLine("methodList", "        return await request<%s>('GET', BASE + '/me');", dto)
+             .varLine("methodList", "    } catch (e) {")
+             .varLine("methodList", "        if (e instanceof ApiError && e.status === 401) return null;")
+             .varLine("methodList", "        throw e;")
+             .varLine("methodList", "    }")
+             .varLine("methodList", "}")
+             .varLine("methodList", "");
+        }
     }
 
     /**
@@ -258,6 +283,7 @@ public class TypeScriptApiRules implements CodeRules {
         runtime.add("requestOrNull");
         runtime.add("seg");
         if (paged) runtime.add("Page");
+        if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) runtime.add("ApiError");
         sb.append(String.format("import { %s } from './apiSupport';%n",
                 String.join(", ", runtime)));
 

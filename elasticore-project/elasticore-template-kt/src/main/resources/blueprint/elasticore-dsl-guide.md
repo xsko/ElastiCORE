@@ -304,7 +304,7 @@ entity:
 ```
 
 - **화살표가 나가지 않는 상태는 끝(최종) 상태**입니다. 위 예에서 `SHIPPED` 와 `CANCELLED` 에서는
-  어떤 명령도 받지 않습니다. 예를 들어 배송된 주문에 `cancel` 을 보내면 422:
+  어떤 명령도 받지 않습니다. 예를 들어 배송된 주문에 `cancel` 을 보내면 409 (지금 상태와 충돌):
   `PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]` (Kotlin: `... it must be PLACED`)
 - SHIPPED 다음 단계가 필요하면 enum 에 상태를 더하고 명령 한 줄을 더합니다:
 
@@ -345,7 +345,7 @@ entity:
 | 생성물 | 내용 |
 |---|---|
 | `private OrderStatus status = OrderStatus.PLACED` | 시작 상태. `initial` 이 없으면 새 행의 상태는 비어 있고(null), 어떤 명령도 통과하지 못합니다 |
-| `PurchaseOrderBase.ship()` | 지금 상태 확인 -> 이동 -> `raiseShipped()` (도착 상태와 같은 이름의 `@event` 가 있을 때). 시작 상태가 아니면 **422** |
+| `PurchaseOrderBase.ship()` | 지금 상태 확인 -> 이동 -> `raiseShipped()` (도착 상태와 같은 이름의 `@event` 가 있을 때). 시작 상태가 아니면 **409** |
 | `PurchaseOrderBase.canShip()` | 지금 이 명령을 할 수 있는지 (`status == PLACED`) |
 | `commands:` 항목, 엔드포인트, 유스케이스, 서비스 | `commands:` 와 같음 (`POST /{id}/ship`) |
 | TypeScript `PurchaseOrderApi.canShip(dto)` | 화면에서 "배송" 버튼을 보일지 정할 때 |
@@ -421,7 +421,7 @@ public void cancel() {
 }
 ```
 
-- **모두 아니면 아무것도**: 하나라도 시작 상태가 아니면 422 를 던지고 **어느 필드도 바뀌지 않습니다.**
+- **모두 아니면 아무것도**: 하나라도 시작 상태가 아니면 거부하고(409) **어느 필드도 바뀌지 않습니다.**
   예) 배송비를 안 낸(`DUE`) 배송을 취소하면 `Shipment cannot cancel when fee is DUE; it must be [PAID]`,
   `status` 는 `READY` 그대로.
 - TypeScript `ShipmentApi.canCancel(dto)` 도 두 조건을 모두 봅니다.
@@ -452,14 +452,14 @@ public void cancel() {
 | 생성물 | 내용 |
 |---|---|
 | `PurchaseOrderBase.canDelete()` | 지금 지울 수 있는지 (`status == CANCELLED`) |
-| `PurchaseOrderBase.checkDeletable()` | 다른 상태면 **422** (`state.PurchaseOrder.status.delete`), 행은 그대로. JPA `@PreRemove` 로 불리므로 id 로 삭제·조건 삭제·cascade 등 **모든 삭제 경로**에 걸림 |
+| `PurchaseOrderBase.checkDeletable()` | 다른 상태면 **409** (`state.PurchaseOrder.status.delete`), 행은 그대로. JPA `@PreRemove` 로 불리므로 id 로 삭제·조건 삭제·cascade 등 **모든 삭제 경로**에 걸림 |
 | TypeScript `canDelete(dto)` | 삭제 버튼 표시용, 같은 조건 |
 
 Pet Store 에서 (`ShopFlowTest.onlyACancelledOrderIsDeleted`):
 
 ```http
 DELETE /api/petstore/purchaseOrder/{배송된 주문}
-HTTP/1.1 422
+HTTP/1.1 409
 { "code": "state.PurchaseOrder.status.delete",
   "detail": "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]" }
 ```

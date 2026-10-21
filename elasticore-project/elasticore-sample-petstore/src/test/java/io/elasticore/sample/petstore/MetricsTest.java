@@ -127,7 +127,7 @@ class MetricsTest {
     }
 
     private MockHttpSession signIn(String login, String password) throws Exception {
-        MvcResult r = mvc.perform(post("/api/petstore/account/signin").contentType(MediaType.APPLICATION_JSON)
+        MvcResult r = mvc.perform(post("/api/petstore/customer/signin").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"login\":\"" + login + "\",\"password\":\"" + password + "\"}"))
                 .andExpect(status().isOk()).andReturn();
         return (MockHttpSession) r.getRequest().getSession(false);

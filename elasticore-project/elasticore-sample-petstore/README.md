@@ -32,13 +32,13 @@
 | 카드번호는 응답에 없다, 주소 필수값은 400 | 값 객체의 `@writeonly`, `!` |
 | 집 주소·카드는 필수 | `homeAddress: Address! @Embedded`, `creditCard: CreditCard! @Embedded` |
 
-## 손으로 쓴 것 (Java 7개 파일, 빈 줄 빼고 256줄)
+## 손으로 쓴 것 (Java 7개 파일, 빈 줄 빼고 231줄)
 
 | 파일 | 내용 |
 |---|---|
 | `domain/model/PurchaseOrder.java` | VAT·할인 정책(설정 값), 기본 배송지 = 집 주소 |
 | `application/PurchaseOrderService.java` | 정책 값 주입, 처음 저장될 때 `place()` |
-| `adapter/in/web/shop/AccountController.java` | 가입·로그인·로그아웃(세션 시작·종료) |
+| `adapter/in/web/shop/AccountController.java` | 가입하고 바로 로그인 (로그인·로그아웃·me 는 `@login` + `@password` 로 생성) |
 | `DemoAccounts.java`, `PetstoreApplication.java` | 데모 계정, 빈 2개 |
 
 나머지 - 엔티티·DTO·매퍼·리포지터리·서비스·컨트롤러·권한 검사·상태 전이·가격 계산·TS 클라이언트 - 는 생성됩니다.

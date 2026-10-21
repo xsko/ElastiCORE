@@ -342,6 +342,7 @@ public final class SpecFactory {
             spec.addStateMachine(machine.getKey(), machine.getValue());
         }
         registerDeriving(spec, model);
+        registerReferencing(spec, model);
         registerReadLevels(spec, model);
         if (entity.getCommands() != null) {
             for (java.util.Map.Entry<String, io.elasticore.base.model.core.Items<Field>> cmd
@@ -1649,6 +1650,54 @@ public final class SpecFactory {
                 }
             }
         }
+    }
+
+    /**
+     * Tells a spec which entities name rows of other aggregates by identity
+     * (an @idof field, written by the id-reference rewrite) - directly, or
+     * through a collection of members of their own aggregate that do.
+     */
+    static void registerReferencing(EntitySpec spec, ECoreModel model) {
+        if (model.getEntityModels() == null) return;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        java.util.List<Entity> entities = new java.util.ArrayList<Entity>();
+        for (int i = 0; i < all.size(); i++) entities.add(all.get(i));
+        java.util.Set<String> referencing = new java.util.HashSet<String>();
+        for (Entity candidate : entities) {
+            for (Field f : fieldsOf(candidate)) {
+                if (f.hasAnnotation("idof")) {
+                    referencing.add(candidate.getIdentity().getName());
+                    break;
+                }
+            }
+        }
+        // A root whose lines name items checks them too: until nothing changes.
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (Entity candidate : entities) {
+                String name = candidate.getIdentity().getName();
+                if (referencing.contains(name)) continue;
+                String root = aggregateOfModel(name, model);
+                if (root == null) root = name;
+                for (Field f : fieldsOf(candidate)) {
+                    if (f.getTypeInfo() == null || !f.getTypeInfo().isList()) continue;
+                    String member = f.getTypeInfo().getCoreItemType();
+                    if (member == null || !referencing.contains(member)) continue;
+                    if (!root.equals(aggregateOfModel(member, model)) && !f.hasAnnotation("cascade")) continue;
+                    referencing.add(name);
+                    grew = true;
+                    break;
+                }
+            }
+        }
+        for (String name : referencing) spec.knownReferencing(name);
+    }
+
+    /** Every field of an entity, inherited and derived ones included. */
+    private static java.util.Collection<Field> fieldsOf(Entity entity) {
+        io.elasticore.base.model.core.ListMap<String, Field> fields = entity.getAllFieldListMap();
+        return fields == null ? java.util.Collections.<Field>emptyList() : fields.values();
     }
 
     /** An annotation's key=value pairs as written, joined: "read=public, ship=admin"; null when it has none. */

@@ -169,6 +169,7 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
         c.varLine("mockDeclarationList", "")
          .varLine("mockDeclarationList", "    @Mock")
          .varLine("mockDeclarationList", "    private lateinit var entityManager: jakarta.persistence.EntityManager");
+        c.var("entityManagerMock", "true");
         String setUp = c.varValue("mockSetUp");
         c.var("mockSetUp", "%s\n        org.mockito.Mockito.lenient().`when`(helper.entityManager).thenReturn(entityManager)",
                 setUp == null ? "" : setUp);
@@ -247,5 +248,130 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
 
     private String relationOf(FieldSpec f) {
         return f.hasDsl("onetoone") ? "OneToOne" : "ManyToOne";
+    }
+
+    // ---- the rows a reference names must exist -------------------------------
+
+    /**
+     * A reference held by its identity (loan.memberId, line.itemId) can name a
+     * row that is not there. The insert then failed on the foreign key - a 409
+     * that says "conflicts with stored data" - and every project wrote the
+     * lookup by hand to answer 404. The entity checks it instead, and its
+     * members' references with it:
+     *
+     * <pre>
+     * public void requireReferences(Lookup lookup) {
+     *     if (this.memberId != null &amp;&amp; lookup.find(Member.class, this.memberId) == null)
+     *         throw new InvariantViolationException("reference.Loan.member", "Member " + ... + " does not exist", ...);
+     * }
+     * </pre>
+     *
+     * The code reference.&lt;Entity&gt;.&lt;relation&gt; is the one @snapshot refuses
+     * a missing source with; the generated API answers both with 404.
+     */
+    @Rule(value = "ddd-reference-exists", target = "entity", order = 97, phase = Rule.Phase.TAIL)
+    void requireReferences(EntitySpec e) {
+        if (e.hasMeta("embeddable") || !e.references(e.getName())) return;
+        SourceCode c = ctx(e);
+        boolean kt = c.syntax() == Syntax.KOTLIN;
+        java.util.List<String> body = new java.util.ArrayList<String>();
+        for (FieldSpec id : e.fields()) {
+            String relation = id.dslValue("idof");
+            if (relation == null) continue;
+            FieldSpec rel = field(e, relation);
+            if (rel == null || rel.typeName() == null) continue;
+            String type = rel.typeName().replace("?", "").trim();
+            String code = missingCode(e, relation);
+            recordMissing(e, relation, type);
+            if (kt) {
+                body.add(String.format("if (this.%s != null && lookup.find(%s::class.java, this.%s) == null)", id.name(), type, id.name()));
+                body.add(String.format("    throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s \" + this.%s + \" does not exist\", this.%s.toString())",
+                        code, type, id.name(), id.name()));
+            } else {
+                body.add(String.format("if (this.%s != null && lookup.find(%s.class, this.%s) == null)", id.name(), type, id.name()));
+                body.add(String.format("    throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s \" + this.%s + \" does not exist\", String.valueOf(this.%s));",
+                        code, type, id.name(), id.name()));
+            }
+        }
+        for (FieldSpec f : e.fields()) {
+            if (!f.isList() || !DddCollectionRules.owns(e, f) || !e.references(f.coreItemType())) continue;
+            if (kt) {
+                body.add(String.format("this.%s?.forEach { it.requireReferences(lookup) }", f.name()));
+            } else {
+                body.add(String.format("if (this.%s != null) for (%s member : this.%s) member.requireReferences(lookup);",
+                        f.name(), f.coreItemType(), f.name()));
+            }
+        }
+        if (body.isEmpty()) return;
+
+        c.varLine("fieldList", "")
+         .varLine("fieldList", "/**")
+         .varLine("fieldList", " * Refuses an identity that names no row: each row this one refers to by its")
+         .varLine("fieldList", " * identity must exist (the API answers 404). Called by the service before")
+         .varLine("fieldList", " * each save.")
+         .varLine("fieldList", " */");
+        c.varLine("fieldList", kt ? "fun requireReferences(lookup: %s) {" : "public void requireReferences(%s lookup) {",
+                "io.elasticore.springboot3.domain.Lookup");
+        for (String line : body) c.varLine("fieldList", "    %s", line);
+        c.varLine("fieldList", "}");
+    }
+
+    /**
+     * The service test saves a fixture whose references name ids no mocked
+     * entity manager has: each lookup answers a mock of the class asked for,
+     * so the check passes and a @snapshot reads a row of the right type.
+     * Lenient, because only the tests that save look anything up. After the
+     * ports (15) and the read-back mocks (16), which declare the manager.
+     */
+    @Rule(value = "ddd-reference-exists-test", target = "service_test", order = 17)
+    void referencesExistInTheServiceTest(EntitySpec e) {
+        if (e.hasMeta("embeddable") || !e.references(e.getName())) return;
+        SourceCode c = ctx(e);
+        if (c.syntax() != Syntax.KOTLIN) return;
+        if (!"true".equals(c.varValue("entityManagerMock"))) {
+            c.varLine("mockDeclarationList", "")
+             .varLine("mockDeclarationList", "    @Mock")
+             .varLine("mockDeclarationList", "    private lateinit var entityManager: jakarta.persistence.EntityManager");
+            c.var("entityManagerMock", "true");
+            if ("repository".equals(c.varValue("queryMock"))) {
+                String setUp = c.varValue("mockSetUp");
+                c.var("mockSetUp", "%s\n        org.mockito.Mockito.lenient().`when`(helper.entityManager).thenReturn(entityManager)",
+                        setUp == null ? "" : setUp);
+            }
+        }
+        String setUp = c.varValue("mockSetUp");
+        String stub = "        org.mockito.Mockito.lenient().`when`(entityManager.find(org.mockito.ArgumentMatchers.any<Class<Any>>(),"
+                + " org.mockito.ArgumentMatchers.any<Any>()))\n"
+                + "            .thenAnswer(org.mockito.stubbing.Answer<Any> { call -> org.mockito.Mockito.mock(call.getArgument<Class<Any>>(0)) })";
+        c.var("mockSetUp", "%s", setUp == null || setUp.isEmpty() ? stub : setUp + "\n" + stub);
+    }
+
+    /** The service checks before it derives values and before beforeSave: ahead of anything that reads them. */
+    @Rule(value = "ddd-reference-exists-service", target = "service", order = 35)
+    void requireReferencesBeforeSave(EntitySpec e) {
+        if (e.hasMeta("embeddable") || !e.references(e.getName())) return;
+        SourceCode c = ctx(e);
+        String em = c.varValue("emRef");
+        if (em == null || em.isEmpty()) em = "entityManager";
+        c.varLine("deriveBeforeSave", "%s", c.syntax() == Syntax.KOTLIN
+                ? String.format("entity.requireReferences { type, id -> %s.find(type, id) }", em)
+                : String.format("entity.requireReferences(%s::find);", em));
+    }
+
+    /** The message code of a reference to a row that does not exist: reference.<Entity>.<relation>. */
+    static String missingCode(EntitySpec e, String relation) {
+        return "reference." + e.getName() + "." + relation;
+    }
+
+    /** Records the code with its wording, so the domain's message bundle (and a translation of it) has it. */
+    static void recordMissing(EntitySpec e, String relation, String type) {
+        io.elasticore.base.model.pub.rules.ErrorCatalog.record(missingCode(e, relation), type + " {0} does not exist");
+    }
+
+    private static FieldSpec field(EntitySpec e, String name) {
+        for (FieldSpec f : e.fields()) {
+            if (f.name().equals(name)) return f;
+        }
+        return null;
     }
 }

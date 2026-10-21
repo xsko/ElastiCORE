@@ -215,29 +215,33 @@
 <tr><td>집 주소 필수</td><td><code>homeAddress: Address! @Embedded</code> + Address 의 <code>street1: string(50)!</code> …</td><td>주소 없음 → 400 "homeAddress: …"</td></tr>
 <tr><td>비밀번호는 해시로만, 돌려주지 않음</td><td><code>password: string(255)! @password</code></td><td>응답에 password 없음, DB 에는 PBKDF2 해시</td></tr>
 <tr><td>스스로 관리자가 될 수 없다</td><td><code>role: UserRole @default(UserRole.USER) @access(admin)</code></td><td><code>"role":"A"</code> 로 보내도 <code>U</code></td></tr>
-<tr><td>가입하면 바로 로그인</td><td><b>손으로</b> - <code>AccountController.signUp</code></td><td>가입 응답의 세션으로 <code>/account/me</code> 200</td></tr>
+<tr><td>가입하면 바로 로그인</td><td><b>손으로</b> - <code>AccountController.signUp</code></td><td>가입 응답의 세션으로 <code>/customer/me</code> 200</td></tr>
 </tbody></table>
       <pre class="code" data-lang="yaml" data-src="customer"></pre>
       <div class="two">
         <div><p class="label">생성: 가입·수정 때 역할 보호와 해시</p><pre class="code" data-lang="java" data-src="gen-customer"></pre></div>
-        <div><p class="label">손으로: 가입·로그인 (세션 시작)</p><pre class="code" data-lang="java" data-src="gen-account"></pre></div>
+        <div><p class="label">손으로: 가입하고 바로 로그인 (세션 시작)</p><pre class="code" data-lang="java" data-src="gen-account"></pre></div>
       </div>
       <div class="gap"><b>DSL 로 못 하는 것:</b> 비밀번호 최소 길이·복잡도. 지금은 한 글자 비밀번호도 가입됩니다(확인함).
         <code>@length(min=8, max=255)</code> 를 붙여도 <code>string(255)</code> 의 최대 길이만 생성되고 최소 길이는 <b>조용히 무시</b>됩니다 - 고칠 대상입니다.
         (이 샘플은 원본의 데모 계정 <code>user/user</code> 를 쓰므로 정책을 넣지 않았습니다.)</div>
 
-      <h2 id="signin">4. 로그인·로그아웃 <span class="cov hand">DSL + 손으로</span></h2>
+      <h2 id="signin">4. 로그인·로그아웃 <span class="cov all">DSL 로 전부</span></h2>
       <p class="biz">고객은 로그인 ID 와 비밀번호로 로그인하고, 로그아웃합니다. 화면은 접속할 때 "지금 누구인지" 를 묻습니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
 <tr><td>ID 와 비밀번호가 맞아야</td><td><code>login … @login</code> + <code>password … @password</code> → 생성 <code>authenticate(login, password)</code></td><td>틀린 비밀번호·없는 ID 모두 401 (같은 시간이 걸리게 - 어느 쪽인지 알리지 않음)</td></tr>
-<tr><td>로그인 유지</td><td><b>손으로</b> - <code>/account/signin</code> 이 세션에 고객 ID·역할을 넣음</td><td>200, 이후 요청은 그 고객으로</td></tr>
-<tr><td>로그아웃</td><td><b>손으로</b> - <code>/account/signout</code></td><td>204, 이후 <code>/account/me</code> 401</td></tr>
-<tr><td>지금 누구인가</td><td><b>손으로</b> - <code>/account/me</code></td><td>방문자 401, 고객 200</td></tr>
+<tr><td>로그인 유지</td><td>같은 두 줄 → 생성 <code>POST /customer/signin</code>: 세션에 고객 ID 와 역할(<code>role</code> 필드)을 넣음</td><td>200, 이후 요청은 그 고객으로</td></tr>
+<tr><td>로그아웃</td><td>생성 <code>POST /customer/signout</code></td><td>204, 이후 <code>/customer/me</code> 401</td></tr>
+<tr><td>지금 누구인가</td><td>생성 <code>GET /customer/me</code></td><td>방문자 401, 고객 200</td></tr>
 <tr><td>로그인 안 했으면 방문자</td><td>런타임 <code>SessionCurrentUser</code> (요청 밖에서는 아무도 아님)</td><td>-</td></tr>
 </tbody></table>
-      <pre class="code" data-lang="java" data-src="gen-auth"></pre>
-      <div class="gap"><b>손으로 쓴 이유:</b> DSL 은 "누가 로그인 ID 이고 무엇이 비밀번호인지" 는 말하지만, <b>로그인 API(세션 시작·종료·현재 사용자)</b> 를
-        만들라는 문법이 없습니다. 이 샘플에서 손으로 쓴 유일한 컨트롤러입니다. 개선 후보: <code>env.yml</code> 의 <code>auth: session</code> 한 줄로 생성.</div>
+      <div class="two">
+        <div><p class="label">생성: 비밀번호 확인</p><pre class="code" data-lang="java" data-src="gen-auth"></pre></div>
+        <div><p class="label">생성: 로그인 API (CustomerController)</p><pre class="code" data-lang="java" data-src="gen-signin"></pre></div>
+      </div>
+      <div class="gap"><b>로그인 API 는 생성됩니다:</b> <code>@login</code> 과 <code>@password</code> 가 있고 <code>@expose</code> 된 엔티티의 컨트롤러에
+        <code>signin</code>·<code>signout</code>·<code>me</code> 가 붙습니다. 화면은 생성된 TS 클라이언트의 <code>signIn</code>·<code>signOut</code>·<code>me</code> 를 씁니다.
+        Spring Security 처럼 로그인을 따로 하는 앱은 <code>env.yml</code> 의 <code>config: signin: false</code> 로 끕니다.</div>
 
       <h2 id="profile">5. 내 정보 <span class="cov all">DSL 로 전부</span></h2>
       <p class="biz">고객은 자기 이름·연락처·집 주소·비밀번호를 고칩니다. 관리자는 모든 고객을 보고 역할을 바꿉니다.</p>
@@ -268,7 +272,7 @@
 <tr><td>카드 필수, 카드 번호 필수</td><td><code>creditCard: CreditCard! @Embedded</code>, <code>creditCardNumber: string(30)!</code></td><td>카드 없음·번호 없음 → 400</td></tr>
 <tr><td>카드 번호는 돌려주지 않는다</td><td><code>creditCardNumber … @writeonly</code></td><td>주문 응답·조회에 번호 없음 (종류·만료일만)</td></tr>
 <tr><td>단가 = 주문 당시 가격</td><td><code>unitCost: money(10.2) @snapshot(item.unitCost)</code></td><td><code>"unitCost":0.01</code> 을 보내도 10.00. 나중에 품목 가격이 바뀌어도 그대로</td></tr>
-<tr><td>없는 품목은 주문 불가</td><td>(<code>@snapshot</code> 이 확인)</td><td>422 "OrderLine.item 99999 does not exist"</td></tr>
+<tr><td>없는 품목은 주문 불가</td><td>(생성된 참조 확인 <code>requireReferences</code>)</td><td>404 "Item 99999 does not exist"</td></tr>
 <tr><td>소계·합계</td><td><code>subTotal … @compute(unitCost * quantity)</code><br><code>totalWithoutVat … @compute(sum(lines.subTotal))</code></td><td>2 × 10.00 + 10.00 = 30.00</td></tr>
 <tr><td>상태·금액은 요청으로 못 정함</td><td><code>states:</code>, <code>@behavior</code>, <code>@compute</code> → 읽기 전용</td><td><code>"status":"SHP","total":1</code> 을 보내도 PLC · 30.94</td></tr>
 <tr><td>새 주문은 접수 상태</td><td><code>states: status: initial: PLACED</code></td><td>PLC</td></tr>
@@ -288,7 +292,7 @@
         <li>요청 형식 <span class="tag gen">생성</span><em>DTO 검증: 줄 1개 이상, 수량 ≥ 1, 카드 필수 → 실패면 400</em></li>
         <li>누가 <span class="tag gen">생성</span><em><code>create=user</code>: 로그인 안 했으면 401, 주인 = 로그인한 고객</em></li>
         <li>DTO → 엔티티 <span class="tag gen">생성</span><em>품목·수량·주소·카드만 옮김 (가격·상태·합계는 읽기 전용)</em></li>
-        <li>파생 값 <span class="tag gen">생성</span><em><code>derive()</code>: 줄 단가 스냅샷 → 소계 → 합계 (없는 품목 422)</em></li>
+        <li>파생 값 <span class="tag gen">생성</span><em><code>requireReferences()</code>: 없는 품목 404, <code>derive()</code>: 줄 단가 스냅샷 → 소계 → 합계</em></li>
         <li>가격 정책 <span class="tag hand">손으로</span><em><code>place()</code>: 주문일, 기본 배송지, VAT, 할인, 반올림, <code>raisePlaced()</code></em></li>
         <li>불변식 <span class="tag gen">생성</span><em>저장 직전 다시 확인: 줄이 없으면 "the cart is empty"</em></li>
         <li>저장·이벤트 <span class="tag gen">생성</span><em>상태 PLACED 로 저장, 커밋 때 접수 이벤트</em></li>
@@ -313,7 +317,7 @@
       <p class="biz">고객은 자기 주문을 <b>배송 전(접수 상태)</b> 에만 취소할 수 있습니다. 화면은 취소할 수 있을 때만 버튼을 보입니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
 <tr><td>자기 주문만</td><td><code>cancel=owner</code></td><td>남의 주문 → 404</td></tr>
-<tr><td>접수 상태에서만</td><td><code>states: status: cancel: PLACED -> CANCELLED</code></td><td>두 번째 취소·배송 후 취소 → 422 "cannot cancel when status is SHIPPED; it must be [PLACED]"</td></tr>
+<tr><td>접수 상태에서만</td><td><code>states: status: cancel: PLACED -> CANCELLED</code></td><td>두 번째 취소·배송 후 취소 → 409 "cannot cancel when status is SHIPPED; it must be [PLACED]"</td></tr>
 <tr><td>취소되면 알린다</td><td><code>@event(… Cancelled)</code></td><td><code>PurchaseOrderCancelledEvent</code></td></tr>
 <tr><td>버튼은 할 수 있을 때만</td><td>(생성) TypeScript <code>Orders.canCancel(order)</code></td><td>서버의 <code>canCancel()</code> 과 같은 판단</td></tr>
 </tbody></table>
@@ -324,7 +328,7 @@
       <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자뿐입니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
 <tr><td>관리자만</td><td><code>@access</code> 에 ship 을 적지 않음</td><td>고객 → 403 "ship PurchaseOrder is for the administrator"</td></tr>
-<tr><td>접수 상태에서만</td><td><code>states: status: ship: PLACED -> SHIPPED</code></td><td>취소된 주문 배송 → 422</td></tr>
+<tr><td>접수 상태에서만</td><td><code>states: status: ship: PLACED -> SHIPPED</code></td><td>취소된 주문 배송 → 409</td></tr>
 <tr><td>배송되면 알린다</td><td><code>@event(… Shipped)</code></td><td><code>PurchaseOrderShippedEvent</code></td></tr>
 <tr><td>버튼은 할 수 있을 때만</td><td>(생성) TypeScript <code>Orders.canShip(order)</code></td><td>-</td></tr>
 <tr><td>주문은 고칠 수 없다</td><td><code>@editable</code> 이 아닌 루트 → 수정 API 없음</td><td>PUT → 405</td></tr>
@@ -377,10 +381,10 @@
           <tr><td>400</td><td>요청이 틀림 - DSL 의 검증, 잘못된 검색, 필수 값 누락</td><td>"lines: the cart is empty", "No property 'nope'…", "A required value is missing."</td></tr>
           <tr><td>401</td><td>로그인 필요</td><td>"Sign in to create PurchaseOrder"</td></tr>
           <tr><td>403</td><td>이 사람에게 허락되지 않음</td><td>"ship PurchaseOrder is for the administrator"</td></tr>
-          <tr><td>404</td><td>없음 - 또는 남의 것</td><td>남의 주문·고객 정보</td></tr>
+          <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음</td><td>남의 주문·고객 정보, "Item 99999 does not exist"</td></tr>
           <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT</td></tr>
-          <tr><td>409</td><td>저장된 데이터와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제</td></tr>
-          <tr><td>422</td><td>도메인이 거절</td><td>"cannot cancel when status is SHIPPED…", "OrderLine.item 99999 does not exist"</td></tr>
+          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when status is SHIPPED…"</td></tr>
+          <tr><td>422</td><td>도메인의 다른 규칙이 거절 (불변식)</td><td>-</td></tr>
         </tbody>
       </table>
 
@@ -390,7 +394,7 @@
         <tbody>
           <tr><td><code>domain/model/PurchaseOrder.java</code></td><td>가격 정책 <code>place()</code>: VAT·할인·반올림, 기본 배송지, 주문일</td><td>설정 값을 쓰는 계산·기본값 규칙 문법 없음</td></tr>
           <tr><td><code>application/PurchaseOrderService.java</code></td><td>요율을 설정에서 읽고, 처음 저장될 때 <code>place()</code></td><td>위와 같음</td></tr>
-          <tr><td><code>adapter/in/web/shop/AccountController.java</code></td><td>가입 후 로그인, 로그인, 로그아웃, 현재 사용자</td><td>로그인 API 생성 문법 없음</td></tr>
+          <tr><td><code>adapter/in/web/shop/AccountController.java</code></td><td>가입하고 바로 로그인</td><td>가입과 로그인을 한 요청으로 묶는 것은 화면의 선택 (로그인·로그아웃·me 는 생성)</td></tr>
           <tr><td><code>DemoAccounts.java</code></td><td>데모 계정 admin/admin, user/user</td><td>기준·데모 데이터 문법 없음 (<code>data.sql</code> 도 손으로)</td></tr>
           <tr><td><code>OrderLine.java</code>, <code>CustomerService.java</code>, <code>PetstoreApplication.java</code></td><td>빈 클래스, <code>Clock</code> 빈</td><td>-</td></tr>
           <tr><td><code>web/src/*.ts</code> (540줄)</td><td>화면</td><td>화면은 DSL 의 대상이 아님. 생성된 TS 클라이언트(타입·API·검증·라벨·<code>canX</code>)를 씀</td></tr>
@@ -398,7 +402,7 @@
       </table>
 
       <h2 id="review">검토: 이 가게의 업무를 DSL 로 다 표현할 수 있나</h2>
-      <p>위 업무별 표의 규칙 <b>56개</b>(표의 행) 중 DSL 로 쓴 것 <b>47개</b>, 손으로 쓴 것 <b>7개</b>,
+      <p>위 업무별 표의 규칙 <b>56개</b>(표의 행) 중 DSL 로 쓴 것 <b>50개</b>, 손으로 쓴 것 <b>4개</b>,
         DSL 에 쓸 곳이 없어 DB 제약으로만 지켜지는 것 <b>1개</b>, 화면이 정하는 것 <b>1개</b>입니다.
         표에 행으로 넣지 않은 빈 곳 - 비밀번호 최소 길이, 비밀번호 변경 때 현재 비밀번호 확인, 결제 승인·환불·재고(모델에 없음),
         장바구니(브라우저에만, 의도) - 은 각 업무의 상자에 적었습니다. DSL 에 넣으려면 필요한 것:</p>
@@ -409,9 +413,9 @@
           <tr><td>2</td><td>업무 용어 - 주문 = 구매·order</td><td><b>완료</b> - <a href="#metrics"><code>@terms</code></a></td><td>Ossie <code>ai_context.synonyms</code></td></tr>
           <tr><td>3</td><td>가격 정책 - 설정 값으로 계산</td><td>손으로 <code>place()</code></td><td><code>policy:</code> - <code>vat: total * config(vat-rate) / 100</code> 같은 계산</td></tr>
           <tr><td>4</td><td>기본값 규칙 - 배송지 = 집 주소, 주문일 = 오늘</td><td>손으로</td><td><code>@default(customer.homeAddress)</code>, <code>@default(today)</code></td></tr>
-          <tr><td>5</td><td>로그인 API</td><td>손으로 컨트롤러</td><td><code>auth: session</code> 한 줄로 가입·로그인·로그아웃·me 생성</td></tr>
+          <tr><td>5</td><td>로그인 API</td><td><b>완료</b> - <a href="#signin"><code>@login</code> + <code>@password</code></a></td><td>signin·signout·me 와 TS 클라이언트 생성. 가입 후 자동 로그인은 손으로</td></tr>
           <tr><td>6</td><td>비밀번호 최소 길이</td><td><code>@length(min=8)</code> 이 조용히 무시됨 (버그)</td><td>최소 길이 생성 + <code>@password(min=8)</code></td></tr>
-          <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 422 와 업무 문구</td></tr>
+          <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 409 와 업무 문구</td></tr>
           <tr><td>8</td><td>기준·데모 데이터</td><td><code>data.sql</code>, <code>DemoAccounts</code></td><td><code>data:</code> 블록 (가입과 같은 규칙 - 해시 등 - 을 거쳐 넣음)</td></tr>
           <tr><td>9</td><td>기본 정렬</td><td>화면이 지정</td><td><code>@expose(20, sort=orderDate desc)</code></td></tr>
         </tbody>
@@ -447,7 +451,7 @@
       description: string(3000)!
 
   Product:
-    meta: entity @root @editable @expose(20) @access(read=public) -- 상품 (Angelfish, Bulldog ...)
+    meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
     fields:
       productId:   long @id @sequence
       name:        string(30)! @search(like)
@@ -521,15 +525,6 @@ public CustomerDTO signUp(@Valid @RequestBody CustomerDTO customer, HttpServletR
     CustomerDTO created = customers.save(customer);
     SessionCurrentUser.signIn(request, created.getCustomerId(), created.getRole().name());
     return created;
-}
-
-public ResponseEntity<CustomerDTO> signIn(@RequestBody Credentials credentials, HttpServletRequest request) {
-    return customers.authenticate(credentials.login(), credentials.password())
-            .map(customer -> {
-                SessionCurrentUser.signIn(request, customer.getCustomerId(), customer.getRole().name());
-                return ResponseEntity.ok(customer);
-            })
-            .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
 }</script>
   <script type="text/plain" id="src-gen-auth">// CustomerCoreService (생성) - @login + @password
 /** The Customer this login and password belong to, or empty. */
@@ -542,6 +537,22 @@ public Optional<CustomerDTO> authenticate(String login, String password) {
     }
     if (!passwordHasher.matches(password, found.get(0).getPassword())) return Optional.empty();
     return Optional.of(PetstoreMapper.toDTO(found.get(0)));
+}</script>
+  <script type="text/plain" id="src-gen-signin">// CustomerController (생성) - @login + @password + @expose
+public CustomerDTO signIn(@RequestBody CustomerSignIn credentials, jakarta.servlet.http.HttpServletRequest request) {
+    CustomerDTO signedIn = customerService.authenticate(credentials.login(), credentials.password())
+            .orElseThrow(() -> new io.elasticore.springboot3.security.NotSignedInException("Wrong login or password"));
+    io.elasticore.springboot3.security.SessionCurrentUser.signIn(request, signedIn.getCustomerId(), signedIn.getRole() == null ? null : signedIn.getRole().name());
+    return signedIn;
+}
+
+public ResponseEntity<Void> signOut(jakarta.servlet.http.HttpServletRequest request) {
+    io.elasticore.springboot3.security.SessionCurrentUser.signOut(request);
+    return ResponseEntity.noContent().build();
+}
+
+public CustomerDTO me() {
+    return customerService.me().orElseThrow(() -> new io.elasticore.springboot3.security.NotSignedInException("Sign in first"));
 }</script>
   <script type="text/plain" id="src-order">  PurchaseOrder:
     # 주문은 로그인한 고객이 자기 것으로, 조회·취소는 본인, 배송·삭제는 관리자
@@ -566,7 +577,8 @@ public Optional<CustomerDTO> authenticate(String login, String password) {
       status:
         initial: PLACED
         ship:    PLACED -> SHIPPED
-        cancel:  PLACED -> CANCELLED</script>
+        cancel:  PLACED -> CANCELLED
+        delete:  CANCELLED      # 지울 수 있는 상태: 취소된 주문만</script>
   <script type="text/plain" id="src-line">  OrderLine:
     meta: entity @behavior -- 주문 줄
     fields:
@@ -591,7 +603,7 @@ public void derive(io.elasticore.springboot3.domain.Lookup lookup) {
     if (this.unitCost == null && this.itemId != null) {
         Item source = (Item) lookup.find(Item.class, this.itemId);
         if (source == null)
-            throw new io.elasticore.springboot3.validation.InvariantViolationException("OrderLine.item " + this.itemId + " does not exist");
+            throw new io.elasticore.springboot3.validation.InvariantViolationException("reference.OrderLine.item", "Item " + this.itemId + " does not exist", String.valueOf(this.itemId));
         this.unitCost = source.getUnitCost();
     }
     this.subTotal = (this.unitCost == null || this.quantity == null) ? null : this.unitCost.times(this.quantity);
@@ -680,8 +692,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
             return;
         }
     }
-    throw new io.elasticore.springboot3.validation.InvariantViolationException(
-            "PurchaseOrder cannot " + command + " when status is " + this.status + "; it must be " + java.util.Arrays.toString(from));
+    throw new io.elasticore.springboot3.validation.InvariantViolationException("state.PurchaseOrder.status." + command,
+            "PurchaseOrder cannot " + command + " when status is " + this.status + "; it must be " + java.util.Arrays.toString(from),
+            String.valueOf(this.status), java.util.Arrays.toString(from));
 }</script>
   <script type="text/plain" id="src-ossie">  - name: PurchaseOrder
     source: ps_purchase_order
@@ -834,7 +847,7 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         datatype: Integer
     custom_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"PurchaseOrder\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"cancel\": \"owner\", \"create\": \"user\", \"read\": \"owner\"}, \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", \"cancel\": \"PLACED -> CANCELLED\"}}, \"events\": \"Placed(total), Shipped, Cancelled\", \"omitted_columns\": [\"credit_card_number\"]}"</script>
+        data: "{\"entity\": \"PurchaseOrder\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"cancel\": \"owner\", \"create\": \"user\", \"read\": \"owner\"}, \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", \"cancel\": \"PLACED -> CANCELLED\", \"delete\": \"CANCELLED\"}}, \"events\": \"Placed(total), Shipped, Cancelled\", \"omitted_columns\": [\"credit_card_number\"]}"</script>
   <script type="text/plain" id="src-metrics"># The shop's measures - what the business means by revenue, an order, the average order.
 # Exported to the Apache Ossie semantic model (blueprint/semantic_model.yml) as metrics,
 # so a BI or AI tool asks for "revenue" and gets this definition, not its own guess.
@@ -914,7 +927,7 @@ metrics:
       description: string(3000)!
 
   Product:
-    meta: entity @root @editable @expose(20) @access(read=public) -- 상품 (Angelfish, Bulldog ...)
+    meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
     fields:
       productId:   long @id @sequence
       name:        string(30)! @search(like)
@@ -1001,6 +1014,7 @@ metrics:
         initial: PLACED
         ship:    PLACED -> SHIPPED
         cancel:  PLACED -> CANCELLED
+        delete:  CANCELLED      # 지울 수 있는 상태: 취소된 주문만
 
   OrderLine:
     meta: entity @behavior -- 주문 줄

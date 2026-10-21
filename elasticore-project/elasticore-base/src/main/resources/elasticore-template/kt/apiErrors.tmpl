@@ -25,10 +25,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
  * Each refusal the generated services make gets the status that says which
  * one it was, as an RFC 9457 problem body:
  *
- *   404  the row is not there
- *   409  a create named a taken identifier, or the version sent is stale
+ *   404  the row is not there, or a row the request refers to is not
+ *   409  a create named a taken identifier, the version sent is stale, or
+ *        the row's state does not allow the step (ship a cancelled order)
  *   400  a value breaks its constraint
- *   422  the aggregate refuses to be put in that state (an invariant)
+ *   422  the aggregate refuses for another of its rules (an invariant)
  *
  * Scoped to the controllers in this package.
  *
@@ -158,10 +159,20 @@ class ${className}(validator: ObjectProvider<jakarta.validation.Validator>,
      */
     @ExceptionHandler(InvariantViolationException::class)
     fun refused(ex: InvariantViolationException): ProblemDetail {
-        val body = problem(HttpStatus.UNPROCESSABLE_ENTITY, "refused", "Refused by the domain",
-            messages.text(ex.code, ex.message, *ex.args))
+        val code = ex.code
+        val detail = messages.text(code, ex.message, *ex.args)
+        val body = when {
+            // A step the row's state does not allow (ship a cancelled order): it conflicts
+            // with the row as it is now (RFC 9110, 409).
+            code != null && code.startsWith("state.") ->
+                problem(HttpStatus.CONFLICT, "state", "Not allowed in this state", detail)
+            // A row the request refers to is not there (a line's item that does not exist).
+            code != null && code.startsWith("reference.") ->
+                problem(HttpStatus.NOT_FOUND, "not-found", "Not found", detail)
+            else -> problem(HttpStatus.UNPROCESSABLE_ENTITY, "refused", "Refused by the domain", detail)
+        }
         // The rule that refused: state.Order.status.ship, invariant.Order.total-ge-0 ...
-        if (ex.code != null) body.setProperty("code", ex.code)
+        if (code != null) body.setProperty("code", code)
         return body
     }
 

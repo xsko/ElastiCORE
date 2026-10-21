@@ -59,6 +59,7 @@ public final class ErrorCatalog {
                 "A unique value is already taken, or the row is still referenced by another.");
         put(m, "invalid", "Invalid request", null);
         put(m, "refused", "Refused by the domain", null);
+        put(m, "state", "Not allowed in this state", null);
         put(m, "not-signed-in", "Sign in first", null);
         put(m, "forbidden", "Not allowed", null);
         put(m, "bad-request", "Invalid request", null);

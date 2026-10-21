@@ -194,6 +194,9 @@ public class HexUseCaseRules implements CodeRules, ArtifactContributor {
         if (login != null) {
             methods.add(method(s, String.format("Optional<%s>", dto), "authenticate",
                     s.parameter(s.nullableType("String"), login) + ", " + s.parameter(s.nullableType("String"), "password")));
+            if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.hasMe(e)) {
+                methods.add(method(s, String.format("Optional<%s>", dto), "me", ""));
+            }
         }
 
         for (int i = 0; i < methods.size(); i++) {
