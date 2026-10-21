@@ -6,9 +6,13 @@ plugins {
 group = 'io.elasticore.springboot3'
 description = 'Spring Boot 3 Common Library'
 
-// The WebClient codecs are the one place the Jackson generation shows:
-// this module's are Jackson 2, elasticore-springboot4 brings Jackson 3 ones.
+// The WebClient codecs, and where in a request body a value was refused, are
+// the places the Jackson generation shows: this module's are Jackson 2,
+// elasticore-springboot4 brings Jackson 3 ones.
 sourceSets.main.java.srcDir 'src/jackson2/java'
+// Tests that need Jackson 2's own annotations (a generated enum's
+// CustomDeserializer); elasticore-springboot4 does not run them.
+sourceSets.test.java.srcDir 'src/jackson2test/java'
 
 java {
     toolchain {
@@ -51,9 +55,18 @@ dependencies {
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
+    // Only compiled against: the API error answers (RequestShapeErrors) and the
+    // request's language (ErrorMessages) name Spring MVC's exceptions and its
+    // locale resolver. A servlet application has it; a WebFlux one never loads them.
+    // compileOnly is not published, so the POM does not change.
+    compileOnly 'org.springframework:spring-webmvc'
     // RunAsSystemExtension, for the generated service tests; a project has JUnit on its test path.
     compileOnly 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testImplementation 'org.springframework:spring-webmvc'
+    testImplementation 'jakarta.validation:jakarta.validation-api'
+    testImplementation 'org.hibernate.validator:hibernate-validator'
+    testImplementation 'org.apache.tomcat.embed:tomcat-embed-el'
 
     implementation 'org.reflections:reflections:0.10.2'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -98,6 +111,26 @@ tasks.withType(JavaCompile).configureEach {
 
 
 // Test configuration inherited from root build.gradle
+
+// The language an API error is said in, on a server whose machine language is
+// Korean - the case the default must not leak into. A JVM of its own: the JDK
+// and Hibernate Validator cache bundles by locale, so the machine language
+// cannot be switched in the middle of a run.
+def koreanServerTest = tasks.register('koreanServerTest', Test) {
+    description = 'Runs the *OnAKoreanServerTest classes on a JVM whose default locale is ko_KR.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    // The application's own ValidationMessages (an English base file and a
+    // Korean one) only here: on the main test path they would change the
+    // built-in NotBlank wording for every other test.
+    classpath = files('src/koreanServerTest/resources') + sourceSets.test.runtimeClasspath
+    jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+    filter { includeTestsMatching '*OnAKoreanServerTest' }
+}
+test {
+    filter { excludeTestsMatching '*OnAKoreanServerTest' }
+    dependsOn koreanServerTest
+}
 
 publishing {
     publications {

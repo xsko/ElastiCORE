@@ -22,7 +22,10 @@ sourceSets {
         resources.srcDirs = ["$shared/src/main/resources"]
     }
     test {
-        java.srcDirs = ["$shared/src/test/java"]
+        // The shared tests, and this module's own on a web layer switched
+        // back to Jackson 2 (src/jackson2test/java - not springboot3's
+        // folder of the same name, whose tests need Jackson 2 throughout).
+        java.srcDirs = ["$shared/src/test/java", "src/jackson2test/java"]
         resources.srcDirs = ["$shared/src/test/resources"]
     }
 }
@@ -60,9 +63,16 @@ dependencies {
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
+    // Only compiled against, as in elasticore-springboot3: Spring MVC's
+    // exceptions and locale resolver, which a servlet application brings.
+    compileOnly 'org.springframework:spring-webmvc'
     // RunAsSystemExtension, for the generated service tests; a project has JUnit on its test path.
     compileOnly 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testImplementation 'org.springframework:spring-webmvc'
+    testImplementation 'jakarta.validation:jakarta.validation-api'
+    testImplementation 'org.hibernate.validator:hibernate-validator'
+    testImplementation 'org.apache.tomcat.embed:tomcat-embed-el'
 
     implementation 'org.reflections:reflections:0.10.2'
     // The library's own mappers (the HTTP port client, the YAML gateway)
@@ -93,6 +103,21 @@ dependencies {
     // The DBMS port's sort is checked against a real database
     testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// As in elasticore-springboot3: the error language on a JVM whose default
+// locale is Korean, in a JVM of its own.
+def koreanServerTest = tasks.register('koreanServerTest', Test) {
+    description = 'Runs the *OnAKoreanServerTest classes on a JVM whose default locale is ko_KR.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = files("$shared/src/koreanServerTest/resources") + sourceSets.test.runtimeClasspath
+    jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+    filter { includeTestsMatching '*OnAKoreanServerTest' }
+}
+test {
+    filter { excludeTestsMatching '*OnAKoreanServerTest' }
+    dependsOn koreanServerTest
 }
 
 publishing {

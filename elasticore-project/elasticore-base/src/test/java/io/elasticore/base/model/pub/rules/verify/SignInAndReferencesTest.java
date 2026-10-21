@@ -827,6 +827,13 @@ public class SignInAndReferencesTest {
 
         String kt = kt("adapter/in/web/SrshopApiErrors.kt");
         assertTrue(kt.contains("problem(HttpStatus.CONFLICT, \"state\", \"Not allowed in this state\", detail)"), kt);
+        assertTrue(kt.contains("@Import(RequestShapeErrors::class)"), kt);
+        assertTrue(kt.contains("messages.violation(code + \".\" + field, it, it.message)"), kt);
+
+        // A row a GET or DELETE names that is not there: the problem body's 404, in Kotlin too.
+        String ktControl = kt("adapter/in/web/SrOrderController.kt");
+        assertTrue(ktControl.contains("orElseThrow { NotFoundException(\"SrOrder not found\") }"), ktControl);
+        assertTrue(ktControl.contains("throw NotFoundException(\"SrOrder not found\")"), ktControl);
 
         String messages = read(jproject, "src/main/resources/i18n/srshop-messages.properties");
         assertTrue(messages.contains("error.state.title=Not allowed in this state"), messages);

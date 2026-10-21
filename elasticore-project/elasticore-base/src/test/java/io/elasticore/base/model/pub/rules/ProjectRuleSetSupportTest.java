@@ -178,13 +178,45 @@ public class ProjectRuleSetSupportTest {
         erp.pkg("control", "com.acme.erp.adapter.in.web");
 
         String java = RuleCatalog.standard().engineFor("hexagonal-springboot")
-                .templateSet(SourceCode.TemplateSet.V3).run(erp, "apiErrors").render();
+                .templateSet(SourceCode.TemplateSet.V3).run(erp, "apiErrors").render().replace("\r\n", "\n");
         assertTrue(java.contains("@ExceptionHandler(io.elasticore.springboot3.validation.ConflictException.class)"), java);
-        assertTrue(java.contains("problem(HttpStatus.CONFLICT, \"conflict\", \"Conflicts with stored data\", ex.getMessage())"), java);
+        // Said by the message code the hand code gave it, the body's code that one.
+        assertTrue(java.contains("return coded(problem(HttpStatus.CONFLICT, \"conflict\", \"Conflicts with stored data\",\n"
+                + "                messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode());"), java);
 
         String kotlin = RuleCatalog.standard().engineFor("jpa-springboot-kt")
-                .templateSet(SourceCode.TemplateSet.KOTLIN).run(erp, "apiErrors").render();
+                .templateSet(SourceCode.TemplateSet.KOTLIN).run(erp, "apiErrors").render().replace("\r\n", "\n");
         assertTrue(kotlin.contains("@ExceptionHandler(io.elasticore.springboot3.validation.ConflictException::class)"), kotlin);
-        assertTrue(kotlin.contains("problem(HttpStatus.CONFLICT, \"conflict\", \"Conflicts with stored data\", ex.message)"), kotlin);
+        assertTrue(kotlin.contains("coded(problem(HttpStatus.CONFLICT, \"conflict\", \"Conflicts with stored data\",\n"
+                + "            messages.text(ex.code, ex.message, *ex.args)), ex.code)"), kotlin);
+    }
+
+    /**
+     * The generated handler imports the runtime's one answer for what Spring
+     * MVC refuses before a controller runs, says a service-side violation in
+     * the request's language, and answers a failed call to another system 502.
+     */
+    @Test
+    public void theApiErrorsImportTheRequestShapeAnswersAndAnswerAFailedCall502() {
+        DomainSpec erp = new DomainSpec("erp", "Erp").entity(order().meta("expose", ""));
+        erp.pkg("control", "com.acme.erp.adapter.in.web");
+
+        String java = RuleCatalog.standard().engineFor("hexagonal-springboot")
+                .templateSet(SourceCode.TemplateSet.V3).run(erp, "apiErrors").render().replace("\r\n", "\n");
+        assertTrue(java.contains("@Import(RequestShapeErrors.class)\npublic class ErpApiErrors {"), java);
+        assertTrue(java.contains("import io.elasticore.springboot3.validation.RequestShapeErrors;"), java);
+        assertTrue(java.contains("String message = messages.violation(code + \".\" + field, v, v.getMessage());"), java);
+        assertTrue(java.contains("@ExceptionHandler(io.elasticore.springboot3.http.PortCallException.class)"), java);
+        assertTrue(java.contains("problem(HttpStatus.BAD_GATEWAY, \"upstream\", \"A called system failed\","), java);
+        assertTrue(java.contains("@ExceptionHandler(io.elasticore.springboot3.validation.NotFoundException.class)"), java);
+        // No request-shape handler body is frozen into the developer's file.
+        assertFalse(java.contains("HttpMessageNotReadableException"), java);
+
+        String kotlin = RuleCatalog.standard().engineFor("jpa-springboot-kt")
+                .templateSet(SourceCode.TemplateSet.KOTLIN).run(erp, "apiErrors").render().replace("\r\n", "\n");
+        assertTrue(kotlin.contains("@Import(RequestShapeErrors::class)\nclass ErpApiErrors("), kotlin);
+        assertTrue(kotlin.contains("messages.violation(code + \".\" + field, it, it.message)"), kotlin);
+        assertTrue(kotlin.contains("messages.text(ex.code, ex.reason, *ex.args)), ex.code)"), kotlin);
+        assertFalse(kotlin.contains("HttpMessageNotReadableException"), kotlin);
     }
 }

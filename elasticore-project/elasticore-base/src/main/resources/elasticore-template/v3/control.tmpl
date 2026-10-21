@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.elasticore.runtime.utils.DTOUtils;
+import io.elasticore.springboot3.validation.NotFoundException;
 ${jsonViewImport}
 /**
  * REST API for ${entityClassName}.
@@ -44,7 +45,8 @@ ${createMethodJsonView}    @PostMapping
 ${readMethodJsonView}    @GetMapping("${pkPathInfo}")
     public ResponseEntity<${dtoClassName}> findById(${pkParamInfo}) {
         Optional<${dtoClassName}> found = ${entityName}Service.findById(${pkFieldInfo});
-        return found.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+        // 404 in the API's problem body (NotFoundException), not an empty one.
+        return found.map(ResponseEntity::ok).orElseThrow(() -> new NotFoundException("${entityClassName} not found"));
     }
 
     @Operation(summary = "Search ${entityClassName} data")
@@ -76,7 +78,7 @@ ${updateMethodJsonView}    @PutMapping
     @DeleteMapping("${pkPathInfo}")
     public ResponseEntity<Boolean> delete(${pkParamInfo}) {
         if (!${entityName}Service.findById(${pkFieldInfo}).isPresent()) {
-            return ResponseEntity.notFound().build();
+            throw new NotFoundException("${entityClassName} not found");
         }
         return ResponseEntity.ok(${entityName}Service.deleteById(${pkFieldInfo}));
     }

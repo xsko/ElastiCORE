@@ -643,6 +643,205 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 관련 파일: `MapperSpecRules.java`, `SearchDtoBaseRules.java`, `RulesGenRunner.java`(`modelDigest`, `writeStamp`),
   `AbstractModelLoader.java`, `elasticore-annotation-guide.md`, `elasticore-rule-guide.md`
 
+### Bug Fixes (런타임 - 오류 응답의 언어)
+
+#### 한 응답은 한 언어 - 기본은 `spring.web.locale`, 서버 머신의 언어는 쓰지 않는다
+- 한국어 OS 의 서버에서 v3 앱의 400 이 두 언어로 나갔다. Bean Validation 의 기본 메시지(`Size`, `NotNull`, `Min` ...)는
+  서버 머신의 언어(`크기가 0에서 10 사이여야 합니다`), DSL 문장과 제목은 영어였다. `@Valid` 가 돌 때 Spring 의 resolver 가
+  헤더 없는 요청에 컨테이너의 언어(JVM 의 ko_KR)를 주었고, `ErrorMessages` 는 코드로만 찾고 못 찾으면 그 문장을 그대로
+  썼다. 번역이 없는 `sv` 도 JDK 의 bundle fallback 으로 한국어였고, 애플리케이션의 `ValidationMessages_ko` 나
+  `messages_ko` 가 있으면 `en` 요청까지 한국어가 섞였다. 가이드는 반대를 약속하고 있었다
+- 이제 `ErrorMessages` 가 언어를 한 번 정하고 코드 찾기와 기본 메시지에 함께 쓴다(Spring Boot 3·4, Java·Kotlin 공통 런타임):
+  - Spring MVC 의 기본 resolver(`AcceptHeaderLocaleResolver`)면 `Accept-Language` 의 언어 중 애플리케이션이 번역한 언어
+    (`messages_<언어>`, 도메인 번들 옆 `_<언어>`, `ValidationMessages_<언어>` 파일), 기본 언어, 영어 중 처음 것. 없으면 기본
+    언어 = `spring.web.locale`, 설정이 없으면 번들의 기본 문구(Locale.ROOT)
+  - 영어는 자기 `_en` 파일이 없으면 Locale.ROOT 로 바꾼다 - 다른 영어 locale 은 `_en` 이 없는 bundle 이 머신의 언어로
+    fallback 한다
+  - 번역 파일 판단은 fallback 없는 `ResourceBundle.Control` 로, 스레드 class loader 로 한다(언어별 캐시)
+  - 코드 번역이 없으면 Hibernate Validator 의 기본 메시지 템플릿(`{jakarta.validation.constraints.*}`)을 그 언어로 숫자와
+    함께 다시 말한다(`BeanValidation.messageIn`, Spring 이 구성한 validator 의 interpolator). DSL 문장은 그대로다
+  - 세션·쿠키·고정 등 다른 resolver 는 전의 규칙 그대로(헤더 없고 resolver 가 컨테이너 언어를 돌려준 요청만 기본 문구)
+  - 서비스 측 검증용 `violation(code, violation, message)`: 코드(`Size.lines`)를 Spring 과 같은 값(`{0}` 필드, 속성 이름순)으로
+    찾고, 없으면 같은 방식으로 다시 말한다
+- v3 기본 출력 변경: `v3/apiErrors.tmpl`·`kt/apiErrors.tmpl` 의 서비스 측 검증 한 줄이 `messages.violation(...)` 이 된다.
+  이유: generate-once 파일이라 3.0 이후에는 바꿀 수 없고, 이 줄 없이는 서비스 측(`PUT`) 400 만 머신의 언어로 남는다.
+  `@Valid` 경로(`messages.text(f)`)는 런타임만 올려도 고쳐진다. 런타임 동작 변경(이유: 가이드가 약속한 동작): 한국어 머신에서
+  헤더 없는 400·`en`·번역 없는 언어(`fr`, `sv`)의 기본 메시지가 영어(또는 `spring.web.locale`)로 나간다
+- 바뀌지 않는 것: 2.x 생성기와 `jpa-springboot` 번들(`spring-api-errors` 가 없음 - `elcoreRulesCheck -Pstrict` 150 MATCH /
+  0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra). 런타임 POM - `spring-webmvc` 는 `compileOnly`
+- 확인: `ErrorLanguageOnAKoreanServerTest` (`-Duser.language=ko` JVM 에서만 도는 `koreanServerTest` 작업, 두 런타임 모두):
+  헤더 없음·`sv`·`fr`·`en` 영어, `spring.web.locale: ko` 한국어(그래도 `en` 은 영어), `de;q=0.9, ko;q=0.8` 한국어, 애플리케이션의
+  `ValidationMessages_ko`·`_ko` 만 있는 MessageSource 키가 `en` 에 새지 않음, 코드 번역(`Size.login=...{1}...`) 우선, 서비스 측
+  위반, 세션 resolver. Pet Store `ShopFlowTest`(테스트 JVM 이 ko_KR). Pet Store 를 `-Duser.language=ko -Duser.country=KR` 로
+  띄워 가입(`@Valid`)·고객 수정(서비스 측)에 헤더 없음/`en`/`sv` 는 `size must be between 0 and 10`, `ko`·`de;q=0.9, ko;q=0.8` 은
+  `크기가 0에서 10 사이여야 합니다` 와 `잘못된 요청` 인 것을 확인했다
+- 남은 것: `ValidationMessages_<언어>` 만 두고 기본 파일이 없는 애플리케이션은 그 파일이 없는 언어에서 머신의 언어로
+  fallback 한다(Hibernate Validator 의 locator, Boot 버전마다 다른 설정 - 가이드에 "쓰지 마세요"). `spring.messages.basename` 으로
+  바꾼 번들에만 있는 언어는 번역으로 보지 않는다. DSL 의 `@email`·날짜 제약 문장은 영어 그대로(TS 클라이언트와 같은 문장)
+- 관련 파일: `ErrorMessages.java`, `BeanValidation.java`, `elasticore-springboot3/build.gradle`, `elasticore-springboot4/build.gradle`
+  (`koreanServerTest`), `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ErrorLanguageOnAKoreanServerTest.java`, `ErrorMessagesTest.java`,
+  `elasticore-sample-petstore/build.gradle`, `ShopFlowTest.java`, `elasticore-rule-guide.md`
+
+### Improvements (오류 응답 - 컨트롤러에 닿기 전의 거절)
+
+#### Spring MVC 가 거절한 요청도 `code` 가 있는 같은 본문으로 - `RequestShapeErrors`
+- JSON 이 아닌 본문, 타입이 받지 않는 값(`quantity: -1`, 없는 enum 코드, 숫자 자리의 글자), 없는 파라미터, 파라미터 제약,
+  없는 경로·메서드(404·405), 406·415 는 생성된 `XxxApiErrors` 에 처리기가 없어 Spring Boot 의 `{timestamp, status, error,
+  path}` 로 나갔다. 가이드와 kit 은 모든 거절에 `code` 가 있다고 했고, 에이전트가 이것을 디버깅하느라 한 단계를 썼다
+- 런타임에 `io.elasticore.springboot3.validation.RequestShapeErrors` (처리기 `RequestShapeAdvice` 를 등록하는 클래스 - 처리기는
+  애플리케이션 전체에 답하는 `@RestControllerAdvice`, `@Order(LOWEST_PRECEDENCE)`)와 `RequestErrors`, Jackson 2/3 로 두 벌인 `JsonPaths`(springboot3 `src/jackson2/java`, springboot4
+  `src/jackson3/java`)를 더했다. 400 `unreadable`, 400 `invalid` + `fieldErrors[].code` `typeMismatch`(필드는 Jackson 경로:
+  `lines[0].quantity`), `NotNull`, 제약 이름, 404 `not-found`, 405 `method-not-allowed`(`Allow` 그대로), 406 `not-acceptable`,
+  415 `unsupported-media-type`. 손으로 쓴 컨트롤러의 `@Valid` 본문도 같은 모양. 브라우저(`Accept: text/html`)의 404·405 는
+  Spring Boot 의 오류 페이지를 둔다. 메시지는 모든 도메인 번들(`i18n/*-messages.properties`)과 그 옆 번역에서 찾는다
+- Jackson 2 의 생성 enum(`CustomDeserializer` -> `fromCode`)이 거절한 값은 `ValueInstantiationException` 이 아닌
+  `JsonMappingException` 으로 와서, 그 원인의 메시지(`Unknown PaymentMethod code: XX`)를 쓴다. JSON 이 깨진 위치가 중첩 객체 안이어도
+  필드 오류가 아니라 `unreadable` 이다(Jackson 이 경로를 붙여도)
+- v3 기본 출력 변경: `v3/apiErrors.tmpl`·`kt/apiErrors.tmpl` 에 `@Import(RequestShapeErrors.class)` 한 줄. 이유: 처리기 본문을
+  개발자 파일에 얼리지 않고 런타임에 두어, 이후 고침(색인 없는 키, 예외 종류)이 라이브러리로 간다. 공통 코드(`ErrorCatalog.shared()`)에
+  `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable`, `upstream`, `no-such-path`, `missing-value`,
+  `type.*` 가 더해져 모든 v3 도메인 번들에 나온다
+- 자동 구성이 아니다 - 생성된 `XxxApiErrors` 가 가져올 때만 생기므로 같은 런타임의 2.x 애플리케이션은 그대로다. 고친 적이 있는
+  `XxxApiErrors` 는 다시 생성되지 않으니 그 한 줄을 붙인다(가이드). Spring Framework 6.1(Boot 3.2) 이상
+- 확인: `RequestShapeErrorsTest`(springboot3 은 Jackson 2, springboot4 는 Jackson 3 으로 같은 단언), `Jackson2CodedEnumTest`,
+  `elasticore-template-ddd` `ApiContractTest`(Boot 3.3.2, 생성 enum 의 `Unknown PaymentMethod code: XX`, 다른 패키지의 손으로 쓴
+  컨트롤러), `elasticore-template-kt` `ShopApiContractTest`, Pet Store `ShopFlowTest`, 그리고 한국어 JVM 으로 띄운 Pet Store 에
+  curl: `quantity -1` -> 400 `lines[0].quantity: a quantity cannot be negative: -1`(ko: `수량은 0 이상의 정수입니다`), `DINERS` ->
+  `creditCard.creditCardType: Unknown CreditCardType code: DINERS`, `{"lines":` -> `unreadable`, `GET /item/abc` -> `itemId: must be a
+  number`, 주문 `PUT` -> 405 `Allow: POST`, `text/plain` -> 415, `Accept: image/png` -> 406, 없는 경로 -> 404 `not-found`, 브라우저 ->
+  Whitelabel, 모두 `application/problem+json`
+- 관련 파일: `RequestShapeErrors.java`, `RequestErrors.java`, `JsonPaths.java`(두 벌), `ErrorCatalog.java`, `ApiErrorRules.java`,
+  `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ProjectRuleSetSupportTest.java`, `ShopModelTest.java`, `SignInAndReferencesTest.java`,
+  `ApiContractTest.java`, `ShopApiContractTest.kt`, `petstore-messages_ko.properties`, `build_guide.py`, `elasticore-rule-guide.md`,
+  `elasticore-ddd-customize-guide.md`, `elasticore-env-guide.md`
+
+#### 생성된 `findById`·`delete` 의 빈 404 -> 같은 모양의 404
+- `GET /order/{id}` 와 `DELETE /order/{id}` 가 없는 행에 본문 없는 404 를 답해 클라이언트가 `code` 를 읽을 수 없었다
+- `v3/control.tmpl`·`kt/control.tmpl` 이 런타임의 새 `NotFoundException("Order not found")` 를 던진다. `EntityNotFoundException`
+  이라 생성된 `XxxApiErrors` 가 `not-found` 로 답하고, `@ResponseStatus(404)` 라서 `spring-api-errors` 를 끈 앱도 500 이 아닌 404 다.
+  v3 기본 출력 변경(이유: 다른 404 와 같은 본문). 2.x 의 `control.tmpl` 은 그대로
+- 확인: `NotFoundExceptionTest`, `ShopModelTest`, `SignInAndReferencesTest`(Kotlin), ddd·Kotlin 샘플의 `findByIdOfNothingIsAProblem`,
+  Pet Store `GET /item/99999` -> 404 `{"detail":"Item not found","code":"not-found"}`
+- 관련 파일: `NotFoundException.java`, `v3/control.tmpl`, `kt/control.tmpl`
+
+### New Features (런타임 - 손으로 쓴 거절)
+
+#### 손으로 쓴 거절도 메시지 코드로 번역된다
+- `ConflictException` 은 메시지 하나만 받아 `<도메인>-messages_ko` 로 번역할 수 없었다. 이제 `BadRequestException`,
+  `NotFoundException`, `ConflictException`, `security.ForbiddenException`, `security.NotSignedInException`, `http.PortCallException` 이
+  `(code, message, args...)` 를 받는다. 생성된 거절과 같은 순서로 찾고, 없으면 기본 문구(값을 넣은 `MessageFormat`), 응답의 `code` 는
+  그 코드다. 예전 생성자는 그대로다(코드 없음 = 예전 응답)
+- v3 기본 출력 변경: 생성된 처리기가 `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())`
+  로 답한다. 이유: 손으로 쓴 규칙도 생성된 규칙처럼 번역되도록
+- 확인: `ErrorMessagesTest.aRefusalWithACodeIsTranslatedLikeAGeneratedOne`, Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode`
+  (테스트용 컨트롤러가 던진 `loan.no-copy-left`: 헤더 없으면 기본 문구, `ko` 면 `messages_ko` 의 번역)
+- 관련 파일: `ConflictException.java`, `BadRequestException.java`, `NotFoundException.java`, `ForbiddenException.java`,
+  `NotSignedInException.java`, `Refusals.java`, `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `elasticore-rule-guide.md`
+
+#### `PortCallException` - 부른 시스템이 실패하면 502
+- 포트는 상대의 오류 상태를 값으로 돌려주고(런타임 프록시와 `httpPort: spring` 모두), 502 로 답할 예외가 없어 에이전트가 택배사
+  호출용 예외와 처리기를 손으로 썼다. 런타임에 `io.elasticore.springboot3.http.PortCallException`(`ResponseStatusException`,
+  502)을 더하고 두 `apiErrors` 템플릿에 처리기(502, `code: upstream`)를 더했다. `ResponseStatusException` 이라 이 처리기가 없는 예전
+  `XxxApiErrors` 에서도 502 다. 실패 정책 설정(`{id}.failOnError`)은 3.1
+- 확인: `PortCallExceptionTest`(처리기 없이 502), `PortFailureContractTest`(오류 본문은 값, 읽을 수 없는 본문·답 없음은 예외, 멀티파트는
+  `HttpStatusCodeException`), Pet Store `ShopFlowTest` 의 502 `upstream`
+- 관련 파일: `PortCallException.java`, `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ApiErrorRules.java`
+
+### Bug Fixes (포트 등록기)
+
+#### `@EnableElastiCore` 가 붙은 클래스의 패키지를 스캔한다
+- `PortServiceRegistrar` 는 호출 스택에서 `@SpringBootApplication` 을 찾고, 못 찾으면 내부 패키지 이름으로 대신했다. 그래서
+  `@SpringBootTest` 에서는 포트를 하나도 등록하지 않았고(테스트마다 손으로 `@Bean`), 공개 저장소에 내부 이름이 있었다
+- 이제 `@EnableElastiCore` 가 붙은 클래스의 패키지와(테스트가 띄우는 그 클래스) 스택의 `@SpringBootApplication` 패키지를 함께 보고,
+  같은 인터페이스는 한 번만 등록한다(예전에는 겹치면 `BeanDefinitionOverrideException`). 내부 패키지 fallback 은 지웠다. 직접 선언한
+  `@Bean` 이 있으면 그 포트는 등록하지 않는다 - 예전 안내대로 테스트에 `@Bean` 을 적어 둔 프로젝트가 같은 타입 빈 둘로 깨지지 않게.
+  `beanFactory` 를 static 에 두지 않는다(두 테스트 컨텍스트가 서로의 것을 쓰지 않게). 생성 결과는 바뀌지 않는다
+- 확인: `PortServiceRegistrarTest`(가져온 클래스의 패키지, 두 번 가져와도 하나, 직접 선언한 빈이 우선; Spring Boot 처럼 덮어쓰기 금지)
+- 관련 파일: `PortServiceRegistrar.java`, `elasticore-dsl-port-guide.md`, `elasticore-rule-guide.md`
+
+### Documentation (포트 가이드 - 실패 처리)
+
+#### 2.8 실패 처리, base URL 이 정해지는 때, 가짜 상대로 테스트
+- 2장 머리에 두 방식(런타임 프록시 / `httpPort: spring`)과 `@EnableElastiCore` 가 필요한 쪽. 2.8: 두 방식의 실패 표(오류 본문은 값,
+  읽을 수 없는 본문·답 없음은 예외, 멀티파트), 502 + 되돌림 패턴(`PortCallException`), 테스트(`@MockitoBean`, 같은 서버의 가짜는
+  `DEFINED_PORT`). 2.7: `httpPort: spring` 의 base URL 은 기동 때 한 번 정해진다(`RANDOM_PORT` 테스트는 포트 0 을 부름 - 조사에서
+  실행으로 확인), Boot 4 키의 그룹 이름은 `erp--credit-check-port`(두 줄)
+- 5장: `elasticore 1.8.x` 와 포트를 등록하지 않던(`ApplicationContextProvider`·`DbTransactionGateway` 만 등록하던)
+  `@ComponentScan("io.elasticore.springboot3")` 대신 `@EnableElastiCore`,
+  등록기가 보는 패키지
+- 관련 파일: `elasticore-dsl-port-guide.md`
+
+#### 개발 가이드의 예제 값에서 내부 이름을 뺐다
+- `Op.ILIKE` 예제의 검색어가 내부 이름이었다. `"acme"` 로 바꿨다(설명도 실제로 맞는 값으로: `acme`, `ACME`, `Acme Supply`)
+- 관련 파일: `elasticore-dev-guide.md`
+
+### Bug Fixes (런타임 - 오류 응답과 포트 등록기 리뷰)
+
+#### 한 도메인의 번역이 다른 도메인의 영어에 가려지지 않는다
+- 도메인이 여럿인 앱(예: `billing`, `catalog`, `shop`)에서 `shop-messages_ko` 에 둔 `error.unreadable` 번역이 `ko` 요청에도
+  영어로 나갔다. 모든 도메인의 기본 파일에 공통 코드(`ErrorCatalog.shared()`)가 들어 있고, Spring 의
+  `ResourceBundleMessageSource` 는 코드를 가진 첫 번들을 쓰며, `_ko` 가 없는 번들은 자기 기본 파일로 답하기 때문이다
+  (이름순으로 앞선 `billing-messages.properties`)
+- `ErrorMessages` 가 두 번 찾는다: 먼저 모든 번들의 그 언어 파일(`_ko_KR`, `_ko`)에서, 없으면 예전처럼 기본 파일까지.
+  `messages_ko` 가 도메인의 `_ko` 보다 앞서는 것은 그대로다. 단일 도메인 앱에서 달라지는 것은 `messages.properties`(기본 파일)에
+  있는 코드를 도메인의 `_ko` 가 번역한 경우뿐이다 - 이제 번역이 나간다
+- 확인: `RequestShapeErrorsTest.aTranslationInOneDomainIsNotHiddenByAnotherDomainsEnglish`,
+  `ErrorMessagesTest.aTranslationInTheSecondBundleWinsOverTheFirstBundlesEnglish`(테스트 번들 `billing-messages.properties`,
+  번역 없음) - 고치기 전에는 둘 다 영어로 실패
+- 관련 파일: `ErrorMessages.java`, `elasticore-rule-guide.md`
+
+#### 2.x 앱의 컴포넌트 스캔이 API 오류 처리기를 가져오지 않는다
+- 처리기가 `@RestControllerAdvice` 라서 예전 포트 가이드대로 `@ComponentScan("io.elasticore.springboot3")` 를 둔 2.x 앱이
+  런타임만 올려도 그것을 가져왔다 - 깨진 JSON, 404, 405, 406, 415 와 앱 컨트롤러의 `MethodArgumentNotValidException` 이 모두
+  `problem+json` 으로 바뀐다
+- 처리기는 `RequestShapeAdvice` 로 옮기고 결코 맞지 않는 `@Conditional` 을 붙였다(스캔도, 그 클래스의 `@Import` 도 지나친다).
+  `RequestShapeErrors` 는 그 정의를 직접 등록하는 `ImportBeanDefinitionRegistrar` 가 되었다 - 생성된 `@Import(RequestShapeErrors.class)`
+  는 그대로라 생성 결과는 바뀌지 않는다. 여러 도메인이 가져와도 처리기는 하나다. 처리기의 빈 이름은
+  `io.elasticore.springboot3.validation.RequestShapeAdvice` 로 바뀌었다(전에는 `...RequestShapeErrors`)
+- 확인: `RequestShapeErrorsRegistrationTest`(런타임 패키지 스캔에 `RequestShape*` 없음, 스캔한 컨텍스트에 `@ControllerAdvice` 없음 -
+  고치기 전에는 둘 다 실패; 두 도메인이 가져온 MVC 컨텍스트에 처리기 하나, `unreadable` 로 답함)
+- 관련 파일: `RequestShapeErrors.java`, `RequestShapeAdvice.java`, `elasticore-dsl-port-guide.md`, `elasticore-rule-guide.md`
+
+#### 포트 프록시를 감싼 `@Primary` 빈이 다시 동작한다
+- 직접 선언한 빈이 있으면 포트 프록시를 지웠으므로 `@Bean @Primary CourierPort retrying(@Qualifier("CourierPort") CourierPort raw)`
+  처럼 프록시를 감싸는 앱이 `NoSuchBeanDefinitionException` 으로 뜨지 않았다(공유 런타임의 2.x 앱 포함)
+- 이제 다른 빈 중 `@Primary` 가 없을 때만(타입 주입이 모호할 때만) 프록시를 지운다. 또 스캔한 패키지에서 포트 인터페이스를
+  구현한 클래스(가짜, 래퍼)도 Reflections 가 돌려줘 프록시로 등록하려다 `IllegalArgumentException` 으로 기동이 실패했다(예전
+  등록기도 같았다) - 이제 `@ExternalService`/`@DbmsService` 가 직접 붙은 인터페이스만 등록한다. 붙은 인터페이스를 상속하기만
+  한 인터페이스도 이제 등록하지 않는다(예전에는 어노테이션이 null 인 프록시가 되어 첫 호출에서 실패했다)
+- `@Primary` 인 가짜(포트를 통째로 바꾸는 테스트 빈)도 이제 프록시를 남기므로 `List<CourierPort>` 는 둘을 받는다(가이드)
+- 확인: `PortServiceRegistrarTest.aPrimaryBeanThatWrapsTheProxyKeepsIt`(고치기 전 `NoSuchBeanDefinitionException`),
+  `aClassImplementingAPortIsNotMadeAProxy`(고치기 전에는 이 패키지의 모든 등록기 테스트가 `IllegalArgumentException`)
+- 관련 파일: `PortServiceRegistrar.java`, `elasticore-dsl-port-guide.md`
+
+#### Boot 4 에서 웹 계층을 Jackson 2 로 되돌린 앱의 필드 오류
+- springboot4 의 `JsonPaths` 는 Jackson 3 예외만 알아, `MappingJackson2HttpMessageConverter` 를 쓰는 Boot 4 앱에서 타입이 틀린 값이
+  필드 오류가 아니라 `unreadable` 로 나갔다. Jackson 2 가 클래스 경로에 있으면 그 예외도 springboot3 처럼 읽는다
+- 확인: springboot4 의 `Jackson2WebLayerOnBoot4Test`(`count: must be a number`, `lines[0].amount` 의 생성자 거절, 깨진 JSON 은
+  `unreadable`; 고치기 전에는 첫 테스트가 실패)
+- 관련 파일: springboot4 `src/jackson3/java/.../JsonPaths.java`, `src/jackson2test/java/.../Jackson2WebLayerOnBoot4Test.java`, `build.gradle`,
+  `elasticore-env-guide.md`
+
+#### 테스트: 한국어 JVM, 공유 테스트 자원
+- `elasticore-template-ddd`, `elasticore-template-kt` 의 테스트도 Pet Store 처럼 `-Duser.language=ko -Duser.country=KR` 로 돈다.
+  새 테스트(`errorsAreNotSaidInTheMachinesLanguage`, `aFieldErrorIsNotSaidInTheMachinesLanguage`)가 헤더 없음·`en`·`sv` 의 400
+  본문에 한글이 없음을 확인한다
+- 런타임 테스트의 `ValidationMessages*.properties`(앱이 덮어쓴 `NotBlank` 문구)는 `src/koreanServerTest/resources` 로 옮겨
+  `koreanServerTest` 에만 둔다 - 다른 모든 테스트의 기본 문구를 바꾸지 않게
+- 관련 파일: 두 샘플과 두 런타임의 `build.gradle`, `ApiContractTest.java`, `ShopApiContractTest.kt`
+
+#### 남은 경우 (리뷰에서 코드를 읽어 찾음, 실행으로 재현하지 않음)
+- `messages_en` 은 있고 `ValidationMessages` 는 `_ko` 파일만 있는(기본 파일 없는) 앱: `en` 요청은 `en` 으로 정해지고(`Locale.ROOT`
+  가 아님), 기본 제약 메시지를 다시 말할 때 Hibernate Validator 가 앱의 `ValidationMessages` 기본 파일을 찾지 못해 JDK 의 bundle
+  fallback 으로 머신 언어 파일을 읽을 수 있다. 피하려면 `ValidationMessages.properties` 기본 파일도 둔다(가이드는 이 파일들로
+  언어를 맞추지 말라고 한다)
+- `spring.web.locale` 로 `Locale.ROOT` 가 아닌 기본 언어를 둔 앱: 코드가 런타임의 번들에 없어 애플리케이션 `MessageSource` 로 가면,
+  Spring Boot 의 `spring.messages.fallback-to-system-locale`(기본 `true`) 때문에 그 언어 파일이 없는 번들은 머신 언어로 답할 수
+  있다. 피하려면 `spring.messages.fallback-to-system-locale=false`
+- 파라미터 제약 처리기(`HandlerMethodValidationException`)를 Spring Framework 6.1 에서 부르는 테스트는 없다.
+  `RequestShapeErrorsTest` 는 springboot3(Spring 6.2)과 springboot4(Spring 7)에서 돌고, Spring 6.1 인 Boot 3.3.2 샘플의 계약
+  테스트는 그 처리기에 닿지 않는다
+
 ## 3.0.261020-alpha2
 
 ### Bug Fixes (생성기)

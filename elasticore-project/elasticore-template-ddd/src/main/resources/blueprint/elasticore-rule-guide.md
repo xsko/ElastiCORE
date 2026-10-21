@@ -757,10 +757,12 @@ sql/http 포트는 그것을 호출하는 서비스가 씁니다.
 No qualifying bean of type 'ShopReportService'
 ```
 
-애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 테스트 컨텍스트는
-등록기가 메인 패키지를 알아내는 호출 스택을 같은 방식으로 걷지 않으므로, 샘플은
-`@Bean` 하나로 직접 등록합니다 — `DddSampleApp` 을 보세요. 이음매가 정확히 어디인지
-읽기에 가장 좋은 자리이기도 합니다.
+애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
+`@EnableElastiCore` 가 붙은 클래스의 패키지(와 기동한 `@SpringBootApplication` 클래스의 패키지)를 보므로,
+그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261021 부터; 전에는 호출 스택만 보아 테스트
+컨텍스트에서는 아무것도 등록하지 않았습니다). 같은 포트에 직접 선언한 `@Bean` 이 있으면 그것을 씁니다.
+`DddSampleApp` 은 `@EnableElastiCore` 없이 런타임 조각만 가져오는 테스트 구성이라 `@Bean` 하나로 직접
+등록합니다 — 이음매가 정확히 어디인지 읽기에 가장 좋은 자리이기도 합니다.
 
 #### 리포지터리 포트 (`ddd-repository-port`)
 
@@ -872,7 +874,7 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 | 요청이 가리킨 행이 없음 - 다른 애그리거트를 id 로 참조 (`loan.memberId`, 주문 줄의 `itemId`) | `InvariantViolationException`, 코드 `reference.<Entity>.<relation>` (DDD 번들, 저장 전 `requireReferences`) | 404 - `Member 99 does not exist` |
 | 지금 상태로는 할 수 없는 명령·삭제 (`states:`) | `InvariantViolationException`, 코드 `state.…` | 409 |
 | 다른 불변식 위반 | `InvariantViolationException` (`IllegalStateException` 하위) | 422 |
-| 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다) | 400, 409 - 던진 메시지가 `detail` 로 나간다 |
+| 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `NotFoundException` (가리킨 행이 없음), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다), `security.ForbiddenException`, `security.NotSignedInException`, `http.PortCallException` (부른 다른 시스템이 실패) | 400, 404, 409, 403, 401, 502 - 던진 메시지가 `detail` 로 나간다. 메시지 코드를 주면 요청 언어로 번역된다 (아래 "손으로 쓴 거절을 번역하기") |
 | 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
 | 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
 | 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261021 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
@@ -916,11 +918,76 @@ generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Sprin
 `TransactionSystemException`)만 잡으므로 unique 충돌 같은 다른 데이터 접근 오류는 사용자의
 핸들러로 갑니다.
 
+**컨트롤러에 닿기 전의 거절 (`RequestShapeErrors`).** 생성된 `ShopApiErrors` 는 런타임의
+`io.elasticore.springboot3.validation.RequestShapeErrors` 를 `@Import` 합니다. Spring MVC 가 컨트롤러 메서드를 부르기
+전에 거절한 요청을 **애플리케이션 전체에서** 같은 모양(`ProblemDetail` + `code`)으로 답합니다 - 다른 패키지에 손으로 쓴
+컨트롤러도 포함합니다. 전에는 Spring Boot 의 기본 본문 `{timestamp, status, error, path}` 였고 `code` 가 없었습니다.
+상태 코드는 전과 같습니다.
+
+| 요청 | 상태 | `code` | 예 (Pet Store 에서 확인) |
+|---|---|---|---|
+| 본문이 없거나 JSON 이 아님 | 400 | `unreadable` | 본문 `{"lines":` |
+| 타입이 받지 않는 값 - 숫자 자리에 글자, 없는 enum 코드, 음수 `quantity`, int 범위 밖 | 400 | `invalid`, `fieldErrors[].code` 는 `typeMismatch` | `lines[0].quantity: a quantity cannot be negative: -1`, `creditCard.creditCardType: Unknown CreditCardType code: DINERS`, `GET /item/abc` -> `itemId: must be a number` |
+| 필수 쿼리 파라미터 없음 | 400 | `invalid`, `fieldErrors[].code` 는 `NotNull` | 손으로 쓴 `@RequestParam` |
+| 파라미터 제약 (`@RequestParam @Min(1) int page`) | 400 | `invalid`, 제약 이름 (`Min`) | 손으로 쓴 컨트롤러 |
+| 손으로 쓴 컨트롤러의 `@Valid` 본문 | 400 | `invalid` | (생성된 컨트롤러의 것은 `ShopApiErrors` 가 답함) |
+| 없는 경로 | 404 | `not-found` | `GET /api/petstore/nothing/here` |
+| 그 경로에 없는 메서드 | 405 (`Allow` 헤더 그대로) | `method-not-allowed` | `@editable` 이 아닌 루트에 `PUT` |
+| 줄 수 없는 응답 형식 (`Accept: image/png`) | 406 | `not-acceptable` | |
+| 읽을 수 없는 본문 형식 (`Content-Type: text/plain`) | 415 | `unsupported-media-type` | |
+
+- 브라우저가 페이지를 달라고 하면(`Accept` 에 `text/html`) 404·405 는 Spring Boot 의 오류 페이지(Whitelabel 이나
+  `error/404.html`)가 그대로 나옵니다.
+- 생성된 컨트롤러의 `findById`·`delete` 가 없는 행에 답하던 **빈 본문의 404** 도 이제 같은 모양입니다
+  (`NotFoundException`, `"code": "not-found"`, `"detail": "Item not found"`). `NotFoundException` 은 `@ResponseStatus(404)` 라서
+  `spring-api-errors` 를 꺼도 404 입니다 (본문은 Spring Boot 의 것).
+- **다르게 답하려면** 그 예외를 `ShopApiErrors` 에서 처리하세요 - 그 파일이 먼저 불립니다. 회사 공통
+  `@RestControllerAdvice` 도 `RequestShapeErrors` 가 등록한 처리기(`RequestShapeAdvice`)보다 먼저입니다(그 처리기는 맨 뒤). 확실히 하려면 공통
+  advice 에 `@Order` 를 붙이세요.
+- `spring.mvc.problemdetails.enabled=true` 는 켜지 마세요. Spring Boot 의 처리기가 맨 앞(`@Order(0)`)에 서서 필드 검증
+  응답(`fieldErrors`)까지 가져갑니다.
+- 자동 구성이 아닙니다. `ShopApiErrors` 가 가져올 때만 생기므로, 같은 런타임 라이브러리를 쓰는 2.x 애플리케이션은 그대로입니다.
+  `spring-api-errors` 를 끄면 함께 빠집니다. `RequestShapeErrors` 는 처리기(`RequestShapeAdvice`)를 등록만 하는 클래스이고,
+  처리기는 `@ComponentScan("io.elasticore.springboot3")` 에 잡히지 않습니다 (예전 포트 가이드가 2.x 앱에 권하던 스캔).
+  여러 도메인의 `XxxApiErrors` 가 모두 가져와도 처리기는 하나입니다.
+- **이미 있는 `XxxApiErrors` 를 고친 적이 있으면** 다시 생성되지 않으니 클래스에 한 줄을 붙이세요
+  (손대지 않았으면 다시 생성되어 붙습니다):
+  ```java
+  @org.springframework.context.annotation.Import(io.elasticore.springboot3.validation.RequestShapeErrors.class)
+  ```
+  Kotlin 은 `@org.springframework.context.annotation.Import(io.elasticore.springboot3.validation.RequestShapeErrors::class)`.
+- Spring Framework 6.1 (Spring Boot 3.2) 이상이 필요합니다 (`NoResourceFoundException`, `HandlerMethodValidationException`).
+  샘플은 Spring Boot 3.3.2 와 4.0.8 에서 확인합니다.
+- **다른 시스템 호출 실패 (502)**: 포트를 부른 코드가 실패라고 판단하면 `io.elasticore.springboot3.http.PortCallException` 을
+  던집니다. `ShopApiErrors` 가 502, `"code": "upstream"` 으로 답합니다. 언제 무엇을 실패로 볼지는
+  `elasticore-dsl-port-guide.md` 2.8 에 있습니다.
+
 #### 오류 코드와 다국어 (Accept-Language)
 
-모든 오류 응답에 프로그램이 분기할 수 있는 `code` 가 있고, 문구는 **요청의 언어**(`Accept-Language`)로
-나갑니다. 번역이 없는 언어, 그리고 `Accept-Language` 가 없는 요청은 기본 문구(영어, 또는 DSL 에 적은 문장)로
-나갑니다. 서버 머신의 언어로 대신하지 않습니다 (한국어 OS 의 서버도 `fr` 요청이나 헤더 없는 요청에 한국어로 답하지 않음).
+모든 오류 응답에 프로그램이 분기할 수 있는 `code` 가 있고, 문구는 **한 응답에 한 언어**로 나갑니다:
+
+1. `Accept-Language` 에 적힌 언어를 순서대로 보아, **애플리케이션이 번역한 언어**(classpath 의 `messages_<언어>`, 도메인 번들
+   옆 `<도메인>-messages_<언어>`, `ValidationMessages_<언어>` 파일이 있는 언어), 기본 언어, 영어 중 처음 나온 것.
+2. 그런 것이 없으면(헤더가 없거나 번역이 없는 언어) **기본 언어**: Spring Boot 의 `spring.web.locale` (Boot 3·4 같은 이름).
+   설정하지 않았으면 번들의 기본 문구(영어, 또는 DSL 에 적은 문장)입니다.
+3. Bean Validation 의 기본 메시지(`Size`, `NotNull`, `Min` ...)도 같은 언어로, 숫자를 넣어 다시 말합니다
+   (`size must be between 0 and 10` / `크기가 0에서 10 사이여야 합니다`). DSL 에 적은 문장은 적은 그대로입니다.
+
+**서버 머신의 언어는 쓰지 않습니다.** 한국어 OS 의 서버도 헤더 없는 요청, `en`, `sv` 에 영어로 답합니다 - Pet Store 를
+`-Duser.language=ko -Duser.country=KR` 로 띄워 확인했고, `ShopFlowTest` 가 한국어 JVM 에서 같은 것을 확인합니다.
+
+```yaml
+# application.yml - 헤더 없는 요청을 한국어로 (번역 파일 _ko 가 있어야 의미가 있음)
+spring:
+  web:
+    locale: ko
+```
+
+- 영어는 번들의 기본 문구라서, `spring.web.locale: ko` 여도 `Accept-Language: en` 이면 영어입니다.
+- Hibernate Validator 에 프랑스어가 있어도 애플리케이션이 번역하지 않았으면 `fr` 요청은 기본 언어로 나갑니다 - DSL 문장과
+  기본 메시지가 섞이지 않게.
+- 세션·쿠키 등 다른 `LocaleResolver` (`spring.web.locale-resolver: fixed` 포함)를 쓰면 그 resolver 가 정한 언어를 따릅니다.
+  헤더도 없고 resolver 가 컨테이너의 언어를 그대로 돌려준 요청(아무도 정하지 않은 요청)만 번들의 기본 문구입니다.
 
 번역되는 것:
 
@@ -928,8 +995,10 @@ generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Sprin
 |---|---|---|
 | 409 (생명주기), 404 (참조한 행 없음), 422 (불변식) | O | O (규칙의 코드로) |
 | 409·400 의 데이터베이스 거절 (`stale`, `required`, `unique`, `referenced`, `conflict`) | O | O (`error.<code>`) |
-| 400 필드 검증 (`@Valid`, 서비스 측 검증 모두) | O | 필드 메시지 O (`<제약>.<필드>`, 예 `Size.lines`) |
-| 404·409(이미 있음)·401·403·기타 400 | O | X — 예외 메시지(영어, 식별자 포함) 그대로 |
+| 400 필드 검증 (`@Valid`, 서비스 측 검증 모두) | O | 필드 메시지 O (`<제약>.<필드>`, 예 `Size.lines`). 번역이 없는 기본 메시지는 요청 언어로 |
+| 컨트롤러 전의 거절 (`RequestShapeErrors`) | O | O (`error.unreadable`, `error.method-not-allowed` ..., 필드는 `typeMismatch.<필드>`) |
+| 손으로 쓴 거절에 메시지 코드를 준 것 | O | O (그 코드로) |
+| 404·409(이미 있음)·401·403·502·기타 400 중 코드 없이 던진 것 | O | X — 예외 메시지(영어, 식별자 포함) 그대로 |
 
 Pet Store 에서 배송된 주문을 취소하면 (`ShopFlowTest` 로 확인):
 
@@ -961,6 +1030,11 @@ HTTP/1.1 409
 | `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | - |
 | `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | - |
 | `reference.<Entity>.<relation>` | 요청이 id 로 가리킨 행이 없음 - 다른 애그리거트 참조(저장 전 확인), `@snapshot` 의 원본 (404) | 식별자 |
+| `upstream` | 다른 시스템 호출 실패 (`PortCallException`, 502) | - |
+| `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable` | 컨트롤러 전의 거절 (`RequestShapeErrors`; 제목 `error.<code>.title`, 문장 `error.<code>`) | 405 `{0}` 메서드, 415 `{0}` 본문 형식, 406 `{0}` 낼 수 있는 형식 |
+| `error.no-such-path`, `error.missing-value` | 없는 경로(404 `not-found`)의 문장, 없는 파라미터의 필드 메시지 | `{0}` 경로 / - |
+| `typeMismatch.<필드>` | 타입이 받지 않는 값의 필드 메시지. `typeMismatch.lines[0].quantity` 그 줄만, `typeMismatch.lines.quantity` 모든 줄. 둘 다 없으면 타입이 거절한 메시지(`Quantity`, enum 의 `fromCode` - 영어), 그것도 없으면 `error.type.number` / `.boolean` / `.text` / `.datetime` / `.enum` / `.other` | `.enum` 의 `{0}` 가능한 값 |
+| (손으로 쓴 코드) | 손으로 쓴 거절에 준 메시지 코드 (아래) | 준 값 |
 
 **번역하는 법**
 
@@ -976,10 +1050,26 @@ state.PurchaseOrder.status.cancel=주문 상태가 {0}이면 취소할 수 없�
 invariant.PurchaseOrder.lines.minsize=장바구니가 비어 있습니다
 Size.lines=장바구니가 비어 있습니다
 NotNull.lines=장바구니가 비어 있습니다
+
+# 컨트롤러 전의 거절 - RequestShapeErrors 도 모든 도메인 번들과 그 옆 번역을 읽습니다
+error.unreadable=요청 본문이 없거나 JSON 이 아닙니다.
+error.method-not-allowed={0} 메서드는 여기서 쓸 수 없습니다.
+typeMismatch.lines.quantity=수량은 0 이상의 정수입니다
 ```
+
+- 필드의 값은 Spring 의 순서입니다: `{0}` 필드, 그다음 제약 속성의 이름순 (`Size` 는 `{1}` max, `{2}` min).
+  `Size.login=로그인은 {1}자까지` 는 `@Valid` 와 서비스 측 검증 모두에 같은 값으로 나갑니다.
+- **필드 없는 코드(`Size=`, `NotNull=`)는 쓰지 마세요.** 그 언어의 모든 `@Size` DSL 문장을 덮어 버리고, 범위는 위치
+  (`{1}`, `{2}`)로만 받습니다. 필드마다(`Size.login`) 쓰거나, 쓰지 않으면 기본 메시지가 요청 언어로 숫자와 함께 나갑니다.
+- **`ValidationMessages*.properties` 로 언어를 맞추지 마세요.** 기본 파일(`ValidationMessages.properties`)은 다른 모든
+  언어의 Hibernate Validator 번역을 덮고, `_<언어>` 파일만 두면 그 파일이 없는 언어의 요청에 서버 머신의 언어로 답하게
+  됩니다(JDK 의 bundle fallback). 위의 규칙이 이미 한 응답을 한 언어로 맞춥니다.
 
 찾는 순서: classpath 의 `messages_<언어>.properties` -> 도메인 번들과 그 옆 번역 ->
 애플리케이션의 `MessageSource` (예: `spring.messages.basename` 으로 바꾼 번들) -> 기본 문구. 설정은 필요 없습니다.
+앞의 둘은 **요청 언어의 파일을 먼저** 봅니다: `messages_ko`, 모든 도메인의 `_ko` 파일을 다 본 뒤에야 기본 파일(영어)을 봅니다.
+그래서 도메인이 여럿이어도(`billing`, `shop`) `shop-messages_ko` 에만 둔 `error.unreadable` 번역이, 이름순으로 앞선
+`billing-messages.properties` 의 영어에 가려지지 않습니다.
 다만 `spring.messages.basename` 을 바꿔 둔 번역은 도메인 번들(영어 기본 문구)보다 뒤에 찾으므로, 도메인 코드의
 번역은 `messages_<언어>.properties` 나 도메인 번들 옆 파일에 두세요.
 
@@ -988,19 +1078,66 @@ NotNull.lines=장바구니가 비어 있습니다
 - 같은 엔티티의 두 `@invariant` 가 같은 이름이 되면 두 번째에 `-2` 가 붙습니다. 조건식의 `+ - * /` 와 한글 등은
   이름에 구분되어 들어갑니다 (`a + b > 0` -> `a-plus-b-gt-0`).
 
+**손으로 쓴 거절을 번역하기**
+
+`beforeSave`·루트 메서드·서비스 오버라이드·포트를 부르는 코드에서 던지는 런타임의 예외는 **메시지 코드**를 받습니다.
+생성된 거절과 같은 순서로 번역을 찾고, 없으면 두 번째 인자(기본 문구, 값이 있으면 `MessageFormat` 패턴)가 나가며,
+응답의 `code` 가 그 코드가 됩니다:
+
+```java
+throw new ConflictException("loan.no-copy-left", "No copy of {0} is left to lend", isbn);
+```
+
+```properties
+# src/main/resources/i18n/library-messages_ko.properties (도메인 번들 옆, 개발자 파일) 또는 messages_ko.properties
+loan.no-copy-left=빌려줄 수 있는 {0} 이(가) 없습니다
+```
+
+```http
+HTTP/1.1 409                       (Accept-Language: ko)
+{ "title": "...", "detail": "빌려줄 수 있는 978-0-00 이(가) 없습니다", "code": "loan.no-copy-left", "status": 409 }
+
+HTTP/1.1 409                       (헤더 없음)
+{ "title": "Conflicts with stored data", "detail": "No copy of 978-0-00 is left to lend", "code": "loan.no-copy-left", "status": 409 }
+```
+
+| 예외 (`io.elasticore.springboot3.`) | 상태 | 코드 없이 던지면 `code` |
+|---|---|---|
+| `validation.BadRequestException(code, message, args...)` | 400 | `bad-request` |
+| `security.NotSignedInException(code, message, args...)` | 401 | `not-signed-in` |
+| `security.ForbiddenException(code, message, args...)` | 403 | `forbidden` |
+| `validation.NotFoundException(code, message, args...)` | 404 | `not-found` |
+| `validation.ConflictException(code, message, args...)` | 409 | `conflict` |
+| `http.PortCallException(code, message, args...)` | 502 | `upstream` |
+
+- 기본 문구는 코드에 적습니다. 생성되는 `<도메인>-messages.properties` 는 손으로 쓴 코드를 모르고 빌드마다 다시 쓰이므로
+  거기에 적지 마세요. 번역만 그 옆 `_ko` 파일이나 `messages_ko.properties` 에 둡니다.
+- 값이 있는 문장은 `'` 를 `''` 로 적습니다 (기본 문구도). 예외의 `getMessage()` 는 값을 넣은 기본 문구입니다(로그에 그대로).
+- 코드 없이 던지면(`new ConflictException("...")`) 예전처럼 그 메시지 그대로 나가고 `code` 는 표의 마지막 칸입니다.
+- 불변식처럼 상태를 코드로 고르는 거절은 `InvariantViolationException(code, message, args...)` 입니다 (`state.` 409,
+  `reference.` 404, 그 밖 422).
+- 확인: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (테스트용 컨트롤러가 던진 것).
+- 고친 적이 있는 `XxxApiErrors` 는 다시 생성되지 않아 처리기가 `ex.getMessage()` 만 씁니다. 새로 생성된 파일처럼
+  `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())` 로 고치세요.
+
 **400 (필드 검증)** 은 `errors` (`"필드: 메시지"` 목록, 예전과 같음) 에 더해 `fieldErrors` 를 보냅니다:
 `[{ "field": "lines", "code": "Size", "message": "장바구니가 비어 있습니다" }]`. 필드 메시지는 Spring 의
 메시지 코드(`Size.lines`, `NotNull.customerDTO.login`, `NotNull` ...)로 같은 번들에서 찾습니다.
 생성된 TypeScript 클라이언트의 `ApiError` 는 `code` 와 `fieldErrors` (필드 -> 메시지)를 읽습니다.
 
-- 런타임: `io.elasticore.springboot3.validation.ErrorMessages`, `InvariantViolationException(code, message, args...)`.
+- 런타임: `io.elasticore.springboot3.validation.ErrorMessages` (`text`, 서비스 측 검증의 `violation`),
+  `RequestShapeErrors`, `InvariantViolationException(code, message, args...)`.
 - 이미 있는 `XxxApiErrors` 는 개발자 파일(generate-once)입니다. 한 번도 고치지 않았다면 다시 생성되고,
-  고쳤다면 그대로 둡니다. 새 형식을 쓰려면 파일을 지우고 다시 빌드하세요.
+  고쳤다면 그대로 둡니다. 새 형식을 쓰려면 파일을 지우고 다시 빌드하세요. 고친 파일도 런타임만 올리면 `@Valid` 의
+  기본 메시지는 요청 언어로 나갑니다(`messages.text(f)`). 서비스 측 검증은 `messages.text(code + "." + field, v.getMessage())`
+  를 `messages.violation(code + "." + field, v, v.getMessage())` 로 바꿔야 같아집니다.
 - `MessageSource` 빈이 여럿이고 primary 가 없으면 애플리케이션의 것은 쓰지 않습니다 (기동은 됨). classpath 의
   `messages_<언어>.properties` 와 도메인 번들은 그대로 찾습니다.
-- `Accept-Language` 가 없을 때는 기본 문구이지만, 애플리케이션이 세션·쿠키 등으로 언어를 정해 두었으면 그 언어를 따릅니다.
+- 번역이 있는지는 classpath 의 파일(`messages_<언어>`, 도메인 번들, `ValidationMessages`)로 봅니다. `spring.messages.basename`
+  으로 바꾼 번들에만 있는 언어는 번역으로 보지 않습니다 - 그 언어도 쓰려면 위 파일 중 하나를 두세요.
 - 생성기와 **런타임 라이브러리(`elasticore-springboot3`/`4`)를 같은 버전으로** 올리세요. 생성된 엔티티가 런타임의
-  `InvariantViolationException(code, message, args...)` 와 `ErrorMessages` 를 씁니다.
+  `InvariantViolationException(code, message, args...)` 와 `ErrorMessages` 를, 생성된 `XxxApiErrors` 가 `RequestShapeErrors`
+  를 씁니다 (예전 런타임에는 없어서 컴파일되지 않음).
 
 #### Kotlin 에서 생성물이 부팅되기 위한 것
 

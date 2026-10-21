@@ -339,6 +339,114 @@ class ApiContractTest {
                 .isEqualTo(400);
     }
 
+    /** A controller written by hand, outside every generated package (registered below, not scanned). */
+    @org.springframework.web.bind.annotation.RestController
+    static class OutsideController {
+        @org.springframework.web.bind.annotation.PostMapping("/outside")
+        String take(@org.springframework.web.bind.annotation.RequestBody java.util.Map<String, Object> body) {
+            return "ok";
+        }
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration
+    static class OutsideTheDomain {
+        @org.springframework.context.annotation.Bean
+        OutsideController outsideController() {
+            return new OutsideController();
+        }
+    }
+
+    private static final MediaType PROBLEM = MediaType.APPLICATION_PROBLEM_JSON;
+
+    private org.springframework.mock.web.MockHttpServletResponse answer(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) throws Exception {
+        return mvc.perform(request.accept(MediaType.APPLICATION_JSON)).andReturn().getResponse();
+    }
+
+    @Test
+    @DisplayName("what Spring MVC refuses before a controller runs is the API's problem body with a code (Boot 3, Jackson 2)")
+    void requestShapeRefusalsAreProblems() throws Exception {
+        // A coded enum read by the generated CustomDeserializer: its own refusal, at the field.
+        org.springframework.mock.web.MockHttpServletResponse coded = answer(post(ORDERS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"orderDate\":\"2026-08-15 10:00:00\",\"paymentMethod\":\"XX\","
+                        + "\"items\":[{\"itemSeq\":1,\"quantity\":1,\"unitPrice\":10.00}]}"));
+        assertThat(coded.getStatus()).isEqualTo(400);
+        assertThat(MediaType.parseMediaType(coded.getContentType()).isCompatibleWith(PROBLEM)).isTrue();
+        JsonNode body = json.readTree(coded.getContentAsString());
+        assertThat(body.path("code").asText()).isEqualTo("invalid");
+        assertThat(body.path("fieldErrors").get(0).path("field").asText()).isEqualTo("paymentMethod");
+        assertThat(body.path("fieldErrors").get(0).path("code").asText()).isEqualTo("typeMismatch");
+        assertThat(body.path("fieldErrors").get(0).path("message").asText()).isEqualTo("Unknown PaymentMethod code: XX");
+
+        JsonNode text = json.readTree(answer(post(ORDERS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"orderDate\":\"2026-08-15 10:00:00\",\"items\":[{\"itemSeq\":1,\"quantity\":\"abc\",\"unitPrice\":10.00}]}"))
+                .getContentAsString());
+        assertThat(text.path("fieldErrors").get(0).path("field").asText()).isEqualTo("items[0].quantity");
+        assertThat(text.path("fieldErrors").get(0).path("message").asText()).isEqualTo("must be a number");
+
+        assertThat(json.readTree(answer(post(ORDERS).contentType(MediaType.APPLICATION_JSON).content("{\"notes\":"))
+                .getContentAsString()).path("code").asText()).isEqualTo("unreadable");
+        assertThat(json.readTree(answer(get(CUSTOMERS + "/abc")).getContentAsString())
+                .path("fieldErrors").get(0).path("code").asText()).isEqualTo("typeMismatch");
+
+        org.springframework.mock.web.MockHttpServletResponse method = answer(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(ORDERS));
+        assertThat(method.getStatus()).isEqualTo(405);
+        assertThat(method.getHeader("Allow")).contains("POST");
+        assertThat(json.readTree(method.getContentAsString()).path("code").asText()).isEqualTo("method-not-allowed");
+
+        assertThat(json.readTree(answer(post(ORDERS).contentType(MediaType.TEXT_PLAIN).content("x"))
+                .getContentAsString()).path("code").asText()).isEqualTo("unsupported-media-type");
+
+        org.springframework.mock.web.MockHttpServletResponse nowhere = answer(get("/api/v1/shop/nothing/here"));
+        assertThat(nowhere.getStatus()).isEqualTo(404);
+        assertThat(json.readTree(nowhere.getContentAsString()).path("code").asText()).isEqualTo("not-found");
+        // A browser keeps Spring Boot's error page.
+        org.springframework.mock.web.MockHttpServletResponse page = mvc.perform(get("/api/v1/shop/nothing/here")
+                .accept(MediaType.TEXT_HTML)).andReturn().getResponse();
+        assertThat(page.getStatus()).isEqualTo(404);
+        assertThat(page.getContentAsString()).doesNotContain("\"code\"");
+
+        // A controller outside every generated package gets the same answer.
+        assertThat(json.readTree(answer(post("/outside").contentType(MediaType.APPLICATION_JSON).content("{\"a\":"))
+                .getContentAsString()).path("code").asText()).isEqualTo("unreadable");
+    }
+
+    @Test
+    @DisplayName("on a Korean machine a field error and a refused body are said in English unless the request asks for Korean")
+    void errorsAreNotSaidInTheMachinesLanguage() throws Exception {
+        String id = createOrder("language");
+        String tooLong = "{\"orderId\":\"" + id + "\",\"trackingNumber\":\"" + "x".repeat(60) + "\"}";
+        java.util.regex.Pattern hangul = java.util.regex.Pattern.compile("[\\uAC00-\\uD7A3]");
+        for (String language : new String[]{null, "en", "sv"}) {
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder field = put(ORDERS)
+                    .contentType(MediaType.APPLICATION_JSON).content(tooLong);
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder text = post(ORDERS)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"orderDate\":\"2026-08-15 10:00:00\",\"items\":[{\"itemSeq\":1,\"quantity\":\"abc\",\"unitPrice\":10.00}]}");
+            if (language != null) {
+                field.header("Accept-Language", language);
+                text.header("Accept-Language", language);
+            }
+            for (org.springframework.mock.web.MockHttpServletResponse r : new org.springframework.mock.web.MockHttpServletResponse[]{
+                    answer(field), answer(text)}) {
+                String body = r.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+                assertThat(r.getStatus()).isEqualTo(400);
+                assertThat(hangul.matcher(body).find()).as("Accept-Language " + language + ": " + body).isFalse();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("GET of a row that is not there answers the problem body, not an empty 404")
+    void findByIdOfNothingIsAProblem() throws Exception {
+        org.springframework.mock.web.MockHttpServletResponse missing = answer(get(ORDERS + "/no-such-order"));
+        assertThat(missing.getStatus()).isEqualTo(404);
+        JsonNode body = json.readTree(missing.getContentAsString());
+        assertThat(body.path("code").asText()).isEqualTo("not-found");
+        assertThat(body.path("detail").asText()).isEqualTo("Order not found");
+    }
+
     @Test
     @DisplayName("nothing is written from a member back into its root")
     void noMappingRunsFromMemberToRoot() throws Exception {

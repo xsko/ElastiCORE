@@ -9,6 +9,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
@@ -20,6 +21,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -316,6 +318,135 @@ class ShopFlowTest {
         mvc.perform(json(post("/api/petstore/customer/search"), "{\"password\":\"zzz%\"}").session(admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].login").exists());
+    }
+
+    /**
+     * What Spring MVC refuses before a controller runs gets the API's problem
+     * body with a code too - the runtime's RequestShapeErrors, imported by the
+     * generated PetstoreApiErrors - instead of Spring Boot's {timestamp, error}.
+     */
+    @Test
+    void aRequestTheApiCannotTakeIsAProblemWithACode() throws Exception {
+        MockHttpSession user = signIn("user", "user");
+        // Quantity refuses -1 while the body is read, before the @min(1) that 0 meets.
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{\"lines\":[{\"itemId\":1000,\"quantity\":-1}]," + CARD + "}").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("invalid"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("lines[0].quantity"))
+                .andExpect(jsonPath("$.fieldErrors[0].code").value("typeMismatch"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("a quantity cannot be negative: -1"));
+        // ... and in the caller's language, by one key for every line (petstore-messages_ko).
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{\"lines\":[{\"itemId\":1000,\"quantity\":1},{\"itemId\":1001,\"quantity\":-1}]," + CARD + "}")
+                        .session(user).header("Accept-Language", "ko"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("잘못된 요청"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("lines[1].quantity"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("수량은 0 이상의 정수입니다"));
+        // A card type that is not one: the enum's own refusal (@json(code), read by fromCode).
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{\"lines\":[{\"itemId\":1000,\"quantity\":1}],"
+                        + "\"creditCard\":{\"creditCardNumber\":\"4111\",\"creditCardType\":\"DINERS\",\"creditCardExpDate\":\"12/30\"}}").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("creditCard.creditCardType"))
+                .andExpect(jsonPath("$.fieldErrors[0].code").value("typeMismatch"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("Unknown CreditCardType code: DINERS"));
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{\"lines\":").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("unreadable"));
+        mvc.perform(get("/api/petstore/item/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.fieldErrors[0].code").value("typeMismatch"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("must be a number"));
+        // PurchaseOrder is a root without @editable: no PUT. Allow says what there is.
+        mvc.perform(json(put("/api/petstore/purchaseOrder"), "{}").session(user))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("Allow", containsString("POST")))
+                .andExpect(jsonPath("$.code").value("method-not-allowed"));
+        mvc.perform(post("/api/petstore/category/search").contentType(MediaType.TEXT_PLAIN).content("x"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("unsupported-media-type"));
+        mvc.perform(get("/api/petstore/nothing/here"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("not-found"));
+        // A browser keeps Spring Boot's error page.
+        mvc.perform(get("/api/petstore/nothing/here").accept(MediaType.TEXT_HTML))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(not(containsString("\"code\""))));
+        // A row that is not there: findById answers the problem body, no longer an empty 404.
+        mvc.perform(get("/api/petstore/item/99999"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("not-found"))
+                .andExpect(jsonPath("$.detail").value("Item not found"));
+    }
+
+    /**
+     * A container on this machine, for a request: its locale (Korean, as on a
+     * Korean server - the test JVM runs ko_KR) and the header the client sent.
+     */
+    private static RequestPostProcessor koreanContainer(String acceptLanguage) {
+        return request -> {
+            request.setPreferredLocales(java.util.List.of(java.util.Locale.KOREA));
+            // MockHttpServletRequest writes the header for the locales; a client that sent none sent none.
+            request.removeHeader("Accept-Language");
+            if (acceptLanguage != null) request.addHeader("Accept-Language", acceptLanguage);
+            return request;
+        };
+    }
+
+    /**
+     * One answer in one language: the request's, else the bundles' English -
+     * never the server machine's, for the DSL's sentences and Bean
+     * Validation's built-in ones alike.
+     */
+    @Test
+    void anErrorIsNeverSaidInTheMachinesLanguage() throws Exception {
+        String signUp = "{\"login\":\"far-too-long-login\",\"password\":\"force-1234\",\"firstName\":\"F\",\"lastName\":\"L\","
+                + "\"homeAddress\":{\"street1\":\"1 Main St\",\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}";
+        for (String english : new String[]{null, "en", "sv", "fr"}) {
+            mvc.perform(json(post("/api/petstore/account/signup"), signUp).with(koreanContainer(english)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.title").value("Invalid request"))
+                    .andExpect(jsonPath("$.fieldErrors[0].field").value("login"))
+                    .andExpect(jsonPath("$.fieldErrors[0].message").value("size must be between 0 and 10"));
+        }
+        mvc.perform(json(post("/api/petstore/account/signup"), signUp).with(koreanContainer("ko")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("잘못된 요청"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("크기가 0에서 10 사이여야 합니다"));
+        mvc.perform(json(post("/api/petstore/account/signup"), signUp).with(koreanContainer("de;q=0.9, ko;q=0.8")))
+                .andExpect(jsonPath("$.title").value("잘못된 요청"));
+    }
+
+    /**
+     * A refusal hand code throws with a message code is said like a generated
+     * one: by its code in the caller's language, its own wording otherwise, and
+     * the body's code is that code. A failed call to another system is 502.
+     */
+    @Test
+    void aRefusalHandCodeThrowsIsSaidByItsCode() throws Exception {
+        mvc.perform(post("/api/petstore/test-refusal/conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("loan.no-copy-left"))
+                .andExpect(jsonPath("$.title").value("Conflicts with stored data"))
+                .andExpect(jsonPath("$.detail").value("No copy of 978-0-00 is left to lend"));
+        mvc.perform(post("/api/petstore/test-refusal/conflict").header("Accept-Language", "ko"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("loan.no-copy-left"))
+                .andExpect(jsonPath("$.detail").value("빌려줄 수 있는 978-0-00 이(가) 없습니다"));
+        // Without a code: as before, the message as written and the generic code.
+        mvc.perform(post("/api/petstore/test-refusal/plain"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("conflict"))
+                .andExpect(jsonPath("$.detail").value("The loan can't be returned twice"));
+        mvc.perform(post("/api/petstore/test-refusal/courier"))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("upstream"))
+                .andExpect(jsonPath("$.title").value("A called system failed"))
+                .andExpect(jsonPath("$.detail").value("The courier did not answer"));
     }
 
     /** A search the caller got wrong is the caller's 400, not the server's 500. */

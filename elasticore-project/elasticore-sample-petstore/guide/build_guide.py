@@ -514,15 +514,19 @@ page.append('''
         쓸 수 없어서 넣지 않았습니다 - 억지로 쓰면 취소분까지 셉니다. 기간(월별)은 BI 도구가 <code>orderDate</code> 로 나눕니다.</div>
 
       <h2 id="errors">오류 응답</h2>
-      <p>모든 오류는 같은 모양(<code>ProblemDetail</code>: <code>status</code>, <code>title</code>, <code>detail</code>, 필드 오류는 <code>errors</code>)이고, 생성된 <code>PetstoreApiErrors</code> 가 만듭니다.</p>
+      <p>모든 오류는 같은 모양(<code>ProblemDetail</code>: <code>status</code>, <code>title</code>, <code>detail</code>, 프로그램이 분기하는 <code>code</code>,
+        필드 오류는 <code>errors</code> 와 <code>fieldErrors</code>)입니다. 서비스가 거절한 것은 생성된 <code>PetstoreApiErrors</code> 가,
+        컨트롤러에 닿기 전에 Spring MVC 가 거절한 것(JSON 이 아닌 본문, 타입이 틀린 값, 없는 경로·메서드)은 그 파일이 가져오는
+        런타임의 <code>RequestShapeErrors</code> 가 만듭니다. 문구는 요청의 언어(<code>Accept-Language</code>, <code>petstore-messages_ko.properties</code>)로,
+        헤더가 없거나 번역이 없는 언어면 영어로 나갑니다 - 서버 머신의 언어로 나가지 않습니다(<code>ShopFlowTest</code> 가 한국어 JVM 에서 확인).</p>
       <table class="map">
         <thead><tr><th>상태</th><th>뜻</th><th>예 (확인함)</th></tr></thead>
         <tbody>
-          <tr><td>400</td><td>요청이 틀림 - DSL 의 검증, 잘못된 검색, 필수 값 누락</td><td>"lines: the cart is empty", "No property 'nope'…", "A required value is missing."</td></tr>
+          <tr><td>400</td><td>요청이 틀림 - DSL 의 검증, 잘못된 검색, 필수 값 누락, 타입이 받지 않는 값, JSON 이 아닌 본문</td><td>"lines: the cart is empty", "No property 'nope'…", "A required value is missing.", 수량 -1 (<code>lines[0].quantity</code>, <code>typeMismatch</code>), 본문 <code>{"lines":</code> (<code>unreadable</code>)</td></tr>
           <tr><td>401</td><td>로그인 필요</td><td>"Sign in to create PurchaseOrder"</td></tr>
           <tr><td>403</td><td>이 사람에게 허락되지 않음</td><td>"ship PurchaseOrder is for the administrator"</td></tr>
-          <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음</td><td>남의 주문·고객 정보, "Item 99999 does not exist"</td></tr>
-          <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT</td></tr>
+          <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음, 또는 없는 경로</td><td>남의 주문·고객 정보, "Item 99999 does not exist", 없는 상품 GET ("Item not found")</td></tr>
+          <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT (<code>method-not-allowed</code>, <code>Allow: POST</code>)</td></tr>
           <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when status is SHIPPED…"</td></tr>
           <tr><td>422</td><td>도메인의 다른 규칙이 거절 (불변식)</td><td>-</td></tr>
         </tbody>

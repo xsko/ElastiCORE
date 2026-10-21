@@ -50,6 +50,14 @@ port:
 
 ## 2. HTTP Port
 
+> **어느 방식인가.** 같은 DSL 로 두 가지 클라이언트가 나옵니다.
+> - **런타임 프록시** (기본, 2.1~2.6): 생성물은 `@ExternalService` 인터페이스이고 구현은 ElastiCORE 런타임의 프록시입니다.
+>   애플리케이션 클래스에 `@EnableElastiCore` 가 있어야 빈이 됩니다 (5장).
+> - **Spring HTTP 서비스 클라이언트** (`httpPort: spring`, Spring Boot 4, 2.7): Spring 이 구현하는 `@HttpExchange`
+>   인터페이스입니다. `@EnableElastiCore` 가 필요 없습니다. 규칙 엔진(`elcore3`)의 Spring Boot 4 프로젝트에서 권합니다.
+>
+> 두 방식 모두 **상대가 오류로 답해도 예외 없이 값으로 돌려줍니다.** 실패를 어떻게 다룰지는 2.8 을 보세요.
+
 ### 2.1 기본 구조
 
 ```yaml
@@ -433,16 +441,25 @@ public interface CreditCheckPort {
 | 객체, 그 외 메서드 | JSON 본문 (null이면 본문 없음) |
 | 객체, `multipart/form-data` + `@contentType` | 파트 |
 
-4xx/5xx 응답도 런타임처럼 **예외 없이** 응답 본문을 반환값으로 돌려줍니다.
+4xx/5xx 응답도 런타임의 일반 요청처럼 **예외 없이** 응답 본문을 반환값으로 돌려줍니다 (생성된 설정이
+`PortAuth.passErrorBodies` 를 겁니다). 답이 아예 없으면(연결 거부, 시간 초과) `RestClientException` 입니다. 2.8 을 보세요.
 
 **설정은 예전 키가 그대로 통합니다** (`{domain}.{Port}.*`). 새 키로도 씁니다:
 
 | 예전 키 (계속 동작) | Spring Boot 4 키 |
 |---|---|
-| `erp.CreditCheckPort.url` | `spring.http.serviceclient.erp-credit-check-port.base-url` |
+| `erp.CreditCheckPort.url` | `spring.http.serviceclient.erp--credit-check-port.base-url` (그룹 이름 그대로, `--` 두 개) |
 | `erp.CreditCheckPort.connectTimeout`, `.readTimeout` (ms), 없으면 `elasticore.http.connectTimeout`, `.readTimeout` | `...connect-timeout`, `...read-timeout` |
 | `erp.CreditCheckPort.authKey`, `.apiKey` | (같은 키, apiKey가 우선) |
 | bean `erp.CreditCheckPort.httpAuthProvider` | (같은 빈 - 런타임처럼 Authorization이 든 헤더 목록을 받아 고침. 본문 인자는 `null`) |
+
+**base URL 은 기동할 때 한 번 정해집니다.** Spring 은 HTTP 서비스 클라이언트를 애플리케이션이 뜰 때 만들므로, 그때의
+`base-url`(예전 키 `erp.CreditCheckPort.url` 도)이 끝까지 쓰입니다. 런타임 프록시는 `{id}.url` 을 **호출할 때마다** 읽습니다.
+
+- 기본값이 서버 자신을 가리키면(같은 서버 안의 가짜 상대, `http://localhost:${server.port}/fake-courier`) 고정 포트로 띄울 때만
+  맞습니다. `@SpringBootTest(webEnvironment = RANDOM_PORT)` 의 포트는 클라이언트가 만들어진 뒤에 정해지므로 **포트 0 으로
+  호출합니다** (`I/O error on POST request for "http://localhost:0/..."`) - 테스트는 2.8 의 방법으로 하세요.
+- 운영 중 주소를 바꾸려면 재기동합니다.
 
 **이런 포트는 예전 방식으로 남습니다** (빌드 로그에 `stays on the ElastiCORE port runtime`과 이유가 나옴). Spring 클라이언트로는 런타임과 같은 요청을 보낼 수 없는 경우입니다:
 - `application/x-www-form-urlencoded` (객체를 form 필드로 펼침)
@@ -456,6 +473,64 @@ public interface CreditCheckPort {
 - `ignoreSSL`, `proxyHost/proxyPort` - `spring.http.serviceclient.<group>.ssl.bundle`이나 JVM 프록시 설정을 씁니다.
 - `HttpAuthProvider`가 요청 본문을 바꾸는 것, `HttpTransformerFactory` - 헤더만 반영됩니다.
 - 멀티파트 파트별 `@contentType`의 값 - 객체 파트는 JSON, 파일 파트는 파일 형식으로 나갑니다.
+
+### 2.8 실패 처리 - 상대가 실패했을 때
+
+포트는 **실패를 판단하지 않습니다.** 상대가 오류 상태(4xx/5xx)로 답하면 그 본문을 반환값으로 돌려주고, 답이 없으면 HTTP
+클라이언트의 예외를 그대로 던집니다. 어느 쪽도 이 API 를 부른 클라이언트에게 "다른 시스템 탓" 이라고 말하지 않습니다 -
+실패라고 판단하는 것은 포트를 부르는 코드의 몫입니다.
+
+| 상대가 | 런타임 프록시 (2.1~2.6) | `httpPort: spring` (2.7) |
+|---|---|---|
+| 200, 읽을 수 있는 본문 | 반환값 | 반환값 |
+| 4xx/5xx, JSON 본문 | **반환값** (본문을 반환 타입으로 읽음 - 없는 필드는 `null`) | **반환값** (같음) |
+| 4xx/5xx, 반환 타입으로 읽을 수 없는 본문 (HTML 오류 페이지 등) | 예외 (읽기 실패) | 예외 (읽기 실패) |
+| 답이 없음 - 연결 거부, 시간 초과 | 예외 (`WebClientRequestException` 등) | `RestClientException` (`ResourceAccessException`) |
+| `multipart/form-data` 요청이 4xx/5xx | 예외 (`HttpStatusCodeException` - RestTemplate 로 보냄) | (반환값, 위와 같음) |
+
+예외를 그대로 두면 API 는 500 입니다. 그래서 순진하게 쓰면 **틀린 채로 성공합니다**: 택배사가 500 을 답해도 운송장 번호가
+`null` 인 응답이 돌아와 주문이 "배송됨" 으로 저장되고 200 이 나갑니다. (확인: `elasticore-springboot3` 의
+`PortFailureContractTest`)
+
+**502 로 답하고 되돌리기** - 런타임의 `io.elasticore.springboot3.http.PortCallException` (502 Bad Gateway) 를 던집니다.
+생성된 `XxxApiErrors` 가 502, `"code": "upstream"`, 던진 이유를 `detail` 로 답합니다 (확인: Pet Store
+`ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode`). unchecked 예외이므로 트랜잭션 안에서 던지면 Spring 의 기본 규칙대로
+그 트랜잭션이 되돌려집니다 - 상태를 바꾼 뒤 부른다면 그 메서드가 트랜잭션이어야 합니다.
+
+```java
+// PurchaseOrderService (개발자 파일) - 배송 명령이 택배사를 부른다
+@Override
+@Transactional                          // 상태 변경과 호출을 한 트랜잭션으로: 실패하면 함께 되돌림
+public PurchaseOrderDTO ship(String orderId) {
+    PurchaseOrderDTO shipped = super.ship(orderId);
+    ShipmentReply reply;
+    try {
+        reply = courier.ship(new ShipmentRequest(orderId));
+    } catch (RestClientException unreachable) {          // 런타임 프록시면 WebClientException 도
+        throw new PortCallException("The courier could not be reached", unreachable);
+    }
+    if (reply == null || reply.getTrackingNo() == null) {  // 오류 상태도 값으로 오므로 내용으로 판단
+        throw new PortCallException("The courier did not accept the shipment");
+    }
+    ...
+}
+```
+
+- `PortCallException(code, message, args...)` 로 메시지 코드를 주면 요청 언어로 번역됩니다 (`elasticore-rule-guide.md`
+  "손으로 쓴 거절을 번역하기"). 상대의 상태와 본문을 남기려면 `PortCallException(port, upstreamStatus, upstreamBody, message, cause)`.
+- `ResponseStatusException` 이므로, 이 예외보다 먼저 생성된(그래서 처리기가 없는) `XxxApiErrors` 에서도 502 로 나갑니다
+  (본문은 Spring Boot 의 것).
+- 포트 전체에 한 번에 걸고 싶으면(`httpPort: spring`) 그 그룹의 `RestClientHttpServiceGroupConfigurer` 에 상태를 보는
+  interceptor 를 더해 `PortCallException` 을 던지게 할 수도 있습니다. 설정으로 켜는 실패 정책은 아직 없습니다 (3.1 예정).
+
+**테스트 - 가짜 상대**
+
+- 포트를 목으로 바꿉니다: `@MockitoBean CourierApiPort courier;` (Spring Boot 3.4 이상, 이전은 `@MockBean`). 성공, 오류
+  본문(`null` 필드), 예외를 각각 돌려주게 해서 502 와 되돌림을 확인합니다.
+- 같은 서버 안의 가짜 컨트롤러(`/fake-courier`)를 부르게 하려면 **고정 포트**로 띄웁니다
+  (`webEnvironment = DEFINED_PORT`, 비어 있는 포트를 `server.port` 로). `httpPort: spring` 은 base URL 을 기동할 때 정하므로
+  `RANDOM_PORT` 와 같이 쓰면 포트 0 을 부릅니다 (2.7).
+- 바깥의 가짜 서버(`MockWebServer`, WireMock)를 쓰면 그 주소를 `{domain}.{Port}.url` 에 넣습니다.
 
 ---
 
@@ -827,31 +902,35 @@ port:
 ### build.gradle
 ```gradle
 dependencies {
-    implementation 'io.elasticore:elasticore-base:1.8.x'
-    implementation 'io.elasticore.springboot3:elasticore-springboot3:1.8.x'
-
-    // HTTP Port 사용 시
-    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    // 버전은 README 의 설치 안내와 같게 (생성기와 런타임은 같은 버전)
+    implementation 'io.elasticore:elasticore-base:<version>'
+    implementation 'io.elasticore.springboot3:elasticore-springboot3:<version>'   // Boot 4: io.elasticore.springboot4:elasticore-springboot4
 
     // DBMS Port 사용 시
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // httpPort: spring (2.7) 사용 시
+    implementation 'org.springframework.boot:spring-boot-starter-restclient'
 }
 ```
+런타임 프록시의 HTTP 클라이언트(WebClient)는 런타임 라이브러리가 실행할 때 함께 가져옵니다. 코드에서 그 타입을 쓰려면
+(예: `WebClientException` 을 잡으려면) `spring-boot-starter-webflux` 를 직접 적으세요.
 
 ### Application 클래스
+런타임 프록시(2.1~2.6, DBMS 포트)는 `@EnableElastiCore` 가 빈으로 등록합니다. `httpPort: spring` 포트만 쓰면 필요 없습니다.
+
 ```java
 @SpringBootApplication
-@ComponentScan(basePackages = {
-    "io.elasticore.springboot3",
-    "com.example.your.package"
-})
+@EnableElastiCore          // io.elasticore.springboot3.EnableElastiCore - Boot 4 런타임도 같은 패키지
 public class Application {
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
     }
 }
 ```
-`io.elasticore.springboot3` 패키지가 ComponentScan에 포함되어야 Port 프록시가 등록됩니다.
+`@ComponentScan("io.elasticore.springboot3")` 로는 포트가 등록되지 않습니다 - 등록기는 컴포넌트가 아니라 `@EnableElastiCore`
+가 가져오는 것입니다. 그 스캔이 등록하는 것은 예전과 같이 `ApplicationContextProvider` 와 `DbTransactionGateway` 뿐이고,
+API 오류 처리기(`RequestShapeAdvice`)는 스캔에 잡히지 않습니다 - 생성된 `XxxApiErrors` 가 가져올 때만 생깁니다.
 
 ### env.yml (Port 네임스페이스)
 ```yaml
@@ -886,9 +965,14 @@ env:
 No qualifying bean of type 'ShopReportService'
 ```
 
-애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 다만 등록기는
-호출 스택에서 메인 패키지를 알아내므로, **테스트 컨텍스트처럼 그 스택을 같은 방식으로
-걷지 않는 곳에서는 직접 등록해야 합니다:**
+애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
+**`@EnableElastiCore` 가 붙은 클래스의 패키지**와, 호출 스택에 있는 `@SpringBootApplication` 클래스의 패키지를
+봅니다. 그래서 그 애플리케이션 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261021 부터 - 전에는
+호출 스택만 보아 테스트 컨텍스트에서는 아무것도 등록하지 않았습니다). 두 패키지에서 같은 인터페이스를 찾으면 한 번만
+등록합니다.
+
+`@EnableElastiCore` 가 없는 구성(테스트가 런타임 조각만 가져오는 경우)에서는 직접 등록합니다. 직접 선언한
+`@Bean` 이 있으면 등록기는 그 포트를 등록하지 않으므로, 예전처럼 테스트에 적어 둔 `@Bean` 도 그대로 동작합니다:
 
 ```java
 @Bean
@@ -901,6 +985,22 @@ ShopReportService shopReportService(BeanFactory beanFactory, Environment environ
 ```
 
 `elasticore-template-ddd` 의 `DddSampleApp` 이 이 형태를 그대로 보여줍니다.
+
+**프록시를 감싸려면 `@Primary`.** 직접 선언한 빈이 `@Primary` 이면 등록기의 프록시는 남습니다. 타입으로 주입하는 곳은
+감싼 빈을 받고, 감싼 빈은 이름(인터페이스의 단순 이름)으로 프록시를 받습니다:
+
+```java
+@Bean
+@Primary
+CourierPort retryingCourier(@Qualifier("CourierPort") CourierPort proxy) {
+    return parcel -> retry(() -> proxy.ship(parcel));
+}
+```
+
+`@Primary` 가 아닌 빈을 선언하면 프록시는 등록되지 않으므로, 그때는 이름 `"CourierPort"` 로 주입할 수 없습니다.
+`@Primary` 인 가짜(테스트에서 포트를 통째로 바꾸는 빈)도 프록시를 남기므로 `List<CourierPort>`·`getBeansOfType` 은 둘을 받습니다 -
+하나만 있어야 하면 가짜에서 `@Primary` 를 빼세요.
+포트 인터페이스를 구현한 클래스(가짜, 래퍼)가 스캔하는 패키지에 있어도 프록시로 등록하지 않습니다 - 인터페이스만 포트입니다.
 
 ### application.properties
 ```properties
