@@ -135,7 +135,7 @@ public class ServiceAccessRules implements CodeRules {
     void nested(EntitySpec e, FieldSpec f) {
         if (!nestsGuarded(e, f)) return;
         ctx(e).removeField(f);
-        io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
+        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                 "[%s] %s.%s is left out: %s is read under @access(read=%s), and a DTO carrying it would show it"
                         + " to whoever reads %s. Its identity stays.",
                 e.domainClassName(), e.getName(), f.name(), simple(f.typeName()), nestedReadLevel(e, f), e.getName()));
@@ -513,12 +513,9 @@ public class ServiceAccessRules implements CodeRules {
         return e.isKnownEnum(type) || "String".equals(type);
     }
 
-    private static final java.util.Set<String> SAID_SIGN_IN =
-            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
-
     private static void warnSignIn(EntitySpec e, String what) {
-        String message = String.format("[%s] %s: %s", e.domainClassName(), e.getName(), what);
-        if (SAID_SIGN_IN.add(message)) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", message);
+        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(
+                String.format("[%s] %s: %s", e.domainClassName(), e.getName(), what));
     }
 
     /**

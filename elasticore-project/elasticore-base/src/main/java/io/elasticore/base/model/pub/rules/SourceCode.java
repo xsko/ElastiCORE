@@ -780,7 +780,20 @@ public final class SourceCode {
     /** Forgets the warnings said so far: each generation run says its own. */
     public static void resetWarnings() {
         REMOVAL_WARNED.clear();
+        DSL_WARNED.clear();
         DeclarationText.resetWarnings();
+    }
+
+    private static final java.util.Set<String> DSL_WARNED =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
+    /**
+     * A DSL warning said once per run: a rule runs for each artifact of an
+     * entity (its DTO, its search DTO ...), and the same finding printed twice
+     * reads as two problems.
+     */
+    public static void dslWarnOnce(String message) {
+        if (DSL_WARNED.add(message)) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", message);
     }
 
     // ---- method-level annotations (project rules) --------------------------

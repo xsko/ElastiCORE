@@ -245,6 +245,24 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 관련 파일: `YamlFileMainModelLoader.java`, `ModelCheck.java`, `RulesGenRunner.java`, `LoadErrorFailsTest.java`,
   `elasticore-dev-guide.md`
 
+### Bug Fixes (`@default(now)`)
+
+#### `timestamp` 필드의 `@default(now)` 가 `Instant.now()` 를 쓴다, 그리고 "만들 때의 시각"을 문서에
+- `@default(now)` 는 2.x 부터 `date`·`datetime`·`time` 에 `LocalDate.now()` 같은 초기값을 썼지만 가이드 어디에도 없었고,
+  규칙 엔진의 `timestamp`(Instant) 에는 `now` 를 그대로 써서 컴파일되지 않았다. `java.time.Instant.now()` 를 쓰고,
+  DTO 에는 날짜 기본값처럼 붙이지 않는다
+- 세 에이전트 모두 "서버가 정하는 주문 시각"을 `beforeSave` 에 손으로 썼다. `orderedAt: datetime @readonly @default(now)`
+  한 줄이면 된다는 것(만들 때 그 시각, 요청 값 무시, 수정해도 그대로)을 `elasticore-annotation-guide.md` 의 `@default` 에 적었다
+- 관련 파일: `DefaultValueLiteral.java`, `SignInAndReferencesTest.java`(`aTimeSetWhenTheRowIsMade`), `elasticore-annotation-guide.md`
+
+### Improvements (DSL 경고는 한 번)
+
+#### 같은 DSL 경고가 한 실행에 한 번만 나온다
+- "Ticket.agent is left out: AgentDTO is read under @access(read=owner) ..." 처럼 엔티티의 산출물(DTO, 검색 DTO)마다 도는
+  규칙의 경고가 두 번씩 찍혀 문제가 둘인 것처럼 읽혔다. `SourceCode.dslWarnOnce` 가 실행마다(`resetWarnings`) 한 번만 말한다.
+  `@signin` 의 경고도 같은 방식이다
+- 관련 파일: `SourceCode.java`, `ServiceAccessRules.java`
+
 ## 3.0.261020-alpha2
 
 ### Bug Fixes (생성기)
