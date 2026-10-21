@@ -58,6 +58,45 @@ public final class BeanValidation {
     }
 
     /**
+     * A built-in constraint message said again in the given language, with
+     * its numbers: "size must be between 1 and 10" for Locale.ROOT, the
+     * provider's Korean for Locale.KOREAN.
+     *
+     * The error is a ConstraintViolation, or a Spring error that carries one
+     * (a FieldError from @Valid). Only the provider's own templates
+     * ({jakarta.validation.constraints.Size.message} ...) are said again: a
+     * DSL sentence is a literal in one language already, and a custom
+     * validator's message may name values only its own validation knew.
+     *
+     * @return the message, or null when there is nothing to say again
+     */
+    public static String messageIn(Object error, java.util.Locale locale) {
+        if (error == null || locale == null || !AVAILABLE) return null;
+        try {
+            return Checks.messageIn(error, locale);
+        } catch (RuntimeException | LinkageError cannot) {
+            return null;
+        }
+    }
+
+    /**
+     * The values Spring gives a constraint's message codes: the field, then
+     * the constraint's attributes in the order of their names (Size: max,
+     * min) - so a translation of Size.lines reads {1} and {2} alike whether
+     * @Valid or a service-side check refused the value.
+     *
+     * @return the values, or none when the argument is not a ConstraintViolation
+     */
+    public static Object[] argumentsOf(Object violation) {
+        if (violation == null || !AVAILABLE) return new Object[0];
+        try {
+            return Checks.argumentsOf(violation);
+        } catch (RuntimeException | LinkageError cannot) {
+            return new Object[0];
+        }
+    }
+
+    /**
      * The constraints of the properties that carry a value - a partial
      * update's rules.
      *
@@ -116,11 +155,17 @@ public final class BeanValidation {
     private static final class Checks {
 
         private static volatile jakarta.validation.Validator validator;
+        /** The factory the validator came from, when known: its interpolator says messages again. */
+        private static volatile jakarta.validation.ValidatorFactory factory;
         private static volatile boolean unavailable;
 
         static void use(Object springValidator) {
             if (springValidator instanceof jakarta.validation.Validator) {
                 validator = (jakarta.validation.Validator) springValidator;
+                // Spring's LocalValidatorFactoryBean is both: the application's
+                // message interpolator, with its MessageSource if it set one.
+                factory = springValidator instanceof jakarta.validation.ValidatorFactory
+                        ? (jakarta.validation.ValidatorFactory) springValidator : null;
                 unavailable = false;
             }
         }
@@ -130,7 +175,9 @@ public final class BeanValidation {
                 synchronized (Checks.class) {
                     if (validator == null && !unavailable) {
                         try {
-                            validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+                            jakarta.validation.ValidatorFactory made = jakarta.validation.Validation.buildDefaultValidatorFactory();
+                            factory = made;
+                            validator = made.getValidator();
                         } catch (RuntimeException noProvider) {
                             // The API without an implementation: nothing to check with.
                             unavailable = true;
@@ -139,6 +186,98 @@ public final class BeanValidation {
                 }
             }
             return validator;
+        }
+
+        private static jakarta.validation.MessageInterpolator interpolator() {
+            jakarta.validation.ValidatorFactory f = factory;
+            if (f == null) {
+                validator();
+                f = factory;
+            }
+            if (f == null) {
+                // A validator handed over without its factory: the provider's default.
+                synchronized (Checks.class) {
+                    if (factory == null && !unavailable) {
+                        try {
+                            factory = jakarta.validation.Validation.buildDefaultValidatorFactory();
+                        } catch (RuntimeException noProvider) {
+                            return null;
+                        }
+                    }
+                    f = factory;
+                }
+            }
+            return f == null ? null : f.getMessageInterpolator();
+        }
+
+        static String messageIn(Object error, java.util.Locale locale) {
+            jakarta.validation.ConstraintViolation<?> v = violationOf(error);
+            if (v == null) return null;
+            String template = v.getMessageTemplate();
+            if (!isProviderTemplate(template)) return null;
+            jakarta.validation.MessageInterpolator interpolator = interpolator();
+            if (interpolator == null) return null;
+            return interpolator.interpolate(template, new Context(v), locale);
+        }
+
+        static Object[] argumentsOf(Object error) {
+            jakarta.validation.ConstraintViolation<?> v = violationOf(error);
+            if (v == null) return new Object[0];
+            List<Object> args = new ArrayList<Object>();
+            args.add(String.valueOf(v.getPropertyPath()));
+            java.util.Map<String, Object> attributes =
+                    new java.util.TreeMap<String, Object>(v.getConstraintDescriptor().getAttributes());
+            attributes.remove("message");
+            attributes.remove("groups");
+            attributes.remove("payload");
+            args.addAll(attributes.values());
+            return args.toArray();
+        }
+
+        /** The violation itself, or the one a Spring error (a FieldError from @Valid) carries. */
+        private static jakarta.validation.ConstraintViolation<?> violationOf(Object error) {
+            if (error instanceof jakarta.validation.ConstraintViolation) {
+                return (jakarta.validation.ConstraintViolation<?>) error;
+            }
+            if (error instanceof org.springframework.validation.ObjectError) {
+                org.springframework.validation.ObjectError spring = (org.springframework.validation.ObjectError) error;
+                if (spring.contains(jakarta.validation.ConstraintViolation.class)) {
+                    return spring.unwrap(jakarta.validation.ConstraintViolation.class);
+                }
+            }
+            return null;
+        }
+
+        /** A template of the provider's own bundle: {jakarta.validation.constraints.Size.message}. */
+        private static boolean isProviderTemplate(String template) {
+            if (template == null || !template.endsWith("}") || template.indexOf('}') != template.length() - 1) return false;
+            return template.startsWith("{jakarta.validation.constraints.")
+                    || template.startsWith("{org.hibernate.validator.constraints.");
+        }
+
+        /** What an interpolator needs of a violation to say its message again. */
+        private static final class Context implements jakarta.validation.MessageInterpolator.Context {
+            private final jakarta.validation.ConstraintViolation<?> violation;
+
+            Context(jakarta.validation.ConstraintViolation<?> violation) {
+                this.violation = violation;
+            }
+
+            @Override
+            public jakarta.validation.metadata.ConstraintDescriptor<?> getConstraintDescriptor() {
+                return violation.getConstraintDescriptor();
+            }
+
+            @Override
+            public Object getValidatedValue() {
+                return violation.getInvalidValue();
+            }
+
+            @Override
+            public <T> T unwrap(Class<T> type) {
+                if (type.isInstance(this)) return type.cast(this);
+                throw new jakarta.validation.ValidationException("Not available here: " + type.getName());
+            }
         }
 
         static void all(Object target) {

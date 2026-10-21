@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 import io.elasticore.runtime.utils.DTOUtils
+import io.elasticore.springboot3.validation.NotFoundException
 ${jsonViewImport}
 /**
  * REST API for ${entityClassName}.
@@ -38,7 +39,8 @@ ${createMethodJsonView}    @PostMapping
 ${readMethodJsonView}    @GetMapping("${pkPathInfo}")
     fun findById(${pkParamInfo}): ResponseEntity<${dtoClassName}> {
         val found = ${entityName}Service.findById(${pkFieldInfo})
-        return found.map { ResponseEntity.ok(it) }.orElseGet { ResponseEntity.notFound().build() }
+        // 404 in the API's problem body (NotFoundException), not an empty one.
+        return found.map { ResponseEntity.ok(it) }.orElseThrow { NotFoundException("${entityClassName} not found") }
     }
 
     @Operation(summary = "Search ${entityClassName} data")
@@ -70,7 +72,7 @@ ${updateMethodJsonView}    @PutMapping
     @DeleteMapping("${pkPathInfo}")
     fun delete(${pkParamInfo}): ResponseEntity<Boolean> {
         if (!${entityName}Service.findById(${pkFieldInfo}).isPresent) {
-            return ResponseEntity.notFound().build()
+            throw NotFoundException("${entityClassName} not found")
         }
         return ResponseEntity.ok(${entityName}Service.deleteById(${pkFieldInfo}))
     }

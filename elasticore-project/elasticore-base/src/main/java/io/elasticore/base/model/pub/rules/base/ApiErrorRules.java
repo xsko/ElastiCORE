@@ -32,12 +32,20 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *   InvariantViolationException (cause)  409  a step the state does not allow (state.*)
  *                                        404  a row the request refers to is not there (reference.*)
  *                                        422  any other rule the aggregate refuses
+ *   PortCallException                    502  a system this one called failed it
  * </pre>
  *
  * One file per domain that exposes anything, beside its controllers and
  * scoped to their package, so it answers for them and for nothing else in
  * the application. Generate-once: what the body of an error looks like is a
  * house style, and the house is the developer's.
+ *
+ * What Spring MVC refuses before any controller runs (a body that is not
+ * JSON, a value of the wrong type, a missing parameter, 404/405/406/415) is
+ * answered by the runtime's RequestShapeErrors, which the file imports: one
+ * advice for the whole application, so the handler bodies are not frozen into
+ * every generated file, and no auto-configuration changes an application that
+ * does not import it.
  */
 public class ApiErrorRules implements CodeRules, DomainArtifactContributor {
 

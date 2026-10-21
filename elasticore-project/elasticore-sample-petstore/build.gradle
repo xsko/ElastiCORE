@@ -86,6 +86,9 @@ tasks.named('elcore3') {
 test {
 	useJUnitPlatform()
 	testLogging { events 'failed' }
+	// The tests run as on a server whose machine language is Korean: an error
+	// that leaked the machine's language into an English answer shows here.
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
 }
 
 // The browser side: the client generated into src/main/ts and the pages in

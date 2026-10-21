@@ -130,4 +130,41 @@ public class ErrorMessagesTest {
                 new String[]{"NotNull.customerDTO.login", "NotNull"}, null, "must not be null");
         assertEquals("must not be null", messages.text(error));
     }
+
+    /**
+     * A refusal hand code throws with a message code is said like a generated
+     * one: the code in the request's language, else its own wording with its values.
+     */
+    @Test
+    public void aRefusalWithACodeIsTranslatedLikeAGeneratedOne() {
+        ConflictException conflict = new ConflictException("state.Order.status.ship",
+                "Order cannot ship when status is {0}; it must be {1}", "SHIPPED", "[PLACED]");
+        assertEquals("Order cannot ship when status is SHIPPED; it must be [PLACED]", conflict.getMessage());
+        assertEquals("state.Order.status.ship", conflict.getCode());
+
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals("주문 상태가 SHIPPED이면 배송할 수 없습니다 ([PLACED])",
+                messages.text(conflict.getCode(), conflict.getMessage(), conflict.getArgs()));
+        LocaleContextHolder.setLocale(Locale.FRENCH);
+        assertEquals("Order cannot ship when status is SHIPPED; it must be [PLACED]",
+                messages.text(conflict.getCode(), conflict.getMessage(), conflict.getArgs()));
+
+        // No code: the message as written, apostrophes and all.
+        ConflictException plain = new ConflictException("The loan can't be returned twice");
+        assertEquals("The loan can't be returned twice", messages.text(plain.getCode(), plain.getMessage(), plain.getArgs()));
+
+        assertEquals("loan.missing", new NotFoundException("loan.missing", "Loan {0} does not exist", 7).getCode());
+        assertEquals("Loan 7 does not exist", new NotFoundException("loan.missing", "Loan {0} does not exist", 7).getMessage());
+        assertEquals("x", new BadRequestException("bad.x", "x").getMessage());
+        assertEquals("review.writer", new io.elasticore.springboot3.security.ForbiddenException("review.writer", "Only the writer").getCode());
+        assertEquals("Sign in", new io.elasticore.springboot3.security.NotSignedInException("Sign in").getMessage());
+    }
+
+    /** A default with values is formatted when no bundle has the code. */
+    @Test
+    public void aDefaultPatternIsFormattedWhenNoBundleHasIt() {
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals("must be one of: A, B", messages.format("no.such.code", "must be one of: {0}", "A, B"));
+        assertEquals("plain", messages.format("no.such.code", "plain"));
+    }
 }

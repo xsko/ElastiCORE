@@ -64,12 +64,34 @@ public final class ErrorCatalog {
         put(m, "forbidden", "Not allowed", null);
         put(m, "bad-request", "Invalid request", null);
         put(m, "no-such-property", "Invalid request", null);
+        put(m, "upstream", "A called system failed", null);
+        // What the runtime's RequestShapeErrors (imported by the generated
+        // handler) answers when Spring MVC refuses a request before any
+        // controller runs. It reads every domain's bundle, so a translation
+        // beside this file reaches those answers too.
+        put(m, "unreadable", "Invalid request", "The request body is missing or is not valid JSON.");
+        put(m, "method-not-allowed", "Method not allowed", "Method {0} is not supported here.");
+        put(m, "unsupported-media-type", "Unsupported media type", "Content type {0} is not supported here.");
+        put(m, "not-acceptable", "Not acceptable", "The answer can only be given as {0}.");
+        detail(m, "no-such-path", "No such path: {0}");
+        detail(m, "missing-value", "is required");
+        detail(m, "type.number", "must be a number");
+        detail(m, "type.boolean", "must be true or false");
+        detail(m, "type.text", "must be text");
+        detail(m, "type.datetime", "must be a date or time");
+        detail(m, "type.enum", "must be one of: {0}");
+        detail(m, "type.other", "has the wrong type");
         return m;
     }
 
     private static void put(Map<String, String> m, String code, String title, String detail) {
         m.put("error." + code + ".title", title);
         if (detail != null) m.put("error." + code, detail);
+    }
+
+    /** A sentence with no title of its own: part of another answer (a field's message, a 404's detail). */
+    private static void detail(Map<String, String> m, String code, String detail) {
+        m.put("error." + code, detail);
     }
 
     /**

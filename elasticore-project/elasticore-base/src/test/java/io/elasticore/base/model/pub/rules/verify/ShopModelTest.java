@@ -415,6 +415,22 @@ public class ShopModelTest {
         assertTrue(errors.contains("new ErrorMessages(messageSource.getIfUnique(), \"i18n/ptshop-messages\")"), errors);
         assertTrue(errors.contains("String code = ex.getCode();"), errors);
         assertTrue(errors.contains("messages.text(code, ex.getMessage(), ex.getArgs())"), errors);
+        // What Spring MVC refuses before a controller runs: the runtime's one advice, imported.
+        assertTrue(errors.contains("@Import(RequestShapeErrors.class)"), errors);
+        // A service-side violation is said in the request's language, built-ins too.
+        assertTrue(errors.contains("String message = messages.violation(code + \".\" + field, v, v.getMessage());"), errors);
+        assertTrue(errors.contains("problem(HttpStatus.BAD_GATEWAY, \"upstream\", \"A called system failed\","), errors);
+        // The codes those answers use are in the bundle a translator copies.
+        assertTrue(bundle.contains("error.unreadable=The request body is missing or is not valid JSON."), bundle);
+        assertTrue(bundle.contains("error.method-not-allowed.title=Method not allowed"), bundle);
+        assertTrue(bundle.contains("error.type.enum=must be one of: {0}"), bundle);
+        assertTrue(bundle.contains("error.upstream.title=A called system failed"), bundle);
+
+        // findById and delete of a row that is not there: the problem body's 404, not an empty one.
+        String controller = java("adapter/in/web/PtOrderController.java");
+        assertTrue(controller.contains("orElseThrow(() -> new NotFoundException(\"PtOrder not found\"))"), controller);
+        assertTrue(controller.contains("import io.elasticore.springboot3.validation.NotFoundException;"), controller);
+        assertFalse(controller.contains("ResponseEntity.notFound()"), controller);
 
         String support = read("src/main/ts/apiSupport.ts");
         assertTrue(support.contains("get code(): string | undefined"), support);
