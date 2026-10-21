@@ -8,8 +8,8 @@ package io.elasticore.springboot3.validation;
  * with the generic text for a broken unique or foreign key.
  *
  * Given a message code, it is said in the request's language the way the
- * generated refusals are: the code is looked up in messages_<lang>.properties
- * and beside the domain's bundle (i18n/<domain>-messages_ko.properties), the
+ * generated refusals are: the code is looked up in {@code messages_<lang>.properties}
+ * and beside the domain's bundle ({@code i18n/<domain>-messages_ko.properties}), the
  * message is what is said where no translation has it, and the body's "code"
  * is that code:
  * <pre>

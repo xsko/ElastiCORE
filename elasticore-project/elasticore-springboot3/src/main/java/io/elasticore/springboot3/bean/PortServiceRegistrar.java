@@ -38,8 +38,8 @@ import java.util.function.Supplier;
  * </ul>
  *
  * <p>Where it looks: the package of the class that carries @EnableElastiCore -
- * the one a @SpringBootTest starts too - and the package of the
- * @SpringBootApplication class that started the application, when it is on
+ * the one a @SpringBootTest starts too - and the package of the class
+ * annotated {@code @SpringBootApplication} that started the application, when it is on
  * the call stack. An interface found in both is registered once.</p>
  *
  * <p>A bean the application declares for a port itself (a hand-written @Bean,

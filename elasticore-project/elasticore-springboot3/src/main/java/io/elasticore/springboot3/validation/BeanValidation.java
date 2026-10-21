@@ -83,7 +83,7 @@ public final class BeanValidation {
      * The values Spring gives a constraint's message codes: the field, then
      * the constraint's attributes in the order of their names (Size: max,
      * min) - so a translation of Size.lines reads {1} and {2} alike whether
-     * @Valid or a service-side check refused the value.
+     * {@code @Valid} or a service-side check refused the value.
      *
      * @return the values, or none when the argument is not a ConstraintViolation
      */
