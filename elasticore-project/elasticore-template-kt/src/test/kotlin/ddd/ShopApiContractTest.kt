@@ -112,6 +112,23 @@ class ShopApiContractTest {
         assertThat(body).contains("an order has at least one line")
     }
 
+    @Test
+    @DisplayName("on a Korean machine a field error is said in English unless the request asks for Korean")
+    fun aFieldErrorIsNotSaidInTheMachinesLanguage() {
+        val id = createOrder("language")
+        val tooLong = """{"orderId":"$id","trackingNumber":"${"x".repeat(60)}"}"""
+        val hangul = Regex("[\\uAC00-\\uD7A3]")
+        for (language in listOf(null, "en", "sv")) {
+            var request = put(orders).contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON).content(tooLong)
+            if (language != null) request = request.header("Accept-Language", language)
+            val response = mvc.perform(request).andReturn().response
+            val body = response.getContentAsString(Charsets.UTF_8)
+            assertThat(response.status).isEqualTo(400)
+            assertThat(body).contains("trackingNumber")
+            assertThat(hangul.containsMatchIn(body)).describedAs("Accept-Language $language: $body").isFalse()
+        }
+    }
+
     private fun answer(request: org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder) =
         mvc.perform(request.accept(MediaType.APPLICATION_JSON)).andReturn().response
 

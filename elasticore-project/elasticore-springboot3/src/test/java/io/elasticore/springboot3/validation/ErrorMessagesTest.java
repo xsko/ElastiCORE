@@ -160,6 +160,28 @@ public class ErrorMessagesTest {
         assertEquals("Sign in", new io.elasticore.springboot3.security.NotSignedInException("Sign in").getMessage());
     }
 
+    /**
+     * Two domain bundles, only the second translated: a file for the
+     * language wins over another bundle's base file, whatever the order the
+     * bundles are looked in - with and without values, by code and by an
+     * error's codes, for ko and ko_KR.
+     */
+    @Test
+    public void aTranslationInTheSecondBundleWinsOverTheFirstBundlesEnglish() {
+        ErrorMessages twoDomains = new ErrorMessages(null, "i18n/billing-messages", "i18n/sample-messages");
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals("잘못된 요청", twoDomains.text("error.invalid.title", "x"));
+        assertEquals("요청 본문이 없거나 JSON 이 아닙니다.", twoDomains.text("error.unreadable", "x"));
+        assertEquals("잘못된 요청", twoDomains.text(new org.springframework.context.support.DefaultMessageSourceResolvable(
+                new String[]{"error.invalid.title"}, new Object[]{"with a value"}, "x")));
+        LocaleContextHolder.setLocale(Locale.KOREA);
+        assertEquals("잘못된 요청", twoDomains.text("error.invalid.title", "x"));
+        // Nobody translated it: the first bundle's own wording, as before.
+        assertEquals("Method PUT is not supported here.", twoDomains.text("error.method-not-allowed", "x", "PUT"));
+        LocaleContextHolder.setLocale(Locale.FRENCH);
+        assertEquals("Invalid request", twoDomains.text("error.invalid.title", "x"));
+    }
+
     /** A default with values is formatted when no bundle has the code. */
     @Test
     public void aDefaultPatternIsFormattedWhenNoBundleHasIt() {

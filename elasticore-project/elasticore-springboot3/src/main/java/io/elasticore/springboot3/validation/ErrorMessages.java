@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
+import java.util.PropertyResourceBundle;
 import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +37,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       and a translation placed beside it ({@code ..._ko.properties});</li>
  *   <li>the application's MessageSource, for any other set-up it has.</li>
  * </ol>
+ * A file for the request's language ({@code _ko}) of any of the first two is
+ * read before any of their base files, so one domain's English never hides
+ * another domain's translation.
  * Nothing found: the default the code was written with. A Bean Validation
  * built-in message (Size, NotNull ...) that no bundle translates is said again
  * in the same language, with its numbers, so one answer is in one language.
@@ -335,10 +339,63 @@ public final class ErrorMessages {
      * only the bundles it finds and logs a warning on every lookup of one it
      * does not - for an application without messages.properties, a warning
      * on every error response.
+     *
+     * A code is looked up in two passes: first in the bundles' files for the
+     * language itself (shop-messages_ko), in the bundles' order; then as
+     * Spring does, where a bundle without that file answers from its base
+     * file. Spring alone takes the first bundle that has the code at all, so
+     * with several domains the English base file of the domain that sorts
+     * first hid another domain's translation (every domain's base file has
+     * the shared codes).
      */
     private static final class QuietBundles extends ResourceBundleMessageSource {
         private final Map<String, ResourceBundle> found = new ConcurrentHashMap<>();
         private final Set<String> missing = ConcurrentHashMap.newKeySet();
+
+        @Override
+        protected String resolveCodeWithoutArguments(String code, Locale locale) {
+            for (String basename : getBasenameSet()) {
+                ResourceBundle own = ownFileWith(basename, code, locale);
+                if (own != null) {
+                    String result = getStringOrNull(own, code);
+                    if (result != null) return result;
+                }
+            }
+            return super.resolveCodeWithoutArguments(code, locale);
+        }
+
+        @Override
+        protected MessageFormat resolveCode(String code, Locale locale) {
+            for (String basename : getBasenameSet()) {
+                ResourceBundle own = ownFileWith(basename, code, locale);
+                if (own != null) {
+                    MessageFormat result = getMessageFormat(own, code, locale);
+                    if (result != null) return result;
+                }
+            }
+            return super.resolveCode(code, locale);
+        }
+
+        /**
+         * The bundle's file for the locale (_ko_KR) or its language (_ko)
+         * when that file itself has the code; else null - also for a bundle
+         * that is not a properties file, which the second pass still reads.
+         */
+        private ResourceBundle ownFileWith(String basename, String code, Locale locale) {
+            if (locale == null || locale.getLanguage().isEmpty()) return null;
+            Set<Locale> candidates = new LinkedHashSet<Locale>();
+            candidates.add(locale);
+            candidates.add(new Locale(locale.getLanguage(), locale.getCountry()));
+            candidates.add(new Locale(locale.getLanguage()));
+            for (Locale candidate : candidates) {
+                ResourceBundle bundle = getResourceBundle(basename, candidate);
+                if (bundle instanceof PropertyResourceBundle && candidate.equals(bundle.getLocale())
+                        && ((PropertyResourceBundle) bundle).handleGetObject(code) != null) {
+                    return bundle;
+                }
+            }
+            return null;
+        }
 
         @Override
         protected ResourceBundle getResourceBundle(String basename, Locale locale) {

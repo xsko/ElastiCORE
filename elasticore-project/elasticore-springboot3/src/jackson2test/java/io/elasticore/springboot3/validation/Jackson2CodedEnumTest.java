@@ -93,7 +93,7 @@ public class Jackson2CodedEnumTest {
     @Test
     public void anUnknownCodeIsTheEnumsOwnMessage() throws Exception {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new Orders())
-                .setControllerAdvice(new RequestShapeErrors(new DefaultListableBeanFactory().getBeanProvider(MessageSource.class)))
+                .setControllerAdvice(new RequestShapeAdvice(new DefaultListableBeanFactory().getBeanProvider(MessageSource.class)))
                 .build();
         mvc.perform(post("/order").contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
                         .content("{\"payments\":[{\"pay\":\"CRD\"},{\"pay\":\"DINERS\"}]}"))

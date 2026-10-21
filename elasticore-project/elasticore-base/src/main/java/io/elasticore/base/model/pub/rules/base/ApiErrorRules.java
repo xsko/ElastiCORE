@@ -42,7 +42,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *
  * What Spring MVC refuses before any controller runs (a body that is not
  * JSON, a value of the wrong type, a missing parameter, 404/405/406/415) is
- * answered by the runtime's RequestShapeErrors, which the file imports: one
+ * answered by the runtime's RequestShapeAdvice, which the RequestShapeErrors the file imports registers: one
  * advice for the whole application, so the handler bodies are not frozen into
  * every generated file, and no auto-configuration changes an application that
  * does not import it.

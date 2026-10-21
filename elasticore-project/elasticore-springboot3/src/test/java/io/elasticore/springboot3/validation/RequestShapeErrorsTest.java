@@ -109,7 +109,7 @@ public class RequestShapeErrorsTest {
     static void setUp() {
         validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
-        RequestShapeErrors errors = new RequestShapeErrors(
+        RequestShapeAdvice errors = new RequestShapeAdvice(
                 new DefaultListableBeanFactory().getBeanProvider(MessageSource.class));
         mvc = MockMvcBuilders.standaloneSetup(new Hand())
                 .setControllerAdvice(errors)
@@ -178,6 +178,27 @@ public class RequestShapeErrorsTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("잘못된 요청"))
                 .andExpect(jsonPath("$.fieldErrors[0].message").value("수량은 0 이상의 정수입니다"));
+    }
+
+    /**
+     * Two domains: billing-messages has the shared codes in English and no
+     * translation, sample-messages_ko translates error.unreadable. A Korean
+     * request is said from the translation, not from the English file of the
+     * domain that sorts first.
+     */
+    @Test
+    public void aTranslationInOneDomainIsNotHiddenByAnotherDomainsEnglish() throws Exception {
+        mvc.perform(json("{\"lines\":").header("Accept-Language", "ko"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("unreadable"))
+                .andExpect(jsonPath("$.detail").value("요청 본문이 없거나 JSON 이 아닙니다."));
+        mvc.perform(json("{\"lines\":[{\"itemId\":1,\"quantity\":-1}]}").header("Accept-Language", "ko"))
+                .andExpect(jsonPath("$.title").value("잘못된 요청"));
+        // English, and a language nobody translated: the English wording.
+        mvc.perform(json("{\"lines\":").header("Accept-Language", "en"))
+                .andExpect(jsonPath("$.detail").value("The request body is missing or is not valid JSON."));
+        mvc.perform(json("{\"lines\":").header("Accept-Language", "sv"))
+                .andExpect(jsonPath("$.detail").value("The request body is missing or is not valid JSON."));
     }
 
     @Test

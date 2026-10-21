@@ -51,6 +51,37 @@ public class PortServiceRegistrarTest {
         }
     }
 
+    /** The port proxy wrapped in a bean of the application's own (retries, metrics), marked @Primary. */
+    @Configuration
+    @Import(PortServiceRegistrar.class)
+    public static class AppThatWrapsThePort {
+        static final class Retrying implements CourierPort {
+            final CourierPort raw;
+
+            Retrying(CourierPort raw) {
+                this.raw = raw;
+            }
+
+            @Override
+            public String ship(String parcel) {
+                return raw.ship(parcel);
+            }
+        }
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        CourierPort retrying(@org.springframework.beans.factory.annotation.Qualifier("CourierPort") CourierPort raw) {
+            return new Retrying(raw);
+        }
+    }
+
+    /** Injected by type: the application's @Primary wrapper; by its name: the proxy. */
+    @Configuration
+    public static class Client {
+        @org.springframework.beans.factory.annotation.Autowired
+        CourierPort byType;
+    }
+
     private static AnnotationConfigApplicationContext start(Class<?>... classes) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         // As Spring Boot runs: a second definition under a taken name fails the start.
@@ -80,6 +111,33 @@ public class PortServiceRegistrarTest {
         try (AnnotationConfigApplicationContext context = start(AppWithItsOwnBean.class)) {
             assertEquals(1, context.getBeanNamesForType(CourierPort.class).length);
             assertSame(AppWithItsOwnBean.HAND, context.getBean(CourierPort.class));
+        }
+    }
+
+    /**
+     * AppThatWrapsThePort.Retrying, a class implementing the port, sits in
+     * the scanned package: Reflections answers it with the interface, and it
+     * used to be registered as a proxy, which failed the start.
+     */
+    @Test
+    public void aClassImplementingAPortIsNotMadeAProxy() {
+        try (AnnotationConfigApplicationContext context = start(App.class)) {
+            assertEquals(1, context.getBeanNamesForType(CourierPort.class).length);
+            assertTrue(!context.containsBeanDefinition("Retrying"), "no proxy for the implementing class");
+        }
+    }
+
+    /** A @Primary bean that wraps the proxy: the proxy stays, so the wrapper gets it. */
+    @Test
+    public void aPrimaryBeanThatWrapsTheProxyKeepsIt() {
+        try (AnnotationConfigApplicationContext context = start(AppThatWrapsThePort.class, Client.class)) {
+            assertEquals(2, context.getBeanNamesForType(CourierPort.class).length);
+            CourierPort primary = context.getBean(CourierPort.class);
+            assertTrue(primary instanceof AppThatWrapsThePort.Retrying, primary.getClass().getName());
+            assertSame(primary, context.getBean(Client.class).byType);
+            Object proxy = context.getBean("CourierPort");
+            assertTrue(Proxy.isProxyClass(proxy.getClass()), "the port runtime's proxy, by its name");
+            assertSame(proxy, ((AppThatWrapsThePort.Retrying) primary).raw);
         }
     }
 }

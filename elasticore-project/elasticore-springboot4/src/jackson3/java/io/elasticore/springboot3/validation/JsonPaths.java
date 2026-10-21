@@ -1,5 +1,6 @@
 package io.elasticore.springboot3.validation;
 
+import org.springframework.util.ClassUtils;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.exc.InputCoercionException;
 import tools.jackson.core.exc.StreamReadException;
@@ -17,10 +18,18 @@ import java.util.List;
  * Jackson 3 keeps the path on the first of its exceptions in the chain,
  * whichever kind it is - a number too large for an int keeps it on the
  * coercion failure itself.
+ *
+ * A Boot 4 application whose web layer was switched back to Jackson 2
+ * (MappingJackson2HttpMessageConverter) sends Jackson 2's exceptions: they
+ * are read the way elasticore-springboot3 reads them, where Jackson 2 is on
+ * the class path.
  */
 final class JsonPaths {
 
     private static final int DEPTH = 16;
+
+    private static final boolean JACKSON2 = ClassUtils.isPresent(
+            "com.fasterxml.jackson.databind.JsonMappingException", JsonPaths.class.getClassLoader());
 
     private JsonPaths() {
     }
@@ -30,6 +39,7 @@ final class JsonPaths {
         int depth = 0;
         for (Throwable t = ex; t != null && depth < DEPTH; t = next(t), depth++) {
             if (t instanceof JacksonException) return render(((JacksonException) t).getPath());
+            if (JACKSON2 && Jackson2.isMapping(t)) return Jackson2.path(t);
         }
         return null;
     }
@@ -48,6 +58,10 @@ final class JsonPaths {
                     && !(t.getCause() instanceof NumberFormatException)) {
                 return t.getCause().getMessage();
             }
+            if (JACKSON2) {
+                String refused = Jackson2.refusedBy(t);
+                if (refused != null) return refused;
+            }
         }
         return null;
     }
@@ -58,6 +72,10 @@ final class JsonPaths {
         for (Throwable t = ex; t != null && depth < DEPTH; t = next(t), depth++) {
             if (t instanceof MismatchedInputException) return ((MismatchedInputException) t).getTargetType();
             if (t instanceof InputCoercionException) return ((InputCoercionException) t).getTargetType();
+            if (JACKSON2) {
+                Class<?> type = Jackson2.targetType(t);
+                if (type != null) return type;
+            }
         }
         return null;
     }
@@ -67,6 +85,7 @@ final class JsonPaths {
         int depth = 0;
         for (Throwable t = ex; t != null && depth < DEPTH; t = next(t), depth++) {
             if (t instanceof StreamReadException && !(t instanceof InputCoercionException)) return true;
+            if (JACKSON2 && Jackson2.unparsable(t)) return true;
         }
         return false;
     }
@@ -86,5 +105,55 @@ final class JsonPaths {
             }
         }
         return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /** Everything that names Jackson 2, loaded only where Jackson 2 is there. */
+    private static final class Jackson2 {
+
+        static boolean isMapping(Throwable t) {
+            return t instanceof com.fasterxml.jackson.databind.JsonMappingException;
+        }
+
+        static String path(Throwable t) {
+            StringBuilder sb = new StringBuilder();
+            for (com.fasterxml.jackson.databind.JsonMappingException.Reference r
+                    : ((com.fasterxml.jackson.databind.JsonMappingException) t).getPath()) {
+                if (r.getFieldName() != null) {
+                    if (sb.length() > 0) sb.append('.');
+                    sb.append(r.getFieldName());
+                } else if (r.getIndex() >= 0) {
+                    sb.append('[').append(r.getIndex()).append(']');
+                }
+            }
+            return sb.length() == 0 ? null : sb.toString();
+        }
+
+        static String refusedBy(Throwable t) {
+            if (t instanceof com.fasterxml.jackson.databind.exc.ValueInstantiationException && t.getCause() != null) {
+                return t.getCause().getMessage();
+            }
+            if (t instanceof com.fasterxml.jackson.databind.JsonMappingException
+                    && !(t instanceof com.fasterxml.jackson.databind.exc.MismatchedInputException)
+                    && t.getCause() instanceof IllegalArgumentException
+                    && !(t.getCause() instanceof NumberFormatException)) {
+                return t.getCause().getMessage();
+            }
+            return null;
+        }
+
+        static Class<?> targetType(Throwable t) {
+            if (t instanceof com.fasterxml.jackson.databind.exc.MismatchedInputException) {
+                return ((com.fasterxml.jackson.databind.exc.MismatchedInputException) t).getTargetType();
+            }
+            if (t instanceof com.fasterxml.jackson.core.exc.InputCoercionException) {
+                return ((com.fasterxml.jackson.core.exc.InputCoercionException) t).getTargetType();
+            }
+            return null;
+        }
+
+        static boolean unparsable(Throwable t) {
+            return t instanceof com.fasterxml.jackson.core.exc.StreamReadException
+                    && !(t instanceof com.fasterxml.jackson.core.exc.InputCoercionException);
+        }
     }
 }

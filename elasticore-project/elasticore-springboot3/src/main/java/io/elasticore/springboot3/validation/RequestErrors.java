@@ -6,7 +6,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 /**
  * A request the controller could not take as it was sent: a body that is not
  * JSON, or a value its type refuses - text for a number, a card type that is
- * not one, a quantity below zero. {@link RequestShapeErrors} says these the
+ * not one, a quantity below zero. {@link RequestShapeAdvice} says these the
  * way a broken constraint is said: the field, and why.
  *
  * The field comes from Jackson's path, which is Jackson 2 or Jackson 3 by the

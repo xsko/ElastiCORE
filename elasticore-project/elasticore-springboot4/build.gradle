@@ -22,7 +22,10 @@ sourceSets {
         resources.srcDirs = ["$shared/src/main/resources"]
     }
     test {
-        java.srcDirs = ["$shared/src/test/java"]
+        // The shared tests, and this module's own on a web layer switched
+        // back to Jackson 2 (src/jackson2test/java - not springboot3's
+        // folder of the same name, whose tests need Jackson 2 throughout).
+        java.srcDirs = ["$shared/src/test/java", "src/jackson2test/java"]
         resources.srcDirs = ["$shared/src/test/resources"]
     }
 }
@@ -108,7 +111,7 @@ def koreanServerTest = tasks.register('koreanServerTest', Test) {
     description = 'Runs the *OnAKoreanServerTest classes on a JVM whose default locale is ko_KR.'
     group = 'verification'
     testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath
+    classpath = files("$shared/src/koreanServerTest/resources") + sourceSets.test.runtimeClasspath
     jvmArgs '-Duser.language=ko', '-Duser.country=KR'
     filter { includeTestsMatching '*OnAKoreanServerTest' }
 }

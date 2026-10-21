@@ -413,6 +413,31 @@ class ApiContractTest {
     }
 
     @Test
+    @DisplayName("on a Korean machine a field error and a refused body are said in English unless the request asks for Korean")
+    void errorsAreNotSaidInTheMachinesLanguage() throws Exception {
+        String id = createOrder("language");
+        String tooLong = "{\"orderId\":\"" + id + "\",\"trackingNumber\":\"" + "x".repeat(60) + "\"}";
+        java.util.regex.Pattern hangul = java.util.regex.Pattern.compile("[\\uAC00-\\uD7A3]");
+        for (String language : new String[]{null, "en", "sv"}) {
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder field = put(ORDERS)
+                    .contentType(MediaType.APPLICATION_JSON).content(tooLong);
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder text = post(ORDERS)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"orderDate\":\"2026-08-15 10:00:00\",\"items\":[{\"itemSeq\":1,\"quantity\":\"abc\",\"unitPrice\":10.00}]}");
+            if (language != null) {
+                field.header("Accept-Language", language);
+                text.header("Accept-Language", language);
+            }
+            for (org.springframework.mock.web.MockHttpServletResponse r : new org.springframework.mock.web.MockHttpServletResponse[]{
+                    answer(field), answer(text)}) {
+                String body = r.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+                assertThat(r.getStatus()).isEqualTo(400);
+                assertThat(hangul.matcher(body).find()).as("Accept-Language " + language + ": " + body).isFalse();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("GET of a row that is not there answers the problem body, not an empty 404")
     void findByIdOfNothingIsAProblem() throws Exception {
         org.springframework.mock.web.MockHttpServletResponse missing = answer(get(ORDERS + "/no-such-order"));

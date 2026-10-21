@@ -44,7 +44,13 @@ import java.util.function.Supplier;
  *
  * <p>A bean the application declares for a port itself (a hand-written @Bean,
  * as tests had to before the registrar looked at the @EnableElastiCore
- * class) is the one used: the registrar's proxy for that interface is dropped.</p>
+ * class) is the one used: the registrar's proxy for that interface is dropped -
+ * unless one of the application's beans is @Primary (a wrapper around the
+ * proxy, say), in which case there is no ambiguity and the proxy stays,
+ * under its name.</p>
+ *
+ * <p>Only the annotated interfaces themselves are ports: a class that
+ * implements one (a fake, a wrapper) is not made a proxy.</p>
  *
  * @author ElastiCore Framework
  * @since 1.0
@@ -98,8 +104,14 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
         Set<Class<?>> dbmsServices = new LinkedHashSet<Class<?>>();
         for (String basePackage : packages) {
             Reflections reflections = new Reflections(basePackage);
-            extPortServices.addAll(reflections.getTypesAnnotatedWith(ExternalService.class));
-            dbmsServices.addAll(reflections.getTypesAnnotatedWith(DbmsService.class));
+            // Reflections also answers the subtypes of an annotated type - a
+            // class implementing the port - which cannot be proxied.
+            for (Class<?> type : reflections.getTypesAnnotatedWith(ExternalService.class)) {
+                if (type.isInterface() && type.isAnnotationPresent(ExternalService.class)) extPortServices.add(type);
+            }
+            for (Class<?> type : reflections.getTypesAnnotatedWith(DbmsService.class)) {
+                if (type.isInterface() && type.isAnnotationPresent(DbmsService.class)) dbmsServices.add(type);
+            }
         }
 
         final BeanFactory factory = this.beanFactory;
@@ -160,12 +172,19 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
                 if (!registry.containsBeanDefinition(name)) continue;
                 Object port = registry.getBeanDefinition(name).getAttribute(PORT_ATTRIBUTE);
                 if (!(port instanceof Class)) continue;
+                boolean declared = false;
+                boolean primary = false;
                 for (String other : beans.getBeanNamesForType((Class<?>) port, true, false)) {
-                    if (!other.equals(name)) {
-                        registry.removeBeanDefinition(name);
-                        break;
+                    if (other.equals(name)) continue;
+                    declared = true;
+                    if (registry.containsBeanDefinition(other) && registry.getBeanDefinition(other).isPrimary()) {
+                        primary = true;
                     }
                 }
+                // A @Primary bean of the application's - one that wraps the
+                // proxy, typically - already decides injection by type, and
+                // may need the proxy itself (@Qualifier("CourierPort")): kept.
+                if (declared && !primary) registry.removeBeanDefinition(name);
             }
         }
 

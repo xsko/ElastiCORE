@@ -65,8 +65,8 @@ public final class ErrorCatalog {
         put(m, "bad-request", "Invalid request", null);
         put(m, "no-such-property", "Invalid request", null);
         put(m, "upstream", "A called system failed", null);
-        // What the runtime's RequestShapeErrors (imported by the generated
-        // handler) answers when Spring MVC refuses a request before any
+        // What the runtime's RequestShapeAdvice (registered by the
+        // RequestShapeErrors the generated handler imports) answers when Spring MVC refuses a request before any
         // controller runs. It reads every domain's bundle, so a translation
         // beside this file reaches those answers too.
         put(m, "unreadable", "Invalid request", "The request body is missing or is not valid JSON.");

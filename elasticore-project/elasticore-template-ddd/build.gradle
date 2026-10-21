@@ -107,6 +107,9 @@ test {
 	useJUnitPlatform()
 	dependsOn 'elcore3ddd'
 	testLogging { events 'passed', 'failed' }
+	// As on a server whose machine language is Korean, like the pet store: an
+	// error that leaked the machine's language into an English answer shows here.
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
 }
 
 // A verification that reads a stale file is not one. A file carrying the
