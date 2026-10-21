@@ -358,8 +358,8 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - JSON 이 아닌 본문, 타입이 받지 않는 값(`quantity: -1`, 없는 enum 코드, 숫자 자리의 글자), 없는 파라미터, 파라미터 제약,
   없는 경로·메서드(404·405), 406·415 는 생성된 `XxxApiErrors` 에 처리기가 없어 Spring Boot 의 `{timestamp, status, error,
   path}` 로 나갔다. 가이드와 kit 은 모든 거절에 `code` 가 있다고 했고, 에이전트가 이것을 디버깅하느라 한 단계를 썼다
-- 런타임에 `io.elasticore.springboot3.validation.RequestShapeErrors` (애플리케이션 전체에 답하는 `@RestControllerAdvice`,
-  `@Order(LOWEST_PRECEDENCE)`)와 `RequestErrors`, Jackson 2/3 로 두 벌인 `JsonPaths`(springboot3 `src/jackson2/java`, springboot4
+- 런타임에 `io.elasticore.springboot3.validation.RequestShapeErrors` (처리기 `RequestShapeAdvice` 를 등록하는 클래스 - 처리기는
+  애플리케이션 전체에 답하는 `@RestControllerAdvice`, `@Order(LOWEST_PRECEDENCE)`)와 `RequestErrors`, Jackson 2/3 로 두 벌인 `JsonPaths`(springboot3 `src/jackson2/java`, springboot4
   `src/jackson3/java`)를 더했다. 400 `unreadable`, 400 `invalid` + `fieldErrors[].code` `typeMismatch`(필드는 Jackson 경로:
   `lines[0].quantity`), `NotNull`, 제약 이름, 404 `not-found`, 405 `method-not-allowed`(`Allow` 그대로), 406 `not-acceptable`,
   415 `unsupported-media-type`. 손으로 쓴 컨트롤러의 `@Valid` 본문도 같은 모양. 브라우저(`Accept: text/html`)의 404·405 는
@@ -436,13 +436,81 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   읽을 수 없는 본문·답 없음은 예외, 멀티파트), 502 + 되돌림 패턴(`PortCallException`), 테스트(`@MockitoBean`, 같은 서버의 가짜는
   `DEFINED_PORT`). 2.7: `httpPort: spring` 의 base URL 은 기동 때 한 번 정해진다(`RANDOM_PORT` 테스트는 포트 0 을 부름 - 조사에서
   실행으로 확인), Boot 4 키의 그룹 이름은 `erp--credit-check-port`(두 줄)
-- 5장: `elasticore 1.8.x` 와 아무것도 등록하지 않던 `@ComponentScan("io.elasticore.springboot3")` 대신 `@EnableElastiCore`,
+- 5장: `elasticore 1.8.x` 와 포트를 등록하지 않던(`ApplicationContextProvider`·`DbTransactionGateway` 만 등록하던)
+  `@ComponentScan("io.elasticore.springboot3")` 대신 `@EnableElastiCore`,
   등록기가 보는 패키지
 - 관련 파일: `elasticore-dsl-port-guide.md`
 
 #### 개발 가이드의 예제 값에서 내부 이름을 뺐다
 - `Op.ILIKE` 예제의 검색어가 내부 이름이었다. `"acme"` 로 바꿨다(설명도 실제로 맞는 값으로: `acme`, `ACME`, `Acme Supply`)
 - 관련 파일: `elasticore-dev-guide.md`
+
+### Bug Fixes (런타임 - 오류 응답과 포트 등록기 리뷰)
+
+#### 한 도메인의 번역이 다른 도메인의 영어에 가려지지 않는다
+- 도메인이 여럿인 앱(예: `billing`, `catalog`, `shop`)에서 `shop-messages_ko` 에 둔 `error.unreadable` 번역이 `ko` 요청에도
+  영어로 나갔다. 모든 도메인의 기본 파일에 공통 코드(`ErrorCatalog.shared()`)가 들어 있고, Spring 의
+  `ResourceBundleMessageSource` 는 코드를 가진 첫 번들을 쓰며, `_ko` 가 없는 번들은 자기 기본 파일로 답하기 때문이다
+  (이름순으로 앞선 `billing-messages.properties`)
+- `ErrorMessages` 가 두 번 찾는다: 먼저 모든 번들의 그 언어 파일(`_ko_KR`, `_ko`)에서, 없으면 예전처럼 기본 파일까지.
+  `messages_ko` 가 도메인의 `_ko` 보다 앞서는 것은 그대로다. 단일 도메인 앱에서 달라지는 것은 `messages.properties`(기본 파일)에
+  있는 코드를 도메인의 `_ko` 가 번역한 경우뿐이다 - 이제 번역이 나간다
+- 확인: `RequestShapeErrorsTest.aTranslationInOneDomainIsNotHiddenByAnotherDomainsEnglish`,
+  `ErrorMessagesTest.aTranslationInTheSecondBundleWinsOverTheFirstBundlesEnglish`(테스트 번들 `billing-messages.properties`,
+  번역 없음) - 고치기 전에는 둘 다 영어로 실패
+- 관련 파일: `ErrorMessages.java`, `elasticore-rule-guide.md`
+
+#### 2.x 앱의 컴포넌트 스캔이 API 오류 처리기를 가져오지 않는다
+- 처리기가 `@RestControllerAdvice` 라서 예전 포트 가이드대로 `@ComponentScan("io.elasticore.springboot3")` 를 둔 2.x 앱이
+  런타임만 올려도 그것을 가져왔다 - 깨진 JSON, 404, 405, 406, 415 와 앱 컨트롤러의 `MethodArgumentNotValidException` 이 모두
+  `problem+json` 으로 바뀐다
+- 처리기는 `RequestShapeAdvice` 로 옮기고 결코 맞지 않는 `@Conditional` 을 붙였다(스캔도, 그 클래스의 `@Import` 도 지나친다).
+  `RequestShapeErrors` 는 그 정의를 직접 등록하는 `ImportBeanDefinitionRegistrar` 가 되었다 - 생성된 `@Import(RequestShapeErrors.class)`
+  는 그대로라 생성 결과는 바뀌지 않는다. 여러 도메인이 가져와도 처리기는 하나다. 처리기의 빈 이름은
+  `io.elasticore.springboot3.validation.RequestShapeAdvice` 로 바뀌었다(전에는 `...RequestShapeErrors`)
+- 확인: `RequestShapeErrorsRegistrationTest`(런타임 패키지 스캔에 `RequestShape*` 없음, 스캔한 컨텍스트에 `@ControllerAdvice` 없음 -
+  고치기 전에는 둘 다 실패; 두 도메인이 가져온 MVC 컨텍스트에 처리기 하나, `unreadable` 로 답함)
+- 관련 파일: `RequestShapeErrors.java`, `RequestShapeAdvice.java`, `elasticore-dsl-port-guide.md`, `elasticore-rule-guide.md`
+
+#### 포트 프록시를 감싼 `@Primary` 빈이 다시 동작한다
+- 직접 선언한 빈이 있으면 포트 프록시를 지웠으므로 `@Bean @Primary CourierPort retrying(@Qualifier("CourierPort") CourierPort raw)`
+  처럼 프록시를 감싸는 앱이 `NoSuchBeanDefinitionException` 으로 뜨지 않았다(공유 런타임의 2.x 앱 포함)
+- 이제 다른 빈 중 `@Primary` 가 없을 때만(타입 주입이 모호할 때만) 프록시를 지운다. 또 스캔한 패키지에서 포트 인터페이스를
+  구현한 클래스(가짜, 래퍼)도 Reflections 가 돌려줘 프록시로 등록하려다 `IllegalArgumentException` 으로 기동이 실패했다(예전
+  등록기도 같았다) - 이제 `@ExternalService`/`@DbmsService` 가 직접 붙은 인터페이스만 등록한다. 붙은 인터페이스를 상속하기만
+  한 인터페이스도 이제 등록하지 않는다(예전에는 어노테이션이 null 인 프록시가 되어 첫 호출에서 실패했다)
+- `@Primary` 인 가짜(포트를 통째로 바꾸는 테스트 빈)도 이제 프록시를 남기므로 `List<CourierPort>` 는 둘을 받는다(가이드)
+- 확인: `PortServiceRegistrarTest.aPrimaryBeanThatWrapsTheProxyKeepsIt`(고치기 전 `NoSuchBeanDefinitionException`),
+  `aClassImplementingAPortIsNotMadeAProxy`(고치기 전에는 이 패키지의 모든 등록기 테스트가 `IllegalArgumentException`)
+- 관련 파일: `PortServiceRegistrar.java`, `elasticore-dsl-port-guide.md`
+
+#### Boot 4 에서 웹 계층을 Jackson 2 로 되돌린 앱의 필드 오류
+- springboot4 의 `JsonPaths` 는 Jackson 3 예외만 알아, `MappingJackson2HttpMessageConverter` 를 쓰는 Boot 4 앱에서 타입이 틀린 값이
+  필드 오류가 아니라 `unreadable` 로 나갔다. Jackson 2 가 클래스 경로에 있으면 그 예외도 springboot3 처럼 읽는다
+- 확인: springboot4 의 `Jackson2WebLayerOnBoot4Test`(`count: must be a number`, `lines[0].amount` 의 생성자 거절, 깨진 JSON 은
+  `unreadable`; 고치기 전에는 첫 테스트가 실패)
+- 관련 파일: springboot4 `src/jackson3/java/.../JsonPaths.java`, `src/jackson2test/java/.../Jackson2WebLayerOnBoot4Test.java`, `build.gradle`,
+  `elasticore-env-guide.md`
+
+#### 테스트: 한국어 JVM, 공유 테스트 자원
+- `elasticore-template-ddd`, `elasticore-template-kt` 의 테스트도 Pet Store 처럼 `-Duser.language=ko -Duser.country=KR` 로 돈다.
+  새 테스트(`errorsAreNotSaidInTheMachinesLanguage`, `aFieldErrorIsNotSaidInTheMachinesLanguage`)가 헤더 없음·`en`·`sv` 의 400
+  본문에 한글이 없음을 확인한다
+- 런타임 테스트의 `ValidationMessages*.properties`(앱이 덮어쓴 `NotBlank` 문구)는 `src/koreanServerTest/resources` 로 옮겨
+  `koreanServerTest` 에만 둔다 - 다른 모든 테스트의 기본 문구를 바꾸지 않게
+- 관련 파일: 두 샘플과 두 런타임의 `build.gradle`, `ApiContractTest.java`, `ShopApiContractTest.kt`
+
+#### 남은 경우 (리뷰에서 코드를 읽어 찾음, 실행으로 재현하지 않음)
+- `messages_en` 은 있고 `ValidationMessages` 는 `_ko` 파일만 있는(기본 파일 없는) 앱: `en` 요청은 `en` 으로 정해지고(`Locale.ROOT`
+  가 아님), 기본 제약 메시지를 다시 말할 때 Hibernate Validator 가 앱의 `ValidationMessages` 기본 파일을 찾지 못해 JDK 의 bundle
+  fallback 으로 머신 언어 파일을 읽을 수 있다. 피하려면 `ValidationMessages.properties` 기본 파일도 둔다(가이드는 이 파일들로
+  언어를 맞추지 말라고 한다)
+- `spring.web.locale` 로 `Locale.ROOT` 가 아닌 기본 언어를 둔 앱: 코드가 런타임의 번들에 없어 애플리케이션 `MessageSource` 로 가면,
+  Spring Boot 의 `spring.messages.fallback-to-system-locale`(기본 `true`) 때문에 그 언어 파일이 없는 번들은 머신 언어로 답할 수
+  있다. 피하려면 `spring.messages.fallback-to-system-locale=false`
+- 파라미터 제약 처리기(`HandlerMethodValidationException`)를 Spring Framework 6.1 에서 부르는 테스트는 없다.
+  `RequestShapeErrorsTest` 는 springboot3(Spring 6.2)과 springboot4(Spring 7)에서 돌고, Spring 6.1 인 Boot 3.3.2 샘플의 계약
+  테스트는 그 처리기에 닿지 않는다
 
 ## 3.0.261020-alpha2
 

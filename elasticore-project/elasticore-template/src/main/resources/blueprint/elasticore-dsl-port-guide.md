@@ -929,7 +929,8 @@ public class Application {
 }
 ```
 `@ComponentScan("io.elasticore.springboot3")` 로는 포트가 등록되지 않습니다 - 등록기는 컴포넌트가 아니라 `@EnableElastiCore`
-가 가져오는 것입니다.
+가 가져오는 것입니다. 그 스캔이 등록하는 것은 예전과 같이 `ApplicationContextProvider` 와 `DbTransactionGateway` 뿐이고,
+API 오류 처리기(`RequestShapeAdvice`)는 스캔에 잡히지 않습니다 - 생성된 `XxxApiErrors` 가 가져올 때만 생깁니다.
 
 ### env.yml (Port 네임스페이스)
 ```yaml
@@ -984,6 +985,22 @@ ShopReportService shopReportService(BeanFactory beanFactory, Environment environ
 ```
 
 `elasticore-template-ddd` 의 `DddSampleApp` 이 이 형태를 그대로 보여줍니다.
+
+**프록시를 감싸려면 `@Primary`.** 직접 선언한 빈이 `@Primary` 이면 등록기의 프록시는 남습니다. 타입으로 주입하는 곳은
+감싼 빈을 받고, 감싼 빈은 이름(인터페이스의 단순 이름)으로 프록시를 받습니다:
+
+```java
+@Bean
+@Primary
+CourierPort retryingCourier(@Qualifier("CourierPort") CourierPort proxy) {
+    return parcel -> retry(() -> proxy.ship(parcel));
+}
+```
+
+`@Primary` 가 아닌 빈을 선언하면 프록시는 등록되지 않으므로, 그때는 이름 `"CourierPort"` 로 주입할 수 없습니다.
+`@Primary` 인 가짜(테스트에서 포트를 통째로 바꾸는 빈)도 프록시를 남기므로 `List<CourierPort>`·`getBeansOfType` 은 둘을 받습니다 -
+하나만 있어야 하면 가짜에서 `@Primary` 를 빼세요.
+포트 인터페이스를 구현한 클래스(가짜, 래퍼)가 스캔하는 패키지에 있어도 프록시로 등록하지 않습니다 - 인터페이스만 포트입니다.
 
 ### application.properties
 ```properties

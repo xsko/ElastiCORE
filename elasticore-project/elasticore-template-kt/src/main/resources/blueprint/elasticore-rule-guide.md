@@ -925,12 +925,14 @@ generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Sprin
   (`NotFoundException`, `"code": "not-found"`, `"detail": "Item not found"`). `NotFoundException` 은 `@ResponseStatus(404)` 라서
   `spring-api-errors` 를 꺼도 404 입니다 (본문은 Spring Boot 의 것).
 - **다르게 답하려면** 그 예외를 `ShopApiErrors` 에서 처리하세요 - 그 파일이 먼저 불립니다. 회사 공통
-  `@RestControllerAdvice` 도 가져온 `RequestShapeErrors` 보다 먼저입니다(가져온 advice 는 맨 뒤). 확실히 하려면 공통
+  `@RestControllerAdvice` 도 `RequestShapeErrors` 가 등록한 처리기(`RequestShapeAdvice`)보다 먼저입니다(그 처리기는 맨 뒤). 확실히 하려면 공통
   advice 에 `@Order` 를 붙이세요.
 - `spring.mvc.problemdetails.enabled=true` 는 켜지 마세요. Spring Boot 의 처리기가 맨 앞(`@Order(0)`)에 서서 필드 검증
   응답(`fieldErrors`)까지 가져갑니다.
 - 자동 구성이 아닙니다. `ShopApiErrors` 가 가져올 때만 생기므로, 같은 런타임 라이브러리를 쓰는 2.x 애플리케이션은 그대로입니다.
-  `spring-api-errors` 를 끄면 함께 빠집니다.
+  `spring-api-errors` 를 끄면 함께 빠집니다. `RequestShapeErrors` 는 처리기(`RequestShapeAdvice`)를 등록만 하는 클래스이고,
+  처리기는 `@ComponentScan("io.elasticore.springboot3")` 에 잡히지 않습니다 (예전 포트 가이드가 2.x 앱에 권하던 스캔).
+  여러 도메인의 `XxxApiErrors` 가 모두 가져와도 처리기는 하나입니다.
 - **이미 있는 `XxxApiErrors` 를 고친 적이 있으면** 다시 생성되지 않으니 클래스에 한 줄을 붙이세요
   (손대지 않았으면 다시 생성되어 붙습니다):
   ```java
@@ -1047,6 +1049,9 @@ typeMismatch.lines.quantity=수량은 0 이상의 정수입니다
 
 찾는 순서: classpath 의 `messages_<언어>.properties` -> 도메인 번들과 그 옆 번역 ->
 애플리케이션의 `MessageSource` (예: `spring.messages.basename` 으로 바꾼 번들) -> 기본 문구. 설정은 필요 없습니다.
+앞의 둘은 **요청 언어의 파일을 먼저** 봅니다: `messages_ko`, 모든 도메인의 `_ko` 파일을 다 본 뒤에야 기본 파일(영어)을 봅니다.
+그래서 도메인이 여럿이어도(`billing`, `shop`) `shop-messages_ko` 에만 둔 `error.unreadable` 번역이, 이름순으로 앞선
+`billing-messages.properties` 의 영어에 가려지지 않습니다.
 다만 `spring.messages.basename` 을 바꿔 둔 번역은 도메인 번들(영어 기본 문구)보다 뒤에 찾으므로, 도메인 코드의
 번역은 `messages_<언어>.properties` 나 도메인 번들 옆 파일에 두세요.
 
