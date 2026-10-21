@@ -511,7 +511,7 @@ metrics:
 | 쓰는 법 | 뜻 | Ossie SQL |
 |---|---|---|
 | `sum(엔티티.필드)` / `avg` / `min` / `max` | 한 엔티티의 필드 집계 | `SUM(PurchaseOrder.total)` |
-| `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(*)` |
+| `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(PurchaseOrder.order_id)` (키 컬럼 - BI 도구가 어느 dataset 을 세는지 알도록) / `COUNT(PurchaseOrder.total)` |
 | `… where 필드 != 값 and 필드 >= 값` | 조건 (`=`, `!=`, `<`, `<=`, `>`, `>=`, `and`) | `SUM(CASE WHEN … THEN … END)` |
 | 값 | 숫자, `'글자'`(안의 `'` 는 `''`), `true`/`false`, **enum 상수 이름** (저장된 값으로 바뀜: `@db` 코드 `'CAN'`, `@jpa:Enumerated(STRING)` 면 이름, 둘 다 없으면 순번 `2`) | |
 | `지표A / 지표B` (`+ - * /`) | 앞에서 선언한 지표끼리 계산. 나누기는 0 으로 나누지 않고, 개수 / 개수는 소수로 | `(…) / NULLIF((…), 0)` |

@@ -875,6 +875,16 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 | 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다) | 400, 409 - 던진 메시지가 `detail` 로 나간다 |
 | 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
 | 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
+| 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261021 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
+
+**`@restExclude(...)`** 는 서비스·컨트롤러·유스케이스·TypeScript 클라이언트에서 메서드를 뺍니다. 이름은 서비스 메서드
+(`save`, `update`, `batchUpdate`, `delete`(목록 삭제), `deleteById`, `updateBySpecification`)와 컨트롤러 엔드포인트
+(`create`, `read`, `search`, `update`, `batchUpdate`, `deleteBatch`(`POST /delete`), `deleteById`, `schemaInfo`)입니다.
+v3 출력에서는 빠진 메서드를 부르는 것도 함께 빠져 컴파일이 깨지지 않습니다: `update` 는 `batchUpdate` 를, `deleteById` 는
+`delete`·`deleteBatch` 를, `delete` 는 `deleteBatch` 를, `save` 는 `create` 를 데려갑니다. 헥사고날의 유스케이스
+인터페이스도 서비스가 뺀 메서드를 약속하지 않습니다(전에는 `@restExclude(batchUpdate)` 가 `XxxService is not abstract
+and does not override abstract method batchUpdate` 로 컴파일되지 않았음). Kotlin 서비스는 메서드를 빼지 않고 그대로 두며,
+컨트롤러·유스케이스만 따릅니다. 2.x 호환 번들은 적힌 대로만 뺍니다.
 
 - **버전 비교**는 DTO 의 `version` 속성을 이름으로 읽습니다(`VersionCheck`). DTO 에 버전이
   없거나 요청이 보내지 않으면 검사하지 않습니다.
@@ -1463,6 +1473,22 @@ elasticore {
 `-Pdomain=shop`, `-Pmode=valid`, `-Pforce`, `-Pv3`, `-Pkt`, `-Pts` 모두 그대로
 전달됩니다. 플러그인을 도입한다고 명령어가 바뀌지 않습니다.
 
+#### TypeScript 클라이언트 (`elcore3ts`, `typescriptClient`)
+
+`src/main/ts` 의 TypeScript 클라이언트는 `elcore3ts` 태스크만 씁니다. `build`·`compileJava` 는 그 태스크를 부르지 않으므로,
+모델을 바꾼 뒤 그대로 두면 클라이언트에 새 필드·엔티티가 없습니다. 빌드가 함께 쓰게 하려면:
+
+```gradle
+elasticore {
+    architecture     = 'hexagonal'
+    typescriptClient = true      // 기본 false. elcore3 다음, 컴파일 전에 elcore3ts 를 실행
+}
+```
+
+이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(첫 줄 `//ecd:`)가 있으면 `elcore3` 가 끝에 한 번 경고합니다:
+`[elcore3] .../src/main/ts holds a generated TypeScript client this run did not refresh - run the elcore3ts task after a
+model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
+
 `-PlistRules` 는 생성하지 않고, 도메인마다 지금 선택된 규칙을 파일 종류(target)별로 실행 순서대로
 보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다.
 
@@ -1617,7 +1643,7 @@ task elcore3(type: JavaExec) {
 ./gradlew elcore3                 # 호환 모드 (2.x와 동일한 출력)
 ./gradlew elcore3 -Pv3            # 정리 모드
 ./gradlew elcore3 -Pkt            # Kotlin (src/main/kotlin 에 .kt)
-./gradlew elcore3 -Pts            # TypeScript (src/main/ts 에 .ts)
+./gradlew elcore3 -Pts            # TypeScript (src/main/ts 에 .ts) - 플러그인에서는 elcore3ts, 빌드와 함께는 typescriptClient = true
 ./gradlew elcore3 -Pdomain=shop   # 도메인 한정
 ./gradlew elcore3 -Pforce         # 수정된 파일도 덮어쓰기
 ```

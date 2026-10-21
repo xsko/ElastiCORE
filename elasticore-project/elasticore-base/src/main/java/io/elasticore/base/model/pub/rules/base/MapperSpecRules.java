@@ -70,6 +70,13 @@ public class MapperSpecRules implements CodeRules {
                 fieldNm = items[1].trim();
             }
         }
+        condition = SearchDtoBaseRules.effectiveCondition(c, f, condition);
+        if (!c.compatible() && !knownCondition(condition)) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s @search(%s) is not a search condition, so it searches by equality - say eq, like,"
+                            + " %%_%%, %%__%%, __=, _%%, %%_, >, >=, <, <=, in, between or isnull.",
+                    e.domainClassName(), e.getName(), f.name(), condition));
+        }
 
         String capFieldNm = capitalize(fieldNm);
         String entityFieldNm = fieldNm;
@@ -151,18 +158,18 @@ public class MapperSpecRules implements CodeRules {
         } else if ("like".equals(condition) || "%_%".equals(condition) || "%%".equals(condition)) {
             and(c, e.getName(), "c.like(%s,\"%%\" +trim(%s)+ \"%%\")", path, fieldNm);
         } else if ("%__%".equals(condition)) {
-            and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s.toLowerCase()+ \"%%\")", path, nn(c, fieldNm));
+            and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s+ \"%%\")", path, lowered(c, fieldNm, true));
         } else if ("__=".equals(condition) || "=__".equals(condition)) {
-            and(c, e.getName(), "c.equal(c.lower(%s),%s.toLowerCase())", path, nn(c, fieldNm));
+            and(c, e.getName(), "c.equal(c.lower(%s),%s)", path, lowered(c, fieldNm, false));
         } else if (condition.startsWith("%")) {
             if (condition.endsWith("__")) {
-                and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s.toLowerCase())", path, nn(c, fieldNm));
+                and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s)", path, lowered(c, fieldNm, true));
             } else {
                 and(c, e.getName(), "c.like(%s,\"%%\" +trim(%s))", path, fieldNm);
             }
         } else if (condition.endsWith("%")) {
             if (condition.startsWith("__")) {
-                and(c, e.getName(), "c.like(c.lower(%s),%s.toLowerCase()+ \"%%\")", path, nn(c, fieldNm));
+                and(c, e.getName(), "c.like(c.lower(%s),%s+ \"%%\")", path, lowered(c, fieldNm, true));
             } else {
                 and(c, e.getName(), "c.like(%s,trim(%s)+ \"%%\")", path, fieldNm);
             }
@@ -309,6 +316,29 @@ public class MapperSpecRules implements CodeRules {
     }
 
     /** A value the surrounding hasValue guard has already established. */
+    /**
+     * The value an ignore-case condition compares, in lower case. 2.x's text
+     * as it was; the clean output lowers through the language (Kotlin's
+     * toLowerCase() does not compile from Kotlin 2.1 on), in every locale
+     * the same, and trims as like does.
+     */
+    private static String lowered(SourceCode c, String value, boolean trim) {
+        if (c.compatible()) return nn(c, value) + ".toLowerCase()";
+        return c.syntax().lowerCase(nn(c, trim ? "trim(" + value + ")" : value));
+    }
+
+    /** The conditions emitCondition reads; anything else falls through to an equality. */
+    static boolean knownCondition(String condition) {
+        if (condition == null) return false;
+        String[] known = {"", "auto", "eq", "=", "like", "%_%", "%%", "%__%", "__=", "=__", ">", ">=", "<", "<=",
+                "in", "between", "~"};
+        for (String k : known) {
+            if (k.equals(condition)) return true;
+        }
+        if (SearchDtoBaseRules.isNullCheck(condition)) return true;
+        return condition.length() > 1 && (condition.startsWith("%") || condition.endsWith("%"));
+    }
+
     private static String nn(SourceCode c, String expression) {
         return c.syntax().notNull(expression);
     }

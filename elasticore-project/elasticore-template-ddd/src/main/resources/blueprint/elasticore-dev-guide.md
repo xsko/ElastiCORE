@@ -212,7 +212,7 @@ Sort.Order desc = field.getDescOrder();
 |----|-------------|------|
 | `EQ` | `equal` | 같음 |
 | `NEQ` | `notEqual` | 다름 |
-| `LIKE` | `like` | LIKE 검색 (`%value%`, 대소문자 구분) |
+| `LIKE` | `like` | LIKE 검색 (`%value%`, 대소문자 구분). DSL 의 v3 `@search(like)` 는 대소문자를 무시하므로 손으로 같은 검색을 쓸 때는 `ILIKE` |
 | `NOT_LIKE` | `notLike` | NOT LIKE |
 | `STARTS_WITH` | `like` | 접두 일치 (`value%`) |
 | `ENDS_WITH` | `like` | 접미 일치 (`%value`) |

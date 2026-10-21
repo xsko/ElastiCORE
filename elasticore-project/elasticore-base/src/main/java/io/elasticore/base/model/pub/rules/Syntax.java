@@ -114,6 +114,11 @@ public enum Syntax {
             return expression;
         }
 
+        /** Locale-independent, so a Turkish JVM does not turn I into a dotless i. */
+        public String lowerCase(String expression) {
+            return expression + ".toLowerCase(java.util.Locale.ROOT)";
+        }
+
         /** Nothing in Java's grammar collides with an identifier. */
         public String escapeName(String name) {
             return name;
@@ -354,6 +359,11 @@ public enum Syntax {
             return String.format("%s!!", expression);
         }
 
+        /** lowercase(), locale-invariant; toLowerCase() is an error from Kotlin 2.1 on. */
+        public String lowerCase(String expression) {
+            return expression + ".lowercase()";
+        }
+
         /** A name that is a keyword here is written in backticks. */
         public String escapeName(String name) {
             return KEYWORDS.contains(name) ? String.format("`%s`", name) : name;
@@ -521,6 +531,10 @@ public enum Syntax {
         /** The non-null assertion, which TypeScript spells after the value. */
         public String notNull(String expression) {
             return String.format("%s!", expression);
+        }
+
+        public String lowerCase(String expression) {
+            return expression + ".toLowerCase()";
         }
 
         public String cast(String type, String expression) {
@@ -753,6 +767,9 @@ public enum Syntax {
 
     /** A value already guarded as present, where the language needs telling. */
     public abstract String notNull(String expression);
+
+    /** A string expression in lower case, the same in every locale. */
+    public abstract String lowerCase(String expression);
 
     /** A name the target language may reserve. */
     public abstract String escapeName(String name);

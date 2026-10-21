@@ -542,6 +542,10 @@ dependencies { elasticore project(':acme-rules') }
 `rules: [jpa-springboot-kt]` 만 적고 스위치를 켜지 않으면 `.kt` 파일이 나오지
 않습니다. 도메인 초기화 마법사는 이 둘을 함께 정해주므로 어긋나지 않습니다.
 
+TypeScript 클라이언트(`src/main/ts`)는 서버 코드와 함께 쓰는 두 번째 출력이라 Gradle 플러그인의 `elcore3ts` 태스크가
+씁니다. `build` 는 그 태스크를 부르지 않으므로, 빌드마다 함께 쓰려면 `elasticore { typescriptClient = true }` 를 적습니다
+(`elasticore-rule-guide.md` "TypeScript 클라이언트"). 적지 않았는데 생성된 클라이언트가 있으면 `elcore3` 가 경고합니다.
+
 ---
 
 ## 8. Namespace 설정

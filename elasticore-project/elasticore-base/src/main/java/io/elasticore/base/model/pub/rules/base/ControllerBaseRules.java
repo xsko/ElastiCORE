@@ -165,11 +165,33 @@ public class ControllerBaseRules implements CodeRules {
         if (e.hasMeta("readonly")) {
             ctx(e).excludeMethod("create", "update", "batchUpdate", "deleteBatch", "deleteById");
         }
+        for (String id : restExcluded(e, !ctx(e).compatible())) ctx(e).excludeMethod(id);
+    }
+
+    /**
+     * The method ids @restExclude names - section ids of the service
+     * (save, update, batchUpdate, delete, deleteById, updateBySpecification)
+     * and of the controller (create, read, search, update, batchUpdate,
+     * deleteBatch, deleteById, schemaInfo). In the clean output a method
+     * also goes with what it calls, so naming one never leaves a caller
+     * that does not compile: update takes batchUpdate (it loops over
+     * update), deleteById takes delete (the list delete calls it) and
+     * deleteBatch, delete takes deleteBatch, save takes create. The 2.x
+     * output reads the list as written.
+     */
+    public static java.util.Set<String> restExcluded(EntitySpec e, boolean clean) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<String>();
         String exclude = e.metaValue("restexclude");
         if (exclude != null && !exclude.trim().isEmpty()) {
             for (String id : exclude.split("[,\\s]+")) {
-                if (!id.isEmpty()) ctx(e).excludeMethod(id);
+                if (!id.isEmpty()) out.add(id);
             }
         }
+        if (!clean) return out;
+        if (out.contains("update")) out.add("batchUpdate");
+        if (out.contains("deleteById")) out.add("delete");
+        if (out.contains("delete")) out.add("deleteBatch");
+        if (out.contains("save")) out.add("create");
+        return out;
     }
 }

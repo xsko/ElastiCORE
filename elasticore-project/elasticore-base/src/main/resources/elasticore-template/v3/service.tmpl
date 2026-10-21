@@ -184,7 +184,9 @@ public class ${className} {
     }
 
     /**
-     * Updates multiple ${entityClassName} entities in one transaction.
+     * Updates multiple ${entityClassName} entities in one transaction, each
+     * through update(dto) - so an override of update() in the extension
+     * service governs PUT /batch too.
      */
     @Transactional
     public void batchUpdate(List<${dtoClassName}> dtoList) {
@@ -192,16 +194,7 @@ public class ${className} {
             return;
         }
         for (${dtoClassName} dto : dtoList) {
-            ${validateUpdate};
-            ${entityClassName} entity = ${cmdRef}.findById(${pkDtoInfo}).orElse(null);
-            ${accessUpdate}
-            if (entity == null) {
-                throw new EntityNotFoundException("Invalid ${dtoClassName} ID: " + ${pkDtoInfo});
-            }${versionCheckInLoop}
-            ${mapperName}.mapping(dto, entity, ${isSkipNull}, ${emRef});
-            ${deriveBeforeSave}
-            beforeSave(entity, dto);
-            ${cmdRef}.save(entity);
+            update(dto);
         }
     }
 

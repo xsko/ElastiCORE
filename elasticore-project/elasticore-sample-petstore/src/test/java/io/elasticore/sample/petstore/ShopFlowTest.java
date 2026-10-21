@@ -62,6 +62,14 @@ class ShopFlowTest {
         mvc.perform(json(post("/api/petstore/item/search"), "{\"name\":\"%Puppy%\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].productName").exists());
+        // @search(like) is part of the name, whatever its case: "gold" finds Golden Retriever and Goldfish
+        // (name order), "  BULL " the Bulldog.
+        mvc.perform(json(post("/api/petstore/product/search"), "{\"name\":\"gold\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].name").value(org.hamcrest.Matchers.contains("Golden Retriever", "Goldfish")));
+        mvc.perform(json(post("/api/petstore/product/search"), "{\"name\":\"  BULL \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].name").value(org.hamcrest.Matchers.contains("Bulldog")));
         mvc.perform(get("/api/petstore/item/1000"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unitCost").value(10.00));

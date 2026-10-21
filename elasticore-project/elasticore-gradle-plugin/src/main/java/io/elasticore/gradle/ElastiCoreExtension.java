@@ -80,4 +80,14 @@ public abstract class ElastiCoreExtension {
      * the cause.
      */
     public abstract Property<Boolean> getGenerateBeforeCompile();
+
+    /**
+     * Whether the build also writes the TypeScript client (src/main/ts).
+     * Default false.
+     *
+     * The client is written by {@code elcore3ts}, which a build never ran: after
+     * a change to the model it silently lacked the new fields and entities.
+     * Set, {@code elcore3ts} runs right after {@code elcore3}, before compile.
+     */
+    public abstract Property<Boolean> getTypescriptClient();
 }

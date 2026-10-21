@@ -46,6 +46,7 @@ public class ElastiCorePlugin implements Plugin<Project> {
         ElastiCoreExtension extension =
                 project.getExtensions().create(EXTENSION, ElastiCoreExtension.class);
         extension.getGenerateBeforeCompile().convention(Boolean.TRUE);
+        extension.getTypescriptClient().convention(Boolean.FALSE);
 
         Configuration tools = toolsConfiguration(project);
 
@@ -72,7 +73,7 @@ public class ElastiCorePlugin implements Plugin<Project> {
         // one: a browser model coexists with whatever the server is written
         // in, so it gets its own task instead of a language a project has to
         // choose between. Registered always, run only when asked for.
-        project.getTasks().register("elcore3ts", JavaExec.class, task -> {
+        TaskProvider<JavaExec> elcore3ts = project.getTasks().register("elcore3ts", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Generates the TypeScript client model");
             task.setClasspath(tools);
@@ -98,8 +99,19 @@ public class ElastiCorePlugin implements Plugin<Project> {
                 }
             });
             elcore3.configure(task -> arguments(task, evaluated, extension));
-            evaluated.getTasks().named("elcore3ts", JavaExec.class,
-                    task -> arguments(task, evaluated, extension));
+            elcore3ts.configure(task -> arguments(task, evaluated, extension));
+
+            // The client written with the server, where the build asks for it:
+            // elcore3 says so to the generator, which otherwise warns that the
+            // client it finds is not refreshed by this run.
+            boolean client = Boolean.TRUE.equals(extension.getTypescriptClient().get());
+            if (client) {
+                elcore3.configure(task -> {
+                    task.systemProperty("elasticore.rules.tsWithBuild", "true");
+                    task.finalizedBy(elcore3ts);
+                });
+                elcore3ts.configure(task -> task.mustRunAfter(elcore3));
+            }
 
             if (Boolean.TRUE.equals(extension.getGenerateBeforeCompile().get())) {
                 // Whichever task this project actually runs. A build that
@@ -107,6 +119,7 @@ public class ElastiCorePlugin implements Plugin<Project> {
                 // engine, and waiting for the other generator would let
                 // compilation start against a tree nothing had written.
                 dependOnGeneration(evaluated, declaresRules(extension) ? elcore3 : elcore);
+                if (client) dependOnGeneration(evaluated, elcore3ts);
             }
         });
     }

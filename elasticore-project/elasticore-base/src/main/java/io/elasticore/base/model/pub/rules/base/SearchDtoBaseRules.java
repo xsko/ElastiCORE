@@ -6,6 +6,7 @@ import io.elasticore.base.model.pub.rules.EntitySpec;
 import io.elasticore.base.model.pub.rules.FieldCode;
 import io.elasticore.base.model.pub.rules.FieldSpec;
 import io.elasticore.base.model.pub.rules.Rule;
+import io.elasticore.base.model.pub.rules.SourceCode;
 import io.elasticore.base.model.pub.rules.Syntax;
 import io.elasticore.base.util.StringUtils;
 
@@ -94,7 +95,7 @@ public class SearchDtoBaseRules implements CodeRules {
         // "@search(like,alias)" renames the property it produces.
         String[] parts = splitCondition(f.searchValue());
         String name = parts.length == 2 ? parts[1] : f.name();
-        String conditionCode = parts[0].isEmpty() ? condition : parts[0];
+        String conditionCode = effectiveCondition(ctx(e), f, parts[0].isEmpty() ? condition : parts[0]);
 
         // "@search(isnull)" asks whether the column is empty, so the caller
         // sends a yes or no rather than a value of the field's own type.
@@ -278,6 +279,16 @@ public class SearchDtoBaseRules implements CodeRules {
      * Whether a condition checks for an empty column. Shared with the mapper,
      * which must read the same property the search DTO declares.
      */
+    /**
+     * The condition a field searches by. In the clean output a string's
+     * like is contains-ignoring-case, what %__% means: "search by part of
+     * the name" found nothing for "gold" on H2, PostgreSQL and Oracle,
+     * whose LIKE keeps case. %_% and %% keep case; 2.x keeps its like.
+     */
+    public static String effectiveCondition(SourceCode c, FieldSpec f, String condition) {
+        return !c.compatible() && f.isStringType() && "like".equals(condition) ? "%__%" : condition;
+    }
+
     public static boolean isNullCheck(String condition) {
         return "isnull".equals(condition);
     }

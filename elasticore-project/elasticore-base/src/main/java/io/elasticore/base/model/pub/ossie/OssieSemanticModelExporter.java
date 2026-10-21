@@ -567,6 +567,16 @@ public final class OssieSemanticModelExporter {
                 return f != null && enumOf(f) != null;
             }
 
+            public String keyColumn(String entity) {
+                Entity e = entity(entity);
+                if (e == null || e.getAllFieldListMap() == null) return null;
+                for (Object each : e.getAllFieldListMap().values()) {
+                    Field f = (Field) each;
+                    if (f.isPrimaryKey() || f.hasAnnotation("pk")) return column(entity, f.getName());
+                }
+                return null;
+            }
+
             private Entity entity(String name) {
                 Entity other = null;
                 for (Entity e : datasetNames.keySet()) {

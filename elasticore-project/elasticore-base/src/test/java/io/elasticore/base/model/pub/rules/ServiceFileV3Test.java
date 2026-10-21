@@ -94,9 +94,10 @@ public class ServiceFileV3Test {
         String out = renderService(order().meta("restexclude", "deleteById"));
 
         assertFalse(out.contains("public boolean deleteById"), out);
-        // the list-delete overload has its own id and survives
-        assertTrue(out.contains("public List<Boolean> delete(List<OrderKeyDTO> dtoList)"), out);
+        // the list delete calls deleteById, so it goes with it rather than not compiling
+        assertFalse(out.contains("public List<Boolean> delete(List<OrderKeyDTO> dtoList)"), out);
         assertTrue(out.contains("public OrderDTO save(OrderDTO dto)"), out);
+        assertTrue(out.contains("public void batchUpdate("), out);
     }
 
     /** One meta drives both artifacts - no dead service code behind a removed endpoint. */

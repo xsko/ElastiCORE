@@ -425,6 +425,38 @@ public class ServiceAccessRules implements CodeRules {
         }
         m.stmt("hashPasswords(dto)").end();
 
+        // ---- a @readonly owner: no request carries it, and the mapper does
+        // not write it, so the claim above never reached the row - stored
+        // without an owner, its owner was answered 404. It is claimed on the
+        // entity instead, for every signed-in caller (the administrator too:
+        // no request can name another owner); inside runAsSystem it is left
+        // as the application set it. On update the mapper leaves the stored
+        // value, for everyone.
+        if (claimed != null && WriteGuardRules.serverSet(claimed)) {
+            String before = c.varValue("createIdReset");
+            c.var("createIdReset", (before == null ? "" : before) + "\n        " + stmt(kt, "claimOwner(entity)"));
+            String target = io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.sealed(e, claimed)
+                    ? "entity.creation()" : "entity";
+            String value = kt
+                    ? String.format("%sAccessPolicy.`as`(id, %s::class.javaObjectType)", RT, ownerType)
+                    : String.format("%sAccessPolicy.as(id, %s.class)", RT, ownerType);
+            m.add("/** A @readonly owner is the server's: whoever is signed in owns what they create. */");
+            if (kt) {
+                m.add("private fun claimOwner(entity: %s) {", entity)
+                 .add("    if (currentUser.system()) return")
+                 .add("    val id = currentUser.id() ?: return")
+                 .add("    %s", c.syntax().setter(target, claimed.name(), value))
+                 .add("}").add("");
+            } else {
+                m.add("private void claimOwner(%s entity) {", entity)
+                 .add("    if (currentUser.system()) return;")
+                 .add("    Object id = currentUser.id();")
+                 .add("    if (id == null) return;")
+                 .add("    %s", c.syntax().statement(c.syntax().setter(target, claimed.name(), value)))
+                 .add("}").add("");
+            }
+        }
+
         // ---- update one row: what the caller may not change is what the row holds
         m.fun("accessUpdate", "entity: " + entity + "?, dto: " + dto, entity + " entity, " + dto + " dto")
          .add(kt ? "    if (entity == null) return" : "    if (entity == null) return;")

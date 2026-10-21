@@ -7,7 +7,7 @@
 엔티티 선언부(`meta:`)에 사용하는 어노테이션. 복수 조합 가능.
 
 ### @expose
-DTO, Repository, Service, Controller, SearchDTO 자동 생성. 기본적으로 string 필드는 like, datetime 필드는 between 검색 자동 적용.
+DTO, Repository, Service, Controller, SearchDTO 자동 생성. 기본적으로 string 필드는 auto(값에 `%` 가 있으면 like, 아니면 정확 일치), datetime 필드는 between 검색 자동 적용.
 ```yaml
 Product:
   meta: entity @expose(30)  # pageSize=30, Controller 포함 전체 CRUD 생성
@@ -237,7 +237,11 @@ email: string(100) @notnull
 수정 불가 필드. `@Column(updatable = false)` 생성.
 ```yaml
 createdDate: datetime @updatable(false)
+item:        Item @ManyToOne @updatable(false)   # 리뷰는 처음 정한 상품에 남는다
 ```
+DDD·헥사고날 번들에서 다른 루트로 가는 참조는 식별자 필드(`itemId`)로 쓰이므로, 그 식별자 필드가 `@updatable(false)` 를
+물려받습니다: `@Column(name = "item_item_id", updatable = false)` 이고, 매퍼는 행에 값이 없을 때(생성)만 씁니다 - 수정
+요청이 다른 `itemId` 를 보내도 저장된 값과 응답은 처음 상품 그대로입니다.
 
 #### @readonly / @noinput - 서버가 정하는 필드
 응답에는 나가고 **요청으로는 받지 않는** 필드입니다. 가입일·등급·처리 번호처럼 서버 코드가 값을 정하는
@@ -760,17 +764,18 @@ coordinates: int[] @env:integerarray       # env.yml annotations 참조
 ### 3.1 개요
 
 `@search(condition)` 또는 `@s(condition)` 또는 `@srch(condition)` 또는 `@filter(condition)` 모두 동일.
-조건과 매핑 필드 구분자: `$` 또는 공백.
+조건과 매핑 필드 구분자: `,` (생성기가 쉼표로 나눕니다).
 ```yaml
-customName: string @search(like$comName)   # comName 필드에 like 검색
+customName: string @search(like,comName)   # comName 필드에 like 검색
 ```
 
 ### 3.2 구현된 연산자 전체 목록 (17개)
 
 | DSL 문법 | JPA Criteria | 대소문자 무시 | 설명 |
 |----------|-------------|:---:|------|
-| `eq`, `=`, (기본값) | `equal` | No | 정확 일치 |
-| `like`, `%_%`, `%%` | `like` (%v%) | No | 포함 검색 |
+| `eq`, `=` | `equal` | No | 정확 일치 |
+| `like` | `like` (%v%) | **v3: Yes** / 2.x 호환: No | 포함 검색. v3 모드(헥사고날·DDD, `-Pv3`, 모든 Kotlin 빌드)에서는 문자열 필드에 `%__%` 와 같음 - 이름 일부를 대소문자와 관계없이 찾습니다. 레이어드 Java(2.x 호환)는 그대로 구분 |
+| `%_%`, `%%` | `like` (%v%) | No | 대소문자를 구분하는 포함 검색 (모든 모드) |
 | `%__%` | `like` (%v%) | Yes | 대소문자 무시 포함 검색 |
 | `__=`, `=__` | `equal` | Yes | 대소문자 무시 정확 일치 |
 | `%_` | `like` (%v) | No | 접미사 검색 (ends-with) |
@@ -784,11 +789,20 @@ customName: string @search(like$comName)   # comName 필드에 like 검색
 | `in` | `.in()` / `Join.in()` | No | 다중 값 포함 |
 | `between`, `~` | `between` | No | 범위 검색 |
 | `isnull` | `isNull` / `isNotNull` | No | 비어 있는지 검색. 검색 속성 `<필드>Empty: Boolean` (3.4.1, v3 번들 전용) |
-| `auto` | Runtime 결정 | No | String 전용, %포함시 like 아니면 eq |
+| `auto`, (기본값 - 조건 없는 `@search`) | Runtime 결정 | No | String 전용, %포함시 like 아니면 eq |
+
+- v3 모드에서 대소문자를 무시하는 조건(`like`, `%__%`, `%__`, `__%`)은 값의 앞뒤 공백을 지우고(`like` 처럼),
+  값을 로캘과 무관하게 소문자로 바꿉니다 (Java `toLowerCase(Locale.ROOT)`, Kotlin `lowercase()` - Kotlin 2.x 에서
+  `toLowerCase()` 는 컴파일 오류). 컬럼은 `lower(...)` 로 비교합니다.
+- 호출자가 값에 넣은 `%`·`_` 는 그대로 와일드카드입니다 (`{"name":"%Puppy%"}`).
+- 인덱스: 포함 검색(`%v%`)은 어느 DB 에서도 B-tree 범위를 쓰지 못하므로 `lower()` 가 비용을 더하지 않습니다. 접두사
+  `__%`·정확 일치 `__=` 를 인덱스로 찾으려면 `lower(col)` 식 인덱스가 필요합니다. MySQL·SQL Server 의 기본 CI 콜레이션은
+  원래 대소문자를 무시합니다.
 
 **미구현 주의:**
 - `!=`, `neq` - 코드에 구현 없음
-- `gt`, `gte`, `lt`, `lte` 키워드 - 미구현 (기호 `>`, `>=`, `<`, `<=`만 동작)
+- `gt`, `gte`, `lt`, `lte`, `ilike` 키워드 - 미구현 (기호 `>`, `>=`, `<`, `<=`만 동작). 모르는 조건은 정확 일치가 되며,
+  v3 모드에서는 빌드가 `... @search(ilike) is not a search condition, so it searches by equality ...` DSL 경고를 냅니다
 
 ### 3.3 auto 조건 동작
 
@@ -1252,7 +1266,7 @@ port:
 
 ### 검색 조건 선택
 - **정확한 코드/ID 검색**: `eq` 또는 `=` (기본값)
-- **텍스트 부분 검색**: `like` (대소문자 구분) 또는 `%__%` (무시)
+- **텍스트 부분 검색**: `like` (v3 모드는 대소문자 무시, 레이어드 Java 는 구분), `%_%` (항상 구분), `%__%` (항상 무시)
 - **날짜 범위**: `between` (LocalDate는 자동 +1일 포함)
 - **다중 선택 필터**: `in`
 - **숫자 비교**: `>=`, `<=`, `>`, `<` (기호만 사용, 키워드 미지원)
@@ -1852,8 +1866,8 @@ PurchaseOrder:
 | 권한 없음 | 403 |
 | `owner` 조회·수정·삭제·명령에서 남의 행 | 404 (존재 자체를 알리지 않음) |
 | `owner` 검색 | 소유자 필드 **동등 조건**(`=`)을 검색에 덧붙임 - 내 것만 나옴 (필드의 `@search` 방식과 무관) |
-| `create` | 소유자 필드를 로그인 ID 로 덮어씀 - 방문자가 보낸 값도 지움 (관리자는 요청 값 그대로). 소유자가 기본키이고 자동 생성이 아니면 기본키를 로그인 ID 로 |
-| `update` | 소유자 필드와 `@access(admin)` 필드는 **행의 현재 값** 으로 (보낸 값 무시, `@dynamicupdate(false)` 에서도 지워지지 않음) |
+| `create` | 소유자 필드를 로그인 ID 로 덮어씀 - 방문자가 보낸 값도 지움 (관리자는 요청 값 그대로). 소유자가 기본키이고 자동 생성이 아니면 기본키를 로그인 ID 로. 소유자 필드가 `@readonly`·`@noinput` 이면(요청이 보낼 수 없는 값) 관리자를 포함해 로그인한 사람이 소유자 - `runAsSystem` 안에서는 손대지 않음 |
+| `update` | 소유자 필드와 `@access(admin)` 필드는 **행의 현재 값** 으로 (보낸 값 무시, `@dynamicupdate(false)` 에서도 지워지지 않음). `@readonly` 소유자는 관리자의 수정에서도 그대로 |
 | `owner` 의 `findAll`·조건 삭제·조건 수정 | 관리자만 (한 건씩 확인할 수 없으므로) |
 | `owner` 수준인데 `@owner` 가 안 풀림 | 빌드 경고(DSL_WARN) + 실행 시 관리자만 (검색은 403) |
 | 로그인 안 한 호출 (요청 밖·WebFlux·gRPC·`@Async` 포함) | **방문자** - fail-closed |

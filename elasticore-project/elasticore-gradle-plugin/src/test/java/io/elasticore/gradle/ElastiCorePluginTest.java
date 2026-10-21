@@ -284,6 +284,33 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("the TypeScript client is written with the build when asked for, and only then")
+    public void theTypescriptClientRunsWithTheBuildWhenAsked() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { architecture = 'hexagonal' }");
+        String off = run("compileJava", "--dry-run").getOutput();
+        // Registered, never run by a build: the client went stale after every model change.
+        assertTrue(!off.contains(":elcore3ts"), off);
+
+        writeBuild("plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { architecture = 'hexagonal'; typescriptClient = true }",
+                "tasks.register('reportElcore3') {\n"
+                        + "    doLast {\n"
+                        + "        def t = tasks.getByName('elcore3')\n"
+                        + "        println '<<<' + t.systemProperties.collect { k, v -> k + '=' + v }.join(';') + '>>>'\n"
+                        + "    }\n"
+                        + "}");
+        String on = run("compileJava", "--dry-run").getOutput();
+        assertTrue(on.contains(":elcore3 SKIPPED"), on);
+        assertTrue(on.contains(":elcore3ts SKIPPED"), on);
+        assertTrue(on.indexOf(":elcore3 SKIPPED") < on.indexOf(":elcore3ts SKIPPED"), on);
+        assertTrue(on.indexOf(":elcore3ts SKIPPED") < on.indexOf(":compileJava SKIPPED"), on);
+        // elcore3 is told, so it does not warn of a client it did not refresh.
+        assertTrue(reportOf(run("reportElcore3")).contains("elasticore.rules.tsWithBuild=true"));
+    }
+
+    @Test
 
     @DisplayName("turning the ordering off leaves compilation alone")
     public void theOrderingCanBeDeclined() throws IOException {

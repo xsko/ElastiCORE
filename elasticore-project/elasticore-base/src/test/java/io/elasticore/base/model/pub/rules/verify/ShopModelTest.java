@@ -345,7 +345,9 @@ public class ShopModelTest {
         String core = java("application/PtBuyerCoreService.java");
         assertTrue(core.contains("protected void beforeSave(PtBuyer entity, PtBuyerDTO request) {"), core);
         int calls = core.split("beforeSave\\(entity, dto\\);", -1).length - 1;
-        assertTrue(calls == 4, "save, update, batchUpdate and updateBySpecification each call it: " + calls);
+        // batchUpdate goes through update(dto) for each row.
+        assertTrue(calls == 3, "save, update and updateBySpecification each call it: " + calls);
+        assertTrue(core.contains("update(dto);"), core);
     }
 
     // ---- the domain rules the DSL states ----------------------------------------
@@ -495,8 +497,9 @@ public class ShopModelTest {
         assertTrue(order.contains("for (PtLine member : this.lines) member.derive(lookup);"), order);
         assertTrue(order.contains("totalSum = totalSum.plus(linesItem.getSubTotal())"), order);
         String service = java("application/PtOrderCoreService.java");
-        assertTrue(service.split("entity\\.derive\\(entityManager::find\\);", -1).length - 1 >= 5,
-                "create, update, batch update, update by condition and the command derive first");
+        // A batch update derives through update(dto).
+        assertTrue(service.split("entity\\.derive\\(entityManager::find\\);", -1).length - 1 >= 4,
+                "create, update, update by condition and the command derive first");
         assertTrue(java("application/dto/PtLineDTO.java").contains("@JsonProperty(access=JsonProperty.Access.READ_ONLY)"),
                 "a derived value is shown, never taken from a request");
     }

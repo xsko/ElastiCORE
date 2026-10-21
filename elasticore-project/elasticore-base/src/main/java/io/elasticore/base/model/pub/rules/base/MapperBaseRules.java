@@ -155,11 +155,17 @@ public class MapperBaseRules implements CodeRules {
             // every output, the 2.x-compatible one too (MapperSrcPublisher).
             if (f.hasDsl("formula")) continue;
 
+            // The identity of a reference marked @updatable(false) (IdReferences
+            // carries it over) is written when the row has none - on create -
+            // and kept after: a review stays on its item.
+            String once = !code.compatible() && f.hasDsl("idof") && "false".equals(f.dslValue("updatable"))
+                    ? code.syntax().getter("to", f.name()) : null;
+
             Conversion plain = conversion(e, f, false, false);
-            if (!plain.skip) emitSetter(code, REV_BODY, f, plain, code.mapperTarget(f.name()));
+            if (!plain.skip) emitSetter(code, REV_BODY, f, plain, code.mapperTarget(f.name()), once);
 
             Conversion managed = conversion(e, f, false, true);
-            if (!managed.skip) emitSetter(code, REV_BODY_EM, f, managed, code.mapperTarget(f.name()));
+            if (!managed.skip) emitSetter(code, REV_BODY_EM, f, managed, code.mapperTarget(f.name()), once);
         }
     }
 
@@ -168,7 +174,16 @@ public class MapperBaseRules implements CodeRules {
     }
 
     private void emitSetter(SourceCode code, String block, FieldSpec f, Conversion conv, String target) {
-        code.line(block, "        if(c==null || c.fd(%s).checkEnable())", RuleText.quote(f.name()));
+        emitSetter(code, block, f, conv, target, null);
+    }
+
+    /** With unsetOnly, the field is written only while the target's value is null. */
+    private void emitSetter(SourceCode code, String block, FieldSpec f, Conversion conv, String target, String unsetOnly) {
+        if (unsetOnly != null) {
+            code.line(block, "        if((c==null || c.fd(%s).checkEnable()) && %s == null)", RuleText.quote(f.name()), unsetOnly);
+        } else {
+            code.line(block, "        if(c==null || c.fd(%s).checkEnable())", RuleText.quote(f.name()));
+        }
 
         // @forceupdate assigns straight through instead of going via setVal,
         // so the value is written even when it is null. A converted field goes

@@ -169,24 +169,33 @@ public class HexUseCaseRules implements CodeRules, ArtifactContributor {
         // A read-only entity's service is missing every write method, so a
         // port that named them would promise what nothing behind it can do.
         boolean writes = !e.hasMeta("readonly");
+        // And a method @restExclude took off the service is not promised
+        // either: the use case kept it, and "XService implements XUseCase"
+        // stopped compiling.
+        java.util.Set<String> gone = io.elasticore.base.model.pub.rules.base.ControllerBaseRules.restExcluded(e, true);
+        for (String id : new String[]{"save", "update", "batchUpdate", "delete", "deleteById"}) {
+            if (c.isMethodExcluded(id)) gone.add(id);
+        }
 
         java.util.List<String> methods = new java.util.ArrayList<String>();
-        if (writes) {
+        if (writes && !gone.contains("save")) {
             methods.add(method(s, s.nullableType(dto), "save", s.parameter(dto, "dto")));
         }
         methods.add(method(s, String.format("Optional<%s>", dto), "findById", pkParams(s, e)));
         methods.add(method(s, String.format("Page<%s>", resultDto), "findBySearch",
                 s.parameter(srchDto, "searchDTO")));
-        if (writes && !c.isMethodExcluded("update")) {
+        if (writes && !gone.contains("update")) {
             methods.add(method(s, s.nullableType(dto), "update", s.parameter(dto, "dto")));
         }
-        if (writes && !c.isMethodExcluded("batchUpdate")) {
+        if (writes && !gone.contains("batchUpdate")) {
             methods.add(method(s, null, "batchUpdate",
                     s.parameter(s.nullableType(String.format("List<%s>", dto)), "dtoList")));
         }
-        if (writes) {
+        if (writes && !gone.contains("delete")) {
             methods.add(method(s, "List<Boolean>", "delete",
                     s.parameter(String.format("List<%s>", keyDto), "dtoList")));
+        }
+        if (writes && !gone.contains("deleteById")) {
             methods.add(method(s, "boolean", "deleteById", pkParams(s, e)));
         }
         // Signing in, where the DSL marks a @login and a @password - and who is

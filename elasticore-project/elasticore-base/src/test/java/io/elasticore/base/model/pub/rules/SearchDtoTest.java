@@ -48,6 +48,16 @@ public class SearchDtoTest {
         assertTrue(out.contains("private String name;"), out);
     }
 
+    /** The clean output's like ignores case, and its search DTO says so; %_% still matches the pattern. */
+    @Test
+    public void likeCondition_cleanOutputIgnoresCase() {
+        String out = renderClean(srch("Product").addField(loader.parse("name", "string(200)! @search(like)")));
+        assertTrue(out.contains("@Schema(description = \"Field matches value (case-insensitive) with identical content"
+                + " between start and end. field:name\"  )"), out);
+        String keeps = renderClean(srch("Product").addField(loader.parse("name", "string(200)! @search(%_%)")));
+        assertTrue(!keeps.contains("case-insensitive"), keeps);
+    }
+
     /** ProductSrchDTO.sku, from "sku: string(50)! @search(eq)". */
     @Test
     public void equalityCondition_documentsExactMatching() {

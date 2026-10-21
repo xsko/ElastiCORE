@@ -405,6 +405,17 @@ public final class RulesGenRunner {
             System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
         }
         runner.printSummary();
+        if (!typescript && !Boolean.getBoolean("elasticore.rules.list")
+                && !Boolean.getBoolean("elasticore.rules.tsWithBuild")) {
+            java.util.List<String> roots = new ArrayList<String>();
+            if (modulePaths != null && !modulePaths.trim().isEmpty()) {
+                for (String m : modulePaths.split(",")) if (!m.trim().isEmpty()) roots.add(m.trim());
+            } else {
+                roots.add(basePath);
+            }
+            String stale = staleClient(roots);
+            if (stale != null) io.elasticore.base.util.ConsoleLog.printWarn(stale);
+        }
 
         // What the DSL validation found, said where the person who can fix it
         // is looking. The extractor prints these; a rule-engine project used
@@ -445,6 +456,33 @@ public final class RulesGenRunner {
             return 1;
         }
         return 0;
+    }
+
+    /**
+     * What to say when a project holds a generated TypeScript client this run
+     * did not refresh: src/main/ts is written only by elcore3ts, which a
+     * build never ran, so after a model change the client silently lacked
+     * the new fields and entities. Null when there is none. Said once.
+     */
+    static String staleClient(java.util.List<String> roots) {
+        for (String root : roots) {
+            File[] files = new File(root, "src/main/ts").listFiles();
+            if (files == null) continue;
+            for (File f : files) {
+                if (!f.isFile() || !f.getName().endsWith(".ts")) continue;
+                try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(
+                        new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
+                    String first = r.readLine();
+                    if (first == null || !first.startsWith("//ecd:")) continue;
+                } catch (IOException e) {
+                    continue;
+                }
+                return "[elcore3] " + new File(root, "src/main/ts").getPath() + " holds a generated TypeScript client"
+                        + " this run did not refresh - run the elcore3ts task after a model change, or set"
+                        + " typescriptClient = true in the elasticore { } block so the build runs it.";
+            }
+        }
+        return null;
     }
 
     /** context-map.md: the bounded contexts and what crosses between them, drawn in Mermaid. */

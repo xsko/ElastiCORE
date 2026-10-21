@@ -487,6 +487,89 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   이 문서 사본을 다시 복사해 원본과 같게 했다(`cmp`)
 - 관련 파일: `elasticore-history.md`
 
+### Improvements (3.0 전에 - 검색, 쓰기 경로, Ossie, TypeScript 클라이언트)
+
+#### v3 의 `@search(like)` 는 대소문자를 무시한다
+- "이름 일부로 검색" 은 모두가 `@search(like)` 로 쓰는데, 생성된 `c.like(r.get("name"), "%" + trim(name) + "%")` 는 H2·
+  PostgreSQL·Oracle 에서 대소문자를 구분해 `{"name":"gold"}` 가 Goldfish 를 찾지 못했다(펫스토어 실험의 세 팀 중 둘이 그대로
+  냈다). 대소문자를 무시하는 `%__%` 는 Kotlin 에 `x!!.toLowerCase()` 를 써서 Kotlin 2.1 부터 컴파일 오류였다(Boot 4 는 Kotlin
+  2.2). 3.0 뒤에 바꾸면 모든 v3 프로젝트의 동작이 바뀌므로 지금 바꾼다
+- v3 모드(헥사고날·DDD, `-Pv3`, 모든 Kotlin 빌드)에서 문자열 필드의 `like` 는 `%__%` 와 같다: `c.like(c.lower(...), "%" +
+  trim(v).toLowerCase(java.util.Locale.ROOT) + "%")`, Kotlin 은 `trim(v)!!.lowercase()`. 검색 DTO 의 `@Schema` 도 대소문자
+  무시 문구다. `%_%`·`%%` 는 모든 모드에서 대소문자를 구분하고, 기호들의 뜻은 그대로다. 소문자 변환은 `Syntax.lowerCase` 를
+  지나 언어마다 맞게 쓰이고(로캘 무관), 대소문자 무시 조건 `%__%`·`%__`·`__%` 는 `like` 처럼 값의 앞뒤 공백을 지운다
+- 모르는 조건(`@search(ilike)`, `gt` 등)은 전처럼 정확 일치지만 v3 모드에서는 DSL 경고를 낸다. 가이드가 조건 없는
+  `@search` 를 정확 일치(`eq`)라 했던 것은 `auto` 로, 구분자 `$` 는 실제 코드대로 `,` 로 고쳤다
+- 2.x 호환 출력(레이어드 Java)은 그대로다 - 같은 `@search(like)` 가 그곳에서는 구분한다(마이그레이션 가이드에 적음).
+  펫스토어·`elasticore-template-ddd`·`elasticore-template-kt` 의 `like` 검색 매퍼 줄이 바뀐다(생성 파일, 커밋 안 됨)
+- 확인: `MapperSpecTest.likeIgnoresCase_v3`·`ignoreCase_kotlin`·`anUnknownConditionIsSaid`, `SearchDtoTest.
+  likeCondition_cleanOutputIgnoresCase`(고치기 전 코드에서는 실패), 2.x 문구는 `likeVariants` 가 그대로 지킨다. 펫스토어
+  `ShopFlowTest.aVisitorBrowsesTheCatalog` 에 `{"name":"gold"}` -> Golden Retriever, Goldfish, `{"name":"  BULL "}` -> Bulldog 추가.
+  같은 모양(`like`, `%__%`, `__=`, `__%`, `%__`)을 샘플 두 개에 잠시 넣어 Java(헥사고날)·Kotlin(헥사고날, Kotlin 1.9.24)으로
+  컴파일하고 Java 쪽은 H2 에서 `"  gold "` 로 찾았다 - 확인 뒤 뺐다. Kotlin 2.2 컴파일은 하지 않았다(`lowercase()` 는 1.5 부터 있음)
+- 관련 파일: `MapperSpecRules.java`(`lowered`, `knownCondition`), `SearchDtoBaseRules.java`(`effectiveCondition`),
+  `Syntax.java`(`lowerCase`), `elasticore-annotation-guide.md`, `elasticore-dev-guide.md`, `elasticore-migration-guide.md`
+
+#### `PUT /batch` 는 행마다 `update(dto)` 를 부른다
+- v3 `batchUpdate`(Java·Kotlin 서비스 템플릿)가 `update()` 의 본문을 복사해 돌아서, 확장 서비스에서 `update()` 를 override
+  한 규칙("쓴 사람만 고친다", "리뷰의 상품은 바뀌지 않는다")을 `PUT /review/batch` 가 건너뛰었다(실험에서 관리자가 남의 리뷰를
+  고치고 리뷰를 다른 상품으로 옮김). 이제 한 트랜잭션 안에서 `for (dto : dtoList) update(dto);` - override, `readBack`, 409 변환이
+  일괄 수정에도 적용된다. `update()` 를 override 한 기존 v3 프로젝트는 다시 생성하면 그 규칙이 일괄 수정에도 걸린다(그것이 고침)
+- `@restExclude(update)` 는 이제 `batchUpdate` 도 함께 뺀다(서비스·컨트롤러·유스케이스·TypeScript) - 남으면 없는 `update` 를
+  부르기 때문이다. 같은 이유로 `deleteById` 는 `delete`(목록)와 `POST /delete` 를, `delete` 는 `POST /delete` 를, `save` 는
+  `POST` 를 데려간다(`ControllerBaseRules.restExcluded`). 2.x 호환 컨트롤러는 적힌 대로만 뺀다
+- 확인: `WritePathsTest.aBatchUpdateGoesThroughUpdate`, `excludingUpdateTakesTheBatchWithIt`(Java 헥사고날·레이어드 v3, Kotlin;
+  고치기 전 코드에서는 실패). 임시 도메인으로 `elasticore-template-ddd` 에서 실행: `update()` 를 override 한 서비스의
+  `batchUpdate` 가 그 override 에 거절된다
+- 관련 파일: `v3/service.tmpl`, `kt/service.tmpl`, `JpaServiceFileRules.java`, `ControllerBaseRules.java`,
+  `TypeScriptApiRules.java`, `elasticore-rule-guide.md`
+
+#### `@restExclude` 가 헥사고날 빌드를 깨지 않는다
+- 서비스에서 뺀 메서드를 유스케이스 인터페이스가 그대로 약속해 `@restExclude(batchUpdate)` 가 `XxxService is not abstract
+  and does not override abstract method batchUpdate(...) in XxxUseCase` 로 컴파일되지 않았다(`save`·`delete`·`deleteById` 도
+  같음). 이제 유스케이스도 같은 목록으로 뺀다. Kotlin 서비스는 원래 메서드를 빼지 않으므로(아래 3.1 목록) 유스케이스·
+  컨트롤러만 따르고 컴파일된다
+- 확인: `WritePathsTest.theUseCaseDropsWhatTheServiceDropped`(Java·Kotlin), 임시 도메인을 `elasticore-template-ddd`(Java)·
+  `elasticore-template-kt`(Kotlin)에 넣어 `@restExclude(update)`·`@restExclude(batchUpdate, deleteById)` 를 컴파일
+- 관련 파일: `HexUseCaseRules.java`
+
+#### `@readonly` 소유자 필드가 소유자를 잃지 않는다
+- `@owner(customerId)` 의 `customerId` 가 `@readonly` 면, 생성 시 서비스가 DTO 에 넣은 소유자를 매퍼가 쓰지 않아(서버가 정하는
+  필드) 행이 소유자 없이 저장되었고, 주인은 자기 행을 수정하려다 404 를 받았다. 이제 그 경우 서비스가 생성 시 엔티티에 직접
+  넣는다(`claimOwner(entity)`, 관리자 포함 로그인한 누구든 - 요청이 그 값을 보낼 수 없으므로. `runAsSystem` 안에서는 손대지
+  않음. 나뉜 루트는 `creation()` 으로). 수정에서는 매퍼가 쓰지 않으므로 누구의 수정이든 저장된 값이 남는다
+- 확인: `WritePathsTest.aReadonlyOwnerIsClaimedOnCreateAndKept`(고치기 전 코드에서는 실패). 임시 도메인을 H2 에서 실행: 회원이
+  만든 리뷰의 `writerId` 가 그 회원, 수정 뒤에도 그대로, 관리자가 만들면 관리자, 관리자의 수정 뒤에도 회원의 것,
+  `@behavior` 로 나뉜 루트도 `creation()` 으로 들어간다
+- 관련 파일: `ServiceAccessRules.java`, `elasticore-annotation-guide.md`
+
+#### 참조의 `@updatable(false)` 가 동작한다
+- DDD·헥사고날에서 다른 루트로 가는 참조는 식별자 필드(`itemId`)로 쓰이는데, `item: Item @updatable(false)` 의 표시가 그
+  필드로 가지 않아 수정 요청이 리뷰를 다른 상품으로 옮겼다. 이제 식별자 필드가 물려받아 `@Column(name = "item_item_id",
+  updatable = false)` 이고, 매퍼는 행에 값이 없을 때(생성)만 쓴다(`&& to.getItemId() == null`)
+- 확인: `WritePathsTest.aReferenceThatMayNotChangeKeepsItsRow`(Java·Kotlin, 고치기 전 코드에서는 실패), 임시 도메인을 H2 에서
+  실행: 다른 `itemId` 로 수정한 리뷰가 처음 상품에 남는다
+- 관련 파일: `IdReferences.java`, `MapperBaseRules.java`, `elasticore-annotation-guide.md`
+
+#### Ossie: `count(엔티티)` 가 어느 dataset 을 세는지 말한다
+- `count(Customer)` 가 dataset 을 이름하지 않는 `COUNT(*)` 로 나가, BI 도구가 어느 테이블을 세는지 알 수 없었다. 이제 키
+  컬럼을 센다: `COUNT(Customer.customer_id)`(키는 비지 않으므로 행 수와 같다). 조건이 있는 `count(...) where ...` 는 조건이
+  이미 dataset 의 컬럼을 이름하므로 그대로다
+- 확인: `OssieMetricsTest.countsRowsOrValuesAndDividesSafely`(고치기 전 코드에서는 실패). 샘플의 지표는 모두 조건이 있어
+  내보낸 `semantic_model.yml` 은 바뀌지 않았다
+- 관련 파일: `OssieMetrics.java`(`Model.keyColumn`), `OssieSemanticModelExporter.java`, `elasticore-dsl-guide.md`
+
+#### TypeScript 클라이언트를 빌드와 함께 (`typescriptClient`)
+- `src/main/ts` 는 `elcore3ts` 만 쓰고 빌드는 그 태스크를 부르지 않아, 모델을 바꾼 뒤 클라이언트에 새 필드·엔티티가 없었다
+  (실험의 2단계 세 팀 모두). 플러그인의 `elasticore { typescriptClient = true }`(기본 false)는 `elcore3` 뒤, 컴파일 전에
+  `elcore3ts` 를 실행한다. 설정이 없는데 생성된 `.ts`(첫 줄 `//ecd:`)가 있으면 `elcore3` 가 끝에 태스크와 설정 이름을 말하는
+  경고를 한 번 낸다
+- 확인: `ElastiCorePluginTest.theTypescriptClientRunsWithTheBuildWhenAsked`(설정 없이 `compileJava` 가 `elcore3ts` 를 부르지
+  않음, 설정하면 `elcore3` -> `elcore3ts` -> `compileJava` 순서, `elcore3` 에 `elasticore.rules.tsWithBuild=true`),
+  `StaleClientTest`(생성된 클라이언트만 경고, 설정·TypeScript 실행에서는 경고 없음)
+- 관련 파일: `ElastiCoreExtension.java`, `ElastiCorePlugin.java`, `RulesGenRunner.java`(`staleClient`),
+  `elasticore-rule-guide.md`, `elasticore-env-guide.md`
+
 ## 3.0.261020-alpha2
 
 ### Bug Fixes (생성기)

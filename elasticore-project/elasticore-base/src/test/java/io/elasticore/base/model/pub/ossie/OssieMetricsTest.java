@@ -40,6 +40,10 @@ public class OssieMetricsTest {
         public boolean isEnum(String entity, String field) {
             return "status".equals(field) || "kind".equals(field);
         }
+
+        public String keyColumn(String entity) {
+            return "Order".equals(entity) ? "order_id" : null;
+        }
     };
 
     @Test
@@ -58,7 +62,8 @@ public class OssieMetricsTest {
     @Test
     public void countsRowsOrValuesAndDividesSafely() {
         OssieMetrics r = new OssieMetrics(shop);
-        assertEquals("COUNT(*)", r.read("all", "count(Order)").sql);
+        // The rows by their key: COUNT(*) named no dataset a BI tool could find.
+        assertEquals("COUNT(Order.order_id)", r.read("all", "count(Order)").sql);
         assertEquals("COUNT(CASE WHEN Order.note = 'gift' THEN 1 END)", r.read("quoted", "count(Order) where note = 'gift'").sql);
         // A quote inside the text is doubled for SQL; " -- " and " and " inside quotes are the text's own.
         assertEquals("COUNT(CASE WHEN Order.note = 'O''Brien' THEN 1 END)", r.read("named", "count(Order) where note = \"O'Brien\"").sql);
@@ -69,12 +74,12 @@ public class OssieMetricsTest {
         r.read("revenue", "sum(Order.total)");
         r.read("orders", "count(Order)");
         OssieMetrics.Metric avg = r.read("average", "revenue / orders");
-        assertEquals("(SUM(Order.total)) / NULLIF((COUNT(*)), 0)", avg.sql);
+        assertEquals("(SUM(Order.total)) / NULLIF((COUNT(Order.order_id)), 0)", avg.sql);
         assertEquals("Decimal", avg.datatype);
         assertEquals("Integer", r.read("twice", "orders * 2").datatype);
         // Two counts divide as whole numbers in most databases: the ratio is made a decimal first.
         OssieMetrics.Metric share = r.read("share", "quoted / orders");
-        assertEquals("CAST((COUNT(CASE WHEN Order.note = 'gift' THEN 1 END)) AS DECIMAL(38, 10)) / NULLIF((COUNT(*)), 0)", share.sql);
+        assertEquals("CAST((COUNT(CASE WHEN Order.note = 'gift' THEN 1 END)) AS DECIMAL(38, 10)) / NULLIF((COUNT(Order.order_id)), 0)", share.sql);
         assertEquals("Decimal", share.datatype);
         assertTrue(r.problems().isEmpty(), r.problems().toString());
     }

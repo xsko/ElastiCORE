@@ -131,6 +131,70 @@ public class MapperSpecTest {
         assertTrue(suffix.contains("c.like(r.get(\"f\"),\"%\" +trim(f))"), suffix);
     }
 
+    private String renderIn(SourceCode.TemplateSet set, String fieldLine) {
+        EntitySpec e = new EntitySpec("Order").addField(loader.parse("f", fieldLine));
+        RuleEngine engine = new RuleEngine().templateSet(set).register(new MapperSpecRules());
+        engine.register(set == SourceCode.TemplateSet.KOTLIN
+                ? new io.elasticore.base.model.pub.rules.lang.kotlin.KotlinMapperSpecShellRules()
+                : new io.elasticore.base.model.pub.rules.base.MapperSpecShellRules());
+        return engine.run(e, "mapper").renderBlock("spec");
+    }
+
+    /**
+     * The clean output reads a string's like as contains-ignoring-case, trimmed;
+     * %_% keeps case, and the ignore-case symbols trim and lower in the root locale.
+     */
+    @Test
+    public void likeIgnoresCase_v3() {
+        SourceCode.TemplateSet v3 = SourceCode.TemplateSet.V3;
+        String like = renderIn(v3, "string(30) @search(like)");
+        assertTrue(like.contains("c.like(c.lower(r.get(\"f\")),\"%\" +trim(f).toLowerCase(java.util.Locale.ROOT)+ \"%\")"), like);
+        assertEquals(like, renderIn(v3, "string(30) @search(%__%)"));
+        String keeps = renderIn(v3, "string(30) @search(%_%)");
+        assertTrue(keeps.contains("c.like(r.get(\"f\"),\"%\" +trim(f)+ \"%\")"), keeps);
+        String number = renderIn(v3, "long @search(like)");
+        assertTrue(number.contains("c.like(r.get(\"f\"),\"%\" +trim(f)+ \"%\")"), number);
+        String eq = renderIn(v3, "string(30) @search(__=)");
+        assertTrue(eq.contains("c.equal(c.lower(r.get(\"f\")),f.toLowerCase(java.util.Locale.ROOT))"), eq);
+        String prefix = renderIn(v3, "string(30) @search(__%)");
+        assertTrue(prefix.contains("c.like(c.lower(r.get(\"f\")),trim(f).toLowerCase(java.util.Locale.ROOT)+ \"%\")"), prefix);
+        String through = renderIn(v3, "string(30) @search(like) @ref(a.b)");
+        assertTrue(through.contains("c.like(c.lower(r.get(\"a\").get(\"b\")),"), through);
+    }
+
+    /** Kotlin lowers with lowercase(): toLowerCase() is an error from Kotlin 2.1 on. */
+    @Test
+    public void ignoreCase_kotlin() {
+        for (String op : new String[]{"like", "%__%", "__=", "%__", "__%"}) {
+            String out = renderIn(SourceCode.TemplateSet.KOTLIN, "string(30) @search(" + op + ")");
+            assertTrue(out.contains(".lowercase()"), op + ": " + out);
+            assertTrue(!out.contains("toLowerCase"), op + ": " + out);
+        }
+        String like = renderIn(SourceCode.TemplateSet.KOTLIN, "string(30) @search(like)");
+        assertTrue(like.contains("\"%\" +trim(f)!!.lowercase()+ \"%\""), like);
+    }
+
+    /** An operator nobody reads is an equality - said in the clean output, as the 2.x output always did it. */
+    @Test
+    public void anUnknownConditionIsSaid() {
+        io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
+        SourceCode.resetWarnings();
+        renderIn(SourceCode.TemplateSet.V3, "string(30) @search(ilike)");
+        assertEquals(1, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
+        io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
+        SourceCode.resetWarnings();
+        renderIn(SourceCode.TemplateSet.V3, "string(30) @search(like)");
+        renderIn(SourceCode.TemplateSet.V3, "string(30) @search(%_)");
+        renderIn(SourceCode.TemplateSet.V3, "string(30) @search(__%)");
+        renderIn(SourceCode.TemplateSet.V3, "date @search(isnull)");
+        renderIn(SourceCode.TemplateSet.V3, "date @search(~)");
+        renderIn(SourceCode.TemplateSet.V3, "string(30) @search");
+        // The 2.x output says nothing new.
+        renderIn(SourceCode.TemplateSet.COMPATIBLE, "string(30) @search(ilike)");
+        assertEquals(0, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
+        SourceCode.resetWarnings();
+    }
+
     @Test
     public void inCondition_onPlainField() {
         String out = oneField("string(30) @search(in)");

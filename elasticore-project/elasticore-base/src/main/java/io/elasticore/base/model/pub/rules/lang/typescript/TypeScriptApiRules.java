@@ -212,12 +212,8 @@ public class TypeScriptApiRules implements CodeRules {
         if (e.hasMeta("readonly")) {
             gone.addAll(java.util.Arrays.asList("create", "update", "batchUpdate", "deleteBatch", "deleteById"));
         }
-        String exclude = e.metaValue("restexclude");
-        if (exclude != null) {
-            for (String id : exclude.split("[,\\s]+")) {
-                if (!id.isEmpty()) gone.add(id);
-            }
-        }
+        // The server's controller drops what goes with each (restExcluded).
+        gone.addAll(io.elasticore.base.model.pub.rules.base.ControllerBaseRules.restExcluded(e, true));
         if (io.elasticore.base.model.pub.rules.verify.SpecFactory.commandOnlyRoots()
                 && io.elasticore.base.model.pub.rules.ddd.DddCommandRules.nothingEditable(e)) {
             gone.add("update");

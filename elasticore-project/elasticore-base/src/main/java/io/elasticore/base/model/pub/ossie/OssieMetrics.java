@@ -50,6 +50,11 @@ final class OssieMetrics {
 
         /** Whether the field's type is an enumeration. */
         boolean isEnum(String entity, String field);
+
+        /** The column of the entity's key (the first, for a composite one), or null. */
+        default String keyColumn(String entity) {
+            return null;
+        }
     }
 
     static final class Metric {
@@ -158,6 +163,12 @@ final class OssieMetrics {
 
         String target = column != null ? ds + "." + column : null;
         String sql;
+        // count(Entity) counts the rows by their key, which is never null:
+        // COUNT(*) names no dataset, and a BI tool could not tell which table
+        // it counts. A condition already names the dataset's columns.
+        if (target == null && condition == null && model.keyColumn(entity) != null) {
+            target = ds + "." + model.keyColumn(entity);
+        }
         if ("COUNT".equals(fn)) {
             if (condition == null) sql = target != null ? "COUNT(" + target + ")" : "COUNT(*)";
             else sql = "COUNT(CASE WHEN " + condition + " THEN " + (target != null ? target : "1") + " END)";

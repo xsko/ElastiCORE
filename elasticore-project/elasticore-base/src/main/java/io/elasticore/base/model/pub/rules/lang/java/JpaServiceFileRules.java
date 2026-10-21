@@ -189,7 +189,7 @@ public class JpaServiceFileRules implements CodeRules {
         // second in the DTO's JSON format and would never compare equal.
         if (version != null && !numeric(version.typeName())) version = null;
         if (version == null) {
-            c.var("versionCheck", "").var("versionCheckInLoop", "").var("createVersionReset", "");
+            c.var("versionCheck", "").var("createVersionReset", "");
             return;
         }
 
@@ -200,8 +200,7 @@ public class JpaServiceFileRules implements CodeRules {
         // Appended to the line before it, so an entity without a version gets
         // no empty line where the check would have been.
         String nl = "\n";
-        c.var("versionCheck", nl + "        " + syntax.statement(check))
-         .var("versionCheckInLoop", nl + "            " + syntax.statement(check));
+        c.var("versionCheck", nl + "        " + syntax.statement(check));
 
         // A primitive version cannot be cleared; it starts at zero anyway.
         c.var("createVersionReset", primitive(version) ? ""
@@ -302,11 +301,9 @@ public class JpaServiceFileRules implements CodeRules {
             ctx(e).excludeMethod("save", "update", "batchUpdate", "delete", "deleteById",
                     "updateBySpecification");
         }
-        String exclude = e.metaValue("restexclude");
-        if (exclude != null && !exclude.trim().isEmpty()) {
-            for (String id : exclude.split("[,\\s]+")) {
-                if (!id.isEmpty()) ctx(e).excludeMethod(id);
-            }
+        // With update goes batchUpdate, which calls it (restExcluded).
+        for (String id : io.elasticore.base.model.pub.rules.base.ControllerBaseRules.restExcluded(e, true)) {
+            ctx(e).excludeMethod(id);
         }
     }
 }

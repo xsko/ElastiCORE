@@ -122,6 +122,11 @@ final class IdReferences {
                 line.append(" @idof(").append(f.getName()).append(")");
                 String search = f.getAnnotationValue("search", "s", "srch", "filter");
                 if (f.hasAnnotation("search") && search != null) line.append(" @search(").append(search).append(")");
+                // "a review stays on its item": the identity is what is written, so it carries the relation's
+                // @updatable(false) - the column is not updated and the mapper writes it only on create.
+                if ("false".equalsIgnoreCase(String.valueOf(f.getAnnotationValue("updatable")).trim())) {
+                    line.append(" @updatable(false)");
+                }
                 Field id = parser.parse(idName, line.toString(), entity);
                 entity.addDerivedField(id);
 
