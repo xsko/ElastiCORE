@@ -152,6 +152,106 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /**
+     * A DTO field read through a relation (@ref(assignee.login)) is written
+     * back into the related row on the way in - past every check that row's
+     * own service makes. Whoever may update a ticket renamed the assignee's
+     * login, or stored a password hash of their own making and signed in as
+     * the assignee. So a @ref into an entity that says who may write it
+     * (guarded: @access, @owner, a @password or an @access(admin) field) is
+     * read-only, as the DDD bundles make every @ref into another aggregate;
+     * a @ref onto the related row's key still points the relation at a row.
+     * A @password is not read through a @ref either: the DTO does not carry
+     * it (access-dto-ref-password).
+     *
+     * Runs before the mapper's own rules at 20, which read what it states.
+     */
+    @Rule(value = "access-mapper-ref", target = "mapper", order = 10)
+    void refsIntoGuardedRowsAreReadOnly(EntitySpec e) {
+        SourceCode c = ctx(e);
+        for (FieldSpec f : e.dtoFields()) {
+            io.elasticore.base.model.entity.Entity target = refEntity(e, f);
+            if (target == null || !guarded(target)) continue;
+            c.refReadOnly(f.name());
+            if (refsAPassword(e, f)) c.refHidden(f.name());
+        }
+    }
+
+    /** A related row's @password is never handed out, and never written through another entity. */
+    @Rule(value = "access-dto-ref-password", target = "dto", order = 0)
+    void noPasswordThroughRef(EntitySpec e, FieldSpec f) {
+        if (!refsAPassword(e, f)) return;
+        ctx(e).removeField(f);
+        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                "[%s] %s DTO field %s is left out: @ref(%s) reads a @password, which is never handed out or"
+                        + " written through another entity.",
+                e.domainClassName(), e.getName(), f.name(), trim(f.dslValue("ref"))));
+    }
+
+    /** Whether a DTO field's @ref(relation.field) reads a field marked @password. */
+    static boolean refsAPassword(EntitySpec e, FieldSpec f) {
+        io.elasticore.base.model.entity.Entity target = refEntity(e, f);
+        if (target == null) return false;
+        String[] path = f.dslValue("ref").split("\\.");
+        io.elasticore.base.model.core.ListMap<String, io.elasticore.base.model.entity.Field> fields =
+                target.getAllFieldListMap();
+        io.elasticore.base.model.entity.Field read = fields == null ? null : fields.get(path[1].trim());
+        return read != null && read.hasAnnotation("password");
+    }
+
+    /**
+     * The entity a DTO field's @ref(relation.field) reads through, or null -
+     * the relation looked for the way the mapper looks for it: the entity's
+     * full field list first, the field's own declared type second.
+     */
+    static io.elasticore.base.model.entity.Entity refEntity(EntitySpec e, FieldSpec f) {
+        String ref = f.dslValue("ref");
+        if (ref == null) return null;
+        String[] path = ref.split("\\.");
+        if (path.length < 2 || path[0].trim().isEmpty() || path[1].trim().isEmpty()) return null;
+        String relation = path[0].trim();
+        String type = null;
+        for (FieldSpec rel : e.allFields()) {
+            if (rel.name().equals(relation)) {
+                type = rel.isList() ? null : rel.typeName();
+                break;
+            }
+        }
+        if (type == null) type = e.typeOfField(relation);
+        type = simple(type);
+        if (type.isEmpty()) return null;
+        io.elasticore.base.model.entity.Entity found = entityNamed(type);
+        if (found == null && e.isKnownDto(type) && !e.dtoTemplateEntity(type).isEmpty()) {
+            found = entityNamed(e.dtoTemplateEntity(type));
+        }
+        return found;
+    }
+
+    private static io.elasticore.base.model.entity.Entity entityNamed(String name) {
+        try {
+            io.elasticore.base.ECoreModelContext context =
+                    io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            return context == null ? null
+                    : context.findModelComponent(name, io.elasticore.base.model.entity.Entity.class);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Whether an entity of the model says who may write it: guarded(EntitySpec), read off the model. */
+    static boolean guarded(io.elasticore.base.model.entity.Entity entity) {
+        io.elasticore.base.model.MetaInfo meta = entity.getMetaInfo();
+        if (meta != null && meta.hasMetaAnnotation("access", "owner")) return true;
+        io.elasticore.base.model.core.ListMap<String, io.elasticore.base.model.entity.Field> fields =
+                entity.getAllFieldListMap();
+        if (fields == null) return false;
+        for (io.elasticore.base.model.entity.Field f : fields.values()) {
+            if (f.hasAnnotation("password")) return true;
+            if ("admin".equalsIgnoreCase(trim(f.getAnnotationValue("access")))) return true;
+        }
+        return false;
+    }
+
+    /**
      * No DTO default for what only the administrator writes: sent back on
      * every update, the default reset it - an administrator saving a
      * telephone demoted an administrator. The entity keeps the default.
@@ -475,7 +575,20 @@ public class ServiceAccessRules implements CodeRules {
      */
     public static boolean signsIn(EntitySpec e) {
         return e.hasMeta("signin") && hasMe(e) && e.hasMeta("expose") && credentialsGuarded(e)
-                && e.signInEntities() == 1;
+                && !keyReusable(e) && e.signInEntities() == 1;
+    }
+
+    /**
+     * Whether someone other than the row's own user or the administrator may
+     * free a key the request chose: delete the member 'alice', then sign up
+     * as 'alice' and own every row whose @owner is 'alice'. A generated key
+     * is never handed out twice, so only a key the request names is asked.
+     */
+    static boolean keyReusable(EntitySpec e) {
+        if (e.pkFields().size() != 1 || keyGenerated(e.pkFields().get(0))) return false;
+        String level = level(e, "delete");
+        if ("admin".equals(level) || "none".equals(level)) return false;
+        return !("owner".equals(level) && ownerIsTheKey(e));
     }
 
     /** Why an entity that says @signin gets no sign-in endpoints; null when it gets them or does not ask. */
@@ -486,6 +599,13 @@ public class ServiceAccessRules implements CodeRules {
             return "its key must be one long, int, string or UUID field - the session holds it";
         if (!e.hasMeta("expose")) return "it is not @expose - there is no controller to put them on";
         if (!credentialsGuarded(e)) return whoMayChangeCredentials(e);
+        if (keyReusable(e)) {
+            String key = e.pkFields().get(0).name();
+            return "delete is " + level(e, "delete") + " and its key " + key + " is one the request chooses, so"
+                    + " whoever deletes a row may sign up again under its " + key + " and own every row that was"
+                    + " its owner's. Let only the row's own user or the administrator delete it: delete=owner with"
+                    + " @owner(" + key + "), or delete=admin - or generate the key (@genid, @sequence)";
+        }
         if (e.signInEntities() > 1)
             return "more than one entity of the application says @signin, and the session holds a bare key they"
                     + " would read as each other's";
@@ -499,10 +619,15 @@ public class ServiceAccessRules implements CodeRules {
      * condition) asks for this one level.
      */
     static String updateLevel(EntitySpec e) {
+        return level(e, "update");
+    }
+
+    /** The level an operation is at, as AccessPolicy reads it: its own entry, else "*", else admin; public with no @access. */
+    static String level(EntitySpec e, String operation) {
         String declared = e.metaText("access");
         if (declared == null || declared.trim().isEmpty()) return "public";
         Map<String, String> levels = levels(e, false);
-        if (levels.containsKey("update")) return levels.get("update");
+        if (levels.containsKey(operation)) return levels.get(operation);
         if (levels.containsKey("*")) return levels.get("*");
         return "admin";
     }

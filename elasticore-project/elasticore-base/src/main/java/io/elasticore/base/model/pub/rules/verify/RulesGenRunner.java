@@ -383,6 +383,8 @@ public final class RulesGenRunner {
         for (String w : contextMap.warnings()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", w);
         for (String p : contextMap.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] context: " + p);
         runner.contextMap = contextMap;
+        // After the context map, which reads the model as the DSL wrote it.
+        runner.shapeReferences(allModels);
 
         for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
             String domainDirName = loader.domainDirNameOf(en.getKey());
@@ -540,6 +542,19 @@ public final class RulesGenRunner {
                 listOf(otherLoginsByApplication, application).addAll(SpecFactory.otherLoginEntities(model));
             }
         }
+        // Each module's sign-in is counted on its own, so two modules that are
+        // in fact deployed as one application both sign in - one session with
+        // a bare key, Staff 7 read as Customer 7. The generator cannot see the
+        // deployment, so it says what it assumed.
+        List<String> signingIn = new ArrayList<String>();
+        for (List<String> names : signInsByApplication.values()) {
+            if (!names.isEmpty()) signingIn.add(String.join(", ", names));
+        }
+        if (signingIn.size() > 1) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce("[elcore3] @signin is counted per module: "
+                    + String.join(" and ", signingIn) + " each sign in through their own module - if these modules"
+                    + " run as one application, only one of them may say @signin.");
+        }
     }
 
     private String applicationRoot(ECoreModel model, String moduleRoot) {
@@ -581,6 +596,37 @@ public final class RulesGenRunner {
                 others == null ? java.util.Collections.<String>emptyList() : others);
     }
 
+    /**
+     * Another aggregate by its identity, where the rule set that decides
+     * references is selected - each model by its own domain's selection, and
+     * every model of the run before any domain is generated. A domain reads
+     * other domains' models too: an @extend child inherits its parent's
+     * fields, and whether the parent checks its references decides whether
+     * the child's check overrides it. Rewritten as each domain came up, that
+     * answer depended on which domain was generated first, and a -Pdomain run
+     * of the child never rewrote the parent: the Kotlin child did not compile
+     * and the Java child dropped the parent's check.
+     *
+     * A TypeScript run takes these from the server's selection: the client
+     * describes what the server sends (see serverRules). It is not gated on
+     * v3: a TypeScript run never reads the domain's own publisher.rules for
+     * that switch, and the server's rules say it. A second rewrite of a model
+     * finds nothing left to do.
+     */
+    private void shapeReferences(List<ECoreModel> models) {
+        if (!(v3 || kotlin || typescript)) return;
+        ECoreModel saved = currentModel;
+        try {
+            for (ECoreModel model : models) {
+                if (model == null || model.getEntityModels() == null) continue;
+                currentModel = model;
+                if (shapes(io.elasticore.base.model.pub.rules.ReferencesById.class)) IdReferences.apply(model);
+            }
+        } finally {
+            currentModel = saved;
+        }
+    }
+
     /** The value types some entity of the run embeds without requiring them; worked out once, on first use. */
     private java.util.Set<String> optionalEmbeddables;
 
@@ -609,18 +655,9 @@ public final class RulesGenRunner {
                 listRules(domainDirName);
                 continue;
             }
-            // Another aggregate by its identity, where the rule set that
-            // decides references is selected. The model is rewritten before
-            // any spec is built from it, so every artifact sees one shape.
-            // A TypeScript run takes these from the server's selection: the
-            // client describes what the server sends (see serverRules). It is
-            // not gated on v3: a TypeScript run never reads the domain's own
-            // publisher.rules for that switch, and the server's rules say it.
+            // Every model's references by identity were rewritten before the
+            // first domain was generated (shapeReferences).
             boolean shaped = v3 || kotlin || typescript;
-            if (shaped
-                    && shapes(io.elasticore.base.model.pub.rules.ReferencesById.class)) {
-                IdReferences.apply(model);
-            }
             // Per domain, because the selection is: a value object travels in
             // the DTO only where a rule set makes it immutable.
             SpecFactory.valueObjectsInDto(shaped && shapes(

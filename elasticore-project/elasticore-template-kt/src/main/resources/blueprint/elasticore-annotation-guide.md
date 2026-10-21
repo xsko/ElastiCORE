@@ -397,6 +397,14 @@ boardName: string @ref(board.name)           # r.get("board").get("name")
 boardTypeName: string @ref(board.boardType.name)
 ```
 
+수정(DTO -> 엔티티)에서는 관계 너머의 행에 그 값을 씁니다 (`to.getBoard().setName(from.getBoardName())`). 3.0 규칙
+엔진의 v3 번들(`jpa-service-access` 가 든 `jpa-springboot-v3`·`jpa-springboot-kt`)에서는 **누가 쓸 수 있는지 정한
+엔티티**(`@access`·`@owner`·`@password`·필드의 `@access(admin)` 이 있는 엔티티)로 가는 `@ref` 는 **읽기 전용**입니다 -
+티켓을 고칠 수 있는 사람이 담당자의 로그인이나 비밀번호를 바꾸면 그 엔티티의 검사를 건너뛰기 때문입니다. 관계의 키를
+가리키는 `@ref(assignee.memberId)` 는 전처럼 관계가 가리키는 행을 바꿉니다. `@password` 를 읽는 `@ref` 는 DTO 에서 빠지고
+DSL 경고가 납니다 (`... is left out: @ref(assignee.password) reads a @password ...`). DDD·헥사고날 번들은 다른 애그리거트로
+가는 `@ref` 를 원래 모두 읽기 전용으로 둡니다. 2.x 호환 번들(`jpa-springboot`)은 그대로입니다.
+
 #### @fk(Target) / @fk(Target.field) / @fk(Target.field, groupName)
 
 **Foreign Key 메타데이터** — Primitive 타입 필드에 FK 관계를 선언. JPA `@ManyToOne`을
@@ -1908,8 +1916,15 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
   때만 로그인 API 를 만듭니다. `public`·`user` 이거나 키가 아닌 필드의 `owner` 이면 남이 관리자의 비밀번호를 바꾸고 관리자로
   로그인할 수 있으므로 만들지 않고, 이유와 고칠 문장(`@access` 가 없으면 `@owner(customerId)
   @access(read=owner, create=public, update=owner)`)을 DSL 경고로 알려 줍니다. `@access` 에 적지 않은 연산은 `admin` 이므로
-  `@access` 를 처음 쓸 때는 가입(`create=public`)과 조회도 함께 적습니다.
-- **로그인은 유일.** `@signin` 엔티티의 `@login` 컬럼에는 `unique = true` 가 붙습니다 (이미 `@unique` 이거나, 키이거나,
+  `@access` 를 처음 쓸 때는 가입(`create=public`)과 조회도 함께 적습니다. `*` 는 다른 항목과 함께 써도 됩니다
+  (`@access(read=public, create=public, *=owner)` 의 수정은 `owner`). 다른 엔티티의 DTO 가 `@ref(member.login)`·
+  `@ref(member.password)` 로 이 엔티티를 읽어도 그 길로는 쓰지 못합니다 (위 "@ref" - 비밀번호는 읽지도 않음).
+- **키를 요청이 정하면 삭제도 본인과 관리자만.** 키가 생성되지 않으면(`@genid`·`@sequence` 가 아님) 누가 `alice` 행을 지운 뒤
+  `alice` 로 다시 가입해 `alice` 가 주인이던 모든 행을 가집니다. 그래서 `delete` 수준(없으면 `*`, 그것도 없으면 `admin`)이
+  `admin`·`none` 이거나 키를 가리키는 `@owner` 의 `owner` 일 때만 만들고, 아니면 `delete is user and its key handle is one
+  the request chooses ...` DSL 경고를 냅니다. 키를 생성되게 해도 됩니다.
+- **로그인은 유일.** 엔티티 줄에 `@signin` 이 있으면 `@login` 컬럼에 `unique = true` 가 붙습니다 - 위 조건에 걸려 로그인
+  API 를 만들지 않을 때도 붙어서, `@access` 를 고쳐도 테이블은 바뀌지 않습니다 (이미 `@unique` 이거나, 키이거나,
   그 컬럼 하나만의 unique `@Index` 가 있으면 그대로). 이미 있는 로그인으로 가입하거나 로그인을 바꾸면 다른 제약 위반처럼
   409 입니다. 같은 로그인이 두 행이면 `authenticate` 가 둘 다 거절하므로, 남의 로그인으로 행을 만들어 그 사람을 못 들어오게
   하는 일을 DB 가 막습니다. 이미 운영 중인 DB 는 마이그레이션으로 unique 제약을 더합니다 (중복이 있으면 먼저 정리).
@@ -1918,6 +1933,8 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
   애플리케이션이고, 멀티 모듈(`elasticore.modules`)에서는 컨트롤러가 생기는 모듈(`control` 의 `모듈명://` 이 가리키는 모듈,
   없으면 그 blueprint 가 있는 모듈)마다 하나입니다. 둘 이상이면 그 애플리케이션 어디에도 만들지 않고 DSL 경고를 냅니다.
   두 모듈이 한 애플리케이션으로 함께 실행되는지는 생성기가 알 수 없으니, 그런 두 모듈에는 한쪽에만 `@signin` 을 씁니다.
+  둘 이상의 모듈이 각자 `@signin` 엔티티를 가지면 빌드가 `@signin is counted per module: Staff and Customer each sign in
+  through their own module - if these modules run as one application, only one of them may say @signin.` 을 한 번 알려 줍니다.
 - **같은 애플리케이션의 다른 `@login`·`@password` 엔티티.** 그 엔티티를 손으로 `SessionCurrentUser.signIn` 하면 그 키도
   같은 세션 키라, `me()` 와 모든 소유자 검사가 `@signin` 엔티티의 같은 키 행으로 읽습니다 (직원 7 = 고객 7). 빌드가
   `Customer: the session the generated sign-in starts holds only a bare Customer key, and Staff has @login and @password
@@ -1965,7 +1982,7 @@ password: string(255)! @password      # 해시 길이를 담을 만큼 (PBKDF2 �
   그 사람이 로그인하지 못합니다. `@signin` 없이 쓰는 엔티티의 로그인이 유일하지 않으면(`@unique`, 키, 그 컬럼 하나만의
   unique `@Index` 가 아님) DSL 경고를 냅니다.
 - 엔티티 줄에 `@signin` 까지 쓰면 `me()`, 컨트롤러의 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표), 그리고
-  로그인 컬럼의 unique.
+  로그인 컬럼의 unique (unique 는 로그인 API 가 거절되어도 `@signin` 만으로 붙음).
 
 ## @snapshot / @compute — 파생 값 (DDD 룰셋)
 

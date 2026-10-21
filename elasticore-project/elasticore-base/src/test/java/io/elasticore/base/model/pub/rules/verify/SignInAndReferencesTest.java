@@ -342,6 +342,106 @@ public class SignInAndReferencesTest {
             "      card:    ScCard @Embedded @required",
             "");
 
+    /**
+     * SEC1, layered: another entity's DTO reads the signing-in entity's login
+     * and password through @ref - whoever may update a ticket wrote them.
+     */
+    private static final String MODEL_REF = String.join("\n",
+            "entity:",
+            "  ZqMember:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(memberId) @access(read=public, create=public, update=owner)",
+            "    fields:",
+            "      memberId: long @id @sequence",
+            "      login:    string(20)! @login",
+            "      password: string(255)! @password",
+            "",
+            "  ZqTag:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      tagId: long @id @sequence",
+            "      label: string(20)",
+            "",
+            "  ZqTicket:",
+            "    meta: entity @root @editable @expose(20) @access(read=user, create=user, update=user)",
+            "    fields:",
+            "      ticketId: long @id @sequence",
+            "      title:    string(30)",
+            "      assignee: ZqMember @ManyToOne",
+            "      tag:      ZqTag @ManyToOne",
+            "",
+            "dto:",
+            "  ZqTicketDTO:",
+            "    meta: dto @template(ZqTicket)",
+            "    fields:",
+            "      assigneeLogin:    string @ref(assignee.login)",
+            "      assigneePassword: string @ref(assignee.password)",
+            "      tagLabel:         string @ref(tag.label)",
+            "");
+
+    /** REF1, child first: the subclass's domain (caa) sorts before its parent's (czz), and has a reference of its own. */
+    private static final String MODEL_PARENT_LAST = String.join("\n",
+            "entity:",
+            "  CzSupplier:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      supplierId: long @id @sequence",
+            "",
+            "  CzItem:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      itemId:   long @id @sequence",
+            "      supplier: CzSupplier @ManyToOne",
+            "");
+    private static final String MODEL_CHILD_FIRST = String.join("\n",
+            "entity:",
+            "  CaMaker:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      makerId: long @id @sequence",
+            "",
+            "  CaBook:",
+            "    meta: entity @extend(CzItem)",
+            "    fields:",
+            "      maker: CaMaker @ManyToOne",
+            "");
+
+    /**
+     * The review's missing cases, each its own module (an application of its
+     * own): update=admin and update=none sign in, so do a sole *=owner with
+     * @owner on the key and *=owner beside other entries; a sole *=user and
+     * *=user beside other entries do not; nor a key the request chooses that
+     * anyone may delete.
+     */
+    private static final String[][] MODEL_CASES = {
+            {"syadmin", "SyAdmin", "@signin @access(read=public, create=admin, update=admin)", "long @id @sequence"},
+            {"synone", "SyNone", "@signin @access(read=public, create=public, update=none)", "long @id @sequence"},
+            {"systarowner", "SyStarOwner", "@signin @owner(keyId) @access(*=owner)", "long @id @sequence"},
+            {"symixowner", "SyMixOwner", "@signin @owner(keyId) @access(read=public, create=public, *=owner)", "long @id @sequence"},
+            {"systaruser", "SyStarUser", "@signin @access(*=user)", "long @id @sequence"},
+            {"symixuser", "SyMixUser", "@signin @access(read=public, create=public, *=user)", "long @id @sequence"},
+            {"syfreed", "SyFreed", "@signin @owner(keyId) @access(read=owner, create=public, update=owner, delete=user)", "string(20) @id"},
+            {"sykept", "SyKept", "@signin @owner(keyId) @access(read=owner, create=public, update=owner, delete=owner)", "string(20) @id"},
+    };
+
+    private static String caseModel(String[] c) {
+        return String.join("\n",
+                "entity:",
+                "  " + c[1] + ":",
+                "    meta: entity @root @editable @expose(20) " + c[2],
+                "    fields:",
+                "      keyId:    " + c[3],
+                "      login:    string(20)! @login",
+                "      password: string(255)! @password",
+                "");
+    }
+
+    private static File layeredJ;
+    private static File layeredK;
+    private static File childFirstJ;
+    private static File childFirstK;
+    private static File childOnly;
+    private static File cases;
+    private static String casesLog;
     private static File jproject;
     private static File kproject;
     private static File extendJ;
@@ -433,6 +533,41 @@ public class SignInAndReferencesTest {
         write(values, "scommon", env("scommon", "io.acme.scommon", null), MODEL_VALUES);
         write(values, "sdshop", env("sdshop", "io.acme.sdshop", null), MODEL_VALUES_USED);
         run(values, "java", false);
+
+        layeredJ = Files.createTempDirectory("elcore-signin-layered-java").toFile();
+        write(layeredJ, "zqshop", env("zqshop", "io.acme.zqshop", null), MODEL_REF);
+        run(layeredJ, "java", false, "layered", null);
+        run(layeredJ, "java", true, "layered", null);
+        layeredK = Files.createTempDirectory("elcore-signin-layered-kt").toFile();
+        write(layeredK, "zqshop", env("zqshop", "io.acme.zqshop", null), MODEL_REF);
+        run(layeredK, "kotlin", false, "layered", null);
+
+        childFirstJ = Files.createTempDirectory("elcore-refs-child-first-java").toFile();
+        write(childFirstJ, "caa", env("caa", "io.acme.caa", null), MODEL_CHILD_FIRST);
+        write(childFirstJ, "czz", env("czz", "io.acme.czz", null), MODEL_PARENT_LAST);
+        run(childFirstJ, "java", false);
+        childFirstK = Files.createTempDirectory("elcore-refs-child-first-kt").toFile();
+        write(childFirstK, "caa", env("caa", "io.acme.caa", null), MODEL_CHILD_FIRST);
+        write(childFirstK, "czz", env("czz", "io.acme.czz", null), MODEL_PARENT_LAST);
+        run(childFirstK, "kotlin", false);
+        // Only the child's domain: its parent's model is never generated.
+        childOnly = Files.createTempDirectory("elcore-refs-child-only").toFile();
+        write(childOnly, "caa", env("caa", "io.acme.caa", null), MODEL_CHILD_FIRST);
+        write(childOnly, "czz", env("czz", "io.acme.czz", null), MODEL_PARENT_LAST);
+        run(childOnly, "kotlin", false, "hexagonal", "caa");
+
+        cases = Files.createTempDirectory("elcore-signin-cases").toFile();
+        StringBuilder paths = new StringBuilder();
+        for (String[] c : MODEL_CASES) {
+            File module = new File(cases, c[0] + "-api");
+            write(module, c[0], env(c[0], "io.acme." + c[0], null), caseModel(c));
+            if (paths.length() > 0) paths.append(',');
+            paths.append(module.getAbsolutePath());
+        }
+        casesLog = captured(cases, paths.toString());
+
+        // The browser client of the refused entities.
+        run(refused, "java", true);
     }
 
     /** A Java generation, with what it printed. */
@@ -481,16 +616,23 @@ public class SignInAndReferencesTest {
     }
 
     private static void run(File project, String language, boolean typescript) {
+        run(project, language, typescript, "hexagonal", null);
+    }
+
+    /** A generation on an architecture; layered is the v3 one (jpa-springboot-v3, jpa-springboot-kt). */
+    private static void run(File project, String language, boolean typescript, String architecture, String domain) {
         String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
-                "elasticore.rules.force", "elasticore.rules.ts"};
+                "elasticore.rules.force", "elasticore.rules.ts", "elasticore.rules.v3", "elasticore.domain"};
         String[] saved = new String[keys.length];
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
         try {
             System.setProperty("elasticore.base.path", project.getAbsolutePath());
-            System.setProperty("elasticore.architecture", "hexagonal");
+            System.setProperty("elasticore.architecture", architecture);
             System.setProperty("elasticore.language", language);
             System.setProperty("elasticore.rules.force", "true");
             if (typescript) System.setProperty("elasticore.rules.ts", "true");
+            if ("layered".equals(architecture)) System.setProperty("elasticore.rules.v3", "true");
+            if (domain != null) System.setProperty("elasticore.domain", domain);
             RulesGenRunner.main(new String[0]);
         } finally {
             for (int i = 0; i < keys.length; i++) {
@@ -820,6 +962,134 @@ public class SignInAndReferencesTest {
         assertFalse(read(extendAcross, "src/main/java/io/acme/rpb/domain/model/RcAlbum.java").contains("requireReferences"));
     }
 
+    /** @rollup: the subclass's columns are in its parent's table, as in 2.x - no table of its own. */
+    @Test
+    public void aRolledUpSubclassHasNoTableOfItsOwn() throws Exception {
+        for (File project : new File[]{extendJ, extendK}) {
+            String ext = project == extendK ? ".kt" : ".java";
+            String book = found(project, "SeBook" + ext);
+            assertFalse(book.contains("@Table"), project + ": " + book);
+            assertTrue(book.contains("@DiscriminatorValue(\"SeBook\")"), project + ": " + book);
+            assertTrue(found(project, "SeItem" + ext).contains("@Table(name = \"se_item\")"), project.toString());
+            // Not rolled up: a table of its own.
+            assertTrue((found(project, "SeDiscBase" + ext) + found(project, "SeDisc" + ext)).contains("@Table("),
+                    project.toString());
+        }
+    }
+
+    /** Every repository the domain's helper injects is one the run wrote - @extend children included. */
+    @Test
+    public void theRepositoryHelperNamesOnlyRepositoriesThatExist() throws Exception {
+        for (File project : new File[]{extendJ, extendK}) {
+            boolean kt = project == extendK;
+            String helper = found(project, kt ? "SeshopRepositoryHelper.kt" : "SeshopRepositoryHelper.java");
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(Se\\w+)Repository\\b").matcher(helper);
+            int named = 0;
+            while (m.find()) {
+                named++;
+                assertTrue(foundOrNull(project, m.group(1) + "Repository." + (kt ? "kt" : "java")) != null,
+                        project + ": " + m.group(0) + " is not generated\n" + helper);
+            }
+            assertTrue(named > 0, helper);
+        }
+    }
+
+    /** REF1: child domain first, and a run of the child's domain alone - the same check either way. */
+    @Test
+    public void aSubclassKeepsItsParentsCheckWhicheverDomainComesFirst() throws Exception {
+        String java = squashed(found(childFirstJ, "CaBookBase.java"));
+        assertTrue(java.contains("@Override public void requireReferences(io.elasticore.springboot3.domain.Lookup lookup) {"
+                + " super.requireReferences(lookup);"), java);
+        assertTrue(java.contains("lookup.find(CaMaker.class, this.makerId)"), java);
+        assertTrue(found(childFirstJ, "CzItem.java").contains("lookup.find(CzSupplier.class, this.supplierId)"));
+        for (File project : new File[]{childFirstK, childOnly}) {
+            String kt = squashed(found(project, "CaBookBase.kt"));
+            assertTrue(kt.contains("override fun requireReferences(lookup: io.elasticore.springboot3.domain.Lookup) {"
+                    + " super.requireReferences(lookup)"), project + ": " + kt);
+        }
+        assertFalse(foundOrNull(childOnly, "CzItem.kt") != null, "the parent's domain was not generated");
+    }
+
+    /** SEC1, layered v3: a @ref into the signing-in entity reads, never writes; its password is not read at all. */
+    @Test
+    public void aRefIntoTheSigningInEntityDoesNotWriteItsCredentials() throws Exception {
+        for (File project : new File[]{layeredJ, layeredK}) {
+            boolean kt = project == layeredK;
+            String mapper = found(project, kt ? "ZqshopMapper.kt" : "ZqshopMapper.java");
+            assertFalse(aLine(mapper, "ssignee", kt ? ".login =" : "setLogin("), project + ": " + mapper);
+            assertFalse(aLine(mapper, "ssignee", kt ? ".password" : "Password"), project + ": " + mapper);
+            // Still shown.
+            assertTrue(aLine(mapper, "ssignee", "ssigneeLogin"), project + ": " + mapper);
+            // A @ref into a row nobody guards is written as before.
+            assertTrue(aLine(mapper, kt ? "tagLabel" : "getTag", kt ? ".label =" : "setLabel("), project + ": " + mapper);
+            String dto = found(project, kt ? "ZqTicketDTO.kt" : "ZqTicketDTO.java");
+            assertFalse(dto.contains("assigneePassword"), dto);
+            assertTrue(dto.contains("assigneeLogin"), dto);
+            // The member still signs in: nobody else writes its password now.
+            String control = found(project, kt ? "ZqMemberController.kt" : "ZqMemberController.java");
+            assertTrue(control.contains("/signin"), control);
+        }
+        assertFalse(found(layeredJ, "ZqTicketDTO.ts").contains("assigneePassword"));
+    }
+
+    /** SEC1 edges, each module an application of its own; the loader keeps '*' beside other entries. */
+    @Test
+    public void whoMayChangeThePasswordDecidesTheSignIn() throws Exception {
+        for (String[] c : MODEL_CASES) {
+            File control = foundOrNull(new File(cases, c[0] + "-api"), c[1] + "Controller.java");
+            assertTrue(control != null, c[1] + ": " + casesLog);
+            boolean signsIn = new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8).contains("/signin");
+            boolean expected = !c[1].equals("SyStarUser") && !c[1].equals("SyMixUser") && !c[1].equals("SyFreed");
+            assertTrue(signsIn == expected, c[1] + " signs in: " + signsIn + "\n" + casesLog);
+        }
+        assertTrue(casesLog.contains("SyStarUser: @signin generates no sign-in: update is user (from *=user)"), casesLog);
+        assertTrue(casesLog.contains("SyMixUser: @signin generates no sign-in: update is user (from *=user)"), casesLog);
+        assertTrue(casesLog.contains("SyFreed: @signin generates no sign-in: delete is user and its key keyId is one the"
+                + " request chooses"), casesLog);
+        // Several modules that each sign in: said once, in case they run as one application.
+        assertTrue(casesLog.contains("@signin is counted per module: SyAdmin and SyNone and"), casesLog);
+    }
+
+    /** The browser client of a refused @signin entity has no signIn and no me. */
+    @Test
+    public void theBrowserClientOfARefusedEntityDoesNotSignIn() throws Exception {
+        for (String entity : new String[]{"SxOpen", "SxUser", "SxSponsored"}) {
+            String api = found(refused, entity + "Api.ts");
+            assertFalse(api.contains("signIn") || api.contains("function me("), entity + ": " + api);
+        }
+    }
+
+    /** Whether one line of the text holds both parts. */
+    private static boolean aLine(String text, String one, String other) {
+        for (String line : text.split("\n")) {
+            if (line.contains(one) && line.contains(other)) return true;
+        }
+        return false;
+    }
+
+    private static String found(File project, String name) throws Exception {
+        File f = foundOrNull(project, name);
+        if (f == null) {
+            StringBuilder files = new StringBuilder();
+            try (java.util.stream.Stream<Path> all = Files.walk(project.toPath())) {
+                for (Path p : all.toArray(Path[]::new)) {
+                    if (Files.isRegularFile(p)) files.append('\n').append(project.toPath().relativize(p));
+                }
+            }
+            assertTrue(false, "not generated: " + name + " in " + project + files);
+        }
+        return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static File foundOrNull(File project, String name) throws Exception {
+        try (java.util.stream.Stream<Path> all = Files.walk(project.toPath())) {
+            for (Path p : all.toArray(Path[]::new)) {
+                if (p.getFileName().toString().equals(name)) return p.toFile();
+            }
+        }
+        return null;
+    }
+
     /** The text with every run of whitespace as one space: indentation and line ends aside. */
     private static String squashed(String text) {
         return text.replaceAll("\\s+", " ");
@@ -976,7 +1246,7 @@ public class SignInAndReferencesTest {
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
         for (File dir : new File[]{jproject, kproject, unsafe, two, refused, modules, owned, extendJ, extendK, values, compat,
-                extendAcross}) {
+                extendAcross, layeredJ, layeredK, childFirstJ, childFirstK, childOnly, cases}) {
             if (dir == null || !dir.exists()) continue;
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override

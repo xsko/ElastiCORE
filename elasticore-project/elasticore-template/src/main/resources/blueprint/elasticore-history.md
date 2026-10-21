@@ -292,7 +292,8 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   `@access(admin)` 으로 막아도 관리자 행 자체를 가져가면 그만이었다. 이제 `update` 수준(없으면 `*`, 그것도 없으면 `admin`,
   `@access` 가 아예 없으면 `public`)이 `admin`·`none` 이거나, `owner` 이면서 `@owner` 가 키일 때만 로그인 API 와 `me()` 를
   만들고, 아니면 이유와 고칠 문장(`@owner(<키>) @access(read=owner, create=public, update=owner)` 등)을 DSL 경고로 낸다.
-  행을 쓰는 경로는 모두 이 수준을 묻는다: `PUT`·`PUT /batch` 는 행마다 소유자를 확인하고, 조건 수정은 `owner` 수준이면
+  그 엔티티의 서비스로 행을 쓰는 경로는 모두 이 수준을 묻는다(다른 엔티티 DTO 의 `@ref` 로 쓰는 길은 아래 "리뷰 2" 가
+  막았다): `PUT`·`PUT /batch` 는 행마다 소유자를 확인하고, 조건 수정은 `owner` 수준이면
   관리자만(`AccessPolicy.requireAll`). 펫스토어 `Customer`, Kotlin 샘플 `Agent`, 가이드 예제는 이미 `update=owner` +
   `@owner(키)` 라 그대로 생성된다
 - **로그인은 유일.** `@signin` 엔티티의 `@login` 컬럼에 `unique = true` 를 붙인다(이미 `@unique` 이거나, 키이거나, 그 컬럼
@@ -337,24 +338,25 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 #### 리뷰 - 상속: `@extend` 하위 클래스가 부모의 `requireReferences` 를 지우지 않는다
 - 위 "확인할 것이 없어도 `requireReferences` 를 가진다" 뒤로, 참조를 확인하는 엔티티를 `@extend` 한 하위 클래스(가이드의
   `Album: meta: entity @extend(Item) @rollup`)가 빈 `requireReferences` 를 가졌다. 모델은 물려받은 필드까지 보고 하위
-  클래스를 "참조한다"로 세지만, 본문은 자기 필드만 읽기 때문이다. Java 는 부모의 확인을 말없이 덮어썼고(없는 공급자 id 가
-  404 로 거절되지 않음), Kotlin 은 `'requireReferences' hides member of supertype 'Item' and needs 'override' modifier` 로
-  컴파일되지 않았다
+  클래스를 "참조한다"로 세지만, 본문은 자기 필드만 읽기 때문이다. Java 는 부모의 확인을 빈 메서드로 말없이 덮어썼고(하위
+  클래스 객체에서 부르면 아무것도 확인하지 않음), Kotlin 은 `'requireReferences' hides member of supertype 'Item' and needs
+  'override' modifier` 로 컴파일되지 않았다
 - 이제 자기 확인이 없고 `@extend` 부모가 확인하면 메서드를 쓰지 않고 물려받는다. 자기 확인이 있으면 부모의 것을 먼저 부른다:
   Java 는 `@Override` 와 `super.requireReferences(lookup);`, Kotlin 은 `override fun` 과 `super.requireReferences(lookup)`
   (all-open 플러그인이 부모의 메서드를 연다). 부모가 다른 도메인에 있으면 그 도메인의 모델로 판단한다
 - 확인: `SignInAndReferencesTest.aSubclassKeepsItsParentsReferenceCheck` - Java·Kotlin 에서 자기 참조가 없는 `SeAlbum`
   (`@rollup`)과 `SeDiscBase`(나뉜 루트)에는 메서드가 없고, 자기 참조가 있는 `SeBook` 은 override 하고 super 를 먼저 부른다.
   `aSubclassInAnotherDomainKeepsItsParentsReferenceCheck` - 부모(`rpa` 의 `RpItem`)와 다른 도메인(`rpb`)의 하위 클래스
-  `RcAlbumBase` 에도 메서드가 없다(다른 도메인의 사실을 보지 않으면 빈 메서드가 생기는 것도 확인했다). 같은 모델을 Kotlin 샘플(`elasticore-template-kt` 의 shop)에 잠시 넣어 `compileKotlin` 으로 컴파일했다 - 고치기 전에는 세
+  `RcAlbumBase` 에도 메서드가 없다(다른 도메인의 사실을 보지 않으면 빈 메서드가 생기는 것도 확인했다). 같은 모양의
+  모델을 Kotlin 샘플(`elasticore-template-kt` 의 shop)에 잠시 넣어 `compileKotlin` 으로 컴파일했다 - 고치기 전에는 세
   하위 클래스에서 위 오류, 고친 뒤에는 없음. 확인한 뒤 모델은 뺐다
 - 관련 파일: `DddReferenceRules.java`(`requireReferences`, `inheritsReferences`), `SpecFactory.java`(`registerParentReferencing`),
   `RulesGenRunner.java`, `SignInAndReferencesTest.java`
 
 #### 리뷰 - 값 객체: 다른 도메인에서, 안쪽에서, `@required` 로 담을 때
 - 선택으로 담은 값 객체를 그 값 객체를 선언한 도메인의 엔티티에서만 찾았다. `common` 의 `Address`(`zipcode: string(10)!`)를
-  `shop` 의 주문이 `shipTo: Address @Embedded` 로 담으면 컬럼은 여전히 NOT NULL 이라, 배송지 없는 주문이
-  `NULL not allowed for column "ZIPCODE"` 로 거절됐다. 이제 실행의 모든 도메인을 한 번 본다
+  `shop` 의 주문이 `shipTo: Address @Embedded` 로 담아도 `Address` 의 컬럼은 `nullable = false` 그대로였다 - 위 항목이
+  고친 `NULL not allowed for column "ZIPCODE"` 거절이 다른 도메인에서는 남았다. 이제 실행의 모든 도메인을 한 번 본다
 - 선택으로 담은 값 객체 안에 `!` 로 담긴 값 객체(`contact: Contact @Embedded` 의 `place: Place! @Embedded`)도 선택이다 -
   바깥 값이 없으면 안쪽 컬럼도 빈다
 - 필수 표시로 `!` 만 셌다. `card: Card @Embedded @required` 로만 담는 값 객체도 선택으로 읽혀 NOT NULL 이 빠졌다. 이제
@@ -382,7 +384,7 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 
 #### 리뷰 - TypeScript: `@minsize` 목록 검사가 실제로 생성된다
 - 앞 커밋이 `validate<Name>()` 에 넣은 목록 `@minsize` 검사는 생성되지 않았다. 검사할 필드 목록이 `...Fields` 상수와 같아서
-  목록 필드를 빼 두었기 때문이다. 펫스토어의 `validatePurchaseOrder` 는 `orderId`·`creditCard` 만 검사했다
+  목록 필드를 빼 두었기 때문이다(고치기 전 코드로 생성한 `validateSrOrder` 에 `lines` 검사가 없음을 확인)
 - 이제 `@minsize(n)`(n 이 1 이상)인 목록은 `validate` 가 검사하고 상수에는 여전히 넣지 않는다(위 "DTO - 최소 개수" 항목)
 - 확인: `SignInAndReferencesTest.theBrowserClientRefusesAnOrderWithoutLines` - `SrOrderDTO.ts` 에
   `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "an order needs a line";`, `SrOrderFields` 에
@@ -412,6 +414,78 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 규칙 가이드가 "전에는 생명주기 거절도 없는 참조도 422" 라고 했다. 없는 행을 id 로 참조한 저장은 외래 키 위반의 409
   "Conflicts with stored data" 였고 `@snapshot` 원본이 없을 때만 422 였다(위 `requireReferences` 항목). 그렇게 고쳤다
 - 관련 파일: `elasticore-rule-guide.md`
+
+### Bug Fixes (리뷰 2 - 로그인 API, 참조 확인의 도메인 순서, 상속 엔티티)
+
+#### 리뷰 2 - 다른 엔티티의 `@ref` 로 로그인·비밀번호를 쓰지 못한다
+- 레이어드 v3(`jpa-springboot-v3`, `jpa-springboot-kt`)에서 다른 엔티티의 DTO 가 `@ref(assignee.login)`·
+  `@ref(assignee.password)` 로 `@signin` 엔티티를 읽으면, 매퍼가 수정 때 `to.getAssignee().setLogin(...)`·
+  `setPassword(...)` 로 담당자의 행에 썼다. 티켓의 수정 수준(`update=user`)만 묻고 담당자 엔티티의 검사는 건너뛰므로, 로그인한
+  아무나 관리자에게 배정된 티켓으로 관리자의 로그인을 바꾸거나 직접 계산한 PBKDF2 문자열을 넣고 관리자로 로그인할 수 있었다.
+  조회에서는 티켓을 읽는 사람 모두에게 담당자의 비밀번호 해시가 나갔다. DDD·헥사고날 번들은 다른 애그리거트로 가는 `@ref` 를
+  원래 읽기 전용으로 두어 그대로다
+- 이제 `jpa-service-access`(2.x 번들에는 없음)의 매퍼 규칙(`access-mapper-ref`)이, 누가 쓸 수 있는지 정한 엔티티(`@access`·
+  `@owner`·`@password`·필드의 `@access(admin)`)로 가는 `@ref` 를 읽기 전용으로 둔다 - 관계의 키를 가리키는 `@ref` 는 전처럼
+  관계를 바꾼다. `@password` 를 읽는 `@ref` 는 DTO·매퍼·TypeScript 에서 빠지고(`access-dto-ref-password`) DSL 경고가 난다.
+  그런 `@ref` 를 가진 v3 프로젝트의 매퍼에서 그 쓰기 줄이 사라진다(샘플에는 없음)
+- 확인: `SignInAndReferencesTest.aRefIntoTheSigningInEntityDoesNotWriteItsCredentials` - Java·Kotlin 레이어드 v3 에서 매퍼에
+  담당자의 로그인·비밀번호 쓰기와 비밀번호 읽기가 없고, 로그인 표시(`assigneeLogin`)와 아무도 지키지 않는 엔티티로 가는
+  `@ref(tag.label)` 쓰기는 남고, DTO·TypeScript DTO 에 `assigneePassword` 가 없다(고치기 전 코드에서는 실패)
+- 관련 파일: `ServiceAccessRules.java`(`refsIntoGuardedRowsAreReadOnly`, `noPasswordThroughRef`, `refEntity`, `guarded(Entity)`),
+  `SourceCode.java`(`refHidden`), `MapperBaseRules.java`, `elasticore-annotation-guide.md`
+
+#### 리뷰 2 - 참조 확인이 도메인을 생성하는 순서에 따르지 않는다
+- 위 "상속: 부모의 `requireReferences`" 는 다른 도메인의 부모를 그 도메인의 모델로 판단하는데, id 참조로 바꾸는 일
+  (`IdReferences`)을 도메인을 생성할 때마다 했다. 하위 클래스의 도메인이 먼저 생성되거나(`caa` 가 `czz` 보다 앞) `-Pdomain` 으로
+  하위 클래스의 도메인만 생성하면 부모가 아직 참조하지 않는 것으로 읽혀, Kotlin 은 `'requireReferences' hides member of
+  supertype` 으로 컴파일되지 않고 Java 는 부모의 확인을 덮어썼다
+- 이제 어떤 도메인도 생성하기 전에 실행의 모든 모델을 각 도메인의 규칙 선택대로 한 번 바꾼다(`shapeReferences`, 컨텍스트 맵
+  검사 뒤). 도메인 필터가 있어도 같다
+- 확인: `SignInAndReferencesTest.aSubclassKeepsItsParentsCheckWhicheverDomainComesFirst` - 자기 참조가 있는 하위 클래스의 도메인이
+  먼저인 모델에서 Java `CaBookBase` 는 `@Override` 와 `super.requireReferences(lookup);`, Kotlin 은 `override fun` 과 `super`,
+  `-Delasticore.domain=caa` 로 하위 도메인만 생성해도 같다(고치기 전 코드에서는 실패)
+- 관련 파일: `RulesGenRunner.java`(`shapeReferences`), `SignInAndReferencesTest.java`
+
+#### 리뷰 2 - 로그인 API 의 남은 조건과 문서
+- **요청이 정하는 키의 삭제.** 키가 생성되지 않는 `@signin` 엔티티(`handle: string(20) @id`)를 아무나 지울 수 있으면, 누가
+  `alice` 를 지우고 `alice` 로 다시 가입해 `alice` 가 주인이던 모든 행을 가졌다. 이제 `delete` 수준(없으면 `*`, 그것도 없으면
+  `admin`)이 `admin`·`none` 이거나 키를 가리키는 `@owner` 의 `owner` 일 때만 로그인 API 를 만들고, 아니면 고칠 문장(`delete=owner`
+  와 `@owner(<키>)`, `delete=admin`, 또는 키를 생성되게)을 DSL 경고로 낸다. 키를 생성하게 하라고만 요구하지 않은 것은, 이름 키
+  (`handle`)도 정상인 모델이고 `delete` 를 적지 않으면 `admin` 이라 흔한 선언은 그대로 통과하기 때문이다
+- **`*` 는 다른 항목과 함께 써도 센다.** 로더가 `@access(read=public, create=public, *=owner)` 의 `*=owner` 를 키로 읽지 못해
+  (`AbstractModelLoader.parseParameters` 의 키 패턴 `\w+`) 버렸다 - 수정이 `admin` 으로 읽혀 본인의 비밀번호 변경이 막혔고,
+  `*=user` 는 남이 바꿀 수 있는데도 로그인 API 가 생겼다. 이제 키는 단어 또는 `*` 하나다. 2.x 에는 영향이 없다: 저장소의 어느
+  blueprint 도 어노테이션 인자에 `*=` 를 쓰지 않고, `*=x` 하나만 쓴 경우는 전에도 같은 글자(`*=x`)로 읽혔으며, 2.x 호환 검사
+  (`elcoreRulesCheck -Pstrict` 150 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra)가 그대로다
+- **로그인 unique 는 `@signin` 만으로.** 코드가 하던 대로 문서를 맞췄다: 로그인 API 가 거절되어도 `@signin` 엔티티의 로그인
+  컬럼은 unique - `@access` 를 고칠 때 테이블이 바뀌지 않는 쪽이 낫다
+- **여러 모듈이 각자 `@signin`.** 멀티 모듈 실행에서 둘 이상의 모듈이 `@signin` 엔티티를 가지면 `@signin is counted per module:
+  ... if these modules run as one application, only one of them may say @signin.` 을 한 번 낸다
+- 확인: `SignInAndReferencesTest.whoMayChangeThePasswordDecidesTheSignIn` - 모듈마다 하나씩, `update=admin`·`update=none`·`*=owner`
+  하나·`*=owner` 와 다른 항목·삭제가 본인뿐인 문자열 키는 로그인 API 가 생기고, `*=user` 하나·`*=user` 와 다른 항목·`delete=user`
+  인 문자열 키는 생기지 않으며 그 경고와 모듈 경고가 나온다(고치기 전 코드에서는 실패).
+  `theBrowserClientOfARefusedEntityDoesNotSignIn` - 거절된 `@signin` 엔티티의 TypeScript 에 `signIn`·`me` 가 없다
+- 관련 파일: `ServiceAccessRules.java`(`keyReusable`, `level`, `whyNoSignIn`), `AbstractModelLoader.java`,
+  `RulesGenRunner.java`(`countSignIns`), `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`,
+  `elasticore-rule-guide.md`, `elasticore-dsl-guide.md`
+
+#### 리뷰 2 - `@extend` 하위 엔티티: 없는 리포지토리, 자기 테이블
+- v3·Kotlin 실행은 서비스(`@expose`·`@service`)와 자기 키가 있는 엔티티에만 리포지토리를 쓰는데, 도메인의
+  `RepositoryHelper` 는 물려받은 키가 있는 `@extend` 하위 엔티티와 서비스가 없는 엔티티의 리포지토리도 주입했다
+  (`SeAlbumRepository` - 없는 클래스라 컴파일되지 않음). 이제 v3·Kotlin 의 헬퍼는 실행이 쓰는 리포지토리만 주입한다. 2.x 호환
+  출력은 그대로다
+- `@extend(X) @rollup` 하위 엔티티가 v3 에서 자기 `@Table(name = "se_book")` 을 가져, 가이드("부모 테이블로 컬럼 통합")와
+  2.x 출력과 달리 자기 테이블에 매핑되었다. 이제 v3 에서도 `@Table` 없이 `@DiscriminatorValue("SeBook")`(`@rollup` 값이 있으면
+  그 값)를 붙여 부모의 테이블(JPA 기본 단일 테이블)에 들어간다
+- 확인: `SignInAndReferencesTest.theRepositoryHelperNamesOnlyRepositoriesThatExist`, `aRolledUpSubclassHasNoTableOfItsOwn`
+  (Java·Kotlin 헥사고날, 고치기 전 코드에서는 실패). 샘플에는 `@rollup` 이 없어 실행으로는 확인하지 않았다
+- 관련 파일: `RepositoryHelperBaseRules.java`, `JpaEntityAnnotationRules.java`, `V3SkeletonCoverageTest.java`,
+  `SignInAndReferencesTest.java`
+
+#### 리뷰 2 - 문서
+- 위 "로그인 API - 리뷰" 의 "행을 쓰는 경로는 모두 이 수준을 묻는다" 를 그 엔티티의 서비스로 쓰는 경로로 좁혔고, 세 템플릿의
+  이 문서 사본을 다시 복사해 원본과 같게 했다(`cmp`)
+- 관련 파일: `elasticore-history.md`
 
 ## 3.0.261020-alpha2
 

@@ -675,6 +675,23 @@ public final class SourceCode {
         return readOnlyRefs.contains(dtoFieldName);
     }
 
+    private final java.util.Set<String> hiddenRefs = new java.util.HashSet<String>();
+
+    /**
+     * States that a DTO field carrying @ref is not read through the relation
+     * either: the DTO does not carry it (a password of the related row). As
+     * with refReadOnly, nothing is hidden until a rule says so.
+     */
+    public SourceCode refHidden(String dtoFieldName) {
+        hiddenRefs.add(dtoFieldName);
+        return this;
+    }
+
+    /** Whether a rule has declined the read through the relation for this DTO field. */
+    public boolean isRefHidden(String dtoFieldName) {
+        return hiddenRefs.contains(dtoFieldName);
+    }
+
     // ---- fields the persistence layer owns ----------------------------------
 
     private final java.util.Set<String> systemManaged = new java.util.HashSet<String>();

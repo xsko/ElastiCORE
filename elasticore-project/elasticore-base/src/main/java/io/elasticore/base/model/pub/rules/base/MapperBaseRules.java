@@ -92,6 +92,8 @@ public class MapperBaseRules implements CodeRules {
             if (SearchDtoBaseRules.flattensAReferenceById(e, f)) continue;
             // Or because not everyone who reads this DTO may read that row.
             if (ServiceAccessRules.nestsGuarded(e, f)) continue;
+            // Or because a rule left it out of the DTO (a related row's password).
+            if (code.isRefHidden(f.name())) continue;
             if (ref != null && ref.contains(".")) {
                 String[] path = ref.split("\\.");
                 Syntax syntax = code.syntax();
@@ -205,6 +207,7 @@ public class MapperBaseRules implements CodeRules {
             String ref = f.dslValue("ref");
             if (ref == null || !ref.contains(".")) continue;
             if (SearchDtoBaseRules.flattensAReferenceById(e, f)) continue;
+            if (code.isRefHidden(f.name())) continue;
 
             String[] path = ref.split("\\.");
             String relField = path[0];

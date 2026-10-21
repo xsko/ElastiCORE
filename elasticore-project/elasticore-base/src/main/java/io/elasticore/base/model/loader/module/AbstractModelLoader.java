@@ -202,7 +202,10 @@ public class AbstractModelLoader implements ConstantParam {
         }else {
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*([^,]+)|([^,\\s]+)");
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*\"([^\"]*)\"|(\\w+)\\s*=\\s*([^,\\s]+)");
-            Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
+            // A key is a word, or '*' alone: @access(create=public, *=owner)
+            // lost its default to the single-value branch, which another
+            // entry then discarded.
+            Pattern kvPattern = Pattern.compile("(\\w+|\\*)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
 
             Matcher kvMatcher = kvPattern.matcher(parameters);
 

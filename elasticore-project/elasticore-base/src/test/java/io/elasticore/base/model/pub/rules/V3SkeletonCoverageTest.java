@@ -107,7 +107,8 @@ public class V3SkeletonCoverageTest {
         DomainSpec d = new DomainSpec("shop", "Shop")
                 .pkg("repository", "kr.co.acme.repository")
                 .pkg("entity", "kr.co.acme.entity")
-                .entity(new EntitySpec("Order").addField(loader.parse("orderId", "long @id")));
+                // Exposed: a v3 run writes a repository only for an entity with a service.
+                .entity(new EntitySpec("Order").meta("expose", null).addField(loader.parse("orderId", "long @id")));
 
         String out = new RuleEngine().templateSet(SourceCode.TemplateSet.V3)
                 .register(new RepositoryHelperBaseRules()).run(d, "repositoryHelper").render();

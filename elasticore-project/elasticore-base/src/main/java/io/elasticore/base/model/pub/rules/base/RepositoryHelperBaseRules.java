@@ -49,6 +49,11 @@ public class RepositoryHelperBaseRules implements CodeRules {
             // entity for its pk field, which resolves through the parent.
             if (e.pkField() == null && !hasInheritedKey(e)) continue;
             if (e.hasMeta("embeddable")) continue;
+            // The v3 and Kotlin runs write a repository only for an entity
+            // with a service and a key of its own (RulesGenRunner); an @extend
+            // child or an entity without @expose/@service has none to inject,
+            // and naming it failed the compile.
+            if (!c.compatible() && (e.pkField() == null || !(e.hasMeta("expose") || e.hasMeta("service")))) continue;
             inject(c, e.getName());
         }
 

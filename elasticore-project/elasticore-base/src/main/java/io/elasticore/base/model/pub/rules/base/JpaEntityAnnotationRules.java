@@ -80,17 +80,18 @@ public class JpaEntityAnnotationRules implements CodeRules {
 
         c.ensureClassAnnotation(AnnoCode.of("jakarta.persistence.Entity"));
 
-        AnnoCode table = AnnoCode.of("jakarta.persistence.Table").val("name", tableName(e));
-        if (e.schema() != null && !e.schema().isEmpty()) {
-            table.val("schema", e.schema());
+        // @rollup: the subclass's columns are in its parent's table (single
+        // table, JPA's default), told apart by the discriminator value - as
+        // the 2.x output does it. It has no table of its own.
+        if (e.hasMeta("rollup")) {
+            String value = e.metaValue("rollup.discriminator");
+            if (value == null) value = e.metaValue("rolluptarget");
+            if (value == null) value = e.metaValue("rollup");
+            if (value == null || value.trim().isEmpty()) value = e.getName();
+            c.ensureClassAnnotation(AnnoCode.of("jakarta.persistence.DiscriminatorValue").value(value.trim()));
+        } else {
+            classTable(c, e);
         }
-        if (!e.indexes().isEmpty()) {
-            // A named array parameter: braced in Java, bracketed in Kotlin.
-            boolean kt = ctx(e).syntax() == Syntax.KOTLIN;
-            table.valRaw("indexes", kt ? "[%s]" : "{%s}", renderIndexes(e));
-            c.addImport("jakarta.persistence.Index");
-        }
-        c.ensureClassAnnotation(table);
 
         if (e.hasMeta("immutable")) {
             c.ensureClassAnnotation(AnnoCode.of("org.hibernate.annotations.Immutable"));
@@ -104,6 +105,20 @@ public class JpaEntityAnnotationRules implements CodeRules {
             c.ensureClassAnnotation(AnnoCode.raw("jakarta.persistence.IdClass",
                     "@IdClass(%s)", c.syntax().classLiteral(e.getName() + "Identity")));
         }
+    }
+
+    private void classTable(SourceCode c, EntitySpec e) {
+        AnnoCode table = AnnoCode.of("jakarta.persistence.Table").val("name", tableName(e));
+        if (e.schema() != null && !e.schema().isEmpty()) {
+            table.val("schema", e.schema());
+        }
+        if (!e.indexes().isEmpty()) {
+            // A named array parameter: braced in Java, bracketed in Kotlin.
+            boolean kt = ctx(e).syntax() == Syntax.KOTLIN;
+            table.valRaw("indexes", kt ? "[%s]" : "{%s}", renderIndexes(e));
+            c.addImport("jakarta.persistence.Index");
+        }
+        c.ensureClassAnnotation(table);
     }
 
     /** Index list for the clean mode: simple names, one entry per line. */
