@@ -320,6 +320,12 @@ public class YamlFileMainModelLoader implements MainModelLoader {
             Map map = mapper.readValue(f, LinkedHashMap.class);
             return FileSource.builder().filepath(f.getAbsolutePath()).infoMap(map).build();
         } catch (Throwable e) {
+            // Only comments or blank lines - a model file switched off by commenting it
+            // out, or a new one not written yet: it declares nothing, like an empty file.
+            if (e instanceof com.fasterxml.jackson.databind.exc.MismatchedInputException && holdsNothing(f)) {
+                ConsoleLog.printWarn(" * EMPTY: "+f.getAbsolutePath());
+                return null;
+            }
             ConsoleLog.printWarn(" * LOAD ERROR: "+f.getAbsolutePath());
             e.printStackTrace();
             // The rule engine stops the build on it: everything the file declares is missing,
@@ -331,6 +337,15 @@ public class YamlFileMainModelLoader implements MainModelLoader {
             return FileSource.builder().filepath(f.getAbsolutePath()).error(e).build();
         }
 
+    }
+
+    /** Whether the YAML file holds no document content at all - no token, only comments and blank lines. */
+    static boolean holdsNothing(File f) {
+        try (com.fasterxml.jackson.core.JsonParser parser = mapper.getFactory().createParser(f)) {
+            return parser.nextToken() == null;
+        } catch (Throwable notReadable) {
+            return false;
+        }
     }
 
     /**

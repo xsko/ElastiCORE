@@ -82,7 +82,11 @@ private CreditCard creditCard;
 담으면(`shipTo: Address @Embedded`, `!` 없음) 그 값 객체의 `!` 필드는 컬럼에 `nullable = false` 를 붙이지
 않습니다 (3.0.261021 부터, v3). 값이 오면 DTO 가 필수 필드를 검사하고(400), 값이 없는 행은 그대로 저장됩니다.
 전에는 배송지를 보내지 않은 주문이 `NULL not allowed for column "ZIPCODE"` (400 `required`) 로 저장되지 않았습니다.
-늘 필수로만 담는 값 객체(`card: Card! @Embedded`)는 지금처럼 NOT NULL 입니다.
+- 담는 엔티티가 **다른 도메인**에 있어도 같습니다(`common` 의 `Address` 를 `shop` 의 주문이 선택으로 담음).
+- 선택으로 담은 값 객체 **안의** 값 객체(`contact: Contact @Embedded` 의 `place: Place! @Embedded`)도 선택입니다 -
+  바깥 값이 없으면 안쪽 컬럼도 비기 때문입니다.
+- 필수로 담는 표시는 `!`, `@required`, `@nn` 입니다. 늘 필수로만 담는 값 객체(`card: Card! @Embedded`,
+  `card: Card @Embedded @required`)는 지금처럼 NOT NULL 입니다.
 
 > **주의**: 값 객체는 통째로 교체됩니다. 응답에 없는 `@writeonly` 필드를 가진 값 객체를 읽어서
 > 그대로 다시 저장하면 그 필드는 비어서 옵니다 - 필수면 400, 선택이면 null 로 저장됩니다.
@@ -219,8 +223,9 @@ joinedOn:  date @readonly @default(now)       # 오늘
 
 엔티티 필드의 초기값(`= LocalDateTime.now()`)이라 행이 만들어질 때 정해지고, `@readonly` 라 요청이 보낸 값은
 쓰이지 않으며, 수정할 때는 DB 에서 읽은 값이 그대로 남습니다. DTO 에는 기본값이 붙지 않습니다(날짜 기본값은 DTO 에서
-뺌). 마지막 수정 시각처럼 **매번 바뀌는** 값은 `@jpa:org.springframework.data.annotation.LastModifiedDate` 와
-`@EnableJpaAuditing` 을 씁니다.
+뺌). `timestamp` 의 기본값도 `now` 든 다른 값(`@default(java.time.Instant.EPOCH)`)이든 엔티티에만 붙습니다(3.0.261021
+부터 - 전에는 DTO 에도 `@Builder.Default ... = java.time.Instant.EPOCH` 가 붙었습니다). 마지막 수정 시각처럼
+**매번 바뀌는** 값은 `@jpa:org.springframework.data.annotation.LastModifiedDate` 와 `@EnableJpaAuditing` 을 씁니다.
 
 #### @notnull / @notblank / @required
 NOT NULL 제약. `@Column(nullable = false)` 생성. `@id`와 함께 사용 불필요.
@@ -326,7 +331,9 @@ onHand: int! @min(0, '재고는 음수가 될 수 없다')
 
 #### @minsize(n, '메시지') / @maxsize(n, '메시지') - 컬렉션 개수
 컬렉션이 담을 멤버 수. DTO 에는 `@Size(min=n, message=...)` (n 이 1 이상이면 `@NotNull` 도 - 목록을 아예 보내지 않아도 400), DDD 루트에는 저장 시점 검사(422)가 됩니다.
-최소 개수는 컬렉션이 아예 없을 때(null)도 위반입니다.
+최소 개수는 컬렉션이 아예 없을 때(null)도 위반입니다. n 이 1 이상이면 TypeScript 클라이언트의 `validate...()` 도
+같은 메시지로 먼저 검사합니다 - `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "..."`
+(부분 수정 `partial` 에서는 묻지 않음). `...Fields` 상수에는 컬렉션이 들어가지 않습니다.
 ```yaml
 lines: List<SalesOrderLine> @OneToMany(mappedBy="order") @minsize(1, '수주에는 품목이 하나 이상 있어야 한다')
 ```
@@ -1923,8 +1930,12 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
   `authenticate(login, password)` 를 override 해 씁니다 - 생성된 `signin` 이 그것을 부릅니다.
 - 컨트롤러는 개발자 소유라 **손댄 컨트롤러에는 들어가지 않습니다.** 빌드가 `... is yours and does not serve POST /signin,
   POST /signout, GET /me ...` 를 DSL 경고로 알려 주면, 그 파일을 지우고 빌드해(손댄 내용은 옮겨 두고) 생성된 것을 보거나
-  세 메서드를 옮겨 적습니다. 거꾸로 손댄 컨트롤러가 DSL 이 더는 만들지 않는 `POST /signin`·`GET /me` 를 아직 가지고
-  있거나(`@signin` 을 지웠거나 위 이유로 거절됨), 관리자만 쓰는 필드가 아닌 역할을 세션에 넣으면 `... is yours and still
+  세 메서드를 옮겨 적습니다. 이 비교는 경로 변수 이름(`/{id}` 와 `/{customerId}`), 끝의 `/`, Kotlin 의 배열 형식
+  (`@GetMapping(value = ["/me"])`), `@RequestMapping(value = "/me", method = RequestMethod.GET)` 을 같은 엔드포인트로
+  읽고, 상수로 쓴 경로(`@GetMapping(ME)`)처럼 읽지 못한 매핑이 있으면 그 HTTP 메서드의 엔드포인트는 묻지 않습니다.
+  2.x 호환 번들(`jpa-springboot`)은 TypeScript 클라이언트가 없으므로 이 경고를 하지 않습니다.
+  거꾸로 손댄 컨트롤러가 DSL 이 더는 만들지 않는 `POST /signin`·`GET /me` 를 아직 가지고 있거나(`@signin` 을
+  지웠거나 위 이유로 거절됨), 관리자만 쓰는 필드가 아닌 역할을 세션에 넣으면 `... is yours and still
   serves POST /signin, GET /me ...` / `... still puts a role in the session ...` 경고가 납니다 - 그 로그인은 생성된 검사가
   믿는 세션을 계속 만들기 때문입니다. 그 메서드를 지우거나 역할 인자를 뺍니다.
 

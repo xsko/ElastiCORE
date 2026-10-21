@@ -630,4 +630,7 @@ entity:
   line 41, column 40`)가 고칠 곳입니다. 흔한 원인은 `-- 설명` 안의 `: ` (예: `-- 주문한 사람: 로그인한 회원`) 이고,
   `,` 나 ` - ` 로 바꾸면 됩니다. 규칙 엔진(`elcore3`)은 3.0.261021 부터 이때 빌드를 멈춥니다
   (`[elcore3] the model check failed`). 전에는 그 파일을 빼고 생성이 성공해, 엉뚱한 곳의 컴파일 오류로만 드러났습니다.
+  멈춘 실행은 DSL 이 더 만들지 않는 생성 파일을 지우지 않습니다 - 읽지 못한 파일이 선언한 엔티티의 DTO·매퍼 등이 그대로
+  남고(`generated files the DSL no longer produces are kept until the model check passes`), YAML 을 고친 다음 실행이
+  정리합니다. 주석(`#`)이나 빈 줄만 있는 파일(모델 파일을 주석으로 꺼 둔 경우)은 빈 파일처럼 `* EMPTY:` 로 건너뜁니다.
   2.x 생성기(`elcore`)는 그대로 경고만 합니다.

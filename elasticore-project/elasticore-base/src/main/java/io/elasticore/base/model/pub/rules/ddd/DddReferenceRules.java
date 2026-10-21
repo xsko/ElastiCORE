@@ -304,19 +304,42 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
                         f.name(), f.coreItemType(), f.name()));
             }
         }
-        // Written even with nothing to check: whatever holds this entity, and its
-        // service, call it because the model says it references - a method that is
-        // missing would not compile, one that is empty costs nothing.
+        // The class this one extends (@extend) may check references itself: the
+        // model counts an entity as referencing by every field it has, inherited
+        // ones included, while the body above reads only its own. With nothing of
+        // its own to add, the parent's method is this class's - one written here
+        // would replace it. With something to add, the parent's checks run first.
+        boolean inherits = inheritsReferences(e);
+        if (body.isEmpty() && inherits) return;
+        if (inherits) body.add(0, kt ? "super.requireReferences(lookup)" : "super.requireReferences(lookup);");
+        // Otherwise written even with nothing to check: whatever holds this entity,
+        // and its service, call it because the model says it references - a method
+        // that is missing would not compile, one that is empty costs nothing.
         c.varLine("fieldList", "")
          .varLine("fieldList", "/**")
          .varLine("fieldList", " * Refuses an identity that names no row: each row this one refers to by its")
          .varLine("fieldList", " * identity must exist (the API answers 404). Called by the service before")
          .varLine("fieldList", " * each save.")
          .varLine("fieldList", " */");
-        c.varLine("fieldList", kt ? "fun requireReferences(lookup: %s) {" : "public void requireReferences(%s lookup) {",
+        if (inherits && !kt) c.varLine("fieldList", "@Override");
+        c.varLine("fieldList", kt
+                        ? (inherits ? "override fun requireReferences(lookup: %s) {" : "fun requireReferences(lookup: %s) {")
+                        : "public void requireReferences(%s lookup) {",
                 "io.elasticore.springboot3.domain.Lookup");
         for (String line : body) c.varLine("fieldList", "    %s", line);
         c.varLine("fieldList", "}");
+    }
+
+    /**
+     * Whether the class this entity extends already has requireReferences:
+     * its @extend parent is itself counted as referencing (and so has the
+     * method, or inherits it the same way). Kotlin's all-open plugin opens the
+     * parent's method, so the child overrides it.
+     */
+    static boolean inheritsReferences(EntitySpec e) {
+        String parent = e.parentName();
+        return parent != null && !parent.trim().isEmpty() && !parent.equals(e.getName())
+                && e.references(parent.trim());
     }
 
     /**

@@ -154,16 +154,22 @@ public class TypeScriptDtoFileRules implements CodeRules {
      * round trip. Only what a request may write is checked.
      */
     private void meta(SourceCode c, EntitySpec e, String className, String rendered) {
+        // shown: the fields the constant describes - not a list. checked: the
+        // fields validate() looks at - those, and a list with a @minsize the
+        // server refuses (400) when it is missing or shorter.
         List<FieldSpec> shown = new ArrayList<FieldSpec>();
+        List<FieldSpec> checked = new ArrayList<FieldSpec>();
         for (FieldSpec f : e.fields()) {
-            if (f.isList()) continue;
+            if (f.isList() && minSize(f) < 1) continue;
             String name = c.syntax().escapeName(f.name());
             boolean declared = false;
             for (String line : RuleText.linesOf(rendered)) {
                 String t = line.trim();
                 if (t.startsWith(name + ":") || t.startsWith(name + "?:")) declared = true;
             }
-            if (declared) shown.add(f);
+            if (!declared) continue;
+            if (!f.isList()) shown.add(f);
+            checked.add(f);
         }
         String base = className.endsWith("DTO") ? className.substring(0, className.length() - 3) : className;
 
@@ -196,30 +202,27 @@ public class TypeScriptDtoFileRules implements CodeRules {
          .varLine("metaList", "export function validate%s(value: Partial<%s> | null | undefined, partial = false): Record<string, string> {", base, className)
          .varLine("metaList", "    const errors: Record<string, string> = {};")
          .varLine("metaList", "    if (value == null) return errors;");
-        for (FieldSpec f : shown) {
+        for (FieldSpec f : checked) {
             if (!writable(f)) continue;
             String name = c.syntax().escapeName(f.name());
             String v = "value." + name;
             String label = labelOf(f);
             List<String> checks = new ArrayList<String>();
+            if (f.isList()) {
+                // @minsize(1, '...'): what the server's @NotNull and @Size refuse with 400, said first.
+                // Missing counts as too short, so it also says what "!" on the list would.
+                int least = minSize(f);
+                String message = DtoBaseRules.Bound.split(f.dslValueAny("minsize"))[1];
+                checks.add(String.format("if (!partial && (%s == null || %s.length < %d)) errors.%s = %s;",
+                        v, v, least, name, RuleText.quote(message != null ? message : label + " needs at least " + least)));
+                c.varLine("metaList", "    %s", checks.get(0));
+                continue;
+            }
             if (f.required()) {
                 // Only a string can be empty; comparing anything else with '' does not compile.
                 checks.add(f.isStringType()
                         ? String.format("if (partial ? %s === '' : (%s == null || %s === '')) errors.%s = %s;", v, v, v, name, RuleText.quote(label + " is required"))
                         : String.format("if (!partial && %s == null) errors.%s = %s;", v, name, RuleText.quote(label + " is required")));
-            } else if (f.isList() && f.dslValueAny("minsize") != null) {
-                // @minsize(1, '...'): what the server's @NotNull and @Size refuse with 400, said first.
-                String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(f.dslValueAny("minsize"));
-                try {
-                    int least = Integer.parseInt(bound[0].trim());
-                    if (least >= 1) {
-                        String message = bound[1] != null ? bound[1] : label + " needs at least " + least;
-                        checks.add(String.format("if (!partial && (%s == null || %s.length < %d)) errors.%s = %s;",
-                                v, v, least, name, RuleText.quote(message)));
-                    }
-                } catch (NumberFormatException notANumber) {
-                    // a bound the server does not read as a number either
-                }
             }
             if (f.isStringType()) {
                 if (f.validationMaxLength() >= 0) {
@@ -273,6 +276,18 @@ public class TypeScriptDtoFileRules implements CodeRules {
         if (f.hasDslAny("readonly", "noinput", "behavior", "statefield", "snapshot", "compute", "formula")) return false;
         if (f.dslValue("ref") != null || f.systemManaged()) return false;
         return true;
+    }
+
+    /** The least size @minsize(n) or @minsize(n, 'message') declares; 0 when none, or not a number. */
+    private static int minSize(FieldSpec f) {
+        String declared = f.dslValueAny("minsize");
+        if (declared == null) return 0;
+        try {
+            return Integer.parseInt(DtoBaseRules.Bound.split(declared)[0].trim());
+        } catch (NumberFormatException notANumber) {
+            // a bound the server does not read as a number either
+            return 0;
+        }
     }
 
     private static String labelOf(FieldSpec f) {

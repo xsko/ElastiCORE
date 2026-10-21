@@ -1815,24 +1815,100 @@ public final class SpecFactory {
         for (String name : facts(model).optionalEmbeddables) spec.knownOptionalEmbeddable(name);
     }
 
+    /**
+     * The same over every model of the run: a value type declared in one
+     * domain is embedded in another, and its columns are written on its own
+     * class, which the domain declaring it generates. Worked out once per run
+     * (the id-reference rewrite does not touch embedded values) and handed to
+     * each spec with {@link #knownOptionalEmbeddables}.
+     */
+    public static java.util.Set<String> optionalEmbeddables(java.util.List<ECoreModel> models) {
+        java.util.List<Entity> entities = new java.util.ArrayList<Entity>();
+        for (ECoreModel model : models) {
+            if (model == null || model.getEntityModels() == null) continue;
+            ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+            for (int i = 0; i < all.size(); i++) entities.add(all.get(i));
+        }
+        return optionalAmong(entities);
+    }
+
+    /** Tells a spec which value types the run embeds without requiring them. */
+    public static void knownOptionalEmbeddables(EntitySpec spec, java.util.Set<String> names) {
+        if (names == null) return;
+        for (String name : names) spec.knownOptionalEmbeddable(name);
+    }
+
     private static java.util.Set<String> optionalEmbeddables(ECoreModel model) {
+        java.util.List<Entity> entities = new java.util.ArrayList<Entity>();
+        if (model.getEntityModels() != null) {
+            ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+            for (int i = 0; i < all.size(); i++) entities.add(all.get(i));
+        }
+        return optionalAmong(entities);
+    }
+
+    /**
+     * An embedding is required only when the field says so - "!", @required
+     * or @nn, the words FieldSpec.required reads. A value inside a value
+     * embedded optionally is optional too, required inside it or not: when the
+     * outer one is absent, so are the inner one's columns.
+     */
+    private static java.util.Set<String> optionalAmong(java.util.List<Entity> entities) {
         java.util.Set<String> optional = new java.util.HashSet<String>();
-        if (model.getEntityModels() == null) return optional;
-        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
-        java.util.Set<String> embeddables = new java.util.HashSet<String>();
-        for (int i = 0; i < all.size(); i++) {
-            Entity candidate = all.get(i);
-            if (candidate.getMetaInfo().hasMetaAnnotation("embeddable")) embeddables.add(candidate.getIdentity().getName());
+        java.util.Map<String, Entity> embeddables = new java.util.HashMap<String, Entity>();
+        for (Entity candidate : entities) {
+            if (candidate.getMetaInfo().hasMetaAnnotation("embeddable")) {
+                embeddables.put(candidate.getIdentity().getName(), candidate);
+            }
         }
         if (embeddables.isEmpty()) return optional;
-        for (int i = 0; i < all.size(); i++) {
-            for (Field f : fieldsOf(all.get(i))) {
-                if (f.getTypeInfo() == null || f.getTypeInfo().isList()) continue;
-                String type = f.getTypeInfo().getBaseTypeName();
-                if (type != null && embeddables.contains(type) && !f.hasAnnotation("notnull")) optional.add(type);
+        for (Entity candidate : entities) {
+            for (Field f : fieldsOf(candidate)) {
+                String type = embeddedType(f, embeddables);
+                if (type != null && !requiredField(f)) optional.add(type);
+            }
+        }
+        boolean grew = !optional.isEmpty();
+        while (grew) {
+            grew = false;
+            for (String outer : new java.util.ArrayList<String>(optional)) {
+                for (Field f : fieldsOf(embeddables.get(outer))) {
+                    String type = embeddedType(f, embeddables);
+                    if (type != null && optional.add(type)) grew = true;
+                }
             }
         }
         return optional;
+    }
+
+    /** The value type a single field embeds, or null. */
+    private static String embeddedType(Field f, java.util.Map<String, Entity> embeddables) {
+        if (f.getTypeInfo() == null || f.getTypeInfo().isList()) return null;
+        String type = f.getTypeInfo().getBaseTypeName();
+        return type != null && embeddables.containsKey(type) ? type : null;
+    }
+
+    private static boolean requiredField(Field f) {
+        return f.hasAnnotation("notnull") || f.hasAnnotation("required") || f.hasAnnotation("nn");
+    }
+
+    /**
+     * An @extend parent declared in another domain: whether its class checks
+     * references (and so has requireReferences, which the child inherits) is a
+     * fact of that domain's model, not of this one - registerReferencing
+     * holds only this model's entities.
+     */
+    public static void registerParentReferencing(EntitySpec spec, ECoreModel model, java.util.List<ECoreModel> models) {
+        String parent = spec.parentName();
+        if (parent == null || parent.trim().isEmpty()) return;
+        parent = parent.trim();
+        if (model.getEntityModels() != null && model.getEntityModels().findByName(parent) != null) return;
+        for (ECoreModel other : models) {
+            if (other == null || other == model || other.getEntityModels() == null) continue;
+            if (other.getEntityModels().findByName(parent) == null) continue;
+            if (referencing(other).contains(parent)) spec.knownReferencing(parent);
+            return;
+        }
     }
 
     /** Every field of an entity, inherited and derived ones included. */

@@ -212,8 +212,9 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   `setUp` 에 `Mockito.lenient().\`when\`(entityManager.find(any<Class<Any>>(), any<Any>())).thenAnswer(Answer<Any> { c ->
   Mockito.mock(c.getArgument<Class<Any>>(0)) })` 를 넣는다. 저장할 때마다 참조마다 조회 한 번(바뀌지 않은 참조도)
 - 3단계 애그리거트(루트 - 멤버 - 멤버의 멤버)도 컴파일되도록, 참조가 있다고 등록된 엔티티는 확인할 것이 없어도
-  `requireReferences` 를 가진다 (리뷰에서 찾음). 모델 전체 계산(참조하는 엔티티, 선택으로 담은 값 객체)은 생성하는
-  모델마다 한 번 하고 그 모델의 엔티티들이 나눠 쓴다 (id 참조로 필드가 바뀌면 다시)
+  `requireReferences` 를 가진다 (리뷰에서 찾음) - 단 `@extend` 부모가 이미 가지면 물려받는다(아래 "리뷰 - 상속" 항목).
+  참조하는 엔티티 계산은 생성하는 모델마다 한 번 하고 그 모델의 엔티티들이 나눠 쓴다 (id 참조로 필드가 바뀌면 다시).
+  선택으로 담은 값 객체는 실행마다 한 번, 모든 도메인에 걸쳐 센다(아래)
 - 관련 파일: `DddReferenceRules.java`(`requireReferences`, `-service`, `-test`), `DddDeriveRules.java`, `DddRepositoryPortRules.java`,
   `EntitySpec.java`(`knownReferencing`), `SpecFactory.java`(`registerReferencing`), `SignInAndReferencesTest.java`
 
@@ -223,7 +224,13 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - `@Size` 는 null 을 통과시키므로 `lines` 를 뺀 주문이 DTO 검증을 지나 저장 시점 불변식에서 422 가 났다. 빈 배열은 400
   이었다(채점 에이전트가 찾음)
 - 정리된 출력(v3)에서 `@minsize(n)` 의 n 이 1 이상이면 DTO 필드에 같은 메시지의 `@NotNull` 을 더한다. 2.x 호환 출력은 그대로
-- 관련 파일: `DtoBaseRules.java`, `SignInAndReferencesTest.java`, `ShopFlowTest.java`, `elasticore-annotation-guide.md`
+- TypeScript 클라이언트의 `validate<Name>()` 도 같은 메시지로 거절한다: `if (!partial && (value.lines == null ||
+  value.lines.length < 1)) errors.lines = "an order needs a line";` (부분 수정 `partial` 에서는 묻지 않음). 이미 있는
+  화면에서 달라지는 것: 품목을 넣기 전의 주문 초안을 `validatePurchaseOrder` 로 검사해 빈 결과로 저장 버튼을 켜던 화면은
+  이제 `lines` 메시지를 받는다. 처음 커밋의 이 검사는 목록 필드를 검사 대상에서 빼 두어 생성되지 않았다(리뷰에서 찾음,
+  아래 "리뷰 - TypeScript" 항목)
+- 관련 파일: `DtoBaseRules.java`, `TypeScriptDtoFileRules.java`, `SignInAndReferencesTest.java`, `ShopFlowTest.java`,
+  `elasticore-annotation-guide.md`
 
 ### Bug Fixes (선택으로 담은 값 객체의 컬럼)
 
@@ -231,8 +238,10 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - agent kit 의 상점 레시피를 처음 빌드해 보니, 배송지(`shipTo: Address @Embedded`, `!` 없음)를 보내지 않은 주문이
   `NULL not allowed for column "ZIPCODE"` - 400 `required` 로 저장되지 않았다. 값 객체의 `!` 필드가 그 값 객체를 담는
   모든 테이블의 컬럼을 NOT NULL 로 만들었기 때문이다. 펫스토어 샘플은 손으로 쓴 코드가 배송지를 늘 채워서 드러나지 않았다
-- 정리된 출력(v3)에서, 모델의 어느 엔티티든 값 객체를 `!` 없이 담으면 그 값 객체의 필드는 `nullable = false` 를 붙이지
-  않는다. 값이 오면 DTO 가 필수 필드를 검사한다(400). 늘 필수로만 담는 값 객체는 그대로 NOT NULL. 2.x 호환 출력은 그대로
+- 정리된 출력(v3)에서, 어느 도메인의 어느 엔티티든 값 객체를 필수 표시(`!`·`@required`·`@nn`) 없이 담으면 그 값 객체의
+  필드는 `nullable = false` 를 붙이지 않는다. 선택으로 담은 값 객체 안의 값 객체도 그렇다. 값이 오면 DTO 가 필수 필드를
+  검사한다(400). 늘 필수로만 담는 값 객체는 그대로 NOT NULL. 2.x 호환 출력은 그대로 (다른 도메인·안쪽 값 객체·`@required`
+  는 리뷰에서 고침 - 아래 "리뷰 - 값 객체" 항목)
 - 관련 파일: `JpaEntityBaseRules.java`, `EntitySpec.java`(`knownOptionalEmbeddable`), `SpecFactory.java`
   (`registerOptionalEmbeddables`), `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`
 
@@ -244,6 +253,8 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 로더가 읽지 못한 파일을 `ModelCheck.failSaid` 로 기록하고, 규칙 엔진은 생성을 마친 뒤 `[elcore3] the model check
   failed (1) - fix these and build again:` 와 파일·파서 메시지를 찍고 1 로 끝난다. 2.x 생성기는 `ModelCheck` 를 보지
   않으므로 그대로다
+- 주석이나 빈 줄만 있는 파일은 선언한 것이 없으므로 빈 파일처럼 건너뛰고, 멈춘 실행은 생성 파일을 지우지 않는다
+  (리뷰에서 고침 - 아래 "리뷰 - 모델 파일" 항목)
 - 관련 파일: `YamlFileMainModelLoader.java`, `ModelCheck.java`, `RulesGenRunner.java`, `LoadErrorFailsTest.java`,
   `elasticore-dev-guide.md`
 
@@ -251,11 +262,19 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 
 #### `timestamp` 필드의 `@default(now)` 가 `Instant.now()` 를 쓴다, 그리고 "만들 때의 시각"을 문서에
 - `@default(now)` 는 2.x 부터 `date`·`datetime`·`time` 에 `LocalDate.now()` 같은 초기값을 썼지만 가이드 어디에도 없었고,
-  규칙 엔진의 `timestamp`(Instant) 에는 `now` 를 그대로 써서 컴파일되지 않았다. `java.time.Instant.now()` 를 쓰고,
-  DTO 에는 날짜 기본값처럼 붙이지 않는다
+  규칙 엔진의 `timestamp`(Instant) 에는 `now` 를 그대로 써서 컴파일되지 않았다. 엔티티에는 `java.time.Instant.now()` 를 쓴다
+- DTO 에는 `date`·`datetime`·`time` 처럼 `timestamp` 의 **모든** 기본값을 붙이지 않는다 - `now` 만이 아니다.
+  `listedAt: timestamp @default(java.time.Instant.EPOCH)` 의 DTO 는 전에 `@Builder.Default private Instant listedAt =
+  java.time.Instant.EPOCH;` 였고 이제 `private Instant listedAt;` 이라, `builder()` 로 만든 DTO 의 값은 null 이다. 엔티티의
+  초기값(`= java.time.Instant.EPOCH`)은 그대로다. v3 번들만 해당한다(`timestamp` 는 규칙 엔진의 타입이고 2.x 에는 없다)
 - 세 에이전트 모두 "서버가 정하는 주문 시각"을 `beforeSave` 에 손으로 썼다. `orderedAt: datetime @readonly @default(now)`
   한 줄이면 된다는 것(만들 때 그 시각, 요청 값 무시, 수정해도 그대로)을 `elasticore-annotation-guide.md` 의 `@default` 에 적었다
-- 관련 파일: `DefaultValueLiteral.java`, `SignInAndReferencesTest.java`(`aTimeSetWhenTheRowIsMade`), `elasticore-annotation-guide.md`
+- 확인: `SignInAndReferencesTest.aTimeSetWhenTheRowIsMade` - `joinedAt: timestamp @readonly @default(now)` 가 Java 엔티티의
+  `joinedAt = java.time.Instant.now();`, Kotlin 엔티티의 `java.time.Instant.now()`, DTO 에는 초기값 없음;
+  `listedAt` 은 엔티티에 `= java.time.Instant.EPOCH`, DTO 에는 없음. 이 커밋 전의 `DefaultValueLiteral.java` 로 같은 모델을
+  생성해 DTO 가 `= java.time.Instant.EPOCH` 였음을 확인했다
+- 관련 파일: `DefaultValueLiteral.java`(`forDto`, `of`), `SignInAndReferencesTest.java`(`aTimeSetWhenTheRowIsMade`),
+  `elasticore-annotation-guide.md`
 
 ### Improvements (DSL 경고는 한 번)
 
@@ -312,6 +331,87 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   `SpecFactory.java`(`signInEntities`, `otherLoginEntities`), `EntitySpec.java`(`knownOtherLoginEntities`),
   `SignInAndReferencesTest.java`, `ShopApiContractTest.kt`,
   `elasticore-annotation-guide.md`, `elasticore-rule-guide.md`, `elasticore-dsl-guide.md`
+
+### Bug Fixes (리뷰 - 상속한 참조 확인, 다른 도메인의 값 객체, 모델 파일, TypeScript 최소 개수, 엔드포인트 경고)
+
+#### 리뷰 - 상속: `@extend` 하위 클래스가 부모의 `requireReferences` 를 지우지 않는다
+- 위 "확인할 것이 없어도 `requireReferences` 를 가진다" 뒤로, 참조를 확인하는 엔티티를 `@extend` 한 하위 클래스(가이드의
+  `Album: meta: entity @extend(Item) @rollup`)가 빈 `requireReferences` 를 가졌다. 모델은 물려받은 필드까지 보고 하위
+  클래스를 "참조한다"로 세지만, 본문은 자기 필드만 읽기 때문이다. Java 는 부모의 확인을 말없이 덮어썼고(없는 공급자 id 가
+  404 로 거절되지 않음), Kotlin 은 `'requireReferences' hides member of supertype 'Item' and needs 'override' modifier` 로
+  컴파일되지 않았다
+- 이제 자기 확인이 없고 `@extend` 부모가 확인하면 메서드를 쓰지 않고 물려받는다. 자기 확인이 있으면 부모의 것을 먼저 부른다:
+  Java 는 `@Override` 와 `super.requireReferences(lookup);`, Kotlin 은 `override fun` 과 `super.requireReferences(lookup)`
+  (all-open 플러그인이 부모의 메서드를 연다). 부모가 다른 도메인에 있으면 그 도메인의 모델로 판단한다
+- 확인: `SignInAndReferencesTest.aSubclassKeepsItsParentsReferenceCheck` - Java·Kotlin 에서 자기 참조가 없는 `SeAlbum`
+  (`@rollup`)과 `SeDiscBase`(나뉜 루트)에는 메서드가 없고, 자기 참조가 있는 `SeBook` 은 override 하고 super 를 먼저 부른다.
+  `aSubclassInAnotherDomainKeepsItsParentsReferenceCheck` - 부모(`rpa` 의 `RpItem`)와 다른 도메인(`rpb`)의 하위 클래스
+  `RcAlbumBase` 에도 메서드가 없다(다른 도메인의 사실을 보지 않으면 빈 메서드가 생기는 것도 확인했다). 같은 모델을 Kotlin 샘플(`elasticore-template-kt` 의 shop)에 잠시 넣어 `compileKotlin` 으로 컴파일했다 - 고치기 전에는 세
+  하위 클래스에서 위 오류, 고친 뒤에는 없음. 확인한 뒤 모델은 뺐다
+- 관련 파일: `DddReferenceRules.java`(`requireReferences`, `inheritsReferences`), `SpecFactory.java`(`registerParentReferencing`),
+  `RulesGenRunner.java`, `SignInAndReferencesTest.java`
+
+#### 리뷰 - 값 객체: 다른 도메인에서, 안쪽에서, `@required` 로 담을 때
+- 선택으로 담은 값 객체를 그 값 객체를 선언한 도메인의 엔티티에서만 찾았다. `common` 의 `Address`(`zipcode: string(10)!`)를
+  `shop` 의 주문이 `shipTo: Address @Embedded` 로 담으면 컬럼은 여전히 NOT NULL 이라, 배송지 없는 주문이
+  `NULL not allowed for column "ZIPCODE"` 로 거절됐다. 이제 실행의 모든 도메인을 한 번 본다
+- 선택으로 담은 값 객체 안에 `!` 로 담긴 값 객체(`contact: Contact @Embedded` 의 `place: Place! @Embedded`)도 선택이다 -
+  바깥 값이 없으면 안쪽 컬럼도 빈다
+- 필수 표시로 `!` 만 셌다. `card: Card @Embedded @required` 로만 담는 값 객체도 선택으로 읽혀 NOT NULL 이 빠졌다. 이제
+  `FieldSpec.required()` 처럼 `!`·`@required`·`@nn` 을 센다
+- 확인: `SignInAndReferencesTest.aValueOfAnotherDomainEmbeddedAsOptionalHasNullableColumns` - 두 도메인(`scommon` 이 값 객체를
+  선언, `sdshop` 이 담음)에서 `ScAddress`·`ScContact`·`ScPlace` 는 `nullable = false` 가 없고, `@required` 로만 담는
+  `ScCard` 는 있다
+- 관련 파일: `SpecFactory.java`(`optionalEmbeddables(List)`, `knownOptionalEmbeddables`), `RulesGenRunner.java`,
+  `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`
+
+#### 리뷰 - 모델 파일: 주석만 있는 파일은 빌드를 멈추지 않고, 멈춘 실행은 생성 파일을 지우지 않는다
+- 위 "`LOAD ERROR` 가 나면 실패" 뒤로, 모델 파일을 통째로 주석 처리해 꺼 두거나 빈 줄만 남은 `.yml` 도
+  `No content to map due to end-of-input` 으로 빌드를 멈췄다. 0 바이트 파일만 건너뛰었기 때문이다. 이제 YAML 토큰이 하나도
+  없는 파일은 `* EMPTY:` 로 건너뛴다. 최상위가 목록인 파일처럼 읽을 수 없는 파일은 그대로 빌드를 멈춘다
+- 읽지 못한 파일 때문에 멈추는 실행도 끝에서 "DSL 이 더 만들지 않는 파일"을 지웠다. 그 파일이 선언한 엔티티의 DTO·매퍼·
+  리포지토리가 `REMOVED` 되어, YAML 오타 하나에 생성 파일 삭제가 따라왔다. 이제 모델 검사가 실패한 실행은 지우지 않고
+  `[elcore3] generated files the DSL no longer produces are kept until the model check passes` 를 찍는다
+- 2.x 생성기(`elcore`)도 같은 로더를 쓰므로 주석만 있는 파일에 `LOAD ERROR` 와 스택 대신 `* EMPTY:` 를 찍는다. 생성 결과는
+  그대로다
+- 확인: `LoadErrorFailsTest.aFileOfOnlyCommentsOrBlankLinesDeclaresNothing`(주석만 있는 파일, 빈 줄만 있는 파일 - 0 으로 끝남),
+  `aStoppedRunKeepsTheFilesOfWhatItCouldNotRead`(생성한 뒤 그 파일을 깨면 1 로 끝나고 `LdOrderDTO.java` 가 남으며
+  `REMOVED(` 가 없음)
+- 관련 파일: `YamlFileMainModelLoader.java`(`holdsNothing`), `RulesGenRunner.java`, `LoadErrorFailsTest.java`,
+  `elasticore-dev-guide.md`
+
+#### 리뷰 - TypeScript: `@minsize` 목록 검사가 실제로 생성된다
+- 앞 커밋이 `validate<Name>()` 에 넣은 목록 `@minsize` 검사는 생성되지 않았다. 검사할 필드 목록이 `...Fields` 상수와 같아서
+  목록 필드를 빼 두었기 때문이다. 펫스토어의 `validatePurchaseOrder` 는 `orderId`·`creditCard` 만 검사했다
+- 이제 `@minsize(n)`(n 이 1 이상)인 목록은 `validate` 가 검사하고 상수에는 여전히 넣지 않는다(위 "DTO - 최소 개수" 항목)
+- 확인: `SignInAndReferencesTest.theBrowserClientRefusesAnOrderWithoutLines` - `SrOrderDTO.ts` 에
+  `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "an order needs a line";`, `SrOrderFields` 에
+  `lines` 없음
+- 관련 파일: `TypeScriptDtoFileRules.java`(`meta`, `minSize`), `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`
+
+#### 리뷰 - 엔드포인트 경고: 같은 엔드포인트를 다르게 쓴 컨트롤러, 그리고 2.x 호환 모드
+- 손댄 컨트롤러가 DSL 이 주는 엔드포인트를 갖고 있는지 경로 문자열 그대로 비교해서, 경로 변수 이름만 다른
+  `@GetMapping("/{id}")`, Kotlin 의 `@GetMapping(value = ["/me"])`, `@RequestMapping(value = "/me", method = RequestMethod.GET)`
+  으로 쓴 컨트롤러도 `... does not serve GET /{customerId} ...` 경고를 받았다
+- 이제 매핑을 읽어서 비교한다. `{...}` 는 이름과 상관없이 같고 끝의 `/` 는 무시한다. `value`·`path`·위치 인자, `"..."`·
+  `{...}`·`[...]`, 메서드 수준의 `@RequestMapping`(method 가 없으면 모든 메서드)을 읽고, 클래스의 `@RequestMapping` 과 주석은
+  읽지 않는다. 상수나 이어 붙인 문자열처럼 읽지 못한 매핑이 있으면 그 HTTP 메서드의 엔드포인트는 경고하지 않는다(틀린 경고보다
+  말하지 않는 쪽). 인자 없는 `@PostMapping`·`@PutMapping`(생성·수정)도 이제 비교하므로, 그것을 지운 컨트롤러는
+  `POST (base path)` 로 경고를 받는다. 문구의 "which the DSL now gives it" 은 "which the DSL gives it" 이 되었다
+- 2.x 호환 모드(`jpa-springboot`)에서는 이 경고를 하지 않는다. 그 모드는 한 번 생성한 파일을 다시 만들지 않고 TypeScript
+  클라이언트도 없는데, 엔드포인트를 지운 2.x 컨트롤러에 "DSL 이 준다"·"TypeScript 클라이언트가 부른다" 는 경고가 실행마다 났다
+- 확인: `SignInAndReferencesTest.endpointsServedAnotherWayAreNotMissing` - 경로 변수를 `{id}` 로 바꾸고 삭제를
+  `@RequestMapping(value = "/{id}", method = RequestMethod.DELETE)` 로 쓴 컨트롤러에 경고가 없다(고치기 전에는
+  `does not serve GET /{userId}, DELETE /{userId}`). Java·Kotlin 형식, 주석, 상수 경로를 읽는 단위 검사도 있다.
+  `theCompatibleModeSaysNothingOfTheDevelopersController` - 호환 모드에서 `@DeleteMapping` 을 지운 컨트롤러에 경고가 없다
+  (고치기 전에는 `does not serve DELETE /{userId}`)
+- 관련 파일: `RulesGenRunner.java`(`warnIfEndpointsMissing`, `missingEndpoints`, `Endpoints`, `warnIfSignInLeft`),
+  `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`
+
+#### 리뷰 - 문서: 3.0.261021 전의 응답
+- 규칙 가이드가 "전에는 생명주기 거절도 없는 참조도 422" 라고 했다. 없는 행을 id 로 참조한 저장은 외래 키 위반의 409
+  "Conflicts with stored data" 였고 `@snapshot` 원본이 없을 때만 422 였다(위 `requireReferences` 항목). 그렇게 고쳤다
+- 관련 파일: `elasticore-rule-guide.md`
 
 ## 3.0.261020-alpha2
 

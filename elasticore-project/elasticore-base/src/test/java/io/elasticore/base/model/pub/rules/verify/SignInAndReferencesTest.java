@@ -72,6 +72,7 @@ public class SignInAndReferencesTest {
             "    fields:",
             "      itemId: long @id @sequence",
             "      name:   string(30)!",
+            "      listedAt: timestamp @default(java.time.Instant.EPOCH)",
             "",
             "  SrOrder:",
             "    meta: entity @root @expose(20) @owner(memberId) @access(read=owner, create=user, close=owner)",
@@ -237,8 +238,118 @@ public class SignInAndReferencesTest {
             "      role:     string(10) @access(admin)",
             "");
 
+    /**
+     * REF1/M3 of the review: a subclass (@extend) of an entity that checks its
+     * references. SeAlbum adds nothing of its own and inherits the check; SeBook
+     * adds one and runs its parent's first.
+     */
+    private static final String MODEL_EXTEND = String.join("\n",
+            "entity:",
+            "  SeSupplier:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      supplierId: long @id @sequence",
+            "      name:       string(30)",
+            "",
+            "  SeMaker:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      makerId: long @id @sequence",
+            "      name:    string(30)",
+            "",
+            "  SeItem:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      itemId:   long @id @sequence",
+            "      name:     string(30)",
+            "      dtype:    string(10) @formula(\"dtype\")",
+            "      supplier: SeSupplier @ManyToOne",
+            "",
+            "  SeAlbum:",
+            "    meta: entity @extend(SeItem) @rollup @expose(20)",
+            "    fields:",
+            "      artist: string(30)",
+            "",
+            "  SeBook:",
+            "    meta: entity @extend(SeItem) @rollup @expose(20)",
+            "    fields:",
+            "      maker: SeMaker @ManyToOne",
+            "",
+            // Not rolled up, and a root split for its behaviour (SeDiscBase extends SeItem).
+            "  SeDisc:",
+            "    meta: entity @root @extend(SeItem) @expose(20)",
+            "    fields:",
+            "      minutes: int",
+            "");
+
+    /** REF1: the parent is declared in one domain (generated first), its subclass in another. */
+    private static final String MODEL_PARENT_DOMAIN = String.join("\n",
+            "entity:",
+            "  RpSupplier:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      supplierId: long @id @sequence",
+            "",
+            "  RpItem:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      itemId:   long @id @sequence",
+            "      supplier: RpSupplier @ManyToOne",
+            "");
+    private static final String MODEL_CHILD_DOMAIN = String.join("\n",
+            "entity:",
+            "  RcAlbum:",
+            "    meta: entity @extend(RpItem)",
+            "    fields:",
+            "      artist: string(30)",
+            "");
+
+    /**
+     * EMB1/EMB2 of the review: value types declared in one domain and embedded
+     * in another - optionally, inside an optional one, and required by @required.
+     */
+    private static final String MODEL_VALUES = String.join("\n",
+            "entity:",
+            "  ScAddress:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      zipcode: string(10)!",
+            "",
+            "  ScPlace:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      city: string(20)!",
+            "",
+            "  ScContact:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      person: string(20)!",
+            "      place:  ScPlace! @Embedded",
+            "",
+            "  ScCard:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      number: string(20)!",
+            "");
+    private static final String MODEL_VALUES_USED = String.join("\n",
+            "entity:",
+            "  SdOrder:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      orderId: long @id @sequence",
+            "      shipTo:  ScAddress @Embedded",
+            "      contact: ScContact @Embedded",
+            "      card:    ScCard @Embedded @required",
+            "");
+
     private static File jproject;
     private static File kproject;
+    private static File extendJ;
+    private static File extendK;
+    private static File values;
+    private static File compat;
+    private static File extendAcross;
+    private static String extendAcrossLog;
     private static File unsafe;
     private static File two;
     private static File refused;
@@ -290,6 +401,11 @@ public class SignInAndReferencesTest {
         File control = new File(owned, "src/main/java/io/acme/swshop/adapter/in/web/SwUserController.java");
         String text = new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8);
         int end = text.lastIndexOf('}');
+        // EP1: the developer names the path variable their way and maps the delete
+        // the long way round - the same endpoints, which are not missing.
+        text = text.replace("\"/{userId}\"", "\"/{id}\"")
+                .replace("@DeleteMapping(\"/{id}\")", "@RequestMapping(value = \"/{id}\", method = RequestMethod.DELETE)");
+        end = text.lastIndexOf('}');
         Files.write(control.toPath(), (text.substring(0, end) + "    // the team's own endpoints go here\n}\n")
                 .getBytes(StandardCharsets.UTF_8));
         File model = new File(owned, "src/main/resources/blueprint/swshop/model/model.yml");
@@ -300,6 +416,23 @@ public class SignInAndReferencesTest {
         // ... and @signin goes.
         Files.write(model.toPath(), MODEL_OWNED.replace(" @signin", "").getBytes(StandardCharsets.UTF_8));
         ownedGoneLog = captured(owned);
+
+        extendJ = Files.createTempDirectory("elcore-refs-extend-java").toFile();
+        write(extendJ, "seshop", env("seshop", "io.acme.seshop", null), MODEL_EXTEND);
+        run(extendJ, "java", false);
+        extendK = Files.createTempDirectory("elcore-refs-extend-kt").toFile();
+        write(extendK, "seshop", env("seshop", "io.acme.seshop", null), MODEL_EXTEND);
+        run(extendK, "kotlin", false);
+
+        extendAcross = Files.createTempDirectory("elcore-refs-extend-across").toFile();
+        write(extendAcross, "rpa", env("rpa", "io.acme.rpa", null), MODEL_PARENT_DOMAIN);
+        write(extendAcross, "rpb", env("rpb", "io.acme.rpb", null), MODEL_CHILD_DOMAIN);
+        extendAcrossLog = captured(extendAcross);
+
+        values = Files.createTempDirectory("elcore-values-across").toFile();
+        write(values, "scommon", env("scommon", "io.acme.scommon", null), MODEL_VALUES);
+        write(values, "sdshop", env("sdshop", "io.acme.sdshop", null), MODEL_VALUES_USED);
+        run(values, "java", false);
     }
 
     /** A Java generation, with what it printed. */
@@ -578,6 +711,12 @@ public class SignInAndReferencesTest {
         assertFalse(dto.contains("Instant.now()") || dto.contains("LocalDate.now()"), dto);
         String kt = kt("domain/model/SrMember.kt");
         assertTrue(kt.contains("java.time.Instant.now()"), kt);
+        // HIST1: any timestamp default, not only now, is the entity's alone - the DTO has none.
+        String item = java("domain/model/SrItem.java");
+        assertTrue(item.contains("listedAt = java.time.Instant.EPOCH;"), item);
+        String itemDto = java("application/dto/SrItemDTO.java");
+        assertTrue(itemDto.contains("private Instant listedAt;") || itemDto.contains("private java.time.Instant listedAt;"), itemDto);
+        assertFalse(itemDto.contains("Instant.EPOCH"), itemDto);
     }
 
     // ---- value types ---------------------------------------------------------------
@@ -628,6 +767,206 @@ public class SignInAndReferencesTest {
         assertTrue(kt("application/SrOrderCoreService.kt").contains("entity.requireReferences { type, id ->"));
     }
 
+    /**
+     * REF1/M3: a subclass of an entity that checks its references keeps the
+     * parent's check. With nothing of its own it writes no method (one would
+     * replace the parent's, and in Kotlin not compile); with a reference of
+     * its own it overrides and calls the parent's first.
+     */
+    @Test
+    public void aSubclassKeepsItsParentsReferenceCheck() throws Exception {
+        String item = read(extendJ, "src/main/java/io/acme/seshop/domain/model/SeItem.java");
+        assertTrue(item.contains("public void requireReferences(io.elasticore.springboot3.domain.Lookup lookup) {"), item);
+        assertTrue(item.contains("if (this.supplierId != null && lookup.find(SeSupplier.class, this.supplierId) == null)"), item);
+        assertFalse(item.contains("super.requireReferences"), item);
+
+        String album = read(extendJ, "src/main/java/io/acme/seshop/domain/model/SeAlbum.java");
+        assertTrue(album.contains("class SeAlbum extends SeItem"), album);
+        assertFalse(album.contains("requireReferences"), "inherits SeItem's: " + album);
+        // A root split for its behaviour: neither half replaces the inherited check.
+        String discBase = read(extendJ, "src/main/java/io/acme/seshop/domain/model/SeDiscBase.java");
+        assertTrue(discBase.contains("extends SeItem"), discBase);
+        assertFalse(discBase.contains("requireReferences"), "inherits SeItem's: " + discBase);
+        assertFalse(read(extendJ, "src/main/java/io/acme/seshop/domain/model/SeDisc.java").contains("requireReferences"));
+
+        String book = read(extendJ, "src/main/java/io/acme/seshop/domain/model/SeBook.java");
+        assertTrue(squashed(book).contains("@Override public void requireReferences(io.elasticore.springboot3.domain.Lookup lookup) {"
+                + " super.requireReferences(lookup); if (this.makerId != null"), book);
+        assertTrue(book.contains("if (this.makerId != null && lookup.find(SeMaker.class, this.makerId) == null)"), book);
+
+        String ktItem = read(extendK, "src/main/kotlin/io/acme/seshop/domain/model/SeItem.kt");
+        assertTrue(squashed(ktItem).contains(" fun requireReferences(lookup: io.elasticore.springboot3.domain.Lookup) {"), ktItem);
+        assertFalse(ktItem.contains("override fun requireReferences"), ktItem);
+        String ktAlbum = read(extendK, "src/main/kotlin/io/acme/seshop/domain/model/SeAlbum.kt");
+        assertFalse(ktAlbum.contains("requireReferences"), "a fun here hides SeItem's and does not compile: " + ktAlbum);
+        assertFalse(read(extendK, "src/main/kotlin/io/acme/seshop/domain/model/SeDiscBase.kt").contains("requireReferences"));
+        String ktBook = read(extendK, "src/main/kotlin/io/acme/seshop/domain/model/SeBook.kt");
+        assertTrue(squashed(ktBook).contains("override fun requireReferences(lookup: io.elasticore.springboot3.domain.Lookup) {"
+                + " super.requireReferences(lookup) if (this.makerId != null"), ktBook);
+    }
+
+    /** REF1: a subclass in another domain than its referencing parent inherits the parent's check too. */
+    @Test
+    public void aSubclassInAnotherDomainKeepsItsParentsReferenceCheck() throws Exception {
+        // The parent's domain is generated first, so the subclass sees its rewritten reference.
+        assertTrue(extendAcrossLog.indexOf("[rpa]") >= 0 && extendAcrossLog.indexOf("[rpa]") < extendAcrossLog.indexOf("[rpb]"),
+                extendAcrossLog);
+        String item = read(extendAcross, "src/main/java/io/acme/rpa/domain/model/RpItem.java");
+        assertTrue(item.contains("if (this.supplierId != null && lookup.find(RpSupplier.class, this.supplierId) == null)"), item);
+        // A root of its own, so split: the state half extends the parent.
+        String album = read(extendAcross, "src/main/java/io/acme/rpb/domain/model/RcAlbumBase.java");
+        assertTrue(album.contains("extends RpItem"), album);
+        assertFalse(album.contains("requireReferences"), "inherits RpItem's: " + album);
+        assertFalse(read(extendAcross, "src/main/java/io/acme/rpb/domain/model/RcAlbum.java").contains("requireReferences"));
+    }
+
+    /** The text with every run of whitespace as one space: indentation and line ends aside. */
+    private static String squashed(String text) {
+        return text.replaceAll("\\s+", " ");
+    }
+
+    /**
+     * EMB1: a value type of one domain embedded optionally by another has
+     * nullable columns. EMB2: so has one inside it, required there or not; and
+     * @required counts as required, as FieldSpec.required reads it.
+     */
+    @Test
+    public void aValueOfAnotherDomainEmbeddedAsOptionalHasNullableColumns() throws Exception {
+        String model = "src/main/java/io/acme/scommon/domain/model/";
+        String address = read(values, model + "ScAddress.java");
+        assertTrue(address.contains("@Column(name = \"zipcode\", length = 10)"), address);
+        String contact = read(values, model + "ScContact.java");
+        assertFalse(contact.contains("nullable = false"), contact);
+        String place = read(values, model + "ScPlace.java");
+        assertFalse(place.contains("nullable = false"), "inside an optional contact: " + place);
+        String card = read(values, model + "ScCard.java");
+        assertTrue(card.contains("nullable = false"), "embedded only as @required: " + card);
+    }
+
+    /** L6/TS1: the TypeScript validate function refuses a list shorter than @minsize - missing included. */
+    @Test
+    public void theBrowserClientRefusesAnOrderWithoutLines() throws Exception {
+        String dto = read(jproject, "src/main/ts/SrOrderDTO.ts");
+        assertTrue(dto.contains("    if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = \"an order needs a line\";"), dto);
+        // The constant still describes single fields only.
+        String fields = dto.substring(dto.indexOf("export const SrOrderFields"), dto.indexOf("} as const;"));
+        assertFalse(fields.contains("lines"), fields);
+    }
+
+    /** EP1: a controller of the developer's that serves the endpoints its own way is not said to miss them. */
+    @Test
+    public void endpointsServedAnotherWayAreNotMissing() {
+        assertFalse(ownedRoleLog.contains("SwUserController.java is yours and does not serve"), ownedRoleLog);
+        String generated = String.join("\n",
+                "@RequestMapping(\"/api/v1/customer\")",
+                "public class CustomerController {",
+                "    /** Read one: @GetMapping(\"/old\") is not an endpoint. */",
+                "    @GetMapping(\"/{customerId}\")",
+                "    @PostMapping",
+                "    @DeleteMapping(\"/{customerId}\")",
+                "    @PostMapping(\"/signin\")",
+                "    @GetMapping(\"/me\")",
+                "    @PostMapping(\"/{customerId}/close\")",
+                "}");
+        String kotlin = String.join("\n",
+                "@RequestMapping(\"/api/v1/customer\")",
+                "class CustomerController(private val service: CustomerService) {",
+                "    @GetMapping(value = [\"/{id}\"], produces = [\"application/json\"])",
+                "    @PostMapping(\"\")",
+                "    @RequestMapping(path = [\"/{id}/\"], method = [RequestMethod.DELETE])",
+                "    @PostMapping(path = [\"/signin\"])",
+                "    @org.springframework.web.bind.annotation.GetMapping(\"/me\")",
+                "    @RequestMapping(\"/{id}/close\")",
+                "}");
+        assertTrue(RulesGenRunner.missingEndpoints(kotlin, generated, "CustomerController").isEmpty(),
+                String.valueOf(RulesGenRunner.missingEndpoints(kotlin, generated, "CustomerController")));
+        // What is really missing is still said, in the generator's spelling; comments are not read.
+        String partial = String.join("\n",
+                "public class CustomerController {",
+                "    // @GetMapping(\"/me\")",
+                "    @GetMapping({\"/{id}\", \"/by-id/{id}\"})",
+                "    @PostMapping(value = \"/\")",
+                "    @DeleteMapping(path = \"/{id}\")",
+                "    @RequestMapping(value = \"/signin\", method = RequestMethod.GET)",
+                "}");
+        assertTrue(RulesGenRunner.missingEndpoints(partial, generated, "CustomerController")
+                .equals(java.util.Arrays.asList("POST /signin", "GET /me", "POST /{customerId}/close")),
+                String.valueOf(RulesGenRunner.missingEndpoints(partial, generated, "CustomerController")));
+        // A mapping the reader cannot follow answers for its method rather than being counted missing.
+        String constants = String.join("\n",
+                "public class CustomerController {",
+                "    @GetMapping(\"/{id}\")",
+                "    @GetMapping(ME)",
+                "    @PostMapping(BASE + \"/signin\")",
+                "    @RequestMapping(value = \"/x\", method = METHODS)",
+                "}");
+        assertTrue(RulesGenRunner.missingEndpoints(constants, generated, "CustomerController").isEmpty(),
+                String.valueOf(RulesGenRunner.missingEndpoints(constants, generated, "CustomerController")));
+        String constantPost = String.join("\n",
+                "public class CustomerController {",
+                "    @GetMapping({\"/{id}\", \"/me\"})",
+                "    @PostMapping(BASE + \"/signin\")",
+                "}");
+        assertTrue(RulesGenRunner.missingEndpoints(constantPost, generated, "CustomerController")
+                .equals(java.util.Collections.singletonList("DELETE /{customerId}")),
+                String.valueOf(RulesGenRunner.missingEndpoints(constantPost, generated, "CustomerController")));
+    }
+
+    /**
+     * WARN1: the 2.x-compatible mode (jpa-springboot) regenerates no controller
+     * and has no TypeScript client, so a controller with an endpoint removed is
+     * not said to miss what "the DSL gives it".
+     */
+    @Test
+    public void theCompatibleModeSaysNothingOfTheDevelopersController() throws Exception {
+        compat = Files.createTempDirectory("elcore-endpoints-compat").toFile();
+        write(compat, "swshop", env("swshop", "io.acme.swshop", null), MODEL_OWNED.replace(" @signin", ""));
+        String first = capturedCompat(compat);
+        File control = null;
+        try (java.util.stream.Stream<Path> all = Files.walk(compat.toPath())) {
+            for (Path p : all.toArray(Path[]::new)) {
+                if (p.getFileName().toString().equals("SwUserController.java")) control = p.toFile();
+            }
+        }
+        assertTrue(control != null, first);
+        String text = new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8);
+        assertTrue(text.contains("@DeleteMapping"), "a delete endpoint to remove: " + text);
+        StringBuilder kept = new StringBuilder();
+        for (String line : text.split("\n", -1)) {
+            if (!line.contains("@DeleteMapping")) kept.append(line).append('\n');
+        }
+        Files.write(control.toPath(), kept.toString().getBytes(StandardCharsets.UTF_8));
+        String log = capturedCompat(compat);
+        assertTrue(log.contains("SKIP(user-owned)"), log);
+        assertFalse(log.contains("does not serve"), log);
+    }
+
+    /** A 2.x-compatible run: no architecture, no language. */
+    private static String capturedCompat(File project) throws Exception {
+        java.io.PrintStream out = System.out;
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language", "elasticore.rules.force"};
+        String[] saved = new String[keys.length];
+        for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
+        System.setOut(new java.io.PrintStream(bytes, true, "UTF-8"));
+        try {
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            System.clearProperty("elasticore.architecture");
+            System.clearProperty("elasticore.language");
+            System.setProperty("elasticore.rules.force", "true");
+            RulesGenRunner.run(new String[0]);
+        } finally {
+            for (int i = 0; i < keys.length; i++) {
+                if (saved[i] == null) System.clearProperty(keys[i]);
+                else System.setProperty(keys[i], saved[i]);
+            }
+            System.setOut(out);
+        }
+        String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        out.print(log);
+        return log;
+    }
+
     @AfterAll
     static void clean() throws Exception {
         java.lang.reflect.Field tmp = io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
@@ -636,7 +975,8 @@ public class SignInAndReferencesTest {
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
-        for (File dir : new File[]{jproject, kproject, unsafe, two, refused, modules, owned}) {
+        for (File dir : new File[]{jproject, kproject, unsafe, two, refused, modules, owned, extendJ, extendK, values, compat,
+                extendAcross}) {
             if (dir == null || !dir.exists()) continue;
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override

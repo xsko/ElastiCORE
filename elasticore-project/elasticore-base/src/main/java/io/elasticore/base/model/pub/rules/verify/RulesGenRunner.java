@@ -394,7 +394,14 @@ public final class RulesGenRunner {
         // would read every generated file as no longer produced.
         if (Boolean.getBoolean("elasticore.rules.list")) return 0;
         runner.writeOrmXml();
-        if (domainFilter == null && runner.succeeded()) runner.removeStale();
+        // Nor when the model check failed: a model file that was not read leaves
+        // everything it declares unproduced, and those files are not stale - the
+        // run stops so the YAML is fixed, and the next one writes them again.
+        boolean modelChecked = io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        if (domainFilter == null && runner.succeeded() && modelChecked) runner.removeStale();
+        if (domainFilter == null && runner.succeeded() && !modelChecked) {
+            System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
+        }
         runner.printSummary();
 
         // What the DSL validation found, said where the person who can fix it
@@ -574,6 +581,9 @@ public final class RulesGenRunner {
                 others == null ? java.util.Collections.<String>emptyList() : others);
     }
 
+    /** The value types some entity of the run embeds without requiring them; worked out once, on first use. */
+    private java.util.Set<String> optionalEmbeddables;
+
     /** Models already emitted, by identity: the shared context re-offers them. */
     private final java.util.Set<ECoreModel> generatedModels =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ECoreModel, Boolean>());
@@ -635,6 +645,12 @@ public final class RulesGenRunner {
                     SpecFactory.registerEnums(spec, m);
                 }
                 SpecFactory.registerAllEmbeddables(spec, allModels);
+                // A value type of another domain embedded here optionally, or one
+                // of this domain embedded optionally there: the columns are on
+                // the value type's class, whichever domain writes it.
+                if (optionalEmbeddables == null) optionalEmbeddables = SpecFactory.optionalEmbeddables(allModels);
+                SpecFactory.knownOptionalEmbeddables(spec, optionalEmbeddables);
+                SpecFactory.registerParentReferencing(spec, model, allModels);
                 SpecFactory.collectEntityImports(spec, entity, model);
                 specs.add(spec);
                 generateEntityArtifacts(entity, spec, model);
@@ -2240,16 +2256,17 @@ public final class RulesGenRunner {
         return java.util.Collections.emptyList();
     }
 
-    private static final java.util.regex.Pattern ENDPOINT = java.util.regex.Pattern.compile(
-            "@(Get|Post|Put|Delete|Patch)Mapping\\(\\s*(?:value\\s*=\\s*|path\\s*=\\s*)?\"([^\"]*)\"");
-
     /**
      * A controller of the developer's that the DSL has since given more to
      * serve - a lifecycle command, the sign-in of @signin. The file is left
      * alone, so the endpoint would not exist while the TypeScript client
      * (always regenerated) calls it. Said as a DSL warning, naming each one.
+     *
+     * Not in the 2.x-compatible mode: it regenerates no generate-once file and
+     * has no TypeScript client, so nothing there is new or called.
      */
     private void warnIfEndpointsMissing(ArtifactTarget out, File file, String wouldWrite) {
+        if (!(v3 || kotlin)) return;
         if (out.fileName() == null || !out.fileName().endsWith("Controller")) return;
         String existing;
         try {
@@ -2257,14 +2274,10 @@ public final class RulesGenRunner {
         } catch (IOException e) {
             return;
         }
-        java.util.Set<String> have = endpoints(existing);
-        java.util.List<String> missing = new java.util.ArrayList<String>();
-        for (String endpoint : endpoints(wouldWrite)) {
-            if (!have.contains(endpoint)) missing.add(endpoint);
-        }
+        java.util.List<String> missing = missingEndpoints(existing, wouldWrite, out.fileName());
         if (missing.isEmpty()) return;
         io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", out.relativePath() + " is yours and does not serve "
-                + String.join(", ", missing) + ", which the DSL now gives it - add them as the generator would write"
+                + String.join(", ", missing) + ", which the DSL gives it - add them as the generator would write"
                 + " them (delete the file and build to see that), or the TypeScript client calls endpoints that do not exist");
     }
 
@@ -2284,11 +2297,11 @@ public final class RulesGenRunner {
             return;
         }
         if (!existing.contains("SessionCurrentUser")) return;
-        java.util.Set<String> have = endpoints(existing);
-        java.util.Set<String> given = endpoints(wouldWrite);
+        Endpoints have = Endpoints.of(existing, out.fileName());
+        Endpoints given = Endpoints.of(wouldWrite, out.fileName());
         java.util.List<String> left = new java.util.ArrayList<String>();
         for (String endpoint : new String[]{"POST /signin", "GET /me"}) {
-            if (have.contains(endpoint) && !given.contains(endpoint)) left.add(endpoint);
+            if (have.serves(endpoint) && !given.serves(endpoint)) left.add(endpoint);
         }
         if (!left.isEmpty()) {
             io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", out.relativePath() + " is yours and still serves "
@@ -2331,11 +2344,241 @@ public final class RulesGenRunner {
         return false;
     }
 
-    private static java.util.Set<String> endpoints(String source) {
-        java.util.Set<String> found = new java.util.LinkedHashSet<String>();
-        java.util.regex.Matcher m = ENDPOINT.matcher(source);
-        while (m.find()) found.add(m.group(1).toUpperCase(java.util.Locale.ROOT) + " " + m.group(2));
-        return found;
+    /**
+     * What the DSL would have the controller serve and the developer's file
+     * does not, as "VERB /path" in the generator's own spelling. A mapping of
+     * theirs the reader cannot follow (a constant, a concatenation) answers
+     * for its method - better unsaid than said wrongly.
+     */
+    static java.util.List<String> missingEndpoints(String existing, String wouldWrite, String className) {
+        Endpoints have = Endpoints.of(existing, className);
+        java.util.List<String> missing = new java.util.ArrayList<String>();
+        Endpoints given = Endpoints.of(wouldWrite, className);
+        for (java.util.Map.Entry<String, String> en : given.mapped.entrySet()) {
+            if (!have.mayServe(en.getKey())) missing.add(en.getValue());
+        }
+        return missing;
+    }
+
+    private static final java.util.regex.Pattern MAPPING = java.util.regex.Pattern.compile(
+            "@(?:org\\.springframework\\.web\\.bind\\.annotation\\.)?(Get|Post|Put|Delete|Patch|Request)Mapping\\b");
+    private static final java.util.regex.Pattern STRING_LITERAL = java.util.regex.Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"");
+    private static final java.util.regex.Pattern REQUEST_METHOD = java.util.regex.Pattern.compile(
+            "\\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\\b");
+
+    /**
+     * The endpoints a controller source maps, read from its method-level
+     * mapping annotations: @GetMapping("/x"), path = "/x", value = ["/x"]
+     * (Kotlin), {"/x", "/y"}, a bare @PostMapping, and @RequestMapping with
+     * or without method = RequestMethod.X. A path is compared with each
+     * {placeholder} as {} - /{id} serves what the generator calls
+     * /{customerId} - and without a trailing slash. Comments are not read.
+     */
+    static final class Endpoints {
+        /** "VERB /path" normalised -> as written; VERB "*" for a @RequestMapping that takes any method. */
+        final java.util.Map<String, String> mapped = new java.util.LinkedHashMap<String, String>();
+        /** Methods ("*" for any) of a mapping that could not be read. */
+        final java.util.Set<String> unreadable = new java.util.HashSet<String>();
+
+        static Endpoints of(String source, String className) {
+            Endpoints found = new Endpoints();
+            String code = withoutComments(source);
+            int classAt = -1;
+            if (className != null) {
+                java.util.regex.Matcher cls = java.util.regex.Pattern.compile(
+                        "\\bclass\\s+" + java.util.regex.Pattern.quote(className) + "\\b").matcher(code);
+                if (cls.find()) classAt = cls.start();
+            }
+            java.util.regex.Matcher m = MAPPING.matcher(code);
+            while (m.find()) {
+                // The class's own @RequestMapping is the base path every endpoint shares.
+                if (m.start() < classAt) continue;
+                String args = argumentsAfter(code, m.end());
+                found.read(m.group(1), args);
+            }
+            return found;
+        }
+
+        private void read(String kind, String args) {
+            java.util.List<String> paths = new java.util.ArrayList<String>();
+            java.util.List<String> verbs = new java.util.ArrayList<String>();
+            boolean pathsRead = true;
+            boolean verbsRead = true;
+            boolean pathSaid = false;
+            boolean methodSaid = false;
+            if (args != null) {
+                for (String element : topLevel(args, ',')) {
+                    String e = element.trim();
+                    if (e.isEmpty()) continue;
+                    int eq = topLevelEquals(e);
+                    String key = eq < 0 ? "value" : e.substring(0, eq).trim();
+                    String val = eq < 0 ? e : e.substring(eq + 1).trim();
+                    if ("value".equals(key) || "path".equals(key)) {
+                        pathSaid = true;
+                        java.util.List<String> literals = literalsOnly(val);
+                        if (literals == null) pathsRead = false;
+                        else paths.addAll(literals);
+                    } else if ("method".equals(key) && "Request".equals(kind)) {
+                        methodSaid = true;
+                        java.util.regex.Matcher rm = REQUEST_METHOD.matcher(val);
+                        while (rm.find()) verbs.add(rm.group(1));
+                        String rest = val.replaceAll("(?:org\\.springframework\\.web\\.bind\\.annotation\\.)?RequestMethod\\.", "")
+                                .replaceAll(REQUEST_METHOD.pattern(), "").replace("arrayOf(", "").replaceAll("[\\s\\[\\]{},()]", "");
+                        if (verbs.isEmpty() || !rest.isEmpty()) verbsRead = false;
+                    }
+                }
+            }
+            // No path is the class's base path itself; @RequestMapping without a method takes any.
+            if (!pathSaid) paths.add("");
+            if (!"Request".equals(kind)) verbs.add(kind.toUpperCase(java.util.Locale.ROOT));
+            else if (!methodSaid) verbs.add("*");
+            if (!verbsRead) {
+                unreadable.add("*");
+            } else if (!pathsRead) {
+                unreadable.addAll(verbs);
+            } else {
+                for (String verb : verbs) {
+                    for (String path : paths) mapped.put(verb + " " + normal(path), verb + " " + (path.isEmpty() ? "(base path)" : path));
+                }
+            }
+        }
+
+        /** Whether the source maps this endpoint, read as written. */
+        boolean serves(String endpoint) {
+            int space = endpoint.indexOf(' ');
+            String path = normal(endpoint.substring(space + 1));
+            return mapped.containsKey(endpoint.substring(0, space) + " " + path) || mapped.containsKey("* " + path);
+        }
+
+        /** Whether it does, or has a mapping for that method the reader could not follow. */
+        boolean mayServe(String normalisedEndpoint) {
+            String verb = normalisedEndpoint.substring(0, normalisedEndpoint.indexOf(' '));
+            return serves(normalisedEndpoint) || unreadable.contains(verb) || unreadable.contains("*");
+        }
+
+        /** {anything} as {}, no trailing slash, a leading one. */
+        static String normal(String path) {
+            StringBuilder sb = new StringBuilder();
+            int depth = 0;
+            for (int i = 0; i < path.length(); i++) {
+                char ch = path.charAt(i);
+                if (ch == '{') {
+                    if (depth++ == 0) sb.append("{}");
+                } else if (ch == '}') {
+                    if (depth > 0) depth--;
+                } else if (depth == 0) {
+                    sb.append(ch);
+                }
+            }
+            String p = sb.toString().trim();
+            while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
+            return p.isEmpty() || p.startsWith("/") ? p : "/" + p;
+        }
+
+        /** The string literals of a value that is nothing else - "x", {"x", "y"}, ["x"], arrayOf("x"); null otherwise. */
+        private static java.util.List<String> literalsOnly(String val) {
+            java.util.List<String> literals = new java.util.ArrayList<String>();
+            java.util.regex.Matcher lit = STRING_LITERAL.matcher(val);
+            StringBuilder rest = new StringBuilder();
+            int last = 0;
+            while (lit.find()) {
+                // A Kotlin template ("$base/x") is not a literal path.
+                if (lit.group(1).contains("$")) return null;
+                literals.add(lit.group(1));
+                rest.append(val, last, lit.start());
+                last = lit.end();
+            }
+            rest.append(val.substring(last));
+            String left = rest.toString().replace("arrayOf(", "").replaceAll("[\\s\\[\\]{},()]", "");
+            return left.isEmpty() ? literals : null;
+        }
+
+        /** The text between the parentheses that follow position at, or null for a bare annotation. */
+        private static String argumentsAfter(String code, int at) {
+            int i = at;
+            while (i < code.length() && Character.isWhitespace(code.charAt(i)) && code.charAt(i) != '\n') i++;
+            if (i >= code.length() || code.charAt(i) != '(') return null;
+            int depth = 0;
+            char quote = 0;
+            for (int j = i; j < code.length(); j++) {
+                char ch = code.charAt(j);
+                if (quote != 0) {
+                    if (ch == '\\') j++;
+                    else if (ch == quote) quote = 0;
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch;
+                } else if (ch == '(' || ch == '[' || ch == '{') {
+                    depth++;
+                } else if (ch == ')' || ch == ']' || ch == '}') {
+                    if (--depth == 0) return code.substring(i + 1, j);
+                }
+            }
+            return null;
+        }
+
+        /** The parts of s between top-level separators - outside quotes and brackets. */
+        private static java.util.List<String> topLevel(String s, char separator) {
+            java.util.List<String> parts = new java.util.ArrayList<String>();
+            int depth = 0;
+            char quote = 0;
+            int start = 0;
+            for (int i = 0; i < s.length(); i++) {
+                char ch = s.charAt(i);
+                if (quote != 0) {
+                    if (ch == '\\') i++;
+                    else if (ch == quote) quote = 0;
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch;
+                } else if (ch == '(' || ch == '[' || ch == '{') {
+                    depth++;
+                } else if (ch == ')' || ch == ']' || ch == '}') {
+                    depth--;
+                } else if (ch == separator && depth == 0) {
+                    parts.add(s.substring(start, i));
+                    start = i + 1;
+                }
+            }
+            parts.add(s.substring(start));
+            return parts;
+        }
+
+        /** The index of a named argument's '=', or -1 when the element is positional. */
+        private static int topLevelEquals(String element) {
+            java.util.regex.Matcher named = java.util.regex.Pattern.compile("^(\\w+)\\s*=").matcher(element);
+            return named.find() ? named.end() - 1 : -1;
+        }
+
+        /** The source without // and block comments, string literals kept. */
+        static String withoutComments(String source) {
+            StringBuilder sb = new StringBuilder(source.length());
+            char quote = 0;
+            for (int i = 0; i < source.length(); i++) {
+                char ch = source.charAt(i);
+                char next = i + 1 < source.length() ? source.charAt(i + 1) : 0;
+                if (quote != 0) {
+                    sb.append(ch);
+                    if (ch == '\\' && next != 0) {
+                        sb.append(next);
+                        i++;
+                    } else if (ch == quote) {
+                        quote = 0;
+                    }
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch;
+                    sb.append(ch);
+                } else if (ch == '/' && next == '/') {
+                    while (i < source.length() && source.charAt(i) != '\n') i++;
+                    sb.append('\n');
+                } else if (ch == '/' && next == '*') {
+                    int end = source.indexOf("*/", i + 2);
+                    i = end < 0 ? source.length() : end + 1;
+                    sb.append(' ');
+                } else {
+                    sb.append(ch);
+                }
+            }
+            return sb.toString();
+        }
     }
 
     private void warnIfConstructorDrifted(ArtifactTarget out, File file, String wouldWrite) {
