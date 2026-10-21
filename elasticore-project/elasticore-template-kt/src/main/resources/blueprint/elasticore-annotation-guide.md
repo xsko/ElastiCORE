@@ -207,7 +207,20 @@ status: string @default("ACTIVE")        # 그대로 유지
 category: string @default('GENERAL')     # 큰따옴표로 변환
 isActive: boolean @default(true)
 processType: ProcessType @default(ProcessType.HANG)
+createdAt: datetime @default(now)        # LocalDateTime.now() - date, time, timestamp(Instant) 도 now
 ```
+
+**서버가 정하는 생성 시각**은 `@readonly` 와 함께 씁니다 - 손으로 `beforeSave` 를 쓰지 않아도 됩니다:
+
+```yaml
+orderedAt: datetime @readonly @default(now)   # 만들 때 그 시각, 요청 값은 무시, 수정해도 그대로
+joinedOn:  date @readonly @default(now)       # 오늘
+```
+
+엔티티 필드의 초기값(`= LocalDateTime.now()`)이라 행이 만들어질 때 정해지고, `@readonly` 라 요청이 보낸 값은
+쓰이지 않으며, 수정할 때는 DB 에서 읽은 값이 그대로 남습니다. DTO 에는 기본값이 붙지 않습니다(날짜 기본값은 DTO 에서
+뺌). 마지막 수정 시각처럼 **매번 바뀌는** 값은 `@jpa:org.springframework.data.annotation.LastModifiedDate` 와
+`@EnableJpaAuditing` 을 씁니다.
 
 #### @notnull / @notblank / @required
 NOT NULL 제약. `@Column(nullable = false)` 생성. `@id`와 함께 사용 불필요.

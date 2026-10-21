@@ -45,7 +45,7 @@ public final class DefaultValueLiteral {
         }
 
         String base = f.baseTypeName();
-        if ("DATE".equals(base) || "DATETIME".equals(base) || "TIME".equals(base)) {
+        if ("DATE".equals(base) || "DATETIME".equals(base) || "TIME".equals(base) || "INSTANT".equals(base)) {
             return null;
         }
 
@@ -82,8 +82,10 @@ public final class DefaultValueLiteral {
             if ("DATE".equals(base)) return "LocalDate.now()";
             if ("DATETIME".equals(base)) return "LocalDateTime.now()";
             if ("TIME".equals(base)) return "LocalTime.now()";
+            // timestamp (an instant): a rule-engine type, written in full - 2.x has no such field.
+            if ("INSTANT".equals(base)) return "java.time.Instant.now()";
         }
-        if ("DATE".equals(base) || "DATETIME".equals(base) || "TIME".equals(base)) {
+        if ("DATE".equals(base) || "DATETIME".equals(base) || "TIME".equals(base) || "INSTANT".equals(base)) {
             return val;
         }
 

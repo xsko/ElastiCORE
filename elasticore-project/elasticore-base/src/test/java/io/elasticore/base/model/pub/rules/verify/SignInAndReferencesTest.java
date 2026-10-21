@@ -64,6 +64,8 @@ public class SignInAndReferencesTest {
             "      secret:   string(255)! @password",
             "      role:     SrRole @default(SrRole.USER) @access(admin)",
             "      home:     SrAddress! @Embedded",
+            "      joinedAt: timestamp @readonly @default(now)",
+            "      joinedOn: date @readonly @default(now)",
             "",
             "  SrItem:",
             "    meta: entity @root @editable @expose(20)",
@@ -363,6 +365,20 @@ public class SignInAndReferencesTest {
         String dto = java("application/dto/SrOrderDTO.java");
         assertTrue(dto.contains("@NotNull(message=\"an order needs a line\")"), dto);
         assertTrue(dto.contains("@Size(min=1, message=\"an order needs a line\")"), dto);
+    }
+
+    // ---- a time the server sets when the row is made ---------------------------------
+
+    /** @readonly @default(now): the entity's initializer, no DTO default - timestamp (Instant) too. */
+    @Test
+    public void aTimeSetWhenTheRowIsMade() throws Exception {
+        String entity = java("domain/model/SrMember.java");
+        assertTrue(entity.contains("joinedAt = java.time.Instant.now();"), entity);
+        assertTrue(entity.contains("joinedOn = LocalDate.now();"), entity);
+        String dto = java("application/dto/SrMemberDTO.java");
+        assertFalse(dto.contains("Instant.now()") || dto.contains("LocalDate.now()"), dto);
+        String kt = kt("domain/model/SrMember.kt");
+        assertTrue(kt.contains("java.time.Instant.now()"), kt);
     }
 
     // ---- value types ---------------------------------------------------------------
