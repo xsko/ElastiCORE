@@ -176,6 +176,88 @@ public class ServiceAccessRules implements CodeRules {
         }
     }
 
+    /**
+     * A whole row of another entity carried as a DTO (member: Member
+     * {@literal @}OneToOne {@literal @}cascade(merge) {@literal @}dtype(MemberDTO)) is
+     * mapped onto the relation on the way in, and the cascade saves it - past
+     * every check the row's own service makes. Whoever may update a profile
+     * rewrote the member's login, or stored a password hash of their own
+     * making and signed in as that member. So the reverse mapping does not
+     * write a cascaded relation into an entity that says who may write it
+     * (guarded, as for @ref): the row is changed through its own service.
+     * A relation the DTO also points by key (memberMemberId) is still
+     * pointed by it; a list of another domain's rows, which the mapper does
+     * write back, is not written either.
+     *
+     * A relation without a cascade is left alone: saving the outer row does
+     * not save the related one, so its fields are not written by it.
+     *
+     * Runs before the mapper's own rules at 20, which read what it states.
+     */
+    @Rule(value = "access-mapper-nested", target = "mapper", order = 10)
+    void nestedGuardedRowsAreNotWritten(EntitySpec e) {
+        SourceCode c = ctx(e);
+        java.util.Set<String> inDto = new java.util.HashSet<String>();
+        for (FieldSpec d : e.dtoFields()) inDto.add(d.name());
+        List<FieldSpec> walk = e.allFields().isEmpty() ? e.fields() : e.allFields();
+        for (FieldSpec f : walk) {
+            if (f.isBaseType() || f.dslValue("ref") != null || !cascades(f)) continue;
+            // A member of this root's own aggregate arrives with it, by design
+            // (ddd-mapper-members); what only a service may write in it is
+            // kept out by ddd-mapper-member-guards.
+            if (c.isWrittenByRoot(f.name())) continue;
+            io.elasticore.base.model.entity.Entity target =
+                    entityNamed(simple(f.isList() ? f.coreItemType() : f.typeName()));
+            if (target == null || !guarded(target)) continue;
+            c.systemManaged(f.name());
+            // Said where the DTO would have carried the row in.
+            String dto = nestedDtoType(f);
+            if (!inDto.contains(f.name()) || dto == null || !isDto(e, dto)) continue;
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s is not written from the DTO: %s says who may write it (@access, @owner, @password),"
+                            + " and the cascade would save the row past those checks. Change it through its own"
+                            + " service; a key the DTO sends still points the relation.",
+                    e.domainClassName(), e.getName(), f.name(), target.getIdentity().getName()));
+        }
+    }
+
+    /** Whether saving the owning row saves this relation's rows too: @cascade, or a JPA cascade written natively. */
+    public static boolean cascades(FieldSpec f) {
+        if (f.hasDsl("cascade")) return true;
+        for (String line : f.nativeAnnotationLines()) {
+            if (NATIVE_CASCADE.matcher(line).find()) return true;
+        }
+        return false;
+    }
+
+    /** A relation annotation with a cascade attribute: @OneToOne(cascade = CascadeType.ALL). */
+    private static final java.util.regex.Pattern NATIVE_CASCADE = java.util.regex.Pattern.compile(
+            "(?i)\\b(OneToOne|OneToMany|ManyToOne|ManyToMany)\\s*\\([^)]*\\bcascade\\s*=");
+
+    /** The DTO type a relation crosses as - @dtype, without List, or the field's own item type. */
+    private static String nestedDtoType(FieldSpec f) {
+        String declared = trim(f.dslValue("dtype"));
+        if (declared != null && !declared.isEmpty()) {
+            int s = declared.indexOf('<');
+            int t = declared.lastIndexOf('>');
+            return s >= 0 && t > s ? declared.substring(s + 1, t).trim() : declared;
+        }
+        return simple(f.isList() ? f.coreItemType() : f.typeName());
+    }
+
+    /** Whether the type is a DTO of this domain or of another one. */
+    private static boolean isDto(EntitySpec e, String type) {
+        if (e.isKnownDto(type)) return true;
+        try {
+            io.elasticore.base.ECoreModelContext context =
+                    io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            return context != null
+                    && context.findModelComponent(type, io.elasticore.base.model.dto.DataTransfer.class) != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** A related row's @password is never handed out, and never written through another entity. */
     @Rule(value = "access-dto-ref-password", target = "dto", order = 0)
     void noPasswordThroughRef(EntitySpec e, FieldSpec f) {

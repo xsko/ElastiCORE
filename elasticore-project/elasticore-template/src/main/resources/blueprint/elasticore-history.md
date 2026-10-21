@@ -475,8 +475,8 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   (`SeAlbumRepository` - 없는 클래스라 컴파일되지 않음). 이제 v3·Kotlin 의 헬퍼는 실행이 쓰는 리포지토리만 주입한다. 2.x 호환
   출력은 그대로다
 - `@extend(X) @rollup` 하위 엔티티가 v3 에서 자기 `@Table(name = "se_book")` 을 가져, 가이드("부모 테이블로 컬럼 통합")와
-  2.x 출력과 달리 자기 테이블에 매핑되었다. 이제 v3 에서도 `@Table` 없이 `@DiscriminatorValue("SeBook")`(`@rollup` 값이 있으면
-  그 값)를 붙여 부모의 테이블(JPA 기본 단일 테이블)에 들어간다
+  2.x 출력과 달리 자기 테이블에 매핑되었다. 이제 v3 에서도 `@Table` 없이 `@DiscriminatorValue("SeBook")`(`@rollup(discriminator=...)`
+  이 있으면 그 값)를 붙여 부모의 테이블(JPA 기본 단일 테이블)에 들어간다
 - 확인: `SignInAndReferencesTest.theRepositoryHelperNamesOnlyRepositoriesThatExist`, `aRolledUpSubclassHasNoTableOfItsOwn`
   (Java·Kotlin 헥사고날, 고치기 전 코드에서는 실패). 샘플에는 `@rollup` 이 없어 실행으로는 확인하지 않았다
 - 관련 파일: `RepositoryHelperBaseRules.java`, `JpaEntityAnnotationRules.java`, `V3SkeletonCoverageTest.java`,
@@ -569,6 +569,79 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   `StaleClientTest`(생성된 클라이언트만 경고, 설정·TypeScript 실행에서는 경고 없음)
 - 관련 파일: `ElastiCoreExtension.java`, `ElastiCorePlugin.java`, `RulesGenRunner.java`(`staleClient`),
   `elasticore-rule-guide.md`, `elasticore-env-guide.md`
+
+### Bug Fixes (리뷰 3 - cascade 로 담은 로그인 행, 생성기의 남은 차이)
+
+#### 리뷰 3 - cascade 로 DTO 에 담은 행으로 로그인·비밀번호를 쓰지 못한다
+- `QmProfile @access(update=user)` 의 `member: QmMember @OneToOne @cascade(merge) @dtype(QmMemberDTO)` 처럼 `@signin`
+  엔티티를 DTO 로 통째로 담으면, 역매핑이 요청의 `member` 를 관계에 붙이고(`toEntity` 는 `login`·`password` 를 보낸 그대로
+  복사) 저장이 cascade 로 회원 행에 merge 했다. 로그인한 아무나 `PUT /qmProfile` 로 회원 1 의 로그인과 (직접 만든 PBKDF2)
+  비밀번호를 바꿀 수 있었다 - v3 의 네 번들(레이어드·헥사고날, Java·Kotlin) 모두. `@ref` 의 같은 문제는 리뷰 2 에서 막았다
+- 이제 `jpa-service-access`(2.x 번들에는 없음)의 매퍼 규칙 `access-mapper-nested` 가, 누가 쓸 수 있는지 정한 엔티티
+  (`@access`·`@owner`·`@password`·필드의 `@access(admin)`, `@ref` 와 같은 기준)로 가는 **cascade 관계**를 역매핑에서 쓰지
+  않는다. 매퍼가 다시 쓰는 다른 도메인의 `List<...> @OneToMany @cascade` 도 같다. DTO 가 함께 보내는 키
+  (`memberMemberId`)는 전처럼 관계를 가리키고, 응답(정방향)에는 그대로 담긴다. 빌드가 필드를 짚어 DSL 경고를 낸다
+  (`QmProfile.member is not written from the DTO: QmMember says who may write it ...`). 수정만이 아니라 생성도 같다 - 요청에
+  담아 보낸 그 행은 저장되지 않는다(3.0 전이라 v3 번들의 기본값을 바꾼다 - 검사를 건너뛰는 쓰기 경로를 닫으려고). cascade 가 없는 관계(저장이 그 행을
+  쓰지 않음)와 검사가 없는 엔티티로 가는 cascade 는 그대로다. 직접 쓴 `@jpa:OneToOne(cascade = ...)` 도 cascade 로 본다
+  (관계 어노테이션 안의 `cascade =` 만, 낱말이 들어 있다고 cascade 가 아님)
+- DDD·헥사고날에서 같은 애그리거트의 멤버(`QdAccount @aggregate(QdCustomer)`)는 루트와 함께 오는 것이 설계라 위 규칙에서
+  빠지고(`ddd-mapper-member-marks`) 루트가 쓴다. 대신 멤버에는 자기 서비스가 없어 루트의 서비스가 해시·검사하지 못하던 멤버의
+  `@password` 와 `@access(admin)` 필드를 DTO 에서 쓰지 않는다(`ddd-mapper-member-guards`, DSL 경고
+  `QdAccount.secret is not written from a DTO: QdAccount is a member of QdCustomer's aggregate ...`) - 전에는 루트의 소유자가
+  관리자만 쓰는 필드를 바꾸고 해시되지 않은 비밀번호를 저장할 수 있었다. 그런 필드는 루트에 둔다
+- `@signin` 을 거절(DSL 경고)하는 대신 이렇게 한 까닭: 모델은 맞다 - 프로필이 회원을 담아 보여 주는 것은 정상이고, 틀린 것은
+  생성된 매퍼가 그 행의 검사를 건너뛰는 쓰기 경로다. DSL 은 한 줄 그대로 두고 생성 코드가 안전한 쪽을 기본값으로 한다
+  (`@ref` 를 읽기 전용으로 둔 리뷰 2 와 같은 원칙). `@signin` 이 아닌 `@owner`·`@access` 엔티티도 같은 구멍이었다
+- 확인: `NestedGuardedRowTest`(리뷰의 모델 + 다른 도메인의 cascade 목록 + 검사 없는 엔티티로 가는 cascade·목록 + 같은
+  애그리거트의 멤버, 레이어드·헥사고날 Java·Kotlin, 고치기 전 코드에서는 실패 - 리뷰의 시험 출력이 쓰기를 보였다),
+  `aNativeCascadeIsACascade`
+- 관련 파일: `ServiceAccessRules.java`(`access-mapper-nested`), `DddMapperRules.java`, `SourceCode.java`(`writtenByRoot`),
+  `elasticore-annotation-guide.md`
+
+#### 리뷰 3 - 프로젝트 규칙이 `update` 만 빼도 `batchUpdate` 가 함께 빠진다
+- `batchUpdate` 가 `update(dto)` 를 부르게 된 뒤, 프로젝트 규칙이 `ctx(e).excludeMethod("update")` 만 하면 Java 서비스가
+  없는 `update` 를 불러 컴파일되지 않았다(`@restExclude` 로 뺄 때만 함께 빠졌다). 이제 v3·Kotlin 출력의 `SourceCode` 가 뺀
+  메서드를 부르는 것도 함께 뺀다(`@restExclude` 와 같은 짝: `update` -> `batchUpdate`, `deleteById` -> `delete`·`deleteBatch`,
+  `delete` -> `deleteBatch`, `save` -> `create`). 2.x 호환 출력은 적힌 대로만 뺀다
+- 확인: `ServiceFileV3Test.excludingUpdateByARuleTakesTheBatch`
+- 관련 파일: `SourceCode.java`(`withCallers`), `ControllerBaseRules.java`, `elasticore-rule-guide.md`
+
+#### 리뷰 3 - TypeScript 클라이언트가 서버의 모드를 따른다
+- 클라이언트는 언제나 v3 서버처럼 `@restExclude(update)` 에 `batchUpdate` 까지 뺐다. 2.x 호환 서버는 `PUT /batch` 를
+  남기므로 클라이언트에 그 메서드가 없었다. 이제 TypeScript 실행이 서버의 모드(v3 스위치·아키텍처, Kotlin, v3 에만 있는
+  규칙, 그리고 서버를 만든 마지막 `elcore3` 가 `build/elasticore/server.mode` 에 남긴 값 - `-Pv3` 를 `elcore3` 에만 준
+  경우)를 보고, 2.x 서버면 적힌 것만 뺀다
+- 확인: `WritePathsTest.theClientOffersWhatItsServerKeeps`(헥사고날 서버의 클라이언트에는 없고, 2.x 서버의 클라이언트에는
+  `batchUpdate` 가 있음)
+- 관련 파일: `TypeScriptApiRules.java`, `RulesGenRunner.java`(`serverIsClean`), `SpecFactory.java`(`compatibleServer`)
+
+#### 리뷰 3 - `@rollup` 판별값이 2.x 와 같다
+- v3(`JpaEntityAnnotationRules`)와 2.x 호환 규칙(`JpaEntityClassRules`)이 `@rollup(Item)` 의 값을 판별값으로 써
+  `@DiscriminatorValue("Item")` 을 냈다 - 부모의 값과 겹칠 수 있다. 2.x 생성기(`EntitySrcFilePublisher`)는 그 값을 읽지 않고
+  `discriminator=`, `target=`, 엔티티 이름 순서로 정한다. 이제 두 규칙 모두 그렇다. `@rollup(X)` 를 쓴 프로젝트는 `jpa-springboot`(2.x 호환) 출력의 판별값도
+  바뀌며, 2.x 생성기와 같아지는 쪽이다(템플릿에는 `@rollup` 이 없어 `elcoreRulesCheck` 가 덮지 않으므로, 임시 모델을 2.x
+  생성기·`jpa-springboot`·v3·Kotlin 으로 생성해 `@DiscriminatorValue` 가 같음을 확인 - 엔티티 파일이 첫 줄 `//ecd:` 말고
+  같았다)
+- 확인: `EntityClassAnnotationTest.rollUp_ownValueIsNotTheDiscriminator`(고치기 전 코드에서는 실패),
+  `NestedGuardedRowTest.aRolledUpEntityIsToldApartByItsName`(v3 네 가지), `SignInAndReferencesTest.aRolledUpSubclassHasNoTableOfItsOwn`
+- 관련 파일: `JpaEntityAnnotationRules.java`, `JpaEntityClassRules.java`, `elasticore-annotation-guide.md`
+
+#### 리뷰 3 - 경고 문구, javadoc, `*` 키
+- `@search(%)` 는 끝 일치(`like '%' + 값`)를 만드는데 경고는 "searches by equality" 라고 했다. 이제
+  `@search(%) searches by the end of the value (like '%' + value) - say %_ for that, _% for the start or %_% for any part.`
+  (`MapperSpecTest.aLonePercentIsSaidAsTheEndsWithItIs`)
+- 생성된 TypeScript 클라이언트가 있으면 `elcore3` 가 매번 경고했다 - 빌드 스크립트의 다른 태스크로 `elcore3ts` 를 부르는
+  펫스토어·`elasticore-template-kt` 에서도. 이제 `elcore3ts` 가 만든 모델의 지문(블루프린트 도메인 폴더의 `.yml`(줄바꿈 무시),
+  `architecture`·`language`·`rules` 설정, ElastiCORE 버전)을
+  `build/elasticore/ts-client.model` 에 남기고, `elcore3` 는 클라이언트가 지금 모델보다 오래되었을 때만
+  `... holds a generated TypeScript client made from an older model ...` 을 낸다 (`StaleClientTest`)
+- `MapperSpecRules.nn()`·`SearchDtoBaseRules.isNullCheck()` 의 javadoc 이 새 메서드 위로 밀려나 있던 것을 제자리로
+- 로더가 `*=` 를 키로 읽는 것(`@access(read=public, *=owner)`)을 `@access` 안에서만 한다. 다른 어노테이션, `--` 주석이
+  만드는 `@label` 까지 2.x 의 패턴 그대로라 2.x 가 읽는 값은 바뀌지 않는다(전에는 `-- x *= 2` 같은 주석의 라벨이 달라졌음)
+  (`StarParameterTest.aStarOutsideAccessIsReadAs2xDid`)
+- 관련 파일: `MapperSpecRules.java`, `SearchDtoBaseRules.java`, `RulesGenRunner.java`(`modelDigest`, `writeStamp`),
+  `AbstractModelLoader.java`, `elasticore-annotation-guide.md`, `elasticore-rule-guide.md`
 
 ## 3.0.261020-alpha2
 

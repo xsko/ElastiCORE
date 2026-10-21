@@ -82,11 +82,12 @@ public class JpaEntityAnnotationRules implements CodeRules {
 
         // @rollup: the subclass's columns are in its parent's table (single
         // table, JPA's default), told apart by the discriminator value - as
-        // the 2.x output does it. It has no table of its own.
+        // the 2.x output does it. It has no table of its own. The value is
+        // 2.x's too: the discriminator, else the target, else the entity's
+        // name - never @rollup(X)'s own value, which is no discriminator.
         if (e.hasMeta("rollup")) {
             String value = e.metaValue("rollup.discriminator");
             if (value == null) value = e.metaValue("rolluptarget");
-            if (value == null) value = e.metaValue("rollup");
             if (value == null || value.trim().isEmpty()) value = e.getName();
             c.ensureClassAnnotation(AnnoCode.of("jakarta.persistence.DiscriminatorValue").value(value.trim()));
         } else {

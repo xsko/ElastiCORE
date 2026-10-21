@@ -18,6 +18,21 @@ public class StarParameterTest {
         Annotation parse(String parameters) {
             return parseParameters("access", parameters);
         }
+
+        Annotation parse(String name, String parameters) {
+            return parseParameters(name, parameters);
+        }
+    }
+
+    /** Outside @access a '*' is no key: a "--" comment such as "x *= 2" is the @label 2.x made of it. */
+    @Test
+    public void aStarOutsideAccessIsReadAs2xDid() {
+        Annotation label = new Loader().parse("label", "x *= 2");
+        assertEquals("2", label.getValue());
+        assertNull(label.getProperties() == null ? null : label.getProperties().getProperty("*"));
+        Annotation other = new Loader().parse("desc", "*=owner");
+        assertEquals("*=owner", other.getValue());
+        assertNull(other.getProperties() == null ? null : other.getProperties().getProperty("*"));
     }
 
     @Test

@@ -87,29 +87,10 @@ public class DddMapperRules implements CodeRules {
 
         for (FieldSpec f : e.fields()) {
             if (!f.isList() || !written.add(f.name())) continue;
-
-            // This spec views a DTO, so the collection names a DTO type. The
-            // aggregate is a fact about entities, so the type is resolved back
-            // to the one it stands for before the boundary is asked about it.
-            String memberDto = f.coreItemType();
-            String memberEntity = e.dtoTemplateEntity(memberDto);
-            // A collection the DTO takes from its template entity names the
-            // entity itself; its DTO is the one @dtype says, else <Entity>DTO.
-            if ((memberEntity == null || memberEntity.isEmpty()) && e.isKnownEntity(memberDto)) {
-                memberEntity = memberDto;
-                String dtype = f.dslValue("dtype");
-                if (dtype != null && dtype.contains("<") && dtype.endsWith(">")) {
-                    memberDto = dtype.substring(dtype.indexOf('<') + 1, dtype.length() - 1).trim();
-                } else {
-                    memberDto = memberEntity + "DTO";
-                }
-            }
-            if (memberEntity == null || memberEntity.isEmpty()) continue;
-
-            if (!e.sameAggregate(memberEntity)) continue;
-
-            writeMembers(c, f, memberDto, memberEntity, MapperBaseRules.REV_BODY, false);
-            writeMembers(c, f, memberDto, memberEntity, MapperBaseRules.REV_BODY_EM, true);
+            String[] member = listMember(e, f);
+            if (member == null) continue;
+            writeMembers(c, f, member[0], member[1], MapperBaseRules.REV_BODY, false);
+            writeMembers(c, f, member[0], member[1], MapperBaseRules.REV_BODY_EM, true);
         }
 
         for (FieldSpec f : e.fields()) {
@@ -144,6 +125,74 @@ public class DddMapperRules implements CodeRules {
         if (!e.knowsAggregateOf(memberEntity) || !e.sameAggregate(memberEntity)) return;
         if (!e.getName().equals(e.aggregateOf(memberEntity))) return;
         ctx(e).field(f).ensure(io.elasticore.base.model.pub.rules.AnnoCode.of("jakarta.validation.Valid"));
+    }
+
+    /**
+     * {member DTO, member entity} of a collection of this aggregate's
+     * members, which membersArriveWithTheirRoot writes; null for any other.
+     */
+    private static String[] listMember(EntitySpec e, FieldSpec f) {
+        // This spec views a DTO, so the collection names a DTO type. The
+        // aggregate is a fact about entities, so the type is resolved back
+        // to the one it stands for before the boundary is asked about it.
+        String memberDto = f.coreItemType();
+        String memberEntity = e.dtoTemplateEntity(memberDto);
+        // A collection the DTO takes from its template entity names the
+        // entity itself; its DTO is the one @dtype says, else <Entity>DTO.
+        if ((memberEntity == null || memberEntity.isEmpty()) && e.isKnownEntity(memberDto)) {
+            memberEntity = memberDto;
+            String dtype = f.dslValue("dtype");
+            if (dtype != null && dtype.contains("<") && dtype.endsWith(">")) {
+                memberDto = dtype.substring(dtype.indexOf('<') + 1, dtype.length() - 1).trim();
+            } else {
+                memberDto = memberEntity + "DTO";
+            }
+        }
+        if (memberEntity == null || memberEntity.isEmpty()) return null;
+        if (!e.sameAggregate(memberEntity)) return null;
+        return new String[]{memberDto, memberEntity};
+    }
+
+    /**
+     * Says which relations the root writes its members through, before the
+     * rules at 10 ask: a member is changed through its root by design, and
+     * a rule that keeps another entity's row out of the mapping
+     * (access-mapper-nested) leaves these to the root.
+     */
+    @Rule(value = "ddd-mapper-member-marks", target = "mapper", order = 5)
+    void markWhatTheRootWrites(EntitySpec e) {
+        SourceCode c = ctx(e);
+        for (FieldSpec f : e.fields()) {
+            if ((f.isList() && listMember(e, f) != null) || singleMember(e, f) != null) {
+                c.writtenByRoot(f.name());
+            }
+        }
+    }
+
+    /**
+     * A member's @password and @access(admin) fields are not written from a
+     * DTO. A member has no service of its own here: it arrives with its root,
+     * and the root's service hashes and checks the root's own fields only -
+     * a password a request sent through the root was stored as sent, and a
+     * field only the administrator writes was the root's owner's to set.
+     * Declared on the root, they are hashed and checked.
+     */
+    @Rule(value = "ddd-mapper-member-guards", target = "mapper", order = 10)
+    void membersKeepWhatOnlyTheirServiceMayWrite(EntitySpec e) {
+        if (e.aggregateRoot()) return;
+        SourceCode c = ctx(e);
+        for (FieldSpec f : e.fields()) {
+            boolean password = f.hasDsl("password");
+            String access = f.dslValue("access");
+            boolean admin = access != null && "admin".equalsIgnoreCase(access.trim());
+            if (!password && !admin) continue;
+            c.systemManaged(f.name());
+            SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s is not written from a DTO: %s is a member of %s's aggregate and arrives with it,"
+                            + " and the root's service %s only its own fields. Declare it on %s.",
+                    e.domainClassName(), e.getName(), f.name(), e.getName(), e.ownAggregate(),
+                    password ? "hashes a @password of" : "checks @access(admin) on", e.ownAggregate()));
+        }
     }
 
     /**

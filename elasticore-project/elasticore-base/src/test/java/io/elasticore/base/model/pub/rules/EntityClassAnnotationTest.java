@@ -185,6 +185,17 @@ public class EntityClassAnnotationTest {
         assertFalse(out.contains("persistence.Table"), out);
     }
 
+    /** @rollup(Item)'s own value is no discriminator: the entity's name, as 2.x writes it. */
+    @Test
+    public void rollUp_ownValueIsNotTheDiscriminator() {
+        EntitySpec e = new EntitySpec("PremiumOrder")
+                .meta("rollup", "Order")
+                .addField(loader.parse("orderId", "long @id"));
+
+        String out = render(e);
+        assertTrue(out.contains("@DiscriminatorValue(\"PremiumOrder\")"), out);
+    }
+
     @Test
     public void compositeKey_emitsIdClass() {
         EntitySpec e = new EntitySpec("ProjectAssignment")

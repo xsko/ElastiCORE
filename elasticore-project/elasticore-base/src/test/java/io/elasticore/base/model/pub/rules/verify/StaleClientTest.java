@@ -50,12 +50,40 @@ public class StaleClientTest {
                 "      itemId: long @id @sequence", "      name: string(20)", "").getBytes(StandardCharsets.UTF_8));
 
         run(true, null);
+        // Made from the model as it is: nothing to say, whichever task the build ran elcore3ts from.
+        String fresh = run(false, null);
+        assertTrue(!fresh.contains("older model"), fresh);
+
+        // The model changed and the client was not made again.
+        Files.write(new File(blueprint, "model/model.yml").toPath(), String.join("\n",
+                "entity:", "  StItem:", "    meta: entity @root @editable @expose(20)", "    fields:",
+                "      itemId: long @id @sequence", "      name: string(20)", "      note: string(40)", "")
+                .getBytes(StandardCharsets.UTF_8));
         String server = run(false, null);
-        assertTrue(server.contains("holds a generated TypeScript client this run did not refresh"), server);
+        assertTrue(server.contains("holds a generated TypeScript client made from an older model"), server);
         String withBuild = run(false, "true");
-        assertTrue(!withBuild.contains("did not refresh"), withBuild);
+        assertTrue(!withBuild.contains("older model"), withBuild);
         String client = run(true, null);
-        assertTrue(!client.contains("did not refresh"), client);
+        assertTrue(!client.contains("older model"), client);
+        String after = run(false, null);
+        assertTrue(!after.contains("older model"), after);
+    }
+
+    /** Line endings alone do not make a model older; a changed file does. */
+    @Test
+    public void theDigestReadsTheDomainModelsOnly() throws Exception {
+        File domain = new File(project.toFile(), "src/main/resources/blueprint/stshop");
+        assertTrue(domain.mkdirs());
+        File model = new File(domain, "model.yml");
+        Files.write(model.toPath(), "entity:\n  A:\n".getBytes(StandardCharsets.UTF_8));
+        String digest = RulesGenRunner.modelDigest(project.toString());
+        Files.write(model.toPath(), "entity:\r\n  A:\r\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(digest.equals(RulesGenRunner.modelDigest(project.toString())));
+        // What the generator writes beside the domains is not the model.
+        Files.write(new File(domain.getParentFile(), "schema.yml").toPath(), "x: 1\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(digest.equals(RulesGenRunner.modelDigest(project.toString())));
+        Files.write(model.toPath(), "entity:\n  B:\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(!digest.equals(RulesGenRunner.modelDigest(project.toString())));
     }
 
     /** What a generation leaves in statics, as SignInAndReferencesTest clears it. */

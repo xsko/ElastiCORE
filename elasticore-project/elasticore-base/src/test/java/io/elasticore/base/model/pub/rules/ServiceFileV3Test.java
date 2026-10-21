@@ -71,6 +71,22 @@ public class ServiceFileV3Test {
         assertFalse(out.contains("${"), "no unresolved template variables:\n" + out);
     }
 
+    /** A rule set of the project's that drops update alone: batchUpdate, which calls it, goes too. */
+    @Test
+    public void excludingUpdateByARuleTakesTheBatch() {
+        SourceCode code = RuleCatalog.standard()
+                .engineFor("jpa-service-file")
+                .templateSet(SourceCode.TemplateSet.V3)
+                .run(order(), "service");
+        code.excludeMethod("update");
+        String out = code.render();
+
+        assertFalse(out.contains("public OrderDTO update("), out);
+        assertFalse(out.contains("batchUpdate"), out);
+        assertTrue(out.contains("public OrderDTO save(OrderDTO dto)"), out);
+        assertTrue(code.isMethodExcluded("batchUpdate"));
+    }
+
     @Test
     public void readonly_dropsWriteMethodsFromService() {
         String out = renderService(order().meta("readonly", null));

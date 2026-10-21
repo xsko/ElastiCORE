@@ -884,7 +884,12 @@ v3 출력에서는 빠진 메서드를 부르는 것도 함께 빠져 컴파일�
 `delete`·`deleteBatch` 를, `delete` 는 `deleteBatch` 를, `save` 는 `create` 를 데려갑니다. 헥사고날의 유스케이스
 인터페이스도 서비스가 뺀 메서드를 약속하지 않습니다(전에는 `@restExclude(batchUpdate)` 가 `XxxService is not abstract
 and does not override abstract method batchUpdate` 로 컴파일되지 않았음). Kotlin 서비스는 메서드를 빼지 않고 그대로 두며,
-컨트롤러·유스케이스만 따릅니다. 2.x 호환 번들은 적힌 대로만 뺍니다.
+컨트롤러·유스케이스만 따릅니다. 2.x 호환 번들은 적힌 대로만 뺍니다. 프로젝트 규칙이 `ctx(e).excludeMethod("update")` 로
+직접 뺄 때도 v3 출력은 같이 데려갑니다(`batchUpdate` 가 없는 `update` 를 부르지 않음). TypeScript 클라이언트는 서버를
+따라, 서버가 2.x 호환 출력이면 적힌 것만 뺍니다(`@restExclude(update)` 여도 2.x 서버에 남는 `PUT /batch` 의 `batchUpdate` 는
+클라이언트에도 남음). 서버의 모드는 `elcore3ts` 자신의 설정(아키텍처·언어·`-Pv3`·v3 규칙)과, 서버를 마지막으로 만든
+`elcore3` 가 `build/elasticore/server.mode` 에 남긴 값으로 압니다 - `-Pv3` 를 `elcore3` 에만 준 레이어드 프로젝트도
+`elcore3` 를 먼저 돌렸으면 클라이언트가 v3 서버를 따릅니다.
 
 - **버전 비교**는 DTO 의 `version` 속성을 이름으로 읽습니다(`VersionCheck`). DTO 에 버전이
   없거나 요청이 보내지 않으면 검사하지 않습니다.
@@ -1485,9 +1490,14 @@ elasticore {
 }
 ```
 
-이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(첫 줄 `//ecd:`)가 있으면 `elcore3` 가 끝에 한 번 경고합니다:
-`[elcore3] .../src/main/ts holds a generated TypeScript client this run did not refresh - run the elcore3ts task after a
+이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(첫 줄 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
+`elcore3` 가 끝에 한 번 경고합니다:
+`[elcore3] .../src/main/ts holds a generated TypeScript client made from an older model - run the elcore3ts task after a
 model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
+`elcore3ts` 는 만든 모델(블루프린트 도메인 폴더의 `.yml` 전부, 그리고 `architecture`·`language`·`rules` 설정과 ElastiCORE
+버전)의 지문을 `build/elasticore/ts-client.model` 에 남기고, `elcore3` 는 그 지문이 지금과 같으면 말하지 않습니다 - 빌드
+스크립트의 다른 태스크(`webBuild` 등)가 `elcore3ts` 를 부르는 프로젝트도 바꾼 것이 없으면 조용합니다. `build` 폴더를
+지우면 `elcore3ts` 를 다시 돌릴 때까지 `elcore3` 가 매번 알려 줍니다.
 
 `-PlistRules` 는 생성하지 않고, 도메인마다 지금 선택된 규칙을 파일 종류(target)별로 실행 순서대로
 보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다.

@@ -68,6 +68,47 @@ public class WritePathsTest {
         run(kotlin, "kotlin", "hexagonal");
         layered = project("elcore-writes-layered");
         run(layered, "java", "layered");
+        // The TypeScript client, of the hexagonal server and of a 2.x one.
+        runTs(java, "hexagonal");
+        // -Pv3 given to the server's run only: the client learns it from what that run recorded.
+        runTs(layered, null);
+        compat = project("elcore-writes-compat");
+        runTs(compat, null);
+    }
+
+    private static File compat;
+
+    private static void runTs(File project, String architecture) {
+        String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
+                "elasticore.rules.force", "elasticore.rules.ts", "elasticore.rules.v3"};
+        String[] saved = new String[keys.length];
+        for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
+        try {
+            for (String k : keys) System.clearProperty(k);
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            if (architecture != null) System.setProperty("elasticore.architecture", architecture);
+            System.setProperty("elasticore.rules.force", "true");
+            System.setProperty("elasticore.rules.ts", "true");
+            assertTrue(RulesGenRunner.run(new String[0]) == 0, "the TypeScript run failed: " + project);
+        } finally {
+            for (int i = 0; i < keys.length; i++) {
+                if (saved[i] == null) System.clearProperty(keys[i]);
+                else System.setProperty(keys[i], saved[i]);
+            }
+        }
+    }
+
+    /** The client follows its server: a clean one drops batchUpdate with update, a 2.x one keeps PUT /batch. */
+    @Test
+    public void theClientOffersWhatItsServerKeeps() throws Exception {
+        String clean = found(java, "WpNoteApi.ts");
+        assertFalse(clean.contains("batchUpdate"), clean);
+        assertFalse(clean.contains("'PUT', BASE, input"), clean);
+        String told = found(layered, "WpNoteApi.ts");
+        assertFalse(told.contains("batchUpdate"), told);
+        String old = found(compat, "WpNoteApi.ts");
+        assertTrue(old.contains("batchUpdate"), old);
+        assertFalse(old.contains("'PUT', BASE, input"), old);
     }
 
     private static File project(String name) throws Exception {
@@ -234,7 +275,7 @@ public class WritePathsTest {
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
-        for (File dir : new File[]{java, kotlin, layered}) {
+        for (File dir : new File[]{java, kotlin, layered, compat}) {
             if (dir == null || !dir.exists()) continue;
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override

@@ -147,6 +147,9 @@ Album:
   fields:
     artist: string
 ```
+판별값(`@DiscriminatorValue`)은 `@rollup(discriminator=ALB)`(또는 `value=`·`type=`), 없으면 `@rollup(target=...)`(또는
+`entity=`), 그것도 없으면 엔티티 이름(`"Album"`)입니다. `@rollup(Item)` 처럼 이름 없이 쓴 값은 판별값이 아닙니다 - 2.x 와
+3.0 의 모든 번들이 같습니다.
 
 ### @terms(용어, 동의어, …)
 업무에서 이 엔티티를 부르는 이름과 동의어. 필드와 `metrics:` 의 지표에도 씁니다. 코드 생성에는 영향이 없고,
@@ -558,6 +561,24 @@ address: Address @relation(mappedBy="market_post_id")
 ```
 cascade 타입: `ALL`, `PERSIST`, `MERGE`, `REMOVE`
 
+cascade 가 붙은 관계를 DTO 로 통째로 담으면(`member: QmMember @OneToOne @cascade(merge) @dtype(QmMemberDTO)`, 다른 도메인
+엔티티의 `List<...> @OneToMany @cascade`), 수정(DTO -> 엔티티) 때 요청이 보낸 행이 관계에 붙고 저장이 cascade 로 그 행까지
+씁니다. 3.0 규칙 엔진의 v3 번들(`jpa-service-access` 가 든 `jpa-springboot-v3`·`jpa-springboot-kt`·DDD·헥사고날)에서는
+**누가 쓸 수 있는지 정한 엔티티**(`@access`·`@owner`·`@password`·필드의 `@access(admin)` 이 있는 엔티티, `@signin` 엔티티 포함)로
+가는 cascade 관계를 DTO 에서 쓰지 않습니다 - 프로필을 고칠 수 있는 사람이 회원의 로그인이나 비밀번호(해시를 직접 만들어)를
+바꿀 수 있었기 때문입니다. 그 행은 자기 서비스(자기 API)로 고치고, DTO 가 함께 보내는 키(`memberMemberId`)는 전처럼 관계를
+가리킵니다. 응답에는 그대로 담깁니다. 빌드가 필드를 짚어 알려 줍니다:
+`[qmshop] QmProfile.member is not written from the DTO: QmMember says who may write it (@access, @owner, @password), and the
+cascade would save the row past those checks. ...`. 생성(`POST`)도 같아서, 요청에 담아 보낸 그 행은 저장되지 않습니다.
+검사가 없는 엔티티로 가는 cascade, cascade 가 없는 관계(`@jpa:OneToOne(cascade = ...)` 처럼 직접 쓴 cascade 는 cascade 로
+봅니다), 2.x 호환 번들(`jpa-springboot`)은 그대로입니다.
+
+DDD·헥사고날 번들에서 **같은 애그리거트의 멤버**는 루트와 함께 오는 것이 설계라 위 규칙에서 빠지고 루트를 통해 쓰입니다.
+다만 멤버에는 자기 서비스가 없어 루트의 서비스가 해시·검사하지 못하므로, 멤버의 `@password` 와 `@access(admin)` 필드는
+DTO 에서 쓰지 않고 빌드가 알려 줍니다(`QdAccount.secret is not written from a DTO: QdAccount is a member of QdCustomer's
+aggregate and arrives with it, and the root's service hashes a @password of only its own fields. Declare it on QdCustomer.`).
+그런 필드는 루트에 둡니다.
+
 #### FK 컬럼명 지정 (@column / @col)
 
 Entity 참조 필드에 `@column` (또는 `@col`)을 사용하면 `@JoinColumn(name=...)`이 생성됩니다. 미지정시 JPA 기본 규칙(필드명 + `_id`)이 적용됩니다.
@@ -803,6 +824,9 @@ customName: string @search(like,comName)   # comName 필드에 like 검색
 - `!=`, `neq` - 코드에 구현 없음
 - `gt`, `gte`, `lt`, `lte`, `ilike` 키워드 - 미구현 (기호 `>`, `>=`, `<`, `<=`만 동작). 모르는 조건은 정확 일치가 되며,
   v3 모드에서는 빌드가 `... @search(ilike) is not a search condition, so it searches by equality ...` DSL 경고를 냅니다
+- `%` 하나만 쓴 `@search(%)` 는 끝 일치(`like '%' + 값`, `%_` 와 같음)입니다. v3 모드에서는 빌드가
+  `... @search(%) searches by the end of the value (like '%' + value) - say %_ for that, _% for the start or %_% for any part.`
+  DSL 경고를 냅니다
 
 ### 3.3 auto 조건 동작
 

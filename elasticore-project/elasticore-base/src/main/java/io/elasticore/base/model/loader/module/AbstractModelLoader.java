@@ -179,6 +179,14 @@ public class AbstractModelLoader implements ConstantParam {
         return s.charAt(s.length() - 1) == q && s.indexOf(q, 1) == s.length() - 1;
     }
 
+    /** key=value, key="value" or a single value - the 2.x reading of annotation parameters. */
+    private static final Pattern KV =
+            Pattern.compile("(\\w+)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
+
+    /** The same for @access, whose key may also be '*', the default level. */
+    private static final Pattern KV_ACCESS =
+            Pattern.compile("(\\w+|\\*)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
+
     /**
      * Parses annotation parameters from a string representation.
      *
@@ -202,12 +210,12 @@ public class AbstractModelLoader implements ConstantParam {
         }else {
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*([^,]+)|([^,\\s]+)");
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*\"([^\"]*)\"|(\\w+)\\s*=\\s*([^,\\s]+)");
-            // A key is a word, or '*' alone: @access(create=public, *=owner)
-            // lost its default to the single-value branch, which another
-            // entry then discarded.
-            Pattern kvPattern = Pattern.compile("(\\w+|\\*)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
-
-            Matcher kvMatcher = kvPattern.matcher(parameters);
+            // A key is a word - or, in @access only, '*' alone:
+            // @access(create=public, *=owner) lost its default to the
+            // single-value branch, which another entry then discarded. Every
+            // other annotation, a "--" comment's @label included, keeps the
+            // 2.x pattern, so what 2.x reads is parsed as it always was.
+            Matcher kvMatcher = ("access".equals(annotationName) ? KV_ACCESS : KV).matcher(parameters);
 
             /*
             while (kvMatcher.find()) {

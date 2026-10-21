@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -192,6 +193,29 @@ public class MapperSpecTest {
         // The 2.x output says nothing new.
         renderIn(SourceCode.TemplateSet.COMPATIBLE, "string(30) @search(ilike)");
         assertEquals(0, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
+        SourceCode.resetWarnings();
+    }
+
+    /** A lone % searches by the end of the value, and the warning says so - not "by equality". */
+    @Test
+    public void aLonePercentIsSaidAsTheEndsWithItIs() throws Exception {
+        io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
+        SourceCode.resetWarnings();
+        String out = renderIn(SourceCode.TemplateSet.V3, "string(30) @search(%)");
+        assertTrue(out.contains("c.like(r.get(\"f\"),\"%\" +trim(f))"), out);
+        assertEquals(1, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
+        java.io.PrintStream saved = System.out;
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(bytes, true, "UTF-8"));
+        try {
+            io.elasticore.base.util.ConsoleLog.printStoredLog("DSL_WARN", "");
+        } finally {
+            System.setOut(saved);
+        }
+        String said = new String(bytes.toByteArray(), "UTF-8");
+        assertTrue(said.contains("@search(%) searches by the end of the value"), said);
+        assertFalse(said.contains("by equality"), said);
+        io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
         SourceCode.resetWarnings();
     }
 

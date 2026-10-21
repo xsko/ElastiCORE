@@ -276,10 +276,6 @@ public class SearchDtoBaseRules implements CodeRules {
     }
 
     /**
-     * Whether a condition checks for an empty column. Shared with the mapper,
-     * which must read the same property the search DTO declares.
-     */
-    /**
      * The condition a field searches by. In the clean output a string's
      * like is contains-ignoring-case, what %__% means: "search by part of
      * the name" found nothing for "gold" on H2, PostgreSQL and Oracle,
@@ -289,6 +285,10 @@ public class SearchDtoBaseRules implements CodeRules {
         return !c.compatible() && f.isStringType() && "like".equals(condition) ? "%__%" : condition;
     }
 
+    /**
+     * Whether a condition checks for an empty column. Shared with the mapper,
+     * which must read the same property the search DTO declares.
+     */
     public static boolean isNullCheck(String condition) {
         return "isnull".equals(condition);
     }

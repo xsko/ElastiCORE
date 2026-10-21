@@ -187,11 +187,6 @@ public class ControllerBaseRules implements CodeRules {
                 if (!id.isEmpty()) out.add(id);
             }
         }
-        if (!clean) return out;
-        if (out.contains("update")) out.add("batchUpdate");
-        if (out.contains("deleteById")) out.add("delete");
-        if (out.contains("delete")) out.add("deleteBatch");
-        if (out.contains("save")) out.add("create");
-        return out;
+        return clean ? io.elasticore.base.model.pub.rules.SourceCode.withCallers(out) : out;
     }
 }

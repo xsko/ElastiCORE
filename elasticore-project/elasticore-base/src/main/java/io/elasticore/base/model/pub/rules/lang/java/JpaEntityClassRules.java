@@ -200,13 +200,16 @@ public class JpaEntityClassRules implements CodeRules {
         return sb.toString();
     }
 
-    /** A roll-up entity carries its discriminator value at class level. */
+    /**
+     * A roll-up entity carries its discriminator value at class level: the
+     * discriminator, else the target, else the entity's name - as 2.x
+     * (EntitySrcFilePublisher), which never reads @rollup(X)'s own value.
+     */
     private void rollUpDiscriminator(SourceCode c, EntitySpec e) {
         if (!e.hasMeta("rollup")) return;
 
         String value = e.metaValue("rollup.discriminator");
         if (value == null) value = e.metaValue("rolluptarget");
-        if (value == null) value = e.metaValue("rollup");
         if (value == null) value = e.getName();
 
         c.line(BLOCK, "@DiscriminatorValue(%s)", RuleText.quote(value));

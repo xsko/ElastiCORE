@@ -71,7 +71,13 @@ public class MapperSpecRules implements CodeRules {
             }
         }
         condition = SearchDtoBaseRules.effectiveCondition(c, f, condition);
-        if (!c.compatible() && !knownCondition(condition)) {
+        if (!c.compatible() && "%".equals(condition)) {
+            // A lone % reads as a leading one: the value ends the column.
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s @search(%%) searches by the end of the value (like '%%' + value) - say %%_ for"
+                            + " that, _%% for the start or %%_%% for any part.",
+                    e.domainClassName(), e.getName(), f.name()));
+        } else if (!c.compatible() && !knownCondition(condition)) {
             io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                     "[%s] %s.%s @search(%s) is not a search condition, so it searches by equality - say eq, like,"
                             + " %%_%%, %%__%%, __=, _%%, %%_, >, >=, <, <=, in, between or isnull.",
@@ -315,7 +321,6 @@ public class MapperSpecRules implements CodeRules {
                         "r,q,c", String.format(predicate, args))));
     }
 
-    /** A value the surrounding hasValue guard has already established. */
     /**
      * The value an ignore-case condition compares, in lower case. 2.x's text
      * as it was; the clean output lowers through the language (Kotlin's
@@ -339,6 +344,7 @@ public class MapperSpecRules implements CodeRules {
         return condition.length() > 1 && (condition.startsWith("%") || condition.endsWith("%"));
     }
 
+    /** A value the surrounding hasValue guard has already established. */
     private static String nn(SourceCode c, String expression) {
         return c.syntax().notNull(expression);
     }

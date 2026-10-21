@@ -2040,6 +2040,17 @@ public final class SpecFactory {
         return commandOnlyRoots;
     }
 
+    /** Whether a TypeScript run's server renders the 2.x-compatible skeletons (no v3, no Kotlin). */
+    private static volatile boolean compatibleServer;
+
+    public static void compatibleServer(boolean on) {
+        compatibleServer = on;
+    }
+
+    public static boolean compatibleServer() {
+        return compatibleServer;
+    }
+
     private static boolean isEmbeddable(String typeName, ECoreModel model) {
         if (typeName == null) return false;
         Entity e = model.getEntityModels().findByName(typeName);
