@@ -1,5 +1,5 @@
 # The 3.0 domain-rule DSL in Kotlin: who may do what (@access, @owner),
-# sign-in (@login, @password), a lifecycle (states) and values the model
+# sign-in (@login, @password, @signin - grade is the session's role, @role), a lifecycle (states) and values the model
 # derives (@snapshot, @compute). The Java side of the same is the pet store
 # sample (elasticore-sample-petstore).
 
@@ -25,12 +25,12 @@ enumeration:
 
 entity:
   Agent:
-    meta: entity @root @editable @expose(20) @owner(agentId) @access(read=owner, create=public, update=owner) -- 상담원
+    meta: entity @root @editable @expose(20) @signin @owner(agentId) @access(read=owner, create=public, update=owner) -- 상담원
     fields:
       agentId: long @id @sequence
       login:    string(20)! @login
       secret:   string(255)! @password
-      grade:    string(10) @access(admin)
+      grade:    string(10) @access(admin) @role
 
   Ticket:
     meta: entity @root @expose(20) @owner(agentId) @access(read=owner, create=user, close=owner) @event(Closed) -- 작업

@@ -207,6 +207,19 @@ public class TypeScriptDtoFileRules implements CodeRules {
                 checks.add(f.isStringType()
                         ? String.format("if (partial ? %s === '' : (%s == null || %s === '')) errors.%s = %s;", v, v, v, name, RuleText.quote(label + " is required"))
                         : String.format("if (!partial && %s == null) errors.%s = %s;", v, name, RuleText.quote(label + " is required")));
+            } else if (f.isList() && f.dslValueAny("minsize") != null) {
+                // @minsize(1, '...'): what the server's @NotNull and @Size refuse with 400, said first.
+                String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(f.dslValueAny("minsize"));
+                try {
+                    int least = Integer.parseInt(bound[0].trim());
+                    if (least >= 1) {
+                        String message = bound[1] != null ? bound[1] : label + " needs at least " + least;
+                        checks.add(String.format("if (!partial && (%s == null || %s.length < %d)) errors.%s = %s;",
+                                v, v, least, name, RuleText.quote(message)));
+                    }
+                } catch (NumberFormatException notANumber) {
+                    // a bound the server does not read as a number either
+                }
             }
             if (f.isStringType()) {
                 if (f.validationMaxLength() >= 0) {

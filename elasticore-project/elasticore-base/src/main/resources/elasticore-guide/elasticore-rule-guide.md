@@ -118,7 +118,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
 | `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값. TS 는 `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
-| `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate` (v3 번들 전부) |
+| `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`·`me()`, `@signin` 이면 컨트롤러의 signin·signout·me (v3 번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
 | 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
@@ -434,6 +434,9 @@ DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노�
 - 템플릿의 슬롯(`${accessCreate}` 등)은 선언이 없으면 비어 있어 생성물이 바뀌지 않습니다.
 - 런타임: `io.elasticore.springboot3.security` 의 `CurrentUser`(기본 `SessionCurrentUser`),
   `AccessPolicy`, `PasswordHasher`(기본 PBKDF2), 401·403 예외. 빈을 등록하면 그것을 씁니다.
+- `@login` + `@password` 엔티티의 CoreService·유스케이스에는 `authenticate` 와 `me()` 가 생깁니다. 엔티티 줄에
+  `@signin` 까지 있으면(모델에 하나만) 그 컨트롤러에 `signin`·`signout`·`me` 엔드포인트도 이 규칙이 씁니다 -
+  컨트롤러는 개발자 소유라, 손댄 컨트롤러에는 들어가지 않고 생성 로그가 DSL 경고로 알려 줍니다.
 
 #### 트랜잭션 Outbox (`ddd-outbox`)
 
@@ -919,9 +922,10 @@ HTTP/1.1 409
   "code": "state.PurchaseOrder.status.cancel", "status": 409 }
 ```
 
-3.0.261021 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 둘 다 422). 오류 처리기는
-generate-once 라 **이미 있는 프로젝트의 `<도메인>ApiErrors` 는 422 그대로**입니다 - 새 응답을 원하면 그 파일을
-지우고 빌드하거나(손댄 곳이 없을 때), `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고칩니다.
+3.0.261021 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 둘 다 422). 이미 있는 프로젝트에서는
+`<도메인>ApiErrors` 를 **손댄 적이 없으면** 다시 생성되어(`REGENERATED(owned, never edited)`) 새 응답으로 바뀌고 -
+422 로 분기하던 클라이언트가 있으면 함께 고칩니다 - **손댄 적이 있으면** 그대로라 생명주기 거절도, 없는 참조도 422 로
+답합니다. 그 파일의 `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고치세요.
 
 `Accept-Language` 가 없거나 번역이 없는 언어면
 `"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"` 입니다.

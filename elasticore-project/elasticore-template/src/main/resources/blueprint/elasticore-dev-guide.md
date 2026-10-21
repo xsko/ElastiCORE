@@ -626,4 +626,8 @@ entity:
 - Q 클래스 재생성: `./gradlew clean build`
 - Specification 디버깅: 개별 조건을 분리하여 단위 테스트
 - 생성 코드 확인: `build/generated/sources/` 또는 namespace 경로 직접 확인
-- YAML 파싱 오류: `./gradlew elcore --info` 로 상세 로그 확인
+- YAML 파싱 오류: 출력의 `* LOAD ERROR: <파일>` 과 바로 아래 파서 메시지(`mapping values are not allowed here ...
+  line 41, column 40`)가 고칠 곳입니다. 흔한 원인은 `-- 설명` 안의 `: ` (예: `-- 주문한 사람: 로그인한 회원`) 이고,
+  `,` 나 ` - ` 로 바꾸면 됩니다. 규칙 엔진(`elcore3`)은 3.0.261021 부터 이때 빌드를 멈춥니다
+  (`[elcore3] the model check failed`). 전에는 그 파일을 빼고 생성이 성공해, 엉뚱한 곳의 컴파일 오류로만 드러났습니다.
+  2.x 생성기(`elcore`)는 그대로 경고만 합니다.

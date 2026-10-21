@@ -78,6 +78,12 @@ private String creditCardNumber;
 private CreditCard creditCard;
 ```
 
+값 객체의 컬럼은 그것을 담는 엔티티의 테이블에 생깁니다. 그래서 어느 엔티티가 값 객체를 **선택으로**
+담으면(`shipTo: Address @Embedded`, `!` 없음) 그 값 객체의 `!` 필드는 컬럼에 `nullable = false` 를 붙이지
+않습니다 (3.0.261021 부터, v3). 값이 오면 DTO 가 필수 필드를 검사하고(400), 값이 없는 행은 그대로 저장됩니다.
+전에는 배송지를 보내지 않은 주문이 `NULL not allowed for column "ZIPCODE"` (400 `required`) 로 저장되지 않았습니다.
+늘 필수로만 담는 값 객체(`card: Card! @Embedded`)는 지금처럼 NOT NULL 입니다.
+
 > **주의**: 값 객체는 통째로 교체됩니다. 응답에 없는 `@writeonly` 필드를 가진 값 객체를 읽어서
 > 그대로 다시 저장하면 그 필드는 비어서 옵니다 - 필수면 400, 선택이면 null 로 저장됩니다.
 > 카드처럼 **생성할 때만 받는 값**에 쓰고, 수정이 필요하면 값 전체를 다시 받으세요.
@@ -1853,18 +1859,35 @@ Customer:
     role: UserRole @default(UserRole.USER) @access(admin)   # 가입자가 스스로 관리자가 될 수 없음
 ```
 
-로그인은 **생성됩니다** (세션 기본값, 3.0.261021 부터). `@login` 과 `@password` 가 있고 `@expose` 된 엔티티의
-컨트롤러에 세 엔드포인트가 붙습니다:
+로그인 API 는 **엔티티 줄에 `@signin` 을 쓰면 생성됩니다** (세션 기본값, 3.0.261021 부터). `@login` 과
+`@password` 가 있고 `@expose` 된 엔티티여야 합니다:
+
+```yaml
+Customer:
+  meta: entity @root @editable @expose(20) @signin @owner(customerId) @access(read=owner, create=public, update=owner)
+```
 
 | 요청 | 답 |
 |---|---|
 | `POST /api/shop/customer/signin` `{"login": "...", "password": "..."}` (키는 두 필드의 이름) | 200 고객 (비밀번호 없음), 세션 시작. 틀리면 401 `Wrong login or password` |
 | `POST /api/shop/customer/signout` | 204, 세션 끝 |
-| `GET /api/shop/customer/me` | 200 로그인한 고객, 방문자는 401 |
+| `GET /api/shop/customer/me` | 200 로그인한 고객, 방문자는 401 (`/me` 라는 문자열 키의 행은 `GET /{id}` 로 읽을 수 없음) |
 
-세션에는 행의 키와 **역할**이 들어갑니다. 역할은 `@role` 을 붙인 필드, 없으면 `role` 이라는 필드의 값입니다
-(enum 이면 상수 이름 - `UserRole.ADMIN` 이면 `ADMIN`, `adminRole` 과 비교). 역할 필드가 없으면 모두 일반 사용자입니다.
-TypeScript 클라이언트에도 `signIn(login, password)`, `signOut()`, `me()` (방문자면 null) 가 생깁니다.
+TypeScript 클라이언트에도 `signIn(login, password)`, `signOut()`, `me()` (방문자면 null) 가 생깁니다. 쿠키 세션이라
+화면과 API 가 같은 출처(origin)일 때 동작합니다.
+
+세션에는 행의 키와 **역할**이 들어갑니다. 역할은 `@role` 을 붙인 필드, 없으면 `role` 이라는 필드의 값으로,
+**`@access(admin)` 인 enum 이나 문자열 필드만** 씁니다 (enum 이면 상수 이름 - `UserRole.ADMIN` 이면 `ADMIN`,
+`adminRole` 과 비교). 관리자만 쓰는 필드가 아니면 가입자가 `"role":"ADMIN"` 을 보내고 로그인해 관리자가 되므로,
+빌드가 DSL 경고를 내고 역할 없이 로그인합니다. 역할 필드가 없으면 모두 일반 사용자입니다.
+
+- **모델에 `@signin` 엔티티는 하나만.** 세션은 맨 키만 들고 있어, 둘이면 판매자 7 이 고객 7 로 읽힙니다. 둘 이상이면
+  어디에도 만들지 않고 DSL 경고를 냅니다. 키가 둘 이상인 엔티티도 경고만 합니다.
+- 틀린 비밀번호를 몇 번까지 허용할지, 정지된 계정을 막을지 같은 로그인 규칙은 개발자 소유인 `CustomerService` 에서
+  `authenticate(login, password)` 를 override 해 씁니다 - 생성된 `signin` 이 그것을 부릅니다.
+- 컨트롤러는 개발자 소유라 **손댄 컨트롤러에는 들어가지 않습니다.** 빌드가 `... is yours and does not serve POST /signin,
+  POST /signout, GET /me ...` 를 DSL 경고로 알려 주면, 그 파일을 지우고 빌드해(손댄 내용은 옮겨 두고) 생성된 것을 보거나
+  세 메서드를 옮겨 적습니다.
 
 손으로 세션을 다룰 때 (가입하고 바로 로그인 같은 것):
 
@@ -1873,8 +1896,8 @@ SessionCurrentUser.signIn(request, customer.getCustomerId(), customer.getRole().
 SessionCurrentUser.signOut(request);
 ```
 
-Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈을 등록하고, 생성되는 로그인 API 는
-`env.yml` 의 `config: signin: false` 로 끕니다 (`authenticate` 는 남음).
+Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈을 등록하고 `@signin` 은 쓰지 않습니다
+(`authenticate` 는 남음).
 
 ## @password / @login — 자격 증명 (v3)
 
@@ -1887,7 +1910,7 @@ password: string(255)! @password      # 해시 길이를 담을 만큼 (PBKDF2 �
 - 응답·검색·DTO 복사에 나오지 않음 (`@writeonly` 와 같음), TypeScript 에서 optional.
 - `@login` 과 `@password` 가 함께 있으면 CoreService·유스케이스에 `authenticate(login, password)` 와 `me()` 생성.
   없는 로그인도 같은 해시 비용을 치러 응답 시간으로 계정 존재를 알 수 없음.
-- 그 엔티티가 `@expose` 면 컨트롤러에 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표).
+- 엔티티 줄에 `@signin` 까지 쓰면 컨트롤러에 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표).
 
 ## @snapshot / @compute — 파생 값 (DDD 룰셋)
 

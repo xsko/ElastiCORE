@@ -348,9 +348,9 @@ OrderLine:
 주문 (로그인 안 함)                      → 401 "Sign in to create PurchaseOrder"
 주문 (단가 0.01, 상태 SHP 를 보내 봄)     → 200 단가 10.00, 상태 PLC - 서버가 정함
 배송 (고객)                              → 403 "ship PurchaseOrder is for the administrator"
-취소 (배송된 주문)                       → 422 "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"
-취소 (배송된 주문, Accept-Language: ko)  → 422 "주문 상태가 SHIPPED이면 취소할 수 없습니다 ..."  code: state.PurchaseOrder.status.cancel
-삭제 (배송된 주문)                       → 422 "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"
+취소 (배송된 주문)                       → 409 "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"
+취소 (배송된 주문, Accept-Language: ko)  → 409 "주문 상태가 SHIPPED이면 취소할 수 없습니다 ..."  code: state.PurchaseOrder.status.cancel
+삭제 (배송된 주문)                       → 409 "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"
 남의 주문 조회                           → 404
 ```
 

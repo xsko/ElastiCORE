@@ -6,7 +6,8 @@ package io.elasticore.springboot3.validation;
  * Thrown by the generated invariant listeners. An IllegalStateException, as
  * it always was - code that caught that still catches this - but a type of
  * its own, so the API can tell a broken business rule (the request asked for
- * something the domain refuses: 422) from a broken program (500). Spring
+ * something the domain refuses: 409 for a step its state does not allow, 404 for a
+ * row it refers to that is not there, 422 for any other rule) from a broken program (500). Spring
  * wraps what a repository throws, so a handler looks for this one in the
  * cause chain rather than at the top.
  */

@@ -29,7 +29,9 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *   DuplicateKeyException                409  a create named a taken identifier
  *   OptimisticLockingFailureException    409  the version sent is not the row's
  *   ConstraintViolationException         400  a value breaks its constraint
- *   InvariantViolationException (cause)  422  the aggregate refuses that state
+ *   InvariantViolationException (cause)  409  a step the state does not allow (state.*)
+ *                                        404  a row the request refers to is not there (reference.*)
+ *                                        422  any other rule the aggregate refuses
  * </pre>
  *
  * One file per domain that exposes anything, beside its controllers and

@@ -41,6 +41,15 @@ public final class ModelCheck {
         }
     }
 
+    /**
+     * A failure already said where it happened - a model file the loader could
+     * not parse, printed with the parser's own message: counted here, so the
+     * rule engine's run ends non-zero, and not said again.
+     */
+    public static void failSaid(String message) {
+        if (SAID.add("fail:" + message)) FAILURES.add(message);
+    }
+
     /** The failures said so far, in order. */
     public static List<String> failures() {
         synchronized (FAILURES) {

@@ -294,7 +294,9 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
             }
         }
         for (FieldSpec f : e.fields()) {
-            if (!f.isList() || !DddCollectionRules.owns(e, f) || !e.references(f.coreItemType())) continue;
+            // The same members SpecFactory.registerReferencing counted: owned, or cascaded to.
+            if (!f.isList() || !f.isEntityRef() || !e.references(f.coreItemType())) continue;
+            if (!DddCollectionRules.owns(e, f) && !f.hasDsl("cascade")) continue;
             if (kt) {
                 body.add(String.format("this.%s?.forEach { it.requireReferences(lookup) }", f.name()));
             } else {
@@ -302,8 +304,9 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
                         f.name(), f.coreItemType(), f.name()));
             }
         }
-        if (body.isEmpty()) return;
-
+        // Written even with nothing to check: whatever holds this entity, and its
+        // service, call it because the model says it references - a method that is
+        // missing would not compile, one that is empty costs nothing.
         c.varLine("fieldList", "")
          .varLine("fieldList", "/**")
          .varLine("fieldList", " * Refuses an identity that names no row: each row this one refers to by its")

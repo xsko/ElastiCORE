@@ -456,14 +456,29 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /**
-     * Whether the API signs in through this entity: a @login and a @password,
-     * exposed, one key, and not turned off with {@code config: signin: false}
-     * (an application that signs in its own way - Spring Security's form, say).
+     * Whether the API signs in through this entity: the entity line says
+     * {@code @signin}, it has a @login and a @password, it is exposed, it has
+     * one key of a type a session holds, and it is the only entity of the
+     * model that says @signin - the session holds a bare key, which two
+     * signing-in entities would read as each other's.
+     *
+     * Asked for, not assumed: an application that signs in its own way (its
+     * own checks of an account's state, Spring Security) gets no second path.
      */
     public static boolean signsIn(EntitySpec e) {
-        if (!hasMe(e) || !e.hasMeta("expose")) return false;
-        String off = e.config("signin");
-        return off == null || !"false".equalsIgnoreCase(off.trim());
+        return e.hasMeta("signin") && hasMe(e) && e.hasMeta("expose") && e.signInEntities() == 1;
+    }
+
+    /** Why an entity that says @signin gets no sign-in endpoints; null when it gets them or does not ask. */
+    static String whyNoSignIn(EntitySpec e) {
+        if (!e.hasMeta("signin")) return null;
+        if (loginField(e) == null) return "it needs one field marked @login and exactly one marked @password";
+        if (e.pkFields().size() != 1 || idType(e.pkFields().get(0).typeName()) == null)
+            return "its key must be one long, int, string or UUID field - the session holds it";
+        if (!e.hasMeta("expose")) return "it is not @expose - there is no controller to put them on";
+        if (e.signInEntities() > 1)
+            return "more than one entity says @signin, and the session holds a bare key they would read as each other's";
+        return null;
     }
 
     /** Whether the service has me(): an entity that signs in (@login, @password) with one key of a type a session holds. */
@@ -471,15 +486,39 @@ public class ServiceAccessRules implements CodeRules {
         return loginField(e) != null && e.pkFields().size() == 1 && idType(e.pkFields().get(0).typeName()) != null;
     }
 
-    /** The field the signed-in user's role is read from: the one marked @role, else one named role. */
+    /**
+     * The field the signed-in user's role is read from: the one marked @role,
+     * else one named role - when only an administrator may write it
+     * (@access(admin)) and it is an enum or a string. A role a member could
+     * set on their own record would let them sign in as an administrator.
+     */
     public static FieldSpec roleField(EntitySpec e) {
+        FieldSpec f = roleCandidate(e);
+        return f != null && roleIsSafe(e, f) ? f : null;
+    }
+
+    private static FieldSpec roleCandidate(EntitySpec e) {
         for (FieldSpec f : e.fields()) {
             if (f.hasDsl("role")) return f;
         }
         for (FieldSpec f : e.fields()) {
-            if ("role".equals(f.name()) && !f.isList()) return f;
+            if ("role".equals(f.name())) return f;
         }
         return null;
+    }
+
+    private static boolean roleIsSafe(EntitySpec e, FieldSpec f) {
+        if (f.isList() || !adminOnly(f)) return false;
+        String type = simple(f.typeName());
+        return e.isKnownEnum(type) || "String".equals(type);
+    }
+
+    private static final java.util.Set<String> SAID_SIGN_IN =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
+    private static void warnSignIn(EntitySpec e, String what) {
+        String message = String.format("[%s] %s: %s", e.domainClassName(), e.getName(), what);
+        if (SAID_SIGN_IN.add(message)) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", message);
     }
 
     /**
@@ -497,7 +536,15 @@ public class ServiceAccessRules implements CodeRules {
      */
     @Rule(value = "spring-signin-control", target = "control", order = 31)
     void signInControl(EntitySpec e) {
+        String why = whyNoSignIn(e);
+        if (why != null) warnSignIn(e, "@signin generates no sign-in: " + why);
         if (!signsIn(e)) return;
+        FieldSpec candidate = roleCandidate(e);
+        if (candidate != null && !roleIsSafe(e, candidate)) {
+            warnSignIn(e, candidate.name() + " is not put in the session as a role: only a field an administrator alone"
+                    + " writes (@access(admin)), an enum or a string, can be - otherwise a member could make"
+                    + " themselves an administrator. Signed-in users get no role.");
+        }
         SourceCode c = ctx(e);
         boolean kt = c.syntax() == Syntax.KOTLIN;
         String entity = e.getName();

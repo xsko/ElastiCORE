@@ -182,7 +182,7 @@ public class TypeScriptApiRules implements CodeRules {
             }
             method(c, "signIn", syntax.parameter("string", login) + ", " + syntax.parameter("string", password), dto,
                     String.format("request<%s>('POST', BASE + '/signin', { %s, %s })", dto, login, password),
-                    "Signs in: the session cookie is set and the " + e.getName() + " answered; ApiError 401 when the "
+                    "Signs in: the session cookie is set (same origin) and the " + e.getName() + " answered; ApiError 401 when the "
                             + login + " or the password is wrong.");
             method(c, "signOut", "", "void", "request<void>('POST', BASE + '/signout')",
                     "Signs out: the session ends.");

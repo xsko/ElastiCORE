@@ -349,9 +349,9 @@ Real requests to the sample application, and its answers:
 order (not signed in)                      → 401 "Sign in to create PurchaseOrder"
 order (sends unit cost 0.01, status SHP)   → 200 unit cost 10.00, status PLC - the server decides
 ship (as a customer)                       → 403 "ship PurchaseOrder is for the administrator"
-cancel (a shipped order)                   → 422 "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"
-cancel (shipped, Accept-Language: ko)      → 422 the same in Korean,  code: state.PurchaseOrder.status.cancel
-delete (a shipped order)                   → 422 "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"
+cancel (a shipped order)                   → 409 "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"
+cancel (shipped, Accept-Language: ko)      → 409 the same in Korean,  code: state.PurchaseOrder.status.cancel
+delete (a shipped order)                   → 409 "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"
 someone else's order                       → 404
 ```
 

@@ -346,7 +346,11 @@ public class JpaEntityBaseRules implements CodeRules {
             col.valIf(f.hasDsl("text"), "columnDefinition", "TEXT")
                .valIf(f.hasDsl("longtext"), "columnDefinition", "LONGTEXT");
         }
-        col.valIf(f.required(), "nullable", false)
+        // A value type embedded somewhere without being required keeps its columns
+        // nullable: its required fields are checked when the value is sent (the DTO),
+        // and a NOT NULL column would refuse every row that has no such value.
+        boolean optionalValue = !ctx(e).compatible() && e.hasMeta("embeddable") && e.embeddedOptionally(e.getName());
+        col.valIf(f.required() && !optionalValue, "nullable", false)
            .valIf("false".equals(f.dslValue("updatable")), "updatable", false);
 
         // 2.x keeps the enum's db length in a second bucket, consulted only

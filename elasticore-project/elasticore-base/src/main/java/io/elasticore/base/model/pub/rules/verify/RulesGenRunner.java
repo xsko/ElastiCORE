@@ -265,6 +265,7 @@ public final class RulesGenRunner {
         // What an earlier run in this JVM found is not this run's to report.
         io.elasticore.base.model.pub.rules.ModelCheck.reset();
         io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
+        SpecFactory.applicationSignIns(0);
 
         boolean v3 = Boolean.getBoolean("elasticore.rules.v3");
         boolean force = Boolean.getBoolean("elasticore.rules.force");
@@ -427,7 +428,7 @@ public final class RulesGenRunner {
         // still generated, so all of its findings were said in this one run.
         java.util.List<String> refused = io.elasticore.base.model.pub.rules.ModelCheck.failures();
         if (!refused.isEmpty()) {
-            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the model check failed (" + refused.size() + "):");
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the model check failed (" + refused.size() + ") - fix these and build again:");
             for (String r : refused) io.elasticore.base.util.ConsoleLog.printWarn("  " + r);
             return 1;
         }
@@ -512,6 +513,10 @@ public final class RulesGenRunner {
         // The refusal codes this domain's rules record as they generate - one
         // catalog for the domain, however many models its blueprint holds.
         io.elasticore.base.model.pub.rules.ErrorCatalog.begin();
+        // One session for the whole application: @signin is counted over every domain.
+        int signIns = 0;
+        for (ECoreModel any : allModels) signIns += SpecFactory.signInEntities(any);
+        SpecFactory.applicationSignIns(signIns);
 
         for (ECoreModel model : models) {
             if (!generatedModels.add(model)) continue;
@@ -2162,6 +2167,41 @@ public final class RulesGenRunner {
         return java.util.Collections.emptyList();
     }
 
+    private static final java.util.regex.Pattern ENDPOINT = java.util.regex.Pattern.compile(
+            "@(Get|Post|Put|Delete|Patch)Mapping\\(\\s*(?:value\\s*=\\s*|path\\s*=\\s*)?\"([^\"]*)\"");
+
+    /**
+     * A controller of the developer's that the DSL has since given more to
+     * serve - a lifecycle command, the sign-in of @signin. The file is left
+     * alone, so the endpoint would not exist while the TypeScript client
+     * (always regenerated) calls it. Said as a DSL warning, naming each one.
+     */
+    private void warnIfEndpointsMissing(ArtifactTarget out, File file, String wouldWrite) {
+        if (out.fileName() == null || !out.fileName().endsWith("Controller")) return;
+        String existing;
+        try {
+            existing = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return;
+        }
+        java.util.Set<String> have = endpoints(existing);
+        java.util.List<String> missing = new java.util.ArrayList<String>();
+        for (String endpoint : endpoints(wouldWrite)) {
+            if (!have.contains(endpoint)) missing.add(endpoint);
+        }
+        if (missing.isEmpty()) return;
+        io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", out.relativePath() + " is yours and does not serve "
+                + String.join(", ", missing) + ", which the DSL now gives it - add them as the generator would write"
+                + " them (delete the file and build to see that), or the TypeScript client calls endpoints that do not exist");
+    }
+
+    private static java.util.Set<String> endpoints(String source) {
+        java.util.Set<String> found = new java.util.LinkedHashSet<String>();
+        java.util.regex.Matcher m = ENDPOINT.matcher(source);
+        while (m.find()) found.add(m.group(1).toUpperCase(java.util.Locale.ROOT) + " " + m.group(2));
+        return found;
+    }
+
     private void warnIfConstructorDrifted(ArtifactTarget out, File file, String wouldWrite) {
         java.util.List<String> expected = new java.util.ArrayList<String>();
         for (String line : wouldWrite.split("\\r?\\n")) {
@@ -2682,6 +2722,7 @@ public final class RulesGenRunner {
             } else if (st != null && st.getStatus() == HashUtils.UNTRACKED) {
                 skipped++;
                 System.out.println(label + "  SKIP(user-owned)");
+                warnIfEndpointsMissing(out, file, content);
                 warnIfConstructorDrifted(out, file, content);
                 warnIfClassAnnotationsDrifted(out, file, content);
                 warnIfBaseNotExtended(out, file, content);

@@ -264,7 +264,7 @@ page.append('''<!doctype html>
         <tbody>
           <tr><td><a href="#browse">1. 상품 둘러보기</a></td><td>누구나</td><td>''' + cov('all') + '''</td><td>-</td></tr>
           <tr><td><a href="#catalog-admin">2. 상품 관리</a></td><td>관리자</td><td>''' + cov('most') + '''</td><td>"품목이 있는 상품은 못 지움" 은 DB 외래 키로만. 관리 화면 없음</td></tr>
-          <tr><td><a href="#signup">3. 회원 가입</a></td><td>방문자</td><td>''' + cov('most') + '''</td><td>가입 후 바로 로그인(세션) · 비밀번호 최소 길이 없음</td></tr>
+          <tr><td><a href="#signup">3. 회원 가입</a></td><td>방문자</td><td>''' + cov('most') + '''</td><td>가입 후 바로 로그인(세션) · 비밀번호 최소 길이는 넣지 않음 (데모 계정)</td></tr>
           <tr><td><a href="#signin">4. 로그인·로그아웃</a></td><td>누구나</td><td>''' + cov('hand') + '''</td><td>로그인 API 3개(세션)는 손으로. 비밀번호 확인은 생성</td></tr>
           <tr><td><a href="#profile">5. 내 정보</a></td><td>고객</td><td>''' + cov('all') + '''</td><td>(현재 비밀번호 확인 없이 비밀번호 변경)</td></tr>
           <tr><td><a href="#cart">6. 장바구니</a></td><td>누구나</td><td>''' + cov('none') + '''</td><td>브라우저에만 있음 (의도)</td></tr>
@@ -328,9 +328,9 @@ page.append('''
         <div><p class="label">생성: 가입·수정 때 역할 보호와 해시</p>''' + code('gen-customer', 'java') + '''</div>
         <div><p class="label">손으로: 가입하고 바로 로그인 (세션 시작)</p>''' + code('gen-account', 'java') + '''</div>
       </div>
-      <div class="gap"><b>DSL 로 못 하는 것:</b> 비밀번호 최소 길이·복잡도. 지금은 한 글자 비밀번호도 가입됩니다(확인함).
-        <code>@length(min=8, max=255)</code> 를 붙여도 <code>string(255)</code> 의 최대 길이만 생성되고 최소 길이는 <b>조용히 무시</b>됩니다 - 고칠 대상입니다.
-        (이 샘플은 원본의 데모 계정 <code>user/user</code> 를 쓰므로 정책을 넣지 않았습니다.)</div>
+      <div class="gap"><b>이 샘플에 없는 것:</b> 비밀번호 최소 길이. <code>password: string(255)! @password @length(min=8)</code> 이면
+        보낸 비밀번호를 해시하기 전에 검사해 7자는 400 입니다(DTO 의 <code>@Size(min=8, max=255)</code>). 이 샘플은 원본의 데모 계정
+        <code>user/user</code> 를 쓰므로 넣지 않았습니다. 복잡도(문자 종류)는 <code>@pattern</code> 으로 씁니다.</div>
 ''')
 SECTIONS.append(src('customer', block(ENTITY, 'Address') + '\n\n' + block(ENTITY, 'Customer')))
 SECTIONS.append(src('gen-customer', '// CustomerCoreService (생성)\n' + G_CUSTOMER))
@@ -342,7 +342,7 @@ page.append('''
       <p class="biz">고객은 로그인 ID 와 비밀번호로 로그인하고, 로그아웃합니다. 화면은 접속할 때 "지금 누구인지" 를 묻습니다.</p>
 ''' + rules([
     ('ID 와 비밀번호가 맞아야', '<code>login … @login</code> + <code>password … @password</code> → 생성 <code>authenticate(login, password)</code>', '틀린 비밀번호·없는 ID 모두 401 (같은 시간이 걸리게 - 어느 쪽인지 알리지 않음)'),
-    ('로그인 유지', '같은 두 줄 → 생성 <code>POST /customer/signin</code>: 세션에 고객 ID 와 역할(<code>role</code> 필드)을 넣음', '200, 이후 요청은 그 고객으로'),
+    ('로그인 유지', '엔티티 줄의 <code>@signin</code> → 생성 <code>POST /customer/signin</code>: 세션에 고객 ID 와 역할(<code>role ... @access(admin)</code> 필드)을 넣음', '200, 이후 요청은 그 고객으로'),
     ('로그아웃', '생성 <code>POST /customer/signout</code>', '204, 이후 <code>/customer/me</code> 401'),
     ('지금 누구인가', '생성 <code>GET /customer/me</code>', '방문자 401, 고객 200'),
     ('로그인 안 했으면 방문자', '런타임 <code>SessionCurrentUser</code> (요청 밖에서는 아무도 아님)', '-'),
@@ -351,9 +351,9 @@ page.append('''
         <div><p class="label">생성: 비밀번호 확인</p>''' + code('gen-auth', 'java') + '''</div>
         <div><p class="label">생성: 로그인 API (CustomerController)</p>''' + code('gen-signin', 'java') + '''</div>
       </div>
-      <div class="gap"><b>로그인 API 는 생성됩니다:</b> <code>@login</code> 과 <code>@password</code> 가 있고 <code>@expose</code> 된 엔티티의 컨트롤러에
-        <code>signin</code>·<code>signout</code>·<code>me</code> 가 붙습니다. 화면은 생성된 TS 클라이언트의 <code>signIn</code>·<code>signOut</code>·<code>me</code> 를 씁니다.
-        Spring Security 처럼 로그인을 따로 하는 앱은 <code>env.yml</code> 의 <code>config: signin: false</code> 로 끕니다.</div>
+      <div class="gap"><b>로그인 API 는 생성됩니다:</b> <code>@login</code>·<code>@password</code> 가 있는 <code>Customer</code> 의 줄에 <code>@signin</code> 을 쓰면
+        그 컨트롤러에 <code>signin</code>·<code>signout</code>·<code>me</code> 가 붙습니다. 화면은 생성된 TS 클라이언트의 <code>signIn</code>·<code>signOut</code>·<code>me</code> 를 씁니다.
+        역할은 관리자만 쓰는 <code>role</code> 필드라서 세션에 들어갑니다 - 그렇지 않은 필드면 가입자가 스스로 관리자가 될 수 있어 빌드가 경고하고 넣지 않습니다.</div>
 ''')
 SECTIONS.append(src('gen-auth', '// CustomerCoreService (생성) - @login + @password\n' + G_AUTH))
 SECTIONS.append(src('gen-signin', '// CustomerController (생성) - @login + @password + @expose\n' + G_SIGNIN))
@@ -558,7 +558,7 @@ page.append('''
           <tr><td>3</td><td>가격 정책 - 설정 값으로 계산</td><td>손으로 <code>place()</code></td><td><code>policy:</code> - <code>vat: total * config(vat-rate) / 100</code> 같은 계산</td></tr>
           <tr><td>4</td><td>기본값 규칙 - 배송지 = 집 주소, 주문일 = 오늘</td><td>손으로</td><td><code>@default(customer.homeAddress)</code>, <code>@default(today)</code></td></tr>
           <tr><td>5</td><td>로그인 API</td><td><b>완료</b> - <a href="#signin"><code>@login</code> + <code>@password</code></a></td><td>signin·signout·me 와 TS 클라이언트 생성. 가입 후 자동 로그인은 손으로</td></tr>
-          <tr><td>6</td><td>비밀번호 최소 길이</td><td><code>@length(min=8)</code> 이 조용히 무시됨 (버그)</td><td>최소 길이 생성 + <code>@password(min=8)</code></td></tr>
+          <tr><td>6</td><td>비밀번호 최소 길이</td><td><b>된다</b> - <code>@length(min=8)</code> 이 해시 전에 검사됨 (이 샘플은 데모 계정 때문에 넣지 않음)</td><td>-</td></tr>
           <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 409 와 업무 문구</td></tr>
           <tr><td>8</td><td>기준·데모 데이터</td><td><code>data.sql</code>, <code>DemoAccounts</code></td><td><code>data:</code> 블록 (가입과 같은 규칙 - 해시 등 - 을 거쳐 넣음)</td></tr>
           <tr><td>9</td><td>기본 정렬</td><td>화면이 지정</td><td><code>@expose(20, sort=orderDate desc)</code></td></tr>

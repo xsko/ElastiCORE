@@ -28,7 +28,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * Each move becomes its command, written: the command checks the state it is
  * given in, moves to the next one and raises the event named for it
  * (SHIPPED raises Shipped, when @event declares one). A move from a state it
- * does not start in is refused as the domain refuses anything - 422 - in the
+ * does not start in is refused - 409, it conflicts with the row as it is - in the
  * domain's words. A new row starts in the initial state.
  *
  * The command was an abstract method the developer had to write; with a move
@@ -265,7 +265,7 @@ public class DddStateRules implements CodeRules {
     /**
      * delete: CANCELLED - a row is deleted only in the states its lifecycle
      * names. canDelete() says whether it may be now (a screen hides the
-     * button); checkDeletable() refuses (422) before JPA removes it, on every
+     * button); checkDeletable() refuses (409) before JPA removes it, on every
      * path a delete takes - by id, by search, by cascade. JPA allows one
      * @PreRemove per class: where the invariant rules already mark the root
      * as being removed, that method calls this check and this one is not
@@ -311,7 +311,7 @@ public class DddStateRules implements CodeRules {
               .varLine("fieldList", "}");
 
         c.varLine("fieldList", "")
-         .varLine("fieldList", "/** Refuses a delete in any other state: 422, and the row stays. */");
+         .varLine("fieldList", "/** Refuses a delete in any other state: 409, and the row stays. */");
         if (annotate) c.varLine("fieldList", "@jakarta.persistence.PreRemove");
         c.varLine("fieldList", kt ? "fun checkDeletable() {" : "void checkDeletable() {");
         for (EntitySpec.StateMachine m : guards) {

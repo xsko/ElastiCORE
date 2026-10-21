@@ -19,7 +19,7 @@ What ElastiCORE puts together, and no single tool below does:
    invariants and derived values in the DDD and hexagonal ones). A lifecycle (`ship: PLACED -> SHIPPED`),
    per-operation access and row ownership (`@access`, `@owner`), invariants, values fixed at order time
    (`@snapshot`) or derived (`@compute`), which states may be deleted - each one line, each enforced in regenerated
-   code. A request that breaks a rule gets a defined HTTP answer (401, 403, 404, 422) and a translatable error code;
+   code. A request that breaks a rule gets a defined HTTP answer (401, 403, 404, 409, 422) and a translatable error code;
    a value the server derives is simply not taken from the request. Screens get the same checks (`canShip(dto)`).
 2. **Generation never stops.** The model stays the single statement after the first day: regenerated files and files
    you own are kept apart (base class + your class, generate-once files, edited files detected by content hash), and

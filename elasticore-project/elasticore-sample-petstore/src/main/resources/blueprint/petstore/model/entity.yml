@@ -57,7 +57,7 @@ entity:
 
   Customer:
     # 가입은 누구나, 읽기·수정은 본인(과 관리자), 삭제는 관리자
-    meta: entity @root @editable @expose(20) @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
+    meta: entity @root @editable @expose(20) @signin @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
           @Index(name="uk_ps_customer_login", columnList="login", unique="true") -- 고객
     fields:
       customerId:  long @id @sequence

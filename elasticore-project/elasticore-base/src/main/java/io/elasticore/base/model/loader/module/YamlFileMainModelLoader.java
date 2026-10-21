@@ -322,6 +322,12 @@ public class YamlFileMainModelLoader implements MainModelLoader {
         } catch (Throwable e) {
             ConsoleLog.printWarn(" * LOAD ERROR: "+f.getAbsolutePath());
             e.printStackTrace();
+            // The rule engine stops the build on it: everything the file declares is missing,
+            // and the compile errors that follow point anywhere but here.
+            String why = String.valueOf(e.getMessage()).replaceAll("\\s+", " ").trim();
+            if (why.length() > 240) why = why.substring(0, 240) + " ...";
+            io.elasticore.base.model.pub.rules.ModelCheck.failSaid(
+                    "LOAD ERROR " + f.getAbsolutePath() + " - not read, nothing it declares was generated: " + why);
             return FileSource.builder().filepath(f.getAbsolutePath()).error(e).build();
         }
 

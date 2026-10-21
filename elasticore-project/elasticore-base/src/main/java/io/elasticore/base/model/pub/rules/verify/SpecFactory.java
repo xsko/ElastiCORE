@@ -343,6 +343,8 @@ public final class SpecFactory {
         }
         registerDeriving(spec, model);
         registerReferencing(spec, model);
+        registerOptionalEmbeddables(spec, model);
+        spec.knownSignInEntities(signInsFor(model));
         registerReadLevels(spec, model);
         if (entity.getCommands() != null) {
             for (java.util.Map.Entry<String, io.elasticore.base.model.core.Items<Field>> cmd
@@ -1658,11 +1660,91 @@ public final class SpecFactory {
      * through a collection of members of their own aggregate that do.
      */
     static void registerReferencing(EntitySpec spec, ECoreModel model) {
-        if (model.getEntityModels() == null) return;
+        for (String name : facts(model).referencing) spec.knownReferencing(name);
+    }
+
+    /**
+     * What the model-wide registrations find, worked out once per model:
+     * every entity's spec asks the same question of the same model, and a
+     * fixed point over all entities for each of them grew with the cube.
+     */
+    private static final class ModelFacts {
+        final java.util.Set<String> referencing;
+        final java.util.Set<String> optionalEmbeddables;
+        final int signIn;
+
+        ModelFacts(java.util.Set<String> referencing, java.util.Set<String> optionalEmbeddables, int signIn) {
+            this.referencing = referencing;
+            this.optionalEmbeddables = optionalEmbeddables;
+            this.signIn = signIn;
+        }
+    }
+
+    private static ECoreModel factsModel;
+    private static int factsFingerprint;
+    private static ModelFacts modelFacts;
+
+    /**
+     * Cached per model and per its shape - the id-reference rewrite adds fields
+     * to the same model object, and facts taken before it would be stale.
+     */
+    private static synchronized ModelFacts facts(ECoreModel model) {
+        int fingerprint = fingerprint(model);
+        if (model != factsModel || fingerprint != factsFingerprint || modelFacts == null) {
+            modelFacts = new ModelFacts(referencing(model), optionalEmbeddables(model), countSignIn(model));
+            factsModel = model;
+            factsFingerprint = fingerprint;
+        }
+        return modelFacts;
+    }
+
+    private static int fingerprint(ECoreModel model) {
+        if (model.getEntityModels() == null) return 0;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        int fields = all.size();
+        for (int i = 0; i < all.size(); i++) fields = 31 * fields + fieldsOf(all.get(i)).size();
+        return fields;
+    }
+
+    /** How many entities of this model say @signin. */
+    static int signInEntities(ECoreModel model) {
+        return facts(model).signIn;
+    }
+
+    /** @signin entities over every domain of the run, said by the runner before each domain; 0 when not said. */
+    private static int applicationSignIns;
+
+    static void applicationSignIns(int count) {
+        applicationSignIns = count;
+    }
+
+    /** What a spec is told: the whole application's count when the runner said it, this model's otherwise. */
+    private static int signInsFor(ECoreModel model) {
+        return Math.max(applicationSignIns, signInEntities(model));
+    }
+
+    private static int countSignIn(ECoreModel model) {
+        if (model.getEntityModels() == null) return 0;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        int count = 0;
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i).getMetaInfo().hasMetaAnnotation("signin")) count++;
+        }
+        return count;
+    }
+
+    private static java.util.Set<String> referencing(ECoreModel model) {
+        java.util.Set<String> referencing = new java.util.HashSet<String>();
+        if (model.getEntityModels() == null) return referencing;
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         java.util.List<Entity> entities = new java.util.ArrayList<Entity>();
         for (int i = 0; i < all.size(); i++) entities.add(all.get(i));
-        java.util.Set<String> referencing = new java.util.HashSet<String>();
+        java.util.Map<String, String> roots = new java.util.HashMap<String, String>();
+        for (Entity candidate : entities) {
+            String name = candidate.getIdentity().getName();
+            String root = aggregateOfModel(name, model);
+            roots.put(name, root == null ? name : root);
+        }
         for (Entity candidate : entities) {
             for (Field f : fieldsOf(candidate)) {
                 if (f.hasAnnotation("idof")) {
@@ -1678,20 +1760,49 @@ public final class SpecFactory {
             for (Entity candidate : entities) {
                 String name = candidate.getIdentity().getName();
                 if (referencing.contains(name)) continue;
-                String root = aggregateOfModel(name, model);
-                if (root == null) root = name;
+                String root = roots.get(name);
                 for (Field f : fieldsOf(candidate)) {
                     if (f.getTypeInfo() == null || !f.getTypeInfo().isList()) continue;
                     String member = f.getTypeInfo().getCoreItemType();
                     if (member == null || !referencing.contains(member)) continue;
-                    if (!root.equals(aggregateOfModel(member, model)) && !f.hasAnnotation("cascade")) continue;
+                    if (!root.equals(roots.get(member)) && !f.hasAnnotation("cascade")) continue;
                     referencing.add(name);
                     grew = true;
                     break;
                 }
             }
         }
-        for (String name : referencing) spec.knownReferencing(name);
+        return referencing;
+    }
+
+    /**
+     * Tells a spec which value types (@embeddable) an entity embeds without
+     * requiring them - an order's optional delivery address. Their columns
+     * live in that entity's table, so a field the value requires when it is
+     * there cannot be NOT NULL in the database.
+     */
+    static void registerOptionalEmbeddables(EntitySpec spec, ECoreModel model) {
+        for (String name : facts(model).optionalEmbeddables) spec.knownOptionalEmbeddable(name);
+    }
+
+    private static java.util.Set<String> optionalEmbeddables(ECoreModel model) {
+        java.util.Set<String> optional = new java.util.HashSet<String>();
+        if (model.getEntityModels() == null) return optional;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        java.util.Set<String> embeddables = new java.util.HashSet<String>();
+        for (int i = 0; i < all.size(); i++) {
+            Entity candidate = all.get(i);
+            if (candidate.getMetaInfo().hasMetaAnnotation("embeddable")) embeddables.add(candidate.getIdentity().getName());
+        }
+        if (embeddables.isEmpty()) return optional;
+        for (int i = 0; i < all.size(); i++) {
+            for (Field f : fieldsOf(all.get(i))) {
+                if (f.getTypeInfo() == null || f.getTypeInfo().isList()) continue;
+                String type = f.getTypeInfo().getBaseTypeName();
+                if (type != null && embeddables.contains(type) && !f.hasAnnotation("notnull")) optional.add(type);
+            }
+        }
+        return optional;
     }
 
     /** Every field of an entity, inherited and derived ones included. */

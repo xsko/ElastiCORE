@@ -363,6 +363,34 @@ public final class EntitySpec {
         return referencingEntities.contains(entityName);
     }
 
+    private int signInEntities;
+
+    /** How many entities of the model say @signin - the generated sign-in is written for one only. */
+    public EntitySpec knownSignInEntities(int count) {
+        this.signInEntities = count;
+        return this;
+    }
+
+    public int signInEntities() {
+        return signInEntities;
+    }
+
+    private final java.util.Set<String> optionalEmbeddables = new java.util.HashSet<String>();
+
+    /** Registers a value type (@embeddable) some entity of the model embeds without requiring it. */
+    public EntitySpec knownOptionalEmbeddable(String embeddableName) {
+        optionalEmbeddables.add(embeddableName);
+        return this;
+    }
+
+    /**
+     * Whether that value type is embedded somewhere as optional - so its columns
+     * may be empty there, whatever its own fields require when it is present.
+     */
+    public boolean embeddedOptionally(String embeddableName) {
+        return optionalEmbeddables.contains(embeddableName);
+    }
+
     /** Declares a business command; its parameters are parsed like fields. */
     public EntitySpec addCommand(String name, List<Field> params) {
         List<FieldSpec> specs = new ArrayList<FieldSpec>();

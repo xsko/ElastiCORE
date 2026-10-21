@@ -89,6 +89,22 @@ class ShopFlowTest {
     @Test
     void aWrongPasswordIsRefused() throws Exception {
         mvc.perform(json(post("/api/petstore/customer/signin"), "{\"login\":\"user\",\"password\":\"nope\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Wrong login or password"));
+    }
+
+    /** The generated sign-in (@signin): who am I, sign out, and a visitor. */
+    @Test
+    void signingOutEndsTheSession() throws Exception {
+        MockHttpSession user = signIn("user", "user");
+        mvc.perform(get("/api/petstore/customer/me").session(user))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.login").value("user"));
+        mvc.perform(post("/api/petstore/customer/signout").session(user))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/petstore/customer/me").session(user))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/petstore/customer/me"))
                 .andExpect(status().isUnauthorized());
     }
 

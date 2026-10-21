@@ -155,23 +155,30 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 
 ### New Features (로그인 API 생성)
 
-#### `@login` + `@password` 엔티티에 signin·signout·me 가 생성된다
-- 펫스토어를 Claude Code 와 agent kit 으로 세 번(Java hexagonal, Java ddd, Kotlin hexagonal) 새로 만들게 했더니 셋 다,
+#### 엔티티 줄의 `@signin` - signin·signout·me 가 생성된다
+- 펫스토어를 에이전트(agent kit)로 세 번(Java hexagonal, Java ddd, Kotlin hexagonal) 새로 만들게 했더니 셋 다,
   그리고 저장소의 펫스토어 샘플도 같은 로그인 컨트롤러(로그인·로그아웃·지금 누구인지)를 손으로 썼다. 세 에이전트 모두
   `SessionCurrentUser` 의 사용법을 찾으려고 jar 를 `javap` 로 열었다
-- `@login` 과 `@password` 가 있고 `@expose` 된 엔티티의 컨트롤러에 `POST /signin` (`{"<login 필드>", "<password 필드>"}`,
-  틀리면 401 `Wrong <login> or password`), `POST /signout` (204), `GET /me` (방문자 401) 가 붙는다. 세션에는 행의 키와
-  역할(`@role` 필드, 없으면 `role` 필드 - enum 이면 상수 이름)이 들어간다. CoreService·유스케이스에 `me()`,
-  TypeScript 클라이언트에 `signIn`·`signOut`·`me()`(방문자면 null)
-- 로그인을 따로 하는 애플리케이션(Spring Security)은 `env.yml` 의 `config: signin: false` 로 끈다. v3 번들의 출력이
-  기본으로 바뀌는 변경이다(3.0 출시 전): `@login` 을 쓰는 프로젝트의 컨트롤러에 엔드포인트 세 개가 더해진다.
-  `jpa-springboot`(2.x 호환)에는 `jpa-service-access` 가 없어 바뀌지 않는다
-- 펫스토어 샘플의 `AccountController` 는 가입하고 바로 로그인하는 것만 남겼다. 화면(`web/src/shop.ts`)은 생성된
-  `CustomerApi.signIn/signOut/me` 를 쓴다
-- 확인: `SignInAndReferencesTest`(Java·Kotlin·TypeScript·`signin: false`), 펫스토어 `ShopFlowTest` 15개(생성된
-  `/customer/signin`, `/customer/me`), `webBuild` 타입 검사, `elasticore-template-kt` 의 `AgentController` 컴파일·테스트
-- 관련 파일: `ServiceAccessRules.java`(`signInControl`, `me`, `signsIn`, `roleField`), `HexUseCaseRules.java`,
-  `TypeScriptApiRules.java`, `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`, `elasticore-env-guide.md`
+- `@login`·`@password` 가 있고 `@expose` 된 엔티티의 줄에 `@signin` 을 쓰면 그 컨트롤러에 `POST /signin`
+  (`{"<login 필드>", "<password 필드>"}`, 틀리면 401 `Wrong <login> or password`), `POST /signout` (204), `GET /me`
+  (방문자 401) 가 붙는다. CoreService·유스케이스에 `me()`, TypeScript 클라이언트에 `signIn`·`signOut`·`me()`(방문자면 null).
+  `@login`·`@password` 만으로는 전처럼 `authenticate` 만 생긴다 - 계정 상태 확인 같은 자체 로그인을 하는 애플리케이션에
+  두 번째 로그인 경로가 저절로 생기지 않게 **요청할 때만** 만든다 (리뷰에서 기본으로 켜는 안을 되돌렸다)
+- 세션에는 행의 키와 역할이 들어간다. 역할은 `@role` 필드, 없으면 `role` 필드인데 **관리자만 쓰는 필드
+  (`@access(admin)`) 이고 enum 이나 문자열일 때만** 쓴다 - 아니면 가입자가 자기 역할을 ADMIN 으로 보내고 로그인해
+  관리자가 될 수 있으므로, DSL 경고와 함께 역할 없이 로그인한다
+- 모델에서 `@signin` 엔티티는 하나만: 세션은 맨 키만 들고 있어 둘이면 서로의 행으로 읽힌다. 둘 이상이면 어느 쪽에도
+  만들지 않고 DSL 경고. 키가 둘 이상이거나 `@expose` 가 없을 때도 경고
+- 손댄 컨트롤러는 생성기가 건너뛰므로 엔드포인트가 들어가지 않는다. 이제 생성기가 그 컨트롤러에 없는 엔드포인트
+  (`POST /signin` 등, 새 명령도)를 DSL 경고로 알린다 - TypeScript 클라이언트는 늘 다시 생성되어 그것을 부르기 때문
+- 펫스토어 샘플의 `Customer` 에 `@signin` 을 붙이고 `AccountController` 는 가입하고 바로 로그인하는 것만 남겼다.
+  화면(`web/src/shop.ts`)은 생성된 `CustomerApi.signIn/signOut/me` 를 쓴다
+- 확인: `SignInAndReferencesTest`(Java·Kotlin·TypeScript, 역할 거부, 두 엔티티, 키 둘), 펫스토어 `ShopFlowTest`(생성된
+  `/customer/signin`, 로그아웃 뒤·방문자의 `/customer/me` 401), `webBuild` 타입 검사, `elasticore-template-kt` 의
+  `AgentController`(역할 포함) 컴파일·테스트, agent kit 의 상점 레시피 계약(S3)
+- 관련 파일: `ServiceAccessRules.java`(`signInControl`, `me`, `signsIn`, `whyNoSignIn`, `roleField`), `HexUseCaseRules.java`,
+  `TypeScriptApiRules.java`, `RulesGenRunner.java`(`warnIfEndpointsMissing`), `SpecFactory.java`, `SignInAndReferencesTest.java`,
+  `elasticore-annotation-guide.md`, `elasticore-rule-guide.md`
 
 ### Improvements (오류 응답 - 상태 충돌 409, 없는 참조 404)
 
@@ -180,8 +187,10 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   "대상의 현재 상태와 충돌"이므로 그쪽이 맞다. 다른 불변식 위반은 그대로 422 다
 - `apiErrors` 템플릿(Java, Kotlin)의 `refused(...)`: 코드가 `state.` 로 시작하면 409 (제목 코드 `state`, "Not allowed in
   this state"), `reference.` 로 시작하면 404, 나머지는 422. 공통 코드에 `error.state.title` 을 더했다
-- `XxxApiErrors` 는 한 번만 생성되므로 **이미 있는 프로젝트는 422 그대로**다. 파일을 지우고 다시 생성하거나 `refused` 를
-  고친다. 펫스토어 샘플은 다시 생성하고 테스트를 409·404 로 바꿨다(`petstore-messages_ko.properties` 에 새 제목)
+- 이미 있는 프로젝트: `XxxApiErrors` 를 **손댄 적이 없으면** 다시 생성되어 409·404 로 답한다 - 422 로 분기하던
+  클라이언트는 함께 고친다. **손댄 적이 있으면** 그대로라 생명주기 거절도, 없는 참조(아래)도 422 다. 그 파일의
+  `refused(...)` 를 고친다. 생성 코드의 주석("Refuses a delete in any other state: 409")도 바뀌었다.
+  펫스토어 샘플은 다시 생성하고 테스트를 409·404 로 바꿨다(`petstore-messages_ko.properties` 에 새 제목)
 - 관련 파일: `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ErrorCatalog.java`, `ShopFlowTest.java`, `ShopModelTest.java`,
   `elasticore-rule-guide.md`, `elasticore-dsl-guide.md`, `elasticore-annotation-guide.md`, `elasticore-ddd-customize-guide.md`
 
@@ -196,6 +205,13 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   "<Target> 99 does not exist")` - API 는 404. `@snapshot` 이 원본 행을 못 찾을 때도 같은 코드·문구(전에는
   "OrderLine.item 99 does not exist", 422)
 - 생성되는 Kotlin 서비스 테스트(`testCode`)는 모의 `entityManager.find` 가 요청한 클래스의 모의 객체를 돌려주게 한다(lenient)
+- 이미 있는 프로젝트에서 달라지는 것: (1) `beforeSave` 에서 손으로 하던 같은 확인은 생성된 확인이 먼저 하므로 그 코드·
+  메시지는 나가지 않는다 - 지우거나, 참조를 객체로 두려면 `@objectref`; (2) 손댄 `XxxApiErrors` 는 이 거절을 422 로 답한다
+  (전에는 외래 키 409); (3) 손댄 Kotlin 서비스 테스트는 다시 생성되지 않으므로 참조 id 를 넣는 저장 테스트가 실패한다 -
+  `setUp` 에 `Mockito.lenient().\`when\`(entityManager.find(any<Class<Any>>(), any<Any>())).thenAnswer(Answer<Any> { c ->
+  Mockito.mock(c.getArgument<Class<Any>>(0)) })` 를 넣는다. 저장할 때마다 참조마다 조회 한 번(바뀌지 않은 참조도)
+- 3단계 애그리거트(루트 - 멤버 - 멤버의 멤버)도 컴파일되도록, 참조가 있다고 등록된 엔티티는 확인할 것이 없어도
+  `requireReferences` 를 가진다 (리뷰에서 찾음). 모델 전체 계산은 모델마다 한 번만 한다
 - 관련 파일: `DddReferenceRules.java`(`requireReferences`, `-service`, `-test`), `DddDeriveRules.java`, `DddRepositoryPortRules.java`,
   `EntitySpec.java`(`knownReferencing`), `SpecFactory.java`(`registerReferencing`), `SignInAndReferencesTest.java`
 
@@ -206,6 +222,28 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   이었다(채점 에이전트가 찾음)
 - 정리된 출력(v3)에서 `@minsize(n)` 의 n 이 1 이상이면 DTO 필드에 같은 메시지의 `@NotNull` 을 더한다. 2.x 호환 출력은 그대로
 - 관련 파일: `DtoBaseRules.java`, `SignInAndReferencesTest.java`, `ShopFlowTest.java`, `elasticore-annotation-guide.md`
+
+### Bug Fixes (선택으로 담은 값 객체의 컬럼)
+
+#### 어느 엔티티가 값 객체를 선택으로 담으면 그 값 객체의 컬럼은 NULL 을 허용한다
+- agent kit 의 상점 레시피를 처음 빌드해 보니, 배송지(`shipTo: Address @Embedded`, `!` 없음)를 보내지 않은 주문이
+  `NULL not allowed for column "ZIPCODE"` - 400 `required` 로 저장되지 않았다. 값 객체의 `!` 필드가 그 값 객체를 담는
+  모든 테이블의 컬럼을 NOT NULL 로 만들었기 때문이다. 펫스토어 샘플은 손으로 쓴 코드가 배송지를 늘 채워서 드러나지 않았다
+- 정리된 출력(v3)에서, 모델의 어느 엔티티든 값 객체를 `!` 없이 담으면 그 값 객체의 필드는 `nullable = false` 를 붙이지
+  않는다. 값이 오면 DTO 가 필수 필드를 검사한다(400). 늘 필수로만 담는 값 객체는 그대로 NOT NULL. 2.x 호환 출력은 그대로
+- 관련 파일: `JpaEntityBaseRules.java`, `EntitySpec.java`(`knownOptionalEmbeddable`), `SpecFactory.java`
+  (`registerOptionalEmbeddables`), `SignInAndReferencesTest.java`, `elasticore-annotation-guide.md`
+
+### Improvements (읽지 못한 모델 파일은 빌드를 멈춘다)
+
+#### `LOAD ERROR` 가 나면 `elcore3` 가 실패한다
+- `-- 설명` 에 `: ` 가 들어가 YAML 이 깨지면 로더가 `* LOAD ERROR` 를 찍고 그 파일을 뺀 채 생성이 성공했다. 엔티티가
+  통째로 없어진 것은 손으로 쓴 코드의 컴파일 오류("package ...dto does not exist")로만 드러났다 - 레시피를 쓰다 직접 겪었다
+- 로더가 읽지 못한 파일을 `ModelCheck.failSaid` 로 기록하고, 규칙 엔진은 생성을 마친 뒤 `[elcore3] the model check
+  failed (1) - fix these and build again:` 와 파일·파서 메시지를 찍고 1 로 끝난다. 2.x 생성기는 `ModelCheck` 를 보지
+  않으므로 그대로다
+- 관련 파일: `YamlFileMainModelLoader.java`, `ModelCheck.java`, `RulesGenRunner.java`, `LoadErrorFailsTest.java`,
+  `elasticore-dev-guide.md`
 
 ## 3.0.261020-alpha2
 
