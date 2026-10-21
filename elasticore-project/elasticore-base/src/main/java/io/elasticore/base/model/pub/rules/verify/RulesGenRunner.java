@@ -255,6 +255,8 @@ public final class RulesGenRunner {
             return generateAll(args);
         } finally {
             io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(false);
+            // What this run said of its applications is not the next caller's.
+            SpecFactory.applicationSignIns(-1, null);
         }
     }
 
@@ -265,7 +267,7 @@ public final class RulesGenRunner {
         // What an earlier run in this JVM found is not this run's to report.
         io.elasticore.base.model.pub.rules.ModelCheck.reset();
         io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
-        SpecFactory.applicationSignIns(0);
+        SpecFactory.applicationSignIns(-1, null);
 
         boolean v3 = Boolean.getBoolean("elasticore.rules.v3");
         boolean force = Boolean.getBoolean("elasticore.rules.force");
@@ -372,6 +374,7 @@ public final class RulesGenRunner {
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
         List<ECoreModel> allModels = loader.allModels();
+        runner.countSignIns(loader);
 
         // The bounded contexts the domains declare (config.context), checked
         // before anything is written: a type taken across a boundary nobody
@@ -500,6 +503,77 @@ public final class RulesGenRunner {
 
     // ------------------------------------------------------------------
 
+    /** Each model's application: the root its controllers are written to. */
+    private final Map<ECoreModel, String> applicationOf = new java.util.IdentityHashMap<ECoreModel, String>();
+
+    /** Application root -> the entities of it that say @signin. */
+    private final Map<String, List<String>> signInsByApplication = new java.util.LinkedHashMap<String, List<String>>();
+
+    /** Application root -> its entities with @login and @password that do not say @signin. */
+    private final Map<String, List<String>> otherLoginsByApplication = new java.util.LinkedHashMap<String, List<String>>();
+
+    /**
+     * Counts @signin per application, once per run. The session belongs to
+     * the running application, so one entity of it may sign in through it.
+     * A single-module run is one application - every domain together. A
+     * multi-module run (elasticore.modules) can generate several, and an
+     * application is the module the controllers are written to: the one a
+     * redirected control namespace names, else the one holding the
+     * blueprint. Two modules that run as one application look like two here;
+     * the guides say to give only one of them @signin.
+     */
+    private void countSignIns(BlueprintLoader loader) {
+        for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
+            String moduleRoot = loader.moduleRootOf(en.getKey());
+            for (ECoreModel model : loader.modelsOf(en.getKey())) {
+                if (applicationOf.containsKey(model)) continue;
+                String application = applicationRoot(model, moduleRoot);
+                applicationOf.put(model, application);
+                listOf(signInsByApplication, application).addAll(SpecFactory.signInEntities(model));
+                listOf(otherLoginsByApplication, application).addAll(SpecFactory.otherLoginEntities(model));
+            }
+        }
+    }
+
+    private String applicationRoot(ECoreModel model, String moduleRoot) {
+        String control = model.getNamespace("control");
+        Map<String, String> redirect = model.getNamespaceModuleRedirectMap();
+        if (control != null && redirect != null) {
+            for (Map.Entry<String, String> en : redirect.entrySet()) {
+                if (!control.startsWith(en.getKey())) continue;
+                String root = moduleRoots.get(en.getValue());
+                if (root != null) return root;
+            }
+        }
+        return moduleRoot != null ? moduleRoot : projectRoot;
+    }
+
+    private static List<String> listOf(Map<String, List<String>> map, String key) {
+        List<String> list = map.get(key);
+        if (list == null) {
+            list = new ArrayList<String>();
+            map.put(key, list);
+        }
+        return list;
+    }
+
+    /**
+     * Tells the specs of this model what its application holds: how many
+     * entities say @signin, and which others have a @login and a @password -
+     * the generated session's bare key would be read as theirs too.
+     */
+    private void sayApplication(ECoreModel model) {
+        String application = applicationOf.get(model);
+        if (application == null) {
+            SpecFactory.applicationSignIns(-1, null);
+            return;
+        }
+        List<String> signIns = signInsByApplication.get(application);
+        List<String> others = otherLoginsByApplication.get(application);
+        SpecFactory.applicationSignIns(signIns == null ? 0 : signIns.size(),
+                others == null ? java.util.Collections.<String>emptyList() : others);
+    }
+
     /** Models already emitted, by identity: the shared context re-offers them. */
     private final java.util.Set<ECoreModel> generatedModels =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ECoreModel, Boolean>());
@@ -513,15 +587,14 @@ public final class RulesGenRunner {
         // The refusal codes this domain's rules record as they generate - one
         // catalog for the domain, however many models its blueprint holds.
         io.elasticore.base.model.pub.rules.ErrorCatalog.begin();
-        // One session for the whole application: @signin is counted over every domain.
-        int signIns = 0;
-        for (ECoreModel any : allModels) signIns += SpecFactory.signInEntities(any);
-        SpecFactory.applicationSignIns(signIns);
 
         for (ECoreModel model : models) {
             if (!generatedModels.add(model)) continue;
             packageModuleMap = model.getNamespaceModuleRedirectMap();
             currentModel = model;
+            // One session per application: @signin is counted over every
+            // domain whose controllers land in the same one.
+            sayApplication(model);
             if (Boolean.getBoolean("elasticore.rules.list")) {
                 listRules(domainDirName);
                 continue;
@@ -2195,6 +2268,69 @@ public final class RulesGenRunner {
                 + " them (delete the file and build to see that), or the TypeScript client calls endpoints that do not exist");
     }
 
+    /**
+     * A controller of the developer's that still signs in where the DSL no
+     * longer would: @signin moved to another entity or refused, or a role no
+     * longer one only the administrator writes. The file is left alone, so
+     * its sign-in keeps starting sessions every generated check trusts - and
+     * the build's own @signin warning would read as if nothing signed in.
+     */
+    private void warnIfSignInLeft(ArtifactTarget out, File file, String wouldWrite) {
+        if (out.fileName() == null || !out.fileName().endsWith("Controller")) return;
+        String existing;
+        try {
+            existing = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return;
+        }
+        if (!existing.contains("SessionCurrentUser")) return;
+        java.util.Set<String> have = endpoints(existing);
+        java.util.Set<String> given = endpoints(wouldWrite);
+        java.util.List<String> left = new java.util.ArrayList<String>();
+        for (String endpoint : new String[]{"POST /signin", "GET /me"}) {
+            if (have.contains(endpoint) && !given.contains(endpoint)) left.add(endpoint);
+        }
+        if (!left.isEmpty()) {
+            io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", out.relativePath() + " is yours and still serves "
+                    + String.join(", ", left) + ", which the DSL does not generate now (the entity no longer says @signin,"
+                    + " or a @signin warning says why): the sessions it starts are trusted by every generated access"
+                    + " check. Remove them, or give the entity what @signin needs.");
+        } else if (passesRole(existing) && !passesRole(wouldWrite)) {
+            io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", out.relativePath() + " is yours and still puts a role in"
+                    + " the session (SessionCurrentUser.signIn(request, id, role)), which the DSL does not do now: the role"
+                    + " is not a field only the administrator writes (@access(admin)), so a member who sets their own"
+                    + " role signs in as the administrator. Drop the role argument, or mark the field @access(admin).");
+        }
+    }
+
+    /** Whether a SessionCurrentUser.signIn call of the source passes a role - a third argument. */
+    static boolean passesRole(String source) {
+        String call = "SessionCurrentUser.signIn(";
+        for (int at = source.indexOf(call); at >= 0; at = source.indexOf(call, at + 1)) {
+            int depth = 0;
+            int args = 1;
+            char quote = 0;
+            for (int i = at + call.length(); i < source.length(); i++) {
+                char ch = source.charAt(i);
+                if (quote != 0) {
+                    if (ch == '\\') i++;
+                    else if (ch == quote) quote = 0;
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch;
+                } else if (ch == '(' || ch == '[' || ch == '{') {
+                    depth++;
+                } else if (ch == ')' || ch == ']' || ch == '}') {
+                    if (depth == 0) break;
+                    depth--;
+                } else if (ch == ',' && depth == 0) {
+                    args++;
+                }
+            }
+            if (args >= 3) return true;
+        }
+        return false;
+    }
+
     private static java.util.Set<String> endpoints(String source) {
         java.util.Set<String> found = new java.util.LinkedHashSet<String>();
         java.util.regex.Matcher m = ENDPOINT.matcher(source);
@@ -2723,6 +2859,7 @@ public final class RulesGenRunner {
                 skipped++;
                 System.out.println(label + "  SKIP(user-owned)");
                 warnIfEndpointsMissing(out, file, content);
+                if ((v3 || kotlin) && !typescript) warnIfSignInLeft(out, file, content);
                 warnIfConstructorDrifted(out, file, content);
                 warnIfClassAnnotationsDrifted(out, file, content);
                 warnIfBaseNotExtended(out, file, content);

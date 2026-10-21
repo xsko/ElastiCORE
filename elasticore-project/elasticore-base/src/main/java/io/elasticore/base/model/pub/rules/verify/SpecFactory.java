@@ -345,6 +345,7 @@ public final class SpecFactory {
         registerReferencing(spec, model);
         registerOptionalEmbeddables(spec, model);
         spec.knownSignInEntities(signInsFor(model));
+        spec.knownOtherLoginEntities(otherLoginsFor(model));
         registerReadLevels(spec, model);
         if (entity.getCommands() != null) {
             for (java.util.Map.Entry<String, io.elasticore.base.model.core.Items<Field>> cmd
@@ -1671,12 +1672,10 @@ public final class SpecFactory {
     private static final class ModelFacts {
         final java.util.Set<String> referencing;
         final java.util.Set<String> optionalEmbeddables;
-        final int signIn;
 
-        ModelFacts(java.util.Set<String> referencing, java.util.Set<String> optionalEmbeddables, int signIn) {
+        ModelFacts(java.util.Set<String> referencing, java.util.Set<String> optionalEmbeddables) {
             this.referencing = referencing;
             this.optionalEmbeddables = optionalEmbeddables;
-            this.signIn = signIn;
         }
     }
 
@@ -1691,7 +1690,7 @@ public final class SpecFactory {
     private static synchronized ModelFacts facts(ECoreModel model) {
         int fingerprint = fingerprint(model);
         if (model != factsModel || fingerprint != factsFingerprint || modelFacts == null) {
-            modelFacts = new ModelFacts(referencing(model), optionalEmbeddables(model), countSignIn(model));
+            modelFacts = new ModelFacts(referencing(model), optionalEmbeddables(model));
             factsModel = model;
             factsFingerprint = fingerprint;
         }
@@ -1706,31 +1705,62 @@ public final class SpecFactory {
         return fields;
     }
 
-    /** How many entities of this model say @signin. */
-    static int signInEntities(ECoreModel model) {
-        return facts(model).signIn;
-    }
+    /**
+     * @signin entities of the application the model's controllers belong to,
+     * said by the runner before each model; -1 when not said.
+     */
+    private static int applicationSignIns = -1;
 
-    /** @signin entities over every domain of the run, said by the runner before each domain; 0 when not said. */
-    private static int applicationSignIns;
+    /** The application's other @login + @password entities, said with it; null when not said. */
+    private static java.util.List<String> applicationOtherLogins;
 
-    static void applicationSignIns(int count) {
+    static void applicationSignIns(int count, java.util.List<String> otherLogins) {
         applicationSignIns = count;
+        applicationOtherLogins = otherLogins;
     }
 
-    /** What a spec is told: the whole application's count when the runner said it, this model's otherwise. */
+    /** What a spec is told: the application's count when the runner said it, this model's otherwise. */
     private static int signInsFor(ECoreModel model) {
-        return Math.max(applicationSignIns, signInEntities(model));
+        return applicationSignIns >= 0 ? applicationSignIns : signInEntities(model).size();
     }
 
-    private static int countSignIn(ECoreModel model) {
-        if (model.getEntityModels() == null) return 0;
+    private static java.util.List<String> otherLoginsFor(ECoreModel model) {
+        return applicationOtherLogins != null ? applicationOtherLogins : otherLoginEntities(model);
+    }
+
+    /** The entities of this model that say @signin - counted from the meta lines, nothing else worked out. */
+    static java.util.List<String> signInEntities(ECoreModel model) {
+        java.util.List<String> names = new java.util.ArrayList<String>();
+        if (model.getEntityModels() == null) return names;
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
-        int count = 0;
         for (int i = 0; i < all.size(); i++) {
-            if (all.get(i).getMetaInfo().hasMetaAnnotation("signin")) count++;
+            if (all.get(i).getMetaInfo().hasMetaAnnotation("signin")) names.add(all.get(i).getIdentity().getName());
         }
-        return count;
+        return names;
+    }
+
+    /**
+     * The entities of this model with a @login and one @password that do not
+     * say @signin - they sign in some other way, and the generated sign-in's
+     * session key could be read as theirs.
+     */
+    static java.util.List<String> otherLoginEntities(ECoreModel model) {
+        java.util.List<String> names = new java.util.ArrayList<String>();
+        if (model.getEntityModels() == null) return names;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity entity = all.get(i);
+            if (entity.getMetaInfo().hasMetaAnnotation("signin") || entity.getMetaInfo().hasMetaAnnotation("readonly")) continue;
+            ModelComponentItems<Field> fields = entity.getItems();
+            boolean login = false;
+            int passwords = 0;
+            for (int j = 0; fields != null && j < fields.size(); j++) {
+                if (fields.get(j).hasAnnotation("login")) login = true;
+                if (fields.get(j).hasAnnotation("password")) passwords++;
+            }
+            if (login && passwords == 1) names.add(entity.getIdentity().getName());
+        }
+        return names;
     }
 
     private static java.util.Set<String> referencing(ECoreModel model) {

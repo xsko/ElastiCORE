@@ -118,7 +118,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
 | `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값. TS 는 `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
-| `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`·`me()`, `@signin` 이면 컨트롤러의 signin·signout·me (v3 번들 전부) |
+| `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
 | 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
@@ -434,9 +434,13 @@ DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노�
 - 템플릿의 슬롯(`${accessCreate}` 등)은 선언이 없으면 비어 있어 생성물이 바뀌지 않습니다.
 - 런타임: `io.elasticore.springboot3.security` 의 `CurrentUser`(기본 `SessionCurrentUser`),
   `AccessPolicy`, `PasswordHasher`(기본 PBKDF2), 401·403 예외. 빈을 등록하면 그것을 씁니다.
-- `@login` + `@password` 엔티티의 CoreService·유스케이스에는 `authenticate` 와 `me()` 가 생깁니다. 엔티티 줄에
-  `@signin` 까지 있으면(모델에 하나만) 그 컨트롤러에 `signin`·`signout`·`me` 엔드포인트도 이 규칙이 씁니다 -
-  컨트롤러는 개발자 소유라, 손댄 컨트롤러에는 들어가지 않고 생성 로그가 DSL 경고로 알려 줍니다.
+- `@login` + `@password` 엔티티의 CoreService·유스케이스에는 `authenticate` 가 생깁니다. 엔티티 줄에 `@signin` 까지
+  있으면 `me()` 와 그 컨트롤러의 `signin`·`signout`·`me` 엔드포인트도 이 규칙이 쓰고, 로그인 컬럼은 unique 가 됩니다.
+  조건은 행의 비밀번호를 본인과 관리자만 바꿀 수 있을 것(`update=owner` 와 키를 가리키는 `@owner`, 또는
+  `update=admin`·`none`), `@expose`, 키 하나, 그리고 애플리케이션에 `@signin` 하나 - 단일 모듈 프로젝트는 모든 도메인이
+  하나의 애플리케이션, 멀티 모듈은 컨트롤러가 생기는 모듈마다입니다. 못 만드는 이유는 엔티티마다 DSL 경고로 나옵니다.
+  컨트롤러는 개발자 소유라 손댄 컨트롤러에는 들어가지 않고, 생성 로그가 빠진 엔드포인트도, DSL 이 더는 만들지 않는데
+  남아 있는 로그인(`POST /signin`·`GET /me`, 세션에 넣는 역할)도 DSL 경고로 알려 줍니다.
 
 #### 트랜잭션 Outbox (`ddd-outbox`)
 

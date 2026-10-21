@@ -549,9 +549,11 @@ Item:
 |---|---|---|
 | 엔티티 meta | `@access(read=owner, create=user, ship=admin)` | 연산별 허용 수준 (public/user/owner/admin/none, 안 적으면 admin) |
 | 엔티티 meta | `@owner(customerId)` | 행의 주인을 담는 필드 |
+| 엔티티 meta | `@signin` | 로그인 API: `me()`, 컨트롤러의 `signin`·`signout`·`me`, TypeScript `signIn`·`signOut`·`me`, 로그인 컬럼 unique. `@login`·`@password`·`@expose`, 키 하나, 본인·관리자만 수정(`update=owner` + 키의 `@owner`, 또는 `update=admin`), 애플리케이션에 하나일 때만 - 아니면 DSL 경고 |
 | 필드 | `@access(admin)` | 관리자만 쓰는 필드 |
 | 필드 | `@password` | 해시로만 저장, 응답·검색에 없음 |
-| 필드 | `@login` | `@password` 와 함께 `authenticate(login, password)` 생성 |
+| 필드 | `@login` | `@password` 와 함께 `authenticate(login, password)` 생성. 유일해야 함 (`@signin` 이면 자동, 아니면 `@unique` - 없으면 DSL 경고) |
+| 필드 | `@role` | `@signin` 의 로그인이 세션에 넣는 역할 (없으면 `role` 필드). `@access(admin)` 인 enum·문자열만 - 아니면 역할 없이 로그인하고 DSL 경고 |
 | 필드 | `@snapshot(item.unitCost)` | 참조한 행의 값을 한 번 복사 |
 | 필드 | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | 저장할 때마다 계산 |
 

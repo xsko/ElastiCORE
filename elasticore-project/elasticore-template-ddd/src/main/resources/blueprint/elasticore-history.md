@@ -167,8 +167,9 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
 - 세션에는 행의 키와 역할이 들어간다. 역할은 `@role` 필드, 없으면 `role` 필드인데 **관리자만 쓰는 필드
   (`@access(admin)`) 이고 enum 이나 문자열일 때만** 쓴다 - 아니면 가입자가 자기 역할을 ADMIN 으로 보내고 로그인해
   관리자가 될 수 있으므로, DSL 경고와 함께 역할 없이 로그인한다
-- 모델에서 `@signin` 엔티티는 하나만: 세션은 맨 키만 들고 있어 둘이면 서로의 행으로 읽힌다. 둘 이상이면 어느 쪽에도
-  만들지 않고 DSL 경고. 키가 둘 이상이거나 `@expose` 가 없을 때도 경고
+- 애플리케이션에서 `@signin` 엔티티는 하나만: 세션은 맨 키만 들고 있어 둘이면 서로의 행으로 읽힌다. 둘 이상이면 어느
+  쪽에도 만들지 않고 DSL 경고. 키가 둘 이상이거나 `@expose` 가 없을 때도 경고 (애플리케이션을 어떻게 세는지, 그리고
+  비밀번호를 누가 바꿀 수 있어야 하는지는 이 섹션 끝의 "로그인 API - 리뷰" 항목)
 - 손댄 컨트롤러는 생성기가 건너뛰므로 엔드포인트가 들어가지 않는다. 이제 생성기가 그 컨트롤러에 없는 엔드포인트
   (`POST /signin` 등, 새 명령도)를 DSL 경고로 알린다 - TypeScript 클라이언트는 늘 다시 생성되어 그것을 부르기 때문
 - 펫스토어 샘플의 `Customer` 에 `@signin` 을 붙이고 `AccountController` 는 가입하고 바로 로그인하는 것만 남겼다.
@@ -211,7 +212,8 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   `setUp` 에 `Mockito.lenient().\`when\`(entityManager.find(any<Class<Any>>(), any<Any>())).thenAnswer(Answer<Any> { c ->
   Mockito.mock(c.getArgument<Class<Any>>(0)) })` 를 넣는다. 저장할 때마다 참조마다 조회 한 번(바뀌지 않은 참조도)
 - 3단계 애그리거트(루트 - 멤버 - 멤버의 멤버)도 컴파일되도록, 참조가 있다고 등록된 엔티티는 확인할 것이 없어도
-  `requireReferences` 를 가진다 (리뷰에서 찾음). 모델 전체 계산은 모델마다 한 번만 한다
+  `requireReferences` 를 가진다 (리뷰에서 찾음). 모델 전체 계산(참조하는 엔티티, 선택으로 담은 값 객체)은 생성하는
+  모델마다 한 번 하고 그 모델의 엔티티들이 나눠 쓴다 (id 참조로 필드가 바뀌면 다시)
 - 관련 파일: `DddReferenceRules.java`(`requireReferences`, `-service`, `-test`), `DddDeriveRules.java`, `DddRepositoryPortRules.java`,
   `EntitySpec.java`(`knownReferencing`), `SpecFactory.java`(`registerReferencing`), `SignInAndReferencesTest.java`
 
@@ -262,6 +264,54 @@ ISBN 13자리 같은 정규식 검사는 `@pattern` 이 컴파일되지 않는 �
   규칙의 경고가 두 번씩 찍혀 문제가 둘인 것처럼 읽혔다. `SourceCode.dslWarnOnce` 가 실행마다(`resetWarnings`) 한 번만 말한다.
   `@signin` 의 경고도 같은 방식이다
 - 관련 파일: `SourceCode.java`, `ServiceAccessRules.java`
+
+### Bug Fixes (로그인 API - 리뷰)
+
+#### `@signin` 은 본인과 관리자만 비밀번호를 바꿀 수 있을 때만, 로그인은 유일하게, `me()` 는 `@signin` 에만
+- **누가 비밀번호를 바꿀 수 있는가.** `@access` 가 없는 `@signin` 엔티티(수정이 `public`)나 `update=user` 에서는 아무나
+  `PUT /member {"memberId":1,"password":"x"}` 로 관리자의 비밀번호를 바꾸고 관리자로 로그인할 수 있었다 - 역할을
+  `@access(admin)` 으로 막아도 관리자 행 자체를 가져가면 그만이었다. 이제 `update` 수준(없으면 `*`, 그것도 없으면 `admin`,
+  `@access` 가 아예 없으면 `public`)이 `admin`·`none` 이거나, `owner` 이면서 `@owner` 가 키일 때만 로그인 API 와 `me()` 를
+  만들고, 아니면 이유와 고칠 문장(`@owner(<키>) @access(read=owner, create=public, update=owner)` 등)을 DSL 경고로 낸다.
+  행을 쓰는 경로는 모두 이 수준을 묻는다: `PUT`·`PUT /batch` 는 행마다 소유자를 확인하고, 조건 수정은 `owner` 수준이면
+  관리자만(`AccessPolicy.requireAll`). 펫스토어 `Customer`, Kotlin 샘플 `Agent`, 가이드 예제는 이미 `update=owner` +
+  `@owner(키)` 라 그대로 생성된다
+- **로그인은 유일.** `@signin` 엔티티의 `@login` 컬럼에 `unique = true` 를 붙인다(이미 `@unique` 이거나, 키이거나, 그 컬럼
+  하나만의 unique `@Index` 면 그대로). 같은 로그인이 두 행이면 `authenticate` 가 둘 다 거절하므로, 누구든 남의 로그인으로
+  가입해 그 계정(관리자 포함)을 못 들어오게 할 수 있었다. 이제 두 번째 행은 다른 제약 위반처럼 409. `@signin` 없는
+  `@login`·`@password` 엔티티의 로그인이 유일하지 않으면 DSL 경고. Kotlin 샘플의 `Agent.login` 컬럼이 unique 가 되었다.
+  이미 운영 중인 DB 는 마이그레이션으로 unique 제약을 더한다(중복이 있으면 먼저 정리)
+- **`me()` 는 `@signin` 으로 로그인하는 엔티티에만.** 앞 커밋은 `@login`·`@password` 가 있으면 모두 CoreService·유스케이스에
+  `me()` 를 만들어, 손으로 `me()` 를 쓴 프로젝트가 컴파일되지 않을 수 있었다(이 섹션의 로그인 항목이 말한 "`@login`·
+  `@password` 만으로는 전처럼 `authenticate` 만" 과도 달랐다). 이제 그 문장 그대로다
+- **경고는 엔티티마다.** `@signin` 이 막힌 이유를 컨트롤러 규칙이 아니라 모든 엔티티에 도는 규칙(`access-signin-check`)이
+  말한다 - 컨트롤러가 없는 엔티티의 "`@expose` 가 없음" 경고가 전에는 나오지 않았다. 역할 경고의 끝은 "The generated
+  sign-in puts no role in the session" 으로 바꿨다(손댄 컨트롤러는 다음 줄)
+- **손댄 컨트롤러에 남은 로그인.** DSL 이 더는 만들지 않는데 손댄 컨트롤러(`SessionCurrentUser` 를 쓰는 파일)가 아직
+  `POST /signin`·`GET /me` 를 가지고 있거나, 세션에 역할을 넣으면(`SessionCurrentUser.signIn` 의 세 번째 인자) DSL 경고 -
+  그 로그인은 생성된 검사가 믿는 세션을 계속 만들기 때문이다(`@signin` 을 옮기거나 역할 필드의 `@access(admin)` 을 지운 뒤)
+- **애플리케이션마다 하나.** 한 번의 생성이 멀티 모듈(`elasticore.modules`)로 여러 애플리케이션을 만들 수 있으므로
+  `@signin` 을 애플리케이션마다 센다: 단일 모듈 프로젝트는 모든 도메인을 함께, 멀티 모듈은 컨트롤러가 생기는 모듈(`control`
+  의 `모듈명://` 이 가리키는 모듈, 없으면 그 blueprint 가 있는 모듈)마다. 두 모듈이 한 애플리케이션으로 함께 실행되는지는
+  생성기가 알 수 없어 가이드에 "한쪽에만" 이라고 적었다. 세는 일은 실행마다 한 번, 엔티티 줄의 `@signin` 만 본다 - 전에는
+  도메인마다 모든 모델의 참조 계산을 다시 해서 셌다
+- **같은 세션 키.** 로그인 API 가 생기는 `@signin` 엔티티의 애플리케이션에 다른 `@login`·`@password` 엔티티가 있으면 DSL
+  경고 - 그 엔티티를 손으로 `SessionCurrentUser.signIn` 하면 그 키가 `@signin` 엔티티의 키로 읽혀(직원 7 = 고객 7) `me()` 와
+  소유자 검사를 통과한다
+- **문자열 키.** 요청이 정하는 문자열 키(`@genid`·`@sequence` 가 아님)의 `@signin` 엔티티는 DSL 경고 - 키가 `me` 인 행은
+  `GET /{id}` 가 아니라 `GET /me` 가 답한다. 가이드의 "`/me` 라는 키" 문구도 고쳤다
+- 이 경고들은 모두 `SourceCode.dslWarnOnce` 로 실행마다 한 번 나온다(앞 항목). 2.x 생성기와 `jpa-springboot` 번들은
+  `@signin` 을 처리하지 않으므로 그대로다
+- 확인: `SignInAndReferencesTest`(수정 수준 셋과 `@expose` 없음의 경고와 생성 안 함, `@signin` 없는 엔티티에 `me()` 없음,
+  로그인 unique 와 경고, 같은 세션 키 경고, 멀티 모듈의 두 애플리케이션이 각자 로그인, 문자열 키 경고, 손댄 컨트롤러의 역할·
+  엔드포인트 경고), `elasticore-template-kt` 의 `ShopApiContractTest.aTakenLoginIsAConflict`(같은 로그인으로 두 번째 가입
+  409, 첫 행은 그대로 로그인됨, 로그인한 상담원이 자기 로그인을 남의 것으로 바꾸면 409), 펫스토어 `ShopFlowTest`, 2.x 호환
+  검사(`elcoreRulesCheck -Pstrict` 150 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra)
+- 관련 파일: `ServiceAccessRules.java`(`signsIn`, `whyNoSignIn`, `updateLevel`, `credentialsGuarded`, `signInCheck`,
+  `uniqueLogin`, `me`), `HexUseCaseRules.java`, `RulesGenRunner.java`(`countSignIns`, `sayApplication`, `warnIfSignInLeft`),
+  `SpecFactory.java`(`signInEntities`, `otherLoginEntities`), `EntitySpec.java`(`knownOtherLoginEntities`),
+  `SignInAndReferencesTest.java`, `ShopApiContractTest.kt`,
+  `elasticore-annotation-guide.md`, `elasticore-rule-guide.md`, `elasticore-dsl-guide.md`
 
 ## 3.0.261020-alpha2
 

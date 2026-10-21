@@ -189,12 +189,13 @@ public class HexUseCaseRules implements CodeRules, ArtifactContributor {
                     s.parameter(String.format("List<%s>", keyDto), "dtoList")));
             methods.add(method(s, "boolean", "deleteById", pkParams(s, e)));
         }
-        // Signing in, where the DSL marks a @login and a @password.
+        // Signing in, where the DSL marks a @login and a @password - and who is
+        // signed in, for the entity the API signs in through (@signin).
         String login = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.loginField(e);
         if (login != null) {
             methods.add(method(s, String.format("Optional<%s>", dto), "authenticate",
                     s.parameter(s.nullableType("String"), login) + ", " + s.parameter(s.nullableType("String"), "password")));
-            if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.hasMe(e)) {
+            if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) {
                 methods.add(method(s, String.format("Optional<%s>", dto), "me", ""));
             }
         }

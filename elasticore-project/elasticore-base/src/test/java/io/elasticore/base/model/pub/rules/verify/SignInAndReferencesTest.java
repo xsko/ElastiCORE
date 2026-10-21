@@ -142,7 +142,7 @@ public class SignInAndReferencesTest {
     private static final String MODEL_TWO_A = String.join("\n",
             "entity:",
             "  StBuyer:",
-            "    meta: entity @root @editable @expose(20) @signin",
+            "    meta: entity @root @editable @expose(20) @signin @owner(buyerId) @access(read=owner, create=public, update=owner)",
             "    fields:",
             "      buyerId:  long @id @sequence",
             "      login:    string(20)! @login",
@@ -151,7 +151,7 @@ public class SignInAndReferencesTest {
     private static final String MODEL_TWO_B = String.join("\n",
             "entity:",
             "  StSeller:",
-            "    meta: entity @root @editable @expose(20) @signin",
+            "    meta: entity @root @editable @expose(20) @signin @owner(sellerId) @access(read=owner, create=public, update=owner)",
             "    fields:",
             "      sellerId: long @id @sequence",
             "      login:    string(20)! @login",
@@ -165,19 +165,99 @@ public class SignInAndReferencesTest {
             "      password: string(255)! @password",
             "");
 
+    /**
+     * SEC1 of the review: @signin where someone other than the row's own user
+     * may change its password - no @access (update is public), update=user,
+     * owner through a field that is not the key - and one that is not exposed.
+     */
+    private static final String MODEL_REFUSED = String.join("\n",
+            "entity:",
+            "  SxOpen:",
+            "    meta: entity @root @editable @expose(20) @signin",
+            "    fields:",
+            "      openId:   long @id @sequence",
+            "      login:    string(20)! @login",
+            "      password: string(255)! @password",
+            "      role:     string(10) @access(admin)",
+            "  SxUser:",
+            "    meta: entity @root @editable @expose(20) @signin @access(read=public, create=public, update=user)",
+            "    fields:",
+            "      userId:   long @id @sequence",
+            "      login:    string(20)! @login",
+            "      password: string(255)! @password",
+            "  SxSponsored:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(sponsorId) @access(read=owner, create=public, update=owner)",
+            "    fields:",
+            "      sponsoredId: long @id @sequence",
+            "      sponsorId:   long",
+            "      login:       string(20)! @login",
+            "      password:    string(255)! @password",
+            "  SxHidden:",
+            "    meta: entity @root @editable @signin @owner(hiddenId) @access(read=owner, create=public, update=owner)",
+            "    fields:",
+            "      hiddenId: long @id @sequence",
+            "      login:    string(20)! @login",
+            "      password: string(255)! @password",
+            "  SxStaff:",
+            "    meta: entity @root @editable @expose(20) @access(read=user, create=admin, update=admin)",
+            "    fields:",
+            "      staffId:  long @id @sequence",
+            "      login:    string(20)! @login @unique",
+            "      password: string(255)! @password",
+            "");
+
+    /** SIGN1: two modules, two applications - each may sign in through its own entity. */
+    private static final String MODEL_ADMIN_APP = String.join("\n",
+            "entity:",
+            "  SmStaff:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(staffId) @access(read=owner, create=admin, update=owner)",
+            "    fields:",
+            "      staffId:  long @id @sequence",
+            "      login:    string(20)! @login",
+            "      password: string(255)! @password",
+            "");
+    private static final String MODEL_SHOP_APP = String.join("\n",
+            "entity:",
+            "  SmClient:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(handle) @access(read=owner, create=public, update=owner)",
+            "    fields:",
+            "      handle:   string(20) @id @login",
+            "      password: string(255)! @password",
+            "");
+
+    /** SEC2: a sign-in left in a controller the developer owns, after the DSL stopped asking for it. */
+    private static final String MODEL_OWNED = String.join("\n",
+            "entity:",
+            "  SwUser:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(userId) @access(read=owner, create=public, update=owner)",
+            "    fields:",
+            "      userId:   long @id @sequence",
+            "      login:    string(20)! @login @unique",
+            "      password: string(255)! @password",
+            "      role:     string(10) @access(admin)",
+            "");
+
     private static File jproject;
     private static File kproject;
     private static File unsafe;
     private static File two;
+    private static File refused;
+    private static File modules;
+    private static File owned;
+    private static String jLog;
     private static String unsafeLog;
     private static String twoLog;
+    private static String refusedLog;
+    private static String modulesLog;
+    private static String ownedRoleLog;
+    private static String ownedGoneLog;
 
     @BeforeAll
     static void generate() throws Exception {
         jproject = Files.createTempDirectory("elcore-signin-java").toFile();
         write(jproject, "srshop", env("srshop", "io.acme.srshop", null), MODEL);
         write(jproject, "soshop", env("soshop", "io.acme.soshop", null), MODEL_OFF);
-        run(jproject, "java", false);
+        jLog = captured(jproject);
         run(jproject, "java", true);
 
         kproject = Files.createTempDirectory("elcore-signin-kt").toFile();
@@ -192,16 +272,52 @@ public class SignInAndReferencesTest {
         write(two, "sta", env("sta", "io.acme.sta", null), MODEL_TWO_A);
         write(two, "stb", env("stb", "io.acme.stb", null), MODEL_TWO_B);
         twoLog = captured(two);
+
+        refused = Files.createTempDirectory("elcore-signin-refused").toFile();
+        write(refused, "sxshop", env("sxshop", "io.acme.sxshop", null), MODEL_REFUSED);
+        refusedLog = captured(refused);
+
+        modules = Files.createTempDirectory("elcore-signin-modules").toFile();
+        write(new File(modules, "admin-api"), "smadmin", env("smadmin", "io.acme.smadmin", null), MODEL_ADMIN_APP);
+        write(new File(modules, "shop-api"), "smshop", env("smshop", "io.acme.smshop", null), MODEL_SHOP_APP);
+        modulesLog = captured(modules, new File(modules, "admin-api").getAbsolutePath() + ","
+                + new File(modules, "shop-api").getAbsolutePath());
+
+        owned = Files.createTempDirectory("elcore-signin-owned").toFile();
+        write(owned, "swshop", env("swshop", "io.acme.swshop", null), MODEL_OWNED);
+        run(owned, "java", false);
+        // The developer edits the generated controller: it is theirs from now on.
+        File control = new File(owned, "src/main/java/io/acme/swshop/adapter/in/web/SwUserController.java");
+        String text = new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8);
+        int end = text.lastIndexOf('}');
+        Files.write(control.toPath(), (text.substring(0, end) + "    // the team's own endpoints go here\n}\n")
+                .getBytes(StandardCharsets.UTF_8));
+        File model = new File(owned, "src/main/resources/blueprint/swshop/model/model.yml");
+        // Then the role stops being the administrator's alone ...
+        Files.write(model.toPath(), MODEL_OWNED.replace("string(10) @access(admin)", "string(10)")
+                .getBytes(StandardCharsets.UTF_8));
+        ownedRoleLog = captured(owned);
+        // ... and @signin goes.
+        Files.write(model.toPath(), MODEL_OWNED.replace(" @signin", "").getBytes(StandardCharsets.UTF_8));
+        ownedGoneLog = captured(owned);
     }
 
     /** A Java generation, with what it printed. */
     private static String captured(File project) throws Exception {
+        return captured(project, null);
+    }
+
+    private static String captured(File project, String modulePaths) throws Exception {
         java.io.PrintStream out = System.out;
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         System.setOut(new java.io.PrintStream(bytes, true, "UTF-8"));
+        String savedModules = System.getProperty("elasticore.modules");
         try {
+            if (modulePaths != null) System.setProperty("elasticore.modules", modulePaths);
             run(project, "java", false);
         } finally {
+            if (savedModules == null) System.clearProperty("elasticore.modules");
+            else System.setProperty("elasticore.modules", savedModules);
             System.setOut(out);
         }
         String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
@@ -293,13 +409,95 @@ public class SignInAndReferencesTest {
         assertFalse(java("adapter/in/web/SrOrderController.java").contains("/signin"));
     }
 
+    /** DOC1/H3 of the review: without @signin the service and the use case are what they were - no me(). */
     @Test
     public void withoutSigninThereAreNoEndpoints() throws Exception {
         String control = read(jproject, "src/main/java/io/acme/soshop/adapter/in/web/SoUserController.java");
         assertFalse(control.contains("/signin"), control);
-        assertTrue(read(jproject, "src/main/java/io/acme/soshop/application/SoUserCoreService.java")
-                .contains("authenticate(String login, String password)"), "authenticate stays");
+        String core = read(jproject, "src/main/java/io/acme/soshop/application/SoUserCoreService.java");
+        assertTrue(core.contains("authenticate(String login, String password)"), "authenticate stays");
+        assertFalse(core.contains(" me()"), core);
+        String useCase = read(jproject, "src/main/java/io/acme/soshop/application/port/in/SoUserUseCase.java");
+        assertTrue(useCase.contains("authenticate("), useCase);
+        assertFalse(useCase.contains(" me()"), useCase);
         assertFalse(read(jproject, "src/main/ts/SoUserApi.ts").contains("signIn"));
+    }
+
+    /** SEC3: the login a @signin entity signs in with is unique; a plain @login that is not is said. */
+    @Test
+    public void theLoginOfTheEntityThatSignsInIsUnique() throws Exception {
+        String member = java("domain/model/SrMember.java");
+        assertTrue(member.contains("@Column(name = \"email\", nullable = false, length = 100, unique = true)"), member);
+        String kt = kt("domain/model/SrMember.kt");
+        assertTrue(kt.contains("@Column(name = \"email\", nullable = false, length = 100, unique = true)"), kt);
+        // Already unique through @unique: one unique, not two.
+        String owned = read(SignInAndReferencesTest.owned, "src/main/java/io/acme/swshop/domain/model/SwUser.java");
+        assertTrue(owned.contains("unique = true") && owned.indexOf("unique") == owned.lastIndexOf("unique"), owned);
+        // Not @signin: left as declared, and the build says what a shared login does.
+        assertFalse(read(jproject, "src/main/java/io/acme/soshop/domain/model/SoUser.java").contains("unique"));
+        assertTrue(jLog.contains("SoUser: login is @login but not unique"), jLog);
+        assertFalse(jLog.contains("SrMember: email is @login but not unique"), jLog);
+    }
+
+    /** SEC1: sign-in only where nobody but the row's own user and the administrator may change the password. */
+    @Test
+    public void noSignInWhereSomeoneElseMayChangeThePassword() throws Exception {
+        for (String entity : new String[]{"SxOpen", "SxUser", "SxSponsored", "SxHidden"}) {
+            File control = new File(refused, "src/main/java/io/acme/sxshop/adapter/in/web/" + entity + "Controller.java");
+            assertFalse(control.isFile() && new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8)
+                    .contains("/signin"), entity);
+            File core = new File(refused, "src/main/java/io/acme/sxshop/application/" + entity + "CoreService.java");
+            if (!core.isFile()) continue;   // not exposed: no service either
+            String text = new String(Files.readAllBytes(core.toPath()), StandardCharsets.UTF_8);
+            assertTrue(text.contains("authenticate("), entity + ": " + text);
+            assertFalse(text.contains(" me()"), entity + ": " + text);
+        }
+        assertTrue(refusedLog.contains("SxOpen: @signin generates no sign-in: update is public (it has no @access), so"
+                + " anyone may change another row's password and login"), refusedLog);
+        assertTrue(refusedLog.contains("Let only the row's own user change it: @owner(openId)"
+                + " @access(read=owner, create=public, update=owner)"), refusedLog);
+        assertTrue(refusedLog.contains("SxUser: @signin generates no sign-in: update is user, so anyone signed in may"
+                + " change another row's password and login"), refusedLog);
+        assertTrue(refusedLog.contains("SxSponsored: @signin generates no sign-in: update is owner, but"
+                + " @owner(sponsorId) is not the key sponsoredId"), refusedLog);
+        // DOC2/L7: no @expose, no controller - said all the same.
+        assertTrue(refusedLog.contains("SxHidden: @signin generates no sign-in: it is not @expose"), refusedLog);
+    }
+
+    /** SEC4: another @login + @password entity beside the one that signs in shares its session key. */
+    @Test
+    public void anotherEntityWithALoginIsToldTheSessionKeyIsShared() {
+        assertTrue(jLog.contains("SrMember: the session the generated sign-in starts holds only a bare SrMember key, and"
+                + " SoUser has @login and @password too."), jLog);
+        // Only where something signs in: beside refused @signin entities SxStaff is no one's concern.
+        assertFalse(refusedLog.contains("holds only a bare"), refusedLog);
+    }
+
+    /** SIGN1: @signin is counted per application - two modules of one run are two. */
+    @Test
+    public void eachApplicationOfAMultiModuleRunSignsInThroughItsOwnEntity() throws Exception {
+        assertTrue(read(modules, "admin-api/src/main/java/io/acme/smadmin/adapter/in/web/SmStaffController.java")
+                .contains("@PostMapping(\"/signin\")"), modulesLog);
+        assertTrue(read(modules, "shop-api/src/main/java/io/acme/smshop/adapter/in/web/SmClientController.java")
+                .contains("@PostMapping(\"/signin\")"), modulesLog);
+        assertFalse(modulesLog.contains("more than one entity"), modulesLog);
+        // L8: a key the request names can be 'me'.
+        assertTrue(modulesLog.contains("SmClient: its key handle is a string the request gives: a row keyed 'me' is"
+                + " answered by GET /me"), modulesLog);
+        assertFalse(modulesLog.contains("SmStaff: its key"), modulesLog);
+    }
+
+    /** SEC2: a controller the developer owns that still signs in where the DSL no longer would. */
+    @Test
+    public void anOwnedControllerThatStillSignsInIsSaid() throws Exception {
+        String control = read(owned, "src/main/java/io/acme/swshop/adapter/in/web/SwUserController.java");
+        assertTrue(control.contains("the team's own endpoints go here"), "left alone");
+        assertTrue(ownedRoleLog.contains("SwUserController.java is yours and still puts a role in the session"), ownedRoleLog);
+        assertTrue(ownedGoneLog.contains("SwUserController.java is yours and still serves POST /signin, GET /me, which"
+                + " the DSL does not generate now"), ownedGoneLog);
+        assertTrue(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, u.getId(), u.getRole() == null ? null : u.getRole().name());"));
+        assertFalse(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, f(a, b));"));
+        assertTrue(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, signedIn.memberId, signedIn.role?.name)"));
     }
 
     /** H1 of the review: a role a member could write is not a session role. */
@@ -315,7 +513,8 @@ public class SignInAndReferencesTest {
     public void twoEntitiesThatSignInGetNoEndpoints() throws Exception {
         assertFalse(read(two, "src/main/java/io/acme/sta/adapter/in/web/StBuyerController.java").contains("/signin"));
         assertFalse(read(two, "src/main/java/io/acme/stb/adapter/in/web/StSellerController.java").contains("/signin"));
-        assertTrue(twoLog.contains("StBuyer: @signin generates no sign-in: more than one entity says @signin"), twoLog);
+        assertTrue(twoLog.contains("StBuyer: @signin generates no sign-in: more than one entity of the application says @signin"), twoLog);
+        assertFalse(read(two, "src/main/java/io/acme/sta/application/StBuyerCoreService.java").contains(" me()"));
         assertTrue(twoLog.contains("StDesk: @signin generates no sign-in: its key must be one long, int, string or UUID field"), twoLog);
     }
 
@@ -437,7 +636,7 @@ public class SignInAndReferencesTest {
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
-        for (File dir : new File[]{jproject, kproject, unsafe, two}) {
+        for (File dir : new File[]{jproject, kproject, unsafe, two, refused, modules, owned}) {
             if (dir == null || !dir.exists()) continue;
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override

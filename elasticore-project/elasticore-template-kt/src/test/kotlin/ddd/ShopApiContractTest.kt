@@ -111,4 +111,27 @@ class ShopApiContractTest {
         assertThat(body).contains("\"code\":\"invariant.Order.items-size-gt-0\"")
         assertThat(body).contains("an order has at least one line")
     }
+
+    @Test
+    @DisplayName("the login an agent signs in with is unique: a second agent with it is refused (409), the first still signs in")
+    fun aTakenLoginIsAConflict() {
+        val agents = "/api/v1/shop/agent"
+        fun create(login: String, secret: String): Int = mvc.perform(post(agents).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"login":"$login","secret":"$secret"}""")).andReturn().response.status
+        assertThat(create("taken", "pw-first")).isEqualTo(200)
+        assertThat(create("taken", "pw-second")).isEqualTo(409)
+        val signIn = mvc.perform(post("$agents/signin").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"login":"taken","secret":"pw-first"}""")).andReturn().response
+        assertThat(signIn.status).isEqualTo(200)
+
+        // Renaming one's own login to a taken one is refused the same way.
+        assertThat(create("other", "pw-other")).isEqualTo(200)
+        val other = mvc.perform(post("$agents/signin").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"login":"other","secret":"pw-other"}""")).andReturn()
+        val otherId = json.readTree(other.response.contentAsString).path("agentId").asLong()
+        val session = other.request.session as org.springframework.mock.web.MockHttpSession
+        val rename = mvc.perform(put(agents).session(session).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"agentId":$otherId,"login":"taken"}""")).andReturn().response.status
+        assertThat(rename).isEqualTo(409)
+    }
 }

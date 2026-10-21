@@ -1873,7 +1873,8 @@ Customer:
 ```
 
 로그인 API 는 **엔티티 줄에 `@signin` 을 쓰면 생성됩니다** (세션 기본값, 3.0.261021 부터). `@login` 과
-`@password` 가 있고 `@expose` 된 엔티티여야 합니다:
+`@password` 가 있고 `@expose` 된 엔티티이며, **그 행의 비밀번호와 로그인은 본인과 관리자만 바꿀 수 있어야** 합니다
+(`update=owner` 와 키를 가리키는 `@owner`, 또는 `update=admin`·`none` - 아래 "수정 수준"):
 
 ```yaml
 Customer:
@@ -1884,23 +1885,48 @@ Customer:
 |---|---|
 | `POST /api/shop/customer/signin` `{"login": "...", "password": "..."}` (키는 두 필드의 이름) | 200 고객 (비밀번호 없음), 세션 시작. 틀리면 401 `Wrong login or password` |
 | `POST /api/shop/customer/signout` | 204, 세션 끝 |
-| `GET /api/shop/customer/me` | 200 로그인한 고객, 방문자는 401 (`/me` 라는 문자열 키의 행은 `GET /{id}` 로 읽을 수 없음) |
+| `GET /api/shop/customer/me` | 200 로그인한 고객, 방문자는 401. 키가 문자열이면 키가 `me` 인 행은 `GET /{id}` 가 아니라 이 엔드포인트(로그인한 사람)가 답합니다 |
 
-TypeScript 클라이언트에도 `signIn(login, password)`, `signOut()`, `me()` (방문자면 null) 가 생깁니다. 쿠키 세션이라
-화면과 API 가 같은 출처(origin)일 때 동작합니다.
+CoreService·유스케이스에 `me()` 가, TypeScript 클라이언트에 `signIn(login, password)`, `signOut()`, `me()` (방문자면
+null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(origin)일 때 동작합니다. `@signin` 이 없으면 `me()` 도 없고
+`authenticate` 만 있습니다 (아래 "@password / @login").
 
 세션에는 행의 키와 **역할**이 들어갑니다. 역할은 `@role` 을 붙인 필드, 없으면 `role` 이라는 필드의 값으로,
 **`@access(admin)` 인 enum 이나 문자열 필드만** 씁니다 (enum 이면 상수 이름 - `UserRole.ADMIN` 이면 `ADMIN`,
 `adminRole` 과 비교). 관리자만 쓰는 필드가 아니면 가입자가 `"role":"ADMIN"` 을 보내고 로그인해 관리자가 되므로,
 빌드가 DSL 경고를 내고 역할 없이 로그인합니다. 역할 필드가 없으면 모두 일반 사용자입니다.
 
-- **모델에 `@signin` 엔티티는 하나만.** 세션은 맨 키만 들고 있어, 둘이면 판매자 7 이 고객 7 로 읽힙니다. 둘 이상이면
-  어디에도 만들지 않고 DSL 경고를 냅니다. 키가 둘 이상인 엔티티도 경고만 합니다.
+- **수정 수준.** 행을 쓰는 요청(`PUT`, `PUT /batch`, 조건 수정)은 모두 `update` 수준을 묻습니다 - `update`, 없으면 `*`,
+  그것도 없으면 `admin`, `@access` 가 아예 없으면 `public`. 이것이 `admin`·`none` 이거나, `owner` 이면서 `@owner` 가 키일
+  때만 로그인 API 를 만듭니다. `public`·`user` 이거나 키가 아닌 필드의 `owner` 이면 남이 관리자의 비밀번호를 바꾸고 관리자로
+  로그인할 수 있으므로 만들지 않고, 이유와 고칠 문장(`@access` 가 없으면 `@owner(customerId)
+  @access(read=owner, create=public, update=owner)`)을 DSL 경고로 알려 줍니다. `@access` 에 적지 않은 연산은 `admin` 이므로
+  `@access` 를 처음 쓸 때는 가입(`create=public`)과 조회도 함께 적습니다.
+- **로그인은 유일.** `@signin` 엔티티의 `@login` 컬럼에는 `unique = true` 가 붙습니다 (이미 `@unique` 이거나, 키이거나,
+  그 컬럼 하나만의 unique `@Index` 가 있으면 그대로). 이미 있는 로그인으로 가입하거나 로그인을 바꾸면 다른 제약 위반처럼
+  409 입니다. 같은 로그인이 두 행이면 `authenticate` 가 둘 다 거절하므로, 남의 로그인으로 행을 만들어 그 사람을 못 들어오게
+  하는 일을 DB 가 막습니다. 이미 운영 중인 DB 는 마이그레이션으로 unique 제약을 더합니다 (중복이 있으면 먼저 정리).
+- **애플리케이션에 `@signin` 엔티티는 하나만.** 세션은 맨 키만 들고 있어, 둘이면 판매자 7 이 고객 7 로 읽힙니다. 한 번의
+  생성 안에서 컨트롤러가 같은 애플리케이션에 생기는 엔티티끼리 셉니다: 단일 모듈 프로젝트는 모든 도메인이 하나의
+  애플리케이션이고, 멀티 모듈(`elasticore.modules`)에서는 컨트롤러가 생기는 모듈(`control` 의 `모듈명://` 이 가리키는 모듈,
+  없으면 그 blueprint 가 있는 모듈)마다 하나입니다. 둘 이상이면 그 애플리케이션 어디에도 만들지 않고 DSL 경고를 냅니다.
+  두 모듈이 한 애플리케이션으로 함께 실행되는지는 생성기가 알 수 없으니, 그런 두 모듈에는 한쪽에만 `@signin` 을 씁니다.
+- **같은 애플리케이션의 다른 `@login`·`@password` 엔티티.** 그 엔티티를 손으로 `SessionCurrentUser.signIn` 하면 그 키도
+  같은 세션 키라, `me()` 와 모든 소유자 검사가 `@signin` 엔티티의 같은 키 행으로 읽습니다 (직원 7 = 고객 7). 빌드가
+  `Customer: the session the generated sign-in starts holds only a bare Customer key, and Staff has @login and @password
+  too ...` DSL 경고로 알려 줍니다. 그 엔티티는 자기 `CurrentUser` 빈(Spring Security 등)으로 로그인하거나, 로그인은
+  `@signin` 엔티티로만 합니다.
+- 키가 둘 이상이거나, `@expose` 가 없거나, `@login`·`@password` 가 모자라도 만들지 않고 DSL 경고를 냅니다.
+- 키가 요청이 정하는 문자열이면(`@genid`·`@sequence` 가 아님) 키가 `me` 인 행은 `GET /{id}` 로 읽을 수 없으므로(`GET /me`
+  가 로그인한 사람을 답함) 빌드가 경고합니다. `beforeSave` 에서 `me` 를 거절하거나 키를 생성되게 합니다.
 - 틀린 비밀번호를 몇 번까지 허용할지, 정지된 계정을 막을지 같은 로그인 규칙은 개발자 소유인 `CustomerService` 에서
   `authenticate(login, password)` 를 override 해 씁니다 - 생성된 `signin` 이 그것을 부릅니다.
 - 컨트롤러는 개발자 소유라 **손댄 컨트롤러에는 들어가지 않습니다.** 빌드가 `... is yours and does not serve POST /signin,
   POST /signout, GET /me ...` 를 DSL 경고로 알려 주면, 그 파일을 지우고 빌드해(손댄 내용은 옮겨 두고) 생성된 것을 보거나
-  세 메서드를 옮겨 적습니다.
+  세 메서드를 옮겨 적습니다. 거꾸로 손댄 컨트롤러가 DSL 이 더는 만들지 않는 `POST /signin`·`GET /me` 를 아직 가지고
+  있거나(`@signin` 을 지웠거나 위 이유로 거절됨), 관리자만 쓰는 필드가 아닌 역할을 세션에 넣으면 `... is yours and still
+  serves POST /signin, GET /me ...` / `... still puts a role in the session ...` 경고가 납니다 - 그 로그인은 생성된 검사가
+  믿는 세션을 계속 만들기 때문입니다. 그 메서드를 지우거나 역할 인자를 뺍니다.
 
 손으로 세션을 다룰 때 (가입하고 바로 로그인 같은 것):
 
@@ -1915,15 +1941,20 @@ Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈�
 ## @password / @login — 자격 증명 (v3)
 
 ```yaml
-login:    string(10)! @login
+login:    string(10)! @login @unique
 password: string(255)! @password      # 해시 길이를 담을 만큼 (PBKDF2 약 100자)
 ```
 
 - 요청으로 받은 비밀번호는 **모든 쓰기 경로에서 해시로만** 저장 (기본 PBKDF2-SHA256, `PasswordHasher` 빈으로 교체).
 - 응답·검색·DTO 복사에 나오지 않음 (`@writeonly` 와 같음), TypeScript 에서 optional.
-- `@login` 과 `@password` 가 함께 있으면 CoreService·유스케이스에 `authenticate(login, password)` 와 `me()` 생성.
-  없는 로그인도 같은 해시 비용을 치러 응답 시간으로 계정 존재를 알 수 없음.
-- 엔티티 줄에 `@signin` 까지 쓰면 컨트롤러에 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표).
+- `@login` 과 `@password` 가 함께 있으면 CoreService·유스케이스에 `authenticate(login, password)` 생성 - 행, 또는
+  로그인이 없거나 두 행 이상이거나 비밀번호가 틀리면 비어 있음. 없는 로그인도 같은 해시 비용을 치러 응답 시간으로 계정
+  존재를 알 수 없음.
+- 로그인은 유일해야 합니다: 같은 로그인이 두 행이면 `authenticate` 가 둘 다 거절하므로, 누가 남의 로그인으로 행을 만들면
+  그 사람이 로그인하지 못합니다. `@signin` 없이 쓰는 엔티티의 로그인이 유일하지 않으면(`@unique`, 키, 그 컬럼 하나만의
+  unique `@Index` 가 아님) DSL 경고를 냅니다.
+- 엔티티 줄에 `@signin` 까지 쓰면 `me()`, 컨트롤러의 `signin`·`signout`·`me` (위 "@access / @owner" 의 로그인 표), 그리고
+  로그인 컬럼의 unique.
 
 ## @snapshot / @compute — 파생 값 (DDD 룰셋)
 

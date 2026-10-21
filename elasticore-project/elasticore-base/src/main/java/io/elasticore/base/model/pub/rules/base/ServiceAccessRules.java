@@ -24,7 +24,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *         @access(read=owner, create=user, cancel=owner, ship=admin)
  * Customer:
  *   fields:
- *     login:    string(10)! @login
+ *     login:    string(10)! @login @unique
  *     password: string(255)! @password
  *     role:     UserRole @access(admin)       # only the administrator writes it
  * </pre>
@@ -67,6 +67,16 @@ public class ServiceAccessRules implements CodeRules {
     /** A field only the administrator writes: @access(admin) on the field. */
     static boolean adminOnly(FieldSpec f) {
         return "admin".equalsIgnoreCase(trim(f.dslValue("access")));
+    }
+
+    /** Whether the key is generated - a sequence, @genid, or a raw @jpa:GeneratedValue - rather than sent. */
+    static boolean keyGenerated(FieldSpec pk) {
+        if (pk.generationType() != null
+                || pk.hasDslAny("sequence", "genid", "generated", "identity", "autoincrement")) return true;
+        for (String line : pk.nativeAnnotationLines()) {
+            if (line.contains("GeneratedValue")) return true;
+        }
+        return false;
     }
 
     /**
@@ -178,14 +188,7 @@ public class ServiceAccessRules implements CodeRules {
         }
         FieldSpec pk = e.pkField();
         boolean ownerIsKey = owner != null && pk != null && owner.name().equals(pk.name());
-        boolean keyGenerated = pk != null && (pk.generationType() != null
-                || pk.hasDslAny("sequence", "genid", "generated", "identity", "autoincrement"));
-        if (pk != null && !keyGenerated) {
-            // A key generated another way - a raw @jpa:GeneratedValue - is generated too.
-            for (String line : pk.nativeAnnotationLines()) {
-                if (line.contains("GeneratedValue")) keyGenerated = true;
-            }
-        }
+        boolean keyGenerated = pk != null && keyGenerated(pk);
         List<FieldSpec> passwords = new ArrayList<FieldSpec>();
         List<FieldSpec> adminOnly = new ArrayList<FieldSpec>();
         for (FieldSpec f : e.fields()) {
@@ -428,9 +431,13 @@ public class ServiceAccessRules implements CodeRules {
     /**
      * Who is signed in: the row whose key the session holds - read past the
      * entity's read level, since anyone signed in may see themselves.
+     *
+     * Only for the entity the API signs in through (@signin): the session's
+     * key is that entity's, and an entity that signs in its own way keeps
+     * the service it had - a me() of its own included.
      */
     private void me(EntitySpec e, SourceCode c, boolean kt) {
-        if (!hasMe(e)) return;
+        if (!signsIn(e)) return;
         String keyType = idType(e.pkFields().get(0).typeName());
         String entity = e.getName();
         String dto = entity + "DTO";
@@ -458,15 +465,17 @@ public class ServiceAccessRules implements CodeRules {
     /**
      * Whether the API signs in through this entity: the entity line says
      * {@code @signin}, it has a @login and a @password, it is exposed, it has
-     * one key of a type a session holds, and it is the only entity of the
-     * model that says @signin - the session holds a bare key, which two
-     * signing-in entities would read as each other's.
+     * one key of a type a session holds, only the row's own user or the
+     * administrator may change the row (credentialsGuarded), and it is the
+     * only entity of the application that says @signin - the session holds a
+     * bare key, which two signing-in entities would read as each other's.
      *
      * Asked for, not assumed: an application that signs in its own way (its
      * own checks of an account's state, Spring Security) gets no second path.
      */
     public static boolean signsIn(EntitySpec e) {
-        return e.hasMeta("signin") && hasMe(e) && e.hasMeta("expose") && e.signInEntities() == 1;
+        return e.hasMeta("signin") && hasMe(e) && e.hasMeta("expose") && credentialsGuarded(e)
+                && e.signInEntities() == 1;
     }
 
     /** Why an entity that says @signin gets no sign-in endpoints; null when it gets them or does not ask. */
@@ -476,9 +485,67 @@ public class ServiceAccessRules implements CodeRules {
         if (e.pkFields().size() != 1 || idType(e.pkFields().get(0).typeName()) == null)
             return "its key must be one long, int, string or UUID field - the session holds it";
         if (!e.hasMeta("expose")) return "it is not @expose - there is no controller to put them on";
+        if (!credentialsGuarded(e)) return whoMayChangeCredentials(e);
         if (e.signInEntities() > 1)
-            return "more than one entity says @signin, and the session holds a bare key they would read as each other's";
+            return "more than one entity of the application says @signin, and the session holds a bare key they"
+                    + " would read as each other's";
         return null;
+    }
+
+    /**
+     * The level an update of the row is at, as AccessPolicy reads it: what
+     * "update" says, else "*", else admin - and public with no @access.
+     * Every request path that writes a row (PUT, PUT /batch, an update by
+     * condition) asks for this one level.
+     */
+    static String updateLevel(EntitySpec e) {
+        String declared = e.metaText("access");
+        if (declared == null || declared.trim().isEmpty()) return "public";
+        Map<String, String> levels = levels(e, false);
+        if (levels.containsKey("update")) return levels.get("update");
+        if (levels.containsKey("*")) return levels.get("*");
+        return "admin";
+    }
+
+    /**
+     * Whether only the row's own user and the administrator may write its
+     * @password and @login: update is admin or none, or owner with @owner on
+     * the key - the signed-in key is then the row's own. Anything wider lets
+     * someone else set the administrator's password and sign in as them.
+     */
+    static boolean credentialsGuarded(EntitySpec e) {
+        String level = updateLevel(e);
+        if ("admin".equals(level) || "none".equals(level)) return true;
+        return "owner".equals(level) && ownerIsTheKey(e);
+    }
+
+    private static boolean ownerIsTheKey(EntitySpec e) {
+        FieldSpec owner = ownerField(e);
+        return owner != null && e.pkFields().size() == 1 && owner.name().equals(e.pkFields().get(0).name());
+    }
+
+    private static String whoMayChangeCredentials(EntitySpec e) {
+        String level = updateLevel(e);
+        String declared = e.metaText("access");
+        Map<String, String> levels = levels(e, false);
+        String source = declared == null || declared.trim().isEmpty() ? " (it has no @access)"
+                : levels.containsKey("update") ? "" : levels.containsKey("*") ? " (from *=" + level + ")" : "";
+        String key = e.pkFields().get(0).name();
+        String password = "password";
+        for (FieldSpec f : e.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+        }
+        String who = "owner".equals(level)
+                ? "update is owner, but @owner" + (e.metaValue("owner") == null ? " is not given" : "(" + trim(e.metaValue("owner"))
+                        + ") is not the key " + key) + ", so the row's owner is not the one who signs in with it"
+                : "update is " + level + source + ", so " + ("user".equals(level) ? "anyone signed in" : "anyone")
+                        + " may change another row's " + password + " and " + loginField(e);
+        String fix = declared == null || declared.trim().isEmpty()
+                ? "@owner(" + key + ") @access(read=owner, create=public, update=owner) - an operation @access does not"
+                        + " name is the administrator's"
+                : "@owner(" + key + ") and update=owner in @access, or update=admin";
+        return who + " - they could set the administrator's password and sign in as the administrator."
+                + " Let only the row's own user change it: " + fix;
     }
 
     /** Whether the service has me(): an entity that signs in (@login, @password) with one key of a type a session holds. */
@@ -519,6 +586,89 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /**
+     * What the build says about signing in, for every entity - on the entity,
+     * which every entity has, rather than on the controller, which only an
+     * exposed one gets: an entity whose @signin cannot be met said nothing
+     * when the reason was the missing @expose.
+     */
+    @Rule(value = "access-signin-check", target = "entity", order = 0)
+    void signInCheck(EntitySpec e) {
+        String why = whyNoSignIn(e);
+        if (why != null) warnSignIn(e, "@signin generates no sign-in: " + why);
+        String login = loginField(e);
+        boolean serviced = e.hasMeta("expose") || e.hasMeta("service");
+        if (login != null && serviced && !e.hasMeta("signin") && !loginUnique(e)) {
+            warnSignIn(e, login + " is @login but not unique (@unique, or a unique @Index on it alone): authenticate"
+                    + " refuses a " + login + " two rows share, so whoever creates a row with someone's " + login
+                    + " locks them out.");
+        }
+        if (!signsIn(e)) return;
+        FieldSpec candidate = roleCandidate(e);
+        if (candidate != null && !roleIsSafe(e, candidate)) {
+            warnSignIn(e, candidate.name() + " is not put in the session as a role: only a field an administrator alone"
+                    + " writes (@access(admin)), an enum or a string, can be - otherwise a member could make"
+                    + " themselves an administrator. The generated sign-in puts no role in the session.");
+        }
+        FieldSpec pk = e.pkFields().get(0);
+        if ("String".equals(idType(pk.typeName())) && !keyGenerated(pk)) {
+            warnSignIn(e, "its key " + pk.name() + " is a string the request gives: a row keyed 'me' is answered by"
+                    + " GET /me (whoever is signed in), not by GET /{" + pk.name() + "}. Refuse 'me' in beforeSave, or"
+                    + " generate the key (@genid, @sequence).");
+        }
+        // Every owner check and me() read the session's bare key as this
+        // entity's; another entity of the application with a login of its
+        // own, signed in through SessionCurrentUser by hand, would be too.
+        List<String> others = e.otherLoginEntities();
+        if (!others.isEmpty()) {
+            String other = others.get(0);
+            boolean one = others.size() == 1;
+            warnSignIn(e, String.format("the session the generated sign-in starts holds only a bare %s key, and %s %s"
+                            + " @login and @password too. Signed in through SessionCurrentUser as well, %s 7 would be %s 7"
+                            + " to me() and to every owner check - sign %s in through a CurrentUser of %s own (Spring"
+                            + " Security, say), or only through %s.",
+                    e.getName(), String.join(", ", others), one ? "has" : "have", other, e.getName(),
+                    one ? other : "them", one ? "its" : "their", e.getName()));
+        }
+    }
+
+    /**
+     * A @signin entity's login is unique: authenticate refuses a login two
+     * rows share, so a second row with someone's login locked them out of
+     * the generated sign-in. The database now refuses the second row - a
+     * taken login is 409, as any constraint is.
+     */
+    @Rule(value = "access-signin-login-unique", target = "entity", order = 31)
+    void uniqueLogin(EntitySpec e, FieldSpec f) {
+        if (!e.hasMeta("signin") || !f.name().equals(loginField(e)) || loginUnique(e)) return;
+        ctx(e).field(f).merge(io.elasticore.base.model.pub.rules.AnnoCode.of("jakarta.persistence.%s", "Column")
+                .valRaw("unique", "true"));
+    }
+
+    /** Whether the @login field is unique already: @unique, the key, or a unique @Index on that column alone. */
+    static boolean loginUnique(EntitySpec e) {
+        String login = loginField(e);
+        if (login == null) return false;
+        FieldSpec f = null;
+        for (FieldSpec each : e.fields()) {
+            if (each.name().equals(login)) f = each;
+        }
+        if (f == null) return false;
+        if (f.hasDsl("unique") && !"false".equals(f.dslValue("unique"))) return true;
+        if (e.pkFields().size() == 1 && e.pkFields().get(0).name().equals(login)) return true;
+        for (EntitySpec.IndexSpec idx : e.indexes()) {
+            if (!"true".equalsIgnoreCase(trim(idx.unique())) || idx.columnList() == null) continue;
+            String column = idx.columnList().trim();
+            if (column.equalsIgnoreCase(login) || column.equalsIgnoreCase(f.dbColumnName())
+                    || column.equalsIgnoreCase(snake(login))) return true;
+        }
+        return false;
+    }
+
+    private static String snake(String name) {
+        return name.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
      * The three endpoints a sign-in needs, next to the entity's own:
      *
      * <pre>
@@ -533,15 +683,8 @@ public class ServiceAccessRules implements CodeRules {
      */
     @Rule(value = "spring-signin-control", target = "control", order = 31)
     void signInControl(EntitySpec e) {
-        String why = whyNoSignIn(e);
-        if (why != null) warnSignIn(e, "@signin generates no sign-in: " + why);
+        // What stands in the way is said by access-signin-check, for every entity.
         if (!signsIn(e)) return;
-        FieldSpec candidate = roleCandidate(e);
-        if (candidate != null && !roleIsSafe(e, candidate)) {
-            warnSignIn(e, candidate.name() + " is not put in the session as a role: only a field an administrator alone"
-                    + " writes (@access(admin)), an enum or a string, can be - otherwise a member could make"
-                    + " themselves an administrator. Signed-in users get no role.");
-        }
         SourceCode c = ctx(e);
         boolean kt = c.syntax() == Syntax.KOTLIN;
         String entity = e.getName();

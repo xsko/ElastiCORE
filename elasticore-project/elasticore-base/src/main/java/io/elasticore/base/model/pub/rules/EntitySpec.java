@@ -365,7 +365,7 @@ public final class EntitySpec {
 
     private int signInEntities;
 
-    /** How many entities of the model say @signin - the generated sign-in is written for one only. */
+    /** How many entities of the application say @signin - the generated sign-in is written for one only. */
     public EntitySpec knownSignInEntities(int count) {
         this.signInEntities = count;
         return this;
@@ -373,6 +373,18 @@ public final class EntitySpec {
 
     public int signInEntities() {
         return signInEntities;
+    }
+
+    private java.util.List<String> otherLoginEntities = java.util.Collections.emptyList();
+
+    /** The application's entities with @login and @password that do not say @signin. */
+    public EntitySpec knownOtherLoginEntities(java.util.List<String> names) {
+        this.otherLoginEntities = names == null ? java.util.Collections.<String>emptyList() : names;
+        return this;
+    }
+
+    public java.util.List<String> otherLoginEntities() {
+        return otherLoginEntities;
     }
 
     private final java.util.Set<String> optionalEmbeddables = new java.util.HashSet<String>();
