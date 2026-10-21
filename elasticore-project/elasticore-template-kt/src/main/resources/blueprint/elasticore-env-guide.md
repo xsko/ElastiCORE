@@ -164,6 +164,7 @@ dependencies {
 | outbox recorder (DDD) | Jackson 2 `ObjectMapper` | Jackson 3 `JsonMapper` (앱이 등록한 것) |
 | Kotlin (`language = 'kotlin'`) | 그대로 | `Specification` 타입 파라미터에 `T : Any`, `Page.map`에 `!!` (Spring Data 4의 JSpecify 선언) |
 | HTTP 포트 클라이언트 (런타임) | Jackson 2 코덱 | Jackson 3 코덱 (`elasticore-springboot4`) |
+| 요청 본문에서 거절된 필드 (`RequestShapeErrors`, API 오류의 `typeMismatch`) | Jackson 2 의 경로 | Jackson 3 의 경로 (`elasticore-springboot4`) - 응답은 같음 |
 | HTTP 포트 (선택: `httpPort: spring`) | ElastiCORE 런타임 | Spring이 구현하는 `@HttpExchange` 인터페이스 + `@ImportHttpServices` (`elasticore-dsl-port-guide.md` 2.7) |
 | 엔티티, 리포지터리, 서비스, 컨트롤러 | 그대로 | 그대로 (Hibernate 7·Spring Data 4에서 컴파일·실행 확인) |
 

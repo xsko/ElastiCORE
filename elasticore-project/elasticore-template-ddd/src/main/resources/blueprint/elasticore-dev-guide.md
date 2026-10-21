@@ -240,8 +240,8 @@ Sort.Order desc = field.getDescOrder();
 
 ```java
 // 대소문자 무시 부분검색
-Specification<VendorInfo> spec = Q.VendorInfo.vendorName(Op.ILIKE, "autosure");
-// -> WHERE LOWER(vendor_name) LIKE LOWER('%autosure%')  (Auto, AUTO, AutoSure 모두 매칭)
+Specification<VendorInfo> spec = Q.VendorInfo.vendorName(Op.ILIKE, "acme");
+// -> WHERE LOWER(vendor_name) LIKE LOWER('%acme%')  (acme, ACME, Acme Supply 모두 매칭)
 ```
 
 **DSL `@search` vs 런타임 `Op` 차이:**

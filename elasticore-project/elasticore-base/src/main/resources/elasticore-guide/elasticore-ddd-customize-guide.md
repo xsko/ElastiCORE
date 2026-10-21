@@ -271,6 +271,7 @@ elasticore {
 - 한 파일 종류의 규칙을 **모두** 끄면 그 파일은 만들어지지 않습니다 (생성 로그에 `SKIP(dontMake)`).
 - 일부만 끄면 그 부분만 빠집니다. 예: `jpa-comment`를 끄면 엔티티 필드의 `@Comment`만 사라집니다.
 - **동작이 바뀝니다.** `ErpApiErrors`는 "없는 대상 404, 중복·지금 상태와 충돌 409, 업무 규칙 위반 422"를 정하는 파일입니다. 끄면 그 응답은 회사 처리기가 정해야 합니다(없으면 500).
+- 컨트롤러에 닿기 전의 거절(JSON 이 아닌 본문, 타입이 틀린 값, 없는 경로·메서드 - `code` 가 있는 같은 모양)도 함께 빠집니다. 그 응답을 맡는 런타임의 `RequestShapeErrors` 는 `ErpApiErrors` 가 `@Import` 해서 생기기 때문입니다. 회사 처리기에서도 쓰려면 그 처리기에 `@Import(io.elasticore.springboot3.validation.RequestShapeErrors.class)` 한 줄을 붙이세요(회사 처리기에 `@Order` 를 주면 그쪽이 먼저입니다). 생성된 컨트롤러의 `findById`·`delete` 가 없는 행에 던지는 `NotFoundException` 은 `@ResponseStatus(404)` 라서 끄더라도 404 입니다.
 
 > **끄면 안 되는 것**: 파일의 뼈대를 채우는 규칙 — `${packageName}`, `${className}` 같은 빈칸을 채우는 규칙(1장 표의 마지막 칸에 있는 규칙, 그리고 `controller-vars`, `v3-service-vars` 같은 `*-vars`, `*-file`) — 을 일부만 끄면 빈칸이 비어 파일이 깨집니다.
 > `suppress`는 "무언가를 더 붙이는" 규칙을 끄거나, 파일 하나의 규칙을 모두 꺼서 통째로 뺄 때 쓰세요.
