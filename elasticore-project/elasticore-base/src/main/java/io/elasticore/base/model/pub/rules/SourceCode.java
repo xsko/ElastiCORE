@@ -419,8 +419,9 @@ public final class SourceCode {
         // A project's entity rule also runs for the developer's class of a
         // root split in two - for the class annotations. The method it adds
         // is on the generated base class that one extends, so writing it
-        // again would only override it with a copy.
-        if ("behavior".equals(target) && Boolean.TRUE.equals(PROJECT_RULE.get())) return this;
+        // again would only override it with a copy. A rule written for the
+        // behavior target itself still adds its method there.
+        if (Boolean.TRUE.equals(BORROWED_ENTITY_RULE.get())) return this;
         addedMethods.add(methodSource);
         return this;
     }
@@ -811,6 +812,9 @@ public final class SourceCode {
      * project rule need not know when the file shell drew the annotations.
      */
     static final ThreadLocal<Boolean> PROJECT_RULE = new ThreadLocal<Boolean>();
+
+    /** Set while a project's entity rule runs for the developer's class of a split root (RuleEngine). */
+    static final ThreadLocal<Boolean> BORROWED_ENTITY_RULE = new ThreadLocal<Boolean>();
 
     private java.util.Set<String> activeRules = java.util.Collections.emptySet();
 

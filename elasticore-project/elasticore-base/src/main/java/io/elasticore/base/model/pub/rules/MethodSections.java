@@ -50,7 +50,7 @@ public final class MethodSections {
             // starts at the first line that opens it once a class is declared.
             // A declaration line, not a comment or javadoc that mentions a class.
             boolean declares = !t.startsWith("*") && !t.startsWith("/") && !t.startsWith("@")
-                    && t.matches("^((public|protected|private|internal|open|abstract|final|data|sealed)\\s+)*class\\s+.*");
+                    && t.matches("^((public|protected|private|internal|open|abstract|final|data|sealed|enum|static)\\s+)*(class|enum|interface|record|object)\\s+.*");
             if (declares && t.endsWith("{")) { classDecl = i; break; }
             if (declares) {
                 for (int j = i; j < footer; j++) {

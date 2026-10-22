@@ -75,6 +75,66 @@ public class ProjectRuleReachTest {
         assertTrue(lastField >= 0 && method > lastField, out);
     }
 
+    /** A team rule written for the developer's class itself. */
+    public static class BehaviorHelperRules implements CodeRules {
+        @Rule(value = "test-behavior-helper", target = "behavior")
+        void helper(EntitySpec e) {
+            ctx(e).addMethod("\tpublic boolean isNamed() {\n\t\treturn getName() != null;\n\t}");
+        }
+    }
+
+    /** A team rule for enums. */
+    public static class EnumHelperRules implements CodeRules {
+        @Rule(value = "test-enum-helper", target = "enum")
+        void helper(EnumSpec e) {
+            ctx(e).addMethod("\tpublic boolean isFinal() {\n\t\treturn this == DONE;\n\t}");
+        }
+    }
+
+    @Test
+    public void aRuleForTheDevelopersClassStillAddsItsMethod() {
+        EntitySpec split = category().entitySplitForBehavior("Category");
+        String mine = RuleCatalog.standard().engineFor("hexagonal-springboot")
+                .register(new BehaviorHelperRules()).templateSet(SourceCode.TemplateSet.V3)
+                .run(split, "behavior").render();
+        assertTrue(mine.contains("public boolean isNamed()"), mine);
+    }
+
+    @Test
+    public void anAddedMethodIsWrittenOnAKotlinEntityWithoutMethods() {
+        String out = RuleCatalog.standard().engineFor("hexagonal-springboot-kt")
+                .register(new KotlinAuditLabelRules()).templateSet(SourceCode.TemplateSet.KOTLIN)
+                .run(category(), "entity").render();
+        assertTrue(out.contains("fun auditLabel(): String"), out);
+        assertTrue(out.indexOf("fun auditLabel()") < out.lastIndexOf("}"), out);
+    }
+
+    /** The Kotlin form of the audit label. */
+    public static class KotlinAuditLabelRules implements CodeRules {
+        @Rule("test-audit-label-kt")
+        void auditLabel(EntitySpec e) {
+            ctx(e).addMethod("    fun auditLabel(): String = \"" + e.getName() + "#\" + categoryId");
+        }
+    }
+
+    @Test
+    public void anAddedMethodIsWrittenOnAnEnum() {
+        EnumSpec status = new EnumSpec("TaskStatus").constant("OPEN", "O", "Open").constant("DONE", "D", "Done")
+                .pkg("enumeration", "com.acme.shop.domain.model");
+        String out = RuleCatalog.standard().engineFor("hexagonal-springboot")
+                .register(new EnumHelperRules()).templateSet(SourceCode.TemplateSet.V3)
+                .run(status, "enum").render();
+        assertTrue(out.contains("public boolean isFinal()"), out);
+        assertTrue(out.indexOf("public boolean isFinal()") > out.indexOf("DONE("), out);
+    }
+
+    @Test
+    public void exclusionsWithoutSectionsLeaveTheTextAsItIs() {
+        String text = "package a;\r\n\r\npublic class A {\r\n\tprivate int x;\r\n}";
+        assertTrue(text == MethodSections.apply(text, java.util.Collections.singleton("deleteById"),
+                java.util.Collections.<String>emptyList()));
+    }
+
     @Test
     public void aSplitRootGetsTheAddedMethodOnItsGeneratedBaseOnly() {
         EntitySpec split = category().entitySplitForBehavior("Category");

@@ -13,7 +13,9 @@
   위반은 생성(`create`)과 같은 400 문제 응답이다(`code: "invalid"`, `fieldErrors[].code: "Size"`) - 펫스토어에서
   `{"name":"a"}` 로 확인
 - 동작 변경 없음: 지금까지 생성되는 검색 DTO 에는 검증 어노테이션이 없다(이 저장소의 v3 샘플과 펫스토어의 모든
-  `*SrchDTO` 를 확인). 검색 DTO 에 제약을 붙이는 규칙이나 손으로 고친 검색 DTO 가 있을 때만 응답이 달라진다
+  `*SrchDTO`, 그리고 `srchdto` target 의 모든 내장 규칙을 확인). 응답이 달라지는 것은 검색 DTO 에 제약을 붙이는 규칙,
+  손으로 고친 검색 DTO, 그리고 `env.yml` 의 `sortableInterface`/`pageableInterface` 로 지정한 프로젝트 인터페이스의 getter 에
+  검증 어노테이션(예: `@Max(100) int getPageSize()`)이 있을 때뿐이다 - 그때는 그 제약이 이제 400 으로 검사된다
 - 컨트롤러는 개발자 파일이라 이미 고친 컨트롤러는 그대로다. 한 번도 고치지 않은 컨트롤러는 다음 생성에 맞춰진다
 - 2.x 출력(`control.tmpl`)은 그대로
 - 파일: `elasticore-template/v3/control.tmpl`, `elasticore-template/kt/control.tmpl`, 테스트 `ProjectRuleReachTest`
@@ -23,9 +25,11 @@
   메서드)을 하나도 찾지 못한 클래스 - 필드만 있는 엔티티(펫스토어의 `Category`, `Country`, `Customer`) - 에서는 아무 말 없이
   버렸다
 - 이제 구역이 없어도 마지막 멤버 뒤, 닫는 중괄호 앞에 쓴다. 더하는 것도 빼는 것도 없는 파일은 이전과 바이트까지 같다
+- enum·interface·record(Kotlin `object` 포함)에서도 버려졌다 - 선언 줄을 `class` 로만 찾았기 때문. 이제 그 선언도 찾는다
+  (ElastiCORE 의 enum 스켈레톤은 상수 목록 뒤에 늘 `;` 와 생성자가 있어, 더한 메서드가 그 뒤에 온다)
 - 두 파일로 나뉜 루트에서는 프로젝트의 엔티티 규칙이 개발자 클래스(target `behavior`)에도 돈다 - 클래스 어노테이션을
-  위해서다. 그 규칙의 `addMethod` 는 생성기 쪽 `XxxBase` 에만 쓴다. 개발자 클래스가 같은 메서드를 한 번 더 가지면 상속받은
-  것을 복사본으로 덮을 뿐이다
+  위해서다. 그렇게 빌려 도는 규칙의 `addMethod` 는 개발자 클래스에 쓰지 않는다 - 생성기 쪽 `XxxBase` 에 있고 개발자
+  클래스가 상속받는다. `target = "behavior"` 로 쓴 규칙은 그대로 개발자 클래스에 더한다(처음 생성될 때)
 - 파일: `MethodSections.java`, `SourceCode.java`, 테스트 `ProjectRuleReachTest`. 펫스토어에서 `Category`·`Country`·
   `Customer`·`Item`·`Product`·`PurchaseOrderBase` 에 한 번씩 생기는 것을 확인
 

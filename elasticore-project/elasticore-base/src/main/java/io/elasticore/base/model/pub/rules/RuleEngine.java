@@ -21,12 +21,19 @@ public final class RuleEngine {
         final Method method;
         final Rule meta;
         final int registrationIndex;
+        /** A project's entity rule run again for the developer's class of a split root. */
+        final boolean borrowedForBehavior;
 
         RuleMethod(Object ruleSet, Method method, Rule meta, int registrationIndex) {
+            this(ruleSet, method, meta, registrationIndex, false);
+        }
+
+        RuleMethod(Object ruleSet, Method method, Rule meta, int registrationIndex, boolean borrowedForBehavior) {
             this.ruleSet = ruleSet;
             this.method = method;
             this.meta = meta;
             this.registrationIndex = registrationIndex;
+            this.borrowedForBehavior = borrowedForBehavior;
         }
 
         /** A project's own rule rather than ElastiCORE's. */
@@ -336,7 +343,7 @@ public final class RuleEngine {
                         if (suppressed.contains(meta.value())) continue;
                         Class<?>[] p = m.getParameterTypes();
                         if (p.length != 1 || p[0] != EntitySpec.class) continue;
-                        RuleMethod rm = new RuleMethod(rs, m, meta, i);
+                        RuleMethod rm = new RuleMethod(rs, m, meta, i, true);
                         if (meta.phase() == Rule.Phase.TAIL) tailRules.add(rm); else headRules.add(rm);
                     }
                 }
@@ -367,6 +374,7 @@ public final class RuleEngine {
         try {
             rm.method.setAccessible(true);
             if (project) SourceCode.PROJECT_RULE.set(Boolean.TRUE);
+            if (rm.borrowedForBehavior) SourceCode.BORROWED_ENTITY_RULE.set(Boolean.TRUE);
             rm.method.invoke(rm.ruleSet, args);
         } catch (IllegalAccessException e) {
             throw new IllegalStateException("Cannot access rule " + rm.meta.value(), e);
@@ -375,6 +383,7 @@ public final class RuleEngine {
                     + e.getTargetException().getMessage(), e.getTargetException());
         } finally {
             if (project) SourceCode.PROJECT_RULE.remove();
+            if (rm.borrowedForBehavior) SourceCode.BORROWED_ENTITY_RULE.remove();
         }
     }
 }
