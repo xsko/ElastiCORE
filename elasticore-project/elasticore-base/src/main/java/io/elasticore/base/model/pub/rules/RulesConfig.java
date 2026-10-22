@@ -16,8 +16,6 @@ import java.util.List;
  *
  * A domain only declares rules when it deviates from the project default;
  * most projects configure level 2 once and leave env.yml untouched.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RulesConfig {
 

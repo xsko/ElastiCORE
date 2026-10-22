@@ -16,8 +16,6 @@ import java.util.Map;
  * types into a HashSet, so its message order is hash-dependent and varies
  * between runs; deterministic order is a precondition for diff-based
  * regeneration, so v3 fixes it here.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class ProtoServiceSpec {
 

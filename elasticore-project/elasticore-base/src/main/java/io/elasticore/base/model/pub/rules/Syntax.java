@@ -10,8 +10,6 @@ package io.elasticore.base.model.pub.rules;
  * set, which is chosen alongside this. Keeping the list this short is the
  * point: a new language is a template directory plus an entry here, not a
  * second emission layer.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public enum Syntax {
 

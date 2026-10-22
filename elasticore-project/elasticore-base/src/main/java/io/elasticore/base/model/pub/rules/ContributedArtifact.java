@@ -8,8 +8,6 @@ package io.elasticore.base.model.pub.rules;
  * else - whether it is made at all, what it contains, which language it is
  * in - is answered where those questions are already answered for every
  * built-in artifact: by the rules, dontMake(), and the run's template set.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class ContributedArtifact {
 

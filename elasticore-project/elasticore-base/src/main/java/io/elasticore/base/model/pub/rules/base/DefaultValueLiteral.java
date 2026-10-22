@@ -9,8 +9,6 @@ import java.util.Locale;
  * Renders an @default value as a literal of the field's own type, ported from
  * getDefaultValueSetup. Entity and DTO emission share it: 2.x applies the same
  * conversion in both, which is why a long default reads "0L" in the DTO too.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class DefaultValueLiteral {
 

@@ -42,8 +42,6 @@ import java.util.Map;
  * marker is never touched, and a file whose //ecd: hash shows developer
  * edits is skipped unless -Pforce is given. Diff-based merging of developer
  * edits is improvement 2 and not wired yet, so skipping is the safe default.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RulesGenRunner {
 

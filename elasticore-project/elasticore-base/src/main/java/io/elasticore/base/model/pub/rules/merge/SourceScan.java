@@ -9,8 +9,6 @@ package io.elasticore.base.model.pub.rules.merge;
  * block and means nothing there. Counting braces without this distinction
  * mis-locates the boundaries, and a merge that mis-locates a boundary damages
  * the developer's code - so the scan is separated out and stated on its own.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class SourceScan {
 

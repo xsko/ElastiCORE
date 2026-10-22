@@ -7,8 +7,6 @@ package io.elasticore.base.model.pub.rules.lang.kotlin;
  * draws no distinction in the list between a superclass and an interface
  * except that the superclass is constructed. Every artifact shell needs the
  * same sentence built, so it is built here once.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class KotlinClass {
 

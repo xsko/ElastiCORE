@@ -14,8 +14,6 @@ import java.util.List;
  *     2.x writes across several - see {@link #of}
  *   - a slot sitting inline ahead of the template's own text, where an
  *     optional line has to close itself - see {@link #leading}
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class Lines {
 

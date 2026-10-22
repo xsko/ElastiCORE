@@ -1,3 +1,44 @@
+## 3.0.261023
+
+펫스토어에 팀 규칙 모듈(`elasticore { rules = [...] }`)을 붙여 rc1 로 생성·빌드·실행하며 규칙 가이드의 예제를 하나씩 다시
+확인했다. 규칙이 쓴 것이 실행 중인 애플리케이션에 닿지 않는 두 자리를 고쳤다. 2.x 생성기와 `jpa-springboot` 번들은
+그대로다.
+
+### Bug Fixes (팀 규칙)
+
+#### v3 검색 엔드포인트가 요청 본문을 검증한다 - 규칙이 검색 DTO 에 붙인 제약이 동작
+- 규칙이 검색 DTO 에 `@Size(min = 2)` 같은 제약을 붙여도(rule dev guide 6장의 "LIKE 검색은 2글자 이상") 생성된
+  `search(@RequestBody XxxSrchDTO searchDTO)` 에 `@Valid` 가 없어 검사되지 않았다. 한 글자 검색이 200 으로 테이블을 훑었다
+- 이제 v3·DDD·헥사고날(`v3/control.tmpl`)과 Kotlin(`kt/control.tmpl`)의 검색 엔드포인트가 `@Valid @RequestBody` 로 받는다.
+  위반은 생성(`create`)과 같은 400 문제 응답이다(`code: "invalid"`, `fieldErrors[].code: "Size"`) - 펫스토어에서
+  `{"name":"a"}` 로 확인
+- 동작 변경 없음: 지금까지 생성되는 검색 DTO 에는 검증 어노테이션이 없다(이 저장소의 v3 샘플과 펫스토어의 모든
+  `*SrchDTO` 를 확인). 검색 DTO 에 제약을 붙이는 규칙이나 손으로 고친 검색 DTO 가 있을 때만 응답이 달라진다
+- 컨트롤러는 개발자 파일이라 이미 고친 컨트롤러는 그대로다. 한 번도 고치지 않은 컨트롤러는 다음 생성에 맞춰진다
+- 2.x 출력(`control.tmpl`)은 그대로
+- 파일: `elasticore-template/v3/control.tmpl`, `elasticore-template/kt/control.tmpl`, 테스트 `ProjectRuleReachTest`
+
+#### `addMethod` 가 메서드 없는 클래스에서 버려지던 것
+- `ctx(e).addMethod(...)` 는 클래스의 닫는 중괄호 앞에 메서드를 더하지만, 메서드 구역(`@Operation` 이나 `/**` 로 시작하는
+  메서드)을 하나도 찾지 못한 클래스 - 필드만 있는 엔티티(펫스토어의 `Category`, `Country`, `Customer`) - 에서는 아무 말 없이
+  버렸다
+- 이제 구역이 없어도 마지막 멤버 뒤, 닫는 중괄호 앞에 쓴다. 더하는 것도 빼는 것도 없는 파일은 이전과 바이트까지 같다
+- 두 파일로 나뉜 루트에서는 프로젝트의 엔티티 규칙이 개발자 클래스(target `behavior`)에도 돈다 - 클래스 어노테이션을
+  위해서다. 그 규칙의 `addMethod` 는 생성기 쪽 `XxxBase` 에만 쓴다. 개발자 클래스가 같은 메서드를 한 번 더 가지면 상속받은
+  것을 복사본으로 덮을 뿐이다
+- 파일: `MethodSections.java`, `SourceCode.java`, 테스트 `ProjectRuleReachTest`. 펫스토어에서 `Category`·`Country`·
+  `Customer`·`Item`·`Product`·`PurchaseOrderBase` 에 한 번씩 생기는 것을 확인
+
+### Documentation (규칙 API)
+
+- 공개 규칙 API(`io.elasticore.base.model.pub.rules`)의 javadoc 에 남아 있던 "PROTOTYPE - part of the 3.0 publisher extension
+  experiment" 문구를 지웠다(30개 파일). `Rule` 은 메서드 모양 여섯 가지와 팀 규칙이 기본 규칙 뒤에 돈다는 것을, `EntitySpec`·
+  `SourceCode` 는 실제로 하는 일을 적는다
+- rule dev guide 6장: `-PlistRules` 로 확인할 규칙 이름 중 없는 `acme-example` 을 `acme-internal` 로, 없는 메서드
+  이름에 대한 로그를 실제 문장(`… is not declared in SalesOrderRepository (repository file); its annotations were not written`)으로
+- 사이트의 팀 규칙 문서(https://www.elasticore.io/docs/guides/team-rules)를 펫스토어 예제로 다시 썼다 - 11개 페이지, 모든
+  예제를 펫스토어 사본에서 생성·빌드·실행해 확인
+
 ## 3.0.261022-rc1
 
 같은 요구사항(도서·회원·대출 API)을 에이전트가 ElastiCORE 로 만들게 하고 어디서 Java 를 손으로 쓰는지 보았다. 네 군데였다:

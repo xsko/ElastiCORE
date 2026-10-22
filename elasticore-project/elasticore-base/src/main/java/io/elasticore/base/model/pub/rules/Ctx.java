@@ -4,8 +4,6 @@ package io.elasticore.base.model.pub.rules;
  * Static entry point used inside rule methods:
  *
  *   ctx(e).field(f).ensure(AnnoCode.of("jakarta.persistence.Id"));
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class Ctx {
 

@@ -6,8 +6,6 @@ import io.elasticore.base.model.entity.Field;
  * Read-only view of a DSL field for rule authors.
  * Wraps the existing model {@link Field} and narrows the query surface
  * so rules do not depend on model internals.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class FieldSpec {
 

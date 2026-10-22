@@ -13,8 +13,6 @@ import java.util.Map;
  * Its declared fields reuse {@link FieldSpec}, so the type questions the
  * rules ask - is this a string, what does its getter look like - are the same
  * ones they ask of an entity field.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class EnumSpec {
 

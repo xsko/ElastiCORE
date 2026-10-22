@@ -9,8 +9,6 @@ import java.util.Map;
  * Read-only view of a transaction port - an interface whose implementation
  * ElastiCORE supplies at runtime, reaching either an HTTP service or a
  * database.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class PortSpec {
 

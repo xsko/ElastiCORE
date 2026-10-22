@@ -9,10 +9,16 @@ import java.lang.annotation.Target;
  * Marks a method as a code emission rule.
  *
  * The method signature decides when the engine calls it:
- * - (EntitySpec)            : once per entity, before field rules
+ * - (EntitySpec)            : once per file of an entity (HEAD before the
+ *                             field rules, TAIL after them)
  * - (EntitySpec, FieldSpec) : once per field
+ * - (DomainSpec)            : once per file of a domain (mapper, a contributed file)
+ * - (EnumSpec)              : once per enum.yml enum
+ * - (PortSpec)              : once per port.yml port
+ * - (ProtoServiceSpec)      : once per proto port
  *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
+ * A project's own rule sets run after ElastiCORE's within each step, so
+ * what they add or take off stays.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

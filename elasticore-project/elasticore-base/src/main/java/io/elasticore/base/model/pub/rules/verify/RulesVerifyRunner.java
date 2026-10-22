@@ -43,8 +43,6 @@ import java.util.Map;
  * specs; runner-level verification for them requires the derived DTO
  * model, which the 2.x pipeline completes at publish time (not load time),
  * and is therefore a next-phase item.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RulesVerifyRunner {
 

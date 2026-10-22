@@ -23,8 +23,6 @@ import java.util.Map;
  * (a list of set names), or a fully qualified CodeRules class name.
  * Factories create a fresh instance per engine so rule sets may keep
  * per-run state.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RuleCatalog {
 

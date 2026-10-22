@@ -496,6 +496,10 @@ DTO 필드에는 ElastiCORE가 `@Schema(description = ...)`를 이미 붙입니�
 	private String name;
 ```
 
+검색 엔드포인트는 요청을 `@Valid` 로 받으므로 한 글자 검색(`{"name":"A"}`)은 400 입니다
+(`"code":"invalid"`, `fieldErrors` 에 `{"field":"name","code":"Size"}`). 이미 고친 컨트롤러라면
+`search(@Valid @RequestBody ...)` 의 `@Valid` 가 있는지 보세요 - 3.0.261023 전에 생성된 컨트롤러에는 없습니다.
+
 ### SQL (`repository.yml`) — 조회 쿼리는 읽기 전용, `SELECT *`는 금지
 
 **하고 싶은 것**: 두 가지.
@@ -552,7 +556,7 @@ repository:
 ```
 
 import(`org.springframework.transaction.annotation.Transactional`)도 ElastiCORE가 넣습니다.
-메서드 이름을 잘못 적으면 파일은 그대로 두고 빌드 로그에 알려 줍니다: `[rule] method 'summarize' is not declared in the repository file`.
+메서드 이름을 잘못 적으면 파일은 그대로 두고 빌드 로그에 알려 줍니다: `[rule] method 'summarize' is not declared in SalesOrderRepository (repository file); its annotations were not written`.
 
 ### 외부 연동 (`port.yml`) — 외부 호출에 표시 달기
 
@@ -645,7 +649,7 @@ public enum OrderStatus {
 
 ### 무엇이 어디로 가나 — 한 번에 확인
 
-`./gradlew elcore3 -PlistRules`를 실행하면 파일 종류(`target`)마다 실행되는 규칙 목록이 나옵니다. 위 다섯 개 규칙 이름(`acme-example`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`)이 각자의 `target` 아래 보이면 연결된 것입니다.
+`./gradlew elcore3 -PlistRules`를 실행하면 파일 종류(`target`)마다 실행되는 규칙 목록이 나옵니다. 위 다섯 개 규칙 이름(`acme-internal`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`)이 각자의 `target` 아래 보이면 연결된 것입니다.
 
 ---
 

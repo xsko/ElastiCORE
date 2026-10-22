@@ -45,7 +45,7 @@ ${readMethodJsonView}    @GetMapping("${pkPathInfo}")
 
     @Operation(summary = "Search ${entityClassName} data")
 ${searchMethodJsonView}    @PostMapping("/search")
-    fun search(@RequestBody searchDTO: ${searchDTOClassName}): ${searchReturnType}<${searchResultDTOClassName}> {
+    fun search(@Valid @RequestBody searchDTO: ${searchDTOClassName}): ${searchReturnType}<${searchResultDTOClassName}> {
         return ${entityName}Service.findBySearch(searchDTO)
     }
 

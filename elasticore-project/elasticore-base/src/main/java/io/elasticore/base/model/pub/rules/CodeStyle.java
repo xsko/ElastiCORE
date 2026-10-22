@@ -12,8 +12,6 @@ package io.elasticore.base.model.pub.rules;
  * Nothing is applied by default. The compatibility mode's contract is that
  * its output matches 2.x byte for byte, and a house style would break that by
  * definition, so a project opts in.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class CodeStyle {
 

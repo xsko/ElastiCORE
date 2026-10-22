@@ -8,8 +8,6 @@ package io.elasticore.base.model.pub.rules;
  *
  * Declaring path root and extension per artifact is what makes non-Java
  * outputs (.proto, .xml, .sql, .ts) first-class.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class ArtifactTarget {
 

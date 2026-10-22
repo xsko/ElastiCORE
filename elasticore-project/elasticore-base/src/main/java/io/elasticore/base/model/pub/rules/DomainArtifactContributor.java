@@ -16,8 +16,6 @@ import java.util.List;
  *
  * Same shape and same reasoning as the entity form: conditions are code, and
  * a set that has nothing to add for this domain answers an empty list.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public interface DomainArtifactContributor {
 

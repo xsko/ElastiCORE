@@ -13,8 +13,6 @@ package io.elasticore.base.model.pub.rules;
  * method sees the spec and answers an empty list where the artifact does
  * not apply. The spec already knows how to say everything a condition
  * would - inventing a condition language here would only shadow it.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public interface ArtifactContributor {
 

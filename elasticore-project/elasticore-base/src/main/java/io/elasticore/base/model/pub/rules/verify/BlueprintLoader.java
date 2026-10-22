@@ -19,8 +19,6 @@ import java.util.Map;
  * the 2.x pipeline consumes. All domains are loaded regardless of any
  * -Pdomain filter: cross-domain references (@extend, enum types, shared
  * DTO templates) must resolve before per-domain work begins.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class BlueprintLoader {
 

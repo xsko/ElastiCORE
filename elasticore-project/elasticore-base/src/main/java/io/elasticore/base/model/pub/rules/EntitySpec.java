@@ -8,11 +8,13 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Read-only view of a DSL entity for rule authors, plus the handle
- * to its {@link SourceCode} under construction.
+ * What a rule reads about one entity - or one dto.yml DTO, or one search
+ * DTO - as the DSL declares it: its name, meta words (hasMeta, metaValue),
+ * fields, events, commands, repository.yml queries and env.yml settings
+ * (config). The file being built for it is {@code Ctx.ctx(entity)}.
  *
- * PROTOTYPE - in the full implementation this wraps the existing
- * model Entity; the prototype builds it directly from parsed Fields.
+ * A rule set's tests build one directly: new EntitySpec("Pet").meta("root", "")
+ * .field("name", "string(30)! @search(like)").
  */
 public final class EntitySpec {
 

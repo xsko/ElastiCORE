@@ -8,8 +8,6 @@ import java.util.List;
  * The code being built for one field: comment, annotations and declaration.
  * The declaration itself (modifier, type, name) always comes from the model;
  * rules only decorate or adjust it.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class FieldCode {
 

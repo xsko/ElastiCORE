@@ -17,8 +17,6 @@ import java.util.regex.Pattern;
  * A call with no arguments means its string literally. That matters because
  * emitted code carries per-cent signs of its own - a LIKE pattern, a column
  * name - and formatting those would corrupt them.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 final class Formatted {
 

@@ -10,8 +10,6 @@ import io.elasticore.base.model.pub.rules.EntitySpec;
 /**
  * Builds rule-engine specs from the REAL loaded model (ECoreModel), so the
  * new pipeline consumes exactly what the 2.x pipeline consumes.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class SpecFactory {
 

@@ -13,8 +13,6 @@ import java.util.Set;
  * Discovers {@link Rule} methods on registered {@link CodeRules} sets and
  * runs them against an entity. Iteration is engine-owned: entity-level rules
  * run once, field-level rules run once per field. Rule authors never loop.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RuleEngine {
 

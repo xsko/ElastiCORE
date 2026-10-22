@@ -14,8 +14,6 @@ import java.util.Map;
  *
  * The annotation type is always given as a full package name; the renderer
  * decides between simple name plus import or inline FQCN.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class AnnoCode {
 

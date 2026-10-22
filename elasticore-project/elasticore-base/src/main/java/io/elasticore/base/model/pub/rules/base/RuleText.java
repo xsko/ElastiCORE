@@ -9,8 +9,6 @@ import java.util.List;
  * back into the lines it was built from.
  *
  * Each of these had grown its own copy in three or four rule sets.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class RuleText {
 

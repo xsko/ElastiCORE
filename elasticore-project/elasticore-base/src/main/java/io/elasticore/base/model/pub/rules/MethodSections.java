@@ -19,8 +19,6 @@ import java.util.Set;
  *
  * When neither exclusions nor additions are requested the input is returned
  * untouched, so default output stays byte-identical.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class MethodSections {
 
@@ -70,10 +68,15 @@ public final class MethodSections {
             String t = lines.get(i).trim();
             if (t.startsWith("@Operation") || t.startsWith("/**")) starts.add(i);
         }
-        if (starts.isEmpty()) return rendered;
+        // A class without method sections (an entity with only fields and
+        // accessors) has nothing to exclude, but a rule's added method still
+        // goes before its closing brace.
+        boolean hasAdditions = additions != null && !additions.isEmpty();
+        if (starts.isEmpty() && !hasAdditions) return rendered;
 
         StringBuilder out = new StringBuilder();
-        for (int i = 0; i < starts.get(0); i++) {
+        int bodyEnd = starts.isEmpty() ? footer : starts.get(0);
+        for (int i = 0; i < bodyEnd; i++) {
             out.append(lines.get(i)).append('\n');
         }
         for (int s = 0; s < starts.size(); s++) {

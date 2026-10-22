@@ -12,8 +12,6 @@ import java.util.Map;
  *
  * Entities reuse {@link EntitySpec}, so rules filter them with the same
  * accessors they already use elsewhere.
- *
- * PROTOTYPE - part of the 3.0 publisher extension experiment.
  */
 public final class DomainSpec {
 
