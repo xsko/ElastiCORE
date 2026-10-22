@@ -22,6 +22,10 @@ import java.nio.file.StandardCopyOption;
  *
  * Failure is always a warning, never an exception. A guide that could not be
  * copied is a worse manual, not a broken build.
+ *
+ * After the copy it writes {@link GuideIndex#FILE_NAME}: every section of the
+ * guides with its line range, so a reader can open one section instead of a
+ * whole guide.
  */
 public final class GuideDeployer {
 
@@ -62,11 +66,27 @@ public final class GuideDeployer {
             File source = developmentSource(developmentRoot);
             if (source == null) {
                 copyFromClasspath(blueprintRootPath);
-                return;
+            } else {
+                copyFromDirectory(source, blueprintRootPath);
             }
-            copyFromDirectory(source, blueprintRootPath);
         } catch (Exception e) {
             ConsoleLog.printWarn("Error copying guide files to blueprint root: " + e.getMessage());
+        }
+        writeIndex(blueprintRootPath);
+    }
+
+    /**
+     * Indexes the guides that are now in the blueprint root. Read from the
+     * copies, not the sources, so the line numbers are those of the files a
+     * reader opens.
+     */
+    private static void writeIndex(String blueprintRootPath) {
+        Path blueprint = Paths.get(blueprintRootPath);
+        if (!Files.isRegularFile(blueprint.resolve(GUIDE_FILES[0]))) return;
+        try {
+            GuideIndex.writeTo(blueprint, GUIDE_FILES);
+        } catch (Exception e) {
+            ConsoleLog.printWarn("Failed to write " + GuideIndex.FILE_NAME + ": " + e.getMessage());
         }
     }
 

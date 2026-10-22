@@ -18,6 +18,8 @@ ElastiCORE는 YAML(DSL)을 읽어 엔티티, DTO, 서비스, 컨트롤러 코드
 | 5 | 잘못된 모델을 빌드에서 막기 | 규칙 위반이면 빌드 실패 |
 | 6 | 다른 YAML 파일에도 규칙 걸기 | `dto.yml`, 검색 DTO, `repository.yml`(SQL), `port.yml`(외부 연동), `enum.yml` |
 | 7 | 규칙 테스트하기 | 프로젝트 없이 규칙만 빠르게 확인 |
+| 8, 9 | 완성된 규칙 클래스, 자주 쓰는 것 | 복사해서 시작할 전체 코드, 한 장 요약 |
+| 10 | 규칙 API 레퍼런스 | `@Rule`, `EntitySpec`·`FieldSpec`, `SourceCode`(`addMethod`, `excludeMethod`, `dontMake` …), `AnnoCode`, `ModelCheck`, 새 파일, `Syntax` |
 
 ---
 
@@ -983,6 +985,187 @@ public class AcmeRules implements CodeRules {
 | 생성 코드가 이상하다 | 7장처럼 `engine.run(...).render()`를 출력해서 규칙만 따로 확인 |
 
 규칙의 실행 순서는 신경 쓰지 않아도 됩니다. 우리 규칙은 항상 ElastiCORE 기본 규칙이 끝난 **뒤에** 실행되므로, 붙이거나 뺀 것이 그대로 남습니다.
+
+---
+
+## 10. 규칙 API 레퍼런스
+
+모든 타입은 `io.elasticore.base.model.pub.rules` 패키지에 있습니다. 여기에는 팀 규칙에 쓰는 것만 모았습니다. 나머지 공개
+메서드는 ElastiCORE 자신의 규칙이 쓰는 것이라 버전 사이에 바뀔 수 있습니다.
+
+```java
+import io.elasticore.base.model.pub.rules.*;
+import static io.elasticore.base.model.pub.rules.Ctx.ctx;
+```
+
+### `@Rule` 속성과 메서드 모양
+
+`CodeRules` 는 구현할 메서드가 없는 표식 인터페이스이고, `@Rule` 이 붙은 메서드 하나가 규칙 하나입니다. 메서드는 `void`,
+클래스에는 인자 없는 생성자가 있어야 합니다.
+
+| 속성 | 기본값 | 뜻 |
+|---|---|---|
+| `value` | (필수) | 규칙 id. `-PlistRules` 에 나오고 `suppress` 에 씁니다. 팀 접두사를 붙이세요 (`acme-…`) |
+| `target` | `"entity"` | 기여하는 파일 종류 (4장 표, 6장) |
+| `order` | `0` | 같은 단계 안에서 작은 것부터. 같으면 등록 순서 |
+| `phase` | `HEAD` | 파일 단위 규칙이 필드 규칙보다 먼저(`HEAD`)인지 나중(`TAIL`)인지. 필드 규칙에는 의미 없음 |
+
+| 파라미터 | 불리는 때 | `target` 예 |
+|---|---|---|
+| `(EntitySpec e)` | 그 엔티티의 파일을 만들 때마다 한 번 | `entity`, `dto`, `srchdto`, `repository`, `control`, `service`, `behavior` |
+| `(EntitySpec e, FieldSpec f)` | 그 파일의 필드마다 한 번 | `entity`, `dto`, `srchdto` |
+| `(DomainSpec d)` | 도메인 단위 파일마다 한 번 | `mapper`, `apiErrors`, 직접 만든 도메인 파일 |
+| `(EnumSpec e)` | 열거형마다 한 번 | `enum` |
+| `(PortSpec p)` | 외부 연동 포트마다 한 번 | `port` |
+| `(ProtoServiceSpec p)` | proto 포트마다 한 번 | `proto` |
+
+한 파일 안의 순서는 `HEAD` 파일 규칙 → 필드 규칙(필드마다) → `TAIL` 파일 규칙입니다.
+
+### `EntitySpec` - 엔티티, `dto.yml` 의 DTO, 검색 DTO
+
+| 메서드 | DSL 에서 |
+|---|---|
+| `getName()`, `domainName()`, `domainClassName()` | 엔티티 이름, 도메인 (`"erp"`, `"Erp"`) |
+| `hasMeta("x")`, `metaValue("x")`, `metaValues("x")` | `meta:` 의 `@x`, `@x(값)` 의 값, 여러 번 쓴 값 모두 |
+| `metaText("access")` | `@access(read=public, update=owner)` 처럼 짝으로 된 값의 원문 |
+| `aggregateRoot()`, `containedIn()` | 루트인가 / 멤버면 소속 루트 이름 |
+| `isSplitForBehavior(e.getName())` | 두 파일로 나뉘는 루트인가 (`XxxBase` + 개발자 클래스) |
+| `fields()`, `allFields()`, `dtoFields()`, `pkFields()` | 자기 필드 / 상속 포함 / DTO 쪽 / 식별자 |
+| `events()`, `eventClassName(ev)`, `eventPackage()` | `@event(...)` 이름들, 생성된 이벤트 클래스 이름·패키지 |
+| `commands()` → `name()`, `params()` | `commands:` 의 업무 명령 |
+| `queries()` → `name()`, `sql()`, `isSelect()`, `isNative()`, `returnType()`, `params()` | `repository.yml` 의 메서드 (target `repository`). 메서드 이름으로 만드는 쿼리면 `sql()` 이 `null` |
+| `pkg("dto")` | `env.yml` 네임스페이스 키의 패키지 |
+| `config("acme.maxPageSize")` | 그 도메인 `env.yml` 의 `elasticore.config.acme.maxPageSize`, 없으면 `null` |
+| `tablePrefix()`, `apiPath()` | `config.table.prefix`, `config.apiPath` |
+
+### `FieldSpec` - 필드 한 줄
+
+| 메서드 | DSL 에서 |
+|---|---|
+| `name()`, `capitalName()` | 필드 이름, 접근자용 (`"email"`, `"Email"`) |
+| `typeName()`, `coreItemType()` | 선언 타입 / `List<X>` 의 `X` |
+| `required()` | `!` |
+| `hasDsl("x")`, `hasDslAny("x", "y")` | `@x` 가 있나 (대소문자 무시) |
+| `dslValue("x")`, `dslValueAny(...)` | `@x(값)` 의 값 - `dslValue("search")` → `"like"` |
+| `dslProperty("onetomany", "mappedBy")` | `@OneToMany(mappedBy="parent")` 처럼 이름 붙은 속성 |
+| `maxLength()` | `string(100)` 또는 `@length` (없으면 0) |
+| `description()` | `--` 뒤의 설명 |
+| `label()` | `--` 설명, 없으면 `@label` |
+| `dbColumnName()` | `@column` 또는 snake_case 이름 |
+| `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | 컬렉션 / 다른 엔티티 참조 / 기본 타입 / 문자열 |
+| `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
+
+`DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")`(없으면 `null`), `config("a.b")`, `isOn("a.b")`.
+`EnumSpec`: `getName()`, `constants()` → `name()`, `values()`, `fields()`.
+`PortSpec`: `getName()`, `protocol()`, `url()`, `operations()` → `name()`, `httpMethod()`, `url()`, `returnType()`, `params()`.
+
+### `SourceCode` - `ctx(spec)` 이 돌려주는 지금 만드는 파일
+
+| 메서드 | 하는 일 |
+|---|---|
+| `ensureClassAnnotation(anno)` | 클래스 어노테이션. 이미 있으면 두 번 붙이지 않음. import 자동 |
+| `removeClassAnnotation(fqcn)` | 클래스 어노테이션 빼기 (기본 규칙이 붙인 것도) |
+| `field(f)` → `FieldCode` | 그 필드의 선언 |
+| `removeField(f)` | 그 필드를 이 파일에서 뺌 |
+| `method("이름").ensure(anno)` | 이름이 같은 메서드 모두에 어노테이션 (`repository`, `port` …). 없는 이름이면 빌드 로그에 알림 |
+| `addMethod(source)` | 손으로 쓴 메서드를 클래스 끝(닫는 중괄호 앞)에 더함 |
+| `excludeMethod("deleteById", …)` | 생성되는 컨트롤러의 엔드포인트 메서드를 뺌 (아래) |
+| `addImport(fqcn)` | import 등록 (실제로 쓰는 것만 렌더) |
+| `dontMake()` | 이 파일을 만들지 않음 (로그에 `SKIP(dontMake)`) |
+| `var(k, v)`, `varLine(k, fmt, args…)`, `varLines(k, list)` | 스켈레톤의 `${k}` 를 채움 / 줄을 더함. `null` 은 무시 - 빈 값은 `""` |
+| `syntax()`, `requireSyntaxAnyOf(ruleId, Syntax…)` | 이 파일의 언어 / 다른 언어 생성에 쓰이면 그 파일을 실패로 |
+| `render()`, `unfilledSlots()` | 테스트에서: 파일 전체 문자열 / 채워지지 않은 `${…}` 이름 |
+
+`addMethod` 는 메서드 본문을 규칙이 쓴 그대로 넣으므로 언어를 가립니다 - Kotlin 프로젝트에서도 쓰려면 `ctx(e).syntax()` 로
+나누세요. 두 파일로 나뉜 루트(`SalesOrderBase` + 개발자의 `SalesOrder`)에서는 엔티티 규칙의 메서드가 `SalesOrderBase` 에만
+들어가고 개발자 클래스는 그것을 상속받습니다. 개발자 클래스에만 더하려면 `@Rule(target = "behavior")` 로 쓰세요 - 처음 생성될
+때만 적용됩니다. 3.0.261022-rc1 에서는 메서드가 하나도 없는 클래스에서 `addMethod` 가 버려지고 개발자 클래스에도 한 번 더
+들어갑니다. rc1 에서는 필드 규칙의 `ctx(e).field(id).after("…")` 로 멤버를 더하세요.
+
+`excludeMethod` 이름과 엔드포인트:
+
+| 이름 | 엔드포인트 |
+|---|---|
+| `create` | `POST /` |
+| `read` | `GET /{id}` |
+| `search` | `POST /search` |
+| `update`, `batchUpdate` | `PUT /`, `PUT /batch` |
+| `deleteById`, `deleteBatch` | `DELETE /{id}`, `POST /delete` |
+| `schemaInfo` | `GET /schema/info` |
+
+v3 출력(`hexagonal`, `ddd`, Kotlin)에서는 `deleteById` 를 빼면 `deleteBatch` 도, `update` 를 빼면 `batchUpdate` 도 빠집니다.
+2.x 호환 번들(`jpa-springboot`)은 적힌 이름만 빼므로 `excludeMethod("deleteById", "deleteBatch")` 처럼 둘 다 적으세요. **컨트롤러에만**(`target = "control"`)
+쓰세요: 헥사고날의 유스케이스 포트는 팀 규칙보다 먼저 만들어지므로, 서비스(`service`)에서 빼면 `XxxService implements
+XxxUseCase` 가 컴파일되지 않습니다. 서비스와 포트에서까지 빼려면 DSL 의 `@restExclude(deleteById)` 를 쓰세요. 컨트롤러는
+개발자 파일이라, 이미 고친 컨트롤러에는 적용되지 않습니다.
+
+### `FieldCode` - 필드 하나
+
+| 메서드 | 하는 일 |
+|---|---|
+| `ensure(anno)` | 같은 어노테이션이 없을 때만 붙임 (보통 이것) |
+| `add(anno)` | 무조건 붙임 (반복 가능한 어노테이션) |
+| `merge(anno)` | 이미 붙은 같은 어노테이션에 속성만 더함, 없으면 붙임 (기본 규칙의 `@Schema`, `@Column` 에 더할 때) |
+| `replace(anno)` | 같은 어노테이션을 이것으로 바꿈 |
+| `removeAnnotation(fqcn)` | 빼기 |
+| `type("String")`, `rename("x")`, `initial("0")` | 선언 타입 / 이름 / 초기값 |
+| `comment(fmt, …)`, `before(fmt, …)`, `after(fmt, …)` | 주석 / 선언 위 줄 / 선언 뒤 멤버 (여러 번 부르면 줄이 이어짐) |
+
+### `AnnoCode` - 어노테이션
+
+어노테이션을 문자열로 이어 붙이지 마세요. `AnnoCode` 가 Java(`{}`)와 Kotlin(`[]`) 문법, import, 따옴표를 맡습니다.
+어노테이션 클래스는 생성기 클래스패스에 없어도 됩니다 - 애플리케이션이 컴파일할 때 필요합니다.
+
+| 코드 | 결과 |
+|---|---|
+| `AnnoCode.of("jakarta.persistence.Column")` | `@Column` + import |
+| `AnnoCode.of("org.jmolecules.ddd.annotation.%s", "Identity")` | 포맷으로 이름 만들기 |
+| `.val("name", "user_id")` | `name = "user_id"` (문자열 - 따옴표 붙음) |
+| `.val("hidden", true)`, `.val("min", 2)` | `hidden = true`, `min = 2` |
+| `.valRaw("access", "JsonProperty.Access.WRITE_ONLY")` | 그대로 - 상수, 클래스 리터럴 |
+| `.valRaw("length", "%d", 200)` | 포맷 |
+| `.value("x")`, `.valueRaw("A.B")` | 이름 없는 속성 - `@X("x")`, `@X(A.B)` |
+| `.qualified()` | 전체 이름으로 (`jakarta.persistence.Entity` 와 이름이 겹칠 때) |
+| `AnnoCode.AnnoList.of(...)` | `indexes = {...}` 같은 어노테이션 목록 |
+
+### `ModelCheck` - 검사
+
+| 메서드 | 결과 |
+|---|---|
+| `ModelCheck.warn(msg)` | 경고만. 같은 메시지는 한 번 |
+| `ModelCheck.fail(msg)` | 생성을 끝까지 한 뒤 모든 실패를 모아 보여 주고 빌드 실패 (`elcore3` 종료 코드 1) |
+| `ModelCheck.failures()`, `ModelCheck.reset()` | 테스트에서 결과 확인 / 테스트 사이 초기화 |
+
+규칙에서 예외를 던지지 마세요. 그 규칙이 쓰던 파일 하나만 실패로 남아 원인을 찾기 어렵습니다.
+
+### 새 파일 - `ArtifactContributor`
+
+| 타입 | 하는 일 |
+|---|---|
+| `ArtifactContributor` → `artifactsFor(EntitySpec e)` | 엔티티마다 파일을 선언 |
+| `DomainArtifactContributor` → `artifactsFor(DomainSpec d)` | 도메인마다 파일을 선언 |
+| `ContributedArtifact.of(target, namespaceKey, className)` | 새 target 이름(= 스켈레톤 이름), 패키지 키, 클래스 이름 |
+| `.orNamespace("entity")` | 그 패키지 키가 없는 프로젝트에서 쓸 키 |
+
+스켈레톤은 규칙 모듈의 `src/main/resources/elasticore-template/v3/<target>.tmpl` (Java),
+`elasticore-template/kt/<target>.tmpl` (Kotlin). 예제는 `elasticore-ddd-customize-guide.md`.
+
+### `Syntax` - 언어 이음새
+
+어노테이션·import 는 생성기가 언어에 맞게 쓰므로 팀 규칙에는 보통 언어 분기가 필요 없습니다. 코드 조각을 직접 쓸 때(새 파일의
+줄, `addMethod`)만 `ctx(e).syntax()` 로 나누거나 `Syntax` 에 묻습니다:
+
+| 호출 | Java | Kotlin |
+|---|---|---|
+| `s.statement("return x")` | `return x;` | `return x` |
+| `s.getter("dto", "name")` | `dto.getName()` | `dto.name` |
+| `s.setter("to", "name", "v")` | `to.setName(v)` | `to.name = v` |
+| `s.localVar("T", "x", "init")` | `T x = init;` | `val x = init` |
+| `s.newInstance("X", "")` | `new X()` | `X()` |
+| `s.nullableType("String")` | `String` | `String?` |
+| `s.classLiteral("X")` | `X.class` | `X::class` |
+
+팀 규칙은 서버(Java·Kotlin) 생성에만 더해지고 TypeScript 클라이언트에는 들어가지 않습니다.
 
 ---
 

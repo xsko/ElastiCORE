@@ -628,7 +628,7 @@ entity:
 - 생성 코드 확인: `build/generated/sources/` 또는 namespace 경로 직접 확인
 - YAML 파싱 오류: 출력의 `* LOAD ERROR: <파일>` 과 바로 아래 파서 메시지(`mapping values are not allowed here ...
   line 41, column 40`)가 고칠 곳입니다. 흔한 원인은 `-- 설명` 안의 `: ` (예: `-- 주문한 사람: 로그인한 회원`) 이고,
-  `,` 나 ` - ` 로 바꾸면 됩니다. 규칙 엔진(`elcore3`)은 3.0.261021 부터 이때 빌드를 멈춥니다
+  `,` 나 ` - ` 로 바꾸면 됩니다. 규칙 엔진(`elcore3`)은 3.0.261022-rc1 부터 이때 빌드를 멈춥니다
   (`[elcore3] the model check failed`). 전에는 그 파일을 빼고 생성이 성공해, 엉뚱한 곳의 컴파일 오류로만 드러났습니다.
   멈춘 실행은 DSL 이 더 만들지 않는 생성 파일을 지우지 않습니다 - 읽지 못한 파일이 선언한 엔티티의 DTO·매퍼 등이 그대로
   남고(`generated files the DSL no longer produces are kept until the model check passes`), YAML 을 고친 다음 실행이

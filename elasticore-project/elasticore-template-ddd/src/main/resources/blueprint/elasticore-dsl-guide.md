@@ -182,7 +182,7 @@ fields:
 
 `!`가 붙은 관계는 자동 생성 DTO(`@expose`/`@service`)에서 **FK id 필드가 필수**입니다. 저장 요청은 이 필드를 보냅니다.
 이름은 `필드명 + 대상 @id` (`post: Post!`, 키 `postId` -> `postPostId`; 키가 `id`이면 `topic: Topic!` -> `topicId`).
-응답용 중첩 DTO(`post`)는 요청에서 선택입니다. v3 · Kotlin · TypeScript 생성 기준(3.0.261021부터)이고, 2.x와
+응답용 중첩 DTO(`post`)는 요청에서 선택입니다. v3 · Kotlin · TypeScript 생성 기준(3.0.261022-rc1부터)이고, 2.x와
 `jpa-springboot` 호환 출력은 이전처럼 중첩 DTO에 `@NotNull`이 붙습니다 -
 `elasticore-annotation-guide.md` "필수 관계 (`!`): 저장 요청은 FK id 필드를 보낸다".
 

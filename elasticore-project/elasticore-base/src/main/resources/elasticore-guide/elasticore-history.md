@@ -42,6 +42,26 @@
   이름에 대한 로그를 실제 문장(`… is not declared in SalesOrderRepository (repository file); its annotations were not written`)으로
 - 사이트의 팀 규칙 문서(https://www.elasticore.io/docs/guides/team-rules)를 펫스토어 예제로 다시 썼다 - 11개 페이지, 모든
   예제를 펫스토어 사본에서 생성·빌드·실행해 확인
+- rule dev guide 10장 "규칙 API 레퍼런스": `@Rule` 속성과 메서드 모양, `EntitySpec`·`FieldSpec`·`DomainSpec`·`EnumSpec`·
+  `PortSpec`, `SourceCode`(`addMethod`, `excludeMethod` 와 엔드포인트 이름, `removeField`, `dontMake`, `var`), `FieldCode`,
+  `AnnoCode`, `ModelCheck`, 새 파일(`ArtifactContributor`), `Syntax`. 사이트에만 있던 것을 프로젝트에 복사되는 가이드에도
+  두었다 - 프로젝트 안에서 일하는 코딩 에이전트는 사이트를 읽지 않는다. `excludeMethod` 의 이름과 엔드포인트 표, v3 와 2.x 호환
+  번들의 차이(v3 는 `deleteBatch`·`batchUpdate` 를 함께 뺀다)는 이전에 어느 가이드에도 없었다
+
+### New Features (가이드 색인)
+
+#### `blueprint/elasticore-guide-index.md` - 가이드의 절마다 한 줄
+- 생성할 때 가이드를 복사한 뒤, 복사된 가이드에서 색인을 쓴다: 절마다 `<가이드>:<첫 줄>-<끝 줄>  <제목>  [다루는 단어]`.
+  제목은 `##`~`####`, 코드 블록 안의 `#` 줄은 제목이 아니다. 단어는 절의 코드 표기(`@search(like)`, `publisher.rules`,
+  `excludeMethod`)와 예제의 DSL 어노테이션(코드 블록 안의 `@Override` 같은 Java 어노테이션은 빼고)이고, 경로·명령·JSON·
+  파일 이름은 넣지 않는다(단어 목록은 160자 안). 코드 블록은 연 표시(백틱 또는 물결, 길이)와 같은 표시로만 닫힌다고 본다.
+  줄 끝은 운영체제와 상관없이 `\n`
+- 왜: 가이드 아홉 개는 합쳐 50만 바이트가 넘고 그중 규칙 가이드만 1,889줄이다. 가이드를 단어로 검색하면 줄 번호는 나오지만 그 절이
+  어디서 끝나는지는 모른다 - 코딩 에이전트가 너무 많이 읽거나 다시 읽는다. 색인을 단어로 검색하면 읽을 범위가 나온다
+  (`@access` → `elasticore-annotation-guide.md:1864-2005  ## @access / @owner — 누가 무엇을 할 수 있는가`)
+- 색인은 검색용이다(약 570줄). 줄 번호가 옆의 가이드와 같은 버전에서 나오므로 낡지 않는다
+- 새 파일 하나가 `blueprint/` 에 더해질 뿐, 생성 코드는 바뀌지 않는다. 쓰지 못하면 경고만 남긴다
+- 파일: `GuideIndex.java`, `GuideDeployer.java`, 테스트 `GuideIndexTest`
 
 ## 3.0.261022-rc1
 

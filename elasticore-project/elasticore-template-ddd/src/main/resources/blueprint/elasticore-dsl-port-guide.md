@@ -967,7 +967,7 @@ No qualifying bean of type 'ShopReportService'
 
 애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
 **`@EnableElastiCore` 가 붙은 클래스의 패키지**와, 호출 스택에 있는 `@SpringBootApplication` 클래스의 패키지를
-봅니다. 그래서 그 애플리케이션 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261021 부터 - 전에는
+봅니다. 그래서 그 애플리케이션 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261022-rc1 부터 - 전에는
 호출 스택만 보아 테스트 컨텍스트에서는 아무것도 등록하지 않았습니다). 두 패키지에서 같은 인터페이스를 찾으면 한 번만
 등록합니다.
 

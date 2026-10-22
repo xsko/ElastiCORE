@@ -603,7 +603,7 @@ private Partner partner;                // 같은 컬럼의 읽기 전용 조인
 - 필드 이름: 대상 키 이름이 참조 이름으로 시작하면 그 이름(`partner` -> `partnerId`, `item` -> `itemCode`),
   아니면 `참조 + 키`(`category` -> `categoryCatId`). 같은 이름의 필드가 이미 있으면 DSL 경고 후 객체 참조 유지.
 - 저장 요청이 보내는 것은 이 ID 필드입니다. 필수 참조(`member: Member!`)이면 DTO 에서 ID 필드가 필수이고,
-  응답용 중첩 DTO 는 선택입니다 (3.0.261021 부터. 이전에는 중첩 DTO 도 `@NotNull` 이라 ID 만 보낸 요청이
+  응답용 중첩 DTO 는 선택입니다 (3.0.261022-rc1 부터. 이전에는 중첩 DTO 도 `@NotNull` 이라 ID 만 보낸 요청이
   `@Valid` 검증에서 거절되었습니다). `member: Member!`, `book: Book!`(Book 의 키 `isbn`) 의 `LoanDTO`:
 
   ```java
@@ -759,7 +759,7 @@ No qualifying bean of type 'ShopReportService'
 
 애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
 `@EnableElastiCore` 가 붙은 클래스의 패키지(와 기동한 `@SpringBootApplication` 클래스의 패키지)를 보므로,
-그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261021 부터; 전에는 호출 스택만 보아 테스트
+그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261022-rc1 부터; 전에는 호출 스택만 보아 테스트
 컨텍스트에서는 아무것도 등록하지 않았습니다). 같은 포트에 직접 선언한 `@Bean` 이 있으면 그것을 씁니다.
 `DddSampleApp` 은 `@EnableElastiCore` 없이 런타임 조각만 가져오는 테스트 구성이라 `@Bean` 하나로 직접
 등록합니다 — 이음매가 정확히 어디인지 읽기에 가장 좋은 자리이기도 합니다.
@@ -877,7 +877,7 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 | 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `NotFoundException` (가리킨 행이 없음), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다), `security.ForbiddenException`, `security.NotSignedInException`, `http.PortCallException` (부른 다른 시스템이 실패) | 400, 404, 409, 403, 401, 502 - 던진 메시지가 `detail` 로 나간다. 메시지 코드를 주면 요청 언어로 번역된다 (아래 "손으로 쓴 거절을 번역하기") |
 | 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
 | 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
-| 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261021 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
+| 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261022-rc1 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
 
 **`@restExclude(...)`** 는 서비스·컨트롤러·유스케이스·TypeScript 클라이언트에서 메서드를 뺍니다. 이름은 서비스 메서드
 (`save`, `update`, `batchUpdate`, `delete`(목록 삭제), `deleteById`, `updateBySpecification`)와 컨트롤러 엔드포인트
@@ -1012,7 +1012,7 @@ HTTP/1.1 409
   "code": "state.PurchaseOrder.status.cancel", "status": 409 }
 ```
 
-3.0.261021 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 생명주기 거절이 422, 없는 행을 id 로
+3.0.261022-rc1 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 생명주기 거절이 422, 없는 행을 id 로
 참조한 저장은 외래 키 위반의 409 "Conflicts with stored data", `@snapshot` 이 원본 행을 못 찾을 때만 422). 이미 있는 프로젝트에서는
 `<도메인>ApiErrors` 를 **손댄 적이 없으면** 다시 생성되어(`REGENERATED(owned, never edited)`) 새 응답으로 바뀌고 -
 422 로 분기하던 클라이언트가 있으면 함께 고칩니다 - **손댄 적이 있으면** 그대로라 생명주기 거절도, 없는 참조도 422 로
@@ -1579,7 +1579,7 @@ pluginManagement {
 
 ```gradle
 plugins {
-    id 'io.elasticore' version '3.0.261020-alpha2'
+    id 'io.elasticore' version '3.0.261022-rc1'
 }
 
 elasticore {

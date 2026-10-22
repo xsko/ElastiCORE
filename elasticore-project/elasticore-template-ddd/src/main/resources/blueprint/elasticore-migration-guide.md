@@ -7,7 +7,7 @@
 
 ```gradle
 - implementation      'io.elasticore:elasticore-base:2.2.260703'
-+ implementation      'io.elasticore:elasticore-base:3.0.261020-alpha2'
++ implementation      'io.elasticore:elasticore-base:3.0.261022-rc1'
 ```
 
 **생성되는 소스 코드는 바뀌지 않습니다** - 2.x 의 결함을 고친 몇 곳만 다르고, 그 목록은

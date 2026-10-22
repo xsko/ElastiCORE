@@ -80,7 +80,7 @@ private CreditCard creditCard;
 
 값 객체의 컬럼은 그것을 담는 엔티티의 테이블에 생깁니다. 그래서 어느 엔티티가 값 객체를 **선택으로**
 담으면(`shipTo: Address @Embedded`, `!` 없음) 그 값 객체의 `!` 필드는 컬럼에 `nullable = false` 를 붙이지
-않습니다 (3.0.261021 부터, v3). 값이 오면 DTO 가 필수 필드를 검사하고(400), 값이 없는 행은 그대로 저장됩니다.
+않습니다 (3.0.261022-rc1 부터, v3). 값이 오면 DTO 가 필수 필드를 검사하고(400), 값이 없는 행은 그대로 저장됩니다.
 전에는 배송지를 보내지 않은 주문이 `NULL not allowed for column "ZIPCODE"` (400 `required`) 로 저장되지 않았습니다.
 - 담는 엔티티가 **다른 도메인**에 있어도 같습니다(`common` 의 `Address` 를 `shop` 의 주문이 선택으로 담음).
 - 선택으로 담은 값 객체 **안의** 값 객체(`contact: Contact @Embedded` 의 `place: Place! @Embedded`)도 선택입니다 -
@@ -226,7 +226,7 @@ joinedOn:  date @readonly @default(now)       # 오늘
 
 엔티티 필드의 초기값(`= LocalDateTime.now()`)이라 행이 만들어질 때 정해지고, `@readonly` 라 요청이 보낸 값은
 쓰이지 않으며, 수정할 때는 DB 에서 읽은 값이 그대로 남습니다. DTO 에는 기본값이 붙지 않습니다(날짜 기본값은 DTO 에서
-뺌). `timestamp` 의 기본값도 `now` 든 다른 값(`@default(java.time.Instant.EPOCH)`)이든 엔티티에만 붙습니다(3.0.261021
+뺌). `timestamp` 의 기본값도 `now` 든 다른 값(`@default(java.time.Instant.EPOCH)`)이든 엔티티에만 붙습니다(3.0.261022-rc1
 부터 - 전에는 DTO 에도 `@Builder.Default ... = java.time.Instant.EPOCH` 가 붙었습니다). 마지막 수정 시각처럼
 **매번 바뀌는** 값은 `@jpa:org.springframework.data.annotation.LastModifiedDate` 와 `@EnableJpaAuditing` 을 씁니다.
 
@@ -630,7 +630,7 @@ private String batchBatchId;         // 저장/수정 입력용 (FK id)
   blueprint `hr/model/dto.yml`의 `EmployeeDTO` 참고).
 
 ##### 필수 관계 (`!`): 저장 요청은 FK id 필드를 보낸다
-> **Since: 3.0.261021** (v3 · Kotlin · TypeScript 생성. 2.x와 `jpa-springboot` 호환 출력은 그대로)
+> **Since: 3.0.261022-rc1** (v3 · Kotlin · TypeScript 생성. 2.x와 `jpa-springboot` 호환 출력은 그대로)
 
 관계에 `!`를 붙이면 컬럼이 NOT NULL이 되고(`@JoinColumn(nullable = false)`), 자동 생성 DTO에서는
 **FK id 필드가 필수**, 중첩 DTO는 선택입니다.
@@ -666,7 +666,7 @@ postPostId: number;
 - 2.x(`build`/`elcore`)와 `jpa-springboot` 호환 출력은 이전과 같습니다: 중첩 `post`에 `@NotNull`과
   `requiredMode=REQUIRED`가 붙고 `postPostId`에는 붙지 않습니다. 이 출력에서는 검증을 통과하는 데 `post`가,
   관계를 저장하는 데 `postPostId`가 필요하므로 요청은 둘 다 보내야 합니다.
-- **3.0.261021 이전 v3 출력에서 바뀐 점**: 이전에는 v3도 2.x처럼 중첩 `post`를 요구했습니다. 이제 `postPostId`만
+- **3.0.261022-rc1 이전 v3 출력에서 바뀐 점**: 이전에는 v3도 2.x처럼 중첩 `post`를 요구했습니다. 이제 `postPostId`만
   보낸 요청이 통과하고, 중첩 `post`만 보내던 요청은 `@Valid` 검증에서 거절됩니다 (그 요청은 이전에도 관계를
   연결하지 못했습니다 - 매퍼는 `postPostId`만 읽습니다).
 - 검색 DTO(`CommentSrchDTO`)의 `postPostId`는 검색 조건이라 필수가 아닙니다. 중첩 `post`는 검색 DTO에 없습니다.
@@ -1925,7 +1925,7 @@ Customer:
     role: UserRole @default(UserRole.USER) @access(admin)   # 가입자가 스스로 관리자가 될 수 없음
 ```
 
-로그인 API 는 **엔티티 줄에 `@signin` 을 쓰면 생성됩니다** (세션 기본값, 3.0.261021 부터). `@login` 과
+로그인 API 는 **엔티티 줄에 `@signin` 을 쓰면 생성됩니다** (세션 기본값, 3.0.261022-rc1 부터). `@login` 과
 `@password` 가 있고 `@expose` 된 엔티티이며, **그 행의 비밀번호와 로그인은 본인과 관리자만 바꿀 수 있어야** 합니다
 (`update=owner` 와 키를 가리키는 `@owner`, 또는 `update=admin`·`none` - 아래 "수정 수준"):
 
