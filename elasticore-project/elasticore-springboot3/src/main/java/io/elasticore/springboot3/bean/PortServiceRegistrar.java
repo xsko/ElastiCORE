@@ -203,7 +203,7 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
 
     /**
      * The packages to look for ports in: the importing class's (the
-     * @EnableElastiCore class) and the started application's.
+     * {@code @EnableElastiCore} class) and the started application's.
      */
     protected Set<String> packagesToScan(AnnotationMetadata metadata) {
         Set<String> packages = new LinkedHashSet<String>();
