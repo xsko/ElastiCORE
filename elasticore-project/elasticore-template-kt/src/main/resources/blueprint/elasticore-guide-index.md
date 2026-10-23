@@ -136,68 +136,68 @@ elasticore-env-guide.md:906-926  ## 13. Best Practices  [uml, @fetchjoin]
 ## elasticore-dsl-port-guide.md
 
 ```text
-elasticore-dsl-port-guide.md:1-1119  # ElastiCORE Port DSL Guide
+elasticore-dsl-port-guide.md:1-1154  # ElastiCORE Port DSL Guide
 elasticore-dsl-port-guide.md:3-49  ## 1. Port 개요
 elasticore-dsl-port-guide.md:9-26  ### 헥사고날에서 이것이 무엇인가  [OrderUseCase, inboundPort, port:, port, OrderRepositoryPort, domainRepository, Page, domainService, uses:]
 elasticore-dsl-port-guide.md:28-34  ### 지원 타입  [HttpServiceProxyFactory, DbmsServiceProxyFactory]
 elasticore-dsl-port-guide.md:36-49  ### 공통 DSL 구조
-elasticore-dsl-port-guide.md:51-535  ## 2. HTTP Port  [@ExternalService, @EnableElastiCore, @HttpExchange, elcore3]
-elasticore-dsl-port-guide.md:61-86  ### 2.1 기본 구조  [@url, @auth, @get, @post, @body]
-elasticore-dsl-port-guide.md:88-129  ### 2.2 HTTP 어노테이션
-elasticore-dsl-port-guide.md:90-112  #### Port 레벨  [@url("baseUrl"), @auth("token"), @timeout, connect, read, write, response, @ExternalService, @post, @body]
-elasticore-dsl-port-guide.md:114-118  #### Method 레벨 (단축)  [@get("/path"), @post("/path"), @put("/path"), @delete("/path")]
-elasticore-dsl-port-guide.md:120-124  #### Method 레벨 (상세)  [@HttpEndpoint, url, method, contentType]
-elasticore-dsl-port-guide.md:126-129  #### 파라미터  [@body]
-elasticore-dsl-port-guide.md:131-241  ### 2.3 Runtime Properties (application.yml / application.properties)
-elasticore-dsl-port-guide.md:136-149  #### 지원 속성 목록  [url, @url(), authKey, @auth(), apiKey, ignoreSSL, proxyHost, proxyPort, connectTimeout, readTimeout, writeTimeout, responseTimeout]
-elasticore-dsl-port-guide.md:151-185  #### application.yml 예시
-elasticore-dsl-port-guide.md:187-198  #### application.properties 예시
-elasticore-dsl-port-guide.md:200-213  #### 프록시 설정 상세  [ProxyProvider.Proxy.HTTP, SimpleClientHttpRequestFactory.setProxy, proxyHost]
-elasticore-dsl-port-guide.md:215-222  #### 속성 우선순위  [apiKey, authKey, HttpAuthProvider]
-elasticore-dsl-port-guide.md:224-241  #### 타임아웃 설정 상세  [@timeout]
-elasticore-dsl-port-guide.md:243-270  ### 2.4 인증 설정 (상세)  [@url, @auth]
-elasticore-dsl-port-guide.md:272-275  ### 2.5 생성 코드  [@ExternalService, HttpServiceProxyFactory, @Autowired]
-elasticore-dsl-port-guide.md:277-385  ### 2.6 Multipart Form-Data (파일 업로드)
-elasticore-dsl-port-guide.md:279-291  #### 기본 Multipart 요청  [@url]
-elasticore-dsl-port-guide.md:293-385  #### Per-Field Content-Type 지정 (Postman 스타일)  [@contentType, @url, @MultipartContentType, MultipartRequest, RestTemplate]
-elasticore-dsl-port-guide.md:387-475  ### 2.7 Spring HTTP 서비스 클라이언트로 생성 (`httpPort: spring`, Spring Boot 4)  [@HttpExchange, elcore3, erp, CreditCheckPort, @ImportHttpServices, @url, @timeout, @contentType, PortAuth.passErrorBodies, RestClientException]
-elasticore-dsl-port-guide.md:477-535  ### 2.8 실패 처리 - 상대가 실패했을 때  [WebClientRequestException, RestClientException, ResourceAccessException, HttpStatusCodeException, PortFailureContractTest]
-elasticore-dsl-port-guide.md:537-872  ## 3. DBMS Port
-elasticore-dsl-port-guide.md:539-552  ### 3.1 기본 구조  [@datasource]
-elasticore-dsl-port-guide.md:554-561  ### 3.2 DBMS 어노테이션 및 옵션  [@datasource("name"), nativeQuery, pageable, ref]
-elasticore-dsl-port-guide.md:563-648  ### 3.3 반환 타입과 실행 방식  [inqueryList, inqueryPage, DTO, inqueryFirst, int, executeUpdate, executeBatchUpdate, long, double, float, string, boolean, update, delete, insert]
-elasticore-dsl-port-guide.md:598-648  #### List 입력 배치 실행 (Multi-row Insert/Update/Delete)  [insert, update, delete, Map]
-elasticore-dsl-port-guide.md:650-684  ### 3.4 Dynamic SQL - JEXL 조건부 블록
-elasticore-dsl-port-guide.md:654-661  #### 인라인 조건 (한 줄)  [status]
-elasticore-dsl-port-guide.md:663-671  #### 블록 조건 (여러 줄)
-elasticore-dsl-port-guide.md:673-684  #### JEXL 표현식  [input]
-elasticore-dsl-port-guide.md:686-697  ### 3.5 Template Variable Substitution (${...})  [tableName]
-elasticore-dsl-port-guide.md:699-727  ### 3.6 sortCode (정렬)  [getSortCode, getSortColumn, getSortAscending, o.created_at, BadRequestException]
-elasticore-dsl-port-guide.md:729-738  ### 3.7 SQL 파일 핫리로드  [lastModified]
-elasticore-dsl-port-guide.md:740-760  ### 3.8 Query Reference (ref)
-elasticore-dsl-port-guide.md:762-780  ### 3.9 다중 데이터소스  [@datasource, EntityManagerFactory, orderEntityManagerFactory, order]
-elasticore-dsl-port-guide.md:782-785  ### 3.10 Native Query vs JPQL
-elasticore-dsl-port-guide.md:787-800  ### 3.11 결과 매핑  [user_name, userName, Map, snake_case, camelCase, java.sql.Date, LocalDate, java.sql.Timestamp, LocalDateTime, Instant, java.sql.Time, LocalTime]
-elasticore-dsl-port-guide.md:802-815  ### 3.12 파라미터 입력 처리
-elasticore-dsl-port-guide.md:817-826  ### 3.13 Pageable 자동 추출  [getPageable, pageNumber, page, sizeVal, size]
-elasticore-dsl-port-guide.md:828-872  ### 3.14 완전한 DBMS Port 예시  [@datasource]
-elasticore-dsl-port-guide.md:874-898  ## 4. gRPC Port  [@server, @client]
-elasticore-dsl-port-guide.md:900-1012  ## 5. 환경 설정
-elasticore-dsl-port-guide.md:902-917  ### build.gradle  [WebClientException]
-elasticore-dsl-port-guide.md:919-933  ### Application 클래스  [@EnableElastiCore, @ComponentScan, ApplicationContextProvider, DbTransactionGateway, RequestShapeAdvice, XxxApiErrors]
-elasticore-dsl-port-guide.md:935-957  ### env.yml (Port 네임스페이스)  [port, domain, application.port.out]
-elasticore-dsl-port-guide.md:959-1003  ### 프록시를 빈으로 등록해야 합니다  [@EnableElastiCore, @SpringBootApplication, @SpringBootTest, @Bean, DddSampleApp, @Primary, getBeansOfType]
-elasticore-dsl-port-guide.md:1005-1012  ### application.properties
-elasticore-dsl-port-guide.md:1014-1119  ## 6. Best Practices
-elasticore-dsl-port-guide.md:1016-1028  ### SQL Injection 방지
-elasticore-dsl-port-guide.md:1030-1032  ### 핫리로드 활용
-elasticore-dsl-port-guide.md:1034-1037  ### 페이징 패턴  [ref, page, size]
-elasticore-dsl-port-guide.md:1039-1043  ### sortCode 활용
-elasticore-dsl-port-guide.md:1045-1048  ### JEXL 조건 사용 지침  [input.]
-elasticore-dsl-port-guide.md:1050-1058  ### 메서드 네이밍 규칙  [find, get, search, count, int, long, exists, check, boolean, update, insert, create, delete, remove]
-elasticore-dsl-port-guide.md:1060-1064  ### 동적 SQL 패턴  [update, delete, insert]
-elasticore-dsl-port-guide.md:1066-1088  ### HTTP Port - Multipart 요청 패턴  [@contentType, FileSystemResource, Resource, RestTemplate]
-elasticore-dsl-port-guide.md:1090-1119  ### HTTP Port - 인증 패턴  [@url, @auth]
+elasticore-dsl-port-guide.md:51-536  ## 2. HTTP Port  [@ExternalService, @EnableElastiCore, @HttpExchange, elcore3]
+elasticore-dsl-port-guide.md:62-87  ### 2.1 기본 구조  [@url, @auth, @get, @post, @body]
+elasticore-dsl-port-guide.md:89-130  ### 2.2 HTTP 어노테이션
+elasticore-dsl-port-guide.md:91-113  #### Port 레벨  [@url("baseUrl"), @auth("token"), @timeout, connect, read, write, response, @ExternalService, @post, @body]
+elasticore-dsl-port-guide.md:115-119  #### Method 레벨 (단축)  [@get("/path"), @post("/path"), @put("/path"), @delete("/path")]
+elasticore-dsl-port-guide.md:121-125  #### Method 레벨 (상세)  [@HttpEndpoint, url, method, contentType]
+elasticore-dsl-port-guide.md:127-130  #### 파라미터  [@body]
+elasticore-dsl-port-guide.md:132-242  ### 2.3 Runtime Properties (application.yml / application.properties)
+elasticore-dsl-port-guide.md:137-150  #### 지원 속성 목록  [url, @url(), authKey, @auth(), apiKey, ignoreSSL, proxyHost, proxyPort, connectTimeout, readTimeout, writeTimeout, responseTimeout]
+elasticore-dsl-port-guide.md:152-186  #### application.yml 예시
+elasticore-dsl-port-guide.md:188-199  #### application.properties 예시
+elasticore-dsl-port-guide.md:201-214  #### 프록시 설정 상세  [ProxyProvider.Proxy.HTTP, SimpleClientHttpRequestFactory.setProxy, proxyHost]
+elasticore-dsl-port-guide.md:216-223  #### 속성 우선순위  [apiKey, authKey, HttpAuthProvider]
+elasticore-dsl-port-guide.md:225-242  #### 타임아웃 설정 상세  [@timeout]
+elasticore-dsl-port-guide.md:244-271  ### 2.4 인증 설정 (상세)  [@url, @auth]
+elasticore-dsl-port-guide.md:273-276  ### 2.5 생성 코드  [@ExternalService, HttpServiceProxyFactory, @Autowired]
+elasticore-dsl-port-guide.md:278-386  ### 2.6 Multipart Form-Data (파일 업로드)
+elasticore-dsl-port-guide.md:280-292  #### 기본 Multipart 요청  [@url]
+elasticore-dsl-port-guide.md:294-386  #### Per-Field Content-Type 지정 (Postman 스타일)  [@contentType, @url, @MultipartContentType, MultipartRequest, RestTemplate]
+elasticore-dsl-port-guide.md:388-476  ### 2.7 Spring HTTP 서비스 클라이언트로 생성 (`httpPort: spring`, Spring Boot 4)  [@HttpExchange, elcore3, erp, CreditCheckPort, @ImportHttpServices, @url, @timeout, @contentType, PortAuth.passErrorBodies, RestClientException]
+elasticore-dsl-port-guide.md:478-536  ### 2.8 실패 처리 - 상대가 실패했을 때  [WebClientRequestException, RestClientException, ResourceAccessException, HttpStatusCodeException, PortFailureContractTest]
+elasticore-dsl-port-guide.md:538-880  ## 3. DBMS Port
+elasticore-dsl-port-guide.md:540-553  ### 3.1 기본 구조  [@datasource]
+elasticore-dsl-port-guide.md:555-562  ### 3.2 DBMS 어노테이션 및 옵션  [@datasource("name"), nativeQuery, pageable, ref]
+elasticore-dsl-port-guide.md:564-656  ### 3.3 반환 타입과 실행 방식  [inqueryList, inqueryPage, DTO, inqueryFirst, int, executeUpdate, executeBatchUpdate, long, double, float, Long, Double, Float, decimal, java.math.BigDecimal]
+elasticore-dsl-port-guide.md:606-656  #### List 입력 배치 실행 (Multi-row Insert/Update/Delete)  [insert, update, delete, Map]
+elasticore-dsl-port-guide.md:658-692  ### 3.4 Dynamic SQL - JEXL 조건부 블록
+elasticore-dsl-port-guide.md:662-669  #### 인라인 조건 (한 줄)  [status]
+elasticore-dsl-port-guide.md:671-679  #### 블록 조건 (여러 줄)
+elasticore-dsl-port-guide.md:681-692  #### JEXL 표현식  [input]
+elasticore-dsl-port-guide.md:694-705  ### 3.5 Template Variable Substitution (${...})  [tableName]
+elasticore-dsl-port-guide.md:707-735  ### 3.6 sortCode (정렬)  [getSortCode, getSortColumn, getSortAscending, o.created_at, BadRequestException]
+elasticore-dsl-port-guide.md:737-746  ### 3.7 SQL 파일 핫리로드  [lastModified]
+elasticore-dsl-port-guide.md:748-768  ### 3.8 Query Reference (ref)
+elasticore-dsl-port-guide.md:770-788  ### 3.9 다중 데이터소스  [@datasource, EntityManagerFactory, orderEntityManagerFactory, order]
+elasticore-dsl-port-guide.md:790-793  ### 3.10 Native Query vs JPQL
+elasticore-dsl-port-guide.md:795-808  ### 3.11 결과 매핑  [user_name, userName, Map, snake_case, camelCase, java.sql.Date, LocalDate, java.sql.Timestamp, LocalDateTime, Instant, java.sql.Time, LocalTime]
+elasticore-dsl-port-guide.md:810-823  ### 3.12 파라미터 입력 처리
+elasticore-dsl-port-guide.md:825-834  ### 3.13 Pageable 자동 추출  [getPageable, pageNumber, page, sizeVal, size]
+elasticore-dsl-port-guide.md:836-880  ### 3.14 완전한 DBMS Port 예시  [@datasource]
+elasticore-dsl-port-guide.md:882-906  ## 4. gRPC Port  [@server, @client]
+elasticore-dsl-port-guide.md:908-1047  ## 5. 환경 설정
+elasticore-dsl-port-guide.md:910-925  ### build.gradle  [WebClientException]
+elasticore-dsl-port-guide.md:927-968  ### Application 클래스  [ElastiCoreAutoConfiguration, @SpringBootApplication, DbTransactionGateway, EntityManagerFactory, @Primary, ApplicationContextProvider, @EnableElastiCore]
+elasticore-dsl-port-guide.md:970-992  ### env.yml (Port 네임스페이스)  [port, domain, application.port.out]
+elasticore-dsl-port-guide.md:994-1038  ### 프록시를 빈으로 등록해야 합니다  [@SpringBootApplication, @SpringBootTest, @EnableElastiCore, @Bean, DddSampleApp, ddd, io.elasticore.sample.ddd, @Primary, getBeansOfType]
+elasticore-dsl-port-guide.md:1040-1047  ### application.properties
+elasticore-dsl-port-guide.md:1049-1154  ## 6. Best Practices
+elasticore-dsl-port-guide.md:1051-1063  ### SQL Injection 방지
+elasticore-dsl-port-guide.md:1065-1067  ### 핫리로드 활용
+elasticore-dsl-port-guide.md:1069-1072  ### 페이징 패턴  [ref, page, size]
+elasticore-dsl-port-guide.md:1074-1078  ### sortCode 활용
+elasticore-dsl-port-guide.md:1080-1083  ### JEXL 조건 사용 지침  [input.]
+elasticore-dsl-port-guide.md:1085-1093  ### 메서드 네이밍 규칙  [find, get, search, count, int, long, exists, check, boolean, update, insert, create, delete, remove]
+elasticore-dsl-port-guide.md:1095-1099  ### 동적 SQL 패턴  [update, delete, insert]
+elasticore-dsl-port-guide.md:1101-1123  ### HTTP Port - Multipart 요청 패턴  [@contentType, FileSystemResource, Resource, RestTemplate]
+elasticore-dsl-port-guide.md:1125-1154  ### HTTP Port - 인증 패턴  [@url, @auth]
 ```
 
 ## elasticore-dev-guide.md

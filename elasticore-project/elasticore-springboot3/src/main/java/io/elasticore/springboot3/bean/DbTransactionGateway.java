@@ -174,7 +174,9 @@ public class DbTransactionGateway implements DbmsSqlExecutor {
         Pageable pageable = PageRequest.of(0, 1);
         Page<O> page = executePagedQuery(dbmsSvcMeta, methodName, input, outputType, pageable, datasource, false);
 
-        return page.stream().findFirst().orElse(null);
+        // Not stream().findFirst(): that throws on a null element - a SUM over no rows.
+        List<O> content = page.getContent();
+        return content.isEmpty() ? null : content.get(0);
     }
 
 
@@ -769,7 +771,28 @@ public class DbTransactionGateway implements DbmsSqlExecutor {
         return map;
     }
 
+    /**
+     * A port method that answers one value - {@code long countX()}, a name, a total -
+     * gets the row's first column. It used to be instantiated as a DTO
+     * ({@code new Long()}), which failed every call.
+     */
+    static boolean isSingleValue(Class<?> type) {
+        return type.isPrimitive()
+                || Number.class.isAssignableFrom(type)
+                || type == String.class
+                || type == Boolean.class
+                || type == Character.class
+                || java.time.temporal.Temporal.class.isAssignableFrom(type)
+                || java.util.Date.class.isAssignableFrom(type);
+    }
+
+    @SuppressWarnings("unchecked")
     private <O> O convertTupleToDto(Tuple tuple, Class<O> outputType) {
+        if (isSingleValue(outputType)) {
+            List<TupleElement<?>> elements = tuple.getElements();
+            if (elements.isEmpty()) return null;
+            return (O) convertValue(tuple.get(elements.get(0)), outputType);
+        }
         try {
             O dto = outputType.getDeclaredConstructor().newInstance();
             for (TupleElement<?> element : tuple.getElements()) {
@@ -807,6 +830,8 @@ public class DbTransactionGateway implements DbmsSqlExecutor {
             if (targetType == Float.class || targetType == float.class) return num.floatValue();
             if (targetType == Short.class || targetType == short.class) return num.shortValue();
             if (targetType == Byte.class || targetType == byte.class) return num.byteValue();
+            if (targetType == java.math.BigDecimal.class) return new java.math.BigDecimal(num.toString());
+            if (targetType == java.math.BigInteger.class) return new java.math.BigDecimal(num.toString()).toBigInteger();
         }
 
         // Boolean
@@ -835,6 +860,13 @@ public class DbTransactionGateway implements DbmsSqlExecutor {
             return sqlTime.toLocalTime();
         }
 
+
+        // A one-letter column (CHAR(1), a code) read into a char
+        if (targetType == Character.class || targetType == char.class) {
+            if (value instanceof Character c) return c;
+            String text = value.toString();
+            if (text.length() == 1) return text.charAt(0);
+        }
 
         if (targetType == String.class) {
             return value.toString();

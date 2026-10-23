@@ -26,6 +26,14 @@ import java.util.*;
 
 public class PortModelLoader extends AbstractModelLoader implements ConstantParam, ModelLoader<Port> {
 
+    /**
+     * The DSL words "decimal" and "bigdecimal" as a whole type name: alone, or a
+     * type argument. Lower case only - a class of the project's called Decimal is
+     * its own type.
+     */
+    private static final java.util.regex.Pattern DECIMAL_WORD =
+            java.util.regex.Pattern.compile("(?<![\\w.])(?:big)?decimal(?![\\w.])");
+
 
     private ModelLoaderContext ctx;
 
@@ -198,6 +206,11 @@ public class PortModelLoader extends AbstractModelLoader implements ConstantPara
             // Handle primitive type declarations - convert to wrapper types
             if (PrimitiveTypeUtil.isPrimitiveType(returnType)) {
                 returnType = PrimitiveTypeUtil.getWrapperType(returnType);
+            } else {
+                // The DSL's decimal, as on a field - alone or in List<...>/Page<...>.
+                // Written out in full: a port interface imports java.util, the model
+                // and the DTOs, not java.math.
+                returnType = DECIMAL_WORD.matcher(returnType).replaceAll("java.math.BigDecimal");
             }
         }
 

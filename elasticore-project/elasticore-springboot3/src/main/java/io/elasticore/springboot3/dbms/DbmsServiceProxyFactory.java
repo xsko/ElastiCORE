@@ -3,7 +3,10 @@ package io.elasticore.springboot3.dbms;
 import io.elasticore.runtime.port.DbmsService;
 import io.elasticore.springboot3.bean.ApplicationContextProvider;
 import io.elasticore.springboot3.util.ReflectUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 
@@ -100,6 +103,27 @@ public class DbmsServiceProxyFactory {
             }
 
             return applicationContext;
+        }
+
+        /**
+         * The SQL executor: from the bean factory this proxy was made for, else
+         * from the static context. Not the static context first - another
+         * context may have set it, or closed it. Null when neither has one.
+         */
+        protected DbmsSqlExecutor executor() {
+            if (beanFactory != null) {
+                try {
+                    DbmsSqlExecutor own = beanFactory.getBean(DbmsSqlExecutor.class);
+                    if (own != null) return own;
+                } catch (NoUniqueBeanDefinitionException ambiguous) {
+                    // two executors in its own context: say so, do not borrow another context's
+                    throw ambiguous;
+                } catch (NoSuchBeanDefinitionException notThere) {
+                    // a factory without one: the static context may have it
+                }
+            }
+            ApplicationContext context = getApplicationContext();
+            return context == null ? null : context.getBean(DbmsSqlExecutor.class);
         }
 
         /**
@@ -215,10 +239,9 @@ public class DbmsServiceProxyFactory {
 
             //String processId, I input, Class<O> outputType, String dataSource)
 
-            if(getApplicationContext()==null)
+            DbmsSqlExecutor executor = executor();
+            if(executor==null)
                 return null;
-
-            DbmsSqlExecutor executor = getApplicationContext().getBean(DbmsSqlExecutor.class);
 
             String processId = externalService.id() + "." + method.getName();
             String datasource = externalService.datasource();
@@ -235,7 +258,9 @@ public class DbmsServiceProxyFactory {
             if(parameters.length==1) {
                 Class<?> firstParamType = parameters[0].getType();
 
-                if (firstParamType.isPrimitive() || firstParamType == String.class) {
+                // A value - long, a Long (what a generated port declares for "long"), a
+                // String, a date - is bound by the parameter's name; an object by its getters.
+                if (BeanUtils.isSimpleValueType(firstParamType)) {
                     isSelfObj = false;
                 }
             }

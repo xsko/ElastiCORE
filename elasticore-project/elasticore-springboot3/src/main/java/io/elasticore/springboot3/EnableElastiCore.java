@@ -21,6 +21,14 @@ import io.elasticore.springboot3.bean.*;
  *   <li>{@link ApplicationContextProvider} - Enables static access to the Spring ApplicationContext</li>
  * </ul>
  * 
+ * <p>Since 3.0.261023 a Spring Boot application does not need it: the runtime
+ * library's auto-configuration ({@code ElastiCoreAutoConfiguration}) sets up
+ * the same pieces, looking for ports in the application's packages. The
+ * annotation still works, alone or together with the auto-configuration - each
+ * port is registered once - and is what an application that switches the
+ * auto-configuration off ({@code elasticore.autoconfigure.enabled=false}) or a
+ * plain Spring context without Spring Boot uses.</p>
+ *
  * <p>Usage example:</p>
  * <pre>
  * {@code

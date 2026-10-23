@@ -757,12 +757,12 @@ sql/http 포트는 그것을 호출하는 서비스가 씁니다.
 No qualifying bean of type 'ShopReportService'
 ```
 
-애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
-`@EnableElastiCore` 가 붙은 클래스의 패키지(와 기동한 `@SpringBootApplication` 클래스의 패키지)를 보므로,
-그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261022-rc1 부터; 전에는 호출 스택만 보아 테스트
-컨텍스트에서는 아무것도 등록하지 않았습니다). 같은 포트에 직접 선언한 `@Bean` 이 있으면 그것을 씁니다.
-`DddSampleApp` 은 `@EnableElastiCore` 없이 런타임 조각만 가져오는 테스트 구성이라 `@Bean` 하나로 직접
-등록합니다 — 이음매가 정확히 어디인지 읽기에 가장 좋은 자리이기도 합니다.
+Spring Boot 애플리케이션에서는 런타임 라이브러리의 자동 구성이 스캔으로 처리합니다 (3.0.261023 부터 - 그 전에는
+`@EnableElastiCore` 가 있어야 했고, 지금도 붙여 두면 그대로 동작합니다). 찾는 곳은 `@SpringBootApplication` 클래스의
+패키지와 그 아래이므로, 그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다. 같은 포트에 직접 선언한
+`@Bean` 이 있으면 그것을 씁니다. `DddSampleApp` 은 생성된 코드(`io.elasticore.sample.ddd`)와 다른 패키지(`ddd`)에 있는
+테스트 구성이라 스캔이 포트에 닿지 않고, `@Bean` 하나로 직접 등록합니다 — 이음매가 정확히 어디인지 읽기에 가장 좋은
+자리이기도 합니다. 자세한 것은 포트 가이드 5장.
 
 #### 리포지터리 포트 (`ddd-repository-port`)
 

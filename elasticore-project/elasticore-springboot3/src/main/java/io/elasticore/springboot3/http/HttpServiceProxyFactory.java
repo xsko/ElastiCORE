@@ -113,6 +113,15 @@ public class HttpServiceProxyFactory {
         }
 
         /**
+         * Where this proxy looks up its beans (auth provider, transformer): the
+         * bean factory it was made for, else the static context. Not the static
+         * context first - another context may have set it, or closed it.
+         */
+        protected BeanFactory beans() {
+            return beanFactory != null ? beanFactory : getApplicationContext();
+        }
+
+        /**
          * Handles standard Object methods (hashCode, equals, toString) for the proxy.
          * These methods are handled locally without making HTTP requests.
          * 
@@ -381,10 +390,10 @@ public class HttpServiceProxyFactory {
             }
 
 
-            if (authProvider == null && getApplicationContext() != null) {
+            if (authProvider == null && beans() != null) {
                 String authProviderBeanId = this.externalService.id() + ".httpAuthProvider";
                 try {
-                    authProvider = (HttpAuthProvider) getApplicationContext().getBean(authProviderBeanId);
+                    authProvider = (HttpAuthProvider) beans().getBean(authProviderBeanId);
                 } catch (NoSuchBeanDefinitionException e) {
                 } catch (BeansException e) {
                     logger.warn(authProviderBeanId + " bean error.", e);
@@ -427,7 +436,7 @@ public class HttpServiceProxyFactory {
 
             String httpTransformFactoryBeanId = this.externalService.id() + ".httpTransformerFactory";
             try {
-                HttpTransformerFactory httpTransformerFactory = (HttpTransformerFactory) getApplicationContext().getBean(httpTransformFactoryBeanId);
+                HttpTransformerFactory httpTransformerFactory = beans() == null ? null : (HttpTransformerFactory) beans().getBean(httpTransformFactoryBeanId);
                 if(httpTransformerFactory!=null) {
                     httpTransformer = httpTransformerFactory.getHttpTransformer(proxy, method, args ,authProvider);
                     resolvedReturnType = httpTransformer.getReturnType();
@@ -602,10 +611,10 @@ public class HttpServiceProxyFactory {
                 } else
                     orgList.add(arg);
             }
-            if(authProvider==null && getApplicationContext() !=null) {
+            if(authProvider==null && beans() !=null) {
                 String authProviderBeanId = this.externalService.id()+".httpAuthProvider";
                 try {
-                    authProvider = (HttpAuthProvider) getApplicationContext().getBean(authProviderBeanId);
+                    authProvider = (HttpAuthProvider) beans().getBean(authProviderBeanId);
                 }catch (BeansException re) {
 
                 }catch (ClassCastException cce) {

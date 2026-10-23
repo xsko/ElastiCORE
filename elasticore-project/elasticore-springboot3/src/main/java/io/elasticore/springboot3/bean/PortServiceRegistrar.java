@@ -22,8 +22,15 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.util.ClassUtils;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
@@ -40,7 +47,9 @@ import java.util.function.Supplier;
  * <p>Where it looks: the package of the class that carries @EnableElastiCore -
  * the one a @SpringBootTest starts too - and the package of the class
  * annotated {@code @SpringBootApplication} that started the application, when it is on
- * the call stack. An interface found in both is registered once.</p>
+ * the call stack. An interface found in both is registered once. The
+ * auto-configuration's registrar looks in the application's auto-configuration
+ * packages instead of its own (ElastiCoreAutoConfiguration.ApplicationPorts).</p>
  *
  * <p>A bean the application declares for a port itself (a hand-written @Bean,
  * as tests had to before the registrar looked at the @EnableElastiCore
@@ -62,6 +71,8 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
 
     private static final String DECLARED_BEANS_WIN = PortServiceRegistrar.class.getName() + ".declaredBeansWin";
 
+    private static final Log LOG = LogFactory.getLog(PortServiceRegistrar.class);
+
     private Environment environment;
 
     private BeanFactory beanFactory;
@@ -76,8 +87,106 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
         this.environment = environment;
     }
 
+    /** The bean factory the registrar was handed, for a subclass that reads the application's packages from it. */
+    protected BeanFactory getBeanFactory() {
+        return beanFactory;
+    }
+
+    /** The port interfaces found in some packages: HTTP ({@code @ExternalService}) and DBMS ({@code @DbmsService}). */
+    public static final class Ports {
+        final Set<Class<?>> http;
+        final Set<Class<?>> dbms;
+        /** Simple names two or more of these ports share: those ports go under their full names. */
+        final Set<String> sharedNames;
+
+        Ports(Set<Class<?>> http, Set<Class<?>> dbms) {
+            this.http = Collections.unmodifiableSet(http);
+            this.dbms = Collections.unmodifiableSet(dbms);
+            Set<String> seen = new HashSet<String>();
+            Set<String> shared = new TreeSet<String>();
+            for (Class<?> port : http) if (!seen.add(port.getSimpleName())) shared.add(port.getSimpleName());
+            for (Class<?> port : dbms) if (!seen.add(port.getSimpleName())) shared.add(port.getSimpleName());
+            this.sharedNames = Collections.unmodifiableSet(shared);
+        }
+
+        public boolean isEmpty() {
+            return http.isEmpty() && dbms.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return http.size() + " HTTP and " + dbms.size() + " DBMS ports";
+        }
+    }
+
+    /*
+     * The last scan, so that the auto-configuration's condition and the
+     * registrar right after it scan once. One slot, emptied when a registrar
+     * has used it: a cache that outlived the refresh would hold the port
+     * classes - and through them their class loader - after a restart.
+     */
+    private static final Object SCAN_LOCK = new Object();
+    private static ClassLoader scannedLoader;
+    private static Set<String> scannedPackages;
+    private static Ports scanned;
+
+    /** The port interfaces in these packages and below them. */
+    public static Ports findPorts(Set<String> packages) {
+        ClassLoader loader = ClassUtils.getDefaultClassLoader();
+        Set<String> key = new LinkedHashSet<String>(packages);
+        synchronized (SCAN_LOCK) {
+            if (scanned != null && scannedLoader == loader && key.equals(scannedPackages)) return scanned;
+        }
+        Ports found = scan(key);
+        synchronized (SCAN_LOCK) {
+            scannedLoader = loader;
+            scannedPackages = key;
+            scanned = found;
+        }
+        return found;
+    }
+
+    private static void forgetScan() {
+        synchronized (SCAN_LOCK) {
+            scannedLoader = null;
+            scannedPackages = null;
+            scanned = null;
+        }
+    }
+
+    private static Ports scan(Set<String> packages) {
+        // By name, so that registration - which port gets which bean name - does
+        // not depend on the order the class path happens to be read in.
+        Set<Class<?>> http = new TreeSet<Class<?>>(BY_NAME);
+        Set<Class<?>> dbms = new TreeSet<Class<?>>(BY_NAME);
+        for (String basePackage : packages) {
+            Reflections reflections = new Reflections(basePackage);
+            // Reflections also answers the subtypes of an annotated type - a
+            // class implementing the port - which cannot be proxied.
+            for (Class<?> type : reflections.getTypesAnnotatedWith(ExternalService.class)) {
+                if (type.isInterface() && type.isAnnotationPresent(ExternalService.class)) http.add(type);
+            }
+            for (Class<?> type : reflections.getTypesAnnotatedWith(DbmsService.class)) {
+                if (type.isInterface() && type.isAnnotationPresent(DbmsService.class)) dbms.add(type);
+            }
+        }
+        return new Ports(http, dbms);
+    }
+
+    private static final Comparator<Class<?>> BY_NAME = new Comparator<Class<?>>() {
+        @Override
+        public int compare(Class<?> a, Class<?> b) {
+            return a.getName().compareTo(b.getName());
+        }
+    };
+
     /** The package of the @SpringBootApplication class on the call stack, or null. */
-    private String detectMainPackage() {
+    protected String detectMainPackage() {
+        return mainApplicationPackage();
+    }
+
+    /** The package of the @SpringBootApplication class on the call stack, or null. */
+    public static String mainApplicationPackage() {
         ClassLoader loader = ClassUtils.getDefaultClassLoader();
         for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
             try {
@@ -92,33 +201,35 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
         return null;
     }
 
-    @Override
-    public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
+    /**
+     * The packages to look for ports in: the importing class's (the
+     * @EnableElastiCore class) and the started application's.
+     */
+    protected Set<String> packagesToScan(AnnotationMetadata metadata) {
         Set<String> packages = new LinkedHashSet<String>();
         String importing = ClassUtils.getPackageName(metadata.getClassName());
         if (!importing.isEmpty()) packages.add(importing);
         String main = detectMainPackage();
         if (main != null && !main.isEmpty()) packages.add(main);
+        return packages;
+    }
 
-        Set<Class<?>> extPortServices = new LinkedHashSet<Class<?>>();
-        Set<Class<?>> dbmsServices = new LinkedHashSet<Class<?>>();
-        for (String basePackage : packages) {
-            Reflections reflections = new Reflections(basePackage);
-            // Reflections also answers the subtypes of an annotated type - a
-            // class implementing the port - which cannot be proxied.
-            for (Class<?> type : reflections.getTypesAnnotatedWith(ExternalService.class)) {
-                if (type.isInterface() && type.isAnnotationPresent(ExternalService.class)) extPortServices.add(type);
-            }
-            for (Class<?> type : reflections.getTypesAnnotatedWith(DbmsService.class)) {
-                if (type.isInterface() && type.isAnnotationPresent(DbmsService.class)) dbmsServices.add(type);
-            }
+    @Override
+    public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
+        Ports ports = findPorts(packagesToScan(metadata));
+        forgetScan();
+        Set<Class<?>> extPortServices = ports.http;
+        Set<Class<?>> dbmsServices = ports.dbms;
+        for (String shared : ports.sharedNames) {
+            LOG.warn("Two or more ports are named " + shared + "; each is registered under its full name"
+                    + " (inject it by type, or @Qualifier(\"<package>." + shared + "\")).");
         }
 
         final BeanFactory factory = this.beanFactory;
         final Environment env = this.environment;
         // port
         for (final Class<?> serviceClass : extPortServices) {
-            register(registry, serviceClass, new Supplier<Object>() {
+            register(registry, serviceClass, ports, new Supplier<Object>() {
                 @Override
                 public Object get() {
                     ExternalService externalService = serviceClass.getAnnotation(ExternalService.class);
@@ -128,7 +239,7 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
         }
         // dbms
         for (final Class<?> serviceClass : dbmsServices) {
-            register(registry, serviceClass, new Supplier<Object>() {
+            register(registry, serviceClass, ports, new Supplier<Object>() {
                 @Override
                 public Object get() {
                     DbmsService dbmsService = serviceClass.getAnnotation(DbmsService.class);
@@ -144,12 +255,29 @@ public class PortServiceRegistrar implements ImportBeanDefinitionRegistrar, Envi
         }
     }
 
-    private static void register(BeanDefinitionRegistry registry, Class<?> serviceClass, Supplier<Object> proxy) {
-        String name = serviceClass.getSimpleName();
+    private static boolean registered(BeanDefinitionRegistry registry, String name, Class<?> port) {
+        return registry.containsBeanDefinition(name)
+                && port.equals(registry.getBeanDefinition(name).getAttribute(PORT_ATTRIBUTE));
+    }
+
+    private static void register(BeanDefinitionRegistry registry, Class<?> serviceClass, Ports ports, Supplier<Object> proxy) {
+        String simple = serviceClass.getSimpleName();
+        String full = serviceClass.getName();
+        // Imported twice (two configuration classes carry @EnableElastiCore, or one
+        // does and the auto-configuration runs too): the first stands.
+        if (registered(registry, simple, serviceClass) || registered(registry, full, serviceClass)) return;
+
+        String name = ports.sharedNames.contains(simple) ? full : simple;
         if (registry.containsBeanDefinition(name)) {
-            // Imported twice (two configuration classes carry @EnableElastiCore): the first stands.
-            Object marked = registry.getBeanDefinition(name).getAttribute(PORT_ATTRIBUTE);
-            if (serviceClass.equals(marked)) return;
+            // The name is another bean's. Overriding it would fail the start (Spring
+            // Boot forbids it): this one goes under its full name.
+            if (name.equals(full)) {
+                LOG.warn("The bean name " + full + " is taken; the port is not registered - declare it as a @Bean.");
+                return;
+            }
+            LOG.warn("The bean name " + simple + " is taken; the port " + full + " is registered under its full name"
+                    + " (inject it by type, or @Qualifier(\"" + full + "\")).");
+            name = full;
         }
         GenericBeanDefinition definition = new GenericBeanDefinition();
         definition.setBeanClass(serviceClass);

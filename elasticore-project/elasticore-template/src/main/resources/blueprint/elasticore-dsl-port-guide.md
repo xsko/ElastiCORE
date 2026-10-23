@@ -52,9 +52,10 @@ port:
 
 > **어느 방식인가.** 같은 DSL 로 두 가지 클라이언트가 나옵니다.
 > - **런타임 프록시** (기본, 2.1~2.6): 생성물은 `@ExternalService` 인터페이스이고 구현은 ElastiCORE 런타임의 프록시입니다.
->   애플리케이션 클래스에 `@EnableElastiCore` 가 있어야 빈이 됩니다 (5장).
+>   Spring Boot 애플리케이션에서는 런타임 라이브러리의 자동 구성이 빈으로 등록합니다 - `@EnableElastiCore` 는
+>   3.0.261023 부터 필요 없습니다 (5장).
 > - **Spring HTTP 서비스 클라이언트** (`httpPort: spring`, Spring Boot 4, 2.7): Spring 이 구현하는 `@HttpExchange`
->   인터페이스입니다. `@EnableElastiCore` 가 필요 없습니다. 규칙 엔진(`elcore3`)의 Spring Boot 4 프로젝트에서 권합니다.
+>   인터페이스입니다. 규칙 엔진(`elcore3`)의 Spring Boot 4 프로젝트에서 권합니다.
 >
 > 두 방식 모두 **상대가 오류로 답해도 예외 없이 값으로 돌려줍니다.** 실패를 어떻게 다룰지는 2.8 을 보세요.
 
@@ -570,9 +571,16 @@ port:
 | `int` + update/delete/insert 메서드명 | `executeUpdate` | DML 실행 (영향 행 수 반환) |
 | `int` + update/delete/insert 메서드명 + `list<DTO>` 파라미터 | `executeBatchUpdate` | 배치 DML 실행 (요소별 반복 실행, 총 영향 행 수 반환) |
 | `int` (기타 메서드명) | `inqueryFirst` | 단일 숫자 조회 |
-| `long`, `double`, `float` | `inqueryFirst` | Primitive 숫자 반환 |
+| `long`, `double`, `float` | `inqueryFirst` | 숫자 하나 (생성되는 타입은 `Long`·`Double`·`Float`) |
+| `decimal` | `inqueryFirst` | 숫자 하나, `java.math.BigDecimal` (합계·금액) |
 | `string` | `inqueryFirst` | 단일 문자열 반환 |
 | `boolean` | `inqueryFirst` | 불린 반환 |
+
+값 하나를 돌려주는 메서드는 결과 행의 첫 열을 그 타입으로 바꿉니다. 열 값이 NULL 이거나(`SUM` 이 빈 집합) 행이 없으면
+`null` 입니다. 파라미터가 값 하나(`long`·`string`·날짜·enum)이면 SQL 의 `:이름` 에 그 이름으로 묶이고, DTO 하나이면 그 getter 로
+묶입니다 (3.0.261023 부터 - 그 전에는 `long` 파라미터 하나, `long`·`decimal` 반환, `string` 반환이 동작하지 않았습니다). 이름으로
+묶으려면 컴파일된 클래스에 파라미터 이름이 남아 있어야 합니다(`-parameters`) - Spring Boot 의 Gradle·Maven 플러그인이 켭니다.
+`List<decimal>` 처럼 목록에도 `decimal` 을 쓸 수 있습니다.
 
 **DML 메서드명 규칙**: 메서드명에 `update`, `delete`, `insert`가 포함되면 `executeUpdate`로 실행됩니다.
 
@@ -917,20 +925,47 @@ dependencies {
 (예: `WebClientException` 을 잡으려면) `spring-boot-starter-webflux` 를 직접 적으세요.
 
 ### Application 클래스
-런타임 프록시(2.1~2.6, DBMS 포트)는 `@EnableElastiCore` 가 빈으로 등록합니다. `httpPort: spring` 포트만 쓰면 필요 없습니다.
+아무것도 더 적지 않습니다. 런타임 라이브러리(`elasticore-springboot3` / `-springboot4`)가 Spring Boot 자동 구성
+(`ElastiCoreAutoConfiguration`)을 가지고 있어서, 의존성에 있으면 기동할 때 다음을 등록합니다 (3.0.261023 부터):
+
+- 런타임 프록시 포트(2.1~2.6 의 HTTP, 3장의 DBMS) - `@SpringBootApplication` 클래스의 패키지와 그 아래에서 찾습니다.
+  Spring Boot 가 엔티티와 리포지터리를 찾는 곳과 같습니다
+- DBMS 포트가 SQL 을 실행하는 `DbTransactionGateway` - 애플리케이션에 `EntityManagerFactory` 가 하나(또는 `@Primary` 하나)
+  있을 때
+- 프록시가 그것을 찾는 `ApplicationContextProvider`, 기동 배너
 
 ```java
-@SpringBootApplication
-@EnableElastiCore          // io.elasticore.springboot3.EnableElastiCore - Boot 4 런타임도 같은 패키지
+@SpringBootApplication     // 이것만 - 포트는 이 패키지(com.example)와 그 아래에서 찾습니다
 public class Application {
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
     }
 }
 ```
-`@ComponentScan("io.elasticore.springboot3")` 로는 포트가 등록되지 않습니다 - 등록기는 컴포넌트가 아니라 `@EnableElastiCore`
-가 가져오는 것입니다. 그 스캔이 등록하는 것은 예전과 같이 `ApplicationContextProvider` 와 `DbTransactionGateway` 뿐이고,
-API 오류 처리기(`RequestShapeAdvice`)는 스캔에 잡히지 않습니다 - 생성된 `XxxApiErrors` 가 가져올 때만 생깁니다.
+
+- **`@EnableElastiCore` 는 그대로 동작합니다.** 붙어 있어도 포트와 위의 빈은 한 번씩만 등록됩니다. 지울 필요는 없습니다
+- **이미 직접 등록한 것이 이깁니다.** `@ComponentScan("io.elasticore.springboot3")` 나 `@Bean` 으로 등록한
+  `DbTransactionGateway`·`ApplicationContextProvider`, 포트에 직접 선언한 `@Bean` 은 그대로 쓰이고 자동 구성은 그 자리를
+  비워 둡니다
+- **포트가 애플리케이션 클래스의 패키지 밖에 있으면** 찾지 못합니다 (`No qualifying bean`) - Spring Boot 가 엔티티를 찾는
+  규칙과 같아서, `@SpringBootApplication(scanBasePackages = ...)` 로 넓힌 컴포넌트 스캔도 여기에는 닿지 않습니다. 애플리케이션
+  클래스를 위쪽 패키지에 두거나, `@AutoConfigurationPackage(basePackages = "com.example.ports")` 를 붙이거나(이 어노테이션은
+  Spring Boot 가 엔티티와 Spring Data 리포지터리를 찾는 곳도 넓힙니다), 그 패키지의 클래스에 `@EnableElastiCore` 를 붙이거나,
+  포트를 `@Bean` 으로 등록하세요 (아래)
+- **포트가 하나도 없으면** 자동 구성은 아무것도 등록하지 않습니다 (배너도 없음)
+- **단순 이름이 같은 포트 둘**(`shop.NotificationPort`, `billing.NotificationPort`)은 둘 다 전체 이름으로 등록하고 경고를
+  남깁니다. 타입으로 주입하거나 `@Qualifier("com.example.shop.NotificationPort")` 처럼 전체 이름을 쓰세요. (`@EnableElastiCore` 가
+  그중 한 포트의 패키지에만 있는 클래스에 붙어 있으면, 그 등록기가 먼저 그 포트를 짧은 이름으로 등록합니다 - 타입으로 주입하면
+  상관없습니다)
+- **`EntityManagerFactory` 가 둘 이상이면** 하나를 `@Primary` 로 하세요. 그렇지 않으면 DBMS 포트의 실행기
+  (`DbTransactionGateway`)를 만들지 않습니다 - 직접 `DbmsSqlExecutor` 빈을 등록해도 됩니다
+- **끄기:** `elasticore.autoconfigure.enabled=false` (이때는 `@EnableElastiCore` 로 등록합니다). 배너만 끄기:
+  `elasticore.banner.enabled=false`
+- Spring Boot 없이 띄우는 Spring 컨텍스트는 자동 구성을 읽지 않습니다 - 그 구성 클래스에 `@EnableElastiCore` 를 붙이세요
+
+3.0.261022-rc1 까지는 `@EnableElastiCore` 가 있어야 런타임 프록시 포트가 빈이 되었습니다. `@ComponentScan("io.elasticore.springboot3")`
+은 포트를 등록하지 않았습니다(`ApplicationContextProvider` 와 `DbTransactionGateway` 만). API 오류 처리기(`RequestShapeAdvice`)는
+어느 쪽으로도 생기지 않고, 생성된 `XxxApiErrors` 가 가져올 때만 생깁니다.
 
 ### env.yml (Port 네임스페이스)
 ```yaml
@@ -965,13 +1000,12 @@ env:
 No qualifying bean of type 'ShopReportService'
 ```
 
-애플리케이션에서는 `@EnableElastiCore` 등록기가 스캔으로 처리합니다. 등록기는
-**`@EnableElastiCore` 가 붙은 클래스의 패키지**와, 호출 스택에 있는 `@SpringBootApplication` 클래스의 패키지를
-봅니다. 그래서 그 애플리케이션 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다 (3.0.261022-rc1 부터 - 전에는
-호출 스택만 보아 테스트 컨텍스트에서는 아무것도 등록하지 않았습니다). 두 패키지에서 같은 인터페이스를 찾으면 한 번만
-등록합니다.
+Spring Boot 애플리케이션에서는 자동 구성이 스캔으로 처리합니다 (위 "Application 클래스"). 찾는 곳은
+**`@SpringBootApplication` 클래스의 패키지와 그 아래**이고, 그 클래스를 띄우는 `@SpringBootTest` 도 같은 곳을 보므로
+포트 빈을 받습니다. `@EnableElastiCore` 를 붙였다면 그 등록기는 **그 어노테이션이 붙은 클래스의 패키지**도 봅니다.
+여러 곳에서 같은 인터페이스를 찾아도 한 번만 등록합니다.
 
-`@EnableElastiCore` 가 없는 구성(테스트가 런타임 조각만 가져오는 경우)에서는 직접 등록합니다. 직접 선언한
+포트가 그 패키지들 밖에 있거나, 테스트가 런타임 조각만 가져오는 구성이라면 직접 등록합니다. 직접 선언한
 `@Bean` 이 있으면 등록기는 그 포트를 등록하지 않으므로, 예전처럼 테스트에 적어 둔 `@Bean` 도 그대로 동작합니다:
 
 ```java
@@ -984,7 +1018,8 @@ ShopReportService shopReportService(BeanFactory beanFactory, Environment environ
 }
 ```
 
-`elasticore-template-ddd` 의 `DddSampleApp` 이 이 형태를 그대로 보여줍니다.
+`elasticore-template-ddd` 의 `DddSampleApp` 이 이 형태를 그대로 보여줍니다. 그 테스트 애플리케이션 클래스는 `ddd`
+패키지에 있고 생성된 포트는 `io.elasticore.sample.ddd` 아래에 있어서, 자동 구성의 스캔이 닿지 않습니다.
 
 **프록시를 감싸려면 `@Primary`.** 직접 선언한 빈이 `@Primary` 이면 등록기의 프록시는 남습니다. 타입으로 주입하는 곳은
 감싼 빈을 받고, 감싼 빈은 이름(인터페이스의 단순 이름)으로 프록시를 받습니다:

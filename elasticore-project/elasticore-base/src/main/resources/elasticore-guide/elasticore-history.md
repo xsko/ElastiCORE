@@ -1,8 +1,10 @@
 ## 3.0.261023
 
 펫스토어에 팀 규칙 모듈(`elasticore { rules = [...] }`)을 붙여 rc1 로 생성·빌드·실행하며 규칙 가이드의 예제를 하나씩 다시
-확인했다. 규칙이 쓴 것이 실행 중인 애플리케이션에 닿지 않는 두 자리를 고쳤다. 2.x 생성기와 `jpa-springboot` 번들은
-그대로다.
+확인했다. 규칙이 쓴 것이 실행 중인 애플리케이션에 닿지 않는 두 자리를 고쳤다. 런타임 라이브러리는 Spring Boot 자동 구성을
+갖게 되어 포트에 `@EnableElastiCore` 가 필요 없다. 그것을 실제 포트로 확인하다 찾은, 값 하나를 받거나 돌려주는 DBMS 포트
+메서드(`Long countProducts()`, `nameOf(Long id)`, `return: decimal`)의 세 버그를 고쳤다. 2.x 생성기와 `jpa-springboot` 번들의
+출력은 그대로다(컴파일되지 않던 `return: decimal` 포트만 바뀐다).
 
 ### Bug Fixes (팀 규칙)
 
@@ -62,6 +64,101 @@
 - 색인은 검색용이다(약 570줄). 줄 번호가 옆의 가이드와 같은 버전에서 나오므로 낡지 않는다
 - 새 파일 하나가 `blueprint/` 에 더해질 뿐, 생성 코드는 바뀌지 않는다. 쓰지 못하면 경고만 남긴다
 - 파일: `GuideIndex.java`, `GuideDeployer.java`, 테스트 `GuideIndexTest`
+
+### Improvements (런타임 - `@EnableElastiCore` 없이)
+
+#### 런타임 라이브러리의 Spring Boot 자동 구성 - 포트가 어노테이션 없이 빈이 된다
+- 런타임 프록시 포트(HTTP `@ExternalService`, DBMS `@DbmsService`)는 애플리케이션 클래스에 `@EnableElastiCore` 가 있어야
+  빈이 되었다. 빠뜨리면 기동이 `No qualifying bean of type 'ShopReportPort'` 로 멈췄다 - 엔티티·로그인·오류 응답은 생성
+  코드가 스스로 등록하는데 포트만 한 줄이 더 필요했고, 사람도 코딩 에이전트도 그 한 줄을 빠뜨렸다
+- 이제 `elasticore-springboot3`·`elasticore-springboot4` 가 `META-INF/spring/...AutoConfiguration.imports` 로
+  `io.elasticore.springboot.autoconfigure.ElastiCoreAutoConfiguration` 을 낸다. 의존성에 있으면 Spring Boot 가 기동할 때 읽고,
+  `@SpringBootApplication` 클래스의 패키지와 그 아래(Spring Boot 의 auto-configuration packages - 엔티티·리포지터리를 찾는
+  곳)에서 포트를 찾는다. **포트가 있을 때만** `@EnableElastiCore` 가 하던 것을 한다: 포트 등록, `EntityManagerFactory` 가 하나(또는
+  `@Primary` 하나)이면 `DbTransactionGateway`, `ApplicationContextProvider`, 기동 배너. 포트가 없는 애플리케이션에는 아무 빈도
+  더하지 않는다
+- 이미 있는 것이 이긴다: `@EnableElastiCore` 가 함께 있어도 포트·빈은 한 번씩만(같은 포트는 처음 등록한 것), `@ComponentScan
+  ("io.elasticore.springboot3")` 나 `@Bean` 으로 등록한 `DbTransactionGateway`(`DbmsSqlExecutor`)·`ApplicationContextProvider`
+  가 있으면 자동 구성은 만들지 않고(`@ConditionalOnMissingBean`), 포트에 직접 선언한 `@Bean` 은 예전처럼 프록시를 대신한다.
+  자동 구성 클래스는 `io.elasticore.springboot3` 밖의 패키지에 둔다 - 그 패키지를 컴포넌트 스캔하는 프로젝트가 자동 구성을 자기
+  구성으로 읽지 않게
+- 끄기: `elasticore.autoconfigure.enabled=false`(그때는 `@EnableElastiCore` 로 등록한다). 배너만 끄기:
+  `elasticore.banner.enabled=false` - `@EnableElastiCore` 로 등록한 배너에도 적용되고, `false` 가 아닌 값은 무시한다(기동을
+  멈추지 않는다)
+- 기본으로 켠 이유(opt-in 원칙의 예외, 저장소 주인이 정함): 생성 코드는 한 줄도 바뀌지 않는다(`elcoreRulesCheck`·
+  `elcoreTreeCheck` 그대로). 포트가 없는 애플리케이션 - 2.x 로 생성한 대부분의 프로젝트 - 에 생기는 것은 기동 때 루트 패키지를
+  한 번 훑는 스캔(Reflections, 결과는 자동 구성과 등록기가 함께 쓴다)뿐이다. 포트가 있는 애플리케이션에서 달라지는 것:
+  - 어노테이션을 빠뜨려 `No qualifying bean` 으로 멈추던 애플리케이션이 뜬다
+  - `@EnableElastiCore` 가 애플리케이션 클래스보다 아래 패키지의 클래스에 붙어 있었다면, 이제 애플리케이션 클래스 패키지의
+    포트도 등록된다
+  - `EntityManagerFactory` 가 둘 이상이고 `@Primary` 가 없으면 `DbTransactionGateway` 를 만들지 않는다(어느 쪽인지 정할 수 없다)
+    - DBMS 포트를 쓰려면 하나를 `@Primary` 로 하거나 `DbmsSqlExecutor` 를 직접 등록한다. `@EnableElastiCore` 로는 그 구성이
+    기동부터 실패했다(`DbTransactionGateway` 생성자가 하나를 요구)
+- 함께 고친 것(어노테이션으로 등록할 때도 같다):
+  - 단순 이름이 같은 포트 둘(`shop.NotificationPort`, `billing.NotificationPort`)은 기동이 `BeanDefinitionOverrideException` 으로
+    멈췄다. 이제 그런 포트는 모두 전체 이름으로 등록하고 경고를 남긴다(타입으로 주입하거나 `@Qualifier("<전체 이름>")`). 어느 하나만
+    짧은 이름을 갖게 하지 않는 것은 그것이 클래스 경로를 읽는 순서로 정해지기 때문이다. 포트는 이름 순으로 등록한다
+  - 포트 프록시는 빈(DBMS 실행기, HTTP 인증·변환기)을 자기가 만들어진 빈 팩토리에서 찾는다. 전에는 정적
+    `ApplicationContextProvider` 에서 찾아, 마지막으로 뜬 다른 컨텍스트를 보거나 닫힌 컨텍스트에 물어 `has been closed already` 로
+    실패할 수 있었다(테스트가 컨텍스트를 여럿 띄울 때). 정적 참조는 빈 팩토리 없이 만든 프록시만 쓰고, 자기 컨텍스트가 닫히면
+    놓는다(그 사이 다른 컨텍스트가 들어오지 않았다면)
+  - 자동 구성의 조건과 등록기가 함께 쓰는 스캔 결과는 등록기가 쓴 뒤 버린다 - 남겨 두면 포트 클래스와 그 클래스 로더를 붙잡아,
+    devtools 로 재시작할 때마다 이전 로더가 메모리에 남는다
+- 확인: 포트 두 개(DBMS `countProducts()`, HTTP `getProduct(id)` - 같은 서버를 부름)가 있는 헥사고날 프로젝트를 로컬 빌드로 생성해,
+  `@EnableElastiCore` 없이 Spring Boot 4.0.8 과 3.5.16 에서 기동·호출(`{"countBySql":2,"nameByHttp":"Pen"}`), 3.5.16 의
+  `@SpringBootTest` 에서 두 포트 주입과 호출, `elasticore.autoconfigure.enabled=false` 이면 `No qualifying bean` 으로 실패,
+  어노테이션과 함께면 배너 한 번·응답 그대로. 단위 테스트는 Boot 3·4 런타임 모두에서: 어노테이션 없이 포트 등록, 포트 없으면 빈
+  없음, `EntityManagerFactory` 없음·하나·둘·`@Primary` 하나, 어노테이션·기본 필터의 컴포넌트 스캔·직접 선언한 빈과 함께일 때
+  하나씩, 같은 단순 이름의 포트 둘, 끄기, 닫힌 컨텍스트, imports 파일
+- 남은 것: 포트를 애플리케이션 클래스 패키지 밖에 두는 구성(`@SpringBootApplication(scanBasePackages = ...)` 로 다른 패키지를
+  스캔하는 경우 포함)은 엔티티 스캔처럼 찾지 못한다 - `@AutoConfigurationPackage(basePackages = ...)` 나 그 패키지 클래스의
+  `@EnableElastiCore`, 또는 `@Bean` 으로 등록한다(포트 가이드 5장)
+- 파일: `ElastiCoreAutoConfiguration.java`, `AutoConfiguration.imports`, `PortServiceRegistrar.java`(포트 스캔을 한 번,
+  찾는 패키지를 하위 클래스가 정함, 이름 충돌), `ApplicationContextProvider.java`, `HttpServiceProxyFactory.java`·
+  `DbmsServiceProxyFactory.java`(자기 빈 팩토리에서 찾기), `ElastiCoreBannerPrinter.java`,
+  `EnableElastiCore.java`(javadoc), 테스트 `ElastiCoreAutoConfigurationTest`, `ElastiCoreBannerPrinterTest`. 포트 가이드 2장 머리·5장,
+  규칙 가이드의 "어댑터는 빈이어야 합니다"
+
+### Bug Fixes (DBMS 포트 - 값 하나를 받고 돌려주는 메서드)
+
+#### `long countX()`·`String`·`BigDecimal` 을 돌려주는 DBMS 포트 메서드
+- 포트 가이드 3.3 은 `return: long`·`string`·`boolean` 을 단건 조회로 적고 있지만, 런타임은 결과 행을 늘 DTO 로 만들었다
+  (`outputType.getDeclaredConstructor().newInstance()` 에 열 이름의 필드를 채움). 그래서 숫자·불린은 호출마다
+  `Failed to map tuple to DTO: Long` 으로 실패했고, `String` 은 빈 문자열(`new String()`), `java.util.Date` 는 호출한 시각을
+  돌려주었다. 샘플은 그런 메서드(`ShopReportService.countOrdersByStatus`)를 선언만 하고 부르지 않아 드러나지 않았다
+- 이제 반환 타입이 값 하나(기본형과 그 래퍼, `Number` - `BigDecimal`·`BigInteger` 포함 -, `String`, `Boolean`, `Character`,
+  `java.time` 의 날짜·시간, `java.util.Date`)이면 행의 첫 열을 그 타입으로 바꿔 돌려준다. 숫자 열은 `BigDecimal`·`BigInteger` 로도,
+  한 글자 열은 `char`·`Character` 로도 바꾼다. 열 값이 NULL 이면 `null`, 행이 없으면 단건 조회는 `null`
+- 생성되는 포트 인터페이스는 래퍼 타입(`Long countProducts()`)이다. 손으로 기본형(`long`)으로 선언하면 결과가 없을 때 프록시가
+  돌려주는 `null` 이 `NullPointerException` 이 된다 - 래퍼로 선언하거나 SQL 에서 `COALESCE` 로 값을 정한다
+- 바꾸지 못하는 것(전처럼 DTO 로 만들려다 실패): enum, `UUID`, `byte[]`. 시각 열(`Timestamp`)을 `LocalDate`·`OffsetDateTime` 으로
+  받는 것도 아직이다
+- 단건 조회가 첫 값을 `stream().findFirst()` 로 꺼내, 값이 NULL 이면(`SUM` 이 빈 집합) `NullPointerException` 이었다. 이제 `null`
+- DTO 와 `Map` 을 돌려주는 메서드는 그대로
+- 파일: `DbTransactionGateway.java`, 테스트 `DbTransactionGatewayValueTest`(H2 에서 COUNT → `Long`·`long`·`Integer`·`BigDecimal`,
+  이름 → `String`(빈 문자열이 아님), 합계 → `BigDecimal`, 불린, `Double`, 한 글자 → `Character`·`char`, NULL 값 → `null`, 행 없음 →
+  빈 목록)
+
+#### 값 하나를 받는 DBMS 포트 메서드 - `nameOf(Long productId)`
+- 파라미터가 하나이면 프록시는 기본형이나 `String` 만 값으로 보고, 나머지는 객체로 보아 getter 로 SQL 의 `:이름` 을 채웠다. 생성되는
+  포트는 DSL 의 `long` 을 `Long` 으로 선언하므로, `long` 파라미터 하나짜리 메서드는 `Long.getProductId()` 를 찾다 아무것도 묶지
+  못했다 - 오류 없이 결과가 비었다(`WHERE product_id = NULL`)
+- 이제 값 타입(Spring 의 `BeanUtils.isSimpleValueType` - 기본형과 래퍼, `String`, 숫자, 날짜·시간, enum, `UUID` 등)은 파라미터
+  이름으로 묶는다. DTO 하나, `Map`, `List`(배치)는 그대로
+- 달라지는 경우 하나: enum 파라미터 하나를 그 getter 로 묶던 SQL(`:code` 에 `Status.getCode()`)은 이제 파라미터 이름으로 묶인다 -
+  그런 SQL 은 `:status` 로 쓰거나 DTO 로 감싼다. 이름으로 묶으려면 클래스에 파라미터 이름이 남아 있어야 한다(`-parameters`,
+  Spring Boot 의 Gradle·Maven 플러그인이 켠다)
+- 파일: `DbmsServiceProxyFactory.java`, 테스트 `DbmsPortInputTest`
+
+#### 포트의 `return: decimal` 이 Java 에 없는 타입 `decimal` 로 생성되던 것 (생성기)
+- 포트 메서드의 반환 타입은 `long`·`string` 같은 일곱 단어만 래퍼 타입으로 바꾸고 나머지는 그대로 썼다. DSL 가이드가 필드 타입으로
+  적는 `decimal`·`bigdecimal` 을 반환 타입에 쓰면 `decimal totalPrice();` 가 생성되어 컴파일되지 않았다
+- 이제 `java.math.BigDecimal` 로 쓴다(포트 인터페이스는 `java.math` 를 import 하지 않아 전체 이름). `List<decimal>`·`Page<decimal>`
+  안의 것도. 2.x 생성기와 규칙 엔진이 같은
+  로더를 쓴다. 이전 출력이 컴파일되지 않던 경우만 바뀐다 - `elcoreRulesCheck`·`elcoreTreeCheck` 그대로
+- 파일: `PortModelLoader.java`, 테스트 `PortReturnTypeTest`(생성해서 `Long`·`java.math.BigDecimal`·`String` 확인)
+- 확인(위 세 가지): 같은 헥사고날 프로젝트에 `totalPriceAbove(minPrice: long): decimal`, `nameOf(productId: long): string` 을 더해
+  Boot 4.0.8 에서 호출 - `{"totalAbove2":3.00,"totalAbove100":null,"name":"Pen"}`, 없는 id 는 `"name":null`
 
 ## 3.0.261022-rc1
 
