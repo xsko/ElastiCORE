@@ -397,7 +397,7 @@ elasticore-annotation-guide.md:2110-2116  ### 제약  [namespace.event]
 ## elasticore-rule-guide.md
 
 ```text
-elasticore-rule-guide.md:1-1893  # ElastiCORE Rule Guide
+elasticore-rule-guide.md:1-1909  # ElastiCORE Rule Guide
 elasticore-rule-guide.md:11-30  ## 1. 규칙이란 무엇인가  [@Column(length=200), CodeRules, Syntax]
 elasticore-rule-guide.md:32-1228  ## 2. 규칙 고르기 (env.yml)  [rules, suppress]
 elasticore-rule-guide.md:52-56  ### 우선순위
@@ -457,21 +457,21 @@ elasticore-rule-guide.md:1472-1490  ## 7. 스켈레톤(`.tmpl`)  [target]
 elasticore-rule-guide.md:1492-1519  ## 7.5 생성 파일의 소유권 (elcore3)  [@readonly, @behavior, @Entity, @Table, @DynamicUpdate, @Audited, super]
 elasticore-rule-guide.md:1515-1519  ### Kotlin 예약어가 든 패키지  [adapter.in.web, in]
 elasticore-rule-guide.md:1521-1533  ## 8. 지켜야 할 것  [AnnoCode, @Column, String.format, Formatted, Formatted.text, FileWriter, FileReader, DSL_WARN]
-elasticore-rule-guide.md:1535-1810  ## 9. 검증  [RulesVerifyRunner.ACCEPTED_DIFFS]
+elasticore-rule-guide.md:1535-1826  ## 9. 검증  [RulesVerifyRunner.ACCEPTED_DIFFS]
 elasticore-rule-guide.md:1567-1658  ### Gradle 플러그인 (권장)  [elcore, elcore3, compileJava, layered, RulesConfig]
 elasticore-rule-guide.md:1606-1615  #### 멀티 모듈
 elasticore-rule-guide.md:1617-1620  #### 기존 스위치
 elasticore-rule-guide.md:1622-1644  #### TypeScript 클라이언트 (`elcore3ts`, `typescriptClient`)  [build, compileJava, elcore3, architecture, language, rules, webBuild, suppress]
 elasticore-rule-guide.md:1646-1658  #### 프로젝트의 규칙 더하기  [elasticore]
-elasticore-rule-guide.md:1660-1756  ### Apache Ossie 시맨틱 모델 내보내기 (`ossie-export`)  [@abstract, @embeddable, source, @table, table.prefix, description, @id, primary_key, @unique, @Index(unique="true"), unique_keys, expression, OSSIE_SQL_2026]
-elasticore-rule-guide.md:1758-1789  ### 플러그인 없이 실행하기 (수동 구성)  [publisher.rules, @ElastiCore]
-elasticore-rule-guide.md:1791-1810  ### 생성해보기 (이 저장소의 샘플 모듈에서)  [publisher.rules]
-elasticore-rule-guide.md:1812-1877  ## 10. 체크리스트
-elasticore-rule-guide.md:1814-1822  ### 새 규칙을 추가할 때  [@Rule(value = ...), target, order, phase, TAIL, Syntax, RuleCatalog.standard]
-elasticore-rule-guide.md:1824-1829  ### 새 아티팩트를 추가할 때  [RuleCatalog, RulesGenRunner, ArtifactTarget]
-elasticore-rule-guide.md:1831-1864  ### 새 아티팩트 종류를 추가할 때 (확장점)  [ArtifactContributor, artifactsFor, DomainArtifactContributor, orNamespace, SourceCode.artifactName, requireSyntaxAnyOf]
-elasticore-rule-guide.md:1866-1877  ### 새 언어를 추가할 때  [Syntax, SourceCode.TemplateSet]
-elasticore-rule-guide.md:1879-1893  ## 11. 패키지 구조
+elasticore-rule-guide.md:1660-1772  ### Apache Ossie 시맨틱 모델 내보내기 (`ossie-export`)  [name, billing_catalog_shop, @abstract, @embeddable, source, @table, table.prefix, description, @id, primary_key, @unique, @Index(unique="true"), unique_keys]
+elasticore-rule-guide.md:1774-1805  ### 플러그인 없이 실행하기 (수동 구성)  [publisher.rules, @ElastiCore]
+elasticore-rule-guide.md:1807-1826  ### 생성해보기 (이 저장소의 샘플 모듈에서)  [publisher.rules]
+elasticore-rule-guide.md:1828-1893  ## 10. 체크리스트
+elasticore-rule-guide.md:1830-1838  ### 새 규칙을 추가할 때  [@Rule(value = ...), target, order, phase, TAIL, Syntax, RuleCatalog.standard]
+elasticore-rule-guide.md:1840-1845  ### 새 아티팩트를 추가할 때  [RuleCatalog, RulesGenRunner, ArtifactTarget]
+elasticore-rule-guide.md:1847-1880  ### 새 아티팩트 종류를 추가할 때 (확장점)  [ArtifactContributor, artifactsFor, DomainArtifactContributor, orNamespace, SourceCode.artifactName, requireSyntaxAnyOf]
+elasticore-rule-guide.md:1882-1893  ### 새 언어를 추가할 때  [Syntax, SourceCode.TemplateSet]
+elasticore-rule-guide.md:1895-1909  ## 11. 패키지 구조
 ```
 
 ## elasticore-rule-dev-guide.md

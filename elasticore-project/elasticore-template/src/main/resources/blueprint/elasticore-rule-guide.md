@@ -1678,7 +1678,23 @@ elasticore {
 ```
 
 생성할 때마다 blueprint 루트에 `semantic_model.yml` 이 다시 만들어집니다 (프로젝트 전체가 **한 모델** -
-도메인을 넘는 관계가 끊기지 않게). Pet Store 의 일부:
+도메인을 넘는 관계가 끊기지 않게).
+
+모델 이름(`name`)은 도메인 이름을 `_` 로 이은 것입니다 (`billing_catalog_shop`). 도메인이 많으면 BI·AI 도구가 모델을
+문장 같은 이름으로 보여 주므로, 이름을 정할 수 있습니다 - 적지 않으면 이전과 같은 이름입니다:
+
+```gradle
+elasticore {
+    rules     = ['ossie-export']
+    ossieName = 'acme_erp'            // -Delasticore.ossie.name=acme_erp (플러그인 없이)
+}
+```
+
+이름은 영문·숫자·`_` 로 씁니다. 다른 글자는 `_` 로 바뀌고 생성할 때 `[ossie] model name 'acme-erp' is written as
+acme_erp` 경고가 나옵니다. 바뀌는 것은 `name` 뿐이고 `description` 과 `custom_extensions` 의 `domains` 는 그대로
+도메인을 적습니다.
+
+Pet Store 의 일부:
 
 ```yaml
 version: 0.2.0.dev0

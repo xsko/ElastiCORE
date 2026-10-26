@@ -209,6 +209,9 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (!rules.isEmpty()) {
             task.systemProperty("elasticore.publisher.rules.add", String.join(",", rules));
         }
+        if (extension.getOssieName().isPresent()) {
+            task.systemProperty("elasticore.ossie.name", extension.getOssieName().get());
+        }
 
         passThrough(project, task, "mode", "mode");
         passThrough(project, task, "domain", "elasticore.domain");

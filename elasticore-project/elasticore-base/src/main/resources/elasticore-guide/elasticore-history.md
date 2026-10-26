@@ -4,8 +4,8 @@
 확인했다. 규칙이 쓴 것이 실행 중인 애플리케이션에 닿지 않는 두 자리를 고쳤다. 런타임 라이브러리는 Spring Boot 자동 구성을
 갖게 되어 포트에 `@EnableElastiCore` 가 필요 없다. 그것을 실제 포트로 확인하다 찾은, 값 하나를 받거나 돌려주는 DBMS 포트
 메서드(`Long countProducts()`, `nameOf(Long id)`, `return: decimal`)의 세 버그를 고쳤다. v3 검색 조건은 `gt`·`gte` 같은
-비교 키워드와 같지 않음(`!=`, `ne`)을 받는다. 2.x 생성기와 `jpa-springboot` 번들의
-출력은 그대로다(컴파일되지 않던 `return: decimal` 포트만 바뀐다).
+비교 키워드와 같지 않음(`!=`, `ne`)을 받는다. Ossie 시맨틱 모델은 프로젝트가 정한 이름(`ossieName`)을 쓸 수 있다.
+2.x 생성기와 `jpa-springboot` 번들의 출력은 그대로다(컴파일되지 않던 `return: decimal` 포트만 바뀐다).
 
 ### Bug Fixes (팀 규칙)
 
@@ -65,6 +65,19 @@
 - 색인은 검색용이다(약 570줄). 줄 번호가 옆의 가이드와 같은 버전에서 나오므로 낡지 않는다
 - 새 파일 하나가 `blueprint/` 에 더해질 뿐, 생성 코드는 바뀌지 않는다. 쓰지 못하면 경고만 남긴다
 - 파일: `GuideIndex.java`, `GuideDeployer.java`, 테스트 `GuideIndexTest`
+
+### New Features (Ossie 내보내기 - 모델 이름)
+
+#### `elasticore { ossieName = '...' }` - 시맨틱 모델의 `name` 을 프로젝트가 정한다
+- `semantic_model.yml` 의 `name` 은 도메인 이름을 `_` 로 이은 것이라, 도메인 아홉 개인 실제 프로젝트에서는 85자였다 -
+  BI·AI 도구가 모델을 이 이름으로 보여 준다
+- 플러그인의 `ossieName`(플러그인 없이는 `-Delasticore.ossie.name`)이 있으면 그것이 `name` 이다. 영문·숫자·`_` 가 아닌
+  글자는 `_` 로 바꾸고 그렇게 바꿨다고 경고한다(`[ossie] model name 'acme-erp' is written as acme_erp`).
+  `description` 과 `custom_extensions` 의 `domains` 는 그대로 도메인을 적는다
+- 동작 변경 없음: 적지 않으면 이전과 같은 이름이다 - 이 저장소의 두 `semantic_model.yml` 도 그대로
+- 파일: `OssieSemanticModelExporter.java`, `ElastiCoreExtension.java`, `ElastiCorePlugin.java`,
+  `elasticore-rule-guide.md`(Ossie 내보내기 절), 테스트 `OssieModelNameTest`, `OssieExportTest`(이름을 적지 않은 ddd 샘플의
+  이름), `ElastiCorePluginTest.theOssieNameIsPassed`
 
 ### Improvements (런타임 - `@EnableElastiCore` 없이)
 

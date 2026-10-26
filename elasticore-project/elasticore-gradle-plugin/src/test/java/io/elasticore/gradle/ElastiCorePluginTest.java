@@ -119,6 +119,21 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("a name for the Ossie model is passed, and only when one is given")
+    public void theOssieNameIsPassed() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }",
+                "elasticore { rules = ['ossie-export']; ossieName = 'acme_erp' }",
+                REPORTER);
+        assertTrue(reportOf(run("reportElcore")).contains("elasticore.ossie.name=acme_erp"));
+
+        // Unset, the exporter names the model after its domains, as before.
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { rules = ['ossie-export'] }", REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.ossie.name"), reported);
+    }
+
+    @Test
     @DisplayName("a framework version the project declares is left as written")
     public void aDeclaredFrameworkIsLeftAlone() throws IOException {
         writeSettings("single");

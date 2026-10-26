@@ -72,6 +72,14 @@ public abstract class ElastiCoreExtension {
     public abstract ListProperty<String> getSuppress();
 
     /**
+     * The name of the Apache Ossie semantic model the {@code ossie-export}
+     * rule set writes. Normally left unset: the model is then named after its
+     * domains joined, which a project of many domains may not want a BI or AI
+     * tool to list it by.
+     */
+    public abstract Property<String> getOssieName();
+
+    /**
      * Whether compilation waits for generation. Default true.
      *
      * Off by default would reproduce a failure this project has hit: Gradle is
