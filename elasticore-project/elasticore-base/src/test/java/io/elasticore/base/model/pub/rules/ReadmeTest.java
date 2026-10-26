@@ -49,6 +49,8 @@ public class ReadmeTest {
             while (link.find()) {
                 String target = link.group(1);
                 if (target.startsWith("http") || target.startsWith("#")) continue;
+                // A section of another page (docs/tour.md#status): the page must exist.
+                if (target.indexOf('#') > 0) target = target.substring(0, target.indexOf('#'));
                 if (!new File(repositoryRoot(), target).exists()) {
                     broken.add(doc + " -> " + target);
                 }

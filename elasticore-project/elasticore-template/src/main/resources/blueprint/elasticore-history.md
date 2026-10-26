@@ -198,6 +198,24 @@
   다른 절은 맞게 적고 있어 두 곳이 서로 달랐다. 두 곳을 지금 동작으로 고치고, 남은 경우(멤버에 루트를 가리키는 필드가 없으면
   DSL 경고)를 적었다
 
+### Documentation (README 첫 화면)
+
+- README 가 476줄이었고, 동작하는 모습(실제 요청과 응답)은 300줄 아래에 있었다 - 처음 온 사람은 거기까지 읽지 않는다.
+  첫 화면을 "무엇을 하는지 한 문장 → 동작 GIF → 왜 쓰는지 네 줄 → 한 명령으로 돌려 보기 → 5단계" 로 바꾸고 README 를
+  190줄 안쪽으로 줄였다
+- GIF(`docs/images/demo.gif`)는 pet store 를 실제로 돌려 받은 것이다: 모델, 401·403·409 응답, `deliver: SHIPPED -> DELIVERED` 와
+  `DELIVERED` 두 줄을 더해 다시 생성한 로그(8 written / 72 unchanged / 25 skipped), 새 명령의 200·409. "Java 7개 파일 45줄" 은
+  두 줄 전후의 `src/main/java` 를 첫 줄(해시·시각) 빼고 비교해 센 것(42줄 추가, 3줄 삭제). 확인 뒤 예제 DSL 은 되돌렸다
+- 덜어 낸 절은 지우지 않고 옮겼다: DSL 읽는 법·무엇이 다른가·규칙(ruleset)·업무 규칙·바운디드 컨텍스트·믿을 수 있는 출력은
+  `docs/tour.md`(`.ko.md`), Spring Initializr·Spring Boot 3·소스 빌드는 `docs/getting-started.md`(`.ko.md`). 링크는 `docs/` 기준으로
+- 5단계의 코드 블록(build.gradle, env.yml, model/entity.yml, 생성 파일 목록, 로그인 호출)은 모양 그대로 둬서
+  `ReadmeQuickStartTest`·`ReadmeTest` 가 계속 실제로 생성해 본다
+- 시작하기의 로그인에 `@signin` 을 더했다 - 모델만으로 로그인·로그아웃·"나는 누구" API 가 생긴다(pet store 의 방식)
+- 파일: `README.md`, `README.ko.md`, `docs/tour.md`, `docs/tour.ko.md`, `docs/getting-started.md`, `docs/getting-started.ko.md`,
+  `docs/images/demo.gif`
+- `ReadmeTest` 의 링크 검사가 다른 문서의 절을 가리키는 링크(`docs/tour.md#status`)를 없는 파일로 읽었다 - `#` 뒤를 떼고
+  문서가 있는지 본다
+
 ## 3.0.261022-rc1
 
 같은 요구사항(도서·회원·대출 API)을 에이전트가 ElastiCORE 로 만들게 하고 어디서 Java 를 손으로 쓰는지 보았다. 네 군데였다:
