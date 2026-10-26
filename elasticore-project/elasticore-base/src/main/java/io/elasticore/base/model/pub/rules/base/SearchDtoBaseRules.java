@@ -195,7 +195,8 @@ public class SearchDtoBaseRules implements CodeRules {
     private String schemaLine(EntitySpec e, FieldSpec f, String conditionCode) {
         // A search property is never required: an absent value means "any".
         return String.format("@Schema(description = %s  %s)",
-                RuleText.quote(conditionText(f, StringUtils.getOperatorDescription(conditionCode))),
+                RuleText.quote(conditionText(f, StringUtils.getOperatorDescription(conditionCode,
+                        !ctx(e).compatible()))),
                 FieldDoc.exampleAttribute(e, f));
     }
 
@@ -282,7 +283,28 @@ public class SearchDtoBaseRules implements CodeRules {
      * whose LIKE keeps case. %_% and %% keep case; 2.x keeps its like.
      */
     public static String effectiveCondition(SourceCode c, FieldSpec f, String condition) {
-        return !c.compatible() && f.isStringType() && "like".equals(condition) ? "%__%" : condition;
+        if (c.compatible()) return condition;
+        if (f.isStringType() && "like".equals(condition)) return "%__%";
+        return symbolOf(condition);
+    }
+
+    /**
+     * A comparison keyword as its symbol: gt is >, gte and ge are >=, lt is <,
+     * lte and le are <=, ne and neq are !=. Clean output only. The 2.2 site
+     * documented the keywords, 2.x read them as an equality, and an agent
+     * writes them as often as the symbols - so the clean output reads them as
+     * they were meant. The 2.x-compatible output keeps its equality.
+     */
+    static String symbolOf(String condition) {
+        if (condition == null) return null;
+        switch (condition.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "gt": return ">";
+            case "gte": case "ge": return ">=";
+            case "lt": return "<";
+            case "lte": case "le": return "<=";
+            case "ne": case "neq": return "!=";
+            default: return condition;
+        }
     }
 
     /**

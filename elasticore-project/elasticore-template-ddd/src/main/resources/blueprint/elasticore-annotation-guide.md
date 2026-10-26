@@ -790,7 +790,7 @@ coordinates: int[] @env:integerarray       # env.yml annotations 참조
 customName: string @search(like,comName)   # comName 필드에 like 검색
 ```
 
-### 3.2 구현된 연산자 전체 목록 (17개)
+### 3.2 구현된 연산자 전체 목록 (18개)
 
 | DSL 문법 | JPA Criteria | 대소문자 무시 | 설명 |
 |----------|-------------|:---:|------|
@@ -803,10 +803,11 @@ customName: string @search(like,comName)   # comName 필드에 like 검색
 | `_%` | `like` (v%) | No | 접두사 검색 (starts-with) |
 | `%__` | `like` (%v) | Yes | 대소문자 무시 접미사 검색 |
 | `__%` | `like` (v%) | Yes | 대소문자 무시 접두사 검색 |
-| `>` | `greaterThan` | No | 초과 |
-| `>=` | `greaterThanOrEqualTo` | No | 이상 |
-| `<` | `lessThan` | No | 미만 |
-| `<=` | `lessThanOrEqualTo` | No | 이하 |
+| `>` (`gt`) | `greaterThan` | No | 초과 |
+| `>=` (`gte`, `ge`) | `greaterThanOrEqualTo` | No | 이상 |
+| `<` (`lt`) | `lessThan` | No | 미만 |
+| `<=` (`lte`, `le`) | `lessThanOrEqualTo` | No | 이하 |
+| `!=` (`ne`, `neq`) | `notEqual` | No | 같지 않음 (v3 번들 전용) |
 | `in` | `.in()` / `Join.in()` | No | 다중 값 포함 |
 | `between`, `~` | `between` | No | 범위 검색 |
 | `isnull` | `isNull` / `isNotNull` | No | 비어 있는지 검색. 검색 속성 `<필드>Empty: Boolean` (3.4.1, v3 번들 전용) |
@@ -820,9 +821,13 @@ customName: string @search(like,comName)   # comName 필드에 like 검색
   `__%`·정확 일치 `__=` 를 인덱스로 찾으려면 `lower(col)` 식 인덱스가 필요합니다. MySQL·SQL Server 의 기본 CI 콜레이션은
   원래 대소문자를 무시합니다.
 
-**미구현 주의:**
-- `!=`, `neq` - 코드에 구현 없음
-- `gt`, `gte`, `lt`, `lte`, `ilike` 키워드 - 미구현 (기호 `>`, `>=`, `<`, `<=`만 동작). 모르는 조건은 정확 일치가 되며,
+**비교 키워드와 `!=`:**
+- v3 모드(헥사고날·DDD, `-Pv3`, 모든 Kotlin 빌드)에서는 키워드가 기호와 같습니다: `gt` = `>`, `gte`·`ge` = `>=`,
+  `lt` = `<`, `lte`·`le` = `<=`, `ne`·`neq` = `!=` (대소문자 무관). 생성 코드도 기호로 쓴 것과 같습니다 (3.0.261023 부터).
+  `!=` 는 SQL 의 `<>` 라 컬럼이 비어 있는(NULL) 행은 결과에 없습니다 - 빈 값도 찾으려면 `isnull` 필드를 함께 둡니다.
+- 레이어드 Java(2.x 호환)와 2.x 에서는 키워드와 `!=` 가 **정확 일치**로 동작합니다 (오류도 경고도 없음). 이 모드에서는
+  기호 `>`, `>=`, `<`, `<=` 를 쓰고, 같지 않음 검색은 없습니다.
+- `ilike` 는 없습니다 - 대소문자 무시 포함 검색은 `%__%` (v3 모드의 문자열 `like` 도 같음). 모르는 조건은 정확 일치가 되며,
   v3 모드에서는 빌드가 `... @search(ilike) is not a search condition, so it searches by equality ...` DSL 경고를 냅니다
 - `%` 하나만 쓴 `@search(%)` 는 끝 일치(`like '%' + 값`, `%_` 와 같음)입니다. v3 모드에서는 빌드가
   `... @search(%) searches by the end of the value (like '%' + value) - say %_ for that, _% for the start or %_% for any part.`
@@ -1293,7 +1298,8 @@ port:
 - **텍스트 부분 검색**: `like` (v3 모드는 대소문자 무시, 레이어드 Java 는 구분), `%_%` (항상 구분), `%__%` (항상 무시)
 - **날짜 범위**: `between` (LocalDate는 자동 +1일 포함)
 - **다중 선택 필터**: `in`
-- **숫자 비교**: `>=`, `<=`, `>`, `<` (기호만 사용, 키워드 미지원)
+- **숫자 비교**: `>=`, `<=`, `>`, `<` (v3 모드에서는 `gte`, `lte`, `gt`, `lt` 도 같음. 2.x 호환 모드는 기호만)
+- **같지 않음**: `!=` 또는 `ne` (v3 모드 전용)
 - **유연한 검색 UI**: `auto` (사용자가 %를 입력하면 like, 아니면 eq)
 
 ### DTO template 활용
@@ -1483,28 +1489,26 @@ fields:
 3. 비감사 엔티티 참조시 `@NotAudited` 존재 확인
 4. 누락 발견시 YAML 재생성 또는 Java 코드 수동 수정
 
-### 8.5 검색 조건 미구현 연산자
+### 8.5 비교 키워드와 같지 않음 (모드에 따라 다름)
 
-Section 3.2의 구현된 연산자 외에는 **사용 불가**합니다. 다음 연산자는 코드에 구현되지 않았습니다.
+Section 3.2 의 연산자 외에는 **사용 불가**합니다. 비교 키워드와 `!=` 는 모드에 따라 다르게 동작합니다.
 
-#### 미구현 연산자
-- `!=`, `neq` (부정 equal) - 미구현
-- `gt`, `gte`, `lt`, `lte` (키워드 형태) - 미구현
+| 쓴 것 | v3 모드 (헥사고날·DDD, `-Pv3`, Kotlin) | 레이어드 Java (2.x 호환), 2.x |
+|---|---|---|
+| `gt`, `gte`/`ge`, `lt`, `lte`/`le` | `>`, `>=`, `<`, `<=` 와 같음 (3.0.261023 부터) | **정확 일치** - 경고 없음 |
+| `!=`, `ne`, `neq` | 같지 않음 (`notEqual`) | **정확 일치** - 경고 없음 |
 
 비어 있는지(IS NULL / IS NOT NULL) 검색은 `@search(isnull)` 하나로 합니다 (3.4.1).
 
-#### 올바른 사용
 ```yaml
-# WRONG - keyword form not implemented
 fields:
-  price: int @search(gt)     # 'gt' keyword not supported
-  age: int @search(lte)      # 'lte' keyword not supported
-
-# CORRECT - use symbol operators
-fields:
-  price: int @search(>)      # Symbol form works
-  age: int @search(<=)       # Symbol form works
+  price: int @search(>)      # 모든 모드
+  age: int @search(<=)       # 모든 모드
+  stock: int @search(gte)    # v3 모드: >= 와 같음. 2.x 호환 모드: 정확 일치
+  code: string(10) @search(ne)  # v3 모드 전용
 ```
+
+어느 모드에서도 같은 결과를 원하면 기호를 쓰세요.
 
 ### 8.6 between 검색과 LocalDate +1일 동작
 
@@ -1542,7 +1546,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 1. **@min/@max**: 정수값만 사용. 실수 검증은 커스텀 어노테이션 또는 서비스 레이어
 2. **DSL 타입**: DSL 가이드 값 타입 표에 있는 타입만. `uuid` 는 타입이 아님 (UUID 키는 `string @id @genid`)
 3. **필드명**: SQL 예약어 회피. 특히 복합키 `@id` 필드
-4. **검색 연산자**: 구현된 16개 연산자만 사용. 비교는 기호(`>`, `<=`) 사용
+4. **검색 연산자**: 3.2 의 연산자만 사용. 비교는 기호(`>`, `<=`)가 모든 모드에서 같음 (키워드·`!=` 는 v3 모드만, 8.5)
 5. **between + LocalDate**: +1일 자동 적용 이해 필요
 6. **@audited**: 생성 후 관계 필드 `@NotAudited` 검증 필수
 7. **코드 생성 후 검증**: 항상 컴파일 후 오류 확인
@@ -1769,8 +1773,11 @@ public class OrderInvariants {
 허용하는데, `@genid` 를 쓰는 루트는 이미 `@PrePersist` 를 쓰고 있습니다. 두
 개면 경고가 아니라 퍼시스턴스 유닛이 아예 뜨지 않습니다.
 
-**한계**: 마지막 멤버만 지우면 루트의 행이 바뀌지 않아 검사가 실행되지 않습니다.
-루트도 함께 바뀌면 다시 걸립니다.
+**멤버를 지울 때도 검사합니다**: 마지막 멤버만 지우면 루트의 행은 바뀌지 않지만, 멤버에 붙는
+`OrderItemRemovalCheck` 리스너가 멤버 행이 지워질 때(flush) 루트의 불변식을 남은 상태로 검사합니다 -
+마지막 품목을 지우는 저장은 거절됩니다. `replaceItems` 로 전부 바꾸는 것은 flush 때 이미 채워져 있으므로
+허용되고, 루트 자체를 지우는 것도 허용됩니다. 멤버에 루트를 가리키는 필드가 없으면(단방향 관계) 이 검사를
+만들 수 없어 빌드가 DSL 경고를 냅니다 - 관계를 양방향(`mappedBy`)으로 매핑하세요.
 
 ## @factory — 팩토리 (DDD 룰셋)
 

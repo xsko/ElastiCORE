@@ -196,6 +196,41 @@ public class MapperSpecTest {
         SourceCode.resetWarnings();
     }
 
+    /** The comparison symbols, as a field line carries them through the DSL parser. */
+    @Test
+    public void comparisonSymbolsReachTheCriteria() {
+        SourceCode.TemplateSet v3 = SourceCode.TemplateSet.V3;
+        assertTrue(renderIn(v3, "int @search(>=)").contains("c.greaterThanOrEqualTo(r.get(\"f\"),f)"));
+        assertTrue(renderIn(v3, "int @search(<=)").contains("c.lessThanOrEqualTo(r.get(\"f\"),f)"));
+        assertTrue(renderIn(v3, "int @search(>)").contains("c.greaterThan(r.get(\"f\"),f)"));
+        assertTrue(renderIn(v3, "int @search(<)").contains("c.lessThan(r.get(\"f\"),f)"));
+        assertTrue(renderIn(v3, "int @search(!=)").contains("c.notEqual(r.get(\"f\"),f)"));
+    }
+
+    /**
+     * The keywords say what the symbols say in the clean output, where they
+     * were an equality with a warning; the 2.x output keeps its equality.
+     */
+    @Test
+    public void comparisonKeywordsAreTheSymbols() {
+        io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
+        SourceCode.resetWarnings();
+        String[][] pairs = {{"gt", ">"}, {"gte", ">="}, {"ge", ">="}, {"lt", "<"}, {"lte", "<="}, {"le", "<="},
+                {"ne", "!="}, {"neq", "!="}, {"GTE", ">="}};
+        for (SourceCode.TemplateSet set : new SourceCode.TemplateSet[]{SourceCode.TemplateSet.V3,
+                SourceCode.TemplateSet.KOTLIN}) {
+            for (String[] pair : pairs) {
+                assertEquals(renderIn(set, "int @search(" + pair[1] + ")"),
+                        renderIn(set, "int @search(" + pair[0] + ")"), set + " " + pair[0]);
+            }
+        }
+        assertEquals(0, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
+        String old = renderIn(SourceCode.TemplateSet.COMPATIBLE, "int @search(gte)");
+        assertTrue(old.contains("c.equal(r.get(\"f\"),f)"), old);
+        assertFalse(renderIn(SourceCode.TemplateSet.COMPATIBLE, "int @search(!=)").contains("notEqual"));
+        SourceCode.resetWarnings();
+    }
+
     /** A lone % searches by the end of the value, and the warning says so - not "by equality". */
     @Test
     public void aLonePercentIsSaidAsTheEndsWithItIs() throws Exception {

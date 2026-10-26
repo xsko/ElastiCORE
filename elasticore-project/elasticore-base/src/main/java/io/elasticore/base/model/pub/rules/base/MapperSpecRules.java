@@ -80,7 +80,7 @@ public class MapperSpecRules implements CodeRules {
         } else if (!c.compatible() && !knownCondition(condition)) {
             io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                     "[%s] %s.%s @search(%s) is not a search condition, so it searches by equality - say eq, like,"
-                            + " %%_%%, %%__%%, __=, _%%, %%_, >, >=, <, <=, in, between or isnull.",
+                            + " %%_%%, %%__%%, __=, _%%, %%_, >, >=, <, <=, != (or gt, gte/ge, lt, lte/le, ne/neq), in, between or isnull.",
                     e.domainClassName(), e.getName(), f.name(), condition));
         }
 
@@ -161,6 +161,9 @@ public class MapperSpecRules implements CodeRules {
             and(c, e.getName(), "c.greaterThan(%s,%s)", path, nn(c, fieldNm));
         } else if ("<".equals(condition)) {
             and(c, e.getName(), "c.lessThan(%s,%s)", path, nn(c, fieldNm));
+        } else if ("!=".equals(condition) && !c.compatible()) {
+            // Clean output only: 2.x read != as an equality.
+            and(c, e.getName(), "c.notEqual(%s,%s)", path, nn(c, fieldNm));
         } else if ("like".equals(condition) || "%_%".equals(condition) || "%%".equals(condition)) {
             and(c, e.getName(), "c.like(%s,\"%%\" +trim(%s)+ \"%%\")", path, fieldNm);
         } else if ("%__%".equals(condition)) {
@@ -336,7 +339,7 @@ public class MapperSpecRules implements CodeRules {
     static boolean knownCondition(String condition) {
         if (condition == null) return false;
         String[] known = {"", "auto", "eq", "=", "like", "%_%", "%%", "%__%", "__=", "=__", ">", ">=", "<", "<=",
-                "in", "between", "~"};
+                "!=", "in", "between", "~"};
         for (String k : known) {
             if (k.equals(condition)) return true;
         }

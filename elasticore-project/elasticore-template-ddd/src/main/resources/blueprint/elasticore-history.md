@@ -3,7 +3,8 @@
 펫스토어에 팀 규칙 모듈(`elasticore { rules = [...] }`)을 붙여 rc1 로 생성·빌드·실행하며 규칙 가이드의 예제를 하나씩 다시
 확인했다. 규칙이 쓴 것이 실행 중인 애플리케이션에 닿지 않는 두 자리를 고쳤다. 런타임 라이브러리는 Spring Boot 자동 구성을
 갖게 되어 포트에 `@EnableElastiCore` 가 필요 없다. 그것을 실제 포트로 확인하다 찾은, 값 하나를 받거나 돌려주는 DBMS 포트
-메서드(`Long countProducts()`, `nameOf(Long id)`, `return: decimal`)의 세 버그를 고쳤다. 2.x 생성기와 `jpa-springboot` 번들의
+메서드(`Long countProducts()`, `nameOf(Long id)`, `return: decimal`)의 세 버그를 고쳤다. v3 검색 조건은 `gt`·`gte` 같은
+비교 키워드와 같지 않음(`!=`, `ne`)을 받는다. 2.x 생성기와 `jpa-springboot` 번들의
 출력은 그대로다(컴파일되지 않던 `return: decimal` 포트만 바뀐다).
 
 ### Bug Fixes (팀 규칙)
@@ -159,6 +160,30 @@
 - 파일: `PortModelLoader.java`, 테스트 `PortReturnTypeTest`(생성해서 `Long`·`java.math.BigDecimal`·`String` 확인)
 - 확인(위 세 가지): 같은 헥사고날 프로젝트에 `totalPriceAbove(minPrice: long): decimal`, `nameOf(productId: long): string` 을 더해
   Boot 4.0.8 에서 호출 - `{"totalAbove2":3.00,"totalAbove100":null,"name":"Pen"}`, 없는 id 는 `"name":null`
+
+### Improvements (검색 조건 - 비교 키워드와 같지 않음)
+
+- `@search(gt)`·`gte`·`ge`·`lt`·`lte`·`le` 가 v3 모드(헥사고날·DDD, `-Pv3`, Kotlin)에서 `>`·`>=`·`<`·`<=` 와 같다. 지금까지는
+  "is not a search condition, so it searches by equality" 경고와 함께 정확 일치였다. 2.2 사이트 문서가 키워드를 동작하는 것처럼
+  적었고, 에이전트도 기호만큼 키워드를 쓴다. 대소문자 무관(`GTE`)
+- `@search(!=)`·`ne`·`neq` 는 같지 않음(`c.notEqual(...)`) - v3 모드 전용. 검색 DTO 의 설명은 "Field does not equal value."
+  SQL 의 `<>` 라 컬럼이 비어 있는(NULL) 행은 나오지 않는다 - 빈 값까지 찾으려면 `isnull` 필드를 함께 둔다
+- 동작 변경: 이 키워드나 `!=` 를 쓴 v3 프로젝트만 바뀐다 - 경고와 함께 정확 일치로 찾던 것이 쓴 대로 비교한다. 2.x 생성기와
+  2.x 호환 출력(레이어드 Java)은 그대로 정확 일치(키워드를 받으면 2.x 호환이 깨진다) - `elcoreRulesCheck`·`elcoreTreeCheck` 그대로
+- 기호 `>=`·`<=` 가 DSL 파서를 지나 Criteria 에 닿는다는 테스트는 2.x 호환 모드에만 있었다 - v3·Kotlin 에도 더했다
+- 경고 문구가 받는 별칭(`ge`, `le`, `neq`)을 모두 적는다
+- 파일: `SearchDtoBaseRules.java`(`effectiveCondition`, `symbolOf`), `MapperSpecRules.java`, `StringUtils.java`, 테스트
+  `MapperSpecTest.comparisonSymbolsReachTheCriteria`·`comparisonKeywordsAreTheSymbols`
+- 확인: 헥사고날 Java 프로젝트(Boot 4.0.8)에 `stock: int @search(gte)`, `weight: int @search(<=)`, `code: string(10) @search(ne)` 를
+  더해 생성·빌드·실행. 상품 셋(재고 1·5·9, 무게 10·20·30, 코드 X·Y·X)에 `{"stock":5}` → B·C, `{"weight":20}` → A·B,
+  `{"code":"X"}` → B. 경고 없음
+
+### Documentation (불변식 - 멤버 삭제)
+
+- annotation guide 의 `@invariant` 와 rule guide 의 불변식 절이 "마지막 멤버를 지우면 검사되지 않는다"는 한계를 그대로 적고 있었다.
+  그 한계는 멤버의 `XxxRemovalCheck` 리스너로 이미 닫혀 있다(`AggregateInvariantTest.emptyingAnOrderIsCaught`) - rule guide 의
+  다른 절은 맞게 적고 있어 두 곳이 서로 달랐다. 두 곳을 지금 동작으로 고치고, 남은 경우(멤버에 루트를 가리키는 필드가 없으면
+  DSL 경고)를 적었다
 
 ## 3.0.261022-rc1
 
