@@ -191,6 +191,22 @@
   더해 생성·빌드·실행. 상품 셋(재고 1·5·9, 무게 10·20·30, 코드 X·Y·X)에 `{"stock":5}` → B·C, `{"weight":20}` → A·B,
   `{"code":"X"}` → B. 경고 없음
 
+### Bug Fixes (서비스 - 같은 패키지의 같은 이름)
+
+#### 엔티티 이름이 서비스 패키지의 클래스 이름과 같으면 코어 서비스가 다른 타입을 가리키던 것
+- 엔티티 `AccidentService`(사고의 수리 항목)와 엔티티 `Accident` 가 함께 있으면, 서비스 패키지에 `Accident` 의 확장
+  서비스 `AccidentService` 가 생기고 엔티티 `AccidentService` 의 `AccidentServiceCoreService` 도 같은 패키지에 놓인다.
+  `-Pv3`·DDD·헥사고날과 Kotlin 의 코어 서비스는 엔티티를 `import ...entity.*;` 로만 가져오는데, 같은 패키지의 클래스가
+  와일드카드 import 보다 앞서므로(Java·Kotlin 같음) 코어 서비스 안의 `AccidentService` 가 모두 서비스 클래스로 읽혀
+  컴파일되지 않았다(한 프로젝트에서 22건)
+- 이제 코어 서비스와 서비스 테스트, AI 확장 서비스가 엔티티를 이름으로도 import 한다(`import ...entity.AccidentService;`) -
+  2.x 의 `service.tmpl` 이 쓰는 방식이고, 이름 import 는 같은 패키지보다 앞선다. 이름이 겹치지 않는 프로젝트는 그 한 줄이
+  더해질 뿐 의미가 같다. 서비스 테스트와 AI 확장 서비스는 개발자 파일이라 고친 파일은 그대로고, 한 번도 고치지 않은
+  파일은 다음 생성에 맞춰진다
+- 2.x 와 2.x 호환 출력은 원래 그렇게 써 왔다 - 그대로
+- 파일: `v3/service.tmpl`, `v3/service_test.tmpl`, `v3/service_extend_ai.tmpl`, `kt/service.tmpl`, `kt/service_test.tmpl`,
+  테스트 `EntityShadowedInServicePackageTest`
+
 ### Documentation (불변식 - 멤버 삭제)
 
 - annotation guide 의 `@invariant` 와 rule guide 의 불변식 절이 "마지막 멤버를 지우면 검사되지 않는다"는 한계를 그대로 적고 있었다.
