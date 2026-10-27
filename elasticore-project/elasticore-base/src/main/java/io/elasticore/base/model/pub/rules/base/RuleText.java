@@ -97,6 +97,22 @@ public final class RuleText {
         }
     }
 
+    /**
+     * A parent the class declaration names by its simple name - a DSL
+     * @extend - wants the import a field of that type would get: a parent of
+     * another domain lives in another package. A parent of the same package,
+     * or one the registry does not know, needs none.
+     */
+    public static void registerParentImport(io.elasticore.base.model.pub.rules.SourceCode c,
+                                            String parent,
+                                            String ownPackage) {
+        if (parent == null || parent.isEmpty()) return;
+        String pkg = componentPackage(parent);
+        if (pkg != null && !pkg.equals(ownPackage)) {
+            c.addImport("%s.%s", pkg, parent);
+        }
+    }
+
     /** Drops the blank tail a rendered block ends with. */
     public static String stripTrailing(String s) {
         int end = s.length();

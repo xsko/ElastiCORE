@@ -72,6 +72,7 @@ public class DtoCleanFileRules implements CodeRules {
         for (FieldSpec f : e.fields()) {
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("dto"));
         }
+        RuleText.registerParentImport(c, parentOf(e), e.pkg("dto"));
 
         c.var("packageName", e.pkg("dto"))
          .var("className", className)
@@ -85,14 +86,18 @@ public class DtoCleanFileRules implements CodeRules {
          .varLines("fieldList", RuleText.linesOf(RuleText.stripTrailing(c.renderFieldBlock(1))));
     }
 
+    private String extendClause(EntitySpec e) {
+        String parent = parentOf(e);
+        return parent == null ? "" : String.format("extends %s", parent);
+    }
+
     /**
      * A DTO of its own declares no parent; one derived from a template
      * inherits whatever the DSL's @extend names.
      */
-    private String extendClause(EntitySpec e) {
-        if (e.hasMeta("dto")) return "";
-        String parent = e.metaValue("extend");
-        return parent == null ? "" : String.format("extends %s", parent);
+    private String parentOf(EntitySpec e) {
+        if (e.hasMeta("dto")) return null;
+        return e.metaValue("extend");
     }
 
     /** Serializable always, plus whatever @implements adds. */

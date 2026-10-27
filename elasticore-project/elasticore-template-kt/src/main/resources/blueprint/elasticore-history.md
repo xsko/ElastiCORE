@@ -216,6 +216,16 @@
 - `ReadmeTest` 의 링크 검사가 다른 문서의 절을 가리키는 링크(`docs/tour.md#status`)를 없는 파일로 읽었다 - `#` 뒤를 떼고
   문서가 있는지 본다
 
+### Bug Fixes (DTO - 다른 도메인의 부모)
+
+#### `@extend` 로 다른 도메인의 DTO 를 상속하면 부모를 import 하지 않던 것
+- `meta: dto @extend(SignInRequest)` 처럼 부모가 다른 도메인의 DTO 면, `-Pv3`·DDD·헥사고날과 Kotlin 의 DTO 가
+  `extends SignInRequest`(Kotlin `: SignInRequest()`) 를 쓰면서 그 import 는 쓰지 않아 `cannot find symbol` 로 컴파일되지
+  않았다. 정리된 출력은 클래스가 쓰는 타입만 import 하는데, 그 목록을 필드 타입에서만 모았다
+- 이제 부모도 필드 타입과 같은 방식으로 import 한다 - 다른 패키지의 부모만. 같은 도메인의 부모는 같은 패키지라 그대로다
+- 2.x 와 2.x 호환 출력은 부모 패키지를 와일드카드로 import 해 왔다 - 그대로
+- 파일: `RuleText.java`(`registerParentImport`), `DtoCleanFileRules.java`, `KotlinDtoFileRules.java`, 테스트 `DtoParentImportTest`
+
 ## 3.0.261022-rc1
 
 같은 요구사항(도서·회원·대출 API)을 에이전트가 ElastiCORE 로 만들게 하고 어디서 Java 를 손으로 쓰는지 보았다. 네 군데였다:

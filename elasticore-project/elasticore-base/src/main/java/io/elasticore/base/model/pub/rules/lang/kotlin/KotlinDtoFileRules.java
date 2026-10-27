@@ -64,6 +64,7 @@ public class KotlinDtoFileRules implements CodeRules {
         for (FieldSpec f : e.fields()) {
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("dto"));
         }
+        RuleText.registerParentImport(c, parentName(e), e.pkg("dto"));
 
         c.var("packageName", e.pkg("dto"))
          .var("className", className)
