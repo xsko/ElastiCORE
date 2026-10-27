@@ -174,6 +174,17 @@
 - 확인(위 세 가지): 같은 헥사고날 프로젝트에 `totalPriceAbove(minPrice: long): decimal`, `nameOf(productId: long): string` 을 더해
   Boot 4.0.8 에서 호출 - `{"totalAbove2":3.00,"totalAbove100":null,"name":"Pen"}`, 없는 id 는 `"name":null`
 
+### Bug Fixes (포트 - 엔티티 없는 도메인)
+
+#### 엔티티가 없는 도메인의 포트가 없는 패키지를 import 하던 것
+- 포트와 DTO 만 있는 도메인(SQL 로 읽기만 하는 대시보드 같은 것)의 포트에 `import <namespace.entity>.*;` 가 들어가
+  `package ... does not exist` 로 컴파일되지 않았다. `env.yml` 의 `namespace.entity` 는 그런 클래스가 갈 자리를 말할 뿐인데,
+  규칙엔진은 그것만 보고 엔티티·DTO 패키지를 늘 import 했다. DTO 도 없는 도메인은 `dto.*` 로 같았다
+- 이제 2.x(`PortSrcPublisher`)처럼 그 종류의 모델이 도메인에 하나라도 있을 때만 그 패키지를 import 한다 - enum 은 이미
+  그랬다. 엔티티가 있는 도메인의 포트는 그대로다
+- 2.x 생성기(`elcore`)는 원래 그렇게 쓴다 - 2.x 호환 출력(`elcore3`)과 `-Pv3`, Kotlin 포트가 그것과 같아진다
+- 파일: `SpecFactory.java`(`fromPort`), 테스트 `PortModelImportsTest`
+
 ### Improvements (검색 조건 - 비교 키워드와 같지 않음)
 
 - `@search(gt)`·`gte`·`ge`·`lt`·`lte`·`le` 가 v3 모드(헥사고날·DDD, `-Pv3`, Kotlin)에서 `>`·`>=`·`<`·`<=` 와 같다. 지금까지는

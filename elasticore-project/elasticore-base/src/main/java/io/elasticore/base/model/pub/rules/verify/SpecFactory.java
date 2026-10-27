@@ -1053,9 +1053,18 @@ public final class SpecFactory {
                         "[elcore3] %s stays on the ElastiCORE port runtime (httpPort: spring): %s", spec.id(), reason));
             }
         }
-        spec.pkg("port", model.getNamespace("port"))
-            .pkg("entity", model.getNamespace("entity"))
-            .pkg("dto", model.getNamespace("dto"));
+        // The port imports each model package with a wildcard, so a package
+        // goes in only when the domain has a model of that kind - as
+        // PortSrcPublisher decides it. A namespace declared in env.yml says
+        // where such classes would go, not that any exist: a domain of ports
+        // and DTOs alone has no entity package for the import to find.
+        spec.pkg("port", model.getNamespace("port"));
+        if (model.getEntityModels() != null && model.getEntityModels().getItems().size() > 0) {
+            spec.pkg("entity", model.getNamespace("entity"));
+        }
+        if (model.getDataTransferModels() != null && model.getDataTransferModels().getItems().size() > 0) {
+            spec.pkg("dto", model.getNamespace("dto"));
+        }
         if (model.getEnumModels() != null && model.getEnumModels().getItems().size() > 0) {
             spec.pkg("enumeration", model.getNamespace("enumeration"));
         }
