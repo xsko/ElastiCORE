@@ -661,14 +661,18 @@ public final class SpecFactory {
 
         String declaredName = dto.getIdentity().getName();
         // What makes a search DTO is @searchable, not its name: CouponQuery
-        // is one as much as CouponSrchDTO is.
-        if (declaredName.endsWith("SrchDTO") || dto.getMetaInfo().hasMetaAnnotation("searchable")) {
+        // is one as much as CouponSrchDTO is, and a plain DTO that happens to
+        // be called ReportSrchDTO is a plain DTO. The loader marks every search
+        // DTO it derives from an entity @searchable, and the runner chooses the
+        // file rule by that mark alone - a name test here gave the plain DTO
+        // the search name, and its file rule then wrote ReportSrchDTODTO.
+        if (searchable) {
             spec.searchDtoClassName(declaredName);
         } else {
             spec.dtoClassName(declaredName);
         }
         spec.searchPageSize(searchPageSizeOf(dto));
-        if (declaredName.endsWith("SrchDTO") || dto.getMetaInfo().hasMetaAnnotation("searchable")) {
+        if (searchable) {
             spec.defaultSort(defaultSortOf(dto, entity));
         }
 

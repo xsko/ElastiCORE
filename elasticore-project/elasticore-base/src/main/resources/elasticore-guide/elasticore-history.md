@@ -36,6 +36,18 @@
 - 파일: `MethodSections.java`, `SourceCode.java`, 테스트 `ProjectRuleReachTest`. 펫스토어에서 `Category`·`Country`·
   `Customer`·`Item`·`Product`·`PurchaseOrderBase` 에 한 번씩 생기는 것을 확인
 
+### Bug Fixes (DTO - 이름이 SrchDTO 로 끝나는 일반 DTO)
+
+#### `meta: dto` 인 `ReportSrchDTO` 가 `class ReportSrchDTODTO` 로 생성되던 것
+- 검색 DTO 가 아닌 일반 DTO 라도 이름이 `SrchDTO` 로 끝나면(보고서 조회 조건 `TransactionStatSrchDTO` 같은 것) 규칙엔진이
+  검색 DTO 로 보고 검색 DTO 이름만 정했다. 파일은 일반 DTO 규칙이 쓰는데, 그 규칙이 읽는 일반 DTO 이름은 비어 있어 기본값
+  `이름 + "DTO"` 가 되었다 - `ReportSrchDTO.java` 안에 `public class ReportSrchDTODTO`, 컴파일 오류(`class ... is public,
+  should be declared in a file named ...`). 2.x 호환 출력(`elcore3`), `-Pv3`, Kotlin, TypeScript 모두 같았다
+- 이제 검색 DTO 인지는 `@searchable` 만으로 정한다 - 규칙엔진이 어느 파일 규칙을 쓸지 고를 때와 같은 기준이다. 엔티티의
+  `@expose`/`@service` 에서 로더가 만드는 `XxxSrchDTO` 는 늘 `@searchable` 을 달고 있어 그대로다
+- 2.x 생성기(`elcore`)는 선언한 이름을 그대로 써 왔다 - 2.x 호환 출력이 그것과 같아진다
+- 파일: `SpecFactory.java`, 테스트 `DtoNamedLikeASearchDtoTest`
+
 ### Documentation (규칙 API)
 
 - 공개 규칙 API(`io.elasticore.base.model.pub.rules`)의 javadoc 에 남아 있던 "PROTOTYPE - part of the 3.0 publisher extension
