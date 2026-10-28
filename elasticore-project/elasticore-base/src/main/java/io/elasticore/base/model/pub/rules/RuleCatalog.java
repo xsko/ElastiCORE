@@ -453,6 +453,11 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules();
             }
         });
+        c.register("mybatis-mapper-members", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperMemberRules();
+            }
+        });
         c.register("mybatis-search", new Factory() {
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules();
@@ -515,7 +520,7 @@ public final class RuleCatalog {
                 "jpa-dto", "jpa-dto-file-v3", "jpa-searchdto", "jpa-searchdto-file-v3",
                 "jpa-enum", "jpa-views", "jpa-support-types",
                 "mybatis-mapper", "mybatis-search", "jpa-repository-helper",
-                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-file",
+                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-file", "mybatis-mapper-members",
                 "mybatis-service-file", "spring-service-extend", "spring-controller", "spring-api-errors",
                 "jpa-write-guard", "jpa-value-object-boundary", "jpa-service-access", "mybatis-schema",
                 "port", "proto", "grpc-stub");

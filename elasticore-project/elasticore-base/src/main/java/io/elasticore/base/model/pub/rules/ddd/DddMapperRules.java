@@ -131,7 +131,7 @@ public class DddMapperRules implements CodeRules {
      * {member DTO, member entity} of a collection of this aggregate's
      * members, which membersArriveWithTheirRoot writes; null for any other.
      */
-    private static String[] listMember(EntitySpec e, FieldSpec f) {
+    public static String[] listMember(EntitySpec e, FieldSpec f) {
         // This spec views a DTO, so the collection names a DTO type. The
         // aggregate is a fact about entities, so the type is resolved back
         // to the one it stands for before the boundary is asked about it.

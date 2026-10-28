@@ -1,0 +1,14 @@
+dto:
+  PurchaseOrderDTO:
+    meta: dto @template(PurchaseOrder)
+
+  OrderLineDTO:
+    meta: dto @template(OrderLine)
+    fields:
+      itemId:   long @ref(item.itemId)           # 주문하는 품목
+      itemName: string @ref(item.name)           # 응답에 품목 이름
+
+  ItemDTO:
+    meta: dto @template(Item)
+    fields:
+      productName: string @ref(product.name)    # 응답에 상품 이름

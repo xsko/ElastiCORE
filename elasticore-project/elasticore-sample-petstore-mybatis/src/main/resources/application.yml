@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: petstore-mybatis
+  datasource:
+    url: jdbc:h2:mem:petstore;DB_CLOSE_DELAY=-1
+  sql:
+    init:
+      mode: always
+      # MyBatis makes no table: the schema the generator wrote for H2, then the catalog.
+      # On another database: db/petstore-schema-{postgresql|oracle|sqlserver}.sql.
+      schema-locations: classpath:db/petstore-schema.sql
+      data-locations: classpath:data.sql
+
+petstore:
+  vat-rate: 5.5        # percent, added to the lines
+  discount-rate: 2.25  # percent, taken off the VAT-inclusive amount
+  demo-accounts: true  # admin/admin and user/user at start-up
+
+server:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax

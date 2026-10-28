@@ -85,15 +85,195 @@ public final class MyBatisSql {
         return springName(f.name()) + "_" + key;
     }
 
-    /** A field whose value lies in the row: neither a collection nor a relation. */
+    /** A field whose value lies in one column of the row: neither a collection, a relation nor an embedded value. */
     public static boolean isValue(EntitySpec e, FieldSpec f) {
-        return !f.isList() && !f.isEntityRef() && !f.hasDsl("formula") && !f.hasDsl("transient");
+        return !f.isList() && !f.isEntityRef() && !f.hasDsl("formula") && !f.hasDsl("transient")
+                && !isEmbedded(e, f);
     }
 
     /** A to-one relation the row holds the key of. */
     public static boolean isToOne(FieldSpec f) {
         return f.isEntityRef() && !f.isList() && !f.hasDsl("embedded")
                 && f.dslValueAny("joinby", "joinfield") == null;
+    }
+
+    /** A to-one relation the row holds the key of, in an entity that may embed values. */
+    public static boolean isToOne(EntitySpec e, FieldSpec f) {
+        return isToOne(f) && !isEmbedded(e, f);
+    }
+
+    /**
+     * The field a to-one relation is read through - @joinBy(customerId), the
+     * reference by identity: the row holds the id as a value of its own,
+     * which is what is written, and the relation is only joined on it. Null
+     * for any other field, and for a @joinBy naming no value of the row.
+     */
+    public static FieldSpec joinedBy(EntitySpec e, FieldSpec f) {
+        if (!f.isEntityRef() || f.isList() || isEmbedded(e, f)) return null;
+        String by = f.dslValueAny("joinby", "joinfield");
+        if (by == null || by.trim().isEmpty()) return null;
+        for (FieldSpec o : e.fields()) {
+            if (o.name().equals(by.trim()) && isValue(e, o)) return o;
+        }
+        return null;
+    }
+
+    /** A to-one relation read with the row: one whose key column it holds, or one read through an id field. */
+    public static boolean isJoined(EntitySpec e, FieldSpec f) {
+        return isToOne(e, f) || joinedBy(e, f) != null;
+    }
+
+    /** The column of the row that holds a relation's key: the id field's for @joinBy, the relation's own otherwise. */
+    public static String keyColumn(EntitySpec e, FieldSpec f, EntitySpec target) {
+        FieldSpec by = joinedBy(e, f);
+        return by != null ? column(by) : foreignKey(f, target);
+    }
+
+    // ---- embedded values ------------------------------------------------------
+
+    /** An @embeddable value kept in the columns of the row that holds it. */
+    public static boolean isEmbedded(EntitySpec e, FieldSpec f) {
+        return !f.isList() && (f.hasDsl("embedded") || e.isEmbeddableType(f.coreItemType()));
+    }
+
+    /** One column of an embedded value: the value's field and the column it lies in. */
+    public static final class Part {
+        public final FieldSpec field;
+        public final String column;
+
+        Part(FieldSpec field, String column) {
+            this.field = field;
+            this.column = column;
+        }
+    }
+
+    /**
+     * The columns of an embedded value, in the order its type declares them:
+     * each field's own column, as JPA maps an @Embedded, or prefix_field where
+     * the relation says @embedded(prefix) - the @AttributeOverrides the JPA
+     * code writes for it. Empty when the type is not known to the run.
+     */
+    public static List<Part> parts(EntitySpec e, FieldSpec f) {
+        List<Part> out = new ArrayList<Part>();
+        EntitySpec type = e.related(f.coreItemType());
+        if (type == null) return out;
+        String prefix = f.dslValueAny("embedded.prefix", "embedded");
+        for (FieldSpec p : type.fields()) {
+            if (p.hasDsl("formula") || p.hasDsl("transient")) continue;
+            String column = prefix != null && !prefix.isEmpty()
+                    ? springName(prefix + "_" + io.elasticore.base.util.StringUtils.camelToSnake(p.name()))
+                    : column(p);
+            out.add(new Part(p, column));
+        }
+        return out;
+    }
+
+    /** What an embedded value holds that its columns cannot: another embedded value, a relation, a collection. */
+    static List<String> unsupportedParts(EntitySpec e, FieldSpec f) {
+        List<String> out = new ArrayList<String>();
+        EntitySpec type = e.related(f.coreItemType());
+        if (type == null) {
+            out.add(f.name() + ": the embedded type " + f.coreItemType() + " is not one the run knows");
+            return out;
+        }
+        for (FieldSpec p : type.fields()) {
+            if (p.hasDsl("formula") || p.hasDsl("transient")) continue;
+            if (p.isList() || isEmbedded(e, p) || p.isEntityRef()) {
+                out.add(f.name() + "." + p.name() + ": an embedded value holds only values");
+            } else if (!isEnum(e, p) && "OTHER".equals(jdbcType(e, p))) {
+                out.add(f.name() + "." + p.name() + ": type " + p.typeName());
+            }
+        }
+        return out;
+    }
+
+    // ---- collections ----------------------------------------------------------
+
+    /**
+     * The field of the target that holds this collection's rows - the
+     * collection's mappedBy, naming a to-one back to this entity - or null
+     * when the collection is not one the MyBatis code reads: one without
+     * mappedBy (a join table) or a many-to-many.
+     */
+    public static FieldSpec backField(EntitySpec e, FieldSpec f) {
+        if (!f.isList() || !f.isEntityRef() || f.hasDsl("manytomany")) return null;
+        String mappedBy = f.dslProperty("onetomany", "mappedBy");
+        if (mappedBy == null || mappedBy.isEmpty()) return null;
+        EntitySpec target = e.related(f.coreItemType());
+        if (target == null || target.pkField() == null) return null;
+        for (FieldSpec b : target.fields()) {
+            if (b.name().equals(mappedBy) && isJoined(target, b) && e.getName().equals(b.coreItemType())) return b;
+        }
+        return null;
+    }
+
+    /**
+     * Whether a collection holds members of this entity's aggregate - rows
+     * that are written, replaced and deleted with it, as JPA's cascade and
+     * orphan removal do. A collection of another aggregate's roots is read
+     * only: those rows are written through their own service.
+     */
+    public static boolean isMemberCollection(EntitySpec e, FieldSpec f) {
+        return backField(e, f) != null && isMemberOf(e, f.coreItemType());
+    }
+
+    /**
+     * Whether an entity is one of this root's members that it writes: in its
+     * aggregate, held by it, and without a service of its own - one with a
+     * service is written there, and writing it with the root as well would
+     * write it twice.
+     */
+    public static boolean isMemberOf(EntitySpec root, String target) {
+        return root.knowsAggregateOf(target) && root.sameAggregate(target)
+                && root.getName().equals(root.aggregateOf(target)) && !hasOwnService(target);
+    }
+
+    /** Whether an entity of the run has a service of its own (@expose or @service). */
+    public static boolean hasOwnService(String entityName) {
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            io.elasticore.base.model.entity.Entity entity = ctx == null ? null
+                    : ctx.findModelComponent(entityName, io.elasticore.base.model.entity.Entity.class);
+            return entity != null && (entity.getMetaInfo().hasMetaAnnotation("expose")
+                    || entity.getMetaInfo().hasMetaAnnotation("service"));
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether an UPDATE has a column to set: a value, an embedded value, a
+     * relation's key or the version that can change. An entity of a key and
+     * collections alone has none, and the mapper writes no update for it.
+     */
+    public static boolean hasColumnsToUpdate(EntitySpec e) {
+        FieldSpec pk = e.pkField();
+        for (FieldSpec f : e.fields()) {
+            if (f == pk || !updatable(f)) continue;
+            if (isValue(e, f) || isEmbedded(e, f) || isToOne(e, f)) return true;
+        }
+        return false;
+    }
+
+    /** The collections of an entity the MyBatis code reads with it. */
+    public static List<FieldSpec> collections(EntitySpec e) {
+        List<FieldSpec> out = new ArrayList<FieldSpec>();
+        for (FieldSpec f : e.fields()) {
+            if (backField(e, f) != null) out.add(f);
+        }
+        return out;
+    }
+
+    /** The money and quantity types of the runtime library, with the handlers that store them. */
+    public static final String MONEY_HANDLER = "io.elasticore.springboot3.mybatis.MoneyTypeHandler";
+    public static final String QUANTITY_HANDLER = "io.elasticore.springboot3.mybatis.QuantityTypeHandler";
+
+    /** The handler a value column is bound with, or null for one MyBatis binds by itself. */
+    public static String typeHandler(EntitySpec e, FieldSpec f) {
+        if (isEnum(e, f)) return ENUM_HANDLER;
+        if (f.isMoney()) return MONEY_HANDLER;
+        if (f.isQuantity()) return QUANTITY_HANDLER;
+        return null;
     }
 
     /** Whether the key is generated by the database, which a create therefore does not send. */
@@ -170,6 +350,8 @@ public final class MyBatisSql {
      */
     public static String jdbcType(EntitySpec e, FieldSpec f) {
         if (isEnum(e, f)) return "VARCHAR";
+        if (f.isMoney()) return "DECIMAL";
+        if (f.isQuantity()) return "INTEGER";
         String t = RuleText.simpleName(f.typeName());
         switch (t) {
             case "String": return f.hasDsl("lob") || f.hasDsl("text") || f.hasDsl("longtext") ? "CLOB" : "VARCHAR";
@@ -191,13 +373,60 @@ public final class MyBatisSql {
         }
     }
 
-    /** The column type a create table statement declares, in standard SQL. */
+    /**
+     * The JDBC type a parameter names, which a driver reads when the value
+     * is null. A large text or binary value is named VARCHAR / VARBINARY
+     * rather than CLOB / BLOB: PostgreSQL keeps them as TEXT / BYTEA and
+     * refuses a null bound as a large object, which the other databases take
+     * either way.
+     */
+    public static String paramJdbcType(EntitySpec e, FieldSpec f) {
+        String jdbc = jdbcType(e, f);
+        if ("CLOB".equals(jdbc)) return "VARCHAR";
+        if ("BLOB".equals(jdbc)) return "VARBINARY";
+        return jdbc;
+    }
+
+    /**
+     * A large value - a CLOB or BLOB, or text longer than Oracle keeps
+     * inline (which is a CLOB there): Oracle neither sorts nor compares one
+     * (ORA-00932), so it is not in the sort list and is searched only by
+     * LIKE.
+     */
+    public static boolean isLob(EntitySpec e, FieldSpec f) {
+        String jdbc = jdbcType(e, f);
+        return "CLOB".equals(jdbc) || "BLOB".equals(jdbc) || ("VARCHAR".equals(jdbc) && f.rawLength() > 4000);
+    }
+
+    /** The databases a schema is written for: the file name's suffix and how each names a type. */
+    public enum Vendor {
+        H2(""), POSTGRESQL("postgresql"), ORACLE("oracle"), SQLSERVER("sqlserver");
+
+        /** What the schema file's name ends with: {domain}-schema-{suffix}.sql, nothing for H2. */
+        public final String suffix;
+
+        Vendor(String suffix) {
+            this.suffix = suffix;
+        }
+    }
+
+    /** The column type a create table statement declares, for H2. */
     public static String ddlType(EntitySpec e, FieldSpec f) {
+        return ddlType(e, f, Vendor.H2);
+    }
+
+    /**
+     * The column type a create table statement declares on a database: the
+     * one Hibernate's dialect would choose for the field, so a table made
+     * for one persistence holds the other's values.
+     */
+    public static String ddlType(EntitySpec e, FieldSpec f, Vendor v) {
         String jdbc = jdbcType(e, f);
         switch (jdbc) {
             case "VARCHAR": {
                 int len = f.rawLength();
-                if (isEnum(e, f)) {
+                boolean code = isEnum(e, f);
+                if (code) {
                     String dbLen = e.enumDbLength(RuleText.simpleName(f.typeName()));
                     try {
                         len = dbLen == null || dbLen.isEmpty() ? 50 : Integer.parseInt(dbLen.trim());
@@ -205,15 +434,51 @@ public final class MyBatisSql {
                         len = 50;
                     }
                 }
-                return "VARCHAR(" + (len > 0 ? len : 255) + ")";
+                if (len <= 0) len = 255;
+                switch (v) {
+                    // Past 4000 neither keeps it inline: Oracle's VARCHAR2 and
+                    // SQL Server's NVARCHAR(n) end there.
+                    case ORACLE: return len > 4000 ? "CLOB" : "VARCHAR2(" + len + " CHAR)";
+                    // Text in NVARCHAR, so any language is kept whatever the
+                    // collation; an enum's code is ASCII.
+                    case SQLSERVER: return code ? "VARCHAR(" + len + ")" : len > 4000 ? "NVARCHAR(MAX)" : "NVARCHAR(" + len + ")";
+                    default: return "VARCHAR(" + len + ")";
+                }
             }
-            case "DECIMAL":
-                return f.precision() > 0 ? "DECIMAL(" + f.precision() + "," + Math.max(0, f.scale()) + ")" : "DECIMAL(19,2)";
-            case "DOUBLE": return "DOUBLE PRECISION";
-            case "TIMESTAMP_WITH_TIMEZONE": return "TIMESTAMP WITH TIME ZONE";
-            case "BLOB": return "BLOB";
-            case "CLOB": return "CLOB";
+            case "DECIMAL": {
+                String ps = f.precision() > 0 ? f.precision() + "," + Math.max(0, f.scale()) : "19,2";
+                if (v == Vendor.ORACLE) return "NUMBER(" + ps + ")";
+                if (v == Vendor.POSTGRESQL) return "NUMERIC(" + ps + ")";
+                return "DECIMAL(" + ps + ")";
+            }
+            case "BIGINT": return v == Vendor.ORACLE ? "NUMBER(19)" : "BIGINT";
+            case "INTEGER": return v == Vendor.ORACLE ? "NUMBER(10)" : v == Vendor.SQLSERVER ? "INT" : "INTEGER";
+            case "SMALLINT": return v == Vendor.ORACLE ? "NUMBER(5)" : "SMALLINT";
+            // SQL Server's TINYINT has no negative values; a Java byte has.
+            case "TINYINT": return v == Vendor.ORACLE ? "NUMBER(3)" : v == Vendor.H2 ? "TINYINT" : "SMALLINT";
+            case "BOOLEAN": return v == Vendor.ORACLE ? "NUMBER(1)" : v == Vendor.SQLSERVER ? "BIT" : "BOOLEAN";
+            case "DOUBLE":
+                return v == Vendor.ORACLE ? "BINARY_DOUBLE" : v == Vendor.SQLSERVER ? "FLOAT(53)" : "DOUBLE PRECISION";
+            case "REAL": return v == Vendor.ORACLE ? "BINARY_FLOAT" : "REAL";
+            case "DATE": return "DATE";
+            case "TIME": return v == Vendor.ORACLE ? "DATE" : "TIME";
+            case "TIMESTAMP":
+                return v == Vendor.SQLSERVER ? "DATETIME2(6)" : v == Vendor.H2 ? "TIMESTAMP" : "TIMESTAMP(6)";
+            case "TIMESTAMP_WITH_TIMEZONE":
+                return v == Vendor.SQLSERVER ? "DATETIMEOFFSET(6)" : v == Vendor.H2 ? "TIMESTAMP WITH TIME ZONE"
+                        : "TIMESTAMP(6) WITH TIME ZONE";
+            case "BLOB": return v == Vendor.POSTGRESQL ? "BYTEA" : v == Vendor.SQLSERVER ? "VARBINARY(MAX)" : "BLOB";
+            case "CLOB": return v == Vendor.POSTGRESQL ? "TEXT" : v == Vendor.SQLSERVER ? "NVARCHAR(MAX)" : "CLOB";
             default: return jdbc;
+        }
+    }
+
+    /** How a key the database generates is declared on a database. */
+    public static String identityClause(Vendor v) {
+        switch (v) {
+            case ORACLE: return " GENERATED BY DEFAULT ON NULL AS IDENTITY";
+            case SQLSERVER: return " IDENTITY(1,1)";
+            default: return " GENERATED BY DEFAULT AS IDENTITY";
         }
     }
 
@@ -230,17 +495,26 @@ public final class MyBatisSql {
         FieldSpec pk = e.pkField();
         for (FieldSpec f : e.fields()) {
             if (f.isList() && f.isEntityRef()) {
-                out.add(f.name() + ": a collection relation (load it with a query of the target's repository)");
+                if (!e.getName().equals(e.ownAggregate()) && !hasOwnService(e.getName())) {
+                    // Its rows would arrive with the root's request and be
+                    // stored by nothing: the root reads and writes one level.
+                    out.add(f.name() + ": a collection on a member of " + e.ownAggregate()
+                            + "'s aggregate (the root reads and writes its members, one level deep)");
+                } else if (f.hasDsl("manytomany")) {
+                    out.add(f.name() + ": a many-to-many relation (map its join table as an entity)");
+                } else if (backField(e, f) == null) {
+                    out.add(f.name() + ": a collection relation without mappedBy naming a "
+                            + f.coreItemType() + " field that points back here (@OneToMany(mappedBy=\"...\"))");
+                }
             } else if (f.isList()) {
                 out.add(f.name() + ": a collection of values");
-            } else if (f.hasDsl("embedded") || e.isEmbeddableType(f.coreItemType())) {
-                out.add(f.name() + ": an embedded value");
-            } else if (f.isMoney()) {
-                out.add(f.name() + ": Money");
+            } else if (isEmbedded(e, f)) {
+                out.addAll(unsupportedParts(e, f));
             } else if (f.hasDsl("discriminator")) {
                 out.add(f.name() + ": a discriminator (inheritance)");
-            } else if (f.isEntityRef() && f.dslValueAny("joinby", "joinfield") != null) {
-                out.add(f.name() + ": a relation read through another field's column (@joinBy)");
+            } else if (f.isEntityRef() && f.dslValueAny("joinby", "joinfield") != null && joinedBy(e, f) == null) {
+                out.add(f.name() + ": @joinBy(" + f.dslValueAny("joinby", "joinfield")
+                        + ") names no value field of " + e.getName() + " that holds the key");
             } else if (!f.isEntityRef() && !isEnum(e, f) && !f.hasDsl("formula") && "OTHER".equals(jdbcType(e, f))) {
                 out.add(f.name() + ": type " + f.typeName());
             } else if (nativeNames(f, "CreatedBy") || nativeNames(f, "LastModifiedBy")) {

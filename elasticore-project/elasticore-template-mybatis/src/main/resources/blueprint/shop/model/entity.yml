@@ -42,6 +42,26 @@ entity:
       joinedAt: datetime @jpa:CreatedDate
       changedAt: datetime @jpa:LastModifiedDate
 
+  # Every column type, written and read back alike on each database (TypesTest).
+  Gadget:
+    meta: entity @expose(20) @access(*=public) -- every column type
+    fields:
+      gadgetId: long @id @sequence
+      name: string(40)! @search(like)
+      active: boolean @search(eq)
+      weight: double
+      ratio: float
+      amount: decimal(12.3) @search(between)
+      price: money(10.2)
+      count: quantity
+      notes: text
+      body: clob
+      image: blob
+      madeOn: date
+      madeAt: datetime @search(between)
+      opensAt: time
+      stampedAt: timestamp
+
   PurchaseOrder:
     meta: entity @expose(20) @access(*=public) -- order
     fields:

@@ -126,6 +126,155 @@ public class MyBatisServiceFileRules implements CodeRules {
             }
         }
         c.var("stampCreate", create.toString()).var("stampUpdate", update.toString());
+
+        String repository = syntax.getter("helper", RuleText.uncapital(e.getName()));
+        String key = syntax.getter("entity", pk.name());
+        // A key and collections alone: no column to set, so no UPDATE - the row only has to be there.
+        c.var("writeRow", MyBatisSql.hasColumnsToUpdate(e)
+                ? String.format("if (%s.update(entity) == 0)\n            throw new OptimisticLockingFailureException(\"%s \" + %s"
+                        + " + \" was changed by someone else; read it again\");", repository, e.getName(), key)
+                : String.format("if (!%s.existsById(%s))\n            throw new EntityNotFoundException(\"%s \" + %s"
+                        + " + \" is not there\");", repository, key, e.getName(), key));
+
+        collectionVars(c, e, pk);
+    }
+
+    /** How many keys one IN list holds: Oracle takes 1000 at most, SQL Server 2100 parameters. */
+    static final int KEYS_PER_READ = 500;
+
+    /**
+     * The collections the service reads with a row (loaded) and, for the
+     * ones that hold the aggregate's own members, writes, replaces and
+     * deletes with it - JPA's cascade and orphan removal, said out loud.
+     */
+    private void collectionVars(SourceCode c, EntitySpec e, FieldSpec pk) {
+        Syntax syntax = c.syntax();
+        String entity = e.getName();
+        String keyType = syntax.nullableType(pk.typeName());
+        String nl = "\n        ";
+        java.util.List<FieldSpec> collections = MyBatisSql.collections(e);
+
+        StringBuilder load = new StringBuilder();
+        if (!collections.isEmpty()) {
+            load.append(nl).append("if (rows.isEmpty()) return rows;")
+                .append(nl).append(String.format("java.util.Map<%s, %s> byKey = new java.util.LinkedHashMap<>();", keyType, entity))
+                .append(nl).append(String.format("for (%s row : rows) byKey.put(%s, row);", entity, syntax.getter("row", pk.name())))
+                .append(nl).append(String.format("List<%s> keys = new ArrayList<>(byKey.keySet());", keyType));
+            for (FieldSpec f : collections) {
+                FieldSpec back = MyBatisSql.backField(e, f);
+                EntitySpec target = e.related(f.coreItemType());
+                String item = target.getName();
+                String mapper = syntax.getter("helper", RuleText.uncapital(item));
+                // Read through an id field (@joinBy), the member holds the root's key itself.
+                FieldSpec backId = MyBatisSql.joinedBy(target, back);
+                load.append(nl).append(String.format("for (%s row : rows) %s", entity,
+                                syntax.statement(syntax.setter("row", f.name(), "new ArrayList<>()"))))
+                    .append(nl).append(String.format("for (int from = 0; from < keys.size(); from += %d) {", KEYS_PER_READ))
+                    .append(nl).append(String.format("    for (%s m : %s.findAllBy%sIn(keys.subList(from, Math.min(keys.size(), from + %d)))) {",
+                            item, mapper, RuleText.capital(back.name()), KEYS_PER_READ))
+                    .append(nl).append(String.format("        %s row = byKey.get(%s);", entity, backId != null
+                            ? syntax.getter("m", backId.name())
+                            : syntax.getter(syntax.getter("m", back.name()), pk.name())))
+                    .append(nl).append("        if (row == null) continue;");
+                if (backId == null) {
+                    load.append(nl).append(String.format("        %s", syntax.statement(syntax.setter("m", back.name(), "row"))));
+                }
+                load.append(nl).append(String.format("        %s.add(m);", syntax.getter("row", f.name())))
+                    .append(nl).append("    }")
+                    .append(nl).append("}");
+            }
+        }
+        c.var("loadBody", load.toString());
+
+        // The aggregate's own members: written with it.
+        StringBuilder before = new StringBuilder(), write = new StringBuilder(), delete = new StringBuilder();
+        java.util.List<FieldSpec> members = new java.util.ArrayList<FieldSpec>();
+        for (FieldSpec f : collections) {
+            if (MyBatisSql.isMemberCollection(e, f)) members.add(f);
+        }
+        StringBuilder methods = new StringBuilder();
+        if (!members.isEmpty()) {
+            String n2 = "\n            ";
+            String n3 = "\n                ";
+            methods.append("\n\n    /**")
+                   .append("\n     * The entity's own collections as a request found them, so writeMembers can")
+                   .append("\n     * tell which of them the request replaced.")
+                   .append("\n     */")
+                   .append(String.format("\n    protected Object[] members(%s entity) {", entity))
+                   .append("\n        return new Object[]{");
+            for (int i = 0; i < members.size(); i++) {
+                methods.append(i > 0 ? ", " : "").append(syntax.getter("entity", members.get(i).name()));
+            }
+            methods.append("};\n    }")
+                   .append("\n\n    /**")
+                   .append("\n     * Writes the members of the entity's aggregate, which have no service of")
+                   .append("\n     * their own: every one when the entity is new (before is null), and a")
+                   .append("\n     * collection the request replaced in place of the rows it had.")
+                   .append("\n     */")
+                   .append(String.format("\n    protected void writeMembers(%s entity, Object[] before) {", entity));
+            for (int i = 0; i < members.size(); i++) {
+                FieldSpec f = members.get(i);
+                FieldSpec back = MyBatisSql.backField(e, f);
+                EntitySpec target = e.related(f.coreItemType());
+                String item = target.getName();
+                String mapper = syntax.getter("helper", RuleText.uncapital(item));
+                String list = syntax.getter("entity", f.name());
+                methods.append(nl).append(String.format("if (before == null || %s != before[%d]) {", list, i))
+                       .append(n2).append(String.format("if (before != null) %s.deleteAllBy%s(%s);", mapper,
+                               RuleText.capital(back.name()), syntax.getter("entity", pk.name())))
+                       .append(n2).append(String.format("if (%s != null) {", list))
+                       .append(n2).append(String.format("    for (%s m : %s) {", item, list))
+                       .append(n3).append(String.format("    %s", MyBatisSql.joinedBy(target, back) != null
+                               ? syntax.statement(syntax.setter("m", MyBatisSql.joinedBy(target, back).name(),
+                                       syntax.getter("entity", pk.name())))
+                               : syntax.statement(syntax.setter("m", back.name(), "entity"))));
+                FieldSpec mpk = target.pkField();
+                if (MyBatisSql.generatedKey(mpk) && !mpk.hasDslAny("primitive", "prim")) {
+                    methods.append(n3).append(String.format("    %s", syntax.statement(syntax.setter("m", mpk.name(), "null"))));
+                }
+                String genId = MyBatisSql.genIdExpression(mpk);
+                if (genId != null) {
+                    methods.append(n3).append(String.format("    if (%s == null) %s", syntax.getter("m", mpk.name()),
+                            syntax.statement(syntax.setter("m", mpk.name(), genId))));
+                }
+                FieldSpec mVersion = MyBatisSql.version(target);
+                if (mVersion != null && !mVersion.hasDslAny("primitive", "prim")) {
+                    methods.append(n3).append(String.format("    %s", syntax.statement(syntax.setter("m", mVersion.name(), "null"))));
+                }
+                for (FieldSpec mf : target.fields()) {
+                    if (!MyBatisSql.isValue(target, mf)) continue;
+                    String now = nowOf(mf);
+                    if (now == null) continue;
+                    String set = syntax.statement(syntax.setter("m", mf.name(), now));
+                    if (MyBatisSql.createdDate(mf)) {
+                        methods.append(n3).append(String.format("    if (%s == null) %s", syntax.getter("m", mf.name()), set));
+                    } else {
+                        methods.append(n3).append("    ").append(set);
+                    }
+                }
+                methods.append(n3).append(String.format("    %s.insert(m);", mapper))
+                       .append(n2).append("    }")
+                       .append(n2).append("}")
+                       .append(nl).append("}");
+            }
+            methods.append("\n    }");
+
+            before.append(nl).append("Object[] membersBefore = members(entity);");
+            write.append(nl).append("writeMembers(entity, membersBefore);");
+            for (FieldSpec f : members) {
+                FieldSpec back = MyBatisSql.backField(e, f);
+                String mapper = syntax.getter("helper", RuleText.uncapital(e.related(f.coreItemType()).getName()));
+                delete.append(nl).append(String.format("%s.deleteAllBy%s(%s);", mapper, RuleText.capital(back.name()),
+                        pk.name()));
+            }
+        }
+        c.var("membersBefore", before.toString())
+         .var("membersWrite", write.toString())
+         .var("membersBeforeEach", before.toString().replace(nl, nl + "    "))
+         .var("membersWriteEach", write.toString().replace(nl, nl + "    "))
+         .var("membersCreate", members.isEmpty() ? "" : nl + "writeMembers(entity, null);")
+         .var("membersDelete", delete.toString())
+         .var("memberMethods", methods.toString());
     }
 
     /** The current time in the field's type, for a creation or modification stamp. */
@@ -139,7 +288,7 @@ public class MyBatisServiceFileRules implements CodeRules {
     void methodFilter(EntitySpec e) {
         if (e.hasMeta("readonly")) {
             ctx(e).excludeMethod("save", "update", "batchUpdate", "delete", "deleteById",
-                    "updateBySpecification", "write");
+                    "updateBySpecification", "write", "deleteRow", "members", "writeMembers");
         }
         for (String id : ControllerBaseRules.restExcluded(e, true)) {
             ctx(e).excludeMethod(id);

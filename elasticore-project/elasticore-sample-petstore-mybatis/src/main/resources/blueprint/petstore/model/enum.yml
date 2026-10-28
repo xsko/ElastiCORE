@@ -1,0 +1,29 @@
+enumeration:
+  CreditCardType:
+    meta: enum @db(code) @json(code) -- 카드 종류
+    fields:
+      code:  string(4) @code
+      label: string(30)
+    enum:
+      VISA:             VISA, Visa
+      MASTER_CARD:      MAST, Master Card
+      AMERICAN_EXPRESS: AMEX, American Express
+
+  UserRole:
+    meta: enum @db(code) @json(code) -- 사용자 권한
+    fields:
+      code:  string(1) @code
+      label: string(20)
+    enum:
+      USER:  U, User
+      ADMIN: A, Administrator
+
+  OrderStatus:
+    meta: enum @db(code) @json(code) -- 주문 상태
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      PLACED:    PLC, Placed
+      SHIPPED:   SHP, Shipped
+      CANCELLED: CAN, Cancelled

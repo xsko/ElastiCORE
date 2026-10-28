@@ -66,6 +66,10 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testRuntimeOnly 'com.h2database:h2'
+	// The databases dbTest runs on.
+	testRuntimeOnly 'org.postgresql:postgresql'
+	testRuntimeOnly 'com.oracle.database.jdbc:ojdbc11'
+	testRuntimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
 }
 
 def generated = 'src/main/java'
@@ -75,8 +79,25 @@ sourceSets {
 }
 
 test {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'database'
+	}
 	testLogging { events 'passed', 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}
+
+// The same tests on Oracle, PostgreSQL and SQL Server: each class runs where
+// its ELASTICORE_IT_{ORACLE|POSTGRESQL|SQLSERVER}_URL is set (CI starts the
+// three), in a schema of its own made for the run.
+tasks.register('dbTest', Test) {
+	group = 'verification'
+	description = 'Runs the shop on the databases ELASTICORE_IT_* name'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'database'
+	}
+	testLogging { events 'passed', 'skipped', 'failed' }
 	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
 }
 

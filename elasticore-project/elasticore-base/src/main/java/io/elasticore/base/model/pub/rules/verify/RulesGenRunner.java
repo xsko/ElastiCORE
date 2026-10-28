@@ -1038,9 +1038,12 @@ public final class RulesGenRunner {
             // first domain was generated (shapeReferences).
             boolean shaped = v3 || kotlin || typescript;
             // Per domain, because the selection is: a value object travels in
-            // the DTO only where a rule set makes it immutable.
-            SpecFactory.valueObjectsInDto(shaped && shapes(
-                    io.elasticore.base.model.pub.rules.ImmutableValueObjects.class));
+            // the DTO only where a rule set makes it immutable - and over
+            // MyBatis, whose layered DTO would otherwise leave an embedded
+            // value out, so an address could not be sent or read at all.
+            SpecFactory.valueObjectsInDto(shaped && (shapes(
+                    io.elasticore.base.model.pub.rules.ImmutableValueObjects.class)
+                    || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS)));
             // And a root starts with a class for its behaviour where the
             // rule set that makes one - the one that names entity classes -
             // is selected.
@@ -1583,6 +1586,40 @@ public final class RulesGenRunner {
         for (EntitySpec spec : specs) {
             relateMyBatis(spec, specs);
         }
+        // The collections: the entity a collection holds gets the statements
+        // that read them for a list of keys and delete them with their root,
+        // and a mapper of its own when it has no service - an order's lines.
+        Map<EntitySpec, List<String>> inbound = new java.util.LinkedHashMap<EntitySpec, List<String>>();
+        for (EntitySpec spec : specs) {
+            for (io.elasticore.base.model.pub.rules.FieldSpec f
+                    : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.collections(spec)) {
+                io.elasticore.base.model.pub.rules.FieldSpec back =
+                        io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.backField(spec, f);
+                EntitySpec target = null;
+                for (EntitySpec s : specs) {
+                    if (s.getName().equals(f.coreItemType())) target = s;
+                }
+                // A collection of another domain's rows is that domain's mapper to read.
+                if (target == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                            "[elcore3] %s.%s: mode: mybatis reads a collection of the domain's own entities;"
+                                    + " %s is not one", spec.domainClassName(), spec.getName() + "." + f.name(),
+                            f.coreItemType()));
+                    continue;
+                }
+                List<String> backs = inbound.get(target);
+                if (backs == null) inbound.put(target, backs = new ArrayList<String>());
+                if (!backs.contains(back.name())) backs.add(back.name());
+                if (!mybatisMapped.contains(target)) {
+                    target.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.SERVICED_CONFIG, "false");
+                    mybatisMapped.add(target);
+                }
+            }
+        }
+        for (Map.Entry<EntitySpec, List<String>> in : inbound.entrySet()) {
+            in.getKey().config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.INBOUND_CONFIG,
+                    String.join("\n", in.getValue()));
+        }
         for (EntitySpec spec : mybatisMapped) {
             spec.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.SEARCH_CONFIG,
                     mybatisSearch.get(spec.searchDtoClassName()));
@@ -1595,30 +1632,78 @@ public final class RulesGenRunner {
         }
         mybatisMapped.clear();
         mybatisSearch.clear();
-        emitDomain(domain, io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.TARGET,
-                ArtifactTarget.resource("src/main/resources", "sql", "db", domain.getName() + "-schema"),
-                "mybatis-schema");
+        // One schema per database: {domain}-schema.sql for H2, and
+        // {domain}-schema-{postgresql|oracle|sqlserver}.sql.
+        for (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.Vendor v
+                : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.Vendor.values()) {
+            domain.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.VENDOR_CONFIG, v.name());
+            emitDomain(domain, io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.TARGET,
+                    ArtifactTarget.resource("src/main/resources", "sql", "db",
+                            domain.getName() + "-schema" + (v.suffix.isEmpty() ? "" : "-" + v.suffix)),
+                    "mybatis-schema");
+        }
     }
 
     /**
-     * Hands an entity the entities its to-one relations point at, and theirs
-     * in turn: the mapper reads the joined row's columns, and the keys of the
-     * rows that one points at. One of another domain is built from its model.
+     * Hands an entity the entities its relations point at, and theirs in
+     * turn: the mapper reads the joined row's columns and the keys of the
+     * rows that one points at, an embedded value's columns and the rows of a
+     * collection. One of another domain is built from its model.
      */
     private void relateMyBatis(EntitySpec spec, List<EntitySpec> specs) {
         for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
-            if (!io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isToOne(f)) continue;
+            if (!f.isEntityRef() && !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isEmbedded(spec, f)) continue;
             String type = f.coreItemType();
-            if (spec.related(type) != null) continue;
-            EntitySpec target = null;
+            EntitySpec own = null;
             for (EntitySpec s : specs) {
-                if (s.getName().equals(type)) target = s;
+                if (s.getName().equals(type)) own = s;
             }
-            if (target == null) target = foreignSpec(type);
+            // One related while the entity was written (relateMyBatisEarly)
+            // was built from the model alone; the domain's own spec, which
+            // knows the run's enums, takes its place.
+            EntitySpec known = spec.related(type);
+            if (known != null && (own == null || known == own)) continue;
+            EntitySpec target = own != null ? own : foreignSpec(type);
             if (target == null) continue;
             spec.knownRelated(type, target);
             if (target != spec) relateMyBatis(target, specs);
         }
+    }
+
+    /**
+     * Hands an entity being written the types of its embedded values and
+     * collections, so what MyBatis cannot write of them is refused before
+     * its files are: the domain's later entities have no spec yet, so these
+     * are built from the model, and relateMyBatis replaces them.
+     */
+    private void relateMyBatisEarly(EntitySpec spec) {
+        for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
+            boolean embedded = io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isEmbedded(spec, f);
+            if (!embedded && !(f.isList() && f.isEntityRef())) continue;
+            if (spec.related(f.coreItemType()) != null) continue;
+            EntitySpec target = ownModelSpec(f.coreItemType());
+            if (target == null) target = foreignSpec(f.coreItemType());
+            if (target != null) spec.knownRelated(f.coreItemType(), target);
+        }
+    }
+
+    /** Specs ownModelSpec built, per model and entity name. */
+    private final Map<String, EntitySpec> ownModelSpecs = new java.util.HashMap<String, EntitySpec>();
+
+    /**
+     * An entity of the model being written, as a spec built from that model -
+     * so a type of the same name in another domain of the run is not the one
+     * read.
+     */
+    private EntitySpec ownModelSpec(String entityName) {
+        if (currentModel == null || currentModel.getEntityModels() == null) return null;
+        String key = currentModel.getInternalDomainName() + "/" + entityName;
+        if (ownModelSpecs.containsKey(key)) return ownModelSpecs.get(key);
+        Entity entity = currentModel.getEntityModels().findByName(entityName);
+        EntitySpec spec = entity == null ? null
+                : SpecFactory.fromEntity(entity, currentModel, currentModel.getInternalDomainName());
+        ownModelSpecs.put(key, spec);
+        return spec;
     }
 
     /**
@@ -2185,6 +2270,7 @@ public final class RulesGenRunner {
         if (v3 && persistence() == RulesConfig.Persistence.MYBATIS) {
             // What the MyBatis code does not write yet is refused, not written
             // so that it loses data quietly.
+            relateMyBatisEarly(spec);
             java.util.List<String> unsupported =
                     io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.unsupported(spec);
             if (!unsupported.isEmpty() && !spec.hasMeta("embeddable") && !spec.hasMeta("abstract")) {
@@ -3596,7 +3682,7 @@ public final class RulesGenRunner {
                         || name.endsWith("-http-services.properties")
                         // a MyBatis mapper and the schema beside it; a file of the
                         // developer's has no stamp and is passed over below
-                        || name.endsWith(".xml") || name.endsWith("-schema.sql"))) continue;
+                        || name.endsWith(".xml") || name.matches(".*-schema(-[a-z0-9]+)?\\.sql"))) continue;
                 String path;
                 try {
                     path = f.getCanonicalPath();

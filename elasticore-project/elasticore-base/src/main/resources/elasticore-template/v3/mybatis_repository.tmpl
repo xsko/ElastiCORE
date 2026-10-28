@@ -57,6 +57,7 @@ public interface ${className} {
 
     int deleteById(@Param("id") ${keyType} id);
     ${loginFinder}
+    ${inboundFinders}
 
     /** Whether the search narrows the rows at all: an update by condition needs it to. */
     static boolean hasCondition(${searchDTOClassName} search) {

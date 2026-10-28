@@ -26,6 +26,27 @@ entities:
       joinedAt: Date @Column(name = "joined_at")
       changedAt: Date @Column(name = "changed_at")
 
+  Gadget:
+    meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.Gadget) -- every column type
+    table: gadget
+    java: io.elasticore.sample.mybatis.shop.domain.model.Gadget
+    fields:
+      gadgetId: Long @Column(name = "gadget_id") @Id @GeneratedValue
+      name: string(40) @Column(name = "name", length = 40)
+      active: Boolean @Column(name = "active")
+      weight: Double @Column(name = "weight")
+      ratio: Float @Column(name = "ratio")
+      amount: java.math.BigDecimal @relation(mappedBy="amount_id") @foreignKey(amount_id) -- java.math.BigDecimal entity relationship
+      price: io.elasticore.springboot3.domain.Money @relation(mappedBy="price_id") @foreignKey(price_id) -- io.elasticore.springboot3.domain.Money entity relationship
+      count: io.elasticore.springboot3.domain.Quantity @relation(mappedBy="count_id") @foreignKey(count_id) -- io.elasticore.springboot3.domain.Quantity entity relationship
+      notes: string @Column(name = "notes")
+      body: string @Column(name = "body")
+      image: byte[] @relation(mappedBy="image_id") @foreignKey(image_id) -- byte[] entity relationship
+      madeOn: Date @Column(name = "made_on")
+      madeAt: Date @Column(name = "made_at")
+      opensAt: java.time.LocalTime @relation(mappedBy="opens_at_id") @foreignKey(opens_at_id) -- java.time.LocalTime entity relationship
+      stampedAt: java.time.Instant @relation(mappedBy="stamped_at_id") @foreignKey(stamped_at_id) -- java.time.Instant entity relationship
+
   Product:
     meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.Product) -- product
     table: product

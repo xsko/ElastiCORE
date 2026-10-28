@@ -48,7 +48,23 @@ public class RepositoryHelperBaseRules implements CodeRules {
     void repositories(DomainSpec d) {
         SourceCode c = ctx(d);
 
+        // Over MyBatis an entity a collection holds has a mapper even without
+        // a service of its own: its rows are read and written with the root.
+        java.util.Set<String> held = new java.util.HashSet<String>();
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
+            for (EntitySpec e : d.entities()) {
+                for (io.elasticore.base.model.pub.rules.FieldSpec f
+                        : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.collections(e)) {
+                    held.add(f.coreItemType());
+                }
+            }
+        }
+
         for (EntitySpec e : d.entities()) {
+            if (held.contains(e.getName()) && e.pkField() != null && !(e.hasMeta("expose") || e.hasMeta("service"))) {
+                inject(c, e.getName());
+                continue;
+            }
             // An entity that inherits its key still has one: 2.x asks the
             // entity for its pk field, which resolves through the parent.
             if (e.pkField() == null && !hasInheritedKey(e)) continue;

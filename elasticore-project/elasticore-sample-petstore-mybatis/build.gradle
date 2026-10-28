@@ -1,0 +1,119 @@
+// The YAPS pet store over MyBatis: the pet store's model with env.yml saying
+// mode: mybatis, on the layered bundle and Spring Boot 4, generated, compiled
+// and run against H2 on every build - and against Oracle, PostgreSQL and
+// SQL Server where they are given (dbTest).
+//
+// The JPA sample (elasticore-sample-petstore) shows the hexagonal bundle; this
+// one shows that the same shop - prices, an address embedded twice, an order
+// and its lines written together, money and quantities - is kept in MyBatis
+// mappers on four databases, from the schema the generator writes for each.
+//
+//   ./gradlew :elasticore-project:elasticore-sample-petstore-mybatis:test     (H2)
+//   ./gradlew :elasticore-project:elasticore-sample-petstore-mybatis:dbTest   (the databases ELASTICORE_IT_* name)
+//   ./gradlew :elasticore-project:elasticore-sample-petstore-mybatis:run      (http://localhost:8080)
+
+plugins {
+	id 'java'
+	id 'application'
+	id 'io.elasticore'
+}
+
+elasticore {
+	architecture = 'layered'
+	language = 'java'
+	// Read off the Spring Boot Gradle plugin in a project; this build's
+	// Gradle predates the Boot 4 plugin, so it is said here.
+	springBoot = '4'
+}
+
+dependencies {
+	elasticore project(':elasticore-project:elasticore-base')
+}
+
+group = 'elasticore-sample-petstore-mybatis'
+version = '1.0.0-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	// What the Spring Boot plugin would set: unnamed @PathVariable/@RequestParam.
+	options.compilerArgs << '-parameters'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation platform('org.springframework.boot:spring-boot-dependencies:4.0.8')
+	annotationProcessor platform('org.springframework.boot:spring-boot-dependencies:4.0.8')
+	testImplementation platform('org.springframework.boot:spring-boot-dependencies:4.0.8')
+
+	// What a MyBatis project declares: MyBatis and Spring Data's paging types,
+	// and no JPA - the runtime library does not bring it either.
+	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.0'
+	implementation 'org.springframework.data:spring-data-commons'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+
+	implementation project(':elasticore-project:elasticore-base')
+	implementation project(':elasticore-project:elasticore-springboot4')
+
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	runtimeOnly 'com.h2database:h2'
+	// The databases dbTest runs on.
+	testRuntimeOnly 'org.postgresql:postgresql'
+	testRuntimeOnly 'com.oracle.database.jdbc:ojdbc11'
+	testRuntimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+	mainClass = 'io.elasticore.sample.mybatis.petstore.PetstoreMyBatisApplication'
+}
+
+// Always regenerated, so a rule change shows up here rather than being
+// skipped as unmodified. The developer's own files carry the generate-once
+// marker and are left alone.
+tasks.named('elcore3') {
+	systemProperty 'elasticore.rules.force', 'true'
+}
+
+// processResources copies the mapper XML and the schemas the generator writes.
+tasks.named('processResources') {
+	dependsOn 'elcore3'
+}
+
+test {
+	useJUnitPlatform {
+		excludeTags 'database'
+	}
+	testLogging { events 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}
+
+// The same shop on Oracle, PostgreSQL and SQL Server: each test class runs
+// where its ELASTICORE_IT_{ORACLE|POSTGRESQL|SQLSERVER}_URL is set (CI starts
+// the three), in a schema of its own made for the run.
+tasks.register('dbTest', Test) {
+	group = 'verification'
+	description = 'Runs the shop on the databases ELASTICORE_IT_* name'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'database'
+	}
+	testLogging { events 'passed', 'skipped', 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}

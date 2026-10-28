@@ -46,7 +46,7 @@ public class ${className} {
      */
     public List<${dtoClassName}> findAll() {
         ${accessFindAll}
-        return ${qryRef}.findAll(null).stream()
+        return loaded(${qryRef}.findAll(null)).stream()
                 .map(${mapperName}::toDTO)
                 .collect(Collectors.toList());
     }
@@ -56,7 +56,7 @@ public class ${className} {
      */
     public List<${dtoClassName}> findAll(Sort sort) {
         ${accessFindAll}
-        return ${qryRef}.findAll(${repositoryClassName}.orderBy(sort)).stream()
+        return loaded(${qryRef}.findAll(${repositoryClassName}.orderBy(sort))).stream()
                 .map(${mapperName}::toDTO)
                 .collect(Collectors.toList());
     }
@@ -72,7 +72,7 @@ public class ${className} {
         ${accessDeleteBySearch}
         List<${entityClassName}> found = ${qryRef}.findBySearch(searchDTO, ${ownerArg}, null, null, null);
         for (${entityClassName} each : found) {
-            ${cmdRef}.deleteById(${pkOfEach});
+            deleteRow(${pkOfEach});
         }
         return found.size();
     }
@@ -82,8 +82,8 @@ public class ${className} {
      */
     public List<${searchResultDTOClassName}> listBySearch(${searchDTOClassName} searchDTO) {
         ${accessSearch}
-        List<${entityClassName}> result = ${qryRef}.findBySearch(searchDTO, ${ownerArg},
-                ${repositoryClassName}.orderBy(searchDTO.getSort()), null, null);
+        List<${entityClassName}> result = loaded(${qryRef}.findBySearch(searchDTO, ${ownerArg},
+                ${repositoryClassName}.orderBy(searchDTO.getSort()), null, null));
         return result.stream()
                 .map(${mapperName}::${toSearchListMappingName})
                 .collect(Collectors.toList());
@@ -101,8 +101,8 @@ public class ${className} {
         long total = ${qryRef}.countBySearch(searchDTO, owner);
         List<${entityClassName}> rows = total <= pageable.getOffset()
                 ? Collections.<${entityClassName}>emptyList()
-                : ${qryRef}.findBySearch(searchDTO, owner, ${repositoryClassName}.orderBy(pageable.getSort()),
-                        pageable.getOffset(), pageable.getPageSize());
+                : loaded(${qryRef}.findBySearch(searchDTO, owner, ${repositoryClassName}.orderBy(pageable.getSort()),
+                        pageable.getOffset(), pageable.getPageSize()));
         return new PageImpl<>(rows, pageable, total)
                 .map(${mapperName}::${toSearchListMappingName});
     }
@@ -130,7 +130,7 @@ public class ${className} {
     public Optional<${dtoClassName}> findById(${pkDtoDefine}) {
         return ${cmdRef}.findById(${pkDtoInfo2})
                 ${accessFindById}
-                .map(e -> ${mapperName}.toDTO(e, MappingContext.withGuard(2)));
+                .map(e -> ${mapperName}.toDTO(loaded(e), MappingContext.withGuard(2)));
     }
 
     /**
@@ -148,8 +148,8 @@ public class ${className} {
             throw new DuplicateKeyException("${entityClassName} " + ${pkDtoInfo} + " already exists; update it instead");
         ${entityClassName} entity = ${mapperName}.toEntity(dto);${createVersionReset}${createIdReset}
         beforeSave(entity, dto);${stampCreate}
-        ${cmdRef}.insert(entity);
-        return ${mapperName}.toDTO(${cmdRef}.findById(${pkOfEntity}).orElse(entity));
+        ${cmdRef}.insert(entity);${membersCreate}
+        return ${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)));
     }
 
     /**
@@ -178,8 +178,7 @@ public class ${className} {
      * a row another request changed first is refused (409).
      */
     protected void write(${entityClassName} entity) {${stampUpdate}
-        if (${cmdRef}.update(entity) == 0)
-            throw new OptimisticLockingFailureException("${entityClassName} " + ${pkOfEntity} + " was changed by someone else; read it again");
+        ${writeRow}
     }
 
     /**
@@ -188,14 +187,14 @@ public class ${className} {
     @Transactional
     public ${dtoClassName} update(${dtoClassName} dto) {
         ${validateUpdate};
-        ${entityClassName} entity = ${cmdRef}.findById(${pkDtoInfo}).orElse(null);
+        ${entityClassName} entity = ${cmdRef}.findById(${pkDtoInfo}).map(this::loaded).orElse(null);
         ${accessUpdate}
         if (entity == null)
-            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}
+            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${membersBefore}
         ${mapperName}.mapping(dto, entity, ${isSkipNull});
         beforeSave(entity, dto);
-        write(entity);
-        return ${mapperName}.toDTO(${cmdRef}.findById(${pkOfEntity}).orElse(entity));
+        write(entity);${membersWrite}
+        return ${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)));
     }
 
     /**
@@ -231,8 +230,13 @@ public class ${className} {
     @Transactional
     public boolean deleteById(${pkDtoDefine}) {
         ${accessDelete}
-        ${cmdRef}.deleteById(${pkDtoInfo2});
+        deleteRow(${pkDtoInfo2});
         return !${cmdRef}.existsById(${pkDtoInfo2});
+    }
+
+    /** Deletes one row, and the members of its aggregate first. */
+    protected void deleteRow(${pkDtoDefine}) {${membersDelete}
+        ${cmdRef}.deleteById(${pkDtoInfo2});
     }
 
     /**
@@ -253,12 +257,26 @@ public class ${className} {
         BeanValidation.validatePresent(dto);
         ${accessUpdateAll}
 
-        List<${entityClassName}> targets = ${qryRef}.findBySearch(srchDTO, null, null, null, null);
-        for (${entityClassName} entity : targets) {
+        List<${entityClassName}> targets = loaded(${qryRef}.findBySearch(srchDTO, null, null, null, null));
+        for (${entityClassName} entity : targets) {${membersBeforeEach}
             ${mapperName}.mapping(dto, entity, true);
             beforeSave(entity, dto);
-            write(entity);
+            write(entity);${membersWriteEach}
         }
         return targets.size();
     }
+
+    /**
+     * Hands each row the rows of its collections, read for all of them at
+     * once - one statement per collection, whatever the number of rows.
+     */
+    protected List<${entityClassName}> loaded(List<${entityClassName}> rows) {${loadBody}
+        return rows;
+    }
+
+    /** One row with its collections. */
+    protected ${entityClassName} loaded(${entityClassName} row) {
+        loaded(Collections.singletonList(row));
+        return row;
+    }${memberMethods}
 }

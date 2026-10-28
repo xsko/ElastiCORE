@@ -151,8 +151,9 @@ public class MyBatisGenerationTest {
                 + " FOREIGN KEY (customer_customer_id) REFERENCES customer (customer_id);"), text);
     }
 
+    /** A collection without mappedBy is a join table under JPA: refused, not dropped. */
     @Test
-    public void aCollectionRelationIsRefusedNotDropped() throws Exception {
+    public void aCollectionWithoutMappedByIsRefusedNotDropped() throws Exception {
         File project = project(String.join("\n",
                 "entity:",
                 "  Basket:",
@@ -167,8 +168,318 @@ public class MyBatisGenerationTest {
                 "      basket: Basket @ManyToOne",
                 ""), "mybatis");
         String log = run(project, 1);
-        assertTrue(log.contains("Basket: mode: mybatis does not write items: a collection relation"), log);
+        assertTrue(log.contains("Basket: mode: mybatis does not write items: a collection relation without mappedBy"), log);
         assertNull(find(project, "Basket.java"), log);
+    }
+
+    private static final String BASKET = String.join("\n",
+            "entity:",
+            "  Basket:",
+            "    meta: entity @root @expose(20) @access(*=public)",
+            "    fields:",
+            "      basketId: string(36) @id @genid",
+            "      label: string(20)",
+            "      lines: List<BasketLine> @OneToMany(mappedBy=\"basket\") @dtype(List<BasketLineDTO>)",
+            "      tags: List<Tag> @OneToMany(mappedBy=\"basket\")",
+            "  BasketLine:",
+            "    meta: entity -- a member (no service, written with its basket)",
+            "    fields:",
+            "      lineId: long @id @sequence",
+            "      basket: Basket @ManyToOne",
+            "      qty: quantity!",
+            "      price: money(10.2)",
+            "      createdAt: datetime @jpa:CreatedDate",
+            "  Tag:",
+            "    meta: entity @root @expose(20) @access(*=public) -- a root of its own, read with the basket only",
+            "    fields:",
+            "      tagId: long @id @sequence",
+            "      basketId: string(36)",
+            "      basket: Basket @ManyToOne @joinBy(basketId)",
+            "      name: string(20)",
+            "",
+            "dto:",
+            "  BasketLineDTO:",
+            "    meta: dto @template(BasketLine)",
+            "");
+
+    /**
+     * A collection mapped by its target's relation back is read for a page of
+     * rows at once, and one of the aggregate's members is written, replaced
+     * and deleted with its root; one of another root is read only.
+     */
+    @Test
+    public void aCollectionIsReadWithItsRowsAndItsMembersWrittenWithIt() throws Exception {
+        File project = project(BASKET, "mybatis");
+        run(project, 0);
+
+        // The member has a mapper of its own - no service, no search - with the statements its root reads it by.
+        String member = read(project, "BasketLineRepository.java");
+        assertTrue(member.contains("List<BasketLine> findAllByBasketIn(@Param(\"keys\") java.util.Collection<String> keys);"), member);
+        assertTrue(member.contains("int deleteAllByBasket(@Param(\"key\") String key);"), member);
+        assertFalse(member.contains("findBySearch"), member);
+        assertNull(find(project, "BasketLineCoreService.java"));
+        String xml = new String(Files.readAllBytes(findResource(project, "BasketLineRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(xml.contains("WHERE t.basket_basket_id IN <foreach collection=\"keys\" item=\"k\" open=\"(\" separator=\",\""
+                + " close=\")\">#{k,jdbcType=VARCHAR}</foreach>"), xml);
+        assertTrue(xml.contains("DELETE FROM basket_line WHERE basket_basket_id = #{key,jdbcType=VARCHAR}"), xml);
+        assertTrue(xml.contains("#{qty,typeHandler=io.elasticore.springboot3.mybatis.QuantityTypeHandler,jdbcType=INTEGER}"), xml);
+        assertTrue(xml.contains("#{price,typeHandler=io.elasticore.springboot3.mybatis.MoneyTypeHandler,jdbcType=DECIMAL}"), xml);
+        // The root reached through an id field (@joinBy) is read by that column.
+        String tagXml = new String(Files.readAllBytes(findResource(project, "TagRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(tagXml.contains("WHERE t.basket_id IN"), tagXml);
+        assertTrue(tagXml.contains("LEFT JOIN basket j1 ON j1.basket_id = t.basket_id"), tagXml);
+        assertFalse(tagXml.contains("basket_basket_id"), tagXml);
+
+        String helper = read(project, "DgshopRepositoryHelper.java");
+        assertTrue(helper.contains("BasketLineRepository basketLine"), helper);
+
+        String service = read(project, "BasketCoreService.java");
+        // Read: one statement per collection for the rows of a page, in lists of 500 keys.
+        assertTrue(service.contains("helper.getBasketLine().findAllByBasketIn(keys.subList(from, Math.min(keys.size(), from + 500)))"), service);
+        assertTrue(service.contains("helper.getTag().findAllByBasketIn("), service);
+        assertTrue(service.contains("Basket row = byKey.get(m.getBasketId());"), service);
+        // Written: the members only - a tag is another root's to write.
+        assertTrue(service.contains("helper.getBasketLine().insert(m);"), service);
+        assertFalse(service.contains("helper.getTag().insert("), service);
+        assertTrue(service.contains("if (m.getCreatedAt() == null) m.setCreatedAt(java.time.LocalDateTime.now());"), service);
+        assertTrue(service.contains("if (before != null) helper.getBasketLine().deleteAllByBasket(entity.getBasketId());"), service);
+        // Deleted: the members first.
+        assertTrue(service.replace("\r\n", "\n").contains(
+                "helper.getBasketLine().deleteAllByBasket(basketId);\n        helper.getBasket().deleteById(basketId);"), service);
+
+        // The root's DTO carries its members, validated with it, and the mapper writes them back.
+        String dto = read(project, "BasketDTO.java");
+        assertTrue(dto.contains("@Valid"), dto);
+        String mapper = read(project, "DgshopMapper.java");
+        assertTrue(mapper.contains("m.setBasket(to);"), mapper);
+        assertTrue(mapper.contains("to.setLines(members);"), mapper);
+
+        // The member's table, with its key back to the root.
+        String schema = new String(Files.readAllBytes(findResource(project, "dgshop-schema.sql")), StandardCharsets.UTF_8);
+        assertTrue(schema.contains("ALTER TABLE basket_line ADD CONSTRAINT fk_basket_line_basket FOREIGN KEY (basket_basket_id)"
+                + " REFERENCES basket (basket_id);"), schema);
+        assertTrue(schema.contains("ALTER TABLE tag ADD CONSTRAINT fk_tag_basket FOREIGN KEY (basket_id) REFERENCES basket (basket_id);"),
+                schema);
+    }
+
+    /** A collection on a member would arrive with the root and be stored by nothing: refused. */
+    @Test
+    public void aCollectionOnAMemberIsRefused() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Basket:",
+                "    meta: entity @root @expose(20) @access(*=public)",
+                "    fields:",
+                "      basketId: long @id @sequence",
+                "      lines: List<BasketLine> @OneToMany(mappedBy=\"basket\")",
+                "  BasketLine:",
+                "    meta: entity",
+                "    fields:",
+                "      lineId: long @id @sequence",
+                "      basket: Basket @ManyToOne",
+                "      notes: List<LineNote> @OneToMany(mappedBy=\"line\")",
+                "  LineNote:",
+                "    meta: entity",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      line: BasketLine @ManyToOne",
+                ""), "mybatis");
+        String log = run(project, 1);
+        assertTrue(log.contains("BasketLine: mode: mybatis does not write notes: a collection on a member of Basket's aggregate"), log);
+    }
+
+    /**
+     * The service writes members the mapper fills, and the mapper fills only
+     * those: an entity with a service of its own is written there, never with
+     * its root. An empty list replaces the members (not hasValue).
+     */
+    @Test
+    public void aMemberWithAServiceOfItsOwnIsWrittenThereOnly() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Cart:",
+                "    meta: entity @root @expose(20) @access(*=public)",
+                "    fields:",
+                "      cartId: long @id @sequence",
+                "      lines: List<CartLine> @OneToMany(mappedBy=\"cart\") @dtype(List<CartLineDTO>)",
+                "      notes: List<CartNote> @OneToMany(mappedBy=\"cart\") @dtype(List<CartNoteDTO>)",
+                "  CartLine:",
+                "    meta: entity",
+                "    fields:",
+                "      lineId: long @id @sequence",
+                "      cart: Cart @ManyToOne",
+                "  CartNote:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      cart: Cart @ManyToOne",
+                "      body: clob",
+                "",
+                "dto:",
+                "  CartLineDTO:",
+                "    meta: dto @template(CartLine)",
+                ""), "mybatis");
+        run(project, 0);
+        String service = read(project, "CartCoreService.java");
+        assertTrue(service.contains("helper.getCartLine().insert(m);"), service);
+        assertFalse(service.contains("helper.getCartNote().insert("), service);
+        assertFalse(service.contains("helper.getCartNote().deleteAllByCart("), service);
+        // Read with the cart all the same.
+        assertTrue(service.contains("helper.getCartNote().findAllByCartIn("), service);
+        // A key and collections alone: no column to set, so no UPDATE - only that the row is there.
+        assertTrue(service.contains("if (!helper.getCart().existsById(entity.getCartId()))"), service);
+        String xml = new String(Files.readAllBytes(findResource(project, "CartRepository.xml")), StandardCharsets.UTF_8);
+        assertFalse(xml.contains("<update id=\"update\""), xml);
+
+        String mapper = read(project, "DgshopMapper.java");
+        assertTrue(mapper.contains("if(from.getLines() != null){"), mapper);
+        assertFalse(mapper.contains("to.setNotes(members);"), mapper);
+        // A CLOB is not sortable: Oracle cannot order by one.
+        String notes = read(project, "CartNoteRepository.java");
+        assertFalse(notes.contains("\"body\""), notes);
+    }
+
+    /**
+     * Oracle compares no CLOB: a search by equality on one is left out - of
+     * the WHERE clause and of what counts as a condition - and said; by LIKE
+     * it is written.
+     */
+    @Test
+    public void aLargeValueIsSearchedByTextOnly() throws Exception {
+        File refused = project(String.join("\n",
+                "entity:",
+                "  Memo:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      memoId: long @id @sequence",
+                "      body: text @search(eq)",
+                ""), "mybatis");
+        String log = run(refused, 0);
+        assertTrue(log.contains("Memo.body is a large value (a LOB on Oracle), searched by text only"), log);
+        String xmlEq = new String(Files.readAllBytes(findResource(refused, "MemoRepository.xml")), StandardCharsets.UTF_8);
+        assertFalse(xmlEq.contains("t.body ="), xmlEq);
+        assertFalse(read(refused, "MemoRepository.java").contains("getBody()"));
+        File liked = project(String.join("\n",
+                "entity:",
+                "  Memo:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      memoId: long @id @sequence",
+                "      body: text @search(like)",
+                ""), "mybatis");
+        run(liked, 0);
+        String xml = new String(Files.readAllBytes(findResource(liked, "MemoRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(xml.contains("LIKE"), xml);
+    }
+
+    private static final String HOUSE = String.join("\n",
+            "enumeration:",
+            "  Kind:",
+            "    meta: enum @db(code) @json(code)",
+            "    fields:",
+            "      code: string(1) @code",
+            "      name: string(20)",
+            "    enum:",
+            "      HOME: H,Home",
+            "      WORK: W,Work",
+            "",
+            "entity:",
+            "  Address:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      street: string(50)!",
+            "      kind: Kind",
+            "  Person:",
+            "    meta: entity @expose(20) @access(*=public)",
+            "    fields:",
+            "      personId: long @id @sequence",
+            "      name: string(30)! @unique",
+            "      home: Address! @Embedded",
+            "      work: Address @embedded(work)",
+            "  Visit:",
+            "    meta: entity @expose(20) @access(*=public)",
+            "    fields:",
+            "      visitId: long @id @sequence",
+            "      person: Person @ManyToOne",
+            "");
+
+    /** An embedded value lies in columns of the row - its own, or prefixed - in the row and in a row joined. */
+    @Test
+    public void anEmbeddedValueIsColumnsOfTheRow() throws Exception {
+        File project = project(HOUSE, "mybatis");
+        run(project, 0);
+        String xml = new String(Files.readAllBytes(findResource(project, "PersonRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(xml.contains("<association property=\"home\" javaType=\"io.acme.dgshop.entity.Address\">"), xml);
+        assertTrue(xml.contains("<result property=\"street\" column=\"street\"/>"), xml);
+        assertTrue(xml.contains("<result property=\"street\" column=\"work_street\"/>"), xml);
+        assertTrue(xml.contains("#{work.kind,javaType="), xml);
+        assertTrue(xml.contains("INSERT INTO person (name, street, kind, work_street, work_kind)"), xml);
+        String visit = new String(Files.readAllBytes(findResource(project, "VisitRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(visit.contains("j1.work_street AS person__work_street"), visit);
+        String repo = read(project, "PersonRepository.java");
+        assertTrue(repo.contains("m.put(\"work.street\", \"t.work_street\");"), repo);
+        // The DTO carries the value, so it can be sent and read.
+        String dto = read(project, "PersonDTO.java");
+        assertTrue(dto.contains("private Address home;"), dto);
+
+        String h2 = new String(Files.readAllBytes(findResource(project, "dgshop-schema.sql")), StandardCharsets.UTF_8);
+        // Required where the value is: the home's street, not the optional work address's.
+        assertTrue(h2.contains("    street VARCHAR(50) NOT NULL,"), h2);
+        assertTrue(h2.contains("    work_street VARCHAR(50),"), h2);
+    }
+
+    /** One schema per database, in the types its Hibernate dialect would choose. */
+    @Test
+    public void eachDatabaseHasItsSchema() throws Exception {
+        File project = project(HOUSE, "mybatis");
+        run(project, 0);
+        String oracle = new String(Files.readAllBytes(findResource(project, "dgshop-schema-oracle.sql")), StandardCharsets.UTF_8);
+        assertTrue(oracle.contains("person_id NUMBER(19) GENERATED BY DEFAULT ON NULL AS IDENTITY NOT NULL"), oracle);
+        assertTrue(oracle.contains("name VARCHAR2(30 CHAR) NOT NULL"), oracle);
+        String sqlServer = new String(Files.readAllBytes(findResource(project, "dgshop-schema-sqlserver.sql")), StandardCharsets.UTF_8);
+        assertTrue(sqlServer.contains("person_id BIGINT IDENTITY(1,1) NOT NULL"), sqlServer);
+        assertTrue(sqlServer.contains("name NVARCHAR(30) NOT NULL"), sqlServer);
+        String postgres = new String(Files.readAllBytes(findResource(project, "dgshop-schema-postgresql.sql")), StandardCharsets.UTF_8);
+        assertTrue(postgres.contains("person_id BIGINT GENERATED BY DEFAULT AS IDENTITY NOT NULL"), postgres);
+        assertTrue(postgres.contains("for PostgreSQL."), postgres);
+    }
+
+    /** SQL Server's UNIQUE takes a single NULL; a nullable unique column is kept by a filtered index. */
+    @Test
+    public void aNullableUniqueColumnIsAFilteredIndexOnSqlServer() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Member:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "      @Index(name=\"ix_member_nick\", columnList=\"nick\", unique=\"true\")",
+                "    fields:",
+                "      memberId: long @id @sequence",
+                "      email: string(80) @unique",
+                "      nick: string(20)",
+                ""), "mybatis");
+        run(project, 0);
+        String sqlServer = new String(Files.readAllBytes(findResource(project, "dgshop-schema-sqlserver.sql")), StandardCharsets.UTF_8);
+        assertFalse(sqlServer.contains("UNIQUE (email)"), sqlServer);
+        assertTrue(sqlServer.contains("CREATE UNIQUE INDEX uk_member_email ON member (email) WHERE email IS NOT NULL;"), sqlServer);
+        assertTrue(sqlServer.contains("CREATE UNIQUE INDEX ix_member_nick ON member (nick) WHERE nick IS NOT NULL;"), sqlServer);
+        String postgres = new String(Files.readAllBytes(findResource(project, "dgshop-schema-postgresql.sql")), StandardCharsets.UTF_8);
+        assertTrue(postgres.contains("UNIQUE (email)"), postgres);
+        assertTrue(postgres.contains("CREATE UNIQUE INDEX ix_member_nick ON member (nick);"), postgres);
+    }
+
+    /** A name one of the databases reserves is said before a schema fails to run there. */
+    @Test
+    public void aReservedNameIsWarned() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Grade:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      gradeId: long @id @sequence",
+                "      level: int",
+                ""), "mybatis");
+        String log = run(project, 0);
+        assertTrue(log.contains("the column level is reserved by Oracle, PostgreSQL or SQL Server"), log);
     }
 
     @Test

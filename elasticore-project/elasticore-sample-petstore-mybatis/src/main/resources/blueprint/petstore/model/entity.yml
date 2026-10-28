@@ -1,0 +1,110 @@
+# The pet store's model (elasticore-sample-petstore), read by the layered
+# bundle over MyBatis. What differs from the hexagonal sample is what the
+# layered bundle does not do for a model: an order holds its customer's id
+# itself (customerId, with the relation joined on it), and pricing and the
+# order's state are the service's (PurchaseOrderService), not @compute or
+# states:.
+entity:
+
+  # ---- catalog: reference data, edited by the shop ----------------------
+
+  Category:
+    meta: entity @root @editable @expose(20) @access(read=public) -- 분류 (Fish, Dogs ...)
+    fields:
+      categoryId:  long @id @sequence
+      name:        string(30)! @search(like)
+      description: string(3000)!
+
+  Product:
+    meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
+    fields:
+      productId:   long @id @sequence
+      name:        string(30)! @search(like)
+      description: string(3000)!
+      category:    Category @ManyToOne
+
+  Item:
+    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) -- 판매 단위 (Large, Male Puppy ...)
+    fields:
+      itemId:      long @id @sequence
+      name:        string(30)! @search(like)
+      description: string(3000)!
+      imagePath:   string(100)
+      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @search(between) @terms(price, 가격)
+      product:     Product @ManyToOne
+
+  Country:
+    meta: entity @root @editable @expose(300) @access(read=public) -- 국가
+    fields:
+      isoCode:       string(2) @id
+      name:          string(80)! @search(like)
+      printableName: string(80)!
+
+  # ---- value types ---------------------------------------------------------
+
+  Address:
+    meta: entity @embeddable -- 주소
+    fields:
+      street1:     string(50)!
+      street2:     string(50)
+      city:        string(50)!
+      state:       string(50)
+      zipcode:     string(10)!
+      countryCode: string(2)!
+
+  CreditCard:
+    meta: entity @embeddable -- 결제 카드
+    fields:
+      creditCardNumber:  string(30)! @writeonly     # accepted, never sent back
+      creditCardType:    CreditCardType!
+      creditCardExpDate: string(5)!                 # MM/YY
+
+  # ---- customers -------------------------------------------------------------
+
+  Customer:
+    # 가입은 누구나, 읽기·수정은 본인(과 관리자), 삭제는 관리자
+    meta: entity @root @editable @expose(20) @signin @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
+          @Index(name="uk_ps_customer_login", columnList="login", unique="true") -- 고객
+    fields:
+      customerId:  long @id @sequence
+      login:       string(10)! @search(eq) @login
+      password:    string(255)! @password        # 저장은 해시로만, 응답·검색에 없음
+      firstName:   string(50)! @search(like)
+      lastName:    string(50)! @search(like)
+      telephone:   string(30)
+      email:       string(100) @email
+      dateOfBirth: date @past
+      role:        UserRole @default(UserRole.USER) @access(admin)   # 관리자만 바꿈
+      homeAddress: Address! @Embedded             # 집 주소는 필수 (기본 배송지)
+
+  # ---- orders -----------------------------------------------------------------
+
+  PurchaseOrder:
+    # 주문은 로그인한 고객이 자기 것으로, 조회는 본인, 삭제는 관리자
+    meta: entity @root @expose(20) @owner(customerId) @access(read=owner, create=user) @terms(order, purchase, 구매) -- 주문
+    fields:
+      orderId:         string(36) @id @genid
+      customerId:      long @search(eq)                    # 주문한 고객 (owner)
+      customer:        Customer @ManyToOne @joinBy(customerId)
+      orderDate:       date @search(between)
+      status:          OrderStatus @search(eq)
+      deliveryAddress: Address @Embedded                   # 없으면 고객의 집 주소
+      creditCard:      CreditCard! @Embedded
+      totalWithoutVat: money(12.2) @default(0)
+      vatRate:         decimal(5.2) @default(0)
+      vat:             money(12.2) @default(0)
+      discountRate:    decimal(5.2) @default(0)
+      discount:        money(12.2) @default(0)
+      total:           money(12.2) @default(0) @search(between)
+      lines:           List<OrderLine> @OneToMany(mappedBy="order") @dtype(List<OrderLineDTO>) @minsize(1, 'the cart is empty')
+      version:         long @jpa:Version
+
+  OrderLine:
+    meta: entity -- 주문 줄 (주문과 함께 쓰이고 지워진다)
+    fields:
+      lineId:   string(36) @id @genid
+      order:    PurchaseOrder @ManyToOne
+      item:     Item @ManyToOne
+      quantity: quantity! @min(1)
+      unitCost: money(10.2)                      # 주문 당시 가격 (서비스가 품목에서 복사)
+      subTotal: money(12.2)
