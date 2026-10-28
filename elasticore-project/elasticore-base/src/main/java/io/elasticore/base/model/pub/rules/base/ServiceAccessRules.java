@@ -386,7 +386,10 @@ public class ServiceAccessRules implements CodeRules {
          .varLine("accessCreate", stmt(kt, "accessCreate(dto)"))
          .varLine("accessUpdate", stmt(kt, "accessUpdate(entity, dto)"))
          .varLine("accessUpdateAll", stmt(kt, "accessUpdateAll(dto)"));
-        c.var("accessSpecOpen", "ownedOnly(").var("accessSpecClose", ")");
+        // A MyBatis service hands the owner to the mapper, whose XML compares it.
+        boolean mybatis = "mybatis".equals(c.varValue("persistence"));
+        if (mybatis) c.var("ownerArg", "ownedOnly()");
+        else c.var("accessSpecOpen", "ownedOnly(").var("accessSpecClose", ")");
         String repo = orDefault(c.varValue("cmdRef"), "repository");
         String id = orDefault(c.varValue("pkDtoInfo2"), pk == null ? "id" : pk.name());
         c.varLine("accessDelete", kt
@@ -447,6 +450,16 @@ public class ServiceAccessRules implements CodeRules {
                  .add("    return spec.and(Specification<%s> { r, _, cb -> cb.equal(r.get<Any>(\"%s\"), id) })", entity, owner.name());
             } else {
                 m.add("    throw %sForbiddenException(\"%s is read by its owner, and names none (@owner)\")", RT, entity);
+            }
+            m.add("}").add("");
+        } else if (mybatis) {
+            m.add("private Object ownedOnly() {")
+             .add("    Object owner = ACCESS.ownerFilter(currentUser, \"read\");")
+             .add("    if (owner == null) return null;");
+            if (owner != null) {
+                m.add("    return %sAccessPolicy.as(owner, %s.class);", RT, ownerType);
+            } else {
+                m.add("    throw new %sForbiddenException(\"%s is read by its owner, and names none (@owner)\");", RT, entity);
             }
             m.add("}").add("");
         } else {
@@ -627,9 +640,14 @@ public class ServiceAccessRules implements CodeRules {
         } else {
             m.append("    public Optional<").append(dto).append("> authenticate(String ").append(loginName).append(", String password) {\n")
              .append("        if (").append(loginName).append(" == null || password == null) return Optional.empty();\n")
-             .append("        List<").append(entity).append("> found = ").append(query)
-             .append(".findAll((Specification<").append(entity).append(">) (r, q, cb) -> cb.equal(r.get(\"")
-             .append(loginName).append("\"), ").append(loginName).append("));\n")
+             .append("        List<").append(entity).append("> found = ").append(query);
+            if ("mybatis".equals(c.varValue("persistence"))) {
+                m.append(".findAllByLogin(").append(loginName).append(");\n");
+            } else {
+                m.append(".findAll((Specification<").append(entity).append(">) (r, q, cb) -> cb.equal(r.get(\"")
+                 .append(loginName).append("\"), ").append(loginName).append("));\n");
+            }
+            m
              .append("        if (found.size() != 1) {\n")
              .append("            passwordHasher.hash(password);\n")
              .append("            return Optional.empty();\n")
@@ -1017,7 +1035,7 @@ public class ServiceAccessRules implements CodeRules {
      * The field @owner names - or, when it names a relation (@owner(customer)),
      * the identity that holds it (customerId). Null when nothing resolves.
      */
-    static FieldSpec ownerField(EntitySpec e) {
+    public static FieldSpec ownerField(EntitySpec e) {
         String name = trim(e.metaValue("owner"));
         if (name == null || name.isEmpty()) return null;
         for (FieldSpec f : e.fields()) {

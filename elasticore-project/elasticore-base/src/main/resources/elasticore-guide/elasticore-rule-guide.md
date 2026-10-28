@@ -75,6 +75,7 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 | `hexagonal-springboot` | `ddd-springboot` + 인바운드 포트(`<Entity>UseCase`) |
 | `hexagonal-springboot-kt` | 위와 같은 육각형의 Kotlin 판 |
 | `ts-model` | TypeScript — DTO·enum·검색DTO + 컨트롤러 호출 클라이언트 |
+| `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
 
 #### 육각형 번들이 더 만드는 것
 

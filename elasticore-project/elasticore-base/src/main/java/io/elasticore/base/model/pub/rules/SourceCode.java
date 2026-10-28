@@ -938,6 +938,45 @@ public final class SourceCode {
         return this;
     }
 
+    /**
+     * Takes off every annotation - on the class and on each field - whose type
+     * the test accepts, and the member a field carries for a lifecycle
+     * callback (@PrePersist and the like), which nothing would call once its
+     * persistence's annotations are gone. The entity listeners go with
+     * EntityListeners.
+     *
+     * For a persistence that is not JPA: the same field rules describe the
+     * class, and what only JPA reads is taken off afterwards. A raw line - a
+     * native annotation the DSL handed through - is tested by its marker.
+     */
+    public SourceCode removeAnnotations(java.util.function.Predicate<String> fqcn) {
+        java.util.Iterator<AnnoCode> it = classAnnotations.iterator();
+        while (it.hasNext()) {
+            AnnoCode a = it.next();
+            if (a.getFqcn() != null && fqcn.test(a.getFqcn())) it.remove();
+        }
+        if (fqcn.test(ENTITY_LISTENERS)) entityListeners.clear();
+        // The types those annotations' values named (GenerationType, FetchType).
+        java.util.Iterator<String> imports = extraImports.iterator();
+        while (imports.hasNext()) {
+            if (fqcn.test(imports.next())) imports.remove();
+        }
+        for (FieldCode fc : fieldCodes.values()) {
+            java.util.Iterator<AnnoCode> f = fc.annotations().iterator();
+            while (f.hasNext()) {
+                AnnoCode a = f.next();
+                if (a.getFqcn() != null && fqcn.test(a.getFqcn())) f.remove();
+            }
+            for (String line : fc.afterLines()) {
+                if (line.trim().matches("@(Pre|Post)[A-Z][A-Za-z]*")) {
+                    fc.removeAfter();
+                    break;
+                }
+            }
+        }
+        return this;
+    }
+
     public String renderClassAnnotations() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < classAnnotations.size(); i++) {

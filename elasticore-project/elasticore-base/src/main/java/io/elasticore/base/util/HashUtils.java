@@ -106,7 +106,23 @@ public class HashUtils {
 
     public static String getVersion(String lineEcdCode) {
         int sp = lineEcdCode.indexOf("_V");
-        return lineEcdCode.substring(sp+2);
+        String version = lineEcdCode.substring(sp+2);
+        // A stamp inside a comment of another language - an XML mapper's
+        // "<!-- //ecd:..._V3.0 -->" - ends where the version does.
+        int end = version.indexOf(' ');
+        return end < 0 ? version : version.substring(0, end);
+    }
+
+    /**
+     * The stamp line for a file of the given extension: as a Java comment, or
+     * inside the comment of a language that has no // - XML, whose
+     * declaration may be preceded by nothing else, and SQL.
+     */
+    public static String makeEcdCode(String content, String extension) {
+        String line = makeEcdCode(content);
+        if ("xml".equals(extension)) return "<!-- " + line.trim() + " -->\n";
+        if ("sql".equals(extension)) return "-- " + line;
+        return line;
     }
 
     public static String extractEcdCode(String lineEcdCode) {

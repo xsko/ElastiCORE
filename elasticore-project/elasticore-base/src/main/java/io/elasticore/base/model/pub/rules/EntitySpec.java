@@ -1198,6 +1198,23 @@ public final class EntitySpec {
         return entityKeys.get(entityName);
     }
 
+    /**
+     * The entities this one's to-one relations point at, whole - for code
+     * that reads their rows in the same statement (a MyBatis mapper's join),
+     * which needs their table and columns rather than their name.
+     */
+    private final java.util.Map<String, EntitySpec> relatedSpecs = new java.util.HashMap<String, EntitySpec>();
+
+    public EntitySpec knownRelated(String entityName, EntitySpec spec) {
+        if (entityName != null && spec != null) relatedSpecs.put(entityName, spec);
+        return this;
+    }
+
+    /** The entity a relation of this one points at, or null when it was not registered. */
+    public EntitySpec related(String entityName) {
+        return relatedSpecs.get(entityName);
+    }
+
     /** Roots of the model that declare an @invariant, so their members can honour it too. */
     private final java.util.Set<String> rootsWithInvariants = new java.util.HashSet<String>();
 

@@ -40,7 +40,32 @@ public final class VersionCheck {
         Object sent = read(dto, property);
         if (sent == null) return;
         if (!same(sent, current)) {
-            throw new ObjectOptimisticLockingFailureException(entityClass, identifier);
+            // In a class of its own, so this one's verifier never meets a type
+            // the application may not have.
+            if (ORM) throw Orm.stale(entityClass, identifier);
+            // An application without Spring's ORM module - MyBatis - gets the
+            // exception that one extends, which the error handler answers alike.
+            throw new org.springframework.dao.OptimisticLockingFailureException(
+                    "Object of class [" + (entityClass == null ? "?" : entityClass.getName())
+                            + "] with identifier [" + identifier + "]: optimistic locking failed");
+        }
+    }
+
+    /** Whether spring-orm is there: a JPA application has it, a MyBatis one need not. */
+    private static final boolean ORM = present("org.springframework.orm.ObjectOptimisticLockingFailureException");
+
+    private static final class Orm {
+        static RuntimeException stale(Class<?> entityClass, Object identifier) {
+            return new ObjectOptimisticLockingFailureException(entityClass, identifier);
+        }
+    }
+
+    private static boolean present(String className) {
+        try {
+            Class.forName(className, false, VersionCheck.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
         }
     }
 

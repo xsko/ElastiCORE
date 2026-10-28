@@ -441,6 +441,34 @@ public final class RuleCatalog {
             }
         });
 
+        // MyBatis (env.yml mode: mybatis): the entity without JPA, its mapper
+        // interface and XML, the service over them and the schema.
+        c.register("mybatis-entity-file", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisEntityFileRules();
+            }
+        });
+        c.register("mybatis-mapper", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules();
+            }
+        });
+        c.register("mybatis-search", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules();
+            }
+        });
+        c.register("mybatis-service-file", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisServiceFileRules();
+            }
+        });
+        c.register("mybatis-schema", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules();
+            }
+        });
+
         // Everything a JPA Spring Boot project got from the 2.x pipeline.
         // Not a generator: the set is the opt-in for the Apache Ossie
         // semantic-model export, read by OssieSemanticModelExporter. It is
@@ -477,6 +505,19 @@ public final class RuleCatalog {
                 "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-spec", "jpa-mapper-spec-shell", "jpa-mapper-file",
                 "spring-service-extend", "spring-controller", "spring-service-test", "spring-api-errors", "jpa-write-guard",
                 "jpa-value-object-boundary", "jpa-service-access",
+                "port", "proto", "grpc-stub");
+        // The v3 layered bundle over MyBatis: the same DTOs, mapper, controller
+        // and access checks, with the JPA entity shell, repository, Q and
+        // Specification search given way to the MyBatis sets. No generated
+        // service test: its skeleton is written against JPA.
+        c.bundle("mybatis-springboot",
+                "jpa-entity", "mybatis-entity-file",
+                "jpa-dto", "jpa-dto-file-v3", "jpa-searchdto", "jpa-searchdto-file-v3",
+                "jpa-enum", "jpa-views", "jpa-support-types",
+                "mybatis-mapper", "mybatis-search", "jpa-repository-helper",
+                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-file",
+                "mybatis-service-file", "spring-service-extend", "spring-controller", "spring-api-errors",
+                "jpa-write-guard", "jpa-value-object-boundary", "jpa-service-access", "mybatis-schema",
                 "port", "proto", "grpc-stub");
         // The domain-model reading of the same artifacts: everything the v3
         // bundle produces, minus what an aggregate boundary says should not

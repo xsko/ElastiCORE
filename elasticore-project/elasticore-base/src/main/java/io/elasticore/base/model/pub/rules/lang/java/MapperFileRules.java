@@ -23,6 +23,11 @@ public class MapperFileRules implements CodeRules {
             return;
         }
 
+        // A MyBatis domain's mapper names neither the EntityManager nor a
+        // Specification: its relations are keys and its search is the XML's.
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
+            ctx(d).template("mybatis_mapper");
+        }
         ctx(d).var("packageName", d.pkg("dto"))
               .var("entityPackageName", d.pkg("entity"))
               .var("dtoPackageName", d.pkg("dto"))

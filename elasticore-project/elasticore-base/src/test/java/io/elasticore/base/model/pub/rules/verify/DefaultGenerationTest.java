@@ -222,12 +222,13 @@ public class DefaultGenerationTest {
     }
 
     @Test
-    public void aMyBatisDomainIsRefusedAsNotYetGenerated() throws Exception {
-        // mybatis names a persistence the rule engine does not write yet - not
-        // one the 2.x generator writes, so the refusal must not send it there.
+    public void aMyBatisDomainUnderTheTwoXSwitchIsRefused() throws Exception {
+        // MyBatis code is 3.0 code: -Pv2 asks for 2.x's JPA code, and the
+        // refusal must not send the domain to the 2.x generator either.
         File project = project(null, "mybatis");
         System.setProperty("elasticore.base.path", project.getAbsolutePath());
         System.setProperty("elasticore.rules.force", "true");
+        System.setProperty("elasticore.rules.v2", "true");
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = System.out;
         System.setOut(new PrintStream(bytes, true, "UTF-8"));
@@ -239,9 +240,8 @@ public class DefaultGenerationTest {
         }
         String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         assertEquals(1, code, log);
-        assertTrue(log.contains("MyBatis code is not generated yet"), log);
-        assertFalse(log.contains("2.x generator"), log);
-        assertNull(find(project, "Note.java"), "JPA code was written for a MyBatis domain: " + log);
+        assertTrue(log.contains("is mode: mybatis, but the code 2.x generates"), log);
+        assertNull(find(project, "Note.java"), "code was written for a refused domain: " + log);
     }
 
     @Test

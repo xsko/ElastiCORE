@@ -27,6 +27,10 @@ public class RepositoryHelperBaseRules implements CodeRules {
 
     @Rule(value = "helper-vars", target = "repositoryHelper", order = 10)
     void vars(DomainSpec d) {
+        // Over MyBatis the helper holds the mappers and nothing of JPA's.
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
+            ctx(d).template("mybatis_repositoryHelper");
+        }
         ctx(d).var("packageName", d.pkg("repository"))
               .var("entityPackageName", d.pkg("entity"))
               .var("dtoPackageName", d.pkg("dto"))

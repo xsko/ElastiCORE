@@ -13,7 +13,7 @@ elasticore:
   config:
     domainName: myDomain        # 도메인명 (생성될 패키지와 파일명에 사용)
     framework: springboot3      # 프레임워크 (springboot3)
-    mode: jpa                   # 생성 모드: jpa, mongo, uml, dsl (쉼표로 복수 지정 가능)
+    mode: jpa                   # 생성 모드: jpa, mybatis, mongo, uml, dsl (쉼표로 복수 지정 가능)
     j2ee: 17                    # Jakarta EE 버전 (17 이상)
   namespace:
     entity: com.example.domain.entity
@@ -78,12 +78,75 @@ config:
 
 쉼표로 구분하여 여러 모드를 동시 실행한다. 각 모드의 산출물이 모두 생성된다.
 
-> **모드는 2.x 생성기가 읽습니다.** 3.0 규칙 엔진(`elcore3` - 플러그인의 기본값)은 JPA 코드만 씁니다. 모드에 `jpa`
-> 가 없는 도메인(`mode: mongo` 등)은 `elcore3` 가 아무 소스도 쓰지 않고 거절하므로, 그런 프로젝트는
-> `elasticore { output = 'v2' }` 로 2.x 생성기를 씁니다(빌드가 `elcore` 를 부름). `jpa` 와 함께 적은 `uml`·`dsl` 은
-> `elcore3` 가 쓰지 않고 경고만 냅니다 - 그 산출물은 `./gradlew elcore` 로 만듭니다.
+> **3.0 규칙 엔진(`elcore3` - 플러그인의 기본값)은 `jpa` 와 `mybatis` 코드를 씁니다.** 둘 다 없는 도메인
+> (`mode: mongo` 등)은 `elcore3` 가 아무 소스도 쓰지 않고 거절하므로, 그런 프로젝트는
+> `elasticore { output = 'v2' }` 로 2.x 생성기를 씁니다(빌드가 `elcore` 를 부름). 함께 적은 `uml`·`dsl` 은
+> `elcore3` 가 쓰지 않고 경고만 냅니다 - 그 산출물은 `./gradlew elcore` 로 만듭니다. `jpa` 와 `mybatis` 를 함께 적으면
+> JPA 코드를 씁니다(한 도메인은 한 저장 방식).
 
-### 2.3 MongoDB 모드
+### 2.3 MyBatis 모드 (3.0)
+
+JPA 대신 MyBatis 로 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261030
+
+```yaml
+config:
+  mode: mybatis
+```
+
+**만들어지는 것** - DTO·검색 DTO·컨트롤러·접근 검사·매퍼(`<도메인>Mapper`)는 JPA 와 같고, 저장 쪽만 다릅니다.
+
+| 파일 | 내용 |
+|---|---|
+| `<Entity>.java` | 엔티티 - JPA 어노테이션이 없는 평범한 클래스. to-one 관계는 대상 클래스 그대로 (`Customer customer`) |
+| `<Entity>Repository.java` | MyBatis 매퍼 인터페이스 (`@Mapper`). 서비스가 `helper.getOrder()` 로 부르는 것 |
+| `<Entity>Repository.xml` | 그 SQL - 같은 패키지 경로의 `src/main/resources` 아래 (MyBatis 가 저절로 찾는 곳) |
+| `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 컨트롤러와 확장 서비스는 JPA 판 그대로 |
+| `db/<domain>-schema.sql` | 테이블 (표준 SQL), 외래키 제약 포함 |
+
+**XML 이 하는 일**
+
+- **한 행 + to-one 관계**: 키를 가진 관계(`@ManyToOne` 등)는 모두 LEFT JOIN 으로 한 문장에 읽습니다(한 단계). 지연 로딩이
+  없으므로 N+1 이 생기지 않습니다 - 페이지 검색은 count 와 본문, **두 문장**입니다. 조인한 행의 관계는 키만 옵니다.
+- **검색**: 검색 DTO 의 조건(`@search`)마다 `<if>` 한 줄. 값이 있을 때만 적용되고, 빈 문자열은 조건이 아닙니다(JPA 와 같음).
+  `eq`·`like`(대소문자 무시, 부분 일치)·`between`(From/To)·`>`·`>=`·`<`·`<=`·`!=`·`isnull`·`_%`(앞부분 일치)·`%_`(뒷부분 일치)
+  를 씁니다. 값 하나인 필드의 `in` 은 JPA 처럼 같음 비교입니다.
+- **정렬**: 엔티티의 속성(`amount`, `customer.name`)만 됩니다. 그 밖의 값은 400 - 요청의 글자가 SQL 에 들어가지 않습니다.
+  정렬이 없으면 키 순서입니다.
+- **페이지**: H2·MySQL·MariaDB·PostgreSQL 은 `LIMIT/OFFSET`, Oracle(12c+)·Tibero·SQL Server·DB2 는 `OFFSET ... FETCH`.
+  런타임 라이브러리가 MyBatis 에 DB 종류를 알려 줍니다(`DatabaseIdProvider`) - 따로 설정할 것은 없습니다.
+  (`OFFSET ... FETCH` 쪽은 H2 의 Oracle 모드에서 확인했습니다 - `elasticore-template-mybatis` 의 테스트.)
+- **쓰기**: insert(DB 가 만든 키는 되돌려 받음), 모든 컬럼 update, 키로 delete. `@jpa:Version` 이 있으면 같은 UPDATE 에서
+  비교하고 1 올립니다 - 낡은 버전은 409.
+- **enum**: JPA 와 같은 값으로 저장합니다(`@db(code)` 면 코드 `N`, 아니면 이름). 두 방식이 같은 테이블을 읽을 수 있습니다.
+
+**JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기.
+
+**테이블·컬럼 이름은 JPA 와 같습니다** - `@table`·`table.prefix`·`@column`, 없으면 이름을 snake case 로,
+관계 컬럼은 `필드_대상키`(`customer_customer_id`). JPA 로 쓰던 테이블을 그대로 읽습니다.
+
+**빌드** - JPA 대신 MyBatis 와 Spring Data 의 페이지 타입을 둡니다.
+
+```gradle
+dependencies {
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.5'   // Spring Boot 4: 4.0.0
+    implementation 'org.springframework.data:spring-data-commons'                // Page, Pageable, Sort
+    // spring-boot-starter-data-jpa 는 필요 없습니다
+}
+```
+
+```properties
+# 생성된 스키마로 테이블 만들기 (H2 등 임베디드 DB 는 기본으로 실행)
+spring.sql.init.schema-locations=classpath:db/shop-schema.sql
+```
+
+**직접 쓰는 쿼리**: 생성된 XML 은 다시 생성되므로 고치지 않습니다. 매퍼 인터페이스와 XML 을 하나 더 만들어
+(`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장 서비스(`OrderService`)에서 씁니다.
+
+**아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다): 컬렉션 관계(`List<Item> @OneToMany`), 값 컬렉션, `@embedded`,
+키 두 개 이상(`@IdClass`), 상속, `Money` 타입, 그리고 DDD·헥사고날·Kotlin(MyBatis 는 레이어드 Java). 컬렉션은 대상의
+검색으로 읽습니다(`ItemSrchDTO` 의 `basketBasketId`). `@formula` 필드는 MyBatis 가 읽지 않습니다(값은 null).
+
+### 2.4 MongoDB 모드
 
 ```yaml
 config:
@@ -92,7 +155,7 @@ config:
 
 **생성 항목:** MongoDB Document 엔티티, Spring Data MongoDB Repository, 서비스 클래스
 
-### 2.4 UML 모드
+### 2.5 UML 모드
 
 ```yaml
 config:
@@ -101,7 +164,7 @@ config:
 
 **생성 항목:** Mermaid 다이어그램, 엔티티 관계도 HTML 문서
 
-### 2.5 DSL 모드
+### 2.6 DSL 모드
 
 ```yaml
 config:
@@ -490,6 +553,7 @@ elasticore:
 | `hexagonal-springboot` | 위 + 인바운드 포트, 헥사고날 패키지 배치 |
 | `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | 위 셋의 Kotlin 판 |
 | `ts-model` | 브라우저용 DTO, enum, 타입 있는 REST 클라이언트 |
+| `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 
 번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
 

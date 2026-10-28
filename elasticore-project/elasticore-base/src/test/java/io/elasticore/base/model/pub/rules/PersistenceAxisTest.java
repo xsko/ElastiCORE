@@ -36,11 +36,10 @@ public class PersistenceAxisTest {
     }
 
     @Test
-    public void onlyJpaIsGenerated() {
+    public void jpaAndMyBatisAreGeneratedMongoIsTheTwoXGenerators() {
         assertTrue(RulesConfig.Persistence.JPA.generated());
-        for (RulesConfig.Persistence p : RulesConfig.Persistence.values()) {
-            if (p != RulesConfig.Persistence.JPA) assertTrue(!p.generated(), p.name());
-        }
+        assertTrue(RulesConfig.Persistence.MYBATIS.generated());
+        assertTrue(!RulesConfig.Persistence.MONGO.generated());
     }
 
     @Test
@@ -54,9 +53,15 @@ public class PersistenceAxisTest {
     }
 
     @Test
-    public void anotherPersistenceGetsNoJpaBundle() {
-        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+    public void myBatisIsLayeredJava() {
+        assertEquals(RulesConfig.MYBATIS_BUNDLE, RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA, RulesConfig.Persistence.MYBATIS));
+        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+                RulesConfig.Architecture.HEXAGONAL, RulesConfig.Language.JAVA, RulesConfig.Persistence.MYBATIS));
+        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+                RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MYBATIS));
+        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+                RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA, RulesConfig.Persistence.MONGO));
         // The browser's model is the same whatever the server stores it in.
         assertEquals("ts-model", RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.TYPESCRIPT, RulesConfig.Persistence.MYBATIS));

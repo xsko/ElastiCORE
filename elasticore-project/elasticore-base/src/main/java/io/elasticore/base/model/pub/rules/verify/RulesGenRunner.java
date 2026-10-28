@@ -452,7 +452,9 @@ public final class RulesGenRunner {
         // word - since 3.0.261028-rc3 the default for a build that says nothing.
         // A domain whose modes leave out jpa is refused; documents beside it
         // are said to be the 2.x generator's.
-        // The persistence is one word of that mode (RulesConfig.persistenceOfMode).
+        // The persistence is one word of that mode (RulesConfig.persistenceOfMode):
+        // jpa, or mybatis, which the rule engine writes as layered Java.
+        String mybatisDomain = null;
         for (ECoreModel model : loader.allModels()) {
             String mode = String.valueOf(model.getConfig("mode", "jpa"));
             java.util.List<String> modes = new ArrayList<String>();
@@ -460,25 +462,33 @@ public final class RulesGenRunner {
                 if (!m.trim().isEmpty()) modes.add(m.trim().toLowerCase());
             }
             RulesConfig.Persistence persistence = RulesConfig.persistenceOfMode(mode);
-            if (persistence == RulesConfig.Persistence.MYBATIS) {
-                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
-                        + "' is mode: " + String.join(",", modes) + ". MyBatis code is not generated yet;"
-                        + " the rule engine writes JPA code only. No source was written.");
-                return 1;
-            }
             if (persistence == null || !persistence.generated()) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
-                        + "' is mode: " + String.join(",", modes) + ". The rule engine writes JPA code only; "
+                        + "' is mode: " + String.join(",", modes) + ". The rule engine writes JPA and MyBatis code; "
                         + (modes.contains("mongo") ? "MongoDB code" : "this mode") + " comes from the 2.x generator -"
                         + " elasticore { output = 'v2' }, whose build runs it, or ./gradlew elcore. No source was written.");
                 return 1;
             }
+            if (persistence == RulesConfig.Persistence.MYBATIS) {
+                String refusal = v2Asked
+                        ? "the code 2.x generates (-Pv2 / output = 'v2') is JPA code"
+                        : RulesConfig.mybatisRefusal(declaredArchitecture,
+                                typescript ? RulesConfig.Language.TYPESCRIPT
+                                        : kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
+                if (refusal != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
+                            + "' is mode: mybatis, but " + refusal + ". No source was written.");
+                    return 1;
+                }
+                if (mybatisDomain == null) mybatisDomain = model.getInternalDomainName();
+            }
             for (String m : modes) {
-                if (m.equals("jpa")) continue;
+                if (RulesConfig.persistenceNamed(m) == persistence) continue;
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", "[" + model.getInternalDomainName()
-                        + "] mode " + m + " is not written by elcore3 - only the JPA code is. "
-                        + (RulesConfig.persistenceNamed(m) == RulesConfig.Persistence.MYBATIS
-                                ? "MyBatis code is not generated yet."
+                        + "] mode " + m + " is not written by elcore3 - only the "
+                        + (persistence == RulesConfig.Persistence.MYBATIS ? "MyBatis" : "JPA") + " code is. "
+                        + (RulesConfig.persistenceNamed(m) != null && RulesConfig.persistenceNamed(m).generated()
+                                ? "A domain is generated for one persistence."
                                 : "The 2.x generator (./gradlew elcore) writes the " + m + " output."));
             }
         }
@@ -497,6 +507,11 @@ public final class RulesGenRunner {
                         + RulesConfig.addedRules()) + ", which only the 3.0 code carries - remove one or the other");
                 return 1;
             }
+        }
+        // MyBatis code exists only as 3.0 code: a domain that names it chose it.
+        if (mybatisDomain != null && !v3 && !v2Asked && !kotlin) {
+            v3 = true;
+            why = "domain '" + mybatisDomain + "' is mode: mybatis";
         }
         if (!v3 && !v2Asked && !kotlin) {
             String asking = domainAskingForV3(loader.allModels());
@@ -972,6 +987,7 @@ public final class RulesGenRunner {
     private ECoreModel currentModel;
 
     private void generate(String domainDirName, List<ECoreModel> models, List<ECoreModel> allModels) {
+        if (allModels != null) runModels = allModels;
         System.out.println();
         System.out.println("[" + domainDirName + "]");
         // The refusal codes this domain's rules record as they generate - one
@@ -1079,6 +1095,15 @@ public final class RulesGenRunner {
     private final List<String[]> mapperForwardSections = new ArrayList<String[]>();
     private final List<String> mapperReverseSections = new ArrayList<String>();
     private final List<String> mapperSpecSections = new ArrayList<String>();
+
+    /** A MyBatis domain's search conditions, by search DTO name (MyBatisSearchRules). */
+    private final Map<String, String> mybatisSearch = new java.util.HashMap<String, String>();
+
+    /** The entities of a MyBatis domain whose mapper is written with the domain's artifacts. */
+    private final List<EntitySpec> mybatisMapped = new ArrayList<EntitySpec>();
+
+    /** Every model of the run, for an entity a relation reaches in another domain. */
+    private List<ECoreModel> runModels = new ArrayList<ECoreModel>();
 
     /** The shadow namespaces of the types the mapper's sections referenced. */
     private final java.util.Set<String> mapperNamespaces = new java.util.HashSet<String>();
@@ -1270,6 +1295,17 @@ public final class RulesGenRunner {
         }
 
         try {
+            if (searchable && persistence() == RulesConfig.Persistence.MYBATIS) {
+                // Over MyBatis a search is the mapper XML's WHERE clause: its
+                // conditions are kept for the entity's XML, and the mapper
+                // class gets no toSpec.
+                if (!searchDtoWritten) return;
+                SourceCode conditions = sectionEngine("mybatis-search")
+                        .run(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.TARGET);
+                mybatisSearch.put(dto.getIdentity().getName(), String.join("\n",
+                        conditions.blockLines(io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.BLOCK)));
+                return;
+            }
             if (searchable) {
                 // A search DTO a rule declined has no type to take, so the
                 // section that would take it is not written either - and the
@@ -1477,7 +1513,10 @@ public final class RulesGenRunner {
 
         System.out.println("  [" + domainDirName + " domain artifacts]");
 
-        emitDomain(domain, "Q", ArtifactTarget.java(queryPackage(model), "Q"), "jpa-q");
+        boolean mybatis = persistence() == RulesConfig.Persistence.MYBATIS;
+        // Q is the JPA Criteria's metadata; a MyBatis domain has none.
+        if (!mybatis) emitDomain(domain, "Q", ArtifactTarget.java(queryPackage(model), "Q"), "jpa-q");
+        else emitMyBatisMappers(domain, model, specs);
 
         // The domain's mapper, in 2.x emission order: the forward mappings
         // follow the entity models' order, the reverse ones the DTO models',
@@ -1492,6 +1531,65 @@ public final class RulesGenRunner {
         emitContributedDomain(domain, model);
         generateSupportTypes(domainDirName, model, specs);
         emitArchitectureTest(domain, model);
+    }
+
+    /**
+     * A MyBatis domain's mappers - the interface beside the service's other
+     * dependencies, the XML under the same package in the resources - and the
+     * domain's schema. Written after the DTOs, whose search DTO says which
+     * conditions the XML's WHERE clause holds.
+     */
+    private void emitMyBatisMappers(io.elasticore.base.model.pub.rules.DomainSpec domain, ECoreModel model,
+                                    List<EntitySpec> specs) {
+        for (EntitySpec spec : specs) {
+            relateMyBatis(spec, specs);
+        }
+        for (EntitySpec spec : mybatisMapped) {
+            spec.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.SEARCH_CONFIG,
+                    mybatisSearch.get(spec.searchDtoClassName()));
+            String name = spec.getName() + "Repository";
+            emit(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.REPOSITORY,
+                    ArtifactTarget.java(model.getNamespace("repository"), name), "mybatis-mapper");
+            emit(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.XML,
+                    ArtifactTarget.resource("src/main/resources", "xml",
+                            model.getNamespace("repository"), name), "mybatis-mapper");
+        }
+        mybatisMapped.clear();
+        mybatisSearch.clear();
+        emitDomain(domain, io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.TARGET,
+                ArtifactTarget.resource("src/main/resources", "sql", "db", domain.getName() + "-schema"),
+                "mybatis-schema");
+    }
+
+    /**
+     * Hands an entity the entities its to-one relations point at, and theirs
+     * in turn: the mapper reads the joined row's columns, and the keys of the
+     * rows that one points at. One of another domain is built from its model.
+     */
+    private void relateMyBatis(EntitySpec spec, List<EntitySpec> specs) {
+        for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
+            if (!io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isToOne(f)) continue;
+            String type = f.coreItemType();
+            if (spec.related(type) != null) continue;
+            EntitySpec target = null;
+            for (EntitySpec s : specs) {
+                if (s.getName().equals(type)) target = s;
+            }
+            if (target == null) target = foreignSpec(type);
+            if (target == null) continue;
+            spec.knownRelated(type, target);
+            if (target != spec) relateMyBatis(target, specs);
+        }
+    }
+
+    /** An entity of another domain of the run, as a spec; null when none is called that. */
+    private EntitySpec foreignSpec(String entityName) {
+        for (ECoreModel m : runModels) {
+            if (m.getEntityModels() == null) continue;
+            Entity entity = m.getEntityModels().findByName(entityName);
+            if (entity != null) return SpecFactory.fromEntity(entity, m, m.getInternalDomainName());
+        }
+        return null;
     }
 
     /** archTest: true - the hexagon's boundaries as an ArchUnit test, written once. */
@@ -1989,6 +2087,43 @@ public final class RulesGenRunner {
                         target(model.getNamespace("entity"),
                                 String.format("%sIdentity", name)),
                         "jpa-entity", "jpa-identity-kt");
+            }
+            return;
+        }
+
+        if (v3 && persistence() == RulesConfig.Persistence.MYBATIS) {
+            // What the MyBatis code does not write yet is refused, not written
+            // so that it loses data quietly.
+            java.util.List<String> unsupported =
+                    io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.unsupported(spec);
+            if (!unsupported.isEmpty() && !spec.hasMeta("embeddable") && !spec.hasMeta("abstract")) {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                        "[elcore3] %s.%s: mode: mybatis does not write %s yet - model it otherwise,"
+                                + " or keep this domain on JPA", spec.domainClassName(), name,
+                        String.join("; ", unsupported)));
+                return;
+            }
+            emit(spec, "entity",
+                    ArtifactTarget.java(model.getNamespace("entity"), name),
+                    "jpa-entity", "mybatis-entity-file");
+            if (serviced && hasPk) {
+                coreOk = emitSucceeded(spec, "service",
+                        ArtifactTarget.java(model.getNamespace("service"),
+                                String.format("%sCoreService", name)),
+                        "mybatis-service-file");
+                // The mapper and its XML wait for the search DTO's conditions,
+                // which the DTO pass reads: they are written with the domain.
+                mybatisMapped.add(spec);
+                if (coreOk) emit(spec, "service_extend",
+                        ArtifactTarget.java(model.getNamespace("service"),
+                                String.format("%sService", name)),
+                        "spring-service-extend");
+            }
+            if (exposed && hasPk && coreOk) {
+                emit(spec, "control",
+                        ArtifactTarget.java(model.getNamespace("control"),
+                                String.format("%sController", name)),
+                        "spring-controller");
             }
             return;
         }
@@ -3367,7 +3502,10 @@ public final class RulesGenRunner {
             for (File f : files) {
                 String name = f.getName();
                 if (!f.isFile() || !(name.endsWith(".java") || name.endsWith(".kt") || name.endsWith(".ts")
-                        || name.endsWith("-http-services.properties"))) continue;
+                        || name.endsWith("-http-services.properties")
+                        // a MyBatis mapper and the schema beside it; a file of the
+                        // developer's has no stamp and is passed over below
+                        || name.endsWith(".xml") || name.endsWith("-schema.sql"))) continue;
                 String path;
                 try {
                     path = f.getCanonicalPath();
@@ -3534,7 +3672,7 @@ public final class RulesGenRunner {
 
             // The hash covers the generated text only, so the user's blocks
             // are put back after it is taken - where 2.x puts them.
-            w.write(HashUtils.makeEcdCode(content));
+            w.write(HashUtils.makeEcdCode(content, out.extension()));
             w.write(st != null && st.hasCustomizedScopeContent() ? withCustomBlocks(content, st) : content);
             w.flush();
             wrote++;

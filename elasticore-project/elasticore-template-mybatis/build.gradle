@@ -1,0 +1,99 @@
+// The MyBatis reading of the pipeline, kept where it can be compiled and run.
+//
+// A domain whose env.yml says mode: mybatis is generated as layered Java over
+// MyBatis mappers: the same DTOs, controller and access checks as over JPA,
+// with the mapper interface, its XML and the schema in place of the JPA
+// entity mapping, repository and Specification search. This module generates
+// such a domain, compiles it, and drives its API against a database.
+//
+//   ./gradlew :elasticore-project:elasticore-template-mybatis:test
+
+plugins {
+	id 'java'
+	id 'io.spring.dependency-management' version '1.1.6'
+	id 'io.elasticore'
+}
+
+elasticore {
+	architecture = 'layered'
+	language = 'java'
+}
+
+dependencies {
+	elasticore project(':elasticore-project:elasticore-base')
+}
+
+group = 'elasticore-template-mybatis'
+version = '1.0.0-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencyManagement {
+	imports {
+		mavenBom 'org.springframework.boot:spring-boot-dependencies:3.5.16'
+	}
+}
+
+dependencies {
+	// What a MyBatis project declares: MyBatis and Spring Data's paging types,
+	// and no JPA - the runtime library must not bring it either.
+	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.5'
+	implementation 'org.springframework.data:spring-data-commons'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+
+	implementation 'org.projectlombok:lombok:1.18.36'
+	annotationProcessor 'org.projectlombok:lombok:1.18.36'
+
+	implementation project(':elasticore-project:elasticore-base')
+	implementation project(':elasticore-project:elasticore-springboot3')
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testRuntimeOnly 'com.h2database:h2'
+}
+
+def generated = 'src/main/java'
+
+sourceSets {
+	main.java.srcDirs += [generated]
+}
+
+test {
+	useJUnitPlatform()
+	testLogging { events 'passed', 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}
+
+// A run that reads a stale file checks nothing: the generated trees are
+// cleared first, files rather than directories (a handle on Windows).
+task elcore3clean(type: Delete) {
+	group = 'elasticore'
+	description = 'Removes previously generated sources'
+	delete fileTree(generated), fileTree('src/main/resources/io'), fileTree('src/main/resources/db')
+}
+
+tasks.named('elcore3') {
+	systemProperty 'elasticore.rules.force', 'true'
+	dependsOn elcore3clean
+}
+
+// processResources copies the mapper XML and the schema the generator writes.
+tasks.named('processResources') {
+	dependsOn 'elcore3'
+}

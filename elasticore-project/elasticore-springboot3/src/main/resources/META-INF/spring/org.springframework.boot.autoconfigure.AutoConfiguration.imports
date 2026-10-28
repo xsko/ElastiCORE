@@ -1,1 +1,2 @@
 io.elasticore.springboot.autoconfigure.ElastiCoreAutoConfiguration
+io.elasticore.springboot.autoconfigure.ElastiCoreMyBatisAutoConfiguration

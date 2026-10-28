@@ -117,8 +117,12 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "    public static void mapping(%s from, %s to, MappingContext c){", dto, en)
             .line(rev, "        mapping(from,to,false,c);")
             .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static void mapping(%s from, %s to, EntityManager em){", dto, en)
+            .line(rev, SEP).line(rev, SEP);
+        // The EntityManager overloads attach a JPA reference for a relation's
+        // key; a MyBatis row holds the key itself, which the plain ones set.
+        boolean em = !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e);
+        if (em) {
+        code.line(rev, "    public static void mapping(%s from, %s to, EntityManager em){", dto, en)
             .line(rev, "        mapping(from,to,false,null,em);")
             .line(rev, "    }")
             .line(rev, "    public static void mapping(%s from, %s to, boolean isSkipNull, EntityManager em){", dto, en)
@@ -130,8 +134,9 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "    public static void mapping(%s from, %s to, boolean isSkipNull, MappingContext c, EntityManager em){", dto, en);
         reverseBody(code, rev, true);
         code.line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static %s toEntity(%s from){", en, dto)
+            .line(rev, SEP).line(rev, SEP);
+        }
+        code.line(rev, "    public static %s toEntity(%s from){", en, dto)
             .line(rev, "        return toEntity(from,MappingContext.withGuard(2,null));")
             .line(rev, "    }")
             .line(rev, "    public static %s toEntity(%s from,MappingContext c1){", en, dto)
@@ -142,8 +147,9 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "        mapping(from,to,c);")
             .line(rev, "        return to;")
             .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static %s toEntity(%s from, EntityManager em){", en, dto)
+            .line(rev, SEP).line(rev, SEP);
+        if (em) {
+        code.line(rev, "    public static %s toEntity(%s from, EntityManager em){", en, dto)
             .line(rev, "        return toEntity(from,MappingContext.withGuard(2,null),em);")
             .line(rev, "    }")
             .line(rev, "    public static %s toEntity(%s from, MappingContext c1, EntityManager em){", en, dto)
@@ -154,8 +160,9 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "        mapping(from,to,c,em);")
             .line(rev, "        return to;")
             .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static List<%s> to%sList(List<%s> fromList){", en, revList, dto)
+            .line(rev, SEP).line(rev, SEP);
+        }
+        code.line(rev, "    public static List<%s> to%sList(List<%s> fromList){", en, revList, dto)
             .line(rev, "        return to%sList(fromList,(MappingContext) null);", revList)
             .line(rev, "    }")
             .line(rev, "    public static List<%s> to%sList(List<%s> fromList, MappingContext c){", en, revList, dto)
@@ -163,8 +170,9 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "        if(fromList==null) return null;")
             .line(rev, "        return fromList.stream().map(e->%s.toEntity(e,c)).collect(Collectors.toList());", mapper)
             .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static List<%s> to%sList(List<%s> fromList, EntityManager em){", en, revList, dto)
+            .line(rev, SEP).line(rev, SEP);
+        if (em) {
+        code.line(rev, "    public static List<%s> to%sList(List<%s> fromList, EntityManager em){", en, revList, dto)
             .line(rev, "        return to%sList(fromList,(MappingContext) null,em);", revList)
             .line(rev, "    }")
             .line(rev, "    public static List<%s> to%sList(List<%s> fromList, MappingContext c, EntityManager em){", en, revList, dto)
@@ -172,8 +180,9 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, "        if(fromList==null) return null;")
             .line(rev, "        return fromList.stream().map(e->%s.toEntity(e,c,em)).collect(Collectors.toList());", mapper)
             .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    public static List<%s> to%sList(List<%s> fromList, BiFunction<%s, %s, %s> modifier){",
+            .line(rev, SEP).line(rev, SEP);
+        }
+        code.line(rev, "    public static List<%s> to%sList(List<%s> fromList, BiFunction<%s, %s, %s> modifier){",
                     en, revList, dto, dto, en, en)
             .line(rev, "        if(fromList==null) return null;")
             .line(rev, "        return fromList.stream()")

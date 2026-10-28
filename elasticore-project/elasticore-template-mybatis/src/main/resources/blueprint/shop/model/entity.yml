@@ -1,0 +1,54 @@
+enumeration:
+  OrderStatus:
+    meta: enum @db(code) @json(code) -- order status
+    fields:
+      code: string(1) @code
+      name: string(20)
+    enum:
+      NEW: N,New
+      PAID: P,Paid
+      SHIPPED: S,Shipped
+
+entity:
+  # A tree: a relation to its own table.
+  Category:
+    meta: entity @expose(20) @access(*=public) -- category
+    fields:
+      categoryId: long @id @sequence
+      name: string(50)! @search(like)
+      slug: string(30) @search(_%)
+      parent: Category @ManyToOne @search(eq)
+
+  # A key the service makes (@genid), not the database.
+  Product:
+    meta: entity @expose(20) @access(*=public) -- product
+    fields:
+      productCode: string(12) @id @genid
+      name: string(100)! @search(like)
+      price: long! @search(between)
+      stock: int @search(<)
+      category: Category @ManyToOne @search(eq)
+
+  Customer:
+    meta: entity @expose(20) @access(*=public) -- customer
+    fields:
+      customerId: long @id @sequence
+      name: string(50)! @search(like)
+      email: string(100) @unique @search(eq)
+      grade: int @default(1) @search(>=)
+      joinedAt: datetime @jpa:CreatedDate
+      changedAt: datetime @jpa:LastModifiedDate
+
+  PurchaseOrder:
+    meta: entity @expose(20) @access(*=public) -- order
+    fields:
+      orderId: long @id @sequence
+      orderNo: string(20)! @search(in)
+      status: OrderStatus! @search(eq)
+      amount: long! @search(between)
+      orderedAt: datetime @search(between)
+      customer: Customer! @ManyToOne @search(eq)
+      product: Product @ManyToOne @search(eq)
+      memo: string(200) @search(like)
+      deliveredAt: datetime @search(isnull)
+      version: long @jpa:Version
