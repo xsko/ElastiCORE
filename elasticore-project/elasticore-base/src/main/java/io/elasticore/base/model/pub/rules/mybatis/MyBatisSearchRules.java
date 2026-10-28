@@ -16,7 +16,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * (MapperSpecRules): which fields search, by what, under which property. One
  * line each in the "search" block, as tab-separated words - the operator, the
  * entity path, the search DTO property and the value's type - which
- * MyBatisXmlRules turns into SQL once it knows the entity's columns.
+ * MyBatisMapperRules turns into SQL once it knows the entity's columns.
  *
  * Operators: eq, ne, gt, ge, lt, le; like (contains), ilike (contains,
  * ignoring case), ieq (equal ignoring case); prefix, iprefix, suffix,
@@ -33,6 +33,15 @@ public class MyBatisSearchRules implements CodeRules {
         if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter")) return;
         if (SearchDtoBaseRules.flattensAReferenceById(e, f)) return;
         SourceCode c = ctx(e);
+        // A @formula is JPA's SELECT expression, not a column of the table:
+        // MyBatis cannot search by it. Left out of the conditions, it also
+        // does not count as one, so an update by condition naming only it is
+        // refused rather than run on every row.
+        if (f.hasDsl("formula")) {
+            SourceCode.dslWarnOnce(String.format("[%s] %s.%s: a @formula field is not searched under mode: mybatis"
+                    + " - it is not a column of the table.", e.domainClassName(), e.getName(), f.name()));
+            return;
+        }
 
         String raw = f.dslValueAny("searchable", "search", "s", "srch", "filter");
         String condition = "auto";
@@ -68,7 +77,7 @@ public class MyBatisSearchRules implements CodeRules {
         c.line(BLOCK, "%s\t%s\t%s\t%s", op, path, prop, type);
     }
 
-    /** The condition as one of the operators MyBatisXmlRules writes, or null for an unknown one. */
+    /** The condition as one of the operators MyBatisMapperRules writes, or null for an unknown one. */
     static String operator(String condition) {
         if (condition == null || condition.isEmpty() || "auto".equals(condition)) return "auto";
         if (SearchDtoBaseRules.isNullCheck(condition)) return "isnull";

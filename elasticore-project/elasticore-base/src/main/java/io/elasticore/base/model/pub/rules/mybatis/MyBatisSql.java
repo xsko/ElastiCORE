@@ -46,8 +46,9 @@ public final class MyBatisSql {
         String name = explicit != null && !explicit.isEmpty()
                 ? explicit
                 : (e.tablePrefix() == null ? "" : e.tablePrefix()) + springName(e.getName());
+        name = springName(name);
         String schema = e.schema();
-        return schema != null && !schema.isEmpty() ? schema + "." + name : name;
+        return schema != null && !schema.isEmpty() ? springName(schema) + "." + name : name;
     }
 
     /** A column name as Spring Boot's JPA naming writes it from a property name. */
@@ -64,10 +65,11 @@ public final class MyBatisSql {
 
     /** The column of a field that holds a value (not a relation). */
     public static String column(FieldSpec f) {
+        // A named column goes through Spring's naming too, which writes it in lower case.
         String named = f.dbColumnName();
-        if (named != null && !named.isEmpty()) return named;
+        if (named != null && !named.isEmpty()) return springName(named);
         named = f.dslValueAny("column", "col");
-        if (named != null && !named.isEmpty()) return named;
+        if (named != null && !named.isEmpty()) return springName(named);
         return springName(f.name());
     }
 
@@ -77,7 +79,7 @@ public final class MyBatisSql {
      */
     public static String foreignKey(FieldSpec f, EntitySpec target) {
         String named = f.dslValueAny("column", "col", "db");
-        if (named != null && !named.isEmpty()) return named;
+        if (named != null && !named.isEmpty()) return springName(named);
         FieldSpec pk = target == null ? null : target.pkField();
         String key = pk == null ? "id" : column(pk);
         return springName(f.name()) + "_" + key;
@@ -225,6 +227,7 @@ public final class MyBatisSql {
         if (e.parentName() != null && !e.parentName().isEmpty()) {
             out.add("extends " + e.parentName() + " (inheritance)");
         }
+        FieldSpec pk = e.pkField();
         for (FieldSpec f : e.fields()) {
             if (f.isList() && f.isEntityRef()) {
                 out.add(f.name() + ": a collection relation (load it with a query of the target's repository)");
@@ -236,11 +239,63 @@ public final class MyBatisSql {
                 out.add(f.name() + ": Money");
             } else if (f.hasDsl("discriminator")) {
                 out.add(f.name() + ": a discriminator (inheritance)");
-            } else if (!f.isEntityRef() && !f.isBaseType() && !isEnum(e, f)
-                    && "OTHER".equals(jdbcType(e, f))) {
+            } else if (f.isEntityRef() && f.dslValueAny("joinby", "joinfield") != null) {
+                out.add(f.name() + ": a relation read through another field's column (@joinBy)");
+            } else if (!f.isEntityRef() && !isEnum(e, f) && !f.hasDsl("formula") && "OTHER".equals(jdbcType(e, f))) {
                 out.add(f.name() + ": type " + f.typeName());
+            } else if (nativeNames(f, "CreatedBy") || nativeNames(f, "LastModifiedBy")) {
+                out.add(f.name() + ": who wrote the row (@jpa:CreatedBy / LastModifiedBy)");
+            } else if ((createdDate(f) || lastModifiedDate(f)) && nowType(f) == null) {
+                out.add(f.name() + ": a time stamp of type " + f.typeName());
+            } else if (f != pk && (f.hasDsl("sequence") || f.generationType() != null)) {
+                out.add(f.name() + ": a generated value that is not the key (@sequence)");
+            } else if (f == pk && !identityKey(pk)) {
+                out.add(f.name() + ": a key generated otherwise than by an identity column (@sequence("
+                        + generation(pk) + "))");
             }
         }
         return out;
+    }
+
+    /** How a generated key is generated, as @sequence or a native @GeneratedValue names it; "" for the default. */
+    static String generation(FieldSpec pk) {
+        String declared = pk.dslValue("sequence");
+        if (declared == null || declared.isEmpty()) declared = pk.generationType();
+        return declared == null ? "" : declared.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Whether the key is the database's identity column, or is not generated
+     * at all - what the MyBatis insert reads back. A sequence, a table or a
+     * UUID generator is Hibernate's, and a row written without it would get
+     * no key.
+     */
+    static boolean identityKey(FieldSpec pk) {
+        if (!generatedKey(pk)) return true;
+        String g = generation(pk);
+        return g.isEmpty() || g.equals("IDENTITY");
+    }
+
+    /** Whether a column keeps its value once written: @updatable(false), as JPA's @Column(updatable = false). */
+    public static boolean updatable(FieldSpec f) {
+        if ("false".equals(f.dslValue("updatable"))) return false;
+        for (String line : f.nativeAnnotationLines()) {
+            if (line.replace(" ", "").contains("updatable=false")) return false;
+        }
+        return true;
+    }
+
+    /** The "now" of a time stamp field's type, or null for a type there is none for. */
+    public static String nowType(FieldSpec f) {
+        String t = RuleText.simpleName(f.typeName());
+        switch (t) {
+            case "LocalDateTime": return "java.time.LocalDateTime.now()";
+            case "LocalDate": return "java.time.LocalDate.now()";
+            case "Instant": return "java.time.Instant.now()";
+            case "OffsetDateTime": return "java.time.OffsetDateTime.now()";
+            case "ZonedDateTime": return "java.time.ZonedDateTime.now()";
+            case "Date": return "new java.util.Date()";
+            default: return null;
+        }
     }
 }

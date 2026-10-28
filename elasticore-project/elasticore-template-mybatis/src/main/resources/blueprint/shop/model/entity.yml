@@ -27,6 +27,9 @@ entity:
       name: string(100)! @search(like)
       price: long! @search(between)
       stock: int @search(<)
+      label: string(20) @search
+      origin: string(20) @updatable(false)
+      rating: int @formula("(select 5)")
       category: Category @ManyToOne @search(eq)
 
   Customer:

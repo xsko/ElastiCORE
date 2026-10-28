@@ -131,12 +131,7 @@ public class MyBatisServiceFileRules implements CodeRules {
     /** The current time in the field's type, for a creation or modification stamp. */
     private static String nowOf(FieldSpec f) {
         if (!MyBatisSql.createdDate(f) && !MyBatisSql.lastModifiedDate(f)) return null;
-        String t = RuleText.simpleName(f.typeName());
-        if ("LocalDateTime".equals(t)) return "java.time.LocalDateTime.now()";
-        if ("LocalDate".equals(t)) return "java.time.LocalDate.now()";
-        if ("Instant".equals(t)) return "java.time.Instant.now()";
-        if ("OffsetDateTime".equals(t)) return "java.time.OffsetDateTime.now()";
-        return null;
+        return MyBatisSql.nowType(f);
     }
 
     /** The service keeps the methods the controller keeps, as the JPA one does. */

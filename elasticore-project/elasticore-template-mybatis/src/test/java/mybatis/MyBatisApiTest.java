@@ -119,6 +119,25 @@ public class MyBatisApiTest {
         create("product", "{\"name\":\"" + name + "\",\"price\":10,\"stock\":3}");
         assertEquals(1, total("product", "{\"name\":\"" + name + "\",\"stock\":4}"));
         assertEquals(0, total("product", "{\"name\":\"" + name + "\",\"stock\":3}"));
+
+        // @search with no condition on text: equal, or like when the value carries a %.
+        String label = unique().substring(0, 10);
+        create("product", "{\"name\":\"Labelled\",\"price\":10,\"label\":\"" + label + "\"}");
+        assertEquals(1, total("product", "{\"label\":\"" + label + "\"}"));
+        assertEquals(0, total("product", "{\"label\":\"" + label.substring(0, 5) + "\"}"));
+        assertEquals(1, total("product", "{\"label\":\"" + label.substring(0, 5) + "%\"}"));
+    }
+
+    @Test
+    public void aColumnNotUpdatableKeepsItsValueAndAFormulaReadsNull() throws Exception {
+        JsonNode product = create("product", "{\"name\":\"Pear\",\"price\":900,\"origin\":\"Naju\"}");
+        String code = product.get("productCode").asText();
+        // @formula is JPA's SELECT expression; MyBatis reads the table's columns.
+        assertTrue(product.get("rating") == null || product.get("rating").isNull(), product.toString());
+        JsonNode updated = body(perform(put(API + "/product").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productCode\":\"" + code + "\",\"price\":950,\"origin\":\"Elsewhere\"}"), 200));
+        assertEquals(950, updated.get("price").asInt(), updated.toString());
+        assertEquals("Naju", jdbc.queryForObject("SELECT origin FROM product WHERE product_code = ?", String.class, code));
     }
 
     // ---- page and sort ------------------------------------------------------------

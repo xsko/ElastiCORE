@@ -101,7 +101,7 @@ config:
 | `<Entity>Repository.java` | MyBatis 매퍼 인터페이스 (`@Mapper`). 서비스가 `helper.getOrder()` 로 부르는 것 |
 | `<Entity>Repository.xml` | 그 SQL - 같은 패키지 경로의 `src/main/resources` 아래 (MyBatis 가 저절로 찾는 곳) |
 | `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 컨트롤러와 확장 서비스는 JPA 판 그대로 |
-| `db/<domain>-schema.sql` | 테이블 (표준 SQL), 외래키 제약 포함 |
+| `db/<domain>-schema.sql` | 테이블과 외래키 - H2 용. 다른 DB 는 일부 타입 이름이 달라(Oracle `NUMBER(19)`, PostgreSQL `TEXT`, MySQL `AUTO_INCREMENT`) 이 파일에서 마이그레이션을 시작합니다 |
 
 **XML 이 하는 일**
 
@@ -115,8 +115,10 @@ config:
 - **페이지**: H2·MySQL·MariaDB·PostgreSQL 은 `LIMIT/OFFSET`, Oracle(12c+)·Tibero·SQL Server·DB2 는 `OFFSET ... FETCH`.
   런타임 라이브러리가 MyBatis 에 DB 종류를 알려 줍니다(`DatabaseIdProvider`) - 따로 설정할 것은 없습니다.
   (`OFFSET ... FETCH` 쪽은 H2 의 Oracle 모드에서 확인했습니다 - `elasticore-template-mybatis` 의 테스트.)
-- **쓰기**: insert(DB 가 만든 키는 되돌려 받음), 모든 컬럼 update, 키로 delete. `@jpa:Version` 이 있으면 같은 UPDATE 에서
-  비교하고 1 올립니다 - 낡은 버전은 409.
+  이 DB 종류는 앱이 직접 쓴 매퍼에도 적용됩니다: `databaseId` 를 단 문장이 그 DB 에서 쓰이게 됩니다. 원치 않으면
+  `elasticore.mybatis.database-id=false` - 그러면 생성된 매퍼는 `LIMIT/OFFSET` 으로 페이지를 나눕니다.
+- **쓰기**: insert(DB 가 만든 키는 되돌려 받음), 모든 컬럼 update(`@updatable(false)` 컬럼은 빼고 - 처음 값 유지), 키로
+  delete. `@jpa:Version` 이 있으면 같은 UPDATE 에서 비교하고 1 올립니다 - 낡은 버전은 409.
 - **enum**: JPA 와 같은 값으로 저장합니다(`@db(code)` 면 코드 `N`, 아니면 이름). 두 방식이 같은 테이블을 읽을 수 있습니다.
 
 **JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기.
@@ -142,9 +144,16 @@ spring.sql.init.schema-locations=classpath:db/shop-schema.sql
 **직접 쓰는 쿼리**: 생성된 XML 은 다시 생성되므로 고치지 않습니다. 매퍼 인터페이스와 XML 을 하나 더 만들어
 (`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장 서비스(`OrderService`)에서 씁니다.
 
-**아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다): 컬렉션 관계(`List<Item> @OneToMany`), 값 컬렉션, `@embedded`,
-키 두 개 이상(`@IdClass`), 상속, `Money` 타입, 그리고 DDD·헥사고날·Kotlin(MyBatis 는 레이어드 Java). 컬렉션은 대상의
-검색으로 읽습니다(`ItemSrchDTO` 의 `basketBasketId`). `@formula` 필드는 MyBatis 가 읽지 않습니다(값은 null).
+**아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다):
+- 컬렉션 관계(`List<Item> @OneToMany`)와 값 컬렉션 - 컬렉션은 대상의 검색으로 읽습니다(`ItemSrchDTO` 의 `basketBasketId`)
+- `@embedded`, 키 두 개 이상(`@IdClass`), 상속, `Money`, JDBC 타입이 없는 타입(`UUID` 등), `@joinBy` 관계
+- 시퀀스·UUID 로 만드는 키(`@sequence(SEQUENCE)` 등 - IDENTITY 만), 키가 아닌 `@sequence`
+- `@jpa:CreatedBy`·`@jpa:LastModifiedBy`, 시각 타입이 아닌 `@jpa:CreatedDate`
+- 조인한 행보다 먼 검색 경로(`@ref(shop.region.name)`) - 빼면 조건부 수정·삭제가 모든 행에 미치므로
+- JPA 도메인의 엔티티가 MyBatis 도메인의 엔티티를 가리키는 것(반대는 됨), 2.x 코드를 지키는 도메인과 같은 프로젝트,
+  DDD·헥사고날·Kotlin(MyBatis 는 레이어드 Java)
+
+`@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
 ### 2.4 MongoDB 모드
 

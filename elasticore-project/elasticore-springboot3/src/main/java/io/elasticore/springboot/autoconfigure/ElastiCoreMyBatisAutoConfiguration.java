@@ -21,9 +21,17 @@ import java.util.Properties;
  *
  * Loaded before MyBatis's own auto-configuration, which takes the provider
  * when it builds the SqlSessionFactory; does nothing without MyBatis.
+ *
+ * With a database id set, a statement of the application's own mappers that
+ * names a databaseId is used for that database (and one naming another is
+ * not), where without one every such statement was left out. An application
+ * that relies on that turns this off: elasticore.mybatis.database-id=false -
+ * the generated mappers then page with LIMIT/OFFSET.
  */
 @AutoConfiguration(beforeName = "org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration")
 @ConditionalOnClass(name = "org.apache.ibatis.mapping.VendorDatabaseIdProvider")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "elasticore.mybatis",
+        name = "database-id", havingValue = "true", matchIfMissing = true)
 public class ElastiCoreMyBatisAutoConfiguration {
 
     /** The vendor names the drivers report, and the ids the generated mappers test. */

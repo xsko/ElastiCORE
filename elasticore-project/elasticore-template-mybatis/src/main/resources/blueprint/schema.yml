@@ -35,6 +35,9 @@ entities:
       name: string(100) @Column(name = "name", length = 100)
       price: Long @Column(name = "price")
       stock: Integer @Column(name = "stock")
+      label: string(20) @Column(name = "label", length = 20)
+      origin: string(20) @Column(name = "origin", length = 20)
+      rating: Integer @Formula
       category: Category @relation(mappedBy="product_id") @foreignKey(category_category_id) -- Category entity relationship
 
   PurchaseOrder:

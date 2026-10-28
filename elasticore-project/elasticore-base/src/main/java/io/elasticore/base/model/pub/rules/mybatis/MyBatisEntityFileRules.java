@@ -44,11 +44,9 @@ public class MyBatisEntityFileRules implements CodeRules {
                 return persistenceOnly(fqcn);
             }
         });
-        for (FieldSpec f : e.fields()) {
-            // A computed column is the database's under JPA (@Formula); MyBatis
-            // reads only the columns the table has.
-            if (f.hasDsl("formula")) ctx(e).removeField(f);
-        }
+        // A @formula field stays, unmapped: JPA computes it in its SELECT,
+        // MyBatis reads only the table's columns, so it is null - and the
+        // domain mapper, which reads it for the DTO, still compiles.
     }
 
     @Rule(value = "mybatis-entity-file", target = "entity", order = 90, phase = Rule.Phase.TAIL)

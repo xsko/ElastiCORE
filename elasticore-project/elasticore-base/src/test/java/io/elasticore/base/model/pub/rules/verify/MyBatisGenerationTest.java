@@ -81,7 +81,7 @@ public class MyBatisGenerationTest {
     public void theEntityAndTheServiceNameNothingOfJpa() throws Exception {
         File project = project(MODEL, "mybatis");
         String log = run(project, 0);
-        assertTrue(log.contains("mode: mybatis"), log);
+        assertTrue(log.contains("mybatisXml"), log);
 
         String entity = read(project, "PurchaseOrder.java");
         assertFalse(entity.contains("jakarta.persistence"), entity);
@@ -190,7 +190,178 @@ public class MyBatisGenerationTest {
         assertNotNull(find(project, "Q.java"));
     }
 
+    @Test
+    public void aRelationIntoACycleOfAnotherDomainEnds() throws Exception {
+        // A MyBatis entity pointing into a JPA domain whose entity points at
+        // itself: each target is built once, so the walk ends.
+        File project = project(String.join("\n",
+                "entity:",
+                "  Employee:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      employeeId: long @id @sequence",
+                "      department: Department @ManyToOne",
+                ""), "mybatis");
+        addDomain(project, "hr", "jpa", String.join("\n",
+                "entity:",
+                "  Department:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      departmentId: long @id @sequence",
+                "      name: string(50)",
+                "      parent: Department @ManyToOne",
+                ""), null);
+        run(project, 0);
+        Path xml = findResource(project, "EmployeeRepository.xml");
+        String text = new String(Files.readAllBytes(xml), StandardCharsets.UTF_8);
+        assertTrue(text.contains("LEFT JOIN department j1 ON j1.department_id = t.department_department_id"), text);
+        assertTrue(text.contains("<id property=\"departmentId\" column=\"parent_department_id\"/>"), text);
+    }
+
+    @Test
+    public void aDomainKeepingTheTwoXCodeIsNotMovedByAMyBatisOne() throws Exception {
+        File project = project(MODEL, "mybatis");
+        addDomain(project, "crm", "jpa", String.join("\n",
+                "entity:",
+                "  Lead:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      leadId: long @id @sequence",
+                ""), "jpa-springboot");
+        String log = run(project, 1);
+        assertTrue(log.contains("is mode: mybatis, which is 3.0 code"), log);
+        assertNull(find(project, "Lead.java"), log);
+        assertNull(find(project, "PurchaseOrder.java"), log);
+    }
+
+    @Test
+    public void aJpaEntityPointingAtAMyBatisOneIsRefused() throws Exception {
+        File project = project(MODEL, "mybatis");
+        addDomain(project, "crm", "jpa", String.join("\n",
+                "entity:",
+                "  Visit:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      visitId: long @id @sequence",
+                "      customer: Customer @ManyToOne",
+                ""), null);
+        String log = run(project, 1);
+        assertTrue(log.contains("Visit.customer is Customer of the MyBatis domain dgshop"), log);
+    }
+
+    @Test
+    public void aDomainBundleOfJpaCodeIsRefusedForMyBatis() throws Exception {
+        File project = project(MODEL, "mybatis");
+        String env = new String(Files.readAllBytes(envOf(project, "dgshop")), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    publisher:\n      rules: [hexagonal-springboot]\n");
+        Files.write(envOf(project, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, 1);
+        assertTrue(log.contains("its publisher.rules names hexagonal-springboot"), log);
+    }
+
+    @Test
+    public void whatJpaDidByItselfIsRefusedWhenMyBatisCannotDoIt() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Note:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      noteId: long @id @sequence(SEQUENCE)",
+                "      author: string(20) @jpa:CreatedBy",
+                ""), "mybatis");
+        String log = run(project, 1);
+        assertTrue(log.contains("@jpa:CreatedBy"), log);
+        assertTrue(log.contains("@sequence(SEQUENCE)"), log);
+    }
+
+    @Test
+    public void aColumnNotUpdatableIsLeftOutOfTheUpdate() throws Exception {
+        File project = project(String.join("\n",
+                "entity:",
+                "  Note:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      origin: string(20) @updatable(false)",
+                "      body: string(200)",
+                ""), "mybatis");
+        run(project, 0);
+        String xml = new String(Files.readAllBytes(findResource(project, "NoteRepository.xml")), StandardCharsets.UTF_8);
+        String update = xml.substring(xml.indexOf("<update"), xml.indexOf("</update>"));
+        assertFalse(update.contains("origin"), update);
+        assertTrue(update.contains("body = "), update);
+        assertTrue(xml.substring(xml.indexOf("<insert")).contains("origin"), xml);
+    }
+
+    @Test
+    public void aDomainMovedBackToJpaLeavesNoMapperBehind() throws Exception {
+        File project = project(MODEL, "mybatis");
+        run(project, 0);
+        assertNotNull(findResource(project, "PurchaseOrderRepository.xml"));
+        Path env = envOf(project, "dgshop");
+        Files.write(env, new String(Files.readAllBytes(env), StandardCharsets.UTF_8)
+                .replace("mode: mybatis", "mode: jpa").getBytes(StandardCharsets.UTF_8));
+        run(project, 0);
+        assertNull(findResource(project, "PurchaseOrderRepository.xml"));
+        assertFalse(new File(project, "src/main/resources/db/dgshop-schema.sql").exists());
+        assertTrue(read(project, "PurchaseOrder.java").contains("@Entity"));
+    }
+
+    @Test
+    public void aJpaDomainIsWrittenTheSameBesideAMyBatisOne() throws Exception {
+        String crm = String.join("\n",
+                "entity:",
+                "  Lead:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      leadId: long @id @sequence",
+                "      name: string(50) @search(like)",
+                "");
+        File alone = project(MODEL, "jpa");
+        Files.delete(envOf(alone, "dgshop"));
+        delete(new File(alone, "src/main/resources/blueprint/dgshop").toPath());
+        addDomain(alone, "crm", "jpa", crm, null);
+        run(alone, 0);
+
+        File beside = project(MODEL, "mybatis");
+        addDomain(beside, "crm", "jpa", crm, null);
+        run(beside, 0);
+
+        for (String name : new String[]{"Lead.java", "LeadCoreService.java", "LeadDTO.java", "LeadSrchDTO.java",
+                "CrmMapper.java", "LeadController.java", "LeadRepository.java", "CrmRepositoryHelper.java"}) {
+            assertEquals(withoutStamp(read(alone, name)), withoutStamp(read(beside, name)), name);
+        }
+    }
+
     // ---- helpers -----------------------------------------------------------------------
+
+    private static String withoutStamp(String text) {
+        return text.startsWith("//ecd:") ? text.substring(text.indexOf('\n') + 1) : text;
+    }
+
+    private static Path envOf(File project, String domain) {
+        return new File(project, "src/main/resources/blueprint/" + domain + "/env.yml").toPath();
+    }
+
+    private static void addDomain(File project, String domain, String mode, String model, String rules)
+            throws IOException {
+        File blueprint = new File(project, "src/main/resources/blueprint/" + domain);
+        assertTrue(new File(blueprint, "model").mkdirs());
+        String env = String.join("\n",
+                "elasticore:",
+                "  enable: true",
+                "  config:",
+                "    domainName: " + domain,
+                "    framework: springboot",
+                "    mode: " + mode,
+                "    j2ee: jakarta",
+                rules == null ? "" : "    publisher:\n      rules: [" + rules + "]",
+                "  namespace:",
+                "    base: io.acme." + domain,
+                "");
+        Files.write(new File(blueprint, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(blueprint, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
+    }
 
     private String run(File project, int expected) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -206,7 +377,7 @@ public class MyBatisGenerationTest {
         }
         String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         out.print(log);
-        assertEquals(expected, code, log);
+        if (expected >= 0) assertEquals(expected, code, log);
         return log;
     }
 

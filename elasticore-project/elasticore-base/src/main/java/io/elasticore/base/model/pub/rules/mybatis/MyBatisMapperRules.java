@@ -84,7 +84,10 @@ public class MyBatisMapperRules implements CodeRules {
              .varLine("loginFinder", "List<%s> findAllByLogin(@Param(\"value\") String %s);", entity, login);
         }
 
-        List<String[]> conditions = conditions(e);
+        // Only the conditions the XML writes: one it cannot write must not
+        // count, or an update by condition naming only it would update
+        // every row (resolved() stops the build for it).
+        List<String[]> conditions = resolved(e, joins(e));
         StringBuilder test = new StringBuilder();
         for (String[] cond : conditions) {
             for (String prop : properties(cond)) {
@@ -157,20 +160,7 @@ public class MyBatisMapperRules implements CodeRules {
         c.var("namespace", "%s.%sRepository", e.pkg("repository"), entity)
          .var("entityClassName", entity);
 
-        // The relations read with the row, each under an alias of its own.
-        List<Join> joins = new ArrayList<Join>();
-        int n = 0;
-        for (FieldSpec f : e.fields()) {
-            if (!MyBatisSql.isToOne(f)) continue;
-            n++;
-            EntitySpec target = e.related(f.coreItemType());
-            if (target == null || target.pkField() == null) {
-                SourceCode.dslWarnOnce(String.format("[%s] %s.%s: %s is not an entity with a key the MyBatis mapper can"
-                        + " join; the relation is left out of the row.", e.domainClassName(), entity, f.name(), f.coreItemType()));
-                continue;
-            }
-            joins.add(new Join(f, target, "j" + n, f.name() + "__"));
-        }
+        List<Join> joins = joins(e);
 
         StringBuilder x = new StringBuilder();
 
@@ -239,17 +229,12 @@ public class MyBatisMapperRules implements CodeRules {
         // where
         x.append(I).append("<sql id=\"where\">\n");
         x.append(I).append(I).append("<where>\n");
-        List<String[]> conditions = conditions(e);
+        List<String[]> conditions = resolved(e, joins);
         if (!conditions.isEmpty()) {
             x.append(I).append(I).append(I).append("<if test=\"s != null\">\n");
             int b = 0;
             for (String[] cond : conditions) {
                 String column = pathColumn(e, joins, cond[1]);
-                if (column == null) {
-                    SourceCode.dslWarnOnce(String.format("[%s] %s: the search on %s has no column the MyBatis mapper"
-                            + " reads; the condition is left out.", e.domainClassName(), entity, cond[1]));
-                    continue;
-                }
                 FieldSpec leaf = pathField(e, joins, cond[1]);
                 EntitySpec owner = leafOwner(e, joins, cond[1]);
                 x.append(condition(cond, column, leaf, owner, "b" + (++b)));
@@ -257,6 +242,14 @@ public class MyBatisMapperRules implements CodeRules {
             x.append(I).append(I).append(I).append("</if>\n");
         }
         FieldSpec ownerField = ServiceAccessRules.ownerField(e);
+        if (ownerField != null && !MyBatisSql.isValue(e, ownerField)) {
+            // The service narrows a search to the owner's rows through this
+            // condition; without a column it would narrow nothing.
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                    "[elcore3] %s.%s: @owner(%s) is not a column of the row, so mode: mybatis cannot keep a search"
+                            + " to the owner's rows - name a field the row holds", e.domainClassName(), entity,
+                    ownerField.name()));
+        }
         if (ownerField != null && MyBatisSql.isValue(e, ownerField)) {
             x.append(I).append(I).append(I).append("<if test=\"owner != null\">AND ").append(MyBatisSql.ROOT).append('.')
              .append(MyBatisSql.column(ownerField)).append(" = #{owner}</if>\n");
@@ -325,6 +318,8 @@ public class MyBatisMapperRules implements CodeRules {
         List<String> sets = new ArrayList<String>();
         for (FieldSpec f : e.fields()) {
             if (f == pk) continue;
+            // Kept as first written, as JPA's @Column(updatable = false) keeps it.
+            if (!MyBatisSql.updatable(f)) continue;
             if (f == version) {
                 String vc = MyBatisSql.column(f);
                 sets.add(vc + " = COALESCE(" + vc + ", 0) + 1");
@@ -351,8 +346,48 @@ public class MyBatisMapperRules implements CodeRules {
         c.var("body", RuleText.stripTrailing(x.toString()));
     }
 
+    /** The to-one relations read with the row, each under an alias of its own (j1, j2 ...). */
+    static List<Join> joins(EntitySpec e) {
+        List<Join> joins = new ArrayList<Join>();
+        int n = 0;
+        for (FieldSpec f : e.fields()) {
+            if (!MyBatisSql.isToOne(f)) continue;
+            n++;
+            EntitySpec target = e.related(f.coreItemType());
+            if (target == null || target.pkField() == null) {
+                SourceCode.dslWarnOnce(String.format("[%s] %s.%s: %s is not an entity with a key the MyBatis mapper can"
+                        + " join; the relation is left out of the row.", e.domainClassName(), e.getName(), f.name(),
+                        f.coreItemType()));
+                continue;
+            }
+            joins.add(new Join(f, target, "j" + n, f.name() + "__"));
+        }
+        return joins;
+    }
+
+    /**
+     * The search conditions the XML can write. One whose path reaches no
+     * column - deeper than a joined row - stops the build: left out, it
+     * would search by nothing and widen an update or a delete by condition
+     * to the whole table.
+     */
+    static List<String[]> resolved(EntitySpec e, List<Join> joins) {
+        List<String[]> out = new ArrayList<String[]>();
+        for (String[] cond : conditions(e)) {
+            if (pathColumn(e, joins, cond[1]) != null) {
+                out.add(cond);
+            } else {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                        "[elcore3] %s.%s: mode: mybatis searches the row and the rows it joins; %s is further"
+                                + " than that - search by a column of %s or of a row it points at",
+                        e.domainClassName(), e.getName(), cond[1], e.getName()));
+            }
+        }
+        return out;
+    }
+
     /** One to-one relation read with the row. */
-    private static final class Join {
+    static final class Join {
         final FieldSpec field;
         final EntitySpec target;
         final String alias;
