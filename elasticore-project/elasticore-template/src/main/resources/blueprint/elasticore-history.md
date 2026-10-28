@@ -1,3 +1,31 @@
+## 3.0.261028
+
+Ossie 시맨틱 모델의 식을 Apache Ossie 가 새로 정한 형태로 내보낸다. 2.x 생성기와 `jpa-springboot` 번들의 출력은
+그대로다 - `ossie-export` 를 켠 프로젝트의 `semantic_model.yml` 만 바뀐다.
+
+### Changes (Ossie 내보내기 - 식의 형태)
+
+#### 이식 가능한 식은 최상위 `sql` 로 쓴다. 서브쿼리 `@formula` 만 `dialects` 의 `ANSI_SQL`
+- 왜: Ossie core spec 에 apache/ossie #617 이 머지되어(2026-10-26) `expression` 이 최상위 `sql` 을 갖는다.
+  `sql` 은 이식 가능한 형태로 `OSSIE_SQL_2026` 으로 쓰고, `sql` 과 `dialects` 중 하나 이상이 있어야 하며(각각 단독 가능),
+  둘 다 있으면 `sql` 이 우선한다. dialect 이름은 자유 문자열이 되었다. 같은 전환을 다루는 이슈가 apache/ossie #639 다
+- 전: 모든 식이 `dialects` 목록 항목 하나 - 이식 가능한 식은 `dialect: OSSIE_SQL_2026`, 서브쿼리는 `dialect: ANSI_SQL`
+- 후: 이식 가능한 식(컬럼 이름, 그 언어 안의 `@formula`, `metrics:` 의 지표)은 `expression: { sql: "..." }`. 서브쿼리
+  `@formula` 는 전과 같은 `ANSI_SQL` 항목 하나이고 최상위 `sql` 은 없다(있으면 그것이 우선하므로). 어느 쪽인지는 전처럼
+  `OssieSql.portable()` 이 가르고, 식의 본문은 한 글자도 바뀌지 않는다
+- 쓰이지 않게 된 `OssieSql.dialect()` 와 `PORTABLE` 상수는 지웠다(패키지 안에서만 쓰던 것). 두 형태는
+  `OssieSemanticModelExporter.expression()` 한 곳에서 쓰며 필드와 지표가 함께 쓴다
+- 확인: 다시 생성한 `semantic_model.yml` - `elasticore-sample-petstore` 557 → 435줄(식 61개), `elasticore-template-ddd`
+  865 → 635줄(식 115개). 두 파일 모두 `OSSIE_SQL_2026`·`ANSI_SQL`·`dialects` 0건, 최상위 `sql` 이 식 수와 같고, 식 본문을
+  전후로 순서대로 대조해 176개 모두 같았으며 식 밖의 줄도 모두 같았다. Ossie 저장소의 `validation/validate.py`
+  (apache/ossie main, 2026-10-27)로 두 파일과, 서브쿼리 `@formula` 를 `ANSI_SQL` 항목으로 둔 형태를 검증해 모두 통과
+- 테스트: `OssieExportTest`(ddd 샘플의 모든 필드가 최상위 `sql`, `dialects`·`OSSIE_SQL_2026` 없음),
+  `OssieFormulaDialectTest`(서브쿼리 `@formula` 는 `ANSI_SQL` 항목만 - 최상위 `sql` 없음, 산술 `@formula` 와 컬럼은 `sql`),
+  `OssieSqlTest`(분류만), 펫스토어 `MetricsTest`(지표의 `sql` 을 실제 DB 에서 실행해 엔티티로 센 값과 비교)
+- 관련 파일: `OssieSemanticModelExporter.java`, `OssieSql.java`, `OssieExportTest.java`, `OssieFormulaDialectTest.java`,
+  `OssieSqlTest.java`, `MetricsTest.java`, `elasticore-rule-guide.md`(식의 형태 단락과 대응표), `dsl-guide.html`(펫스토어
+  안내 페이지의 예, `guide/build_guide.py` 로 다시 생성)
+
 ## 3.0.261027-rc2
 
 펫스토어에 팀 규칙 모듈(`elasticore { rules = [...] }`)을 붙여 rc1 로 생성·빌드·실행하며 규칙 가이드의 예제를 하나씩 다시

@@ -2,15 +2,14 @@ package io.elasticore.base.model.pub.ossie;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The dialect an expression is declared in: OSSIE_SQL_2026 for what the Ossie
- * language says (core-spec/expression_language.md, "Supported SQL
- * Constructs"), ANSI_SQL for what it rules out ("Not Supported in
- * Expressions" - a query of any kind).
+ * How an expression is declared: as the portable top-level sql for what the
+ * Ossie language says (core-spec/expression_language.md, "Supported SQL
+ * Constructs"), as an ANSI_SQL dialect entry for what it rules out ("Not
+ * Supported in Expressions" - a query of any kind).
  */
 public class OssieSqlTest {
 
@@ -37,7 +36,6 @@ public class OssieSqlTest {
         };
         for (String sql : portable) {
             assertTrue(OssieSql.portable(sql), sql);
-            assertEquals("OSSIE_SQL_2026", OssieSql.dialect(sql), sql);
         }
     }
 
@@ -52,7 +50,6 @@ public class OssieSqlTest {
         };
         for (String sql : opaque) {
             assertFalse(OssieSql.portable(sql), sql);
-            assertEquals("ANSI_SQL", OssieSql.dialect(sql), sql);
         }
     }
 

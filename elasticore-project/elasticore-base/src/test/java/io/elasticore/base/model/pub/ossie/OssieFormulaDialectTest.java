@@ -21,10 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A @formula in the exported model, declared in the dialect it can honestly
- * be: an expression of the Ossie language as OSSIE_SQL_2026, a subquery as
- * the opaque ANSI_SQL. Generated the way a project generates it - a
- * hexagonal build that opted into ossie-export - and read from the file.
+ * A @formula in the exported model, declared as what it can honestly be: an
+ * expression of the Ossie language as the portable top-level sql
+ * (OSSIE_SQL_2026, never named), a subquery as an entry of the opaque ANSI_SQL
+ * dialect. Generated the way a project generates it - a hexagonal build that
+ * opted into ossie-export - and read from the file.
  */
 public class OssieFormulaDialectTest {
 
@@ -127,8 +128,12 @@ public class OssieFormulaDialectTest {
     @Test
     public void aSubqueryFormulaIsOpaqueSqlAndNothingElse() {
         String field = field("item_count");
+        // Kept as a dialect entry, with no top-level sql: the spec makes sql
+        // authoritative when both are there, and this SQL is not portable.
+        assertTrue(field.contains("        expression:\n          dialects:\n            - dialect: ANSI_SQL\n"
+                + "              expression: \"" + SUBQUERY + "\"\n"), field);
         assertEquals("ANSI_SQL", dialectOf(field), field);
-        assertTrue(field.contains("expression: \"" + SUBQUERY + "\""), field);
+        assertTrue(!field.contains(" sql: "), "a subquery claimed to be in the Ossie language:\n" + field);
         assertTrue(!field.contains("OSSIE_SQL_2026"), "a subquery claimed to be in the Ossie language:\n" + field);
         assertTrue(field.contains("\\\"formula\\\": \\\"database\\\""), "the extension does not say the database computes it:\n" + field);
     }
@@ -136,16 +141,16 @@ public class OssieFormulaDialectTest {
     @Test
     public void anArithmeticFormulaIsInTheOssieLanguage() {
         String field = field("line_total");
-        assertEquals("OSSIE_SQL_2026", dialectOf(field), field);
-        assertTrue(field.contains("expression: \"" + ARITHMETIC + "\""), field);
+        assertTrue(field.contains("        expression:\n          sql: \"" + ARITHMETIC + "\"\n"), field);
+        assertTrue(!field.contains("dialect"), "a portable formula named a dialect:\n" + field);
         assertTrue(field.contains("\\\"formula\\\": \\\"database\\\""), field);
     }
 
     @Test
     public void aPlainColumnIsInTheOssieLanguage() {
         String field = field("unit_price");
-        assertEquals("OSSIE_SQL_2026", dialectOf(field), field);
-        assertTrue(field.contains("expression: \"unit_price\""), field);
+        assertTrue(field.contains("        expression:\n          sql: \"unit_price\"\n"), field);
+        assertTrue(!field.contains("dialect"), "a column named a dialect:\n" + field);
         assertTrue(!field.contains("formula"), "a stored column is not a formula:\n" + field);
     }
 

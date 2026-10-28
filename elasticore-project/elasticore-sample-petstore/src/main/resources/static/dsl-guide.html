@@ -709,21 +709,15 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "order_id"
+          sql: "order_id"
         datatype: String
       - name: order_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "order_date"
+          sql: "order_date"
         datatype: Date
       - name: status
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "status"
+          sql: "status"
         datatype: String
         ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
         custom_extensions:
@@ -731,51 +725,37 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
             data: "{\"lifecycle\": true, \"enumeration\": \"OrderStatus\"}"
       - name: street1
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "street1"
+          sql: "street1"
         datatype: String
         description: "deliveryAddress.street1"
       - name: street2
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "street2"
+          sql: "street2"
         datatype: String
         description: "deliveryAddress.street2"
       - name: city
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "city"
+          sql: "city"
         datatype: String
         description: "deliveryAddress.city"
       - name: state
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "state"
+          sql: "state"
         datatype: String
         description: "deliveryAddress.state"
       - name: zipcode
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "zipcode"
+          sql: "zipcode"
         datatype: String
         description: "deliveryAddress.zipcode"
       - name: country_code
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "country_code"
+          sql: "country_code"
         datatype: String
         description: "deliveryAddress.countryCode"
       - name: credit_card_type
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "credit_card_type"
+          sql: "credit_card_type"
         datatype: String
         description: "creditCard.creditCardType"
         ai_context: "Codes: VISA = Visa, MAST = Master Card, AMEX = American Express"
@@ -784,70 +764,52 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
             data: "{\"enumeration\": \"CreditCardType\"}"
       - name: credit_card_exp_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "credit_card_exp_date"
+          sql: "credit_card_exp_date"
         datatype: String
         description: "creditCard.creditCardExpDate"
       - name: total_without_vat
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "total_without_vat"
+          sql: "total_without_vat"
         datatype: Decimal
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"compute\": \"sum(lines.subTotal)\", \"value_type\": \"money\"}"
       - name: vat_rate
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "vat_rate"
+          sql: "vat_rate"
         datatype: Decimal
       - name: vat
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "vat"
+          sql: "vat"
         datatype: Decimal
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"value_type\": \"money\"}"
       - name: discount_rate
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "discount_rate"
+          sql: "discount_rate"
         datatype: Decimal
       - name: discount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "discount"
+          sql: "discount"
         datatype: Decimal
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"value_type\": \"money\"}"
       - name: total
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "total"
+          sql: "total"
         datatype: Decimal
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"value_type\": \"money\"}"
       - name: version
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "version"
+          sql: "version"
         datatype: Integer
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "customer_id"
+          sql: "customer_id"
         datatype: Integer
     custom_extensions:
       - vendor_name: ELASTICORE
@@ -865,9 +827,7 @@ metrics:
   <script type="text/plain" id="src-ossie-metric"># blueprint/semantic_model.yml (생성)
   - name: revenue
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)"
+      sql: "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)"
     description: "매출 (취소 제외, VAT 포함·할인 후 금액)"
     datatype: Decimal
     ai_context:

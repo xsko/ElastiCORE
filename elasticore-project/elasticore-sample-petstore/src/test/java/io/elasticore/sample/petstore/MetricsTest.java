@@ -70,7 +70,9 @@ class MetricsTest {
         Map<String, BigDecimal> measured = new HashMap<String, BigDecimal>();
         for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
             Map<String, Object> expression = (Map<String, Object>) m.get("expression");
-            String sql = (String) ((List<Map<String, Object>>) expression.get("dialects")).get(0).get("expression");
+            // The portable form: a metric is always in the Ossie language.
+            String sql = (String) expression.get("sql");
+            assertThat(expression).as((String) m.get("name")).containsKey("sql").doesNotContainKey("dialects");
             measured.put((String) m.get("name"), run(sql, tables));
         }
 

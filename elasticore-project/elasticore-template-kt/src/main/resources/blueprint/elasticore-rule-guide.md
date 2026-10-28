@@ -1707,13 +1707,11 @@ datasets:
     fields:
       - name: status
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: "status"
+          sql: "status"
         datatype: String
         ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
       - name: total
-        expression: { dialects: [ { dialect: OSSIE_SQL_2026, expression: "total" } ] }
+        expression: { sql: "total" }
         datatype: Decimal
       - name: city                       # 임베디드 값(deliveryAddress)의 컬럼
         description: "deliveryAddress.city"
@@ -1738,8 +1736,8 @@ relationships:
 | `-- 라벨` | `description` | |
 | `@id` 필드 (복합 키 포함) | `primary_key` | |
 | `@unique`, `@Index(unique="true")` | `unique_keys` | |
-| 값 필드 | `fields[]` + `expression`(컬럼, `OSSIE_SQL_2026`) + `datatype` | 타입 대응은 DSL 가이드 "값 타입 한눈에" 표 |
-| `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `OSSIE_SQL_2026`, 서브쿼리(SELECT)가 들어 있으면 `ANSI_SQL` 항목 하나 - 아래 "dialect" |
+| 값 필드 | `fields[]` + `expression.sql`(컬럼) + `datatype` | 타입 대응은 DSL 가이드 "값 타입 한눈에" 표 |
+| `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `expression.sql`, 서브쿼리(SELECT)가 들어 있으면 `dialects` 의 `ANSI_SQL` 항목 하나 - 아래 "식의 형태" |
 | `@extend(Parent)` 의 필드 | 자식 dataset 의 `fields` | 상속된 컬럼도 그 테이블에 있으므로 |
 | `@Embedded` 값 객체 | 그 컬럼들 (`deliveryAddress.city`) | `@embedded(prefix)` 면 `prefix_city` |
 | enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | 테이블에는 코드만 있으므로 뜻을 함께 |
@@ -1747,17 +1745,33 @@ relationships:
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
 | `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
 | `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `custom_extensions` | 파생 규칙과 값 타입 |
-| `metrics:` 의 지표 | `metrics[]` (`OSSIE_SQL_2026`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표" |
+| `metrics:` 의 지표 | `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표" |
 | `@terms(…)` (엔티티·필드·지표) | `ai_context.synonyms` | 업무 용어 |
 
-**dialect**: 스펙이 등록한 dialect 이름은 열두 개지만 의미를 정의한 것은 `OSSIE_SQL_2026` 하나입니다
-(`core-spec/expression_language.md` 의 이식 가능한 식 언어 - 컬럼 참조, 산술·비교·논리 연산, `CASE WHEN`, 집계,
-`COALESCE`·`NULLIF`·`CAST` 같은 함수). `ANSI_SQL` 을 비롯한 나머지는 벤더 언어 이름이라 소비자가 **무시해도 되는** 항목입니다.
-그래서 컬럼 이름인 필드 식과 `metrics:` 에서 만든 지표 식은 모두 `OSSIE_SQL_2026` 으로 내보냅니다. `@formula` 는 식에 따라
-갈립니다: `unit_price * quantity` 처럼 그 언어 안의 식이면 `OSSIE_SQL_2026`, `(select count(*) from ...)` 처럼 서브쿼리가
-들어 있으면 그 언어로 쓸 수 없으므로(스펙 "Not Supported in Expressions": SELECT/FROM/JOIN, 서브쿼리, CTE) `ANSI_SQL`
-항목 하나만 내보냅니다 - 읽는 쪽이 그 SQL 을 이해하면 쓰고, 아니면 건너뜁니다. `@formula` 필드는 `custom_extensions` 에
-`"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
+**식의 형태**: Ossie 의 `expression` 은 최상위 `sql` 과 `dialects` 목록 중 하나 이상을 가집니다. 최상위 `sql` 은
+이식 가능한 형태로, 스펙이 의미를 정의한 유일한 dialect 인 `OSSIE_SQL_2026` 으로 씁니다
+(`core-spec/expression_language.md` - 컬럼 참조, 산술·비교·논리 연산, `CASE WHEN`, 집계, `COALESCE`·`NULLIF`·`CAST`
+같은 함수). 둘 다 있으면 `sql` 이 우선합니다. `dialects` 의 dialect 이름은 자유 문자열이라 `ANSI_SQL` 같은 항목은 소비자가
+**무시해도 됩니다**. 그래서 컬럼 이름인 필드 식과 `metrics:` 에서 만든 지표 식은 모두 최상위 `sql` 로 내보냅니다.
+`@formula` 는 식에 따라 갈립니다:
+
+```yaml
+# @formula("unit_price * quantity") - 그 언어 안의 식
+expression:
+  sql: "unit_price * quantity"
+
+# @formula("(select count(*) from ...)") - 서브쿼리
+expression:
+  dialects:
+    - dialect: ANSI_SQL
+      expression: "(select count(*) from ...)"
+```
+
+서브쿼리는 그 언어로 쓸 수 없으므로(스펙 "Not Supported in Expressions": SELECT/FROM/JOIN, 서브쿼리, CTE) 최상위 `sql`
+없이 `ANSI_SQL` 항목 하나만 내보냅니다 - 읽는 쪽이 그 SQL 을 이해하면 쓰고, 아니면 건너뜁니다. `@formula` 필드는
+`custom_extensions` 에 `"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
+3.0.261027-rc2 까지는 모든 식을 `dialects` 목록으로 내보냈습니다(이식 가능한 식은 `dialect: OSSIE_SQL_2026`). Ossie 가 최상위
+`sql` 을 이식 가능한 형태로 정한 뒤(apache/ossie #617) 지금 형태로 바뀌었습니다 - 식의 내용은 같습니다.
 
 **내보내지 않는 것**: 선언하지 않은 지표 - 엔티티 필드에서 매출 공식을 지어내는 것은 추측을 내보내는 일입니다.
 `is_time` 은 쓰지 않습니다 - 스펙이 `datatype`(Date/Time/DateTime/DateTimeTz)
@@ -1765,7 +1779,8 @@ relationships:
 
 **검증**: `elasticore-sample-petstore` 와 `elasticore-template-ddd` 의 `SemanticModelTest` 가 내보낸 모든
 테이블·컬럼·기본 키·조인 컬럼이 실제 DB 에 있는지 빌드마다 확인합니다. 두 파일을 Ossie 의 `ossie-schema.json` 으로
-검증한 결과는 오류 0 이었습니다 (2026-10-03, 직접 실행 - 빌드 테스트에는 없음). 이전 출력(`semantic_model:` 배열, `expression` 없음, `money` → String, enum·임베디드 컬럼
+검증한 결과는 오류 0 이었고 (2026-10-03), 최상위 `sql` 로 바꾼 뒤 Ossie 의 `validation/validate.py` 로 두 파일과
+서브쿼리 `@formula` 형태를 검증한 결과도 통과였습니다 (2026-10-28) - 둘 다 직접 실행, 빌드 테스트에는 없음. 이전 출력(`semantic_model:` 배열, `expression` 없음, `money` → String, enum·임베디드 컬럼
 누락, 2.x 식 조인 컬럼, 비밀번호 컬럼 포함)은 스펙에 맞지 않았습니다 - 3.0.260925 에서 고쳤습니다.
 
 내보내기 실패는 빌드가 아니라 내보내기만 저하시킵니다. schema.yml 과 같은 성격의 사이드카로, 항상

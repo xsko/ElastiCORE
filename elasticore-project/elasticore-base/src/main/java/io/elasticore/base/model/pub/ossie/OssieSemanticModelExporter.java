@@ -43,9 +43,9 @@ import java.util.TreeMap;
  * document, flat at the root; every field an expression; each value type one
  * of the spec's DataTypes. One document for the whole project, so the
  * relationships that cross domain files stay inside one model. Expressions
- * are declared in OSSIE_SQL_2026, the one dialect the spec gives a meaning;
- * a @formula the Ossie language cannot say keeps its SQL as ANSI_SQL, which
- * a consumer may ignore (OssieSql).
+ * are the top-level sql, the portable form in OSSIE_SQL_2026, the one dialect
+ * the spec gives a meaning; a @formula the Ossie language cannot say keeps its
+ * SQL as an ANSI_SQL dialect entry, which a consumer may ignore (OssieSql).
  *
  * Only what the blueprint actually knows is emitted:
  * - columns as the generated entities map them - an enum by its column, an
@@ -368,15 +368,12 @@ public final class OssieSemanticModelExporter {
 
         // A @formula column is computed by the database: its SQL is the
         // expression. A column name, or a formula the Ossie language can say,
-        // is declared in that language; a formula it cannot say - one with a
-        // subquery - keeps its SQL under the opaque ANSI_SQL name, which a
-        // consumer may ignore, rather than a claim it would read and get wrong.
+        // is the portable sql; a formula it cannot say - one with a subquery -
+        // keeps its SQL under the opaque ANSI_SQL name, which a consumer may
+        // ignore, rather than a claim it would read and get wrong.
         String formula = f.getAnnotationValue("formula");
         String expression = formula != null && !formula.isEmpty() ? formula : column;
-        b.append("        expression:\n");
-        b.append("          dialects:\n");
-        b.append("            - dialect: ").append(OssieSql.dialect(expression)).append('\n');
-        b.append("              expression: ").append(yaml(expression)).append('\n');
+        b.append(expression("        ", expression));
 
         EnumStorage stored = en == null ? null : storage(f, en);
         String type = stored != null ? stored.datatype : ossieType(f);
@@ -537,10 +534,7 @@ public final class OssieSemanticModelExporter {
                 b.append("  - name: ").append(plain(name)).append('\n');
                 // Aggregates, CASE WHEN, CAST, NULLIF and comparisons: all of
                 // it in the Ossie language, so declared as such.
-                b.append("    expression:\n");
-                b.append("      dialects:\n");
-                b.append("        - dialect: ").append(OssieSql.dialect(m.sql)).append('\n');
-                b.append("          expression: ").append(yaml(m.sql)).append('\n');
+                b.append(expression("    ", m.sql));
                 if (m.label != null && !m.label.isEmpty()) b.append("    description: ").append(yaml(m.label)).append('\n');
                 if (m.datatype != null) b.append("    datatype: ").append(m.datatype).append('\n');
                 if (!m.terms.isEmpty()) b.append("    ai_context:\n      synonyms: ").append(list(m.terms)).append('\n');
@@ -738,6 +732,25 @@ public final class OssieSemanticModelExporter {
 
     private void customExtension(String indent, Map<String, Object> data) {
         out.append(extension(indent, data));
+    }
+
+    /**
+     * An expression object (core spec, "Expression"): what the Ossie language
+     * says is the top-level sql - the portable OSSIE_SQL_2026 form, which needs
+     * no dialect named - and only what it cannot say is a dialect entry, under
+     * the opaque ANSI_SQL. The text of the expression is written as given.
+     */
+    private static String expression(String indent, String sql) {
+        StringBuilder b = new StringBuilder();
+        b.append(indent).append("expression:\n");
+        if (OssieSql.portable(sql)) {
+            b.append(indent).append("  sql: ").append(yaml(sql)).append('\n');
+        } else {
+            b.append(indent).append("  dialects:\n");
+            b.append(indent).append("    - dialect: ").append(OssieSql.OPAQUE).append('\n');
+            b.append(indent).append("      expression: ").append(yaml(sql)).append('\n');
+        }
+        return b.toString();
     }
 
     /** custom_extensions with one ELASTICORE entry; data is a JSON string, as the spec says. */
