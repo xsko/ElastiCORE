@@ -222,6 +222,39 @@ public class DefaultGenerationTest {
     }
 
     @Test
+    public void aMyBatisDomainIsRefusedAsNotYetGenerated() throws Exception {
+        // mybatis names a persistence the rule engine does not write yet - not
+        // one the 2.x generator writes, so the refusal must not send it there.
+        File project = project(null, "mybatis");
+        System.setProperty("elasticore.base.path", project.getAbsolutePath());
+        System.setProperty("elasticore.rules.force", "true");
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream out = System.out;
+        System.setOut(new PrintStream(bytes, true, "UTF-8"));
+        int code;
+        try {
+            code = RulesGenRunner.run(new String[0]);
+        } finally {
+            System.setOut(out);
+        }
+        String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        assertEquals(1, code, log);
+        assertTrue(log.contains("MyBatis code is not generated yet"), log);
+        assertFalse(log.contains("2.x generator"), log);
+        assertNull(find(project, "Note.java"), "JPA code was written for a MyBatis domain: " + log);
+    }
+
+    @Test
+    public void jpaBesideMongoStillWritesTheJpaCode() throws Exception {
+        // 2.x writes both for "jpa,mongo"; the rule engine writes the JPA half
+        // and says the rest is the 2.x generator's - as before the axis existed.
+        File project = project(null, "jpa,mongo");
+        String log = run(project);
+        assertTrue(log.contains("mode mongo"), log);
+        assertNotNull(find(project, "Note.java"), log);
+    }
+
+    @Test
     public void theMarkerIsReadAsTheGeneratorWroteIt() throws Exception {
         File project = project(null);
         List<String> roots = new ArrayList<String>();

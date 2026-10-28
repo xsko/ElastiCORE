@@ -452,12 +452,21 @@ public final class RulesGenRunner {
         // word - since 3.0.261028-rc3 the default for a build that says nothing.
         // A domain whose modes leave out jpa is refused; documents beside it
         // are said to be the 2.x generator's.
+        // The persistence is one word of that mode (RulesConfig.persistenceOfMode).
         for (ECoreModel model : loader.allModels()) {
+            String mode = String.valueOf(model.getConfig("mode", "jpa"));
             java.util.List<String> modes = new ArrayList<String>();
-            for (String m : String.valueOf(model.getConfig("mode", "jpa")).split(",")) {
+            for (String m : mode.split(",")) {
                 if (!m.trim().isEmpty()) modes.add(m.trim().toLowerCase());
             }
-            if (!modes.contains("jpa")) {
+            RulesConfig.Persistence persistence = RulesConfig.persistenceOfMode(mode);
+            if (persistence == RulesConfig.Persistence.MYBATIS) {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
+                        + "' is mode: " + String.join(",", modes) + ". MyBatis code is not generated yet;"
+                        + " the rule engine writes JPA code only. No source was written.");
+                return 1;
+            }
+            if (persistence == null || !persistence.generated()) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
                         + "' is mode: " + String.join(",", modes) + ". The rule engine writes JPA code only; "
                         + (modes.contains("mongo") ? "MongoDB code" : "this mode") + " comes from the 2.x generator -"
@@ -467,8 +476,10 @@ public final class RulesGenRunner {
             for (String m : modes) {
                 if (m.equals("jpa")) continue;
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", "[" + model.getInternalDomainName()
-                        + "] mode " + m + " is not written by elcore3 - only the JPA code is. The 2.x generator"
-                        + " (./gradlew elcore) writes the " + m + " output.");
+                        + "] mode " + m + " is not written by elcore3 - only the JPA code is. "
+                        + (RulesConfig.persistenceNamed(m) == RulesConfig.Persistence.MYBATIS
+                                ? "MyBatis code is not generated yet."
+                                : "The 2.x generator (./gradlew elcore) writes the " + m + " output."));
             }
         }
 
@@ -1694,18 +1705,23 @@ public final class RulesGenRunner {
         // the reverse - is the exact bug class bundleFor exists to eliminate.
         if (!v3 && !kotlin && !typescript) return RulesConfig.DEFAULT_BUNDLE;
         RulesConfig.Architecture architecture = RulesConfig.declaredArchitecture();
-        if (architecture != null) {
-            return RulesConfig.bundleFor(architecture,
-                    typescript ? RulesConfig.Language.TYPESCRIPT
-                            : kotlin ? RulesConfig.Language.KOTLIN
-                            : RulesConfig.Language.JAVA);
-        }
-        return typescript ? "ts-model"
-                : kotlin ? RulesConfig.bundleFor(
-                        RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN)
-                : v3 ? RulesConfig.DEFAULT_BUNDLE_V3
-                : RulesConfig.bundleFor(
-                        RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA);
+        if (architecture == null) architecture = RulesConfig.Architecture.LAYERED;
+        return RulesConfig.bundleFor(architecture,
+                typescript ? RulesConfig.Language.TYPESCRIPT
+                        : kotlin ? RulesConfig.Language.KOTLIN
+                        : RulesConfig.Language.JAVA,
+                persistence());
+    }
+
+    /**
+     * Where the domain being generated keeps its data, from its mode. Every
+     * domain reaching generation writes JPA (generateAll refuses the rest),
+     * so this names the axis the bundle is chosen on rather than changing
+     * the choice.
+     */
+    private RulesConfig.Persistence persistence() {
+        return currentModel == null ? RulesConfig.Persistence.JPA
+                : RulesConfig.persistenceOfMode(currentModel.getConfig("mode", "jpa"));
     }
 
     /**
