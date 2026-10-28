@@ -60,6 +60,7 @@ dependencies {
     // Only compiled against: the generated MyBatis mappers' enum handler and
     // the database id they page by, used where the application has MyBatis.
     compileOnly 'org.mybatis:mybatis:3.5.19'
+    testImplementation 'org.mybatis:mybatis:3.5.19'
     // Only compiled against: BeanValidation checks for a provider at run time
     // and does nothing where the application has none.
     compileOnly 'jakarta.validation:jakarta.validation-api'

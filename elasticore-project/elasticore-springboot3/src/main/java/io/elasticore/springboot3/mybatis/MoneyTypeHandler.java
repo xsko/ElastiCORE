@@ -27,20 +27,27 @@ public class MoneyTypeHandler extends BaseTypeHandler<Money> {
 
     @Override
     public Money getNullableResult(ResultSet rs, String columnName) throws SQLException {
-        return of(rs.getBigDecimal(columnName));
+        return getNullableResult(rs, rs.findColumn(columnName));
     }
 
     @Override
     public Money getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
-        return of(rs.getBigDecimal(columnIndex));
+        return of(rs.getBigDecimal(columnIndex), rs.getMetaData().getScale(columnIndex));
     }
 
     @Override
     public Money getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
-        return of(cs.getBigDecimal(columnIndex));
+        return of(cs.getBigDecimal(columnIndex), 0);
     }
 
-    private static Money of(BigDecimal amount) {
-        return amount == null ? null : Money.of(amount);
+    /**
+     * The amount with the column's decimal places: Oracle keeps a NUMBER(10,2)
+     * of 100.00 as 100 and hands it back so, where the other databases hand
+     * back 100.00 - the same money, said alike whichever database holds it.
+     */
+    private static Money of(BigDecimal amount, int scale) {
+        if (amount == null) return null;
+        if (scale > 0 && amount.scale() < scale) amount = amount.setScale(scale);
+        return Money.of(amount);
     }
 }
