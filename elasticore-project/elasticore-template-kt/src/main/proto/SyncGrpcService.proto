@@ -1,4 +1,3 @@
-//ecd:841768546H20260808162632_V2.2
 syntax = "proto3";
 
 option java_package = "io.elasticore.blueprint.domain.integration.grpc";

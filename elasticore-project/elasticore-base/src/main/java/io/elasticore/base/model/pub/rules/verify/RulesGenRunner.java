@@ -602,10 +602,10 @@ public final class RulesGenRunner {
 
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
-        // elasticore.merge: what was generated last, to merge the developer's
-        // edits against. One that cannot be read stops the run - without it
-        // an edited file can only be overwritten or left behind.
-        if (Boolean.getBoolean("elasticore.merge")) {
+        // What was generated last, to merge the developer's edits against. One
+        // that cannot be read stops the run - without it an edited file can
+        // only be overwritten or left behind.
+        if (merges(v3, kotlin)) {
             try {
                 runner.cache = GeneratedCache.load(new File(basePath));
             } catch (IOException e) {
@@ -647,6 +647,7 @@ public final class RulesGenRunner {
                 }
             }
             if (io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty()) runner.writeDdl();
+            runner.saveCache();
             io.elasticore.base.util.ConsoleLog.printStoredWarnLog("DSL_WARN", "  ");
             for (String f : io.elasticore.base.model.pub.rules.ModelCheck.failures()) {
                 io.elasticore.base.util.ConsoleLog.printWarn(f);
@@ -703,7 +704,7 @@ public final class RulesGenRunner {
         }
         if (!typescript && !Boolean.getBoolean("elasticore.rules.list")
                 && !Boolean.getBoolean("elasticore.rules.tsWithBuild")) {
-            String stale = staleClient(roots);
+            String stale = staleClient(roots, runner.cachedFiles());
             if (stale != null) io.elasticore.base.util.ConsoleLog.printWarn(stale);
         }
 
@@ -757,8 +758,13 @@ public final class RulesGenRunner {
      * it from. Null when there is none. Said once.
      */
     static String staleClient(java.util.List<String> roots) {
+        return staleClient(roots, java.util.Collections.<String>emptySet());
+    }
+
+    /** cached: the files .elasticore/cache holds, by absolute path - a merged client has no stamp. */
+    static String staleClient(java.util.List<String> roots, java.util.Set<String> cached) {
         for (String root : roots) {
-            if (!holdsGeneratedClient(root)) continue;
+            if (!holdsGeneratedClient(root, cached)) continue;
             if (modelDigest(root).equals(readStamp(root))) continue;
             return "[elcore3] " + new File(root, "src/main/ts").getPath() + " holds a generated TypeScript client"
                     + " made from an older model - run the elcore3ts task after a model change, or set"
@@ -767,11 +773,12 @@ public final class RulesGenRunner {
         return null;
     }
 
-    private static boolean holdsGeneratedClient(String root) {
+    private static boolean holdsGeneratedClient(String root, java.util.Set<String> cached) {
         File[] files = new File(root, "src/main/ts").listFiles();
         if (files == null) return false;
         for (File f : files) {
             if (!f.isFile() || !f.getName().endsWith(".ts")) continue;
+            if (cached.contains(absolute(f))) return true;
             try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(
                     new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
                 String first = r.readLine();
@@ -3685,6 +3692,11 @@ public final class RulesGenRunner {
                 io.elasticore.base.model.pub.rules.ErrorCatalog.recorded());
         File file = new File(rootFor(handler) + "/src/main/resources/i18n/" + domainName + "-messages.properties");
         String label = String.format("    %-12s %s", "messages", relative(file));
+        String key = cache != null ? cacheKey(file) : null;
+        if (key != null) {
+            writeMerged(label, file, key, text, true);
+            return;
+        }
         if (file.isFile()) {
             try {
                 String existing = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
@@ -3721,6 +3733,19 @@ public final class RulesGenRunner {
             if (m.isEmpty()) continue;
             File file = new File(en.getKey() + "/src/main/resources/META-INF/orm.xml");
             String xml = m.toXml();
+            String key = cache != null ? cacheKey(file) : null;
+            if (key != null) {
+                // An orm.xml of the developer's own - not the generator's, not
+                // in the cache - keeps its place, and the mapping goes beside it.
+                if (file.isFile() && cache.get(key) == null && !ownOrmXml(file)) {
+                    file = new File(en.getKey() + "/src/main/resources/META-INF/elasticore-orm.xml");
+                    key = cacheKey(file);
+                    notes.add("META-INF/orm.xml is yours, so the mapping went to META-INF/elasticore-orm.xml:"
+                            + " add spring.jpa.mapping-resources=META-INF/elasticore-orm.xml");
+                }
+                writeMerged("  " + relative(file), file, key, xml, true);
+                continue;
+            }
             if (file.isFile()) {
                 String existing;
                 try {
@@ -3755,6 +3780,12 @@ public final class RulesGenRunner {
                 }
             }
         }
+    }
+
+    /** Whether an orm.xml is one this generator wrote: it says so in its comment. */
+    private static boolean ownOrmXml(File file) {
+        String text = readLf(file);
+        return text != null && text.contains("Generated by ElastiCORE (mapping: xml)");
     }
 
     /** Every file this run produced or considered, and the directories they are in. */
@@ -3893,17 +3924,50 @@ public final class RulesGenRunner {
     private final java.util.Set<String> mergedKeys = new java.util.HashSet<String>();
 
     /**
-     * Whether a file is merged rather than stamped: with elasticore.merge, a
-     * MyBatis mapper. The others keep their //ecd: line for now.
+     * Whether this run merges: the 3.0 code does unless the build said
+     * merge = false (elasticore.merge); the code 2.x generates keeps its
+     * stamps, and stays byte for byte what 2.x wrote, unless it was asked.
+     */
+    static boolean merges(boolean v3, boolean kotlin) {
+        String said = System.getProperty("elasticore.merge");
+        if (said == null || said.trim().isEmpty()) return v3 || kotlin;
+        return Boolean.parseBoolean(said.trim());
+    }
+
+    /**
+     * Whether a file is merged rather than stamped: every file but the Java
+     * and Kotlin sources, which keep their //ecd: line for now - the
+     * generate-once marker, the custom blocks and the 2.x detection read it.
      */
     private boolean merges(ArtifactTarget out) {
-        return cache != null && "xml".equals(out.extension());
+        return cache != null && !"java".equals(out.extension()) && !"kt".equals(out.extension());
+    }
+
+    /**
+     * Whether a cache entry is this run's to call stale: the client run
+     * (TypeScript) and the server run write into one project and one cache,
+     * and neither produces the other's files.
+     */
+    private boolean ownsEntry(String key) {
+        return key.endsWith(".ts") == typescript;
+    }
+
+    /** The files the cache holds, by absolute path; empty when this run does not merge. */
+    private java.util.Set<String> cachedFiles() {
+        java.util.Set<String> files = new java.util.HashSet<String>();
+        if (cache == null) return files;
+        for (String key : cache.paths()) files.add(absolute(new File(projectRoot, key)));
+        return files;
+    }
+
+    private static String absolute(File f) {
+        return f.getAbsoluteFile().toPath().normalize().toString().replace('\\', '/');
     }
 
     /** The file's path in the cache: relative to the project, or null outside it. */
     private String cacheKey(File file) {
-        String p = file.getAbsoluteFile().toPath().normalize().toString().replace('\\', '/');
-        String root = new File(projectRoot).getAbsoluteFile().toPath().normalize().toString().replace('\\', '/');
+        String p = absolute(file);
+        String root = absolute(new File(projectRoot));
         return p.startsWith(root + "/") ? p.substring(root.length() + 1) : null;
     }
 
@@ -3920,6 +3984,15 @@ public final class RulesGenRunner {
      * is the developer's against it.
      */
     private void writeMerged(String label, File file, String key, String content) {
+        writeMerged(label, file, key, content, false);
+    }
+
+    /**
+     * overwritten: a file the generator used to write over on every run
+     * (orm.xml, the messages) - one it finds outside the cache is its own
+     * last output, not something to leave alone.
+     */
+    private void writeMerged(String label, File file, String key, String content, boolean overwritten) {
         mergedKeys.add(key);
         String generated = content.replace("\r\n", "\n");
         String base = cache.get(key);
@@ -3944,13 +4017,16 @@ public final class RulesGenRunner {
         boolean stamped = false;
         if (base == null) {
             // Written before the project merged: the stamp says whether it is
-            // still what was generated then. That text is the base; the stamp
-            // goes with this write.
+            // still what was generated then. That text is the base - custom
+            // blocks are left out of the hash, and are the developer's like any
+            // other edit - and the stamp goes with this run.
             HashUtils.Response st = readStatus(file);
-            if (st != null && neverEdited(st)) {
+            if (st != null && st.getStatus() == HashUtils.NO_MODIFIED && st.getPreSourceContent() != null) {
                 base = st.getPreSourceContent().replace("\r\n", "\n");
-                disk = base;
+                disk = disk.substring(disk.indexOf('\n') + 1);
                 stamped = true;
+            } else if (overwritten) {
+                base = disk;
             } else if (!disk.equals(generated)) {
                 skipped++;
                 System.out.println(label + "  SKIP(not in the cache)");
@@ -3984,7 +4060,8 @@ public final class RulesGenRunner {
         }
         if (disk.equals(generated) || base.equals(generated)) {
             // The developer's text already is the new one, or the DSL did not
-            // change this file: nothing to write.
+            // change this file: nothing to write - but a stamp to take off.
+            if (stamped && !writeLf(label, file, disk)) return;
             cache.put(key, generated);
             unchanged++;
             System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
@@ -4015,7 +4092,7 @@ public final class RulesGenRunner {
         if (cache == null) return;
         int removed = 0;
         for (String key : cache.paths()) {
-            if (mergedKeys.contains(key)) continue;
+            if (mergedKeys.contains(key) || !ownsEntry(key)) continue;
             File f = new File(projectRoot, key);
             String disk = f.isFile() ? readLf(f) : null;
             if (disk != null && disk.equals(cache.get(key))) {

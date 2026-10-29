@@ -191,8 +191,10 @@ DB 는 `elasticore-sample-petstore-mybatis`(펫스토어 전체)와 `elasticore-
 테스트가 H2 와 실제 Oracle 23 Free·PostgreSQL 16·SQL Server 2022 에서 확인합니다(CI 의 "Oracle, PostgreSQL and
 SQL Server").
 
-**직접 쓰는 쿼리**: 생성된 XML 은 다시 생성되므로 고치지 않습니다. 매퍼 인터페이스와 XML 을 하나 더 만들어
-(`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장 서비스(`OrderService`)에서 씁니다.
+**직접 쓰는 쿼리**: 생성된 XML 의 문장을 고쳐도 됩니다(힌트, 조건, 정렬 ...) - 모델이 바뀌어도 고친 내용은 남습니다(9-2
+생성 파일 병합). **새 문장**은 매퍼 인터페이스와 XML 을 하나 더 만들어(`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장
+서비스(`OrderService`)에서 씁니다 - 생성된 XML 에 넣은 문장을 부를 메서드는 생성된 매퍼 인터페이스(Java)에 있어야 하는데,
+Java 파일은 고치면 그 뒤로 생성기가 건너뜁니다.
 
 **아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다):
 - `mappedBy` 없는 컬렉션, `@ManyToMany`, 값 컬렉션(`List<String>`), 다른 도메인 엔티티의 컬렉션
@@ -977,6 +979,46 @@ config:
 **한계**: Oracle 에는 `TEXT` 가 없어, JPA 의 `columnDefinition = "TEXT"`(DSL `text`)는 Oracle 에서 CLOB 이 되고 Hibernate
 validate 가 거절합니다(경고) - Oracle 이면 `clob` 이나 길이를 쓰세요. 이름에 따옴표를 치지 않으므로 DB 의 예약어인
 이름은 쓸 수 없습니다(MyBatis 도메인은 경고).
+
+---
+
+## 9-2. 생성 파일 병합 - 고친 내용을 지키면서 DSL 을 따라가기 (3.0)
+
+생성된 파일을 고쳐도 됩니다. 다음 빌드는 **고친 내용을 남기고 DSL 의 변경도 넣습니다** - git 이 두 브랜치를 병합하듯이.
+주석을 달든, 문장을 더하든, 줄을 고치든 종류는 상관없습니다. Since: 3.0.261030
+
+**대상**: Java·Kotlin 소스를 뺀 생성 파일 전부 - MyBatis 매퍼 XML, `orm.xml`(`mapping: xml`), `db/schema-{db}.sql`,
+`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, TypeScript 클라이언트(`.ts`).
+이 파일들에는 첫 줄 표시(`//ecd:`)가 붙지 않습니다 - `<!DOCTYPE mapper ...>` 가 그대로 첫 줄입니다. Java·Kotlin 은
+지금처럼 첫 줄 표시로 다룹니다(`elasticore-rule-guide.md` 7.5). Flyway 마이그레이션은 한 번 쓰면 다시 쓰지 않는 이력이고
+(9-1), `blueprint/schema.yml` 은 매번 새로 씁니다.
+
+**켜기**: 3.0 코드는 기본으로 켜져 있습니다. 끄려면 `elasticore { merge = false }`. `output = 'v2'`(2.x 코드)는 기본이 꺼짐 -
+2.x 가 쓰던 그대로입니다.
+
+**`.elasticore/cache` - 커밋합니다.** 생성기가 마지막에 쓴 그대로(병합 전)를 파일마다 담은 파일 하나입니다(압축하지 않은
+zip). 병합의 기준이라, 클론한 사람(`--depth 1` 도)이 고친 파일도 병합되려면 저장소에 있어야 합니다. 내용이 같으면 바이트도
+같아서 생성 결과가 바뀐 만큼만 저장소가 늘어납니다. 옆의 `.elasticore/.gitattributes` 가 binary 로 둡니다.
+
+| 경우 | 빌드가 하는 일 |
+|---|---|
+| 처음 생성 | 쓰고 캐시에 담음 |
+| 고치지 않은 파일, DSL 변경 | 새로 씀 |
+| 고친 파일, DSL 그대로 | 그대로 둠 - `UNCHANGED(your edits kept)` |
+| 고친 파일, DSL 변경 | 병합 - `MERGED(your edits kept)` |
+| 고친 줄을 DSL 도 바꿈 | **충돌** - 파일에 `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` 를 남기고 빌드 실패. 표시를 정리할 때까지 계속 실패하고, 정리한 내용이 그 뒤의 기준 |
+| 파일을 지움 | 다시 생성 - 생성된 그대로 다시 받는 방법 |
+| DSL 이 더 만들지 않음 | 고치지 않았으면 지우고, 고쳤으면 남기고 경고(그 뒤로 개발자 파일) |
+| 캐시에 없는 자리에 다른 파일 | 덮어쓰지 않고 알림 |
+| 첫 줄 표시로 생성된 파일(이전 버전) | 고치지 않았으면 표시를 떼고 넘겨받음(사용자 블록 `// !----` 은 고친 내용으로 남음). 고쳤으면 그대로 두고 알림 - 지우면 새로 생성 |
+
+- `-Pforce` 는 병합하는 파일에 적용되지 않습니다. 빌드에 늘 켜 둔 설정이 고친 내용을 지우면 안 되기 때문입니다.
+- **git 병합에서 충돌이 나면**: `.elasticore/cache` 는 어느 쪽을 골라도 됩니다(`git checkout --ours .elasticore/cache`).
+  충돌한 생성 파일도 한쪽을 고르고 빌드하면 다른 쪽의 DSL 변경이 다시 들어옵니다. 단 **양쪽 브랜치가 같은 생성 파일을 각자
+  손으로 고쳤다면** 그 파일은 직접 합칩니다 - 한쪽을 고르면 다른 쪽이 고친 것이 빠집니다.
+- 캐시를 읽을 수 없으면(깨짐) 아무것도 쓰지 않고 실패합니다. git 에서 다시 받으세요. 지우면 고친 파일은 모두 "캐시에 없음"
+  으로 그대로 남습니다.
+- 줄 단위 병합이라, 양쪽이 **바로 이웃한 줄**을 고쳐도 충돌로 봅니다(git 과 같음).
 
 ---
 

@@ -230,8 +230,9 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (extension.getLanguage().isPresent()) {
             task.systemProperty("elasticore.language", extension.getLanguage().get());
         }
-        if (Boolean.TRUE.equals(extension.getMerge().getOrNull())) {
-            task.systemProperty("elasticore.merge", "true");
+        // Unsaid, the generator decides: on for the 3.0 code, off for 2.x's.
+        if (extension.getMerge().isPresent()) {
+            task.systemProperty("elasticore.merge", String.valueOf(extension.getMerge().get()));
         }
         // The generation, when the build chose one: elcore3 then writes it
         // without the check for a project 2.x generated (RulesGenRunner).

@@ -35,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class GeneratedMergeTest {
 
     private static final String[] KEYS = {"elasticore.base.path", "elasticore.rules.force", "elasticore.merge",
-            "elasticore.ddl.databases", "elasticore.ddl.migration"};
+            "elasticore.ddl.databases", "elasticore.ddl.migration", "elasticore.rules.v2", "elasticore.rules.v3",
+            "elasticore.rules.ts", "elasticore.rules.tsWithBuild"};
 
     private static final String ORDER = String.join("\n",
             "  PurchaseOrder:",
@@ -71,6 +72,8 @@ public class GeneratedMergeTest {
     private final List<File> projects = new ArrayList<File>();
     private final String[] saved = save();
     private boolean force;
+    /** Runs without elasticore.merge, as a build that says nothing of it. */
+    private boolean unsaid;
 
     @AfterEach
     void clean() throws IOException {
@@ -85,10 +88,13 @@ public class GeneratedMergeTest {
     public void aMapperIsWrittenWithoutAStampAndKeptInTheCache() throws Exception {
         File project = project(CUSTOMER + ORDER);
         String log = run(project, 0);
-        assertTrue(log.contains(XML + "  WROTE") || log.contains("WROTE"), log);
+        assertTrue(log.contains(XML + "  WROTE"), log);
         String xml = xml(project);
         assertTrue(xml.startsWith("<!DOCTYPE mapper"), xml);
         assertFalse(xml.contains("//ecd:"), xml);
+        Path schema = resource(project, "dgshop-schema.sql");
+        assertNotNull(schema);
+        assertFalse(read(schema).contains("//ecd:"), read(schema));
 
         File cache = new File(project, ".elasticore/cache");
         assertTrue(cache.isFile());
@@ -97,13 +103,13 @@ public class GeneratedMergeTest {
         Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(cache.toPath()));
         String key = key(project);
         assertEquals(xml.replace("\r\n", "\n"), entries.get(key));
-        // A plain zip: any tool reads it; every entry carries the format's first day, never a local time.
+        // A plain zip any tool reads, stored. The Java sources are not in it: they keep their stamp.
         try (ZipFile zip = new ZipFile(cache)) {
             Enumeration<? extends ZipEntry> all = zip.entries();
             while (all.hasMoreElements()) {
                 ZipEntry e = all.nextElement();
                 assertEquals(ZipEntry.STORED, e.getMethod());
-                assertTrue(e.getName().endsWith(".xml"), e.getName());
+                assertFalse(e.getName().endsWith(".java") || e.getName().endsWith(".kt"), e.getName());
             }
         }
 
@@ -193,6 +199,119 @@ public class GeneratedMergeTest {
         log = run(project, 0);
         assertTrue(log.contains("UNCHANGED(your edits kept)"), log);
         assertEquals(resolved, xml(project));
+    }
+
+    @Test
+    public void onByDefaultForTheThreeZeroCodeAndOffForTwoX() throws Exception {
+        File project = project(CUSTOMER + ORDER);
+        unsaid = true;
+        run(project, 0);
+        assertFalse(xml(project).contains("//ecd:"));
+        assertTrue(new File(project, ".elasticore/cache").isFile());
+        // The Java sources keep their stamp.
+        assertTrue(read(java(project, "PurchaseOrder.java")).startsWith("//ecd:"));
+
+        // The code 2.x generates: stamped as 2.x stamps it, no cache.
+        File twoX = project(CUSTOMER + ORDER, "jpa", "");
+        System.setProperty("elasticore.rules.v2", "true");
+        run(twoX, 0);
+        assertFalse(new File(twoX, ".elasticore").exists());
+
+        // Said off, the 3.0 code is stamped as before.
+        File off = project(CUSTOMER + ORDER);
+        System.clearProperty("elasticore.rules.v2");
+        unsaid = false;
+        System.setProperty("elasticore.merge", "false");
+        run(off, 0);
+        assertTrue(xml(off).startsWith("<!-- //ecd:"), xml(off));
+        assertFalse(new File(off, ".elasticore").exists());
+    }
+
+    @Test
+    public void everyKindOfGeneratedTextIsMerged() throws Exception {
+        // The project DDL and the messages, edited, then the model changed.
+        System.setProperty("elasticore.ddl.databases", "h2,postgresql");
+        File project = project(CUSTOMER + ORDER, "mybatis", "");
+        run(project, 0);
+        Path ddl = new File(project, "src/main/resources/db/schema-postgresql.sql").toPath();
+        Path messages = resource(project, "dgshop-messages.properties");
+        assertNotNull(messages);
+        assertFalse(read(ddl).contains("//ecd:"), read(ddl));
+        assertFalse(read(messages).contains("//ecd:"), read(messages));
+        Files.write(ddl, ("-- reviewed\n" + read(ddl)).getBytes(StandardCharsets.UTF_8));
+        Files.write(messages, (read(messages) + "custom.greeting=hello\n").getBytes(StandardCharsets.UTF_8));
+
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        String log = run(project, 0);
+        assertTrue(read(ddl).contains("-- reviewed") && read(ddl).contains("memo"), read(ddl));
+        assertTrue(read(messages).contains("custom.greeting=hello"), read(messages));
+        assertTrue(log.contains("schema-postgresql.sql  MERGED(your edits kept)"), log);
+    }
+
+    @Test
+    public void theOrmXmlIsMerged() throws Exception {
+        File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
+        run(project, 0);
+        Path orm = new File(project, "src/main/resources/META-INF/orm.xml").toPath();
+        String generated = read(orm);
+        assertTrue(generated.contains("Generated by ElastiCORE (mapping: xml)"), generated);
+        Files.write(orm, generated.replace("</entity-mappings>", "    <!-- mine -->\n</entity-mappings>")
+                .getBytes(StandardCharsets.UTF_8));
+
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        String log = run(project, 0);
+        String merged = read(orm);
+        assertTrue(merged.contains("<!-- mine -->") && merged.contains("memo"), log + merged);
+    }
+
+    @Test
+    public void theClientAndTheServerShareTheCache() throws Exception {
+        File project = project(CUSTOMER + ORDER, "jpa", "");
+        run(project, 0);
+        System.setProperty("elasticore.rules.ts", "true");
+        run(project, 0);
+        Path ts = typescript(project, "PurchaseOrderDTO.ts");
+        assertNotNull(ts, "the client was not written");
+        assertFalse(read(ts).contains("//ecd:"), read(ts));
+        Files.write(ts, (read(ts) + "// mine\n").getBytes(StandardCharsets.UTF_8));
+
+        // The server's run: the client's files are not its stale ones.
+        System.clearProperty("elasticore.rules.ts");
+        String log = run(project, 0);
+        assertTrue(Files.exists(ts), log);
+        assertFalse(log.contains("PurchaseOrderDTO.ts was generated"), log);
+        Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        assertNotNull(entries.get(keyOf(project, ts)));
+
+        // And the client's run keeps the server's.
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        System.setProperty("elasticore.rules.ts", "true");
+        log = run(project, 0);
+        assertTrue(read(ts).contains("// mine") && read(ts).contains("memo"), log + read(ts));
+        entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        boolean server = false;
+        for (String k : entries.keySet()) if (!k.endsWith(".ts")) server = true;
+        assertTrue(server, entries.keySet().toString());
+    }
+
+    @Test
+    public void customBlocksOfAStampedFileAreKept() throws Exception {
+        File project = project(CUSTOMER + ORDER);
+        System.setProperty("elasticore.merge", "false");
+        run(project, 0);
+        String stamped = xml(project);
+        // A custom block, which 2.x left out of the hash.
+        String withBlock = stamped.replace("</mapper>",
+                "    <!-- // !---------- -->\n    <select id=\"mine\" resultType=\"long\">SELECT 1</select>\n"
+                        + "    <!-- // ------------! -->\n</mapper>");
+        Files.write(xmlPath(project), withBlock.getBytes(StandardCharsets.UTF_8));
+
+        System.setProperty("elasticore.merge", "true");
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        String log = run(project, 0);
+        String merged = xml(project);
+        assertFalse(merged.contains("//ecd:"), merged);
+        assertTrue(merged.contains("<select id=\"mine\"") && merged.contains("t.memo"), log + merged);
     }
 
     @Test
@@ -373,8 +492,22 @@ public class GeneratedMergeTest {
         return new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
     }
 
+    private static Path java(File project, String name) throws IOException {
+        Path p = under(new File(project, "src/main/java"), name);
+        assertNotNull(p, name + " was not written");
+        return p;
+    }
+
+    private static Path typescript(File project, String name) throws IOException {
+        return under(new File(project, "src/main/ts"), name);
+    }
+
     private static Path resource(File project, String name) throws IOException {
-        File root = new File(project, "src/main/resources");
+        return under(new File(project, "src/main/resources"), name);
+    }
+
+    private static Path under(File root, String name) throws IOException {
+        if (!root.isDirectory()) return null;
         try (Stream<Path> all = Files.walk(root.toPath())) {
             return all.filter(p -> p.getFileName().toString().equals(name)).findFirst().orElse(null);
         }
@@ -400,7 +533,8 @@ public class GeneratedMergeTest {
             System.setProperty("elasticore.base.path", project.getAbsolutePath());
             if (force) System.setProperty("elasticore.rules.force", "true");
             else System.clearProperty("elasticore.rules.force");
-            if (System.getProperty("elasticore.merge") == null) System.setProperty("elasticore.merge", "true");
+            if (unsaid) System.clearProperty("elasticore.merge");
+            else if (System.getProperty("elasticore.merge") == null) System.setProperty("elasticore.merge", "true");
             code = RulesGenRunner.run(new String[0]);
         } finally {
             System.setOut(out);
@@ -413,6 +547,10 @@ public class GeneratedMergeTest {
     }
 
     private File project(String model) throws IOException {
+        return project(model, "mybatis", "");
+    }
+
+    private File project(String model, String mode, String config) throws IOException {
         File dir = Files.createTempDirectory("elcore-merge").toFile();
         projects.add(dir);
         File blueprint = new File(dir, "src/main/resources/blueprint/dgshop");
@@ -423,8 +561,9 @@ public class GeneratedMergeTest {
                 "  config:",
                 "    domainName: dgshop",
                 "    framework: springboot",
-                "    mode: mybatis",
+                "    mode: " + mode,
                 "    j2ee: jakarta",
+                config,
                 "  namespace:",
                 "    base: io.acme.dgshop",
                 "    entity: io.acme.dgshop.entity",

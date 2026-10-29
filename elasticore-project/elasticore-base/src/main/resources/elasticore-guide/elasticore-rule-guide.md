@@ -1492,7 +1492,10 @@ v3에 자기 스켈레톤이 없는 타깃은 호환 스켈레톤으로 떨어�
 
 ## 7.5 생성 파일의 소유권 (elcore3)
 
-생성기가 파일을 어떻게 다루는지는 첫 줄로 정해집니다.
+Java·Kotlin 소스는 생성기가 파일을 어떻게 다루는지가 첫 줄로 정해집니다(아래 표). 그 밖의 생성 파일 - MyBatis 매퍼 XML,
+`orm.xml`, DDL·스키마 SQL, properties, TypeScript - 은 3.0 코드에서 첫 줄 표시 없이 **병합**됩니다: 고친 내용은 남고
+DSL 의 변경도 들어옵니다(`.elasticore/cache`, `elasticore-env-guide.md` 9-2 절). `output = 'v2'` 이거나 `merge = false` 면
+이 파일들도 아래 표대로 첫 줄 표시(`<!-- //ecd:... -->`, `-- //ecd:...`)를 씁니다.
 
 | 파일 상태 | 동작 |
 |---|---|
@@ -1653,7 +1656,7 @@ elasticore {
 }
 ```
 
-이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(첫 줄 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
+이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(`.elasticore/cache` 에 있거나 첫 줄이 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
 `elcore3` 가 끝에 한 번 경고합니다:
 `[elcore3] .../src/main/ts holds a generated TypeScript client made from an older model - run the elcore3ts task after a
 model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
