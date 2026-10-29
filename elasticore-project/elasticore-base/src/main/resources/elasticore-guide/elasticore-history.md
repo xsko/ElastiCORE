@@ -1,3 +1,322 @@
+## 3.0.261030-rc5
+
+3.0 코드의 생성 파일은 이제 첫 줄 `//ecd:` 없이 쓰이고, 고친 내용을 지키면서 DSL 의 변경을 병합한다(`.elasticore/cache`,
+`elasticore { merge = false }` 로 끔) - Java·Kotlin 까지, 한 번만 생성하는 파일은 고치기 전까지 DSL 을 따라가고, 2.x 에서
+올라오는 프로젝트의 고친 파일도 넘겨받는다. `mode: mybatis` 도메인은 같은 모델을 MyBatis 로 생성하고(펫스토어, Oracle·
+PostgreSQL·SQL Server), `elasticore { ddl {} }` 은 프로젝트의 DDL 과 Flyway 마이그레이션을 쓴다. 런타임 라이브러리는
+`spring-boot-starter-data-jpa` 를 더는 끌어오지 않는다 - JPA 프로젝트는 스타터를 직접 선언한다. 2.x 생성기의 출력은 그대로다.
+
+### New Features (v3 규칙 엔진 - DDL)
+
+#### `elasticore { ddl {} }` - 프로젝트의 테이블을 DB 별 DDL 로, 모델의 변화를 Flyway 마이그레이션으로
+- 왜: 운영 DB 는 `ddl-auto` 로 만들지 않는다. 엔티티를 바꿀 때마다 무엇을 ALTER 해야 하는지 사람이 찾아 DB 마다 다른 문법으로
+  써 왔고, MyBatis 도메인은 H2 용 스키마 하나뿐이었다.
+- 무엇:
+  - 설정은 프로젝트 한 번 - `build.gradle` 의 `elasticore { ddl { databases = [...]; migration = 'flyway' } }`(플러그인이
+    `elasticore.ddl.*` 로 넘김). 도메인은 `env.yml` 의 `ddl: false`, `ddl.databases`, `ddl.migration`, `ddl.separate: true`
+    로 필요한 것만 덮어쓴다(별도 DB 는 `db/{domain}/` 아래 따로).
+  - `db/schema-{h2|postgresql|oracle|sqlserver}.sql`: 모든 도메인의 테이블·외래키·인덱스·시퀀스·스키마, 그 DB 의 Hibernate
+    방언이 고르는 타입으로. 매 빌드 다시 생성.
+  - `migration = 'flyway'`: `db/migration/{db}/V{시각}__init.sql`(그 DB 이력의 시작)과, 모델이 바뀌면
+    `V{시각}__{무엇}.sql`(바뀐 만큼), 그리고 `db/migration/schema-state.json`(마이그레이션이 만든 스키마). 더하거나 넓히는
+    것(테이블·선택 컬럼·길이·외래키·인덱스·스키마)은 실행되는 문장으로, 데이터를 잃거나 기존 행에서 실패할 수 있는 것(삭제·
+    타입 변경·줄임·NOT NULL·키 변경)은 파일 끝의 **검토** 주석과 빌드 로그의 `REVIEW` 로. 필수 컬럼 추가는 빈 채로 추가하고
+    NOT NULL 을 검토로. 마이그레이션은 한 번 쓰면 다시 쓰지 않는다. SQL Server 의 ALTER COLUMN 은 그 컬럼의 인덱스·외래키를
+    지웠다 다시 만든다. 이력을 깨는 실행은 그 이력의 마이그레이션과 상태를 쓰지 않고 실패한다: 상태 파일 없이 마이그레이션만
+    남은 경우, 상태 파일을 읽을 수 없는 경우(병합 충돌), 목록에서 빠졌던 DB 가 다시 들어온 경우(그 DB 이력을 손으로 맞춘 뒤
+    상태에 추가), 이번 버전의 파일이 이미 있는 경우. 직접 쓴 Flyway 이력이 있는 프로젝트는 한 번 `-PddlBaseline` 으로 상태만
+    지금 모델로 시작한다. 상태 파일은 모든 마이그레이션을 쓴 뒤 임시 파일에서 옮겨 갱신한다. 목록에서 빠진 DB 는 경고 - 그
+    이력은 거기서 멈춘다.
+  - JPA 도메인의 테이블은 생성된 엔티티 소스(JavaParser, Kotlin 은 줄 단위)와 `mapping: xml` 의 `orm.xml` 에서 읽는다 -
+    Hibernate 가 보는 그대로: Spring Boot 의 이름 규칙, Hibernate 6 의 타입, `@Size`·`@NotNull` 의 DDL 반영, 임베디드·
+    `@AttributeOverrides`, `@IdClass`, 다대다·조인 테이블(양방향이면 소유 쪽 컬럼은 반대편 속성 이름, Set 만 기본 키),
+    일대일 소유 쪽 조인 컬럼의 유일 인덱스, `@OneToMany @JoinColumn` 의 외래키, `@ElementCollection`(`{엔티티}_{속성}`,
+    값 컬럼은 Hibernate 처럼 nullable, 모두 필수인 Set 만 전 컬럼 기본 키, `@OrderColumn`; Map 은 경고 후 생략), 다른
+    스키마 엔티티의 조인 테이블은 기본 스키마에, 상속(SINGLE_TABLE·JOINED·TABLE_PER_CLASS), 변환기의 컬럼 타입,
+    `@JdbcTypeCode`(JSON·XML·LONG32VARCHAR), Envers 의 감사 테이블(JOINED 하위 클래스는 키·자기 컬럼·`rev` 만, SINGLE_TABLE
+    은 루트 감사 테이블에 하위 컬럼과 `dtype`)·`revinfo`·`revinfo_seq`(application.yml 의 `audit_table_suffix` 등 반영),
+    도메인 패키지 밖의 엔티티(outbox). `@NotBlank`·`@NotEmpty` 도 NOT NULL - Hibernate 6.6/7 의 Bean Validation DDL 이
+    그렇게 한다. 2.x 코드를 지키는 프로젝트는 새 `elcoreDdl` 작업이 `elcore` 뒤에 쓴다.
+  - MyBatis 도메인은 모델에서(MyBatisTables). 프로젝트 DDL 이 켜진 도메인은 `{domain}-schema.sql` 대신 프로젝트 파일에 든다.
+    PR #44 의 도메인별 `-schema-{db}.sql` 은 이것으로 바뀌었다(미발표). 컬럼 이름이 Oracle·PostgreSQL·SQL Server 의 예약어면 경고.
+  - DDL 을 켜지 않은 MyBatis 도메인의 `{domain}-schema.sql`(H2)도 같은 모델로 쓰여 바뀐다(3.0 미발표 출력, PR #43): 크기를
+    말하지 않은 소수는 `DECIMAL(19,2)` 대신 Hibernate 와 같은 `DECIMAL(38,2)`, 유일 컬럼은 테이블 안 `UNIQUE (...)` 대신
+    `CREATE UNIQUE INDEX uk_...`. 한 프로젝트의 JPA·MyBatis 도메인이 같은 타입을 쓰게 하려는 것이다.
+  - 공통 모델(`rules/schema`): `Schema`·`Table`·`Column`·`ColumnType`, `Database`(DB 별 타입과 문장), `SchemaWriter`,
+    `SchemaDiff`, `DdlConfig`.
+- 확인:
+  - JPA 샘플 넷이 생성된 `schema-h2.sql` 로 만든 테이블에서 Hibernate `ddl-auto=validate` 로 기동(`SchemaValidateTest`):
+    2.x 템플릿(Hibernate 6.6 - 다대다·복합 키·JSON·`acct` 스키마·`_hist` Envers), template-ddd(`mapping: xml`·Envers·
+    `columnDefinition TEXT`·outbox), template-kt(Kotlin), 펫스토어(Boot 4·Hibernate 7). 펫스토어는 CI 의 PostgreSQL·Oracle·
+    SQL Server 에서도(`SchemaValidateOn*Test`).
+  - `DdlMigrationTest`: 첫 실행·변경 없음·모델 변경의 세 번, DB 별 문장, 검토 주석, 마이그레이션을 차례로 H2 에 실행한 결과가
+    마지막 모델의 테이블. 도메인의 `ddl: false`·`separate`. 이력을 깨는 실행의 거부. `JpaSchemaReaderTest`: 이름·타입·
+    관계·상속별 Envers·컬렉션 테이블·Kotlin 규칙. `SchemaDiffTest`: 넓힘과 줄임(크기 없는 소수, Oracle 의 CLOB 경계), SQL
+    Server 의 인덱스와 NOT NULL.
+  - `MigrationTest`(template-mybatis): 넓힘(유일 인덱스가 걸린 컬럼 포함)·선택으로·새 컬럼·필터 유일 인덱스·새 테이블과
+    외래키·인덱스 삭제를 H2 와 CI 의 세 DB 에서 실행.
+  - MyBatis 펫스토어는 이제 Flyway 로 시작한다(`db/migration/{vendor}` + 반복 마이그레이션 `R__catalog.sql`) - H2 와 세 DB.
+- 관련 파일: `rules/schema/*`, `verify/JpaSchemaReader.java`, `verify/DdlRun.java`, `verify/RulesGenRunner.java`,
+  `mybatis/MyBatisTables.java`·`MyBatisSchemaRules.java`·`MyBatisSql.java`, `elasticore-gradle-plugin`(`DdlSpec`, `elcoreDdl`),
+  `elasticore-env-guide.md`(2.3·9-1 절), 샘플 넷과 MyBatis 둘의 `build.gradle`·테스트, `.github/workflows/ci.yml`
+
+### New Features (v3 규칙 엔진 - 생성 파일 병합)
+
+#### 생성 파일 병합 - 고친 내용을 지키면서 DSL 을 따라간다 (3.0 코드 기본, `elasticore { merge = false }` 로 끔)
+- 왜: 생성 파일을 고치면 그 파일은 `SKIP(user-modified)` 로 DSL 을 더 따라가지 않았다 - 고친 내용과 DSL 의 변경 중 하나를
+  잃어야 했다. 첫 줄의 `//ecd:` 표시는 형식마다 주석 문법이 필요했고(XML `<!-- -->`, SQL `--`), properties 에서는 주석이
+  아니라 `//ecd` 키였으며, 첫 줄이 정해진 형식(`<!DOCTYPE>`)과 맞지 않았다. `orm.xml` 과 `i18n/*-messages.properties` 는
+  표시 없이 매번 통째로 덮어써 고친 내용이 사라졌다.
+- 무엇:
+  - Java·Kotlin 소스를 뺀 생성 파일 - MyBatis 매퍼 XML, `orm.xml`, `db/schema-{db}.sql`, `{domain}-schema.sql`,
+    `*-http-services.properties`, `i18n/*-messages.properties`, TypeScript 클라이언트 - 은 표시 없이 쓰이고, 쓴 그대로가
+    `.elasticore/cache` 에 남는다(프로젝트와 함께 커밋). 무압축 zip, 항목 순서와 시각 고정 - 같은 내용이면 같은 바이트라
+    git 이 바뀐 만큼만 저장한다. 옆의 `.gitattributes` 가 binary 로 둔다.
+  - 다음 생성은 파일마다 지난 생성본(캐시)·디스크의 파일·새 생성본을 견준다: 고친 것이 없으면 새로 쓰고, DSL 이 그대로면
+    고친 파일을 그대로 두고, 둘 다 바뀌었으면 줄 단위 3-way 병합(git 과 같은 규칙). 무엇을 고쳤는지는 보지 않고 같은 줄을
+    양쪽이 바꿨는지만 본다. 같은 줄이면 `<<<<<<< yours` / `>>>>>>> elasticore` 를 남기고 빌드가 실패하며, 표시가 남은 동안
+    계속 실패한다. 정리한 파일이 그 뒤의 기준.
+  - 지운 파일은 다시 생성. DSL 이 더 만들지 않는 파일은 캐시와 같으면 지우고, 고쳤으면 남기고 경고(캐시에서 빠진다).
+    캐시에 없는 자리의 다른 파일은 덮어쓰지 않는다. 이전에 표시와 함께 생성된 파일은 해시가 맞으면 넘겨받고(사용자 블록은
+    고친 내용으로 남음), 고쳤으면 그대로 두고 알린다. `orm.xml`·메시지처럼 늘 덮어쓰던 파일은 처음 병합하는 실행(`.elasticore/`
+    가 없음)에서만 전처럼 쓰고, 그 뒤로 캐시에 없으면 다른 파일처럼 건드리지 않는다. 캐시를 읽을 수 없으면 - 잘렸거나
+    프로젝트 밖 경로를 담았으면 - 아무것도 쓰지 않고 실패한다. 예외로 끝난 실행도 쓴 파일만큼 캐시를 남긴다.
+  - `elcoreDdl`(DDL 만)의 충돌도 빌드를 실패시킨다.
+  - 병합 파일은 플랫폼 줄바꿈으로 쓴다(Windows 에서 CRLF) - `orm.xml` 과 메시지는 전에 LF 였다.
+  - 캐시와 생성 파일은 같이 다닌다(둘 다 커밋하거나 둘 다 git 에서 뺀다) - 캐시만 커밋하면 pull 뒤 로컬의 옛 생성 파일이
+    고친 파일로 보인다. 저장소의 샘플은 생성 파일 대부분을 빼고 매 빌드 다시 만들므로 `.elasticore/` 도 뺀다.
+  - git 병합 충돌: 캐시는 한쪽, 충돌한 생성 파일은 캐시와 같은 쪽을 고르고 빌드(가이드 9-2).
+  - `-Pforce` 는 병합하는 파일에 적용하지 않는다 - 샘플처럼 빌드가 늘 켜 두는 설정이 고친 내용을 지우면 안 된다.
+  - 클라이언트 실행(`elcore3ts`)과 서버 실행이 한 캐시를 쓴다: 각자 자기 파일만 오래된 것으로 본다. 오래된 클라이언트 경고는
+    캐시의 `.ts` 도 생성된 클라이언트로 본다.
+  - 2.x 코드(`output = 'v2'`, `jpa-springboot`)는 끈 채로 - 2.x 가 쓰던 그대로(`elcoreRulesCheck`·`elcoreTreeCheck` 불변).
+    3.0 미발표 출력의 기본 변경: 위 파일들의 첫 줄 표시가 빠지고, MyBatis 매퍼 머리 주석이 "고치지 말라" 대신 병합을 말한다.
+  - Java·Kotlin 은 그대로 첫 줄 표시 - 한 번만 생성하는 파일, 사용자 블록, 2.x 감지가 그 줄을 읽는다(다음 단계).
+- 확인: `GeneratedMergeTest`(위 경우 전부, 형식별 - 매퍼·DDL·메시지·`orm.xml`·TypeScript, 클라이언트와 서버의 공유 캐시와
+  오래된 클라이언트 경고, 기본값과 2.x, 얕은 클론, `force`, 잃은 캐시, 한 도메인 실행, 잘린·밖을 가리키는 캐시, DDL 만의 충돌),
+  `ThreeWayMergeTest`, 플러그인 `mergeIsPassed`. 펫스토어 MyBatis 모델로 git 저장소를
+  만들어 실제로: 수정 후 두 브랜치(각자 모델 변경)를 병합 - 충돌한 생성 파일은 한쪽을 골라 다시 생성하면 양쪽 모델 변경과
+  개발자 수정이 모두 남음; `--depth 1` 클론에서 수정과 모델 변경이 병합됨; 모델 변경 30번 커밋에 캐시 34개 버전이 pack 에서
+  약 20KB(매퍼 XML 자체와 비슷).
+- 관련 파일: `util/ThreeWayMerge.java`, `verify/GeneratedCache.java`, `verify/RulesGenRunner.java`(writeMerged·
+  removeStaleMerged·staleClient), `v3/mybatis_xml.tmpl`, `elasticore-gradle-plugin`(`merge`), `elasticore-env-guide.md`(9-2,
+  2.3), `elasticore-rule-guide.md`(7.5, TypeScript), 샘플 다섯의 `.gitignore`
+
+### New Features (v3 규칙 엔진 - Java·Kotlin 병합)
+
+#### Java·Kotlin 소스도 병합 - 첫 줄 `//ecd:` 없이, 2.x 에서 올라오는 프로젝트의 고친 파일까지
+- 왜: 생성 파일 병합(generated-merge)이 Java·Kotlin 을 빼고 있었다. 고친 Java 파일은 `SKIP(user-modified)` 로 DSL 을 더
+  따라가지 않았고, 한 번만 생성하는 파일(확장 서비스·컨트롤러)은 DSL 이 바뀌어도 경고만 했다. 줄 단위 병합만으로는 DSL 이
+  넣는 import 와 개발자가 넣은 import, DSL 의 새 필드와 개발자의 새 메서드가 한 자리에서 충돌했다(측정: 날짜 필드 하나에
+  DTO 둘이 충돌).
+- 무엇:
+  - 3.0 코드의 Java·Kotlin 소스도 표시 없이 쓰이고 `.elasticore/cache` 를 기준으로 병합된다. 소스 병합: import 는 묶음으로
+    (양쪽이 넣은 것은 모두, 개발자가 지운 것은 지운 채), 클래스 안에서 양쪽이 같은 자리에 더하기만 한 줄은 둘 다(생성된 줄
+    먼저), 한쪽이 바꾼 줄 옆에 다른 쪽이 더하기만 한 줄은 그 옆에. 같은 줄을 각자 바꾼 것만 충돌.
+  - 한 번만 생성하는 파일: 고치기 전에는 DSL 을 따라가고, 고친 뒤에는 깔끔하게 합쳐지는 DSL 의 변경만 받는다(`MERGED`).
+    겹치면 충돌 표시 없이 그대로 두고(`KEPT(yours ...)`) 전부터 있던 경고(엔드포인트, 로그인, 생성자, 클래스 어노테이션,
+    베이스 상속)로 옮길 것을 말한다. 예: `@readonly` 는 손대지 않은 쓰기 엔드포인트를 개발자 컨트롤러에서도 지우고,
+    `@signin` 을 지우면 손대지 않은 로그인 엔드포인트가 빠진다 - 전에는 경고만 했다.
+  - 표시가 있는 파일은 첫 병합 빌드에서 파일마다 넘겨받는다 - 기준을 표시의 해시로 확인할 수 있을 때만: 고치지 않았으면
+    그 내용, 고쳤으면 이번 빌드가 만드는 것 또는 - 2.x 프로젝트가 `output = 'v3'` 로 옮기는 첫 빌드에서 - 2.x 번들을
+    메모리에서만 한 번 더 돌려 만든 것(`[elcore3] upgrade : ...`). 확인할 수 없으면 표시를 두고 전처럼 건너뛴다.
+  - 빌드 요약에 `=== merge: N merged with your edits / N kept as yours / N conflict(s) / N still stamped ... ===` 와 표시가
+    남은 파일 목록.
+  - 오래된 파일 정리는 개발자 클래스가 아직 상속하는 `...Base` 를 남긴다(표시 방식과 같게). 그리고 DSL 이 더 만들지
+    않는 생성 클래스라도 남는 소스가 아직 쓰면(같은 패키지, import, 전체 이름) 지우지 않고 어느 파일이 쓰는지 알린다
+    (`... is no longer generated, but ... still uses it - kept`) - 쓰는 곳이 없어진 다음 빌드에서 지워진다. 지워지는
+    엔티티의 파일끼리만 서로 쓰는 것은 전처럼 함께 지워진다(엔티티 클래스와 그 `...Base` 도 한 번에). 남는 매퍼 인터페이스는 같은 이름의 XML 도 남긴다. 전에는
+    2.x template 을 `output = 'v3'` 로 옮기는 첫 빌드가 2.x 호환 번들이 쓴(3.0 표시) `CouponCoreService` 를 지워, 개발자
+    컨트롤러가 컴파일되지 않았다. 병합하는 빌드에서만 - 2.x 코드(`output = 'v2'`)는 전처럼 지운다.
+  - 소스의 import 묶음은 맨 위의 import 와 그 사이 빈 줄뿐이다: 그 사이의 주석(주석 처리한 import 포함)부터는 줄로
+    병합되어 남고, 코드 안(텍스트 블록)이나 주석 안의 `import` 는 import 가 아니다.
+  - 2.x 프로젝트의 첫 3.0 빌드는 `-Pdomain` 으로 하면 멈춘다(다른 도메인의 고친 파일이 기준을 찾을 기회를 잃으므로).
+    그 빌드가 2.x 코드를 메모리에서 만든 뒤에는 모델을 다시 읽어, 업그레이드 빌드와 다음 빌드가 같은 코드를 쓴다.
+  - 표시도 없고 캐시에도 없는 소스는 그대로 두고 요약에 센다 - 캐시 파일이 없으면 git 에서 가져오라고 한다.
+  - 마이그레이션 가이드: 2.x 는 `@service`·`@expose` 없이도 키가 있는 엔티티에 리포지토리를, `@template`·`@searchable`
+    DTO 가 있으면 서비스와 컨트롤러까지 썼고 v3 는 `@expose`·`@service` 엔티티만 쓴다는 줄, `@ElastiCore` 로
+    생성하던 프로젝트는 옮길 때 그것을 지운다는 줄(남기면 컴파일마다 2.x 코드가 다시 쓰여 병합에 편집으로 들어온다).
+  - 3.0 미발표 출력의 기본 변경: Java·Kotlin 소스의 첫 줄 표시가 빠진다. 샘플의 한 번만 생성한 파일 넷(pet store
+    `CustomerService`·`PurchaseOrderService`·`OrderLine`, MyBatis pet store `PurchaseOrderService`)이 표시 줄만 빠졌다.
+    2.x 코드(`output = 'v2'`)는 그대로(`elcoreRulesCheck` 157/0/2, `elcoreTreeCheck` 0/0/0).
+- 확인:
+  - `ThreeWayMergeTest`(import 묶음, 같은 자리 추가, 바뀐 줄 옆 추가, Kotlin, import 사이 주석, 텍스트 블록),
+    `GeneratedMergeTest`(Java 편집과 날짜 필드, 한 번만 생성하는 파일의 세 경우, 표시 넘겨받기와 확인 못 하는 기준,
+    2.x → 3.0 업그레이드와 그 다음 빌드, `-Pdomain` 업그레이드 거절, 개발자 코드가 쓰는 오래된 클래스와 매퍼 XML,
+    2.x 코드의 정리), `SignInAndReferencesTest`.
+  - 실제 프로젝트 측정: template(2.x) 과 elasticore-petstore 에 모든 엔티티 필드 추가 - 바뀐 생성 파일 119 개 충돌 0;
+    template 의 2.x → 3.0 - 바뀐 187 개 충돌 0(줄 단위만이면 1).
+  - 샘플 시나리오(작업 트리에서 실제 생성·컴파일·테스트): MyBatis pet store 24/24, JPA pet store 23/23, template-kt
+    21/21, template-ddd 23/23, template-mybatis 24/24 - 편집(생성 DTO 의 import·메서드·주석, 서비스, 매퍼 XML, DDL)
+    뒤 필드 추가가 병합되고 컴파일·테스트 통과, 이름 바꾸기 충돌이 빌드를 멈추고 풀면 계속, 엔티티를 넣었다 빼면
+    고치지 않은 파일은 지워지고 고친 것은 남고 알림. (샘플의 `elcore3clean` 은 생성 전에 소스를 지우므로 `-x
+    elcore3clean` 으로.)
+  - 2.x template 을 가이드대로 옮기기(`output = 'v3'`, `@ElastiCore` 제거, 서비스를 쓰던 엔티티에 `@expose`) 15/15:
+    표시가 있는 2.x 파일 263 개를 기준으로 읽고, 고친 DTO 와 CoreService 는 표시 없이 편집이 남은 채 병합, 고치지 않은
+    파일은 3.0 코드, 두 번째 빌드는 그대로, 컴파일 통과.
+- 관련 파일: `util/ThreeWayMerge.java`(mergeSource), `verify/RulesGenRunner.java`(writeMergedSource·confirmedBase·
+  twoXBases·rewriteOwned·removeStale·removeStaleMerged·removeUnused·stillUsed·printSummary), `util/ConsoleLog.java`(snapshot·restore),
+  `elasticore-env-guide.md` 9-2, `elasticore-rule-guide.md` 7.5, `elasticore-migration-guide.md`
+
+### New Features (v3 규칙 엔진 - MyBatis)
+
+#### `mode: mybatis` - 같은 모델을 JPA 대신 MyBatis 로 생성한다
+- 왜: v3 는 JPA 코드만 썼다. 공공·금융·SI 현장의 상당수는 MyBatis 를 쓰고, 그런 프로젝트는 ElastiCORE 를 쓸 수 없었다.
+- 무엇: env.yml `config.mode` 의 한 단어(2.x 가 이미 읽는 키)로 정한다. 새 DSL 키는 없다. 레이어드 Java, Spring Boot 3·4.
+  - DTO·검색 DTO·컨트롤러·접근 검사·도메인 매퍼는 JPA 와 같고, 서비스는 JPA 판과 메서드 이름·시그니처가 같다 - 컨트롤러와
+    확장 서비스는 그대로.
+  - 엔티티: JPA 규칙이 그리는 클래스에서 JPA·Hibernate·Spring Data 어노테이션과 수명주기 콜백을 걷어낸 평범한 클래스.
+  - `<Entity>Repository` (MyBatis `@Mapper`) + 같은 패키지 경로의 `<Entity>Repository.xml`: to-one 관계를 LEFT JOIN 해 한
+    문장으로 읽는 resultMap(N+1 없음 - 페이지는 count 와 본문 두 문장), 검색 DTO 조건마다 `<if>`, 엔티티 속성 목록으로만
+    하는 정렬(그 밖은 400), DB 별 페이지(`LIMIT/OFFSET`, Oracle·Tibero·SQL Server·DB2 는 `OFFSET ... FETCH`),
+    insert(생성 키 회수)·update(버전 비교·증가)·delete.
+  - `db/<domain>-schema.sql`: 테이블과 외래키(참조 중인 행 삭제는 JPA 처럼 409). H2 용이며, 다른 DB 는 일부 타입 이름이
+    달라 이 파일에서 마이그레이션을 시작한다고 파일 머리에 적는다.
+  - JPA 가 하던 `@genid`·`@jpa:CreatedDate`·`@jpa:LastModifiedDate` 는 서비스가 하고, `@updatable(false)` 컬럼은 UPDATE 에서
+    뺀다. 이름은 Spring 의 JPA 명명과 같다(테이블·컬럼은 소문자 snake, 관계 컬럼 `field_targetkey`, enum 은 같은 코드 값) -
+    한 테이블을 두 방식이 읽는다. `@formula` 필드는 엔티티에 남되 MyBatis 가 읽지 않아 null 이고 검색 조건에서 빠진다(경고).
+  - 아직 쓰지 않는 것은 조용히 빼지 않고 빌드가 멈춘다: 컬렉션 관계·값 컬렉션·`@embedded`·복합 키·상속·Money·JDBC 타입이
+    없는 타입·`@joinBy`·IDENTITY 가 아닌 키 생성·키가 아닌 `@sequence`·`@jpa:CreatedBy`/`LastModifiedBy`, 조인한 행보다 먼 검색
+    경로(빼면 조건부 수정·삭제가 모든 행에 미침), 컬럼이 아닌 `@owner`, DDD·헥사고날·Kotlin(빌드의 선언이든 도메인의
+    `publisher.rules` 든).
+  - 프로젝트 단위의 거절: `-Pv2` 와 함께(2.x 코드는 JPA), 2.x 코드를 지키는 도메인과 같은 프로젝트(그 도메인을 v3 로
+    다시 쓰지 않도록), JPA 엔티티가 MyBatis 엔티티를 가리킴(반대는 됨). `jpa,mongo` 처럼 jpa 와 함께 적힌 모드는 전처럼
+    JPA 를 쓴다.
+  - 도메인을 `jpa` 로 되돌리면 생성했던 매퍼 XML 과 스키마를 지운다(손대지 않은 것만).
+- 기반: 번들을 아키텍처·언어에 더해 **저장 방식**으로도 고른다(`RulesConfig.Persistence`, `bundleFor(아키텍처, 언어, 저장 방식)`).
+  XML·SQL 파일의 생성 표시(`//ecd:`)는 그 언어의 주석 안에 쓴다(`<!-- //ecd:... -->`, `-- //ecd:...`).
+- 런타임 라이브러리 (`elasticore-springboot3`·`-springboot4`):
+  - `ConvertedEnumTypeHandler`(enum 을 JPA 변환기와 같은 값으로), `ElastiCoreMyBatisAutoConfiguration`(MyBatis 에 DB 종류를
+    알림). 이 자동 설정은 MyBatis 가 있는 앱에서 기본으로 켜지며, 앱이 직접 쓴 매퍼의 `databaseId` 문장도 그 DB 에서 쓰이게
+    한다. 끄려면 `elasticore.mybatis.database-id=false`.
+  - **`spring-boot-starter-data-jpa` 를 더는 끌어오지 않는다** (implementation → compileOnly). 끌어오면 MyBatis 앱 안에서
+    Hibernate 가 떴다. JPA 프로젝트는 README 의 빌드처럼 data-jpa 스타터를 직접 선언한다 - 저장소의 JPA 샘플은 모두 이미
+    그렇다. 증상: 기동 시 EntityManagerFactory 빈이나 Hibernate 를 못 찾으면 `spring-boot-starter-data-jpa` 를 선언한다.
+  - `jakarta.persistence-api` 는 `api` 로 (NotFoundException 이 EntityNotFoundException 을 상속하므로 그것을 던지는 코드가
+    컴파일되려면 필요).
+  - `VersionCheck`: spring-orm 이 없는 앱에서는 `OptimisticLockingFailureException`(같은 409)을 던진다. 전에는 MyBatis 앱에서
+    `NoClassDefFoundError` 였다.
+- 확인:
+  - `MyBatisGenerationTest`(생성물, 거절들, 다른 도메인 자기참조 순환, 2.x 도메인과 함께, JPA→MyBatis 관계, `@updatable(false)`,
+    jpa 로 되돌릴 때 정리, 옆에 MyBatis 도메인이 있어도 JPA 도메인 출력이 바이트 단위로 같음), `MyBatisSearchResolutionTest`,
+    `PersistenceAxisTest`, `DefaultGenerationTest`. 독립 리뷰의 지적(H1·H2·M1~M6·L1~L8)을 반영.
+  - 새 모듈 `elasticore-template-mybatis`: 생성·컴파일 후 H2 위에서 API 를 돈다 - 관계 조인, 모든 검색 조건, 페이지 문장 수 2,
+    정렬과 거절, 버전 409, 참조 행 삭제 409, unique 409, 시각 찍기. `OFFSET ... FETCH` 분기는 H2 Oracle 모드에서 SQL 까지 확인.
+  - Spring Boot 4.0.8 + mybatis-spring-boot-starter 4.0.0 프로젝트를 만들어 같은 호출을 돌림(Hibernate 없음).
+  - JPA 쪽: `elcoreRulesCheck -Pstrict` 157 MATCH / 0 DIFF, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra, base·런타임·
+    template·template-ddd·template-kt·petstore 테스트 통과.
+- 관련 파일: `RulesConfig.java`, `RuleCatalog.java`, `RulesGenRunner.java`, `rules/mybatis/*`, `v3/mybatis_*.tmpl`,
+  `ServiceAccessRules.java`, `MapperAssembleRules.java`, `MapperFileRules.java`, `RepositoryHelperBaseRules.java`, `SourceCode.java`,
+  `EntitySpec.java`, `HashUtils.java`, 런타임 `build.gradle`·`VersionCheck.java`·`mybatis/`·`autoconfigure/`,
+  `elasticore-env-guide.md`(2.3 절), `elasticore-rule-guide.md`
+
+### New Features (v3 규칙 엔진 - MyBatis)
+
+#### `mode: mybatis` 가 펫스토어를 쓴다 - Money·값 객체·컬렉션·`@joinBy`, Oracle·PostgreSQL·SQL Server
+- 왜: 펫스토어 모델을 `mode: mybatis` 로 바꾸자 빌드가 멈췄다. 가격(Money), 주소·카드(값 객체), 주문줄(컬렉션), 수량
+  (Quantity) - 쇼핑몰의 핵심이 모두 "아직 쓰지 않는 것" 이었다. 그리고 생성 스키마는 H2 용뿐이라 실제 DB 에서 돌려 본 적이
+  없었다.
+- 무엇:
+  - **Money·Quantity**: 한 컬럼(DECIMAL·INTEGER)에 JPA 변환기와 같은 값. 런타임 라이브러리에 `MoneyTypeHandler`·
+    `QuantityTypeHandler` 를 두고 XML 이 결과·파라미터마다 이름으로 쓴다. 검색 DTO 가 다른 타입(BigDecimal)으로 들고 있으면
+    그 값은 JDBC 타입으로만 묶는다. Oracle 은 `NUMBER(10,2)` 의 100.00 을 100 으로 돌려주므로(CI 의 Oracle 에서 발견),
+    `MoneyTypeHandler` 가 컬럼에 선언된 소수 자릿수로 맞춘다 - 어느 DB 든 같은 금액이 같은 모양(`100.00`)으로.
+  - **값 객체**(`@embeddable` + `@Embedded`, `@embedded(prefix)`): 그 필드가 행의 컬럼 - 이름은 JPA 와 같다(각자의 컬럼,
+    prefix 면 `prefix_field`). resultMap 의 association 으로 행과 조인한 행 모두에서 읽고, insert·update·정렬(`home.city`)·검색
+    경로가 그 컬럼을 쓴다. 선택인 값의 컬럼은 스키마에서 NULL 허용. MyBatis 도메인의 DTO 는 값 객체를 싣는다(레이어드 DTO 는
+    빼던 것 - 그러면 주소를 보낼 수 없다). 값 객체 안의 값 객체·관계는 거절.
+  - **컬렉션**(`@OneToMany(mappedBy=...)`): 대상 매퍼에 `findAllBy{back}In(keys)`·`deleteAllBy{back}(key)`. 서비스의
+    `loaded()` 가 한 행이든 한 페이지든 컬렉션마다 한 문장(키 500 개씩)으로 읽어 나눠 준다 - 주문 페이지와 주문줄이 세 문장.
+    **애그리거트의 멤버**(루트가 아닌 대상)는 루트와 함께 쓴다: 매퍼가 DTO 의 줄을 엔티티로 옮기고(`@Valid`), 저장 때 insert
+    (`@genid`·생성 시각 포함), 수정 요청이 줄을 보내면 지우고 다시 쓰고, 루트를 지울 때 먼저 지운다. 멤버는 서비스 없이
+    매퍼(`*_member` 템플릿)만, 헬퍼에 주입된다. 다른 루트의 컬렉션은 읽기만. `mappedBy` 없는 것·`@ManyToMany` 는 거절.
+  - **`@joinBy(idField)`**: 행이 id 를 값으로 갖고 관계는 그 컬럼으로 조인만 - 레이어드에서 `@owner(customerId)` 를 쓰는 모양.
+    외래키도 그 컬럼에.
+  - **DB 별 스키마**: `{domain}-schema.sql`(H2) 에 더해 `-postgresql`·`-oracle`·`-sqlserver`. 타입은 그 DB 의 Hibernate
+    방언이 고르는 것(Oracle `NUMBER(19)`·`VARCHAR2(n CHAR)`·`BINARY_DOUBLE`, SQL Server `NVARCHAR`·`DATETIME2`·`BIT`,
+    PostgreSQL `TEXT`·`BYTEA`), 생성 키는 그 DB 의 IDENTITY. `@Index` 를 인덱스로, SQL Server 에서는 NULL 허용 유일 컬럼을
+    필터 인덱스로. 어느 DB 의 예약어인 테이블·컬럼 이름은 경고. CLOB·BLOB 파라미터는 VARCHAR·VARBINARY 로 묶는다
+    (PostgreSQL 이 대형 객체로 묶인 NULL 을 거절).
+  - XML: resultMap 을 DTD 순서(id, result, association)로, 조인한 행의 컬럼 별칭이 PostgreSQL 의 63 자를 넘으면 `jN_` 로.
+  - 독립 리뷰가 찾은 것: 멤버 안의 컬렉션(저장할 곳이 없어 조용히 잃던 것)은 거절, 자기 서비스가 있는 엔티티는 루트와 함께
+    쓰지 않음(두 번 쓰지 않도록 - 매퍼와 서비스가 같은 판정), `lines: []` 는 줄을 모두 지움, 키와 컬렉션뿐인 엔티티는 UPDATE
+    없이 행이 있는지만 확인(전에는 없는 문장을 불러 매번 실패), 큰 값(CLOB·BLOB, 4000 자 넘는 문자열)은 정렬 목록에서 빼고
+    LIKE 가 아닌 검색 조건은 경고하고 뺌(Oracle ORA-00932), 같은 이름의 엔티티가 다른 도메인에 있어도 자기 도메인 것을 읽음.
+- 새 모듈 `elasticore-sample-petstore-mybatis`: 펫스토어 모델을 레이어드 + MyBatis + Spring Boot 4 로. 가격 계산은 확장
+  서비스가 한다(레이어드는 `@compute`·`states:` 를 하지 않는다). 테스트(ShopFlow)는 둘러보기·가입·로그인·주문(값 객체,
+  줄, 금액)·소유자 범위·삭제(줄 먼저)·409·400 과, 주문 한 페이지가 세 문장인 것을 본다.
+- CI 에 "MyBatis on Oracle, PostgreSQL and SQL Server" 작업: Oracle 23 Free·PostgreSQL 16·SQL Server 2022 서비스
+  컨테이너에서 펫스토어 흐름과 template-mybatis 의 API 테스트(모든 검색 조건, 모든 컬럼 타입의 왕복, 버전·외래키·유일 409,
+  DB 별 페이지 문법)를 각 DB 의 생성 스키마로 돌린다. 건너뛴 DB 가 있으면 실패.
+- 확인: base 의 `MyBatisGenerationTest`(컬렉션·멤버·`@joinBy`·값 객체·DB 별 스키마·필터 인덱스·예약어 경고), H2 의 두 모듈
+  테스트, CI 의 세 DB. JPA 쪽 출력은 그대로(`elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`).
+- 관련 파일: `rules/mybatis/*`(새 `MyBatisMapperMemberRules`), `v3/mybatis_service.tmpl`·`mybatis_repository*.tmpl`·
+  `mybatis_schema.tmpl`, `RulesGenRunner.java`, `RepositoryHelperBaseRules.java`, `RuleCatalog.java`, `DddMapperRules.java`,
+  런타임 `mybatis/MoneyTypeHandler.java`·`QuantityTypeHandler.java`, `elasticore-env-guide.md`(2.3 절),
+  `elasticore-template-mybatis`, `elasticore-sample-petstore-mybatis`, `.github/workflows/ci.yml`
+
+### Bug Fixes (v3 규칙 엔진 - `mapping: xml`, `-Pdomain`)
+
+#### 도메인 하나만 생성해도 모듈의 orm.xml 이 다른 도메인의 매핑을 잃지 않는다
+- 왜: `mapping: xml` 도메인이 둘 이상인 모듈에서 `-Pdomain` 으로 한 도메인만 생성하면, 그 실행은 그 도메인의 클래스만
+  읽고 모듈의 `META-INF/orm.xml` 을 그것만으로 다시 썼다. 다른 도메인의 `<entity>` 가 빠져, 다음 실행까지 그 엔티티들은
+  JPA 매핑 없이(애너테이션도 없이) 남았다.
+- 무엇: `-Pdomain` 실행은 마지막으로 생성한 orm.xml(`.elasticore/cache` 의 기준, 없으면 생성기가 쓴 파일)에서 이번에
+  생성하지 않은 도메인의 클래스 - 그 도메인들의 엔티티·enum 패키지에 있는 것 - 를 제자리에 두고, 이번 도메인의 클래스는
+  새로 쓴다. 이번 도메인이 더 갖지 않는(지웠거나 패키지를 옮긴) 클래스의 매핑은 빠진다 - 남기면 없는 클래스나 같은 이름의
+  두 엔티티를 매핑해 기동이 실패한다. 생성한 도메인도 쓰는 패키지는 다른 도메인의 것으로 보지 않는다(같은 패키지를 쓰는
+  도메인끼리는 그 패키지에서 이번에 매핑하지 않은 클래스가 빠진다 - 다음 전체 실행이 다시 쓴다). 새 클래스는 같은 패키지의
+  마지막 클래스 뒤에 - 모델에서 더 앞에 적힌 클래스면 다음 전체 실행이 자리를 옮긴다. 병합은 다른
+  도메인 쪽에 변경이 없다고 보므로 개발자가 고친 내용도 남는다. 전체 실행은 전과 같다 - 이번 실행의 매핑만 쓴다.
+- 확인: `GeneratedMergeTest.aRunOverOneDomainKeepsTheOtherDomainsMappingsInTheOrmXml`(dgshop·billing 두 도메인,
+  dgshop 만 바꿔 `-Pdomain` - billing 의 `Invoice` 가 남고 dgshop 의 새 필드가 들어감, 이어진 전체 실행은 `UNCHANGED`),
+  `...WithoutTheCache`(`merge = false` 에서도 같음), `aRunOverOneDomainDropsWhatThatDomainNoLongerMapsAndKeepsEditsToTheOthers`
+  (dgshop 이 엔티티 하나를 지우고 패키지를 옮김 - 옛 매핑이 빠지고, billing 블록 안의 개발자 주석은 남음),
+  `OrmMappingTest.aRunOverOneDomainKeepsOnlyTheOtherDomainsClasses`(CRLF 의 이전 파일, `<attributes>` 없는 블록, 종류가
+  바뀐 클래스, 새 클래스의 자리), `aRunOverOneDomainKeepsTheOtherDomainsMappingsBesideTheDevelopersOwnOrmXml`(개발자의
+  orm.xml 이 있어 매핑이 `elasticore-orm.xml` 로 갈 때도 같음). 처음 두 테스트는 고치기 전 코드에서 실패했다.
+- 관련 파일: `OrmMapping.java`(`toXml(previous, otherPackages)`), `RulesGenRunner.java`(`otherDomainPackages`, `writeOrmXml`),
+  `GeneratedMergeTest.java`, `OrmMappingTest.java`.
+
+### Documentation (마이그레이션 가이드 - 롤백)
+
+#### 3.0 코드로 옮긴 프로젝트는 버전만 되돌리면 고친 내용을 잃는다고 적음
+- 왜: "Q. 롤백하려면?" 이 "버전을 되돌리면 됩니다. 3.0 이 남긴 상태가 없습니다" 라고 했다. 2.x 코드를 유지한 프로젝트에는
+  맞지만, 3.0 코드는 첫 줄 `//ecd:` 없이 쓰이므로 2.x 생성기는 그 파일을 고친 것으로 보지 않고 덮어쓴다.
+- 확인: `elasticore-template` 에서 2.x 생성기(`elcore`)를 돌림(확인 뒤 되돌림) - `ArticleKeyDTO.java` 의 `//ecd:` 줄을
+  지우고 한 줄을 더하면 2.x 코드로 다시 쓰이고 더한 줄이 사라졌다. 3.0 의 한 번만 생성하는 파일처럼 첫 줄이
+  `// Initially generated by ElastiCORE; ...` 인 `CommentController.java` 도 같았다(2.x 는 그 표시를 `//ecd:` 아래에서만 찾는다).
+- 무엇: `elasticore-migration-guide.md` "Q. 롤백하려면?" 을 둘로 나눔(2.x 코드 유지 프로젝트는 버전만, 3.0 코드로 옮긴
+  프로젝트는 옮기기 전 커밋으로 소스를 되돌린 뒤 버전 - 컨트롤러·확장 서비스도 덮어쓰임, `merge = false` 로 생성해 온
+  프로젝트는 표시가 있어 고친 파일이 남음), "되돌리는 법" 의 `output = 'v2'` 에도 같은 주의를 더함.
+- 관련 파일: `elasticore-migration-guide.md`.
+
+### Documentation (v3 규칙 엔진 - 한 번만 생성하는 파일)
+
+#### 가이드가 한 번만 생성하는 파일을 "다시 쓰이지 않는다"고 하던 곳을 병합에 맞춤
+- 왜: Java·Kotlin 병합(merge-java) 뒤로 한 번만 생성하는 파일(컨트롤러, 확장 서비스, 나뉜 루트의 개발자 클래스, 팩토리)은
+  고치기 전에는 DSL 을 따라가고, 고친 뒤에는 깔끔하게 합쳐지는 변경만 받는다. 그런데 가이드 여러 곳이 아직 "처음 한 번만
+  생성되고 그 뒤로는 건드리지 않는다", "규칙은 처음 만들어질 때만 적용된다", "Java 파일은 고치면 건너뛴다"고 해, 나중에
+  더한 규칙이나 `supportAI` 를 손으로 옮겨야 하는 것처럼 읽혔다.
+- 무엇: `elasticore-rule-dev-guide.md` 2장 끝("이미 만들어져 내가 고친 파일에도 붙습니다")·4장 `target` 끝·문제 해결 표,
+  `elasticore-ddd-customize-guide.md` "이미 있는 내 파일"·스켈레톤 첫 줄 표·Kotlin 표·문제 해결 표,
+  `elasticore-env-guide.md` `supportAI` 를 나중에 켤 때와 MyBatis 직접 쓰는 쿼리, `elasticore-migration-guide.md`
+  "손으로 고쳐둔 파일" 질문, `elasticore-rule-guide.md`·`elasticore-annotation-guide.md` 의 `@factory` 와 도메인 서비스 예.
+  손으로 붙여야 하는 경우는 그대로 적었다: 겹쳐서 `KEPT`, `merge = false`, 병합 전 버전이 만든 파일을 고친
+  `SKIP(user-owned)`, 표시 줄 없이 복사한 파일(`SKIP(no ElastiCORE header - yours)` - ERP 예제의 세 파일). 빠진 클래스
+  어노테이션 알림은 여전히 엔티티 클래스에만 나온다. 이전 스냅샷에서 올라오는 프로젝트를 위한 안내(`XxxApiErrors`,
+  `OrderService` 생성자)는 그 파일들이 기준을 확인할 수 없어 여전히 맞으므로 두었다.
+- 생성물은 그대로다. 팩토리와 도메인 서비스가 생성하는 주석의 "written once" 도 두었다 - 개발자 파일의 생성 줄을 바꾸면
+  그 줄을 고치거나 지운 개발자의 파일이 매 빌드 `KEPT` 로 남아 그 뒤의 DSL 변경을 받지 못한다.
+- 확인: `GeneratedMergeTest` -
+  `aRuleAddedLaterReachesAnEditedSkeleton`(나중에 더한 프로젝트 규칙의 클래스 어노테이션이 고친 컨트롤러에 `MERGED`,
+  규칙을 빼면 다시 빠짐), `aRuleAddedLaterReachesTheEditedClassOfASplitRoot`(DDD 루트의 고친 개발자 클래스에
+  `@AggregateRoot` 와 import 가 병합, 메서드는 남음, "add them by hand" 알림 없음),
+  `supportAiTurnedOnLaterReachesAnEditedService`(`supportAI` 를 나중에 켜면 고친 `CustomerService` 에 `@Tool` 병합),
+  `aFactoryWithItsBodyWrittenFollowsTheSignatureOrSaysSo`(손대지 않은 팩토리는 새 필수 필드를 시그니처에 받고, 본문을 쓴
+  팩토리는 `KEPT` 와 알림).
+- 관련 파일: 위 가이드 6개, `DddFactoryRules`(Javadoc), `GeneratedMergeTest`, `com.acme.probe.AddedLaterRules`
+
 ## 3.0.261029-rc4
 
 v3 서비스가 `@fetchjoin` 연관을 2.x 처럼 페이지 검색에서 함께 가져오고, 규칙 엔진은 `mode: mongo` 같은 JPA 가 아닌 도메인을

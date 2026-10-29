@@ -86,7 +86,7 @@ config:
 
 ### 2.3 MyBatis 모드 (3.0)
 
-JPA 대신 MyBatis 로 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261030
+JPA 대신 MyBatis 로 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261030-rc5
 
 ```yaml
 config:
@@ -890,7 +890,7 @@ datasource:
 ## 9-1. DDL - DB 별 스키마와 마이그레이션 (3.0)
 
 운영 DB 는 `ddl-auto` 로 만들지 않습니다. ElastiCORE 가 **프로젝트의 모든 테이블**(JPA·MyBatis 도메인 모두)을 DB 마다
-DDL 로 쓰고, 모델이 바뀌면 **바뀐 만큼을 Flyway 마이그레이션**으로 씁니다. Since: 3.0.261030
+DDL 로 쓰고, 모델이 바뀌면 **바뀐 만큼을 Flyway 마이그레이션**으로 씁니다. Since: 3.0.261030-rc5
 
 **켜기 - 프로젝트 한 번** (`build.gradle`, 도메인마다가 아님):
 
@@ -985,7 +985,7 @@ validate 가 거절합니다(경고) - Oracle 이면 `clob` 이나 길이를 쓰
 ## 9-2. 생성 파일 병합 - 고친 내용을 지키면서 DSL 을 따라가기 (3.0)
 
 생성된 파일을 고쳐도 됩니다. 다음 빌드는 **고친 내용을 남기고 DSL 의 변경도 넣습니다** - git 이 두 브랜치를 병합하듯이.
-주석을 달든, 문장을 더하든, 줄을 고치든 종류는 상관없습니다. Since: 3.0.261030
+주석을 달든, 문장을 더하든, 줄을 고치든 종류는 상관없습니다. Since: 3.0.261030-rc5
 
 **대상**: 생성 파일 전부 - Java·Kotlin 소스, MyBatis 매퍼 XML, `orm.xml`(`mapping: xml`), `db/schema-{db}.sql`,
 `{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, gRPC `.proto`, TypeScript 클라이언트(`.ts`).
