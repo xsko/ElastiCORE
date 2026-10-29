@@ -41,6 +41,11 @@ elasticore {
 고치지 않은 파일은 3.0 코드로 새로 쓰이고, 기준을 확인할 수 없는 파일은 전처럼 건너뛰고 알립니다 - 이 빌드에서 생긴
 `.elasticore/cache` 를 생성 파일과 함께 커밋하세요(`elasticore-env-guide.md` 9-2). 한 번만 생성하는 파일(확장 서비스·
 컨트롤러)은 개발자의 것이라, 3.0 의 변경이 고친 줄과 겹치면 충돌 표시 없이 그대로 두고 손으로 옮길 것을 경고합니다.
+3.0 이 더 만들지 않는 생성 파일은 지워지지만, 남는 소스가 아직 쓰는 것은 남기고 어느 파일이 쓰는지 알립니다
+(`... is no longer generated, but ... still uses it - kept`) - 아래 표의 "서비스·리포지토리" 를 보십시오.
+애플리케이션 클래스에 `@ElastiCore` 를 붙여 생성하던 프로젝트는 옮길 때 그것을 지웁니다(`annotationProcessor` 의
+elasticore-base 도) - 남겨 두면 컴파일할 때마다 2.x 생성기가 2.x 코드를 다시 써서 3.0 코드와 섞이고, 병합은 그것을
+개발자의 편집으로 받습니다.
 레이어드 Java 의 v3 번들(`jpa-springboot-v3`)은 2.x 번들에 없는 규칙을 더 씁니다 - `@access`·`@owner` 접근 검사
 (`jpa-service-access`), 오류 코드가 있는 거절 응답(`spring-api-errors`), 서버가 정하는 필드의 쓰기 보호
 (`jpa-write-guard`). 검색에서는 `like` 가 대소문자를 무시하고 `gt`·`gte` 같은 키워드가 기호와 같아집니다. `@fetchjoin` 연관은 2.x 처럼 페이지
@@ -144,6 +149,7 @@ elasticore:
 
 | 무엇이 | 2.x 코드 | v3 코드 | 할 일 |
 |---|---|---|---|
+| 서비스·리포지토리가 생기는 엔티티 | 키가 있으면 `XxxRepository`, `@template`·`@searchable` DTO 가 있으면 `XxxCoreService`·`XxxService`·컨트롤러까지 (`@service`·`@expose` 없이도) | `@expose`(컨트롤러까지) 나 `@service`(컨트롤러 없이) 를 적은 엔티티만 | 그 엔티티의 줄에 `@expose` 를 적습니다(2.x 처럼 컨트롤러까지 - 고치지 않은 컨트롤러는 3.0 것으로 바뀝니다). 적지 않으면 그 엔티티의 2.x 서비스·리포지토리는 쓰는 곳이 없어질 때 지워집니다 |
 | 키를 받는 엔티티 생성자 | `new Order(id)` | 없음 (기본 생성자만) | 연관에 넣을 참조는 `repository.getReferenceById(id)`, 테스트 데이터는 기본 생성자와 setter 로 만듭니다 |
 | 보호 블록(`// !----` ~ `// ----!`) 안 코드가 쓰는 import | `jakarta.persistence.*`·`java.util.*` 같은 `*` import 덕에 컴파일됨 | 생성 코드가 쓰는 것만 import | 블록이 쓰는 import 를 `package` 아래의 보호 블록에 적습니다 (`elasticore-dev-guide.md` 의 "사용자 코드 보존 블록") |
 | `@fetchjoin`·`table.autoJoin` | `withJoinFetches()` 로 페이지 검색에서 루트와 함께 가져옴 | 같음 - 3.0.261029-rc4 부터 (3.0.261028-rc3 까지의 v3 는 가져오지 않았음, 위) | 없음. rc3 까지의 v3 로 옮기며 `JoinSpec.fetchJoin()` 으로 대신 쓴 쿼리는 그대로 동작합니다 |

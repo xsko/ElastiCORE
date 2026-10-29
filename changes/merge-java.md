@@ -18,18 +18,31 @@
     메모리에서만 한 번 더 돌려 만든 것(`[elcore3] upgrade : ...`). 확인할 수 없으면 표시를 두고 전처럼 건너뛴다.
   - 빌드 요약에 `=== merge: N merged with your edits / N kept as yours / N conflict(s) / N still stamped ... ===` 와 표시가
     남은 파일 목록.
-  - 오래된 파일 정리는 개발자 클래스가 아직 상속하는 `...Base` 를 남긴다(표시 방식과 같게).
+  - 오래된 파일 정리는 개발자 클래스가 아직 상속하는 `...Base` 를 남긴다(표시 방식과 같게). 그리고 DSL 이 더 만들지
+    않는 생성 클래스라도 남는 소스가 아직 쓰면(같은 패키지, import, 전체 이름) 지우지 않고 어느 파일이 쓰는지 알린다
+    (`... is no longer generated, but ... still uses it - kept`) - 쓰는 곳이 없어진 다음 빌드에서 지워진다. 지워지는
+    엔티티의 파일끼리만 서로 쓰는 것은 전처럼 함께 지워진다. 전에는 2.x template 을 `output = 'v3'` 로 옮기는 첫 빌드가
+    2.x 호환 번들이 쓴(3.0 표시) `CouponCoreService` 를 지워, 개발자 컨트롤러가 컴파일되지 않았다.
+  - 마이그레이션 가이드: 2.x 는 `@service`·`@expose` 없이도 키가 있는 엔티티에 리포지토리를, `@template`·`@searchable`
+    DTO 가 있으면 서비스와 컨트롤러까지 썼고 v3 는 `@expose`·`@service` 엔티티만 쓴다는 줄, `@ElastiCore` 로
+    생성하던 프로젝트는 옮길 때 그것을 지운다는 줄(남기면 컴파일마다 2.x 코드가 다시 쓰여 병합에 편집으로 들어온다).
   - 3.0 미발표 출력의 기본 변경: Java·Kotlin 소스의 첫 줄 표시가 빠진다. 샘플의 한 번만 생성한 파일 넷(pet store
     `CustomerService`·`PurchaseOrderService`·`OrderLine`, MyBatis pet store `PurchaseOrderService`)이 표시 줄만 빠졌다.
     2.x 코드(`output = 'v2'`)는 그대로(`elcoreRulesCheck` 157/0/2, `elcoreTreeCheck` 0/0/0).
 - 확인:
   - `ThreeWayMergeTest`(import 묶음, 같은 자리 추가, 바뀐 줄 옆 추가, Kotlin), `GeneratedMergeTest`(Java 편집과 날짜 필드,
-    한 번만 생성하는 파일의 세 경우, 표시 넘겨받기와 확인 못 하는 기준, 2.x → 3.0 업그레이드), `SignInAndReferencesTest`.
+    한 번만 생성하는 파일의 세 경우, 표시 넘겨받기와 확인 못 하는 기준, 2.x → 3.0 업그레이드, 개발자 코드가 쓰는 오래된
+    클래스), `SignInAndReferencesTest`.
   - 실제 프로젝트 측정: template(2.x) 과 elasticore-petstore 에 모든 엔티티 필드 추가 - 바뀐 생성 파일 119 개 충돌 0;
     template 의 2.x → 3.0 - 바뀐 187 개 충돌 0(줄 단위만이면 1).
-  - 샘플 시나리오(작업 트리에서 실제 생성·컴파일·테스트): MyBatis pet store, JPA pet store, template-kt, template-ddd, ...
-    - 편집(생성 DTO 의 import·메서드·주석, 서비스, 매퍼 XML, DDL) 뒤 필드 추가가 병합되고 컴파일·테스트 통과, 이름 바꾸기
-    충돌이 빌드를 멈추고 풀면 계속, 엔티티를 넣었다 빼면 고치지 않은 파일은 지워지고 고친 것은 남고 알림.
+  - 샘플 시나리오(작업 트리에서 실제 생성·컴파일·테스트): MyBatis pet store 24/24, JPA pet store 23/23, template-kt
+    21/21, template-ddd 23/23, template-mybatis 24/24 - 편집(생성 DTO 의 import·메서드·주석, 서비스, 매퍼 XML, DDL)
+    뒤 필드 추가가 병합되고 컴파일·테스트 통과, 이름 바꾸기 충돌이 빌드를 멈추고 풀면 계속, 엔티티를 넣었다 빼면
+    고치지 않은 파일은 지워지고 고친 것은 남고 알림. (샘플의 `elcore3clean` 은 생성 전에 소스를 지우므로 `-x
+    elcore3clean` 으로.)
+  - 2.x template 을 가이드대로 옮기기(`output = 'v3'`, `@ElastiCore` 제거, 서비스를 쓰던 엔티티에 `@expose`) 15/15:
+    표시가 있는 2.x 파일 263 개를 기준으로 읽고, 고친 DTO 와 CoreService 는 표시 없이 편집이 남은 채 병합, 고치지 않은
+    파일은 3.0 코드, 두 번째 빌드는 그대로, 컴파일 통과.
 - 관련 파일: `util/ThreeWayMerge.java`(mergeSource), `verify/RulesGenRunner.java`(writeMergedSource·confirmedBase·
   twoXBases·rewriteOwned·removeStaleMerged·printSummary), `util/ConsoleLog.java`(snapshot·restore),
   `elasticore-env-guide.md` 9-2, `elasticore-rule-guide.md` 7.5, `elasticore-migration-guide.md`
