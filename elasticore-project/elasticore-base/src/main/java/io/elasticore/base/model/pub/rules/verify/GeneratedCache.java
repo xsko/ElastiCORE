@@ -33,11 +33,13 @@ final class GeneratedCache {
 
     private final File file;
     private final TreeMap<String, String> entries;
+    private final boolean existed;
     private boolean changed;
 
-    private GeneratedCache(File file, TreeMap<String, String> entries) {
+    private GeneratedCache(File file, TreeMap<String, String> entries, boolean existed) {
         this.file = file;
         this.entries = entries;
+        this.existed = existed;
     }
 
     /** The project's cache, empty when it has none yet; an unreadable one throws. */
@@ -45,11 +47,24 @@ final class GeneratedCache {
         File file = new File(new File(projectRoot, DIR), NAME);
         TreeMap<String, String> entries = new TreeMap<String, String>();
         if (file.isFile()) entries.putAll(read(Files.readAllBytes(file.toPath())));
-        return new GeneratedCache(file, entries);
+        // The attributes are written with the first cache and left alone: a
+        // cache deleted from beside them was there before.
+        boolean existed = file.isFile() || new File(file.getParentFile(), ".gitattributes").isFile();
+        return new GeneratedCache(file, entries, existed);
     }
 
     File file() {
         return file;
+    }
+
+    /**
+     * Whether the project had a cache when the run began. Without one, this
+     * is its first merging run; with one, a file it does not hold was not
+     * written by a merging run - or the cache was replaced or deleted - and
+     * what is in that file is not known to be the generator's.
+     */
+    boolean existed() {
+        return existed;
     }
 
     String get(String path) {
@@ -76,13 +91,13 @@ final class GeneratedCache {
      * changed it conflict as a whole, and either side may be taken.
      */
     void save() throws IOException {
+        if (!changed) return;
         File dir = file.getParentFile();
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("cannot create " + dir);
         File attributes = new File(dir, ".gitattributes");
         if (!attributes.exists()) {
             Files.write(attributes.toPath(), (NAME + " binary\n").getBytes(StandardCharsets.UTF_8));
         }
-        if (!changed && file.isFile()) return;
         File tmp = new File(dir, NAME + ".tmp");
         Files.write(tmp.toPath(), zip(entries));
         try {
@@ -93,26 +108,43 @@ final class GeneratedCache {
         changed = false;
     }
 
+    /**
+     * The entries of a cache. One that is cut short - its end record missing,
+     * or fewer entries than the record counts - or that names a path outside
+     * the project is refused: a run would merge against part of it, and its
+     * stale files are deleted by those paths.
+     */
     static Map<String, String> read(byte[] bytes) throws IOException {
+        int end = bytes.length - 22;
+        if (end < 0 || int4(bytes, end) != 0x06054b50L) throw new IOException("not a whole zip");
+        int count = (bytes[end + 10] & 0xff) | (bytes[end + 11] & 0xff) << 8;
         Map<String, String> found = new TreeMap<String, String>();
         try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
             ZipEntry e;
             byte[] buf = new byte[8192];
             while ((e = in.getNextEntry()) != null) {
+                if (!inside(e.getName())) throw new IOException("an entry outside the project: " + e.getName());
                 ByteArrayOutputStream content = new ByteArrayOutputStream();
                 int n;
                 while ((n = in.read(buf)) > 0) content.write(buf, 0, n);
                 found.put(e.getName(), new String(content.toByteArray(), StandardCharsets.UTF_8));
             }
         }
-        if (bytes.length > 0 && found.isEmpty() && !isEmptyZip(bytes)) {
-            throw new IOException("not a zip");
-        }
+        if (found.size() != count) throw new IOException(found.size() + " entries of " + count);
         return found;
     }
 
-    private static boolean isEmptyZip(byte[] bytes) {
-        return bytes.length == 22 && bytes[0] == 0x50 && bytes[1] == 0x4b && bytes[2] == 5 && bytes[3] == 6;
+    /** A relative path with '/', none of its parts "..". */
+    private static boolean inside(String path) {
+        if (path.isEmpty() || path.startsWith("/") || path.indexOf('\\') >= 0 || path.indexOf(':') >= 0) return false;
+        for (String part : path.split("/")) {
+            if (part.isEmpty() || part.equals("..") || part.equals(".")) return false;
+        }
+        return true;
+    }
+
+    private static long int4(byte[] b, int at) {
+        return (b[at] & 0xffL) | (b[at + 1] & 0xffL) << 8 | (b[at + 2] & 0xffL) << 16 | (b[at + 3] & 0xffL) << 24;
     }
 
     /**

@@ -36,7 +36,7 @@ public class GeneratedMergeTest {
 
     private static final String[] KEYS = {"elasticore.base.path", "elasticore.rules.force", "elasticore.merge",
             "elasticore.ddl.databases", "elasticore.ddl.migration", "elasticore.rules.v2", "elasticore.rules.v3",
-            "elasticore.rules.ts", "elasticore.rules.tsWithBuild"};
+            "elasticore.rules.ts", "elasticore.rules.tsWithBuild", "elasticore.domain", "elasticore.ddl.only"};
 
     private static final String ORDER = String.join("\n",
             "  PurchaseOrder:",
@@ -249,6 +249,107 @@ public class GeneratedMergeTest {
     }
 
     @Test
+    public void editsOfAFileThatWasAlwaysOverwrittenSurviveALostCache() throws Exception {
+        File project = project(CUSTOMER + ORDER);
+        run(project, 0);
+        Path messages = resource(project, "dgshop-messages.properties");
+        assertNotNull(messages);
+        String edited = read(messages) + "custom.greeting=hello\n";
+        Files.write(messages, edited.getBytes(StandardCharsets.UTF_8));
+
+        // The cache deleted - or replaced by the other side of a git conflict - with its folder left.
+        Files.delete(new File(project, ".elasticore/cache").toPath());
+        String log = run(project, 0);
+        assertEquals(edited, read(messages), log);
+        assertTrue(log.contains("dgshop-messages.properties: not in .elasticore/cache"), log);
+
+        // The folder gone as well: the project's first merging run, which writes it as it always did.
+        delete(new File(project, ".elasticore").toPath());
+        run(project, 0);
+        assertFalse(read(messages).contains("custom.greeting"), read(messages));
+    }
+
+    @Test
+    public void aRunOverOneDomainRemovesNothing() throws Exception {
+        File project = project(CUSTOMER + ORDER + coupon("Coupon"));
+        run(project, 0);
+        Path coupon = resource(project, "CouponRepository.xml");
+        model(project, CUSTOMER + ORDER);
+        System.setProperty("elasticore.domain", "dgshop");
+        try {
+            run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.domain");
+        }
+        assertTrue(Files.exists(coupon), "a run over one domain cannot tell another's file from a stale one");
+        run(project, 0);
+        assertFalse(Files.exists(coupon));
+    }
+
+    @Test
+    public void aCacheCutShortOrNamingPathsOutsideIsRefused() throws Exception {
+        java.util.TreeMap<String, String> entries = new java.util.TreeMap<String, String>();
+        entries.put("src/main/resources/a.xml", "<a/>\n");
+        entries.put("src/main/resources/b.xml", "<b/>\n");
+        byte[] whole = GeneratedCache.zip(entries);
+        assertEquals(entries, GeneratedCache.read(whole));
+        assertRefused(java.util.Arrays.copyOf(whole, whole.length - 30));
+        assertRefused(java.util.Arrays.copyOf(whole, 40));
+        for (String outside : new String[]{"../evil.xml", "src/../../evil.xml", "/etc/evil", "C:/evil.xml"}) {
+            java.util.TreeMap<String, String> bad = new java.util.TreeMap<String, String>();
+            bad.put(outside, "x");
+            assertRefused(GeneratedCache.zip(bad));
+        }
+    }
+
+    private static void assertRefused(byte[] cache) {
+        try {
+            GeneratedCache.read(cache);
+        } catch (IOException expected) {
+            return;
+        }
+        throw new AssertionError("read a cache it should have refused");
+    }
+
+    @Test
+    public void aConflictInTheDdlAloneFailsTheBuild() throws Exception {
+        // A project that keeps 2.x's code and merges its DDL: the code comes from
+        // a run that writes no DDL and merges nothing (in a build, the 2.x
+        // generator), the DDL from elcoreDdl alone, after it.
+        System.setProperty("elasticore.rules.v2", "true");
+        File project = project(CUSTOMER + ORDER, "jpa", "");
+        System.setProperty("elasticore.merge", "false");
+        run(project, 0);
+        System.setProperty("elasticore.merge", "true");
+        System.setProperty("elasticore.ddl.databases", "h2");
+        System.setProperty("elasticore.ddl.only", "true");
+        try {
+            run(project, 0);
+            Path ddl = new File(project, "src/main/resources/db/schema-h2.sql").toPath();
+            String generated = read(ddl);
+            assertFalse(generated.contains("//ecd:"), generated);
+            String line = null;
+            for (String l : generated.split("\r?\n")) if (l.contains("order_no")) line = l;
+            assertNotNull(line, generated);
+            Files.write(ddl, generated.replace(line, line + " -- the business key").getBytes(StandardCharsets.UTF_8));
+
+            System.clearProperty("elasticore.ddl.only");
+            System.clearProperty("elasticore.ddl.databases");
+            model(project, CUSTOMER + ORDER.replace("orderNo:", "orderCode:"));
+            System.setProperty("elasticore.merge", "false");
+            run(project, 0);
+            System.setProperty("elasticore.merge", "true");
+            System.setProperty("elasticore.ddl.databases", "h2");
+            System.setProperty("elasticore.ddl.only", "true");
+            String log = run(project, 1);
+            assertTrue(log.contains("schema-h2.sql: 1 place(s)"), log);
+            assertTrue(read(ddl).contains("<<<<<<< yours"), read(ddl));
+        } finally {
+            System.clearProperty("elasticore.ddl.only");
+        }
+    }
+
+    @Test
     public void theOrmXmlIsMerged() throws Exception {
         File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
         run(project, 0);
@@ -283,8 +384,13 @@ public class GeneratedMergeTest {
         Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
         assertNotNull(entries.get(keyOf(project, ts)));
 
-        // And the client's run keeps the server's.
+        // The model changes: the server's run, which does not write the client,
+        // knows the client - stampless - from the cache, and says it is stale.
         model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        log = runCapturingErr(project, 0);
+        assertTrue(log.contains("made from an older model"), log);
+
+        // And the client's run keeps the server's.
         System.setProperty("elasticore.rules.ts", "true");
         log = run(project, 0);
         assertTrue(read(ts).contains("// mine") && read(ts).contains("memo"), log + read(ts));

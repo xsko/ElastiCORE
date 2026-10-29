@@ -327,6 +327,12 @@ public final class RulesGenRunner {
         try {
             return generateAll(args);
         } finally {
+            // A run that ended on an exception has still written what it
+            // wrote: the cache follows the files (a no-op when it already has).
+            if (merging != null) {
+                merging.saveCache();
+                merging = null;
+            }
             io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(false);
             // What this run said of its applications is not the next caller's.
             SpecFactory.applicationSignIns(-1, null);
@@ -608,6 +614,7 @@ public final class RulesGenRunner {
         if (merges(v3, kotlin)) {
             try {
                 runner.cache = GeneratedCache.load(new File(basePath));
+                merging = runner;
             } catch (IOException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
                         + " cannot be read (" + e.getMessage() + ") - take it from git again;"
@@ -652,7 +659,9 @@ public final class RulesGenRunner {
             for (String f : io.elasticore.base.model.pub.rules.ModelCheck.failures()) {
                 io.elasticore.base.util.ConsoleLog.printWarn(f);
             }
-            return io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty() ? 0 : 1;
+            // A schema left with conflict marks, or one that could not be written, is the build's answer too.
+            for (String n : runner.notes) System.out.println("  " + n);
+            return io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty() && runner.succeeded() ? 0 : 1;
         }
 
         for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
@@ -3920,6 +3929,9 @@ public final class RulesGenRunner {
     /** What was generated last (elasticore.merge), or null when the project does not merge. */
     private GeneratedCache cache;
 
+    /** The run of this JVM that holds a cache, for run() to save it whatever ends the run. */
+    private static RulesGenRunner merging;
+
     /** The cache entries this run wrote or kept - the rest are stale after a whole run. */
     private final java.util.Set<String> mergedKeys = new java.util.HashSet<String>();
 
@@ -3989,8 +4001,9 @@ public final class RulesGenRunner {
 
     /**
      * overwritten: a file the generator used to write over on every run
-     * (orm.xml, the messages) - one it finds outside the cache is its own
-     * last output, not something to leave alone.
+     * (orm.xml, the messages) - on the project's first merging run, one it
+     * finds is its own last output, not something to leave alone. Once there
+     * is a cache, one it does not hold is treated as any other.
      */
     private void writeMerged(String label, File file, String key, String content, boolean overwritten) {
         mergedKeys.add(key);
@@ -4025,7 +4038,8 @@ public final class RulesGenRunner {
                 base = st.getPreSourceContent().replace("\r\n", "\n");
                 disk = disk.substring(disk.indexOf('\n') + 1);
                 stamped = true;
-            } else if (overwritten) {
+            } else if (overwritten && !cache.existed()) {
+                // The first merging run: the file holds what the last run wrote over it.
                 base = disk;
             } else if (!disk.equals(generated)) {
                 skipped++;

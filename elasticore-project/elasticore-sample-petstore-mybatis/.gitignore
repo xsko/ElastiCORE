@@ -14,3 +14,8 @@
 
 # The message bundle the generator writes beside the error handler.
 /src/main/resources/i18n/*-messages.properties
+
+# What the generator last wrote, merged against (elasticore-env-guide.md 9-2). A project
+# commits it with its generated files; this one keeps most of those out of git and
+# regenerates them on every build, so the cache stays local with them.
+/.elasticore/
