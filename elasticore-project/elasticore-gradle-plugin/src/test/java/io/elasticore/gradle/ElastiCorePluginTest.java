@@ -120,6 +120,18 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("merging edited generated files is passed, and only when asked for")
+    public void mergeIsPassed() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { merge = true }", REPORTER);
+        assertTrue(reportOf(run("reportElcore")).contains("elasticore.merge=true"));
+
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { merge = false }", REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.merge"), reported);
+    }
+
+    @Test
     @DisplayName("a name for the Ossie model is passed, and only when one is given")
     public void theOssieNameIsPassed() throws IOException {
         writeSettings("single");
