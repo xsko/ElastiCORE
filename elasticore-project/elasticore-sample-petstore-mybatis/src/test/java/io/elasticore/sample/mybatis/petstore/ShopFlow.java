@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The shop as a browser uses it - browse, sign up and in, check out, look at
  * the orders - over the generated MyBatis mappers. Run on H2 (ShopFlowTest)
  * and on Oracle, PostgreSQL and SQL Server (ShopFlowOnDatabasesTest), each on
- * the schema the generator wrote for it and the same catalog: the identity
+ * the migrations the generator wrote for it and the same catalog: the identity
  * columns number it 1, 2, 3 ... so Fish is category 1, Dogs 2, item 1 is the
  * large Angelfish at 10.00 and item 2 the toothless one at 10.00.
  */

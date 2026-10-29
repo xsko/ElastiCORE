@@ -25,6 +25,11 @@ elasticore {
 	springBoot = '4'
 	// The model as an Apache Ossie semantic model too: blueprint/semantic_model.yml
 	rules = ['ossie-export']
+	// The tables Hibernate maps, for each database (db/schema-{db}.sql) - checked
+	// by SchemaValidateTest with ddl-auto=validate.
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+	}
 }
 
 dependencies {
@@ -70,6 +75,10 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	// The databases dbTest validates the generated schema on.
+	testRuntimeOnly 'org.postgresql:postgresql'
+	testRuntimeOnly 'com.oracle.database.jdbc:ojdbc11'
+	testRuntimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
 }
 
 application {
@@ -83,8 +92,22 @@ tasks.named('elcore3') {
 	systemProperty 'elasticore.rules.force', 'true'
 }
 
+// Hibernate validates the generated schema of each database ELASTICORE_IT_* names (CI starts them).
+tasks.register('dbTest', Test) {
+	group = 'verification'
+	description = 'Validates the generated schema on the databases ELASTICORE_IT_* name'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'database'
+	}
+	testLogging { events 'passed', 'skipped', 'failed' }
+}
+
 test {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'database'
+	}
 	testLogging { events 'failed' }
 	// The tests run as on a server whose machine language is Korean: an error
 	// that leaked the machine's language into an English answer shows here.

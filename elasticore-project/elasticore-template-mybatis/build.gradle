@@ -17,6 +17,10 @@ plugins {
 elasticore {
 	architecture = 'layered'
 	language = 'java'
+	// The tables for each database the tests run on (db/schema-{db}.sql).
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+	}
 }
 
 dependencies {

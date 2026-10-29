@@ -28,6 +28,11 @@ plugins {
 elasticore {
 	architecture = 'hexagonal'
 	language = 'java'
+	// The tables Hibernate maps - Envers' audit tables among them - for each
+	// database (db/schema-{db}.sql), checked by SchemaValidateTest.
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+	}
 }
 
 // The plugin resolves io.elasticore:elasticore-base at its own version by

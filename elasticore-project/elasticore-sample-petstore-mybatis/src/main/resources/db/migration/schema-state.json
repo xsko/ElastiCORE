@@ -1,0 +1,344 @@
+{
+  "comment" : "The schema the migrations in this directory build, written by ElastiCORE after each one. Commit it with them; the next change of the model is a migration from this.",
+  "databases" : [ "h2", "postgresql", "oracle", "sqlserver" ],
+  "tables" : [ {
+    "name" : "ps_category",
+    "source" : "Petstore.Category",
+    "columns" : [ {
+      "name" : "category_id",
+      "type" : "BIGINT",
+      "nullable" : false,
+      "identity" : true
+    }, {
+      "name" : "name",
+      "type" : "TEXT",
+      "length" : 30,
+      "nullable" : false
+    }, {
+      "name" : "description",
+      "type" : "TEXT",
+      "length" : 3000,
+      "nullable" : false
+    } ],
+    "primaryKey" : [ "category_id" ],
+    "foreignKeys" : [ ],
+    "indexes" : [ ]
+  }, {
+    "name" : "ps_product",
+    "source" : "Petstore.Product",
+    "columns" : [ {
+      "name" : "product_id",
+      "type" : "BIGINT",
+      "nullable" : false,
+      "identity" : true
+    }, {
+      "name" : "name",
+      "type" : "TEXT",
+      "length" : 30,
+      "nullable" : false
+    }, {
+      "name" : "description",
+      "type" : "TEXT",
+      "length" : 3000,
+      "nullable" : false
+    }, {
+      "name" : "category_category_id",
+      "type" : "BIGINT"
+    } ],
+    "primaryKey" : [ "product_id" ],
+    "foreignKeys" : [ {
+      "name" : "fk_ps_product_category",
+      "columns" : [ "category_category_id" ],
+      "table" : "ps_category",
+      "referenced" : [ "category_id" ]
+    } ],
+    "indexes" : [ ]
+  }, {
+    "name" : "ps_item",
+    "source" : "Petstore.Item",
+    "columns" : [ {
+      "name" : "item_id",
+      "type" : "BIGINT",
+      "nullable" : false,
+      "identity" : true
+    }, {
+      "name" : "name",
+      "type" : "TEXT",
+      "length" : 30,
+      "nullable" : false
+    }, {
+      "name" : "description",
+      "type" : "TEXT",
+      "length" : 3000,
+      "nullable" : false
+    }, {
+      "name" : "image_path",
+      "type" : "TEXT",
+      "length" : 100
+    }, {
+      "name" : "unit_cost",
+      "type" : "DECIMAL",
+      "precision" : 10,
+      "scale" : 2,
+      "nullable" : false
+    }, {
+      "name" : "product_product_id",
+      "type" : "BIGINT"
+    } ],
+    "primaryKey" : [ "item_id" ],
+    "foreignKeys" : [ {
+      "name" : "fk_ps_item_product",
+      "columns" : [ "product_product_id" ],
+      "table" : "ps_product",
+      "referenced" : [ "product_id" ]
+    } ],
+    "indexes" : [ ]
+  }, {
+    "name" : "ps_country",
+    "source" : "Petstore.Country",
+    "columns" : [ {
+      "name" : "iso_code",
+      "type" : "TEXT",
+      "length" : 2,
+      "nullable" : false
+    }, {
+      "name" : "name",
+      "type" : "TEXT",
+      "length" : 80,
+      "nullable" : false
+    }, {
+      "name" : "printable_name",
+      "type" : "TEXT",
+      "length" : 80,
+      "nullable" : false
+    } ],
+    "primaryKey" : [ "iso_code" ],
+    "foreignKeys" : [ ],
+    "indexes" : [ ]
+  }, {
+    "name" : "ps_customer",
+    "source" : "Petstore.Customer",
+    "columns" : [ {
+      "name" : "customer_id",
+      "type" : "BIGINT",
+      "nullable" : false,
+      "identity" : true
+    }, {
+      "name" : "login",
+      "type" : "TEXT",
+      "length" : 10,
+      "nullable" : false
+    }, {
+      "name" : "password",
+      "type" : "TEXT",
+      "length" : 255,
+      "nullable" : false
+    }, {
+      "name" : "first_name",
+      "type" : "TEXT",
+      "length" : 50,
+      "nullable" : false
+    }, {
+      "name" : "last_name",
+      "type" : "TEXT",
+      "length" : 50,
+      "nullable" : false
+    }, {
+      "name" : "telephone",
+      "type" : "TEXT",
+      "length" : 30
+    }, {
+      "name" : "email",
+      "type" : "TEXT",
+      "length" : 100
+    }, {
+      "name" : "date_of_birth",
+      "type" : "DATE"
+    }, {
+      "name" : "role",
+      "type" : "TEXT",
+      "length" : 1,
+      "ascii" : true
+    }, {
+      "name" : "street1",
+      "type" : "TEXT",
+      "length" : 50,
+      "nullable" : false
+    }, {
+      "name" : "street2",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "city",
+      "type" : "TEXT",
+      "length" : 50,
+      "nullable" : false
+    }, {
+      "name" : "state",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "zipcode",
+      "type" : "TEXT",
+      "length" : 10,
+      "nullable" : false
+    }, {
+      "name" : "country_code",
+      "type" : "TEXT",
+      "length" : 2,
+      "nullable" : false
+    } ],
+    "primaryKey" : [ "customer_id" ],
+    "foreignKeys" : [ ],
+    "indexes" : [ {
+      "name" : "uk_ps_customer_login",
+      "columns" : [ "login" ],
+      "unique" : true
+    } ]
+  }, {
+    "name" : "ps_purchase_order",
+    "source" : "Petstore.PurchaseOrder",
+    "columns" : [ {
+      "name" : "order_id",
+      "type" : "TEXT",
+      "length" : 36,
+      "nullable" : false
+    }, {
+      "name" : "customer_id",
+      "type" : "BIGINT"
+    }, {
+      "name" : "order_date",
+      "type" : "DATE"
+    }, {
+      "name" : "status",
+      "type" : "TEXT",
+      "length" : 3,
+      "ascii" : true
+    }, {
+      "name" : "street1",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "street2",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "city",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "state",
+      "type" : "TEXT",
+      "length" : 50
+    }, {
+      "name" : "zipcode",
+      "type" : "TEXT",
+      "length" : 10
+    }, {
+      "name" : "country_code",
+      "type" : "TEXT",
+      "length" : 2
+    }, {
+      "name" : "credit_card_number",
+      "type" : "TEXT",
+      "length" : 30,
+      "nullable" : false
+    }, {
+      "name" : "credit_card_type",
+      "type" : "TEXT",
+      "length" : 4,
+      "nullable" : false,
+      "ascii" : true
+    }, {
+      "name" : "credit_card_exp_date",
+      "type" : "TEXT",
+      "length" : 5,
+      "nullable" : false
+    }, {
+      "name" : "total_without_vat",
+      "type" : "DECIMAL",
+      "precision" : 12,
+      "scale" : 2
+    }, {
+      "name" : "vat_rate",
+      "type" : "DECIMAL",
+      "precision" : 5,
+      "scale" : 2
+    }, {
+      "name" : "vat",
+      "type" : "DECIMAL",
+      "precision" : 12,
+      "scale" : 2
+    }, {
+      "name" : "discount_rate",
+      "type" : "DECIMAL",
+      "precision" : 5,
+      "scale" : 2
+    }, {
+      "name" : "discount",
+      "type" : "DECIMAL",
+      "precision" : 12,
+      "scale" : 2
+    }, {
+      "name" : "total",
+      "type" : "DECIMAL",
+      "precision" : 12,
+      "scale" : 2
+    }, {
+      "name" : "version",
+      "type" : "BIGINT"
+    } ],
+    "primaryKey" : [ "order_id" ],
+    "foreignKeys" : [ {
+      "name" : "fk_ps_purchase_order_customer",
+      "columns" : [ "customer_id" ],
+      "table" : "ps_customer",
+      "referenced" : [ "customer_id" ]
+    } ],
+    "indexes" : [ ]
+  }, {
+    "name" : "ps_order_line",
+    "source" : "Petstore.OrderLine",
+    "columns" : [ {
+      "name" : "line_id",
+      "type" : "TEXT",
+      "length" : 36,
+      "nullable" : false
+    }, {
+      "name" : "order_order_id",
+      "type" : "TEXT",
+      "length" : 36
+    }, {
+      "name" : "item_item_id",
+      "type" : "BIGINT"
+    }, {
+      "name" : "quantity",
+      "type" : "INTEGER",
+      "nullable" : false
+    }, {
+      "name" : "unit_cost",
+      "type" : "DECIMAL",
+      "precision" : 10,
+      "scale" : 2
+    }, {
+      "name" : "sub_total",
+      "type" : "DECIMAL",
+      "precision" : 12,
+      "scale" : 2
+    } ],
+    "primaryKey" : [ "line_id" ],
+    "foreignKeys" : [ {
+      "name" : "fk_ps_order_line_order",
+      "columns" : [ "order_order_id" ],
+      "table" : "ps_purchase_order",
+      "referenced" : [ "order_id" ]
+    }, {
+      "name" : "fk_ps_order_line_item",
+      "columns" : [ "item_item_id" ],
+      "table" : "ps_item",
+      "referenced" : [ "item_id" ]
+    } ],
+    "indexes" : [ ]
+  } ],
+  "sequences" : [ ]
+}

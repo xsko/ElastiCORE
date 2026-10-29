@@ -67,7 +67,7 @@ final class TestDatabase {
         }
         // Spring runs a schema on an embedded database only, unless told to.
         p.put("spring.sql.init.mode", "always");
-        p.put("spring.sql.init.schema-locations", "classpath:db/" + domain + "-schema-" + vendor + ".sql");
+        p.put("spring.sql.init.schema-locations", "classpath:db/schema-" + vendor + ".sql");
         return p;
     }
 }

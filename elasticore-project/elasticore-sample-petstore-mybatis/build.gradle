@@ -24,6 +24,12 @@ elasticore {
 	// Read off the Spring Boot Gradle plugin in a project; this build's
 	// Gradle predates the Boot 4 plugin, so it is said here.
 	springBoot = '4'
+	// The tables for each database, and every change of the model as a Flyway
+	// migration (db/migration/{db}/), which the application runs at start-up.
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+		migration = 'flyway'
+	}
 }
 
 dependencies {
@@ -61,6 +67,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+	// The migrations the generator writes, run at start-up, on each database.
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.flywaydb:flyway-database-oracle'
+	runtimeOnly 'org.flywaydb:flyway-sqlserver'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
 	implementation project(':elasticore-project:elasticore-base')

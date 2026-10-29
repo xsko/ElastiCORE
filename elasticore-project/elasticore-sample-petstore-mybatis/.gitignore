@@ -4,9 +4,10 @@
 !/src/main/java/io/elasticore/sample/mybatis/petstore/*.java
 !/src/main/java/io/elasticore/sample/mybatis/petstore/application/PurchaseOrderService.java
 
-# The mapper XML and the schemas, written by every build.
+# The mapper XML and the full schemas, written by every build. The migrations
+# and their state (db/migration/) are the database's history: committed.
 /src/main/resources/io/
-/src/main/resources/db/
+/src/main/resources/db/schema-*.sql
 
 /src/main/resources/blueprint/*.md
 /src/main/resources/blueprint/schema.yml

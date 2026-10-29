@@ -12,7 +12,7 @@ import java.util.Map;
  * A database of the CI job's, given by ELASTICORE_IT_{VENDOR}_URL, _USER and
  * _PASSWORD (an administrator), and a place of its own in it for one test
  * class: a schema on PostgreSQL, a database on SQL Server, a user on Oracle -
- * so every run starts from the generated schema on empty tables, whatever
+ * so every run starts from the generated migrations on an empty database, whatever
  * ran before it.
  */
 final class TestDatabase {
@@ -27,8 +27,8 @@ final class TestDatabase {
 
     /**
      * Makes a new, empty place on the database and answers the Spring
-     * properties that point the application at it, with the schema the
-     * generator wrote for that database and the catalog.
+     * properties that point the application at it, where Flyway runs the
+     * migrations the generator wrote for that database and the catalog.
      */
     static Map<String, String> fresh(String vendor) {
         String v = vendor.toUpperCase(Locale.ROOT);
@@ -65,10 +65,8 @@ final class TestDatabase {
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot make a place for the test on " + vendor + ": " + e.getMessage(), e);
         }
-        // Spring runs a schema on an embedded database only, unless told to (application.yml does too).
-        p.put("spring.sql.init.mode", "always");
-        p.put("spring.sql.init.schema-locations", "classpath:db/petstore-schema-" + vendor + ".sql");
-        p.put("spring.sql.init.data-locations", "classpath:data.sql");
+        // The tables are Flyway's to make: the migrations the generator wrote for this database
+        // (application.yml: db/migration/{vendor}), then the catalog.
         return p;
     }
 }

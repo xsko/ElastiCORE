@@ -109,4 +109,12 @@ public abstract class ElastiCoreExtension {
      * Set, {@code elcore3ts} runs right after {@code elcore3}, before compile.
      */
     public abstract Property<Boolean> getTypescriptClient();
+
+    /** The project's DDL (see {@link DdlSpec}); none unless said. */
+    @org.gradle.api.tasks.Nested
+    public abstract DdlSpec getDdl();
+
+    public void ddl(org.gradle.api.Action<? super DdlSpec> action) {
+        action.execute(getDdl());
+    }
 }

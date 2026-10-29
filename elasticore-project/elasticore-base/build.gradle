@@ -52,6 +52,8 @@ dependencies {
 
     testImplementation 'org.mockito:mockito-core:4.11.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:4.11.0'
+    // The DDL and its migrations, run on a database (DdlMigrationTest).
+    testImplementation 'com.h2database:h2:2.2.224'
 
 }
 

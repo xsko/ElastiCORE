@@ -16,6 +16,12 @@ plugins {
 // Without it, the generator would find the 2.x code here and stop.
 elasticore {
 	output = 'v2'
+	// The tables the 2.x code maps - many-to-many join tables, a key of two
+	// fields, JSON and XML columns, Envers' audit tables - for each database
+	// (db/schema-{db}.sql), checked by SchemaValidateTest.
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+	}
 }
 
 // Inside this repository elasticore-base is the module next door rather than a

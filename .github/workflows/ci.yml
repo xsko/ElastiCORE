@@ -131,13 +131,14 @@ jobs:
           name: test-reports
           path: '**/build/reports/tests/'
 
-  # The MyBatis code on the databases its schemas are written for: the shop's
-  # API tests and the pet store's flows, each on Oracle, PostgreSQL and SQL
-  # Server from the schema the generator wrote for that database, in a schema
-  # (a user, a database) of its own. The passwords are the run's, made from
-  # its id: the containers live as long as the job.
+  # The generated code and DDL on the databases they are written for, each on
+  # Oracle, PostgreSQL and SQL Server in a schema (a user, a database) of its
+  # own: the MyBatis shop's API tests and the pet store's flows (the latter
+  # from the Flyway migrations the generator wrote), a migration's ALTERs, and
+  # Hibernate validating the JPA pet store's generated schema. The passwords
+  # are the run's, made from its id: the containers live as long as the job.
   databases:
-    name: MyBatis on Oracle, PostgreSQL and SQL Server
+    name: Oracle, PostgreSQL and SQL Server
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -190,10 +191,11 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew :elasticore-project:elasticore-template-mybatis:dbTest \
-            :elasticore-project:elasticore-sample-petstore-mybatis:dbTest --continue --console=plain 2>&1 | tee build.log
+            :elasticore-project:elasticore-sample-petstore-mybatis:dbTest \
+            :elasticore-project:elasticore-sample-petstore:dbTest --continue --console=plain 2>&1 | tee build.log
 
       # A database the job did not reach would skip its tests and pass; every
-      # one of the six classes must have run.
+      # one of the ten classes must have run.
       - name: No database was skipped
         run: |
           shopt -s nullglob
@@ -202,7 +204,7 @@ jobs:
           skipped=""
           if [ "$files" -gt 0 ]; then skipped=$(grep -l 'skipped="[1-9]' "${results[@]}" || true); fi
           echo "$files result files"
-          if [ "$files" -lt 6 ] || [ -n "$skipped" ]; then
+          if [ "$files" -lt 10 ] || [ -n "$skipped" ]; then
             echo "::error title=Database tests skipped::$files result files; skipped in: $skipped"
             exit 1
           fi

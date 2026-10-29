@@ -101,10 +101,10 @@ config:
 | `<Entity>Repository.java` | MyBatis 매퍼 인터페이스 (`@Mapper`). 서비스가 `helper.getOrder()` 로 부르는 것 |
 | `<Entity>Repository.xml` | 그 SQL - 같은 패키지 경로의 `src/main/resources` 아래 (MyBatis 가 저절로 찾는 곳) |
 | `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 컨트롤러와 확장 서비스는 JPA 판 그대로 |
-| `db/<domain>-schema.sql` | 테이블·외래키·`@Index` - H2 용 |
-| `db/<domain>-schema-postgresql.sql` / `-oracle.sql` / `-sqlserver.sql` | 같은 스키마를 그 DB 의 타입으로 (아래 표). 그대로 실행하거나 마이그레이션의 시작으로 씁니다 |
+| `db/<domain>-schema.sql` | 테이블·외래키·`@Index` - H2 용. 프로젝트 DDL(9-1 절)이 켜져 있으면 그쪽 `db/schema-{db}.sql` 이 대신합니다 |
 
-**DB 별 스키마** - 타입은 그 DB 에서 Hibernate 가 고르는 것과 같습니다. 그래서 JPA 로 만든 테이블과 서로 읽을 수 있습니다.
+**DB 별 스키마** - PostgreSQL·Oracle·SQL Server 의 스키마와 마이그레이션은 프로젝트 DDL 이 씁니다(9-1 절, `elasticore { ddl {} }`).
+타입은 그 DB 에서 Hibernate 가 고르는 것과 같습니다. 그래서 JPA 로 만든 테이블과 서로 읽을 수 있습니다.
 생성되는 SQL 은 이름에 따옴표를 치지 않으므로, 어느 DB 의 예약어(`level`, `date`, `user`, `order` ...)인 테이블·컬럼 이름은
 생성 때 경고합니다 - `@table`·`@column` 으로 다른 이름을 주세요.
 
@@ -182,13 +182,13 @@ dependencies {
 
 ```properties
 # 생성된 스키마로 테이블 만들기 (H2 등 임베디드 DB 는 기본으로 실행, 그 밖에는 spring.sql.init.mode=always)
-spring.sql.init.schema-locations=classpath:db/shop-schema.sql
-# PostgreSQL / Oracle / SQL Server 면 그 DB 의 파일
-# spring.sql.init.schema-locations=classpath:db/shop-schema-oracle.sql
+spring.sql.init.schema-locations=classpath:db/shop-schema.sql      # 프로젝트 DDL 이면 classpath:db/schema-h2.sql
+# PostgreSQL / Oracle / SQL Server 면 프로젝트 DDL(9-1 절)이 쓴 그 DB 의 파일, 또는 Flyway 마이그레이션
+# spring.sql.init.schema-locations=classpath:db/schema-oracle.sql
 ```
 
 DB 는 `elasticore-sample-petstore-mybatis`(펫스토어 전체)와 `elasticore-template-mybatis`(모든 검색 조건·모든 컬럼 타입)의
-테스트가 H2 와 실제 Oracle 23 Free·PostgreSQL 16·SQL Server 2022 에서 확인합니다(CI 의 "MyBatis on Oracle, PostgreSQL and
+테스트가 H2 와 실제 Oracle 23 Free·PostgreSQL 16·SQL Server 2022 에서 확인합니다(CI 의 "Oracle, PostgreSQL and
 SQL Server").
 
 **직접 쓰는 쿼리**: 생성된 XML 은 다시 생성되므로 고치지 않습니다. 매퍼 인터페이스와 XML 을 하나 더 만들어
@@ -882,6 +882,101 @@ datasource:
 ```
 
 단일 데이터소스 환경에서는 설정하지 않으면 기본 `primary` EntityManagerFactory를 사용한다.
+
+---
+
+## 9-1. DDL - DB 별 스키마와 마이그레이션 (3.0)
+
+운영 DB 는 `ddl-auto` 로 만들지 않습니다. ElastiCORE 가 **프로젝트의 모든 테이블**(JPA·MyBatis 도메인 모두)을 DB 마다
+DDL 로 쓰고, 모델이 바뀌면 **바뀐 만큼을 Flyway 마이그레이션**으로 씁니다. Since: 3.0.261030
+
+**켜기 - 프로젝트 한 번** (`build.gradle`, 도메인마다가 아님):
+
+```gradle
+elasticore {
+    ddl {
+        databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver (postgres, mssql 도 됨)
+        migration = 'flyway'                   // 생략·none: 전체 스키마만
+    }
+}
+```
+
+**만들어지는 것** (`src/main/resources/`)
+
+| 파일 | 내용 |
+|---|---|
+| `db/schema-{db}.sql` | 모든 테이블·외래키·인덱스·시퀀스. 매 빌드 다시 생성. 빈 DB 에 `spring.sql.init.schema-locations` 로 실행하거나 DBA 에게 넘깁니다 |
+| `db/migration/{db}/V{시각}__init.sql` | 그 DB 이력의 첫 마이그레이션(그때의 전체 스키마) |
+| `db/migration/{db}/V{시각}__{무엇}.sql` | 모델이 바뀐 만큼 - `add_customer_email`, `create_visit` ... |
+| `db/migration/schema-state.json` | 마이그레이션들이 만든 스키마. 다음 변경은 이것과 비교합니다 |
+
+**마이그레이션 파일과 상태 파일은 커밋합니다** - DB 의 이력입니다. 마이그레이션은 한 번 쓰면 다시 쓰지 않습니다(Flyway 가
+checksum 을 봅니다). 손으로 고쳐도 됩니다 - 그 뒤로는 개발자의 파일입니다. `db/schema-*.sql` 은 생성물이라 커밋하지 않아도 됩니다.
+
+```yaml
+# application.yml - Spring Boot 가 DB 종류로 폴더를 고릅니다 ({vendor}: h2, postgresql, oracle, sqlserver)
+spring:
+  flyway:
+    locations: classpath:db/migration/{vendor}
+```
+의존성: `spring-boot-starter-flyway`(Boot 4; Boot 3 는 `org.flywaydb:flyway-core`)와 DB 별 모듈
+(`flyway-database-postgresql`·`flyway-database-oracle`·`flyway-sqlserver`).
+
+**마이그레이션이 쓰는 것**
+
+| 모델의 변화 | 마이그레이션 |
+|---|---|
+| 엔티티 추가 | `CREATE TABLE` + 외래키 + 인덱스 (다른 스키마의 첫 테이블이면 스키마도) |
+| 필드 추가 (선택) | `ADD COLUMN` |
+| 필드 추가 (필수 `!`) | 빈 채로 `ADD COLUMN`, `NOT NULL` 은 **검토**로 (있는 행에 값부터) |
+| 길이·정밀도 늘림 | `ALTER COLUMN` - DB 마다 문법이 다릅니다 (Oracle `MODIFY`, SQL Server 는 인덱스를 잠시 지웠다 다시) |
+| 필수 → 선택 | `DROP NOT NULL` |
+| 관계·`@unique`·`@Index` 추가/삭제 | 외래키·인덱스 추가/삭제 |
+| 필드·엔티티 삭제, 타입 변경·줄임, 선택 → 필수, 키 변경 | **검토**: 파일 끝에 주석으로 - 데이터를 잃거나 기존 행에서 실패할 수 있는 것 |
+
+검토가 필요한 변경은 빌드 로그에 `REVIEW` 로도 나옵니다. 주석을 풀고(또는 데이터를 옮기는 SQL 을 더해) 커밋하세요.
+
+**이력을 깨는 빌드는 실패합니다** - 그 이력의 마이그레이션과 상태 파일은 쓰지 않고 이유를 말합니다(`db/schema-*.sql` 은 그대로 다시 생성).
+
+| 상황 | 할 일 |
+|---|---|
+| `schema-state.json` 이 없는데 마이그레이션이 있다 | 버전 관리에서 상태 파일을 되살립니다 |
+| 이미 직접 쓴 Flyway 이력이 있는 프로젝트에서 처음 켠다 | DB 가 지금 모델과 같은지 확인하고 한 번 `./gradlew elcore -PddlBaseline` - 첫 마이그레이션 없이 상태만 지금 모델로 씁니다 |
+| `schema-state.json` 을 읽을 수 없다 (병합 충돌 표시) | 두 브랜치가 각자 마이그레이션을 썼습니다. 마이그레이션은 둘 다 두고, 상태는 나중 것의 것을 택한 뒤 다시 빌드합니다 |
+| `databases` 에서 뺐던 DB 를 다시 넣었다 | 그 DB 폴더의 이력을 손으로 지금 모델까지 맞춘 뒤, 상태 파일의 `databases` 에 그 DB 를 더합니다 |
+| 이번 빌드의 버전(`V{시각}__`)인 파일이 이미 있다 | 다시 빌드합니다 (시각이 바뀝니다) |
+
+`databases` 에서 뺀 DB 는 경고만 나오고, 그 DB 의 마이그레이션은 거기서 멈춥니다.
+
+**도메인별로 다르게** - 그 도메인의 `env.yml` 에서 필요한 것만 덮어씁니다.
+
+```yaml
+config:
+  ddl: false                 # 이 도메인은 DDL 에서 뺌 (다른 시스템이 관리하는 테이블을 읽기만 할 때)
+```
+```yaml
+config:
+  ddl:
+    separate: true           # 별도 DB: db/{domain}/schema-{db}.sql, db/{domain}/migration/... 따로
+    databases: [oracle]      # 그 DB 의 종류
+    migration: none          # 그 도메인은 스키마만
+```
+`separate` 가 아니면 모든 도메인이 프로젝트의 DB 하나(파일 하나, 이력 하나)에 들어갑니다. 다른 DB 의 테이블을 가리키는
+관계에는 외래키를 걸 수 없어 빼고 경고합니다. 전역 설정 없이 도메인 하나만 `ddl.databases` 로 켤 수도 있습니다.
+
+**JPA 도메인의 테이블** 은 생성된 엔티티 소스(와 `mapping: xml` 의 `orm.xml`)에서 읽습니다 - Hibernate 가 읽는 그대로라
+개발자가 고친 엔티티·직접 쓴 엔티티(outbox 등)도 들어갑니다. 이름은 Spring Boot 의 규칙(snake case, 관계 컬럼
+`필드_대상키`, 조인 테이블 `소유테이블_속성`), 타입은 Hibernate 의 선택, 길이·NOT NULL 은 `@Size`·`@NotNull` 까지
+반영합니다. Envers(`@Audited`) 의 감사 테이블·`revinfo`·`revinfo_seq` 도 쓰며, `application.yml` 의
+`audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 씁니다.
+
+확인: ElastiCORE 의 JPA 샘플 넷(2.x·헥사고날·Kotlin·펫스토어)이 이 DDL 로 만든 테이블에서 Hibernate
+`ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·Oracle·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로
+세 DB 에서 도는지, 변경 마이그레이션(ALTER)이 세 DB 에서 실행되는지 CI 가 매번 봅니다.
+
+**한계**: Oracle 에는 `TEXT` 가 없어, JPA 의 `columnDefinition = "TEXT"`(DSL `text`)는 Oracle 에서 CLOB 이 되고 Hibernate
+validate 가 거절합니다(경고) - Oracle 이면 `clob` 이나 길이를 쓰세요. 이름에 따옴표를 치지 않으므로 DB 의 예약어인
+이름은 쓸 수 없습니다(MyBatis 도메인은 경고).
 
 ---
 

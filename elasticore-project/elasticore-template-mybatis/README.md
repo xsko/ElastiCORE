@@ -11,8 +11,7 @@ written in. `elcore3` writes, beside the DTOs, mapper and controller a JPA domai
 | `infrastructure/persistence/<Entity>Repository.java` | the MyBatis mapper interface (`@Mapper`) |
 | `resources/.../<Entity>Repository.xml` | its statements: the row with its to-one relations joined, the search, sort and page, insert, update, delete |
 | `application/<Entity>CoreService.java` | the service the controller calls, with the JPA one's methods |
-| `resources/db/shop-schema.sql` | the tables, for H2 |
-| `resources/db/shop-schema-{postgresql,oracle,sqlserver}.sql` | the same tables in each database's types |
+| `resources/db/schema-{h2,postgresql,oracle,sqlserver}.sql` | the tables in each database's types (`elasticore { ddl }` in build.gradle) |
 
 The tests in `src/test/java/mybatis` (`ShopApi`) drive the generated API: create, read, every search condition
 of the model, paging and sorting, a refused sort, an update and a stale version, a delete still referenced, a

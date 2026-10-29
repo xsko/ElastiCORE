@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The shop on a database the CI job gives: Oracle, PostgreSQL, SQL Server.
- * Each from the schema the generator wrote for it
- * (db/petstore-schema-{vendor}.sql), with the same catalog and the same flows
+ * Each from the migrations the generator wrote for it
+ * (db/migration/{vendor}), run by Flyway, with the same catalog and the same flows
  * as on H2. A database not given is skipped (./gradlew ...:dbTest).
  */
 @Tag("database")

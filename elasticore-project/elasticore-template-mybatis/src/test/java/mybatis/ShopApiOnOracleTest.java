@@ -5,7 +5,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-/** The shop on Oracle, from db/shop-schema-oracle.sql, as a user of its own. */
+/** The shop on Oracle, from db/schema-oracle.sql, as a user of its own. */
 @Tag("database")
 @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_ORACLE_URL", matches = ".+")
 public class ShopApiOnOracleTest extends ShopApi {

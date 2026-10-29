@@ -81,6 +81,16 @@ public class ElastiCorePlugin implements Plugin<Project> {
             task.systemProperty("elasticore.rules.ts", "true");
         });
 
+        // The DDL alone, read off the code another task wrote: a project that
+        // keeps 2.x's code gets it after elcore (elcore3 writes it itself).
+        TaskProvider<JavaExec> elcoreDdl = project.getTasks().register("elcoreDdl", JavaExec.class, task -> {
+            task.setGroup(GROUP);
+            task.setDescription("Writes the DDL of the project's tables (elasticore { ddl })");
+            task.setClasspath(tools);
+            task.getMainClass().set(RULE_ENGINE);
+            task.systemProperty("elasticore.ddl.only", "true");
+        });
+
         // The arguments are settled here, while the build is being configured,
         // and not inside a task action. An action that reaches for the project
         // is the one thing the configuration cache refuses, so the lazier
@@ -100,6 +110,16 @@ public class ElastiCorePlugin implements Plugin<Project> {
             });
             elcore3.configure(task -> arguments(task, evaluated, extension));
             elcore3ts.configure(task -> arguments(task, evaluated, extension));
+            elcoreDdl.configure(task -> arguments(task, evaluated, extension));
+
+            boolean ddl = !extension.getDdl().getDatabases().getOrElse(new ArrayList<>()).isEmpty();
+            if (ddl && keepsTwoX(extension)) {
+                elcore.configure(task -> task.finalizedBy(elcoreDdl));
+                elcoreDdl.configure(task -> task.mustRunAfter(elcore));
+                // The schema is a resource: it is there before the resources are copied.
+                evaluated.getTasks().matching(t -> t.getName().equals("processResources"))
+                        .configureEach(t -> t.dependsOn(elcoreDdl));
+            }
 
             // The client written with the server, where the build asks for it:
             // elcore3 says so to the generator, which otherwise warns that the
@@ -232,7 +252,17 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (extension.getOssieName().isPresent()) {
             task.systemProperty("elasticore.ossie.name", extension.getOssieName().get());
         }
+        // The project's DDL: the databases its schema is written for, and migrations.
+        List<String> databases = extension.getDdl().getDatabases().getOrElse(new ArrayList<>());
+        if (!databases.isEmpty()) {
+            task.systemProperty("elasticore.ddl.databases", String.join(",", databases));
+        }
+        if (extension.getDdl().getMigration().isPresent()) {
+            task.systemProperty("elasticore.ddl.migration", extension.getDdl().getMigration().get());
+        }
 
+        // Once, to start the history over a Flyway history of the project's own: -PddlBaseline.
+        passThrough(project, task, "ddlBaseline", "elasticore.ddl.baseline");
         passThrough(project, task, "mode", "mode");
         passThrough(project, task, "domain", "elasticore.domain");
 

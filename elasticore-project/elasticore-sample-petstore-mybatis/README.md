@@ -14,9 +14,12 @@ What it shows the MyBatis code doing:
 | `customerId: long` + `customer: Customer @ManyToOne @joinBy(customerId)` | the order holds its customer's id, the relation is joined on it - `@owner(customerId)` on the layered bundle |
 | `@Index(..., unique="true")` | a unique index; a taken login is a 409 |
 
-`db/petstore-schema.sql` is the H2 schema; `petstore-schema-postgresql.sql`, `-oracle.sql` and `-sqlserver.sql` are the
-same tables in each database's types. `data.sql` is the catalog without generated keys, so the identity columns number
-it alike on every database.
+The build's `elasticore { ddl { databases = [...]; migration = 'flyway' } }` writes the tables for each database
+(`db/schema-{db}.sql`) and the Flyway migrations that build them (`db/migration/{db}/V..__init.sql`, the next change of
+the model a migration of its own), which the application runs at start-up (`spring.flyway.locations:
+classpath:db/migration/{vendor}`). The migrations and `db/migration/schema-state.json` are committed: they are the
+database's history. `db/catalog/R__catalog.sql` is the catalog, without generated keys, so the identity columns number it
+alike on every database.
 
 The pricing - catalog prices, VAT, discount, delivery to the customer's home - is `PurchaseOrderService`'s, the one
 hand-written service: the layered bundle does not run the `@compute` and `states:` the hexagonal sample declares.

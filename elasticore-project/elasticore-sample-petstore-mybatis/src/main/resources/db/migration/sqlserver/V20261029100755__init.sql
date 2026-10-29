@@ -1,0 +1,95 @@
+-- The tables of the project, for SQL Server 2016 or later: the first migration of its history.
+-- Written by ElastiCORE; yours from now on - it is never written again.
+
+CREATE TABLE ps_category (
+    category_id BIGINT IDENTITY(1,1) NOT NULL,
+    name NVARCHAR(30) NOT NULL,
+    description NVARCHAR(3000) NOT NULL,
+    PRIMARY KEY (category_id)
+);
+
+CREATE TABLE ps_product (
+    product_id BIGINT IDENTITY(1,1) NOT NULL,
+    name NVARCHAR(30) NOT NULL,
+    description NVARCHAR(3000) NOT NULL,
+    category_category_id BIGINT,
+    PRIMARY KEY (product_id)
+);
+
+CREATE TABLE ps_item (
+    item_id BIGINT IDENTITY(1,1) NOT NULL,
+    name NVARCHAR(30) NOT NULL,
+    description NVARCHAR(3000) NOT NULL,
+    image_path NVARCHAR(100),
+    unit_cost DECIMAL(10,2) NOT NULL,
+    product_product_id BIGINT,
+    PRIMARY KEY (item_id)
+);
+
+CREATE TABLE ps_country (
+    iso_code NVARCHAR(2) NOT NULL,
+    name NVARCHAR(80) NOT NULL,
+    printable_name NVARCHAR(80) NOT NULL,
+    PRIMARY KEY (iso_code)
+);
+
+CREATE TABLE ps_customer (
+    customer_id BIGINT IDENTITY(1,1) NOT NULL,
+    login NVARCHAR(10) NOT NULL,
+    password NVARCHAR(255) NOT NULL,
+    first_name NVARCHAR(50) NOT NULL,
+    last_name NVARCHAR(50) NOT NULL,
+    telephone NVARCHAR(30),
+    email NVARCHAR(100),
+    date_of_birth DATE,
+    role VARCHAR(1),
+    street1 NVARCHAR(50) NOT NULL,
+    street2 NVARCHAR(50),
+    city NVARCHAR(50) NOT NULL,
+    state NVARCHAR(50),
+    zipcode NVARCHAR(10) NOT NULL,
+    country_code NVARCHAR(2) NOT NULL,
+    PRIMARY KEY (customer_id)
+);
+
+CREATE TABLE ps_purchase_order (
+    order_id NVARCHAR(36) NOT NULL,
+    customer_id BIGINT,
+    order_date DATE,
+    status VARCHAR(3),
+    street1 NVARCHAR(50),
+    street2 NVARCHAR(50),
+    city NVARCHAR(50),
+    state NVARCHAR(50),
+    zipcode NVARCHAR(10),
+    country_code NVARCHAR(2),
+    credit_card_number NVARCHAR(30) NOT NULL,
+    credit_card_type VARCHAR(4) NOT NULL,
+    credit_card_exp_date NVARCHAR(5) NOT NULL,
+    total_without_vat DECIMAL(12,2),
+    vat_rate DECIMAL(5,2),
+    vat DECIMAL(12,2),
+    discount_rate DECIMAL(5,2),
+    discount DECIMAL(12,2),
+    total DECIMAL(12,2),
+    version BIGINT,
+    PRIMARY KEY (order_id)
+);
+
+CREATE TABLE ps_order_line (
+    line_id NVARCHAR(36) NOT NULL,
+    order_order_id NVARCHAR(36),
+    item_item_id BIGINT,
+    quantity INT NOT NULL,
+    unit_cost DECIMAL(10,2),
+    sub_total DECIMAL(12,2),
+    PRIMARY KEY (line_id)
+);
+
+ALTER TABLE ps_product ADD CONSTRAINT fk_ps_product_category FOREIGN KEY (category_category_id) REFERENCES ps_category (category_id);
+ALTER TABLE ps_item ADD CONSTRAINT fk_ps_item_product FOREIGN KEY (product_product_id) REFERENCES ps_product (product_id);
+ALTER TABLE ps_purchase_order ADD CONSTRAINT fk_ps_purchase_order_customer FOREIGN KEY (customer_id) REFERENCES ps_customer (customer_id);
+ALTER TABLE ps_order_line ADD CONSTRAINT fk_ps_order_line_order FOREIGN KEY (order_order_id) REFERENCES ps_purchase_order (order_id);
+ALTER TABLE ps_order_line ADD CONSTRAINT fk_ps_order_line_item FOREIGN KEY (item_item_id) REFERENCES ps_item (item_id);
+
+CREATE UNIQUE INDEX uk_ps_customer_login ON ps_customer (login);

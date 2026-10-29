@@ -30,6 +30,11 @@ plugins {
 // only where it deviates from what the project said here.
 elasticore {
 	language = 'kotlin'
+	// The tables the Kotlin entities map, for each database (db/schema-{db}.sql),
+	// checked by SchemaValidateTest.
+	ddl {
+		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+	}
 }
 
 // Inside this repository elasticore-base is the module next door rather than a

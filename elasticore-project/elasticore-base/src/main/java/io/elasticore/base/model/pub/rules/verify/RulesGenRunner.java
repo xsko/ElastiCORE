@@ -615,6 +615,32 @@ public final class RulesGenRunner {
         // After the context map, which reads the model as the DSL wrote it.
         runner.shapeReferences(allModels);
 
+        // The DDL alone (elcoreDdl): for a project whose code another task
+        // wrote - the 2.x generator - the tables are read off that code.
+        if (Boolean.getBoolean("elasticore.ddl.only")) {
+            for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
+                String domainDirName = loader.domainDirNameOf(en.getKey());
+                if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
+                runner.domainRoot = loader.moduleRootOf(en.getKey());
+                for (ECoreModel m : loader.modelsOf(en.getKey())) {
+                    runner.currentModel = m;
+                    // A MyBatis domain's tables come from its generated model, which elcore3 builds and writes itself.
+                    if (RulesConfig.mybatis(m.getConfig("mode")) && runner.ddlOf(m).enabled()) {
+                        io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] ddl: domain " + domainDirName
+                                + " is mode: mybatis - its DDL is written by elcore3, not elcoreDdl");
+                        continue;
+                    }
+                    runner.recordDdl(domainDirName, m, new ArrayList<EntitySpec>());
+                }
+            }
+            if (io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty()) runner.writeDdl();
+            io.elasticore.base.util.ConsoleLog.printStoredWarnLog("DSL_WARN", "  ");
+            for (String f : io.elasticore.base.model.pub.rules.ModelCheck.failures()) {
+                io.elasticore.base.util.ConsoleLog.printWarn(f);
+            }
+            return io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty() ? 0 : 1;
+        }
+
         for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
             String domainDirName = loader.domainDirNameOf(en.getKey());
             if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
@@ -629,6 +655,12 @@ public final class RulesGenRunner {
         // everything it declares unproduced, and those files are not stale - the
         // run stops so the YAML is fixed, and the next one writes them again.
         boolean modelChecked = io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        // The DDL reads every domain's tables, and a migration is written once:
+        // only from a whole run that succeeded.
+        if (domainFilter == null && runner.succeeded() && modelChecked) {
+            runner.writeDdl();
+            modelChecked = io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        }
         if (domainFilter == null && runner.succeeded() && modelChecked) runner.removeStale();
         if (domainFilter == null && runner.succeeded() && !modelChecked) {
             System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
@@ -1082,6 +1114,7 @@ public final class RulesGenRunner {
             if (!typescript) {
                 warnUnenforced(model);
                 warnStubsOverMoves(specs);
+                recordDdl(domainDirName, model, specs);
             }
 
             if (typescript) {
@@ -1632,14 +1665,11 @@ public final class RulesGenRunner {
         }
         mybatisMapped.clear();
         mybatisSearch.clear();
-        // One schema per database: {domain}-schema.sql for H2, and
-        // {domain}-schema-{postgresql|oracle|sqlserver}.sql.
-        for (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.Vendor v
-                : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.Vendor.values()) {
-            domain.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.VENDOR_CONFIG, v.name());
+        // The tables to start on, for H2 - unless the project's DDL writes
+        // this domain's tables, for every database it names (writeDdl).
+        if (!ddlOf(model).enabled()) {
             emitDomain(domain, io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.TARGET,
-                    ArtifactTarget.resource("src/main/resources", "sql", "db",
-                            domain.getName() + "-schema" + (v.suffix.isEmpty() ? "" : "-" + v.suffix)),
+                    ArtifactTarget.resource("src/main/resources", "sql", "db", domain.getName() + "-schema"),
                     "mybatis-schema");
         }
     }
@@ -1685,6 +1715,75 @@ public final class RulesGenRunner {
             if (target == null) target = foreignSpec(f.coreItemType());
             if (target != null) spec.knownRelated(f.coreItemType(), target);
         }
+    }
+
+    // ---- the project's DDL ------------------------------------------------------------
+
+    /** The project's DDL setting (the build's elasticore { ddl }), read once. */
+    private io.elasticore.base.model.pub.rules.schema.DdlConfig projectDdl;
+    private final List<DdlRun.Part> ddlParts = new ArrayList<DdlRun.Part>();
+
+    private io.elasticore.base.model.pub.rules.schema.DdlConfig projectDdl() {
+        if (projectDdl == null) {
+            try {
+                projectDdl = io.elasticore.base.model.pub.rules.schema.DdlConfig.global();
+            } catch (IllegalArgumentException e) {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] " + e.getMessage());
+                projectDdl = io.elasticore.base.model.pub.rules.schema.DdlConfig.OFF;
+            }
+        }
+        return projectDdl;
+    }
+
+    /** A domain's DDL: the project's, with what its env.yml says instead. */
+    private io.elasticore.base.model.pub.rules.schema.DdlConfig ddlOf(final ECoreModel model) {
+        try {
+            return io.elasticore.base.model.pub.rules.schema.DdlConfig.forDomain(projectDdl(), model::getConfig);
+        } catch (IllegalArgumentException e) {
+            io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] " + model.getInternalDomainName() + ": " + e.getMessage());
+            return io.elasticore.base.model.pub.rules.schema.DdlConfig.OFF;
+        }
+    }
+
+    /** Remembers the domain for the DDL written once every domain is generated. */
+    private void recordDdl(String domainDirName, ECoreModel model, List<EntitySpec> specs) {
+        // Every domain, the ones the DDL leaves out too: their entities are theirs, not "outside every domain".
+        io.elasticore.base.model.pub.rules.schema.DdlConfig ddl = ddlOf(model);
+        boolean mybatis = RulesConfig.mybatis(model.getConfig("mode"));
+        String root = domainRoot != null ? domainRoot : projectRoot;
+        ddlParts.add(new DdlRun.Part(domainDirName, ddl, root, mybatis ? specs : null, model.getNamespace("entity")));
+    }
+
+    /** The project's DDL: run when every domain has been generated and the model check passed. */
+    private void writeDdl() {
+        boolean any = false;
+        for (DdlRun.Part p : ddlParts) any |= p.config.enabled();
+        if (!any) return;
+        java.util.Set<String> sources = new java.util.LinkedHashSet<String>();
+        sources.add(projectRoot);
+        if (moduleRoots != null) sources.addAll(moduleRoots.values());
+        for (DdlRun.Part p : ddlParts) sources.add(p.root);
+        final Map<String, String> savedModules = packageModuleMap;
+        final String savedRoot = domainRoot;
+        DdlRun run = new DdlRun(ddlParts, projectRoot, new ArrayList<String>(sources), (root, dir, name, ext, content) -> {
+            // Under the root the domain is written to, whatever module the last one was.
+            packageModuleMap = null;
+            domainRoot = root;
+            ArtifactTarget out = ArtifactTarget.resource("src/main/resources", ext, dir.replace('/', '.'), name);
+            File d = new File(root + "/" + out.relativePath()).getParentFile();
+            if (d != null) generatedDirs.add(d);
+            write(String.format("    %-12s %s", "ddl", out.relativePath()), out, content);
+        });
+        try {
+            run.run(projectDdl());
+        } catch (IOException e) {
+            io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] ddl: " + e.getMessage());
+        } finally {
+            packageModuleMap = savedModules;
+            domainRoot = savedRoot;
+        }
+        for (String m : run.messages()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", m);
+        for (String p : run.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail(p);
     }
 
     /** Specs ownModelSpec built, per model and entity name. */
@@ -3682,7 +3781,7 @@ public final class RulesGenRunner {
                         || name.endsWith("-http-services.properties")
                         // a MyBatis mapper and the schema beside it; a file of the
                         // developer's has no stamp and is passed over below
-                        || name.endsWith(".xml") || name.matches(".*-schema(-[a-z0-9]+)?\\.sql"))) continue;
+                        || name.endsWith(".xml") || name.matches("(.*-)?schema(-[a-z0-9]+)?\\.sql"))) continue;
                 String path;
                 try {
                     path = f.getCanonicalPath();
