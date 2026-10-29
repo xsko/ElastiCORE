@@ -33,6 +33,22 @@ public class ConsoleLog {
         accumulatedCounts.clear();
     }
 
+    /** What is stored now, for a run inside a run to put back as it found it (restore). */
+    public static Object snapshot() {
+        Map<String, List<String>> logs = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : consoleLogMap.entrySet()) logs.put(e.getKey(), new ArrayList<>(e.getValue()));
+        Map<String, AtomicInteger> counts = new HashMap<>();
+        for (Map.Entry<String, AtomicInteger> e : accumulatedCounts.entrySet()) counts.put(e.getKey(), new AtomicInteger(e.getValue().get()));
+        return new Object[]{logs, counts};
+    }
+
+    @SuppressWarnings("unchecked")
+    public static void restore(Object snapshot) {
+        Object[] s = (Object[]) snapshot;
+        consoleLogMap = (Map<String, List<String>>) s[0];
+        accumulatedCounts = (Map<String, AtomicInteger>) s[1];
+    }
+
     /**
      * Clear specific log key entries after printing per-domain report.
      * Before clearing, accumulates count for final summary.

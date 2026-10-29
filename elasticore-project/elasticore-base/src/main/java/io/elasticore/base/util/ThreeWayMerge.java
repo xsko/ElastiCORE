@@ -56,9 +56,10 @@ public final class ThreeWayMerge {
 
     /**
      * The merge of three lists of lines, added to out; the number of conflicts.
-     * bothAdded: lines both sides only added at one place are kept, the
-     * generated ones first - in a class body, a field the DSL added and a
-     * method the developer added before the same closing brace.
+     * bothAdded (a class body): lines both sides only added at one place are
+     * kept, the generated ones first - a field the DSL added and a method the
+     * developer added before the same closing brace; and lines one side only
+     * added next to lines the other changed are kept beside the change.
      */
     private static int mergeLines(List<String> o, List<String> a, List<String> b, List<String> out,
                                   boolean bothAdded) {
@@ -91,6 +92,21 @@ public final class ThreeWayMerge {
                 out.addAll(ac);
             } else if (bothAdded && oc.isEmpty()) {
                 out.addAll(bc);
+                out.addAll(ac);
+            } else if (bothAdded && startsWith(ac, oc)) {
+                // The developer only added after lines the DSL changed: the
+                // DSL's lines, then theirs - a method after the last field.
+                out.addAll(bc);
+                out.addAll(ac.subList(oc.size(), ac.size()));
+            } else if (bothAdded && endsWith(ac, oc)) {
+                out.addAll(ac.subList(0, ac.size() - oc.size()));
+                out.addAll(bc);
+            } else if (bothAdded && startsWith(bc, oc)) {
+                // And the other way round: the DSL only added after lines the developer changed.
+                out.addAll(ac);
+                out.addAll(bc.subList(oc.size(), bc.size()));
+            } else if (bothAdded && endsWith(bc, oc)) {
+                out.addAll(bc.subList(0, bc.size() - oc.size()));
                 out.addAll(ac);
             } else {
                 conflicts++;
@@ -190,6 +206,14 @@ public final class ThreeWayMerge {
             if (key != null) keys.add(key);
         }
         return keys;
+    }
+
+    private static boolean startsWith(List<String> whole, List<String> part) {
+        return whole.size() > part.size() && whole.subList(0, part.size()).equals(part);
+    }
+
+    private static boolean endsWith(List<String> whole, List<String> part) {
+        return whole.size() > part.size() && whole.subList(whole.size() - part.size(), whole.size()).equals(part);
     }
 
     /** Whether a text still holds the marks of a conflict nobody resolved. */

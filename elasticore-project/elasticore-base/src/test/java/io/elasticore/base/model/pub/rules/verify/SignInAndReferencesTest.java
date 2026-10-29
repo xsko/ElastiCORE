@@ -461,6 +461,7 @@ public class SignInAndReferencesTest {
     private static String refusedLog;
     private static String modulesLog;
     private static String ownedRoleLog;
+    private static String ownedAfterRole;
     private static String ownedGoneLog;
 
     @BeforeAll
@@ -513,6 +514,7 @@ public class SignInAndReferencesTest {
         Files.write(model.toPath(), MODEL_OWNED.replace("string(10) @access(admin)", "string(10)")
                 .getBytes(StandardCharsets.UTF_8));
         ownedRoleLog = captured(owned);
+        ownedAfterRole = new String(Files.readAllBytes(control.toPath()), StandardCharsets.UTF_8);
         // ... and @signin goes.
         Files.write(model.toPath(), MODEL_OWNED.replace(" @signin", "").getBytes(StandardCharsets.UTF_8));
         ownedGoneLog = captured(owned);
@@ -767,9 +769,18 @@ public class SignInAndReferencesTest {
     public void anOwnedControllerThatStillSignsInIsSaid() throws Exception {
         String control = read(owned, "src/main/java/io/acme/swshop/adapter/in/web/SwUserController.java");
         assertTrue(control.contains("the team's own endpoints go here"), "left alone");
-        assertTrue(ownedRoleLog.contains("SwUserController.java is yours and still puts a role in the session"), ownedRoleLog);
-        assertTrue(ownedGoneLog.contains("SwUserController.java is yours and still serves POST /signin, GET /me, which"
-                + " the DSL does not generate now"), ownedGoneLog);
+        // The role leaves the sign-in: a change the generated controller makes where the developer
+        // did not edit it, so it is merged into theirs (generated-file merge) - their edits kept.
+        assertTrue(ownedRoleLog.contains("SwUserController.java  MERGED(your edits kept)"), ownedRoleLog);
+        assertFalse(ownedRoleLog.contains("is yours and still puts a role in the session"), ownedRoleLog);
+        assertFalse(ownedAfterRole.contains("getRole()"), ownedAfterRole);
+        assertTrue(ownedAfterRole.contains("SessionCurrentUser.signIn(request,"), ownedAfterRole);
+        assertTrue(ownedAfterRole.contains("\"/{id}\"") && ownedAfterRole.contains("method = RequestMethod.DELETE")
+                && ownedAfterRole.contains("the team's own endpoints go here"), ownedAfterRole);
+        // @signin gone: the endpoints, which the developer never edited, go from their file too - their line stays.
+        assertTrue(ownedGoneLog.contains("SwUserController.java  MERGED(your edits kept)"), ownedGoneLog);
+        assertFalse(control.contains("/signin") || control.contains("/me\""), control);
+        assertFalse(ownedGoneLog.contains("is yours and still serves POST /signin"), ownedGoneLog);
         assertTrue(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, u.getId(), u.getRole() == null ? null : u.getRole().name());"));
         assertFalse(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, f(a, b));"));
         assertTrue(RulesGenRunner.passesRole("SessionCurrentUser.signIn(request, signedIn.memberId, signedIn.role?.name)"));

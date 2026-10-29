@@ -408,7 +408,7 @@ public final class RulesGenRunner {
         // A project on a bundle is the one meeting these documents for the
         // first time, and until now it was the only one that never received
         // them - both rule-engine sample modules had an empty blueprint root.
-        if (!Boolean.getBoolean("elasticore.rules.list")) {
+        if (!Boolean.getBoolean("elasticore.rules.list") && captured == null) {
             io.elasticore.base.util.GuideDeployer.deployTo(
                     basePath + "/src/main/resources/blueprint", basePath);
         }
@@ -615,6 +615,15 @@ public final class RulesGenRunner {
             try {
                 runner.cache = GeneratedCache.load(new File(basePath));
                 merging = runner;
+                // A 2.x project's first merging run: the code 2.x generated is
+                // the base of every file the developer edited since.
+                java.util.List<String> sourceRoots = new ArrayList<String>(loader.moduleRoots().values());
+                if (sourceRoots.isEmpty()) sourceRoots.add(basePath);
+                if (!runner.cache.existed() && !kotlin && !typescript && twoXGenerated(sourceRoots) != null) {
+                    runner.upgradeBases = twoXBases();
+                    System.out.println("[elcore3] upgrade   : the code 2.x generates, " + runner.upgradeBases.size()
+                            + " file(s), read as the bases of the files edited since");
+                }
             } catch (IOException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
                         + " cannot be read (" + e.getMessage() + ") - take it from git again;"
@@ -670,6 +679,8 @@ public final class RulesGenRunner {
             runner.domainRoot = loader.moduleRootOf(en.getKey());
             runner.generate(domainDirName, loader.modelsOf(en.getKey()), allModels);
         }
+        // twoXBases wanted the files' texts only: nothing after this writes for it.
+        if (captured != null) return runner.succeeded() ? 0 : 1;
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
         if (Boolean.getBoolean("elasticore.rules.list")) return 0;
@@ -3588,6 +3599,14 @@ public final class RulesGenRunner {
 
     /** Writes an owned file again, keeping it owned (the template carries the marker). */
     private boolean rewriteOwned(File file, String content) {
+        // A merged file has no stamp to keep: the cache holds what was written.
+        String key = cache != null ? cacheKey(file) : null;
+        if (key != null && cache.get(key) != null) {
+            String text = content.replace("\r\n", "\n");
+            if (!writeLf("  " + key, file, text)) return false;
+            cache.put(key, text);
+            return true;
+        }
         Writer w = null;
         try {
             w = FileBasedSourceFileAccessFactory.newPlatformLineWriter(file);
@@ -3695,7 +3714,7 @@ public final class RulesGenRunner {
      * a translation is a file beside it (..._ko.properties), never this one.
      */
     private void writeMessages(String domainName, ArtifactTarget handler) {
-        if (typescript) return;
+        if (typescript || captured != null) return;
         String text = io.elasticore.base.model.pub.rules.ErrorCatalog.properties(domainName,
                 io.elasticore.base.model.pub.rules.ErrorCatalog.shared(),
                 io.elasticore.base.model.pub.rules.ErrorCatalog.recorded());
@@ -3932,6 +3951,57 @@ public final class RulesGenRunner {
     /** The run of this JVM that holds a cache, for run() to save it whatever ends the run. */
     private static RulesGenRunner merging;
 
+    /** While twoXBases runs: what each file would be, by cache key, instead of writing it. */
+    private static Map<String, String> captured;
+
+    /** For a project moving from the code 2.x generates: that code, by cache key - bases to confirm by hash. */
+    private Map<String, String> upgradeBases;
+
+    /**
+     * The code 2.x generates for this project as its model is now, by cache
+     * key: a run of the 2.x bundle inside this run that writes nothing. Its
+     * texts are bases only where a stamp's hash says so (confirmedBase) - the
+     * code a 2.x project was generated with, before the developer edited it.
+     */
+    private static Map<String, String> twoXBases() {
+        String[] keys = {"elasticore.rules.v2", "elasticore.rules.v3", "elasticore.architecture", "elasticore.language",
+                "elasticore.merge", "elasticore.ddl.databases", "elasticore.ddl.migration", "elasticore.ddl.only",
+                "elasticore.rules.ts", "elasticore.rules.kt", "elasticore.rules.list"};
+        Map<String, String> saved = new java.util.HashMap<String, String>();
+        for (String k : keys) saved.put(k, System.getProperty(k));
+        Object logs = io.elasticore.base.util.ConsoleLog.snapshot();
+        List<String> failures = io.elasticore.base.model.pub.rules.ModelCheck.failures();
+        java.io.PrintStream out = System.out;
+        java.io.PrintStream err = System.err;
+        Map<String, String> found = new java.util.HashMap<String, String>();
+        try {
+            for (String k : keys) System.clearProperty(k);
+            System.setProperty("elasticore.rules.v2", "true");
+            System.setProperty("elasticore.merge", "false");
+            java.io.PrintStream quiet = new java.io.PrintStream(new java.io.ByteArrayOutputStream());
+            System.setOut(quiet);
+            System.setErr(quiet);
+            captured = found;
+            generateAll(new String[0]);
+        } catch (RuntimeException e) {
+            found.clear();
+        } finally {
+            captured = null;
+            System.setOut(out);
+            System.setErr(err);
+            for (String k : keys) {
+                if (saved.get(k) == null) System.clearProperty(k);
+                else System.setProperty(k, saved.get(k));
+            }
+            io.elasticore.base.util.ConsoleLog.restore(logs);
+            io.elasticore.base.model.pub.rules.ModelCheck.reset();
+            for (String f : failures) io.elasticore.base.model.pub.rules.ModelCheck.failSaid(f);
+            SpecFactory.applicationSignIns(-1, null);
+            SpecFactory.compatibleServer(false);
+        }
+        return found;
+    }
+
     /** The cache entries this run wrote or kept - the rest are stale after a whole run. */
     private final java.util.Set<String> mergedKeys = new java.util.HashSet<String>();
 
@@ -3953,6 +4023,161 @@ public final class RulesGenRunner {
      */
     private boolean merges(ArtifactTarget out) {
         return cache != null && !"java".equals(out.extension()) && !"kt".equals(out.extension());
+    }
+
+    /** Whether a Java or Kotlin source is merged: by its imports as a set and its lines (ThreeWayMerge.mergeSource). */
+    private boolean mergesSource(ArtifactTarget out) {
+        return cache != null && ("java".equals(out.extension()) || "kt".equals(out.extension()));
+    }
+
+    /** The generate-once marker a skeleton carries: the developer's from the first write. */
+    private static final String OWNED_MARKER = "// Initially generated by ElastiCORE;";
+
+    private static boolean owned(String content) {
+        int at = content.indexOf(OWNED_MARKER);
+        return at >= 0 && at < 300;
+    }
+
+    /**
+     * A Java or Kotlin source, merged. True when it was dealt with; false
+     * leaves it to the stamp's rules (write), which is what happens to a file
+     * whose base cannot be known - stamped, edited, and no generation of the
+     * generator this run has, or of the code 2.x generates, is what its
+     * stamp's hash says was written.
+     *
+     * A generated file is merged as any other, conflicts failing the build. A
+     * skeleton (generate-once) follows the DSL until it is edited, and after
+     * that takes the DSL's changes where they merge cleanly; where they do
+     * not, the developer's file is left as it is and the warnings a file of
+     * theirs has always had say what the DSL now wants - never conflict
+     * marks in code that is the developer's own.
+     */
+    private boolean writeMergedSource(String label, ArtifactTarget out, File file, String key, String content) {
+        String generated = content.replace("\r\n", "\n");
+        boolean skeleton = owned(generated);
+        String base = cache.get(key);
+        String disk = null;
+        if (file.isFile()) {
+            disk = readLf(file);
+            if (disk == null) return false;
+        }
+        if (disk == null) {
+            mergedKeys.add(key);
+            if (writeLf(label, file, generated)) {
+                cache.put(key, generated);
+                wrote++;
+                System.out.println(label + "  WROTE");
+            }
+            return true;
+        }
+        boolean stamped = false;
+        if (base == null) {
+            HashUtils.Response st = readStatus(file);
+            if (st == null || st.getEcd() == null || st.getPreSourceContent() == null) {
+                // No stamp: the developer's - unless it is exactly what is generated now.
+                if (!disk.equals(generated)) return false;
+                base = disk;
+            } else {
+                int eol = disk.indexOf('\n');
+                String stamp = eol < 0 ? disk : disk.substring(0, eol);
+                String stripped = disk.substring(eol + 1);
+                if (st.getStatus() == HashUtils.NO_MODIFIED
+                        || (st.getStatus() == HashUtils.UNTRACKED && neverEdited(st))) {
+                    base = st.getPreSourceContent().replace("\r\n", "\n");
+                } else {
+                    base = confirmedBase(stamp, st.getEcd(), generated,
+                            upgradeBases == null ? null : upgradeBases.get(key));
+                    if (base == null) return false;
+                }
+                disk = stripped;
+                stamped = true;
+            }
+        }
+        mergedKeys.add(key);
+        if (disk.equals(base)) {
+            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, generated)) return true;
+            cache.put(key, generated);
+            if (disk.equals(generated) && !stamped) {
+                unchanged++;
+                System.out.println(label + "  UNCHANGED");
+            } else {
+                wrote++;
+                System.out.println(label + "  WROTE");
+            }
+            return true;
+        }
+        if (io.elasticore.base.util.ThreeWayMerge.hasConflictMarks(disk)) {
+            failed++;
+            System.out.println(label + "  CONFLICT(unresolved)");
+            notes.add("[elcore3] " + key + " still has conflict marks (<<<<<<< yours) - resolve them first");
+            return true;
+        }
+        if (disk.equals(generated) || base.equals(generated)) {
+            if (stamped && !writeLf(label, file, disk)) return true;
+            cache.put(key, generated);
+            unchanged++;
+            System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            return true;
+        }
+        io.elasticore.base.util.ThreeWayMerge.Result merged =
+                io.elasticore.base.util.ThreeWayMerge.mergeSource(base, disk, generated);
+        if (merged.conflicts() == 0) {
+            if (!writeLf(label, file, merged.text())) return true;
+            cache.put(key, generated);
+            wrote++;
+            System.out.println(label + "  MERGED(your edits kept)");
+            return true;
+        }
+        if (skeleton) {
+            // The developer's own code: left as it is, against the base it
+            // was written from, so the next run tries again.
+            if (stamped && !writeLf(label, file, disk)) return true;
+            cache.put(key, base);
+            skipped++;
+            System.out.println(label + "  KEPT(yours - the DSL's changes to it do not merge)");
+            notes.add("[elcore3] " + key + ": the DSL changes this file of yours where you changed it too ("
+                    + merged.conflicts() + " place(s)) - it is left as it is; take the changes over by hand");
+            warnIfEndpointsMissing(out, file, content);
+            if ((v3 || kotlin) && !typescript) warnIfSignInLeft(out, file, content);
+            warnIfConstructorDrifted(out, file, content);
+            warnIfClassAnnotationsDrifted(out, file, content);
+            warnIfBaseNotExtended(out, file, content);
+            return true;
+        }
+        if (!writeLf(label, file, merged.text())) return true;
+        cache.put(key, generated);
+        failed++;
+        System.out.println(label + "  CONFLICT");
+        notes.add("[elcore3] " + key + ": " + merged.conflicts() + " place(s) where your edits and the DSL's"
+                + " change the same lines - marked <<<<<<< yours / >>>>>>> elasticore in the file; resolve them"
+                + " and run again");
+        return true;
+    }
+
+    /**
+     * The base of a stamped file that was edited: what was generated into it
+     * then, if this run can produce it again - the text this generator writes
+     * now, or, for a project moving from the code 2.x generates, that code.
+     * Only a text whose hash is the one on the stamp is taken: a guessed base
+     * would merge the wrong changes in silently.
+     */
+    static String confirmedBase(String stampLine, String ecd, String... candidates) {
+        String version;
+        try {
+            version = HashUtils.getVersion(stampLine.trim());
+        } catch (RuntimeException e) {
+            return null;
+        }
+        for (String c : candidates) {
+            if (c == null) continue;
+            String text = c.endsWith("\n") ? c : c + "\n";
+            try {
+                if (HashUtils.checkHashCode(text, ecd, version)) return text;
+            } catch (RuntimeException e) {
+                // not this one
+            }
+        }
+        return null;
     }
 
     /**
@@ -4108,6 +4333,8 @@ public final class RulesGenRunner {
         for (String key : cache.paths()) {
             if (mergedKeys.contains(key) || !ownsEntry(key)) continue;
             File f = new File(projectRoot, key);
+            // A base a developer's class still extends stays, and stays known.
+            if (f.isFile() && stillExtended(f)) continue;
             String disk = f.isFile() ? readLf(f) : null;
             if (disk != null && disk.equals(cache.get(key))) {
                 if (!f.delete()) continue;
@@ -4184,12 +4411,22 @@ public final class RulesGenRunner {
         }
         if (xmlMapping()) content = movedQuery(out, content);
 
+        // Gathering what the code 2.x generates, for an upgrade's bases: nothing is written.
+        if (captured != null) {
+            String key = cacheKey(file);
+            if (key != null) captured.put(key, content.replace("\r\n", "\n"));
+            return;
+        }
         if (merges(out)) {
             String key = cacheKey(file);
             if (key != null) {
                 writeMerged(label, file, key, content);
                 return;
             }
+        }
+        if (mergesSource(out)) {
+            String key = cacheKey(file);
+            if (key != null && writeMergedSource(label, out, file, key, content)) return;
         }
 
         HashUtils.Response st = null;

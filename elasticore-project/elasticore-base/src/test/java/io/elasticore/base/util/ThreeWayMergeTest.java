@@ -134,6 +134,22 @@ public class ThreeWayMergeTest {
     }
 
     @Test
+    public void inASourceLinesAddedNextToAChangedOneStayBesideIt() {
+        // The upgrade's case: the DSL rewrites the last field and drops the blank lines
+        // after it; the developer added a method right there.
+        String base = t("class X {", "    int a;", "", "}");
+        String yours = t("class X {", "    int a;", "", "    void m() {}", "}");
+        String generated = t("class X {", "    long a;", "}");
+        assertEquals(1, ThreeWayMerge.merge(base, yours, generated).conflicts(), "a line merge conflicts here");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(base, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertEquals(t("class X {", "    long a;", "    void m() {}", "}"), r.text());
+
+        // A line both changed, each its own way, is still a conflict.
+        assertEquals(1, ThreeWayMerge.mergeSource(base, t("class X {", "    short a;", "", "}"), generated).conflicts());
+    }
+
+    @Test
     public void kotlinImportsHaveNoSemicolon() {
         String base = t("package a", "", "import a.b.Item", "", "class X(val name: String)");
         String yours = t("package a", "", "import a.b.Item", "import java.util.UUID", "", "class X(val name: String) // mine");
