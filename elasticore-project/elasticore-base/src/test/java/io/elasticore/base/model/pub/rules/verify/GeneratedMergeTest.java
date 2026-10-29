@@ -70,6 +70,7 @@ public class GeneratedMergeTest {
 
     private final List<File> projects = new ArrayList<File>();
     private final String[] saved = save();
+    private boolean force;
 
     @AfterEach
     void clean() throws IOException {
@@ -192,6 +193,26 @@ public class GeneratedMergeTest {
         log = run(project, 0);
         assertTrue(log.contains("UNCHANGED(your edits kept)"), log);
         assertEquals(resolved, xml(project));
+    }
+
+    @Test
+    public void forceDoesNotThrowEditsAway() throws Exception {
+        // The samples' builds set elasticore.rules.force on every run.
+        force = true;
+        File project = project(CUSTOMER + ORDER);
+        run(project, 0);
+        String edited = xml(project).replaceFirst("(</resultMap>\\r?\\n)", "$1\n    <!-- test-->\n");
+        Files.write(xmlPath(project), edited.getBytes(StandardCharsets.UTF_8));
+
+        String log = run(project, 0);
+        assertTrue(log.contains("UNCHANGED(your edits kept)"), log);
+        assertEquals(edited, xml(project));
+
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        log = run(project, 0);
+        assertTrue(log.contains("MERGED(your edits kept)"), log);
+        String merged = xml(project);
+        assertTrue(merged.contains("<!-- test-->") && merged.contains("t.memo"), merged);
     }
 
     @Test
@@ -377,7 +398,8 @@ public class GeneratedMergeTest {
         int code;
         try {
             System.setProperty("elasticore.base.path", project.getAbsolutePath());
-            System.clearProperty("elasticore.rules.force");
+            if (force) System.setProperty("elasticore.rules.force", "true");
+            else System.clearProperty("elasticore.rules.force");
             if (System.getProperty("elasticore.merge") == null) System.setProperty("elasticore.merge", "true");
             code = RulesGenRunner.run(new String[0]);
         } finally {

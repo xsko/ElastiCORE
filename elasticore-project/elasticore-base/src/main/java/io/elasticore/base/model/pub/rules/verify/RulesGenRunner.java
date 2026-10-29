@@ -3953,17 +3953,17 @@ public final class RulesGenRunner {
                 stamped = true;
             } else if (!disk.equals(generated)) {
                 skipped++;
-                String message = "[elcore3] " + key + ": not in " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
+                System.out.println(label + "  SKIP(not in the cache)");
+                notes.add("[elcore3] " + key + ": not in " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
                         + " - edited before merging was turned on, or not written by ElastiCORE - so what to merge"
-                        + " it with is not known; left as it is (delete it to have it generated, or -Pforce)";
-                if (!force) {
-                    System.out.println(label + "  SKIP(not in the cache)");
-                    notes.add(message);
-                    return;
-                }
+                        + " it with is not known; left as it is (delete it to have it generated)");
+                return;
             }
         }
-        if (force || base == null || disk.equals(base)) {
+        // -Pforce does not reach here: builds leave it on to regenerate every
+        // run, which merging does anyway, and an edit is never thrown away by
+        // a setting. Deleting the file is how to have it generated afresh.
+        if (base == null || disk.equals(base)) {
             if ((stamped || !disk.equals(generated)) && !writeLf(label, file, generated)) return;
             cache.put(key, generated);
             if (disk.equals(generated) && !stamped) {
@@ -3971,7 +3971,7 @@ public final class RulesGenRunner {
                 System.out.println(label + "  UNCHANGED");
             } else {
                 wrote++;
-                System.out.println(label + (force && !disk.equals(base) ? "  WROTE(forced)" : "  WROTE"));
+                System.out.println(label + "  WROTE");
             }
             return;
         }
