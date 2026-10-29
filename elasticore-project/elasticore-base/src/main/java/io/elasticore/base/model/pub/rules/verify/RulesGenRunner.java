@@ -602,6 +602,19 @@ public final class RulesGenRunner {
 
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
+        // elasticore.merge: what was generated last, to merge the developer's
+        // edits against. One that cannot be read stops the run - without it
+        // an edited file can only be overwritten or left behind.
+        if (Boolean.getBoolean("elasticore.merge")) {
+            try {
+                runner.cache = GeneratedCache.load(new File(basePath));
+            } catch (IOException e) {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
+                        + " cannot be read (" + e.getMessage() + ") - take it from git again;"
+                        + " deleting it keeps every generated file that differs from what is generated now");
+                return 1;
+            }
+        }
         List<ECoreModel> allModels = loader.allModels();
         runner.countSignIns(loader);
 
@@ -661,7 +674,13 @@ public final class RulesGenRunner {
             runner.writeDdl();
             modelChecked = io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
         }
-        if (domainFilter == null && runner.succeeded() && modelChecked) runner.removeStale();
+        if (domainFilter == null && runner.succeeded() && modelChecked) {
+            runner.removeStale();
+            runner.removeStaleMerged();
+        }
+        // Whatever else happened: the files this run wrote are on disk, and
+        // the next run merges against what it wrote into them.
+        runner.saveCache();
         if (domainFilter == null && runner.succeeded() && !modelChecked) {
             System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
         }
@@ -3867,6 +3886,195 @@ public final class RulesGenRunner {
         return p.startsWith(root + "/") ? p.substring(root.length() + 1) : p;
     }
 
+    /** What was generated last (elasticore.merge), or null when the project does not merge. */
+    private GeneratedCache cache;
+
+    /** The cache entries this run wrote or kept - the rest are stale after a whole run. */
+    private final java.util.Set<String> mergedKeys = new java.util.HashSet<String>();
+
+    /**
+     * Whether a file is merged rather than stamped: with elasticore.merge, a
+     * MyBatis mapper. The others keep their //ecd: line for now.
+     */
+    private boolean merges(ArtifactTarget out) {
+        return cache != null && "xml".equals(out.extension());
+    }
+
+    /** The file's path in the cache: relative to the project, or null outside it. */
+    private String cacheKey(File file) {
+        String p = file.getAbsoluteFile().toPath().normalize().toString().replace('\\', '/');
+        String root = new File(projectRoot).getAbsoluteFile().toPath().normalize().toString().replace('\\', '/');
+        return p.startsWith(root + "/") ? p.substring(root.length() + 1) : null;
+    }
+
+    /**
+     * A generated file without a stamp, kept in step with the DSL and with
+     * whatever the developer wrote into it.
+     *
+     * The base is what this generator wrote into the file last time, from the
+     * cache. The developer's edits are what the file has and the base has
+     * not; the DSL's are what the new text has and the base has not. Both are
+     * kept - whatever kind of edit it was - unless they touch the same lines:
+     * then the file gets git's conflict marks and the run fails, as a merge
+     * would. The cache takes the new text either way, so the file, resolved,
+     * is the developer's against it.
+     */
+    private void writeMerged(String label, File file, String key, String content) {
+        mergedKeys.add(key);
+        String generated = content.replace("\r\n", "\n");
+        String base = cache.get(key);
+        String disk = null;
+        if (file.isFile()) {
+            disk = readLf(file);
+            if (disk == null) {
+                failed++;
+                notes.add(key + ": cannot be read");
+                System.out.println(label + "  ERROR cannot read " + key);
+                return;
+            }
+        }
+        if (disk == null) {
+            if (writeLf(label, file, generated)) {
+                cache.put(key, generated);
+                wrote++;
+                System.out.println(label + "  WROTE");
+            }
+            return;
+        }
+        boolean stamped = false;
+        if (base == null) {
+            // Written before the project merged: the stamp says whether it is
+            // still what was generated then. That text is the base; the stamp
+            // goes with this write.
+            HashUtils.Response st = readStatus(file);
+            if (st != null && neverEdited(st)) {
+                base = st.getPreSourceContent().replace("\r\n", "\n");
+                disk = base;
+                stamped = true;
+            } else if (!disk.equals(generated)) {
+                skipped++;
+                String message = "[elcore3] " + key + ": not in " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
+                        + " - edited before merging was turned on, or not written by ElastiCORE - so what to merge"
+                        + " it with is not known; left as it is (delete it to have it generated, or -Pforce)";
+                if (!force) {
+                    System.out.println(label + "  SKIP(not in the cache)");
+                    notes.add(message);
+                    return;
+                }
+            }
+        }
+        if (force || base == null || disk.equals(base)) {
+            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, generated)) return;
+            cache.put(key, generated);
+            if (disk.equals(generated) && !stamped) {
+                unchanged++;
+                System.out.println(label + "  UNCHANGED");
+            } else {
+                wrote++;
+                System.out.println(label + (force && !disk.equals(base) ? "  WROTE(forced)" : "  WROTE"));
+            }
+            return;
+        }
+        if (io.elasticore.base.util.ThreeWayMerge.hasConflictMarks(disk)) {
+            failed++;
+            String message = "[elcore3] " + key + " still has conflict marks (<<<<<<< yours) - resolve them first";
+            System.out.println(label + "  CONFLICT(unresolved)");
+            notes.add(message);
+            return;
+        }
+        if (disk.equals(generated) || base.equals(generated)) {
+            // The developer's text already is the new one, or the DSL did not
+            // change this file: nothing to write.
+            cache.put(key, generated);
+            unchanged++;
+            System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            return;
+        }
+        io.elasticore.base.util.ThreeWayMerge.Result merged = io.elasticore.base.util.ThreeWayMerge.merge(base, disk, generated);
+        if (!writeLf(label, file, merged.text())) return;
+        cache.put(key, generated);
+        if (merged.conflicts() == 0) {
+            wrote++;
+            System.out.println(label + "  MERGED(your edits kept)");
+        } else {
+            failed++;
+            String message = "[elcore3] " + key + ": " + merged.conflicts() + " place(s) where your edits and the DSL's"
+                    + " change the same lines - marked <<<<<<< yours / >>>>>>> elasticore in the file; resolve them"
+                    + " and run again";
+            System.out.println(label + "  CONFLICT");
+            notes.add(message);
+        }
+    }
+
+    /**
+     * After a whole run: a merged file the DSL no longer produces is removed
+     * when it is still what was generated, and kept with a warning when the
+     * developer edited it - then it is theirs, and leaves the cache.
+     */
+    private void removeStaleMerged() {
+        if (cache == null) return;
+        int removed = 0;
+        for (String key : cache.paths()) {
+            if (mergedKeys.contains(key)) continue;
+            File f = new File(projectRoot, key);
+            String disk = f.isFile() ? readLf(f) : null;
+            if (disk != null && disk.equals(cache.get(key))) {
+                if (!f.delete()) continue;
+                removed++;
+                System.out.println("  " + key + "  REMOVED(the DSL no longer produces it)");
+            } else if (disk != null) {
+                String message = "[elcore3] " + key + " was generated, the DSL no longer produces it,"
+                        + " and it has been edited - it is yours now; delete it, or move what you wrote.";
+                io.elasticore.base.util.ConsoleLog.printWarn(message);
+                notes.add(message);
+            }
+            cache.remove(key);
+        }
+        if (removed > 0) notes.add(removed + " merged file(s) the DSL no longer produces were removed.");
+    }
+
+    private void saveCache() {
+        if (cache == null) return;
+        try {
+            cache.save();
+        } catch (IOException e) {
+            failed++;
+            notes.add(cache.file() + " cannot be written: " + e.getMessage()
+                    + " - the next run merges against what it held before");
+        }
+    }
+
+    /** A file's text with LF line ends, or null when it cannot be read. */
+    private static String readLf(File file) {
+        try {
+            return new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n");
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** LF text written with the line ends a stamped file would get, in UTF-8. */
+    private boolean writeLf(String label, File file, String text) {
+        File dir = file.getParentFile();
+        if (dir != null && !dir.exists() && !dir.mkdirs()) {
+            failed++;
+            notes.add(file + ": cannot create " + dir);
+            System.out.println(label + "  ERROR cannot create " + dir);
+            return false;
+        }
+        String eol = style.lineEnding() == null ? System.lineSeparator() : style.lineEnding();
+        try {
+            java.nio.file.Files.write(file.toPath(), text.replace("\n", eol).getBytes(StandardCharsets.UTF_8));
+            return true;
+        } catch (IOException e) {
+            failed++;
+            notes.add(file + ": " + e);
+            System.out.println(label + "  ERROR " + e.getMessage());
+            return false;
+        }
+    }
+
     private void write(String label, ArtifactTarget out, String rendered) {
         File file = new File(rootFor(out) + "/" + out.relativePath());
         remember(file);
@@ -3884,6 +4092,14 @@ public final class RulesGenRunner {
             content = orm(out).extract(content, out.packageName(), out.fileName(), kotlin);
         }
         if (xmlMapping()) content = movedQuery(out, content);
+
+        if (merges(out)) {
+            String key = cacheKey(file);
+            if (key != null) {
+                writeMerged(label, file, key, content);
+                return;
+            }
+        }
 
         HashUtils.Response st = null;
         if (file.isFile()) {
