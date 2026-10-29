@@ -336,6 +336,9 @@ public class GeneratedMergeTest {
         log = run(other, 0);
         assertTrue(log.contains("PurchaseOrderDTO.java  SKIP(user-modified"), log);
         assertEquals(mineStamped, read(otherDto));
+        // And the summary says where it stands.
+        assertTrue(log.contains("/ 1 still stamped (edited, base not confirmed) ==="), log);
+        assertTrue(log.contains("still stamped: src/main/java/io/acme/dgshop/application/dto/PurchaseOrderDTO.java"), log);
     }
 
     @Test
@@ -621,6 +624,39 @@ public class GeneratedMergeTest {
         log = run(project, 0);
         assertTrue(Files.exists(gift));
         assertFalse(log.contains("GiftRepository.xml was generated"), log);
+    }
+
+    @Test
+    public void aClassNoLongerProducedStaysWhileACodeOfTheDevelopersUsesIt() throws Exception {
+        File project = project(CUSTOMER + ORDER + coupon("Coupon"));
+        run(project, 0);
+        Path dto = java(project, "CouponDTO.java");
+        Path xml = resource(project, "CouponRepository.xml");
+        assertNotNull(xml);
+        java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^package ([\\w.]+);").matcher(read(dto));
+        assertTrue(pkg.find());
+        // The developer's report, in a package of its own, reads the DTO.
+        Path report = new File(project, "src/main/java/io/acme/dgshop/report/CouponReport.java").toPath();
+        Files.createDirectories(report.getParent());
+        Files.write(report, ("package io.acme.dgshop.report;\n\nimport " + pkg.group(1) + ".CouponDTO;\n\n"
+                + "public class CouponReport {\n    CouponDTO last;\n}\n").getBytes(StandardCharsets.UTF_8));
+
+        model(project, CUSTOMER + ORDER);
+        String log = run(project, 0);
+        assertTrue(Files.exists(dto), log);
+        assertTrue(log.contains("CouponDTO.java is no longer generated, but src/main/java/io/acme/dgshop/report/"
+                + "CouponReport.java still uses it - kept"), log);
+        assertFalse(Files.exists(xml), "what nothing uses goes as before");
+        assertTrue(Files.exists(report));
+
+        // Once the report no longer needs it, it goes.
+        Files.write(report, "package io.acme.dgshop.report;\n\npublic class CouponReport {\n}\n"
+                .getBytes(StandardCharsets.UTF_8));
+        log = run(project, 0);
+        assertFalse(Files.exists(dto), log);
+        assertTrue(log.contains("CouponDTO.java  REMOVED"), log);
+        Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        assertNull(entries.get(keyOf(project, dto)));
     }
 
     @Test
