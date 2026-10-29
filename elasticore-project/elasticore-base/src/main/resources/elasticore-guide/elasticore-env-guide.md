@@ -193,8 +193,8 @@ SQL Server").
 
 **직접 쓰는 쿼리**: 생성된 XML 의 문장을 고쳐도 됩니다(힌트, 조건, 정렬 ...) - 모델이 바뀌어도 고친 내용은 남습니다(9-2
 생성 파일 병합). **새 문장**은 매퍼 인터페이스와 XML 을 하나 더 만들어(`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장
-서비스(`OrderService`)에서 씁니다 - 생성된 XML 에 넣은 문장을 부를 메서드는 생성된 매퍼 인터페이스(Java)에 있어야 하는데,
-Java 파일은 고치면 그 뒤로 생성기가 건너뜁니다.
+서비스(`OrderService`)에서 씁니다 - 생성된 XML 과 매퍼 인터페이스에 문장과 메서드를 더해도 병합으로 남지만, 그러면
+모델이 바뀔 때마다 생성 코드와 같은 자리에서 합쳐야 해 충돌할 곳이 늘어납니다.
 
 **아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다):
 - `mappedBy` 없는 컬렉션, `@ManyToMany`, 값 컬렉션(`List<String>`), 다른 도메인 엔티티의 컬렉션
@@ -324,7 +324,7 @@ ElastiCORE가 만들지 않은 코드는 Spring Boot 4 마이그레이션 가이
 | `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4는 Jackson 3 매퍼를 등록) |
 | `JsonNode.asText()` 경고 | Jackson 3: `asString()` |
 
-이미 생성된 개발자 소유 파일(`XxxService`, 컨트롤러)은 다시 생성되지 않습니다. `supportAI`를 나중에 켰다면 `@Tool`이 없는 서비스는 직접 고치거나, 손대지 않은 파일이면 지우고 다시 생성합니다.
+`supportAI`를 나중에 켜도 이미 생성된 개발자 소유 `XxxService`에 `@Tool`이 들어옵니다: 손대지 않은 파일은 다시 생성되고, 고친 파일은 고친 줄과 겹치지 않으면 병합됩니다(`MERGED(your edits kept)`, 9-2). 겹쳐서 `KEPT(yours ...)`로 남았거나 병합 전 버전이 만든 파일을 고쳐 `SKIP(user-owned)`로 남았다면 직접 붙입니다.
 
 ### Spring AI 2.0에서 도구 쓰기
 

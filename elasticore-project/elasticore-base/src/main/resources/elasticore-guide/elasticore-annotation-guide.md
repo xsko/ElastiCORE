@@ -1664,7 +1664,7 @@ public abstract class PricingDomainServiceBase {     // 매번 재생성 - uses 
 
 @Service
 public class PricingDomainService extends PricingDomainServiceBase {
-	// 연산은 여기에. generate-once 이므로 이 파일은 첫 생성 후 당신 것입니다.
+	// 연산은 여기에. generate-once 라 이 파일은 당신 것이고, 고친 내용은 남습니다.
 }
 ```
 
@@ -1819,7 +1819,8 @@ public class OrderInvariants {
 ### 생성물
 
 `OrderFactory.place(...)` 스텁이 생기고, 파일은 **generate-once** 입니다 —
-첫 실행 후에는 덮어쓰지 않으므로 본문은 개발자 것입니다.
+본문은 개발자 것이라 고친 내용은 남습니다. 본문을 쓰기 전에는 시그니처가 루트의 필수 필드를 따라가고, 쓴 뒤에 필수 필드가
+바뀌면 파일을 그대로 두고 손으로 옮기라고 알립니다(`KEPT(yours ...)`).
 
 ```java
 public static Order place(LocalDateTime orderDate) {

@@ -29,8 +29,13 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *     meta: entity @root @invariant(items.size > 0, '...') @factory(place)
  *
  * Each name becomes a static method on an OrderFactory class - place(...) -
- * and the class carries the generate-once marker, so the first run writes the
- * signature and every run after leaves the file alone.
+ * and the class carries the generate-once marker: the first run writes the
+ * signature, which follows the model until the developer edits the file;
+ * after that only the model's changes that merge cleanly come in (a new
+ * required field next to a body they wrote does not - the file is kept and
+ * the build says so). The generated text itself still says "written once":
+ * changing a line of a file developers own would leave every one who edited
+ * that line kept, out of the merge, on each build.
  *
  * <h3>What is generated is a place, not a behaviour</h3>
  *
