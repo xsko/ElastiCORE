@@ -3888,7 +3888,9 @@ public final class RulesGenRunner {
                 if (produced.contains(path)) continue;
                 // A base a developer's class still extends is not stale: the
                 // class is theirs and kept, and removing its parent breaks it.
-                if (stillExtended(f)) continue;
+                // A merging run asks removeUnused instead, which lets a base go
+                // with a class that is going too.
+                if (cache == null && stillExtended(f)) continue;
                 HashUtils.Response st = readStatus(f);
                 if (st == null || st.getOldEcdLine() == null || st.getStatus() == HashUtils.UNTRACKED
                         || st.getStatus() == HashUtils.NO_ECD) continue;
@@ -4512,8 +4514,8 @@ public final class RulesGenRunner {
         for (String key : cache.paths()) {
             if (mergedKeys.contains(key) || !ownsEntry(key)) continue;
             File f = new File(projectRoot, key);
-            // A base a developer's class still extends stays, and stays known.
-            if (f.isFile() && stillExtended(f)) continue;
+            // A base a developer's class still extends stays, and stays known:
+            // removeUnused finds the class using it - unless that is going too.
             String disk = f.isFile() ? readLf(f) : null;
             if (disk != null && disk.equals(cache.get(key))) {
                 unedited.put(f, key);
