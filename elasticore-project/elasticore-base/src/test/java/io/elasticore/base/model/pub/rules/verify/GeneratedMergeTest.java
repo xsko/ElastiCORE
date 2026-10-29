@@ -629,6 +629,107 @@ public class GeneratedMergeTest {
     }
 
     @Test
+    public void aRunOverOneDomainKeepsTheOtherDomainsMappingsInTheOrmXml() throws Exception {
+        File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
+        billing(project, "jpa", "    mapping: xml");
+        run(project, 0);
+        Path orm = new File(project, "src/main/resources/META-INF/orm.xml").toPath();
+        String whole = read(orm);
+        assertTrue(whole.contains("io.acme.billing.entity.Invoice") && whole.contains("io.acme.dgshop.entity.Customer"), whole);
+
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        System.setProperty("elasticore.domain", "dgshop");
+        try {
+            run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.domain");
+        }
+        String one = read(orm);
+        assertTrue(one.contains("io.acme.billing.entity.Invoice"), "the other domain's mapping went: " + one);
+        assertTrue(one.contains("name=\"memo\""), one);
+
+        // A whole run writes what the run over one domain left.
+        String log = run(project, 0);
+        assertEquals(one, read(orm), log);
+        assertTrue(log.contains("orm.xml  UNCHANGED"), log);
+    }
+
+    @Test
+    public void aRunOverOneDomainKeepsTheOtherDomainsMappingsBesideTheDevelopersOwnOrmXml() throws Exception {
+        File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
+        billing(project, "jpa", "    mapping: xml");
+        Path own = new File(project, "src/main/resources/META-INF/orm.xml").toPath();
+        Files.createDirectories(own.getParent());
+        String mine = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<entity-mappings/>\n";
+        Files.write(own, mine.getBytes(StandardCharsets.UTF_8));
+        run(project, 0);
+        Path beside = new File(project, "src/main/resources/META-INF/elasticore-orm.xml").toPath();
+        assertTrue(read(beside).contains("io.acme.billing.entity.Invoice"), read(beside));
+
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        System.setProperty("elasticore.domain", "dgshop");
+        try {
+            run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.domain");
+        }
+        String one = read(beside);
+        assertTrue(one.contains("io.acme.billing.entity.Invoice") && one.contains("name=\"memo\""), one);
+        assertEquals(mine, read(own));
+    }
+
+    @Test
+    public void aRunOverOneDomainDropsWhatThatDomainNoLongerMapsAndKeepsEditsToTheOthers() throws Exception {
+        File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
+        billing(project, "jpa", "    mapping: xml");
+        run(project, 0);
+        Path orm = new File(project, "src/main/resources/META-INF/orm.xml").toPath();
+        String invoice = "<entity class=\"io.acme.billing.entity.Invoice\" access=\"FIELD\">";
+        String whole = read(orm).replace("\r\n", "\n");
+        assertTrue(whole.contains(invoice + "\n"), whole);
+        Files.write(orm, whole.replace(invoice + "\n", invoice + "\n        <!-- billing's note -->\n")
+                .getBytes(StandardCharsets.UTF_8));
+
+        // dgshop loses PurchaseOrder and moves its classes to another package.
+        model(project, CUSTOMER);
+        Path env = new File(project, "src/main/resources/blueprint/dgshop/env.yml").toPath();
+        Files.write(env, read(env).replace("entity: io.acme.dgshop.entity", "entity: io.acme.dgshop.model")
+                .getBytes(StandardCharsets.UTF_8));
+        System.setProperty("elasticore.domain", "dgshop");
+        String log;
+        try {
+            log = run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.domain");
+        }
+        String one = read(orm);
+        assertTrue(one.contains("<!-- billing's note -->") && one.contains("io.acme.billing.entity.Invoice"), log + one);
+        assertTrue(one.contains("io.acme.dgshop.model.Customer"), one);
+        assertFalse(one.contains("io.acme.dgshop.entity."), "the moved classes' old mapping went: " + one);
+        assertFalse(one.contains("PurchaseOrder"), "the removed entity's mapping went: " + one);
+    }
+
+    @Test
+    public void aRunOverOneDomainKeepsTheOtherDomainsMappingsWithoutTheCache() throws Exception {
+        System.setProperty("elasticore.merge", "false");
+        File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");
+        billing(project, "jpa", "    mapping: xml");
+        run(project, 0);
+        Path orm = new File(project, "src/main/resources/META-INF/orm.xml").toPath();
+        model(project, CUSTOMER + ORDER + "      memo: string(200)\n");
+        System.setProperty("elasticore.domain", "dgshop");
+        try {
+            run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.domain");
+        }
+        String one = read(orm);
+        assertTrue(one.contains("io.acme.billing.entity.Invoice") && one.contains("name=\"memo\""), one);
+        run(project, 0);
+        assertEquals(one, read(orm));
+    }
+
+    @Test
     public void theClientAndTheServerShareTheCache() throws Exception {
         File project = project(CUSTOMER + ORDER, "jpa", "");
         run(project, 0);
@@ -1022,6 +1123,36 @@ public class GeneratedMergeTest {
         Files.write(new File(blueprint, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
         model(dir, model);
         return dir;
+    }
+
+    /** A second domain, billing, beside dgshop in the same module. */
+    private static void billing(File project, String mode, String config) throws IOException {
+        File blueprint = new File(project, "src/main/resources/blueprint/billing");
+        assertTrue(new File(blueprint, "model").mkdirs());
+        String env = String.join("\n",
+                "elasticore:",
+                "  enable: true",
+                "  config:",
+                "    domainName: billing",
+                "    framework: springboot",
+                "    mode: " + mode,
+                "    j2ee: jakarta",
+                config,
+                "  namespace:",
+                "    base: io.acme.billing",
+                "    entity: io.acme.billing.entity",
+                "    repository: io.acme.billing.repository",
+                "");
+        Files.write(new File(blueprint, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
+        String model = String.join("\n",
+                "entity:",
+                "  Invoice:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      invoiceId: long @id @sequence",
+                "      total: long!",
+                "");
+        Files.write(new File(blueprint, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
     }
 
     private static void model(File project, String model) throws IOException {

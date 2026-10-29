@@ -608,6 +608,23 @@ public final class RulesGenRunner {
 
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
+        if (domainFilter != null) {
+            // A package a generated domain uses too is not only theirs: its
+            // classes this run did not map are stale, not someone else's.
+            java.util.Set<String> others = new java.util.HashSet<String>();
+            java.util.Set<String> generated = new java.util.HashSet<String>();
+            for (String key : loader.contexts().keySet()) {
+                boolean left = !domainFilter.contains(loader.domainDirNameOf(key));
+                for (ECoreModel m : loader.modelsOf(key)) {
+                    for (String ns : new String[]{"entity", "enumeration"}) {
+                        String pkg = m.getNamespace(ns);
+                        if (pkg != null && !pkg.isEmpty()) (left ? others : generated).add(pkg);
+                    }
+                }
+            }
+            others.removeAll(generated);
+            runner.otherDomainPackages = others;
+        }
         // What was generated last, to merge the developer's edits against. One
         // that cannot be read stops the run - without it an edited file can
         // only be overwritten or left behind.
@@ -3672,6 +3689,13 @@ public final class RulesGenRunner {
     /** The JPA mapping moved out of the domain classes, per module root. */
     private final Map<String, OrmMapping> ormByRoot = new java.util.LinkedHashMap<String, OrmMapping>();
 
+    /**
+     * A run over some domains only (-Pdomain): the domain model packages of the
+     * domains it leaves out, whose classes the module's orm.xml keeps. Null for
+     * a whole run.
+     */
+    private java.util.Set<String> otherDomainPackages;
+
     /** Whether the domain being generated keeps its JPA mapping in orm.xml. */
     private boolean xmlMapping() {
         return currentModel != null && !typescript && (v3 || kotlin)
@@ -3779,7 +3803,6 @@ public final class RulesGenRunner {
             }
             if (m.isEmpty()) continue;
             File file = new File(en.getKey() + "/src/main/resources/META-INF/orm.xml");
-            String xml = m.toXml();
             String key = cache != null ? cacheKey(file) : null;
             if (key != null) {
                 // An orm.xml of the developer's own - not the generator's, not
@@ -3790,9 +3813,17 @@ public final class RulesGenRunner {
                     notes.add("META-INF/orm.xml is yours, so the mapping went to META-INF/elasticore-orm.xml:"
                             + " add spring.jpa.mapping-resources=META-INF/elasticore-orm.xml");
                 }
-                writeMerged("  " + relative(file), file, key, xml, true);
+                // The other domains' classes as last generated: the merge then
+                // sees no change to them, and the developer's edits stay.
+                String previous = null;
+                if (otherDomainPackages != null) {
+                    previous = cache.get(key);
+                    if (previous == null && file.isFile() && ownOrmXml(file)) previous = readLf(file);
+                }
+                writeMerged("  " + relative(file), file, key, m.toXml(previous, otherDomainPackages), true);
                 continue;
             }
+            String xml = m.toXml();
             if (file.isFile()) {
                 String existing;
                 try {
@@ -3804,10 +3835,16 @@ public final class RulesGenRunner {
                     file = new File(en.getKey() + "/src/main/resources/META-INF/elasticore-orm.xml");
                     notes.add("META-INF/orm.xml is yours, so the mapping went to META-INF/elasticore-orm.xml:"
                             + " add spring.jpa.mapping-resources=META-INF/elasticore-orm.xml");
-                } else if (equalsIgnoringLineEndings(existing, xml)) {
-                    unchanged++;
-                    System.out.println("  " + relative(file) + "  UNCHANGED");
-                    continue;
+                    if (otherDomainPackages != null && file.isFile() && ownOrmXml(file)) {
+                        xml = m.toXml(readLf(file), otherDomainPackages);
+                    }
+                } else {
+                    if (otherDomainPackages != null) xml = m.toXml(existing, otherDomainPackages);
+                    if (equalsIgnoringLineEndings(existing, xml)) {
+                        unchanged++;
+                        System.out.println("  " + relative(file) + "  UNCHANGED");
+                        continue;
+                    }
                 }
             }
             File dir = file.getParentFile();

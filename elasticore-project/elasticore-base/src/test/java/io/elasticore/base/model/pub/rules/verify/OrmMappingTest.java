@@ -247,4 +247,57 @@ public class OrmMappingTest {
         assertTrue(split[1].contains("return OrderStatus.fromCode(dbData)"), split[1]);
         assertTrue(split[1].contains("@Converter(autoApply = true)"), split[1]);
     }
+
+    private static String entity(String pkg, String name, String kind) {
+        return String.join("\n",
+                "package " + pkg + ";",
+                "",
+                "import jakarta.persistence." + kind + ";",
+                "import jakarta.persistence.Id;",
+                "",
+                "@" + kind,
+                "public class " + name + " {",
+                "",
+                "\t@Id",
+                "\tprivate Long id;",
+                "}",
+                "");
+    }
+
+    @Test
+    public void aRunOverOneDomainKeepsOnlyTheOtherDomainsClasses() {
+        // The last whole run: shop's Order, Item and Coupon, billing's Invoice.
+        OrmMapping whole = new OrmMapping();
+        whole.extract(entity("com.acme.shop", "Order", "Entity"), "com.acme.shop", "Order", false);
+        whole.extract(entity("com.acme.shop", "Item", "Entity"), "com.acme.shop", "Item", false);
+        whole.extract(entity("com.acme.shop", "Coupon", "Entity"), "com.acme.shop", "Coupon", false);
+        whole.extract(entity("com.acme.billing", "Invoice", "Entity"), "com.acme.billing", "Invoice", false);
+        // Written with CRLF, and a block of billing's with no <attributes>.
+        String previous = whole.toXml().replace(
+                "<entity class=\"com.acme.billing.Invoice\" access=\"FIELD\">\n        <attributes>\n"
+                        + "            <id name=\"id\"/>\n        </attributes>\n",
+                "<entity class=\"com.acme.billing.Invoice\" access=\"FIELD\">\n").replace("\n", "\r\n");
+        assertTrue(previous.contains("Invoice\" access=\"FIELD\">\r\n    </entity>"), previous);
+
+        // shop alone: Coupon gone from the DSL, Item now an embeddable, Gift new.
+        OrmMapping shop = new OrmMapping();
+        shop.extract(entity("com.acme.shop", "Order", "Entity"), "com.acme.shop", "Order", false);
+        shop.extract(entity("com.acme.shop", "Item", "Embeddable"), "com.acme.shop", "Item", false);
+        shop.extract(entity("com.acme.shop", "Gift", "Entity"), "com.acme.shop", "Gift", false);
+        String xml = shop.toXml(previous, java.util.Collections.singleton("com.acme.billing"));
+
+        assertTrue(xml.contains("<entity class=\"com.acme.billing.Invoice\" access=\"FIELD\">\n    </entity>"), xml);
+        assertFalse(xml.contains("Coupon"), "a class the domain no longer has leaves: " + xml);
+        assertTrue(xml.contains("<embeddable class=\"com.acme.shop.Item\""), xml);
+        assertFalse(xml.contains("<entity class=\"com.acme.shop.Item\""), xml);
+        // The new class right after its package's last one, before billing's.
+        int order = xml.indexOf("com.acme.shop.Order"), gift = xml.indexOf("com.acme.shop.Gift");
+        assertTrue(order < gift && gift < xml.indexOf("com.acme.billing.Invoice"), xml);
+        assertFalse(xml.contains("\r"), xml);
+
+        // A whole run keeps nothing and writes in the order the classes came.
+        String alone = shop.toXml();
+        assertFalse(alone.contains("Invoice"), alone);
+        assertTrue(alone.indexOf("shop.Order") < alone.indexOf("shop.Gift"), alone);
+    }
 }
