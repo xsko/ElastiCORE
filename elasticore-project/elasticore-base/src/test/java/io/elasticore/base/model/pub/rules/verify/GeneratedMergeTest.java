@@ -364,6 +364,14 @@ public class GeneratedMergeTest {
         System.setProperty("elasticore.rules.v3", "true");
         System.clearProperty("elasticore.merge");
         unsaid = true;
+        // Over one domain, the other domains' edited files would never find their bases.
+        System.setProperty("elasticore.domain", "dgshop");
+        String refused = runCapturingErr(project, 1);
+        assertTrue(refused.contains("run it without -Pdomain once"), refused);
+        assertTrue(read(dto).startsWith("//ecd:"), "nothing was written");
+        assertFalse(new File(project, ".elasticore/cache").exists());
+        System.clearProperty("elasticore.domain");
+
         String log = run(project, 0);
         assertTrue(log.contains("[elcore3] upgrade   : the code 2.x generates"), log);
         String moved = read(dto);
@@ -372,6 +380,13 @@ public class GeneratedMergeTest {
         assertTrue(log.contains("PurchaseOrderDTO.java  MERGED(your edits kept)")
                 || log.contains("PurchaseOrderDTO.java  UNCHANGED(your edits kept)"), log);
         assertTrue(new File(project, ".elasticore/cache").isFile());
+
+        // The upgrade run generated what a run without it does: the next one changes nothing.
+        byte[] cache = Files.readAllBytes(new File(project, ".elasticore/cache").toPath());
+        String again = run(project, 0);
+        assertFalse(again.contains("[elcore3] upgrade"), again);
+        assertFalse(java.util.regex.Pattern.compile("\\.java  (WROTE|MERGED)").matcher(again).find(), again);
+        assertArrayEquals(cache, Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
     }
 
     @Test
@@ -660,6 +675,39 @@ public class GeneratedMergeTest {
     }
 
     @Test
+    public void aKeptMapperKeepsItsXmlAndWhatItUses() throws Exception {
+        File project = project(CUSTOMER + ORDER + coupon("Coupon"));
+        run(project, 0);
+        Path repo = java(project, "CouponRepository.java");
+        Path xml = resource(project, "CouponRepository.xml");
+        Path core = java(project, "CouponCoreService.java");
+        assertNotNull(xml);
+        report(project, "import " + packageOf(repo) + ".CouponRepository;", "CouponRepository repo;");
+
+        model(project, CUSTOMER + ORDER);
+        String log = run(project, 0);
+        assertTrue(Files.exists(repo), log);
+        assertTrue(Files.exists(xml), "the mapper's statements stay with it");
+        assertTrue(log.contains("CouponRepository.xml is no longer generated, but"), log);
+        assertFalse(Files.exists(core), "the service nothing kept uses goes");
+    }
+
+    @Test
+    public void theCodeTwoXGeneratesTidiesUpAsItAlwaysHas() throws Exception {
+        File project = project(CUSTOMER + ORDER + coupon("Coupon"), "jpa", "");
+        System.setProperty("elasticore.rules.v2", "true");
+        System.setProperty("elasticore.merge", "false");
+        run(project, 0);
+        Path repo = java(project, "CouponRepository.java");
+        report(project, "import " + packageOf(repo) + ".CouponRepository;", "CouponRepository repo;");
+
+        model(project, CUSTOMER + ORDER);
+        String log = run(project, 0);
+        assertFalse(Files.exists(repo), log);
+        assertFalse(log.contains("still uses it"), log);
+    }
+
+    @Test
     public void aFileInTheWayIsNotOverwritten() throws Exception {
         File project = project(CUSTOMER + ORDER);
         run(project, 0);
@@ -754,6 +802,21 @@ public class GeneratedMergeTest {
             }
         }
         return sb.toString();
+    }
+
+    /** The developer's class in a package of its own, using what the lines say. */
+    private static Path report(File project, String imports, String field) throws IOException {
+        Path report = new File(project, "src/main/java/io/acme/dgshop/report/CouponReport.java").toPath();
+        Files.createDirectories(report.getParent());
+        Files.write(report, ("package io.acme.dgshop.report;\n\n" + imports + "\n\npublic class CouponReport {\n    "
+                + field + "\n}\n").getBytes(StandardCharsets.UTF_8));
+        return report;
+    }
+
+    private static String packageOf(Path source) throws IOException {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^package ([\\w.]+);").matcher(read(source));
+        assertTrue(m.find(), source.toString());
+        return m.group(1);
     }
 
     private String key(File project) throws IOException {

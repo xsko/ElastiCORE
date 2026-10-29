@@ -150,6 +150,35 @@ public class ThreeWayMergeTest {
     }
 
     @Test
+    public void aCommentAmongTheImportsIsKeptAndACommentedImportStaysComment() {
+        String yours = SOURCE.replace("import lombok.Getter;\n",
+                "// the team's: kept for the batch\n// import a.b.Old;\nimport lombok.Getter;\n");
+        String generated = SOURCE.replace("import lombok.Getter;\n", "import lombok.Getter;\nimport java.time.LocalDate;\n");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(SOURCE, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertTrue(r.text().contains("// the team's: kept for the batch\n// import a.b.Old;\n"), r.text());
+        assertFalse(r.text().contains("\nimport a.b.Old;"), r.text());
+        assertTrue(r.text().contains("import java.time.LocalDate;"), r.text());
+        assertEquals(1, r.text().split("import lombok.Getter;", -1).length - 1, r.text());
+
+        // Imports in a block comment above are not imports.
+        String commented = "/*\nimport a.b.Gone;\n*/\n" + SOURCE;
+        ThreeWayMerge.Result c = ThreeWayMerge.mergeSource(commented, commented + "// mine\n", commented);
+        assertEquals(commented + "// mine\n", c.text());
+    }
+
+    @Test
+    public void anImportInATextBlockIsCode() {
+        String base = t("package a;", "", "public class X {", "    String s = \"\"\"", "import a.b.C;", "\"\"\";", "}");
+        String yours = base.replace("public class X {", "public class X { // mine");
+        String generated = base.replace("    String s", "    int n;\n    String s");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(base, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertEquals(t("package a;", "", "public class X { // mine", "    int n;", "    String s = \"\"\"", "import a.b.C;",
+                "\"\"\";", "}"), r.text());
+    }
+
+    @Test
     public void kotlinImportsHaveNoSemicolon() {
         String base = t("package a", "", "import a.b.Item", "", "class X(val name: String)");
         String yours = t("package a", "", "import a.b.Item", "import java.util.UUID", "", "class X(val name: String) // mine");

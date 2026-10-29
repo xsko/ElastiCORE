@@ -620,9 +620,27 @@ public final class RulesGenRunner {
                 java.util.List<String> sourceRoots = new ArrayList<String>(loader.moduleRoots().values());
                 if (sourceRoots.isEmpty()) sourceRoots.add(basePath);
                 if (!runner.cache.existed() && !kotlin && !typescript && twoXGenerated(sourceRoots) != null) {
+                    // Only this run reads them: the cache it leaves says the
+                    // project has moved, and the next run would find the other
+                    // domains' edited files with no base to merge against.
+                    if (domainFilter != null) {
+                        io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] The first 3.0 build of a project 2.x"
+                                + " generated reads the 2.x code of every domain as the bases of the files edited"
+                                + " since - run it without -Pdomain once. No source was written.");
+                        merging = null;
+                        return 1;
+                    }
                     runner.upgradeBases = twoXBases();
                     System.out.println("[elcore3] upgrade   : the code 2.x generates, " + runner.upgradeBases.size()
                             + " file(s), read as the bases of the files edited since");
+                    // That run loaded the model into the shared context of its
+                    // own, never shaped for 3.0: this one generates from a load
+                    // of its own again, as a run without the upgrade would.
+                    loader = (modulePaths != null && !modulePaths.trim().isEmpty())
+                            ? BlueprintLoader.loadModules(modulePaths)
+                            : BlueprintLoader.load(basePath + "/src/main/resources/blueprint");
+                    RulesConfig.settleSpringBoot(loader.contexts().values());
+                    runner.moduleRoots = loader.moduleRoots();
                 }
             } catch (IOException e) {
                 io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
@@ -698,6 +716,7 @@ public final class RulesGenRunner {
         if (domainFilter == null && runner.succeeded() && modelChecked) {
             runner.removeStale();
             runner.removeStaleMerged();
+            runner.removeUnused();
         }
         // Whatever else happened: the files this run wrote are on disk, and
         // the next run merges against what it wrote into them.
@@ -3844,7 +3863,6 @@ public final class RulesGenRunner {
      * domain's file from a stale one.
      */
     private void removeStale() {
-        int removed = 0;
         Map<File, String> unedited = new java.util.LinkedHashMap<File, String>();
         for (File dir : generatedDirs) {
             // Only a directory this run is the one generator of: the project's
@@ -3892,18 +3910,56 @@ public final class RulesGenRunner {
                 }
             }
         }
-        Map<File, File> used = stillUsed(unedited.keySet());
-        for (Map.Entry<File, String> en : unedited.entrySet()) {
-            if (used.containsKey(en.getKey())) {
-                keptInUse(en.getValue(), used.get(en.getKey()));
-            } else if (en.getKey().delete()) {
+        // Removed by removeUnused, together with what removeStaleMerged finds.
+        for (Map.Entry<File, String> en : unedited.entrySet()) staleStamped.put(canonical(en.getKey()), en.getValue());
+    }
+
+    /** Unedited stale files, by canonical file: stamped ones (removeStale) with their path, merged ones with their cache key. */
+    private final Map<File, String> staleStamped = new java.util.LinkedHashMap<File, String>();
+    private final Map<File, String> staleMerged = new java.util.LinkedHashMap<File, String>();
+
+    /**
+     * The unedited stale files both passes found go - but, in a merging run,
+     * not one a kept source still uses, nor a file named like a class kept so
+     * (the mapper XML of a kept mapper). It stays, and stays known, and goes
+     * on a later run once nothing uses it. The code 2.x generates (no merge)
+     * tidies up as it always has.
+     */
+    private void removeUnused() {
+        java.util.Set<File> all = new java.util.LinkedHashSet<File>(staleStamped.keySet());
+        all.addAll(staleMerged.keySet());
+        Map<File, File> used = cache != null ? stillUsed(all) : new java.util.HashMap<File, File>();
+        Map<String, File> keptNames = new java.util.HashMap<String, File>();
+        for (Map.Entry<File, File> en : used.entrySet()) keptNames.put(baseName(en.getKey()), en.getValue());
+        int removed = 0;
+        int removedMerged = 0;
+        for (File f : all) {
+            boolean merged = staleMerged.containsKey(f);
+            String label = merged ? staleMerged.get(f) : staleStamped.get(f);
+            File user = used.get(f);
+            String n = f.getName();
+            if (user == null && !n.endsWith(".java") && !n.endsWith(".kt")) user = keptNames.get(baseName(f));
+            if (user != null) {
+                keptInUse(label, user);
+                continue;
+            }
+            if (!f.delete()) continue;
+            System.out.println("  " + label + "  REMOVED(the DSL no longer produces it)");
+            if (merged) {
+                cache.remove(label);
+                removedMerged++;
+            } else {
                 removed++;
-                System.out.println("  " + en.getValue() + "  REMOVED(the DSL no longer produces it)");
             }
         }
-        if (removed > 0) {
-            notes.add(removed + " generated file(s) the DSL no longer produces were removed.");
-        }
+        if (removed > 0) notes.add(removed + " generated file(s) the DSL no longer produces were removed.");
+        if (removedMerged > 0) notes.add(removedMerged + " merged file(s) the DSL no longer produces were removed.");
+    }
+
+    private static String baseName(File f) {
+        String n = f.getName();
+        int dot = n.lastIndexOf('.');
+        return dot < 0 ? n : n.substring(0, dot);
     }
 
     /**
@@ -4104,6 +4160,8 @@ public final class RulesGenRunner {
             for (String f : failures) io.elasticore.base.model.pub.rules.ModelCheck.failSaid(f);
             SpecFactory.applicationSignIns(-1, null);
             SpecFactory.compatibleServer(false);
+            // Said once per run: what that run said, this one says again.
+            io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
         }
         return found;
     }
@@ -4113,6 +4171,9 @@ public final class RulesGenRunner {
 
     /** Sources this merging run left to their stamp: edited, and their base not confirmed. */
     private final java.util.Set<String> stampKept = new java.util.TreeSet<String>();
+
+    /** Sources a merging run found without a stamp and outside the cache: no base, so left as they are. */
+    private final java.util.Set<String> unbased = new java.util.TreeSet<String>();
 
     /** How the merge went, for the summary: merged with edits, edits kept as they are, conflicts. */
     private int mergedWithEdits;
@@ -4131,9 +4192,8 @@ public final class RulesGenRunner {
     }
 
     /**
-     * Whether a file is merged rather than stamped: every file but the Java
-     * and Kotlin sources, which keep their //ecd: line for now - the
-     * generate-once marker, the custom blocks and the 2.x detection read it.
+     * Whether a file is merged as text rather than as a source: every file
+     * but the Java and Kotlin sources, which mergesSource takes.
      */
     private boolean merges(ArtifactTarget out) {
         return cache != null && !"java".equals(out.extension()) && !"kt".equals(out.extension());
@@ -4436,7 +4496,7 @@ public final class RulesGenRunner {
                     + " change the same lines - marked <<<<<<< yours / >>>>>>> elasticore in the file; resolve them"
                     + " and run again";
             conflicts++;
-        System.out.println(label + "  CONFLICT");
+            System.out.println(label + "  CONFLICT");
             notes.add(message);
         }
     }
@@ -4448,7 +4508,6 @@ public final class RulesGenRunner {
      */
     private void removeStaleMerged() {
         if (cache == null) return;
-        int removed = 0;
         Map<File, String> unedited = new java.util.LinkedHashMap<File, String>();
         for (String key : cache.paths()) {
             if (mergedKeys.contains(key) || !ownsEntry(key)) continue;
@@ -4467,20 +4526,8 @@ public final class RulesGenRunner {
             }
             cache.remove(key);
         }
-        // One a kept source still uses stays, and stays known: it goes on the
-        // run after nothing uses it.
-        Map<File, File> used = stillUsed(unedited.keySet());
-        for (Map.Entry<File, String> en : unedited.entrySet()) {
-            if (used.containsKey(en.getKey())) {
-                keptInUse(en.getValue(), used.get(en.getKey()));
-                continue;
-            }
-            if (!en.getKey().delete()) continue;
-            removed++;
-            System.out.println("  " + en.getValue() + "  REMOVED(the DSL no longer produces it)");
-            cache.remove(en.getValue());
-        }
-        if (removed > 0) notes.add(removed + " merged file(s) the DSL no longer produces were removed.");
+        // Removed by removeUnused - one a kept source still uses stays known.
+        for (Map.Entry<File, String> en : unedited.entrySet()) staleMerged.put(canonical(en.getKey()), en.getValue());
     }
 
     private void saveCache() {
@@ -4559,8 +4606,13 @@ public final class RulesGenRunner {
         if (mergesSource(out)) {
             String key = cacheKey(file);
             if (key != null && writeMergedSource(label, out, file, key, content)) return;
-            // Left to the stamp below: a file whose base no run could confirm.
-            if (key != null && file.isFile()) stampKept.add(key);
+            // Left to the stamp below: a file whose base no run could confirm -
+            // or, without a stamp, one the cache does not know.
+            if (key != null && file.isFile()) {
+                String text = readLf(file);
+                if (text != null && text.startsWith("//ecd:")) stampKept.add(key);
+                else unbased.add(key);
+            }
         }
 
         HashUtils.Response st = null;
@@ -4716,6 +4768,12 @@ public final class RulesGenRunner {
                     + " kept as yours / " + conflicts + " conflict(s) / " + stampKept.size()
                     + " still stamped (edited, base not confirmed) ===");
             for (String k : stampKept) System.out.println("  still stamped: " + k);
+            if (!unbased.isEmpty()) {
+                // Without a stamp and unknown to the cache there is no base: left as it is.
+                System.out.println("  " + unbased.size() + " source(s) without a stamp that " + GeneratedCache.DIR + "/"
+                        + GeneratedCache.NAME + " does not hold were left as they are"
+                        + (cache.existed() ? "" : " - the cache is missing: take it from git and run again"));
+            }
         }
         for (String n : notes) {
             System.out.println("  " + n);

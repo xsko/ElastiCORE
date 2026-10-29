@@ -169,18 +169,44 @@ public final class ThreeWayMerge {
             this.body = body;
         }
 
+        /**
+         * The block is the imports at the top and the blank lines between
+         * them, nothing else: it ends at the first other line, and the lines
+         * after it - a comment among imports, the imports below it - are
+         * merged as lines, so nothing of the developer's is dropped. An
+         * "import" past the start of the code (a text block) or inside a
+         * comment is not one.
+         */
         static Parts of(String text) {
             List<String> l = lines(text);
             int first = -1;
             int last = -1;
             int pkg = -1;
+            boolean inComment = false;
             for (int i = 0; i < l.size(); i++) {
                 String t = l.get(i).trim();
-                if (pkg < 0 && t.startsWith("package ")) pkg = i;
+                if (inComment) {
+                    if (t.contains("*/")) inComment = false;
+                    if (first >= 0) break;
+                    continue;
+                }
+                if (pkg < 0 && first < 0 && t.startsWith("package ")) {
+                    pkg = i;
+                    continue;
+                }
                 if (importKey(l.get(i)) != null) {
                     if (first < 0) first = i;
                     last = i;
+                    continue;
                 }
+                if (t.isEmpty()) continue;
+                if (first >= 0) break;
+                if (t.startsWith("/*")) {
+                    inComment = !t.contains("*/");
+                    continue;
+                }
+                if (t.startsWith("//") || t.startsWith("@file:")) continue;
+                break;
             }
             // No imports: the block is empty, right after the package line.
             if (first < 0) {

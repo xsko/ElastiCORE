@@ -21,8 +21,14 @@
   - 오래된 파일 정리는 개발자 클래스가 아직 상속하는 `...Base` 를 남긴다(표시 방식과 같게). 그리고 DSL 이 더 만들지
     않는 생성 클래스라도 남는 소스가 아직 쓰면(같은 패키지, import, 전체 이름) 지우지 않고 어느 파일이 쓰는지 알린다
     (`... is no longer generated, but ... still uses it - kept`) - 쓰는 곳이 없어진 다음 빌드에서 지워진다. 지워지는
-    엔티티의 파일끼리만 서로 쓰는 것은 전처럼 함께 지워진다. 전에는 2.x template 을 `output = 'v3'` 로 옮기는 첫 빌드가
-    2.x 호환 번들이 쓴(3.0 표시) `CouponCoreService` 를 지워, 개발자 컨트롤러가 컴파일되지 않았다.
+    엔티티의 파일끼리만 서로 쓰는 것은 전처럼 함께 지워진다. 남는 매퍼 인터페이스는 같은 이름의 XML 도 남긴다. 전에는
+    2.x template 을 `output = 'v3'` 로 옮기는 첫 빌드가 2.x 호환 번들이 쓴(3.0 표시) `CouponCoreService` 를 지워, 개발자
+    컨트롤러가 컴파일되지 않았다. 병합하는 빌드에서만 - 2.x 코드(`output = 'v2'`)는 전처럼 지운다.
+  - 소스의 import 묶음은 맨 위의 import 와 그 사이 빈 줄뿐이다: 그 사이의 주석(주석 처리한 import 포함)부터는 줄로
+    병합되어 남고, 코드 안(텍스트 블록)이나 주석 안의 `import` 는 import 가 아니다.
+  - 2.x 프로젝트의 첫 3.0 빌드는 `-Pdomain` 으로 하면 멈춘다(다른 도메인의 고친 파일이 기준을 찾을 기회를 잃으므로).
+    그 빌드가 2.x 코드를 메모리에서 만든 뒤에는 모델을 다시 읽어, 업그레이드 빌드와 다음 빌드가 같은 코드를 쓴다.
+  - 표시도 없고 캐시에도 없는 소스는 그대로 두고 요약에 센다 - 캐시 파일이 없으면 git 에서 가져오라고 한다.
   - 마이그레이션 가이드: 2.x 는 `@service`·`@expose` 없이도 키가 있는 엔티티에 리포지토리를, `@template`·`@searchable`
     DTO 가 있으면 서비스와 컨트롤러까지 썼고 v3 는 `@expose`·`@service` 엔티티만 쓴다는 줄, `@ElastiCore` 로
     생성하던 프로젝트는 옮길 때 그것을 지운다는 줄(남기면 컴파일마다 2.x 코드가 다시 쓰여 병합에 편집으로 들어온다).
@@ -30,9 +36,10 @@
     `CustomerService`·`PurchaseOrderService`·`OrderLine`, MyBatis pet store `PurchaseOrderService`)이 표시 줄만 빠졌다.
     2.x 코드(`output = 'v2'`)는 그대로(`elcoreRulesCheck` 157/0/2, `elcoreTreeCheck` 0/0/0).
 - 확인:
-  - `ThreeWayMergeTest`(import 묶음, 같은 자리 추가, 바뀐 줄 옆 추가, Kotlin), `GeneratedMergeTest`(Java 편집과 날짜 필드,
-    한 번만 생성하는 파일의 세 경우, 표시 넘겨받기와 확인 못 하는 기준, 2.x → 3.0 업그레이드, 개발자 코드가 쓰는 오래된
-    클래스), `SignInAndReferencesTest`.
+  - `ThreeWayMergeTest`(import 묶음, 같은 자리 추가, 바뀐 줄 옆 추가, Kotlin, import 사이 주석, 텍스트 블록),
+    `GeneratedMergeTest`(Java 편집과 날짜 필드, 한 번만 생성하는 파일의 세 경우, 표시 넘겨받기와 확인 못 하는 기준,
+    2.x → 3.0 업그레이드와 그 다음 빌드, `-Pdomain` 업그레이드 거절, 개발자 코드가 쓰는 오래된 클래스와 매퍼 XML,
+    2.x 코드의 정리), `SignInAndReferencesTest`.
   - 실제 프로젝트 측정: template(2.x) 과 elasticore-petstore 에 모든 엔티티 필드 추가 - 바뀐 생성 파일 119 개 충돌 0;
     template 의 2.x → 3.0 - 바뀐 187 개 충돌 0(줄 단위만이면 1).
   - 샘플 시나리오(작업 트리에서 실제 생성·컴파일·테스트): MyBatis pet store 24/24, JPA pet store 23/23, template-kt
@@ -44,5 +51,5 @@
     표시가 있는 2.x 파일 263 개를 기준으로 읽고, 고친 DTO 와 CoreService 는 표시 없이 편집이 남은 채 병합, 고치지 않은
     파일은 3.0 코드, 두 번째 빌드는 그대로, 컴파일 통과.
 - 관련 파일: `util/ThreeWayMerge.java`(mergeSource), `verify/RulesGenRunner.java`(writeMergedSource·confirmedBase·
-  twoXBases·rewriteOwned·removeStaleMerged·printSummary), `util/ConsoleLog.java`(snapshot·restore),
+  twoXBases·rewriteOwned·removeStale·removeStaleMerged·removeUnused·stillUsed·printSummary), `util/ConsoleLog.java`(snapshot·restore),
   `elasticore-env-guide.md` 9-2, `elasticore-rule-guide.md` 7.5, `elasticore-migration-guide.md`
