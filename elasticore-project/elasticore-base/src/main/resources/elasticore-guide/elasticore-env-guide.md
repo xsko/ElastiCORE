@@ -197,8 +197,8 @@ camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬�
 페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
 `ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 순서가 없는 SQL 의 페이지는 SQL Server
 에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음) - 그러니 페이지의 `ORDER BY` 를
-`/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). `/* if */` 블록 안의 `/* if */` 는 런타임처럼
-조건이 아닌 주석으로 남습니다. 정렬은 런타임처럼 입력의 `sortCode`·
+`/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). 블록 안에 블록을 두는 것(중첩)은 런타임처럼
+지원하지 않습니다 - 안쪽 `/* if-end */` 가 바깥 블록을 닫습니다. 정렬은 런타임처럼 입력의 `sortCode`·
 `sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261031
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임

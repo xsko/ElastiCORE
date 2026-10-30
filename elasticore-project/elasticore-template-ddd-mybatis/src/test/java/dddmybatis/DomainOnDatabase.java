@@ -153,7 +153,7 @@ abstract class DomainOnDatabase {
 
         assertThat(products.findByNameContaining("0% off " + tag)).extracting(Product::getSku).containsExactly("A" + tag);
         assertThat(products.findBySkuStartingWith("A" + tag)).extracting(Product::getSku).containsExactly("A" + tag);
-        assertThat(products.findBySkuStartingWith("_" + tag.substring(1))).as("_ is no wildcard").isEmpty();
+        assertThat(products.findBySkuStartingWith("_" + tag)).as("_ is no wildcard").isEmpty();
         assertThat(products.findBySkuIn(java.util.Collections.emptyList())).isEmpty();
         assertThat(products.findBySkuIn(java.util.Arrays.asList("A" + tag, "B" + tag))).hasSize(2);
         List<String> skus = products.findAllByOrderBySkuDesc().stream().map(Product::getSku).collect(Collectors.toList());
