@@ -147,8 +147,11 @@ shows the result of every step for someone writing their first rule.
   on every pull request over the 238 files 2.x generates for the reference project — apart from bug fixes the
   [history](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) lists.
   A project holding 2.x's code that chose nothing is stopped rather than rewritten.
-- **Your edits are kept**: regenerated files and generate-once files (service extensions, controllers, …) are kept
-  apart, and a file you edited is recognised by its content hash and never overwritten.
+- **Your edits are kept, and the model's changes still come in**: the 3.0 code merges each edited generated file with
+  what the model now generates, against what it generated last (`.elasticore/cache`); only an edit and a model change
+  on the same lines stop the build, with conflict marks. Generate-once files (service extensions, controllers, …)
+  follow the model until you edit them, then take the changes that merge cleanly. The 2.x code (`output = 'v2'`)
+  recognises an edited file by its content hash and leaves it alone.
 
 ---
 
