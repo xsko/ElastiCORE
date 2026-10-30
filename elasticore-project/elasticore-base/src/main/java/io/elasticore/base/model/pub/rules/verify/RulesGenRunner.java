@@ -1509,6 +1509,11 @@ public final class RulesGenRunner {
             io.elasticore.base.model.pub.rules.PortSpec spec = SpecFactory.fromPort(port, model);
             emitPort(spec, target(model.getNamespace("port"), name));
             if (spec.springHttp() && !spec.operations().isEmpty() && !typescript) springPorts.add(spec);
+            // A database port of a MyBatis domain runs on MyBatis: a mapper, its XML and the adapter.
+            if (v3 && !kotlin && !typescript
+                    && io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules.applies(spec)) {
+                emitMyBatisPort(spec);
+            }
         }
         if (!springPorts.isEmpty()) emitSpringHttpServices(model, springPorts);
 
@@ -1563,6 +1568,33 @@ public final class RulesGenRunner {
                     io.elasticore.base.model.pub.rules.base.SpringHttpPorts.properties(domainName, ports));
         } catch (RuntimeException e) {
             failed(String.format("    %-12s %s", "httpServices", props.relativePath()), props, e);
+        }
+    }
+
+    /** A database port of a MyBatis domain: its mapper, the mapper's XML, and the adapter that implements the port. */
+    private void emitMyBatisPort(io.elasticore.base.model.pub.rules.PortSpec spec) {
+        String pkg = io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules.packageOf(spec);
+        String name = spec.getName();
+        emitPortArtifact(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules.MAPPER,
+                ArtifactTarget.java(pkg, name + "Mapper"));
+        emitPortArtifact(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules.XML,
+                ArtifactTarget.resource("src/main/resources", "xml", pkg, name + "Mapper"));
+        emitPortArtifact(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules.ADAPTER,
+                ArtifactTarget.java(pkg, name + "Adapter"));
+    }
+
+    private void emitPortArtifact(io.elasticore.base.model.pub.rules.PortSpec spec, String targetName, ArtifactTarget out) {
+        String label = String.format("    %-12s %s", targetName, out.relativePath());
+        try {
+            SourceCode code = engine("mybatis-port").run(spec, targetName);
+            if (!code.isMake()) {
+                skipped++;
+                System.out.println(label + "  SKIP(dontMake)");
+                return;
+            }
+            write(label, out, code.render());
+        } catch (RuntimeException e) {
+            failed(label, out, e);
         }
     }
 

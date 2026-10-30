@@ -5,13 +5,41 @@
 # Customer data, and loading either aggregate to compute it would be using a
 # consistency boundary as a query engine. That is what a read model is for,
 # and the dbms port is how one is declared: the SQL is the model, the
-# interface is generated into application.port.out, and the adapter is a
-# runtime proxy - no generated persistence code, which is why the interface
-# lives on the application side of the hexagon.
+# interface is generated into application.port.out. In a MyBatis domain the
+# adapter is generated too - a MyBatis mapper with this SQL and the class
+# that implements the port with it, in infrastructure.persistence - so the
+# interface stays on the application side of the hexagon.
 port:
   ShopReportService:
     meta: dbms
     methods:
+      # A page of a read model: a count and a page of rows (PortRows.pageable).
+      customerPage:
+        meta: method
+        params:
+          input: RevenueSearchInput
+        return: Page<CustomerRevenueDTO>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customerId,
+                 c.first_name as firstName,
+                 c.last_name as lastName
+          FROM shop_customer c
+          WHERE 1=1
+          AND c.last_name LIKE CONCAT(CONCAT('%', :lastName), '%') /* if:lastName */
+          ORDER BY c.customer_id
+
+      # A write that goes around the aggregate on purpose: a bulk correction.
+      updateCustomerPhone:
+        meta: method
+        params:
+          customerId: long
+          phone: string
+        return: int
+        nativeQuery: true
+        query: |
+          UPDATE shop_customer SET phone = :phone WHERE customer_id = :customerId
+
       countOrdersByStatus:
         meta: method
         params:
@@ -36,7 +64,7 @@ port:
           FROM shop_customer c
           LEFT JOIN shop_order o ON o.customer_customer_id = c.customer_id
           WHERE 1=1
-          AND c.last_name LIKE CONCAT('%', :lastName, '%') /* if:lastName */
+          AND c.last_name LIKE CONCAT(CONCAT('%', :lastName), '%') /* if:lastName */
           GROUP BY c.customer_id, c.first_name, c.last_name
           ORDER BY totalRevenue DESC
 

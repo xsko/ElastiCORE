@@ -187,15 +187,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
-      - name: The shop and the pet store on each database
+      - name: The shop, the domain model and the pet store on each database
         run: |
           set -o pipefail
           ./gradlew :elasticore-project:elasticore-template-mybatis:dbTest \
+            :elasticore-project:elasticore-template-ddd-mybatis:dbTest \
             :elasticore-project:elasticore-sample-petstore-mybatis:dbTest \
             :elasticore-project:elasticore-sample-petstore:dbTest --continue --console=plain 2>&1 | tee build.log
 
       # A database the job did not reach would skip its tests and pass; every
-      # one of the ten classes must have run.
+      # one of the thirteen classes must have run.
       - name: No database was skipped
         run: |
           shopt -s nullglob
@@ -204,7 +205,7 @@ jobs:
           skipped=""
           if [ "$files" -gt 0 ]; then skipped=$(grep -l 'skipped="[1-9]' "${results[@]}" || true); fi
           echo "$files result files"
-          if [ "$files" -lt 10 ] || [ -n "$skipped" ]; then
+          if [ "$files" -lt 13 ] || [ -n "$skipped" ]; then
             echo "::error title=Database tests skipped::$files result files; skipped in: $skipped"
             exit 1
           fi

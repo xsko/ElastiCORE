@@ -165,7 +165,35 @@ SQL Server 의 `UNIQUE` 는 NULL 을 하나만 받으므로, 값이 없어도 �
   행이 id 를 값으로 갖고 관계는 그 컬럼으로 조인만 합니다. 쓰는 것은 id 입니다. `@owner(customerId)` 를 레이어드에서
   쓸 때의 모양입니다(헥사고날은 이 둘을 저절로 만듭니다).
 
-**JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기.
+- **1:1 관계의 반대편** (`customer: Customer @OneToOne(mappedBy="vipProfile")`): 키는 상대 행(`Customer.vipProfile`)에
+  하나만 있고, 이쪽은 그 컬럼으로 조인해 읽기만 합니다(JPA 처럼 컬럼 하나).
+- **`@abstract` 부모 (`@extend(AuditEntity)`)**: 부모의 필드가 행의 컬럼입니다(JPA 의 `@MappedSuperclass`). 감사 필드를
+  모아 둔 부모가 이 모양입니다. `@abstract` 가 아닌 부모(테이블 상속)는 거절합니다. Since: 3.0.261031
+
+**JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기,
+`@jpa:CreatedBy`·`@jpa:LastModifiedBy` 에 쓴 사람 넣기 - 앱의 `AuditorAware` 빈이 말하는 사람(JPA 감사가 묻는 그 빈.
+없으면 null). Since: 3.0.261031
+
+**repository.yml 의 쿼리** - 매퍼 인터페이스에 DSL 이 적은 이름·시그니처 그대로 생기고, XML 에 그 문장이 생깁니다.
+Since: 3.0.261031
+- **이름으로 읽는 쿼리**(`query` 없음): Spring Data 처럼 이름을 읽습니다 - `find·count·exists·delete` + `By`, `First/TopN`,
+  `Distinct`, `And`·`Or`, `Is·Not·LessThan(Equal)·GreaterThan(Equal)·Before·After·Between·IsNull·IsNotNull·Like·NotLike·
+  StartingWith·EndingWith·Containing·NotContaining·In·NotIn·True·False·IgnoreCase·AllIgnoreCase`, `OrderBy...Asc/Desc`.
+  속성은 행·값 객체·조인한 행의 것(`findByCustomerName` 은 `customer.name`). `pageable: true` 면 `Page` 를 count 와 한 페이지로.
+- **`nativeQuery: true` 인 SQL**: 적은 그대로 실행하고 `:name`(또는 `?1`)을 그 파라미터로 묶습니다. 엔티티를 답하면 키로
+  다시 읽어 조인한 행까지 채우고(쿼리가 준 순서대로), DTO 를 답하면 컬럼 별칭으로 채웁니다(`AS customerId`).
+  `UPDATE`·`DELETE`·`INSERT` 는 바뀐 행 수를 답합니다.
+- **JPQL**(`nativeQuery` 없이 `query` 를 적은 것)은 거절합니다 - MyBatis 는 SQL 을 실행합니다. `nativeQuery: true` 와 DB 의 SQL 로.
+
+**dbms 포트** (`port: ... meta: dbms`) - MyBatis 도메인에서는 포트도 MyBatis 로 생성합니다: 포트의 SQL 을 담은 매퍼
+(`<Port>Mapper` + XML)와 포트를 구현하는 어댑터(`<Port>Adapter`, 빈)가 `infrastructure.persistence`(없으면 repository 패키지)에
+생깁니다 - 런타임 프록시 대신. SQL 은 포트 DSL 에 적은 그대로이고, `:name` 은 `#{}`, 줄 끝의 `/* if:name */` 는 `<if>`(값이 있을
+때 - 빈 문자열은 없음), 블록 `/* if:name */ ... /* if-end */` 도 같습니다. 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
+camelCase 로 DTO 에, 값 하나면 첫 컬럼). `/* if:` 에 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로.
+Since: 3.0.261031
+
+JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
+라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.
 
 **테이블·컬럼 이름은 JPA 와 같습니다** - `@table`·`table.prefix`·`@column`, 없으면 이름을 snake case 로,
 관계 컬럼은 `필드_대상키`(`customer_customer_id`). JPA 로 쓰던 테이블을 그대로 읽습니다.
@@ -197,14 +225,53 @@ SQL Server").
 모델이 바뀔 때마다 생성 코드와 같은 자리에서 합쳐야 해 충돌할 곳이 늘어납니다.
 
 **아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다):
-- `mappedBy` 없는 컬렉션, `@ManyToMany`, 값 컬렉션(`List<String>`), 다른 도메인 엔티티의 컬렉션
-- 값 객체 안의 값 객체·관계, 키 두 개 이상(`@IdClass`), 상속, JDBC 타입이 없는 타입(`UUID` 등),
-  행의 값 필드를 가리키지 않는 `@joinBy`
+- `mappedBy` 없는 컬렉션, `@ManyToMany`, 값 컬렉션(`List<String>`, `string[]`), 다른 도메인 엔티티의 컬렉션
+- 값 객체 안의 값 객체·관계, 키 두 개 이상(`@IdClass`), `@abstract` 가 아닌 부모(테이블 상속),
+  JDBC 타입이 없는 타입(`UUID` 등), 행의 값 필드를 가리키지 않는 `@joinBy`, 상대가 키를 갖지 않는 `@OneToOne(mappedBy)`
 - 시퀀스·UUID 로 만드는 키(`@sequence(SEQUENCE)` 등 - IDENTITY 만), 키가 아닌 `@sequence`
-- `@jpa:CreatedBy`·`@jpa:LastModifiedBy`, 시각 타입이 아닌 `@jpa:CreatedDate`
+- 시각 타입이 아닌 `@jpa:CreatedDate`, `@audited`(행의 이력은 Hibernate Envers 의 것 - MyBatis 의 쓰기는 이력을 남기지 않음)
 - 조인한 행보다 먼 검색 경로(`@ref(shop.region.name)`) - 빼면 조건부 수정·삭제가 모든 행에 미치므로
+- repository.yml 의 JPQL, 이름이 쿼리로 읽히지 않는 메서드, 멤버가 있는 루트의 `deleteBy...`(멤버를 남김)
+- 레이어드에서 루트가 1:1 로 갖는 멤버(서비스가 없는 것) - 레이어드 서비스는 그것을 쓰지 않습니다. 그 엔티티에 서비스를
+  주거나 도메인 규칙(`architecture = 'ddd'`·`'hexagonal'`)으로
 - JPA 도메인의 엔티티가 MyBatis 도메인의 엔티티를 가리키는 것(반대는 됨), 2.x 코드를 지키는 도메인과 같은 프로젝트,
-  DDD·헥사고날·Kotlin(MyBatis 는 레이어드 Java)
+  Kotlin(MyBatis 코드는 Java)
+
+#### DDD·헥사고날 (`architecture = 'ddd'`·`'hexagonal'` + `mode: mybatis`)
+
+도메인 모델과 헥사고날도 MyBatis 로 생성합니다(묶음 `ddd-mybatis-springboot`·`hexagonal-mybatis-springboot` - 빌드의
+`architecture` 와 `mode` 로 저절로 고름. 도메인 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot` 를
+적어도 MyBatis 판으로 읽습니다). Since: 3.0.261031
+
+모델은 JPA 판과 같고, 만들어지는 것도 같습니다 - 루트와 `<Root>Base`, 멤버, 값 객체, 도메인 이벤트, 불변식, 팩토리,
+명세, 명령(`commands:`), 생명주기(`states:`), `@snapshot`·`@compute`, 도메인 서비스·프로세스 매니저, 포트
+(`<Root>RepositoryPort`·`<Root>QueryPort`·`<Root>UseCase`), 아웃박스, 아키텍처 테스트. 도메인(`domain.model`)에는 JPA·Spring
+Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 것을 여기서는 그대로).
+
+다른 것은 **저장소 어댑터**(`<Root>RepositoryAdapter`)입니다. JPA 가 스스로 하던 일을 어댑터가 한 줄씩 합니다:
+
+| JPA 가 하던 것 | MyBatis 어댑터 |
+|---|---|
+| `save()` 가 새 행인지 판단 | 버전이 없으면(또는 키가 없으면) INSERT, 아니면 UPDATE |
+| 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 |
+| 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
+| 1:1 멤버 cascade (`@OneToOne @cascade`) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE |
+| `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
+| `@DomainEvents` 발행 | 저장 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |
+| `@CreatedDate`·`@CreatedBy` 등 감사 | 저장 때 시각과 `AuditorAware` 의 사람을 넣음 |
+| `EntityManager.find` (참조 검사·`@snapshot`) | 어댑터가 `Lookup.Source` - 런타임이 등록하는 `Lookup` 빈이 타입별로 찾아 줌 |
+| 지연 로딩 | 없음 - 행은 조인한 행과 함께, 컬렉션은 페이지 단위로 한 문장씩 읽음 |
+
+애플리케이션 서비스는 포트만 받습니다(`<Root>RepositoryPort`, `<Root>QueryPort`, `Lookup`) - 확장 서비스의 생성자도
+그 셋입니다. 검색 포트는 `Specification` 대신 검색 DTO 를 받습니다(`findAll(OrderSrchDTO, owner, Pageable)`).
+애그리거트의 멤버(`@aggregate(Order)`)는 `@service` 를 적어도 자기 서비스가 없고 루트가 씁니다. 매퍼(`<Member>Repository`)만
+생기며, 그것을 부르는 것은 루트의 어댑터뿐입니다.
+
+아웃박스(`outbox: true`)는 MyBatis 매퍼로 쓰고, 릴레이는 DB 마다의 잠금으로 다음 행을 가져갑니다 - PostgreSQL·Oracle
+`FOR UPDATE SKIP LOCKED`, SQL Server `UPDLOCK, READPAST`, H2 `FOR UPDATE`. 테이블은 프로젝트 DDL 에 들어갑니다.
+
+`elasticore-template-ddd-mybatis` 가 `elasticore-template-ddd` 의 모델과 테스트를 MyBatis 위에서 돌립니다(H2, 그리고 CI 의
+Oracle·PostgreSQL·SQL Server).
 
 `@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
@@ -616,6 +683,7 @@ elasticore:
 | `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | 위 셋의 Kotlin 판 |
 | `ts-model` | 브라우저용 DTO, enum, 타입 있는 REST 클라이언트 |
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
+| `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | 도메인 모델·헥사고날을 MyBatis 로 (`architecture` 가 ddd·hexagonal 이고 `mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 
 번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
 

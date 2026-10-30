@@ -838,6 +838,87 @@ public class MyBatisGenerationTest {
         assertTrue(log.contains("PurchaseOrder.findBig is JPQL"), log);
     }
 
+    private static final String PORT = String.join("\n",
+            "dto:",
+            "  OrderFind:",
+            "    fields:",
+            "      orderNo: string",
+            "      sortCode: string",
+            "  OrderRow:",
+            "    fields:",
+            "      orderNo: string",
+            "      amount: long",
+            "",
+            "port:",
+            "  OrderReport:",
+            "    meta: dbms",
+            "    methods:",
+            "      findRows:",
+            "        meta: method",
+            "        params:",
+            "          input: OrderFind",
+            "        return: Page<OrderRow>",
+            "        nativeQuery: true",
+            "        query: |",
+            "          SELECT order_no as orderNo, amount FROM purchase_order",
+            "          WHERE amount > 0",
+            "          AND order_no = :orderNo /* if:orderNo */",
+            "      countAll:",
+            "        meta: method",
+            "        params:",
+            "          status: string",
+            "        return: long",
+            "        nativeQuery: true",
+            "        query: SELECT COUNT(*) FROM purchase_order WHERE status = :status AND note <> ':notABind'",
+            "      updateAmount:",
+            "        meta: method",
+            "        params:",
+            "          orderNo: string",
+            "          amount: long",
+            "        return: int",
+            "        nativeQuery: true",
+            "        query: UPDATE purchase_order SET amount = :amount WHERE order_no = :orderNo",
+            "");
+
+    @Test
+    public void aDatabasePortOfAMyBatisDomainIsAMapperAndAnAdapter() throws Exception {
+        File project = project(MODEL + "\n" + PORT, "mybatis");
+        String env = new String(Files.readAllBytes(envOf(project, "dgshop")), StandardCharsets.UTF_8)
+                .replace("    repository: io.acme.dgshop.repository\n",
+                        "    repository: io.acme.dgshop.repository\n    port: io.acme.dgshop.port\n");
+        Files.write(envOf(project, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
+        run(project, 0);
+
+        String xml = new String(Files.readAllBytes(findResource(project, "OrderReportMapper.xml")), StandardCharsets.UTF_8);
+        assertTrue(xml.contains("<if test=\"@io.elasticore.springboot3.bean.PortRows@present(p.orderNo)\">AND order_no = #{p.orderNo}</if>"), xml);
+        assertTrue(xml.contains("<select id=\"findRowsRows\" resultType=\"java.util.LinkedHashMap\">"), xml);
+        assertTrue(xml.contains("<select id=\"findRowsCount\" resultType=\"long\">"), xml);
+        assertTrue(xml.contains("<if test=\"orderBy != null\"> ORDER BY ${orderBy}</if>"), xml);
+        assertTrue(xml.contains("WHERE status = #{status} AND note &lt;&gt; ':notABind'"), xml);
+        assertTrue(xml.contains("<update id=\"updateAmount\">"), xml);
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        f.newDocumentBuilder().parse(findResource(project, "OrderReportMapper.xml").toFile());
+
+        String adapter = read(project, "OrderReportAdapter.java");
+        assertTrue(adapter.contains("public class OrderReportAdapter implements OrderReport"), adapter);
+        assertTrue(adapter.contains("return new PageImpl<>(PortRows.list(rows, OrderRow.class), pageable, total);"), adapter);
+        assertTrue(adapter.contains("return mapper.updateAmount(orderNo, amount);"), adapter);
+        assertTrue(read(project, "OrderReportMapper.java").contains("@Mapper"));
+    }
+
+    @Test
+    public void aPortConditionThatIsAnExpressionIsRefusedUnderMyBatis() throws Exception {
+        File project = project(MODEL + "\n" + PORT.replace("/* if:orderNo */", "/* if:input.orderNo != null */"),
+                "mybatis");
+        String env = new String(Files.readAllBytes(envOf(project, "dgshop")), StandardCharsets.UTF_8)
+                .replace("    repository: io.acme.dgshop.repository\n",
+                        "    repository: io.acme.dgshop.repository\n    port: io.acme.dgshop.port\n");
+        Files.write(envOf(project, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, 1);
+        assertTrue(log.contains("which is the port runtime's (JEXL)"), log);
+    }
+
     @Test
     public void aConcreteParentIsStillRefused() throws Exception {
         File project = project(String.join("\n",

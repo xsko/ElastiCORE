@@ -863,10 +863,12 @@ public final class MyBatisQueries {
         String sql = q.sql;
         Matcher m = NAMED.matcher(sql);
         int at = 0;
+        int scanned = 0;
         boolean inString = false;
         while (m.find()) {
             // A :name inside a quoted literal is the literal's.
-            for (int i = at; i < m.start(); i++) if (sql.charAt(i) == '\'') inString = !inString;
+            for (int i = scanned; i < m.start(); i++) if (sql.charAt(i) == '\'') inString = !inString;
+            scanned = m.end();
             if (inString) continue;
             Param p;
             if (m.group(1) != null) {
@@ -887,7 +889,6 @@ public final class MyBatisQueries {
                 out.append(bindOf(e, p.type, p.name));
             }
             at = m.end();
-            for (int i = m.start(); i < m.end(); i++) if (sql.charAt(i) == '\'') inString = !inString;
         }
         out.append(cdata(sql.substring(at))).append("]]>");
         return out.toString().replace("<![CDATA[]]>", "");

@@ -115,6 +115,34 @@ class HexagonalPortTest {
         assertThat(filtered.get(0).getFirstName()).isEqualTo("Grace");
     }
 
+    @Test
+    @DisplayName("in a MyBatis domain the port is a generated MyBatis adapter, not the runtime's proxy")
+    void thePortIsAGeneratedAdapter() {
+        assertThat(reports).isInstanceOf(
+                io.elasticore.sample.dddmybatis.shop.infrastructure.persistence.ShopReportServiceAdapter.class);
+    }
+
+    @Test
+    @DisplayName("a page of the read model is a count and a page of rows")
+    void aPageOfTheReadModel() {
+        String tag = "Pager" + System.nanoTime();
+        for (int i = 0; i < 3; i++) customer("P" + i, tag, "pager" + i + System.nanoTime() + "@example.com");
+
+        RevenueSearchInput input = new RevenueSearchInput();
+        input.setLastName(tag);
+        org.springframework.data.domain.Page<CustomerRevenueDTO> page = reports.customerPage(input);
+        assertThat(page.getTotalElements()).isEqualTo(3L);
+        assertThat(page.getContent()).hasSize(3).allSatisfy(r -> assertThat(r.getLastName()).isEqualTo(tag));
+    }
+
+    @Test
+    @DisplayName("a write through the port changes the rows it names and answers how many")
+    void aWriteThroughThePort() {
+        Customer c = customer("Wren", "Writer", "wren" + System.nanoTime() + "@example.com");
+        assertThat(reports.updateCustomerPhone(c.getCustomerId(), "010-1234")).isEqualTo(1);
+        assertThat(customers.findById(c.getCustomerId()).orElseThrow().getPhone()).isEqualTo("010-1234");
+    }
+
     // ---- fixtures ---------------------------------------------------------
 
     private Customer customer(String first, String last, String email) {

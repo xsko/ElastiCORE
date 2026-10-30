@@ -180,6 +180,11 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
      * @return the sort code string, or null if no sorting information found
      */
     protected String extractSortCode(Object input) {
+        return sortCodeOf(input);
+    }
+
+    /** The sort code an input carries (sortCode, or sortColumn and sortAscending), or null. */
+    static String sortCodeOf(Object input) {
         if (input == null) return null;
 
         String sortColumnNm= null;
@@ -602,6 +607,12 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
 
     @SuppressWarnings("unchecked")
     protected <O> O convertRowToDto(Map<String, Object> row, Class<O> outputType) {
+        return rowToDto(row, outputType);
+    }
+
+    /** A row as the type a port method answers: its first column for one value, a DTO by column label otherwise. */
+    @SuppressWarnings("unchecked")
+    static <O> O rowToDto(Map<String, Object> row, Class<O> outputType) {
         if (isSingleValue(outputType)) {
             if (row.isEmpty()) return null;
             return (O) convertValue(row.values().iterator().next(), outputType);
@@ -626,7 +637,7 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
     }
 
 
-    private Object convertValue(Object value, Class<?> targetType) {
+    static Object convertValue(Object value, Class<?> targetType) {
         if (value == null) return null;
 
         Class<?> sourceType = value.getClass();
@@ -948,7 +959,7 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
     }
 
 
-    private String toCamelCase(String columnName) {
+    static String toCamelCase(String columnName) {
         String[] parts = columnName.split("_");
         StringBuilder camelCaseString = new StringBuilder(parts[0].toLowerCase());
         for (int i = 1; i < parts.length; i++) {

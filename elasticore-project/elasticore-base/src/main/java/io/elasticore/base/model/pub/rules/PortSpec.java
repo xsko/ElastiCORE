@@ -79,6 +79,19 @@ public final class PortSpec {
             return this;
         }
 
+        /** The SQL of a database port's operation as the DSL writes it, or null. */
+        private String sql;
+
+        /** The SQL a database port's operation runs, as the DSL writes it - :name binds, /* if:name *&#47; lines. */
+        public Operation sql(String sql) {
+            this.sql = sql;
+            return this;
+        }
+
+        public String sql() {
+            return sql;
+        }
+
         public String name() { return name; }
         public String returnType() { return returnType; }
         public List<String[]> params() { return params; }
@@ -137,6 +150,18 @@ public final class PortSpec {
 
     public String domainClassName() {
         return domainClassName == null ? domainId : domainClassName;
+    }
+
+    /** The domain's env.yml mode - mybatis writes a database port as a MyBatis mapper and adapter. */
+    private String mode;
+
+    public PortSpec mode(String mode) {
+        this.mode = mode;
+        return this;
+    }
+
+    public String mode() {
+        return mode;
     }
 
     public PortSpec(String name, String domainId) {

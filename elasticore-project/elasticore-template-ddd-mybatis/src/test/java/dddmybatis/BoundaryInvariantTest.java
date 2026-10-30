@@ -199,6 +199,8 @@ class BoundaryInvariantTest {
         for (String mapperName : SOURCES.keySet()) {
             if (!mapperName.endsWith("Mapper.java")) continue;
             String mapper = SOURCES.get(mapperName);
+            // The domain's DTO mapper - not a MyBatis mapper interface (a port's SQL).
+            if (!mapper.contains("public class ")) continue;
 
             for (EntitySpec spec : SPECS) {
                 for (FieldSpec f : spec.fields()) {

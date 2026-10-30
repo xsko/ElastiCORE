@@ -1048,7 +1048,9 @@ public final class SpecFactory {
                 }
             }
             endpoint(op, m.getMetaInfo());
+            op.sql(m.getQuery());
         }
+        spec.mode(String.valueOf(model.getConfig("mode", "jpa")));
 
         // A port the Spring client cannot send as the runtime does stays on the runtime.
         if (spec.springHttp()) {
@@ -1065,6 +1067,9 @@ public final class SpecFactory {
         // where such classes would go, not that any exist: a domain of ports
         // and DTOs alone has no entity package for the import to find.
         spec.pkg("port", model.getNamespace("port"));
+        // Where a MyBatis domain's adapter of a database port goes: with the other adapters.
+        spec.pkg("repository", model.getNamespace("repository"));
+        spec.pkg("persistence", model.getNamespace("persistence"));
         if (model.getEntityModels() != null && model.getEntityModels().getItems().size() > 0) {
             spec.pkg("entity", model.getNamespace("entity"));
         }

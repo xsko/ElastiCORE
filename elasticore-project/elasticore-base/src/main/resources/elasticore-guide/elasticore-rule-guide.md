@@ -76,7 +76,7 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 | `hexagonal-springboot-kt` | 위와 같은 육각형의 Kotlin 판 |
 | `ts-model` | TypeScript — DTO·enum·검색DTO + 컨트롤러 호출 클라이언트 |
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
-| `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.4) |
+| `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.3) |
 | `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + 인바운드 포트 — `architecture = 'hexagonal'` + `mode: mybatis` |
 
 `mode: mybatis` 인 도메인이 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot`·`jpa-springboot-v3` 를

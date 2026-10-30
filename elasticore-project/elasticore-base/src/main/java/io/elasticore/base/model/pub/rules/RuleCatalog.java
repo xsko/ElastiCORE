@@ -473,6 +473,11 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules();
             }
         });
+        c.register("mybatis-port", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisPortRules();
+            }
+        });
         c.register("mybatis-ddd", new Factory() {
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisDddRules();
