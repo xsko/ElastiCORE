@@ -73,7 +73,8 @@ files and uncommitted edits included - not at the code older than them:
 | `diffMutation` | tests detect less than 70% of PIT's mutations of the changed library lines they run | Mutation testing of the change |
 
 "The libraries" are `elasticore-base`, `elasticore-springboot3` and
-`elasticore-springboot4`, main sources. A failing gate annotates the lines on
+`elasticore-springboot4`, main sources, the Jackson adapters (`src/jackson2`,
+`src/jackson3`) included. A failing gate annotates the lines on
 the pull request and lists them in the job summary; the HTML reports are under
 each module's `build/reports/jacoco/` and `build/reports/pitest/`, and in the
 run's artifacts.
@@ -86,7 +87,16 @@ run's artifacts.
 - **An Error Prone warning that is wrong for its line** is suppressed on the
   smallest element with the reason: `@SuppressWarnings("CheckName") // why`.
 - The thresholds are properties (`-PdiffCoverageMinimum=`, `-PdiffMutationMinimum=`)
-  for trying things locally; CI uses the defaults.
+  for trying things locally; CI uses the defaults. `-PdiffBase=<ref>` measures
+  against another base; on CI, or with `-PdiffBase` given, a base that cannot be
+  found fails the gates rather than letting them compare with nothing.
+- Error Prone runs on JDK 21 as a compile of its own (`errorprone`, part of
+  `check`, so of `build`); Gradle downloads a JDK 21 where there is none. The
+  published classes are still `compileJava`'s.
+- A change of more than 300 library lines gets one mutation per changed line
+  (`-PmutationsPerLine=0` for all of them); PIT's tests run on four JVMs on CI
+  and two on a workstation (`-PmutationThreads=`).
+- A file moved and edited counts the lines that differ from the old one.
 
 ### `elcoreRulesCheck -Pstrict` — the compatibility gate
 

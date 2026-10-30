@@ -6,6 +6,7 @@ import com.palantir.javaformat.java.FormatterException;
 import com.palantir.javaformat.java.JavaFormatterOptions;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,18 +22,37 @@ import java.util.List;
  *
  * Arguments: {@code check|apply <list file>}. Each line of the list file is
  * {@code <path>|<first>:<last>,<first>:<last>...}, 1-based and inclusive. In
- * check mode the program prints {@code <path>|<first>:<last>} for every file
- * whose changed lines are not formatted - the lines the formatter would
- * rewrite - and exits with 1; in apply mode it rewrites those files.
+ * check mode the program prints {@code UNFORMATTED <path>|<first>:<last>} for
+ * every file whose changed lines are not formatted - the lines the formatter
+ * would rewrite; in apply mode it rewrites those files ({@code FORMATTED <path>}).
+ * A file it cannot format is {@code ERROR <path>|<why>}. The last line is
+ * {@code DONE}; the build takes output without it as a run that broke.
+ *
+ * Exit codes: 0 all formatted (or formatted now), {@value #UNFORMATTED} some
+ * changed lines are not formatted, 1 a file could not be formatted or the run
+ * broke, 2 wrong arguments.
  */
 public final class FormatChangedLines {
 
+    static final int UNFORMATTED = 3;
+
     private FormatChangedLines() {}
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
+        int code;
+        try {
+            code = run(args, System.out);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            code = 1;
+        }
+        System.exit(code);
+    }
+
+    static int run(String[] args, PrintStream out) throws IOException {
         if (args.length != 2 || !(args[0].equals("check") || args[0].equals("apply"))) {
             System.err.println("usage: FormatChangedLines check|apply <list file>");
-            System.exit(2);
+            return 2;
         }
         boolean apply = args[0].equals("apply");
         Formatter formatter = Formatter.createFormatter(JavaFormatterOptions.builder()
@@ -46,13 +66,14 @@ public final class FormatChangedLines {
             }
             int bar = entry.lastIndexOf('|');
             Path file = Paths.get(entry.substring(0, bar));
-            String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+            String text;
             String formatted;
             try {
+                text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
                 formatted = format(formatter, text, entry.substring(bar + 1));
-            } catch (FormatterException e) {
-                // A file that does not parse is the compiler's to report.
-                System.out.println("ERROR " + file + "|" + e.getMessage().replace('\n', ' '));
+            } catch (FormatterException | IOException | RuntimeException e) {
+                // Reported, never taken as formatted.
+                out.println("ERROR " + file + "|" + String.valueOf(e).replace('\n', ' '));
                 failed++;
                 continue;
             }
@@ -62,13 +83,14 @@ public final class FormatChangedLines {
             unformatted++;
             if (apply) {
                 Files.write(file, formatted.getBytes(StandardCharsets.UTF_8));
-                System.out.println("FORMATTED " + file);
+                out.println("FORMATTED " + file);
             } else {
                 int[] lines = differingLines(text, formatted);
-                System.out.println("UNFORMATTED " + file + "|" + lines[0] + ":" + lines[1]);
+                out.println("UNFORMATTED " + file + "|" + lines[0] + ":" + lines[1]);
             }
         }
-        System.exit(failed > 0 || (!apply && unformatted > 0) ? 1 : 0);
+        out.println("DONE");
+        return failed > 0 ? 1 : !apply && unformatted > 0 ? UNFORMATTED : 0;
     }
 
     /** The text with the given 1-based line ranges formatted, line endings kept. */
