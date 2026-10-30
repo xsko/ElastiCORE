@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FormatChangedLinesTest {
-    private   static final int   PROBE  =  1 ;
 
     private final Formatter formatter = Formatter.createFormatter(JavaFormatterOptions.builder()
             .style(JavaFormatterOptions.Style.PALANTIR)
