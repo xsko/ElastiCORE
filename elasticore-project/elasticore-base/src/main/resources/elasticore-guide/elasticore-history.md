@@ -1,3 +1,263 @@
+## 3.0.261031-rc7
+
+고친 것의 릴리스다. MyBatis 에서 이미 쓰인 고유값은 JPA 처럼 409 `unique` 로 답한다. 직접 쓴 Flyway 이력 위의
+`-PddlBaseline` 은 외래키·인덱스 이름을 넘겨받아 그 이름을 지우는 문장을 검토로 쓰고, Spring Boot 기본 위치(`db/migration`
+바로 아래)의 이력도 덮어쓰지 않는다. 2.x 에서 3.0 코드로 옮기는 첫 병합은 사용자 블록 때문에 충돌하지 않는다. Ossie 내보내기는
+2.x 코드와 함께 쓸 수 있고 고유 키의 컬럼 이름을 바로 쓴다. 기여자를 위해 머지 전 게이트(바뀐 줄의 포맷·Error Prone·커버리지·
+변이 테스트)가 생겼다.
+
+### Bug Fixes (프로젝트 DDL - `-PddlBaseline` 으로 넘겨받은 이름)
+
+#### 넘겨받은 이력의 외래키·인덱스를 그 이름으로 지우는 문장은 검토로 - 그 DB 는 다른 이름일 수 있다
+- 왜: `-PddlBaseline` 은 직접 쓴 Flyway 이력이 만든 DB 위에서 상태를 지금 모델로 시작한다. 상태의 외래키·인덱스 이름은 모델이
+  붙일 이름(`fk_{table}_{field}`, 30 자 넘으면 해시)인데, 그 DB 를 만든 것은 대개 Hibernate 이고 Hibernate 는 외래키를 해시로
+  이름 붙이며(`FK` 와 해시 25 자) `@Index(unique)` 를 유일 제약으로 둔다. 마이그레이션은 외래키·인덱스 삭제를 실행
+  문장으로 쓰므로, 넘겨받은 뒤 관계나 `@Index` 를 빼면 `DROP CONSTRAINT fk_...`(없는 이름)·`DROP INDEX ..._u`(제약이 쓰는
+  인덱스)가 실패한다 - Flyway 가 실패하면 앱이 뜨지 않는다. 도메인 9개짜리 프로젝트에서 Hibernate 스키마와 프로젝트 DDL 을
+  대조하면 테이블·컬럼·타입·외래키 대상은 모두 같고, 외래키 이름 69/69 와 유일 인덱스의 형태 32/32 가 달랐다
+- 무엇: `-PddlBaseline` 이 쓴 상태는 그때의 외래키·인덱스 이름을 `takenOver` 로 적는다. 그 이름을 지우는 문장과 지운 뒤
+  같은 이름으로 다시 만드는 문장은 검토 주석으로 쓰고 이유를 단다(그 DB 의 이름으로 바꿔 실행)
+  - SQL Server 에서 컬럼을 바꾸며 그 이름의 인덱스·외래키를 지웠다 다시 만드는 것은 SQL Server 마이그레이션에서만 검토이고,
+    같은 이력의 다른 DB(PostgreSQL 등)에서는 컬럼 변경을 그대로 실행한다(`Change.reviewOn`·`safeOn`)
+  - 빌드의 `REVIEW` 줄은 모든 DB 가 기다리면 `*/V...`, 일부만이면 그 DB 의 폴더를 가리킨다
+  - 넘겨받은 뒤 마이그레이션이 만든 외래키·인덱스는 그 이름이 맞으므로 전처럼 실행한다. 모델에 그 이름이 남아 있는 동안
+    `takenOver` 도 남는다. 이름은 바꾸지 않는다 - 3.0 의 `init` 으로 만든 DB 는 지금 이름을 쓴다
+  - `takenOver` 가 없는 상태 파일은 전과 같다(쓰는 내용도 바이트 단위로 같다). 이 변경 전에 `-PddlBaseline` 으로 만든 상태에는 `takenOver` 가 없다 - 가이드(9-1)에 다시
+    baseline 하는 법
+- 확인: `DdlMigrationTest.aKeyNamedByAHistoryTakenOverIsNotDroppedAsWritten`(자기 이력 위에 baseline → 관계를 빼면
+  `-- ALTER TABLE visit DROP CONSTRAINT fk_visit_customer;` 와 이유, 마이그레이션이 만든 `fk_visit_owner` 는 빼면 실행 문장),
+  `whatOnlySqlServerDropsAndMakesAgainWaitsThereAlone`, `SchemaDiffTest.anIndexByANameTakenOverIsNotDroppedAndMadeAgainAsWritten`,
+  `whatANameTakenOverChangesIsSaidAndWaitsWhereItMatters`.
+  위 프로젝트(`db/migration` 의 자기 이력, 기본 위치 이력을 다루는 변경과 함께 돌림)에서 baseline 이 이름 124 개(외래키 69,
+  인덱스 55)를 넘겨받고, 생성된 엔티티에서 관계 하나를 빼자 마이그레이션이 `-- ALTER TABLE <테이블> DROP CONSTRAINT fk_<테이블>_<관계>;`
+  와 이유를 검토로 썼다 - 그 DB 에서 이 외래키의 이름은 Hibernate 의 해시 이름이다
+- 관련 파일: `Schema.java`(`takenOver`), `SchemaDiff.java`, `DdlRun.java`(baseline, 상태 쓰기), `DdlMigrationTest.java`,
+  `SchemaDiffTest.java`, `elasticore-env-guide.md`(9-1 절)
+
+### Bug Fixes (프로젝트 DDL - 기본 위치에 있는 Flyway 이력)
+
+#### `db/migration` 바로 아래에 직접 쓴 이력이 있으면 첫 마이그레이션을 쓰지 않는다 - `-PddlBaseline` 도 그 이력에 먹는다
+- 왜: 마이그레이션은 `db/migration/{db}/` 에 쓰고, 이미 있는 이력은 그 폴더에서만 찾았다. Spring Boot 의 기본 위치
+  `classpath:db/migration` 에 이력을 둔 프로젝트(`db/migration/V1__baseline.sql` ...)는 이력이 없는 것으로 보여, 처음 켜면
+  `db/migration/{db}/V{시각}__init.sql`(모든 테이블의 CREATE)을 썼다. Flyway 는 위치 아래의 폴더까지 읽으므로, 다음 기동에서
+  그 init 이 기존 이력 뒤에 실행돼 이미 있는 테이블을 만들다 실패한다 - 앱이 뜨지 않는다. 가이드가 이런 프로젝트에 권하는
+  `-PddlBaseline` 도 같은 판정이라 효과가 없었다(init 을 또 씀). 마이그레이션 디렉터리를 읽는 다른 도구(Atlas 의 `atlas.sum` 등)도
+  그 파일을 이력에 넣는다
+- 무엇: `db/migration`(분리 도메인은 `db/{domain}/migration`) 바로 아래에 Flyway 가 읽는 마이그레이션(`V`·`U`·`R`·`B` 로
+  시작하고 `__` 가 있는 `.sql`)이 있으면 프로젝트 자기 이력이다. 하위 폴더(Flyway 의 `common/` 과 `{vendor}`)는 세지 않는다 -
+  프로젝트의 `locations` 가 이름을 댈 때만 읽히므로 기본 위치를 쓴다는 표시가 아니다
+  - DB 가 하나이고 상태 파일이 없음: baseline 없이는 마이그레이션도 상태도 쓰지 않고 실패(이유와 `-PddlBaseline` 을 말함).
+    `-PddlBaseline` 이면 상태만 지금 모델로 쓰고 외래키·인덱스 이름을 `takenOver` 로 적는다(`db/migration/{db}/` 의 이력과 같은
+    `startFromTheModel` - `ddl-baseline-names`). 다음 변경은 `db/migration/{db}/` 에 - 기본 위치가 그 폴더도 읽으므로
+    `locations` 를 바꾸지 않아도 된다
+  - DB 가 둘 이상: 상태 파일이 있든 없든 실패 - 기본 위치는 아래 폴더를 모두 읽어 한 DB 에 다른 DB 의 마이그레이션을 실행한다
+    (baseline 뒤에 둘째 DB 를 더하면 그 `init` 이 첫 DB 의 Flyway 가 읽는 자리에 생겼다). 이력을 DB 별 폴더로 옮기고
+    `locations` 를 `{vendor}` 로 하라고 말한다
+  - 이력이 `db/migration/{db}/` 에 있는 경우는 전과 같다
+- 확인: `DdlMigrationTest.aHistoryOfTheProjectsOwnInTheDefaultLocationIsNotWrittenOver`(거절 → baseline 으로 상태만 →
+  모델 변경이 `migration/h2/` 의 마이그레이션 하나), `aHistoryInTheDefaultLocationIsNotForSeveralDatabases` - 둘 다 고치기 전
+  코드에서 실패했다(init 을 쓰고 성공). `aBaselineOverTheDefaultLocationTakesTheNamesOverAndASecondDatabaseIsRefusedLater`(이름을
+  넘겨받아 관계를 빼면 검토, baseline 뒤 둘째 DB 는 거절), `aHistoryOfTheProjectsOwnIsAnyMigrationFlywayReadsOutsideTheDatabasesFolders`.
+  Flyway 가 위치 아래 폴더를 읽는 것은 Flyway 10.20.1 의 classpath·파일 스캐너로 확인했다. 도메인 9개짜리 프로젝트
+  (`db/migration/V1__baseline.sql`~`V19`, `classpath:db/migration`)에서 고치기 전에는 `-PddlBaseline` 을 줘도
+  `db/migration/postgresql/V…__init.sql`(테이블 54개)이 생겼고, 고친 뒤에는 `elcore`(→ `elcoreDdl`)가 마이그레이션 없이 멈추고,
+  `-PddlBaseline` 이 `schema-state.json` 만 쓰며, 다시 돌리면 아무것도 쓰지 않는다
+- 관련 파일: `DdlRun.java`(`write`, `startFromTheModel`, `hasOwnHistory`), `DdlMigrationTest.java`, `elasticore-env-guide.md`(9-1 절 - `locations` 와 이력을 깨는 빌드 표)
+
+### Bug Fixes (프로젝트 DDL - 넘겨받은 이름은 넘겨받은 DB 에만)
+
+#### baseline 뒤에 더한 DB 의 마이그레이션은 넘겨받은 이름 때문에 기다리지 않는다
+- 왜: `-PddlBaseline` 이 적는 `takenOver`(`ddl-baseline-names`)는 모든 DB 에 하나였다. baseline 뒤에 `databases` 에 더한 DB 는
+  `init` 이 모델의 이름으로 만드므로 이름이 맞는데도, 그 DB 의 마이그레이션에서 그 이름의 외래키·인덱스를 지우는 문장이 검토
+  주석이 되었고, 나중에 더한 SQL Server 는 그 이름 위의 컬럼 변경까지 기다렸다 - 주석을 풀지 않으면 그 DB 의 스키마가 모델과
+  어긋난 채 남는다
+- 무엇: baseline 이 쓴 상태는 이름을 넘겨받은 DB 들을 `takenOverOn` 으로 함께 적고, 그 이름 때문에 기다리는 문장은 그 DB 의
+  마이그레이션에서만 검토로 쓴다(나머지 DB 는 실행 문장, 빌드의 `REVIEW` 줄은 그 DB 의 폴더). 모든 DB 의 파일에 붙는 그
+  문장의 설명은 어느 DB 에서 넘겨받은 이름인지 말한다(`- on h2, its name was taken over ...`). 모델에 그 이름이 남는 동안
+  `takenOverOn` 도 남는다. `takenOverOn` 이 없는 상태는 모든 DB 에서 넘겨받은 것으로 읽고, `takenOver` 가 없는 상태 파일은
+  전과 같다
+- 함께: `db/migration` 바로 아래의 이력 때문에 여러 DB 빌드를 거절할 때(`ddl-flyway-own-history`) 찾은 파일 이름을 대고, 이력을
+  이미 DB 별 폴더로 옮겨 Flyway 가 그 자리에서 더는 읽지 않는 남은 파일이면 옮기라고 말한다
+- 확인: `DdlMigrationTest.aDatabaseAddedAfterTheBaselineHasTheModelsNames`(H2 이력 위 baseline 뒤 PostgreSQL 을 더하면 상태에
+  `"takenOverOn" : [ "h2" ]`, 관계를 빼면 H2 는 검토이고 PostgreSQL 은 `ALTER TABLE visit DROP CONSTRAINT fk_visit_customer;`),
+  `SchemaDiffTest.aNameTakenOverWaitsOnlyOnTheDatabasesItWasTakenOverFrom`(같은 이름으로 다시 만드는 인덱스는 H2 에서만 검토,
+  SQL Server 의 컬럼 넓힘은 실행, JSON 을 오가도 같고 `keepTakenOver` 가 이어 받음), 거절 메시지의 파일 이름은
+  `aBaselineOverTheDefaultLocationTakesTheNamesOverAndASecondDatabaseIsRefusedLater`
+- 관련 파일: `Schema.java`(`takenOverOn`), `SchemaDiff.java`(`byName`, `takenOverOn`), `DdlRun.java`(`startFromTheModel`,
+  `ownHistoryFile`), `DdlMigrationTest.java`, `SchemaDiffTest.java`, `elasticore-env-guide.md`(9-1 절)
+
+### Bug Fixes (생성 파일 병합 - DSL 이 바꾸지 않은 파일의 사용자 블록)
+
+#### 표시가 있는 파일을 DSL 이 바꾸지 않으면 첫 병합에서 사용자 블록을 옮기지 않는다
+- 왜: 사용자 블록을 2.x 의 자리로 돌려놓는 첫 병합(`merge-stamped-custom-blocks`)은 고치지 않은 파일이면 DSL 이 그 파일을
+  바꾸지 않았어도 새로 쓰며 블록을 옮겼다 - 클래스 중간에 둔 블록이 닫는 괄호 앞으로 갔다. 같은 경우의 고친 파일은 블록을 그
+  자리에 두었고, 가이드는 어느 쪽도 그렇게 말하지 않았다
+- 무엇: DSL 이 바꾸지 않은 파일은 고쳤든 아니든 표시만 떼고 블록을 그 자리에 둔다. 블록을 2.x 의 자리로 옮기는 것은 DSL 이
+  바꾸어 새로 쓰는 파일뿐이다. Java·Kotlin 소스와 그 밖의 생성 파일 모두
+- 확인: `GeneratedMergeTest.customBlocksOfAStampedFileTheDslDoesNotChangeStayWhereTheyStand`(클래스 중간에 블록을 둔 Java DTO 와
+  `</resultMap>` 뒤에 블록을 둔 매퍼 XML - 첫 병합 뒤 파일이 표시 줄만 빠진 그대로)
+- 관련 파일: `RulesGenRunner.java`(`writeMergedSource`, `writeMerged`), `GeneratedMergeTest.java`, `elasticore-env-guide.md`(9-2 절 - 표시가 있던 프로젝트의 표)
+
+### Changes (기여 - 머지 전 게이트)
+
+#### 바뀐 줄의 포맷·Error Prone·커버리지·mutation 을 CI 가 막는다
+- 왜: 여러 사람과 여러 AI 가 같은 코드를 고친다. CI 는 테스트·2.x 호환은 막았지만, 새 코드가 테스트로 실행되는지, 그
+  테스트가 실제로 무엇을 확인하는지, 포맷과 흔한 버그 패턴은 사람의 눈에 맡겼다.
+- 무엇이 (`gradle/quality.gradle`, `./gradlew prCheck` 가 넷 다):
+  - 모두 **변경이 더하거나 고친 줄**만 본다 - `origin/main` 과의 merge base 부터 작업 트리까지(커밋 전 변경·새 파일 포함).
+    그 전 코드는 게이트 밖(전체를 재포맷하면 523 파일 3만 7천 줄이 바뀌고 열린 PR 마다 충돌했다).
+  - `formatCheck`·`formatChanged`: 라이브러리·플러그인·도구의 바뀐 Java 줄만 palantir-java-format 으로(git clang-format 방식,
+    `elasticore-quality-tools` 의 `FormatChangedLines`).
+  - `diffErrorprone`: Error Prone 2.50 이 라이브러리 main 소스를 따로(JDK 21, 배포 클래스는 그대로) 컴파일 - ERROR 는 어디서든
+    `build` 실패, WARNING 은 바뀐 줄에서 실패. 억제는 `@SuppressWarnings("Check") // 이유`.
+  - `diffCoverage`: JaCoCo - 바뀐 라이브러리 줄의 80% 를 테스트가 실행. 런타임 라이브러리는 샘플 테스트가 실행한 줄도 셈.
+  - `diffMutation`: PIT 1.22 - 바뀐 줄의 mutation 만(`elasticore-quality-tools` 의 PIT 기능 `CHANGEDLINES`) 돌려, 테스트가
+    실행하는 줄의 mutation 70% 를 테스트가 잡아야 함.
+  - 실패하면 PR 의 줄에 annotation, job summary 에 표, HTML 보고서는 artifact.
+  - 아무것도 확인하지 않고 통과하는 길을 막음: CI 나 `-PdiffBase` 에서 base 를 못 찾으면 실패(`main` 은 `origin/main` 으로도
+    찾음), 포매터가 깨지면(`DONE` 없음·예외) 실패, Error Prone 의 출력 캡처는 일부러 경고를 내는 canary 클래스로 확인,
+    git 설정(`diff.noprefix`, `core.quotePath`)과 무관한 diff.
+  - 소스 루트별로 셈: springboot3 의 `src/main/java` 는 springboot3·4 어느 테스트가 실행해도, `src/jackson2/java`(3)와
+    `src/jackson3/java`(4)는 같은 이름의 파일이 있어 각 모듈 것만. Korean 서버 테스트(`koreanServerTest`)의 실행도 셈.
+  - 큰 변경(300줄 초과)은 줄마다 mutation 1개(`perline`) - PR #52 크기(4993줄)로 CI 에서 9.5분. PIT 는 빌드가 병렬
+    (`org.gradle.parallel`)이어도 한 번에 하나(build service) - 셋이 함께 돌면 32GB 작업 PC 의 메모리가 바닥났다.
+- CI: 새 job `Format and static analysis of the change`·`Mutation testing of the change`, `Build, test and compatibility
+  checks` 에 커버리지 단계. CONTRIBUTING.md 에 "The gates on the lines you write", PR 템플릿에 `prCheck`.
+- 게이트가 찾은 기존 코드의 결함(ERROR 2건):
+  - `DbmsServiceImpl`(런타임)이 `DbmsService` 애노테이션을 구현하면서 `equals`·`hashCode` 가 없었다 - 이제
+    `Annotation` 의 계약대로(JVM 이 만든 같은 값의 애노테이션과 같고 해시도 같음), `toString` 도.
+  - `ECoreModel.findModelByName(String)` 의 `modelName = modelName;`(자기 대입, 아무 일도 안 함)을 지움 - 동작 그대로.
+    `ns:Model` 이름은 지금도 접두어째 찾는다(별도 확인 대상).
+- 확인: 각 게이트를 실패시켜 봄 - 이 PR 의 포맷 안 된 줄·`PatternMatchingInstanceof` 를 게이트가 잡았고 고친 뒤 통과;
+  PR #52 를 기준으로(수동 실행 `base`) 포맷 32 파일·Error Prone 51건으로 실패, mutation 74.8%(981개, 9.5분),
+  로컬 `diffCoverage` 79.8%(샘플 테스트를 세기 전). 없는 base 는 실패. `DbmsServiceImplTest`, `elasticore-quality-tools`
+  테스트 14(포매터의 종료 코드·오류, 인터셉터의 줄 필터·`perline`).
+- 샘플 `AggregateFactoryTest` 는 JaCoCo 가 더하는 synthetic 메서드를 세지 않음.
+- 관련 파일: `gradle/quality.gradle`(새), `build.gradle`, `settings.gradle`, `elasticore-project/elasticore-quality-tools/`(새),
+  `.github/workflows/ci.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, `CONTRIBUTING.md`,
+  런타임 `dbms/meta/DbmsServiceImpl.java`, `ECoreModel.java`.
+
+### Bug Fixes (생성 파일 병합 - 표시가 있는 파일의 사용자 블록)
+
+#### 표시가 있는 파일의 사용자 블록은 병합하지 않고 2.x 의 자리로 돌려놓는다 - 2.x 에서 3.0 코드로 옮길 때 충돌하지 않는다
+- 왜: 사용자 블록(`// !----------` ~ `// ------------!`)은 해시에서 빠진다 - 블록이 어디 있든 파일은 생성된 그대로로
+  읽힌다. 병합하는 첫 실행은 그런 파일의 기준을 해시가 확인한 본문(블록 없음)으로, 디스크를 블록이 든 본문으로 잡았다.
+  새 생성본에도 블록이 없으니 블록이 개발자 편집이 되어, 그 옆 줄을 DSL 이 바꾸면 같은 자리 충돌이 됐다. 2.x 에서 3.0
+  코드로 옮기면 블록 옆(닫는 괄호, import, 빈 줄)이 거의 늘 바뀐다 - 도메인 9개짜리 2.x 프로젝트의 `-Pv3` 이행에서 사용자
+  블록이 있는 파일 4개(모두 표시가 생성된 그대로)가 전부 `CONFLICT` 였고 빌드가 멈췄다. 병합하지 않는 실행은 블록을 새
+  텍스트에 다시 넣으므로(`withCustomBlocks`) 이 일이 없었다
+- 무엇: 표시가 있는 파일을 처음 병합할 때 사용자 블록은 해시처럼 병합에서도 뺀다 - 디스크 쪽도 블록을 뺀 본문으로 병합하고,
+  쓸 때 블록을 2.x 가 다시 쓸 때의 자리(import 블록은 `package` 줄 아래, 나머지는 닫는 줄 앞)에 넣는다. 그래서 고치지 않은
+  파일은 기준과 디스크가 같아 새 생성본에 블록을 넣은 것이 되고, 고친 파일은 고친 줄만 병합된다. Java·Kotlin 소스와 그 밖의
+  생성 파일 모두. 캐시에는 전처럼 블록 없는 생성본을 두므로 다음 실행부터 블록은 다른 편집과 같은 개발자의 줄이다.
+  개발자가 블록을 다른 자리(예: 클래스 중간)에 두었다면 2.x 가 다시 쓸 때처럼 그 자리로 옮겨진다
+- 리뷰 뒤: `HashUtils` 는 import 블록을 마지막 하나만 기억하고, import 블록 위의 블록을 그 안에 넣는다 - import 블록이 둘이면
+  첫 번째가 말없이 사라지고(`WROTE`), 코드 블록이 import 블록 위에 있으면 import 자리로 옮겨져 컴파일되지 않았다. 그래서 블록을
+  온전히 돌려놓을 수 있는 파일(`blocksPutBackWhole` - import 블록이 많아야 하나이고 맨 앞, 닫히지 않은 블록이 없음 - 닫는 줄이
+  틀린 블록은 `HashUtils` 에게 파일 끝까지라 닫는 중괄호가 블록과 함께 옮겨졌다)만 위처럼 병합하고, 나머지는 전처럼
+  블록을 고친 내용으로 그 자리에 둔 채 병합한다. 블록을 뺀 병합이 충돌하면 블록을 둔 채 다시 병합해 그 결과를 쓴다 - 끝 줄을
+  덮는 충돌 표시의 한쪽에 블록이 들어가 "yours" 로 해결하면 지워지던 것. `KEPT(yours ...)` 와 `UNCHANGED` 는 파일을 블록이
+  있던 그대로 둔다
+- 확인: `GeneratedMergeTest.theCustomBlocksOfATwoXFileComeIntoTheThreeZeroCodeWithoutAConflict`(2.x 가 쓴 DTO 의
+  `package` 아래 import 블록과 첫 필드 뒤 블록 - 고치기 전 `CONFLICT` 로 실패, 고친 뒤 두 블록이 2.x 의 자리에 남고,
+  이어진 모델 변경도 충돌 없이 병합). `customBlocksOfAStampedFileAreKept`(매퍼 XML)는 그대로 통과. 위 프로젝트의 `-Pv3`
+  이행: `4 conflict(s)` → `0 conflict(s)`, 4개 파일이 블록 수 그대로 `WROTE`, 다시 돌리면 `0 written / 579 unchanged`.
+  `blocksThatWouldNotComeBackWholeAreMergedAsEdits`, `twoBlocksOfImportsOfATwoXFileAreBothKeptOnTheMoveTo30`(import 블록 둘과
+  코드 블록 - 셋 다 남고 말없는 `WROTE` 가 아님; 리뷰 전 코드에서는 `WROTE` 로 실패)
+- 관련 파일: `RulesGenRunner.java`(`writeMergedSource`, `writeMerged`, `withBlocks`, `blocksPutBackWhole`), `GeneratedMergeTest.java`,
+  `elasticore-env-guide.md`(9-2 절 - 표시가 있던 프로젝트의 표)
+
+### Documentation (마이그레이션 가이드 - `withJoinFetches()` 가 생기는 서비스)
+
+#### 2.x 는 모든 CoreService 에 `withJoinFetches()` 를 만든다 - v3 로 옮기면 연관이 없는 엔티티의 호출이 컴파일되지 않는다
+- 왜: `@fetchjoin` 항목이 "2.x 와 같이 그 연관이 있는 엔티티에만 생성" 이라고 했다. 2.x 는 연관이 없어도 만든다 - 아무 조건도
+  더하지 않는 빈 Specification(`return null`). 그래서 그런 엔티티의 확장 서비스가 `.and(withJoinFetches())` 를 부르는 2.x
+  프로젝트는 v3 로 옮기면 컴파일되지 않는데, "2.x 코드에서 옮길 때 손볼 것" 표에 없었다. 개발 가이드(12장)는 이미 바르게 적고
+  있었다
+- 확인: 2.x 기준 트리 `elasticore-template` 의 CoreService 24 개 모두에 `withJoinFetches()` 가 있고, 연관이 없는
+  `CouponCoreService` 는 빈 조건이다. 도메인 9개짜리 2.x 프로젝트(CoreService 53 개, 모두 있음)를 `-Pv3` 로 옮기자 v3
+  CoreService 7 개에만 생겼고, 연관이 없는 엔티티의 확장 서비스 2 곳이 컴파일되지 않았다. v3 의 판정은
+  `JpaServiceFileRules.joinFetchVars`(가져올 연관이 없으면 메서드를 쓰지 않음)
+- `elasticore-migration-guide.md`: `@fetchjoin` 항목의 문장을 바로잡고, "손볼 것" 표에 `withJoinFetches()` 줄을 더했다 -
+  2.x 에서도 아무것도 하지 않던 호출이므로 지운다
+- 생성물은 그대로다
+- 관련 파일: `elasticore-migration-guide.md`
+
+### Bug Fixes (MyBatis - 고유값 충돌의 답)
+
+#### MyBatis 도메인에서 이미 쓰인 고유값이 JPA 와 같은 409 `unique` 로 답한다
+- 왜: 같은 모델의 회원가입에서 이미 있는 로그인(유일 인덱스)을 보내면 JPA 는 409 `code: unique`("A unique value is already
+  taken."), MyBatis 는 409 `code: already-exists`(드라이버 메시지 그대로)였다. Spring 의 JDBC 변환기가 MyBatis 의 고유 위반을
+  `DuplicateKeyException` 으로 바꾸고, 생성된 `<Domain>ApiErrors` 는 그것을 "생성할 때 이미 있는 식별자"(서비스가 던지는 것)로만
+  읽었다. 에이전트 킷의 계약 테스트가 shop 레시피를 MyBatis·헥사고날로 돌리다 찾았다.
+- 무엇이: `DuplicateKeyException` 의 원인에 DB 의 `SQLException` 이 있으면 `DataIntegrityViolationException` 과 같은 답(SQLSTATE 로
+  `unique`, 모르는 종류면 `conflict`) - 드라이버의 글(SQL 이 든)은 나가지 않음. 원인이 없으면(서비스가 던진 것) 그대로
+  `already-exists`. 동시에 같은 키로 만들어 DB 의 기본키가 거절한 것은 이제 `unique`. Java·Kotlin 템플릿.
+  `<Domain>ApiErrors` 는 한 번만 생성하는 파일 - 고치지 않은 프로젝트는 다음 생성에서 받고, 고친 프로젝트는 병합으로 받는다.
+- 확인: `elasticore-sample-petstore-mybatis` 의 `ShopFlow.aTakenLoginIsAConflict`(코드 `unique`, 글에 SQL 없음)(H2, CI 에서 Oracle·PostgreSQL·
+  SQL Server) - 고치기 전 `already-exists` 로 실패. 에이전트 킷 계약(shop on MyBatis) S2.
+- 관련 파일: `elasticore-template/v3/apiErrors.tmpl`, `elasticore-template/kt/apiErrors.tmpl`, 샘플 `ShopFlow.java`.
+
+### Bug Fixes (2.x 코드 - `ossie-export` 와 함께)
+
+#### 2.x 코드를 지키는 빌드도 `rules = ['ossie-export']` 를 쓸 수 있다
+- 왜: 3.0.261028-rc3 부터 `output = 'v2'`(와 `-Pv2`)는 프로젝트 규칙과 함께 쓰면 거절한다 - 그 규칙은 2.x 템플릿에
+  그려지지 않기 때문이다. 그런데 `ossie-export` 도 프로젝트 규칙으로 세었다. 이 규칙은 코드를 쓰지 않는 시맨틱 모델 내보내기의
+  켜기 신호이고(`RuleCatalog` 의 등록 주석, `OssieExportRules` 는 비어 있음), 2.x 생성기도 같은 신호로 내보낸다
+  (`ModelExtractor` 가 `OssieSemanticModelExporter.requested` 를 읽음). 그래서 `./gradlew elcore` 로 2.x 코드와
+  `semantic_model.yml` 을 만들던 프로젝트가 `output = 'v2'` 를 적으면 `./gradlew elcore` 가 태스크를 구성하다 실패했고
+  (`ddl` 을 켰으면 어느 빌드든), `elcore3 -Pv2` 는 "which only the 3.0 code carries" 라며 멈췄다. 선택을 적지 못하니 `generateBeforeCompile` 을 켜면 빌드가 `elcore3` 에서
+  멈추고, `ddl` 의 `elcore` → `elcoreDdl` 연결도 받을 수 없었다
+- 무엇: 플러그인의 `output = 'v2'` 검사(`keepsTwoX`)와 규칙 엔진의 `-Pv2` 검사가 `ossie-export` 를 빼고 센다. 다른
+  프로젝트 규칙은 전처럼 거절한다(`ossie-export` 와 함께 적어도, 여러 번 적어도). 생성물은 그대로다 - 2.x 호환 번들에
+  더해지는 `OssieExportRules` 는 아무것도 쓰지 않는다
+- 멀티모듈(`modules`, 또는 하위 프로젝트에 `blueprint/` 가 있는 빌드)의 2.x 생성기(`ModelExtractor.extractMultiModule`)는
+  시맨틱 모델을 내보내지 않았다 - 이 변경으로 거절이 풀리면 `semantic_model.yml` 없이, 아무 말 없이 지나갔다(리뷰에서 찾음).
+  이제 단일 모듈과 같은 조건(`exportOssieIfRequested`)으로 첫 모듈의 `blueprint/`, 그 `schema.yml` 옆에 쓴다
+- 확인: `DefaultGenerationTest.v2KeepsTheOssieExport`(`-Pv2` + `ossie-export` → 2.x 호환 코드와 `semantic_model.yml`),
+  `ElastiCorePluginTest.outputV2KeepsTheOssieExport`(`output = 'v2'` + `ossie-export` → `:elcore`, 규칙 전달; 프로젝트
+  규칙이 더해지면 거절) - 둘 다 고치기 전 코드에서 실패했다. `v2ExportsTheOssieModelOfAMultiModuleBuild`(모듈 둘, 두 도메인이
+  든 `semantic_model.yml` 이 첫 모듈에) - 고치기 전 `extractMultiModule` 에서 실패. `ossieExportIsNoRuleSetOfTheCodeHoweverOftenItIsNamed`. `v2IsNotTheProjectsOwnRules` 는 프로젝트 규칙의 예로
+  `ossie-export` 를 쓰고 있어, 규칙 개발 가이드의 예(`com.acme.rules.AcmeRules`)로 바꿨다. 도메인 9개짜리 2.x 프로젝트
+  (`rules = ['ossie-export']`)에서 `output = 'v2'` 를 적고 `elcore`·`elcore3 -Pv2` 를 돌려 확인했다
+- 관련 파일: `ElastiCorePlugin.java`(`keepsTwoX`), `RulesGenRunner.java`(`addedCodeRules`, `-Pv2` 검사), `ModelExtractor.java`(`exportOssieIfRequested`),
+  `DefaultGenerationTest.java`, `ElastiCorePluginTest.java`, `elasticore-rule-guide.md`(어느 세대의 코드인가 표, Ossie 켜는 법)
+
+### Bug Fixes (Ossie 내보내기 - `unique_keys` 의 컬럼 이름)
+
+#### `@Index` 의 `columnList` 에 속성 이름을 적어도 `unique_keys` 는 컬럼 이름으로
+- 왜: `@Index(columnList="company_id,seqCd", unique="true")` 처럼 속성 이름을 적은 모델에서 `unique_keys` 가
+  `[company_id, seqCd]` 로 나왔다. 데이터셋의 필드는 컬럼 이름(`seq_cd`)이라 키가 없는 필드를 가리켰다. Hibernate 는
+  `columnList` 의 이름을 논리 이름으로 읽어 같은 이름 규칙으로 컬럼을 찾고(`seq_cd`), 프로젝트 DDL(`JpaSchemaReader`)도
+  그렇게 읽는다 - 내보내기만 글자 그대로 옮겼다
+- 무엇: `uniqueKeys` 가 `columnList` 의 이름마다 데이터셋의 필드를 찾는다(`keyColumn`) - 속성 이름이면 그 필드의 컬럼(`columnOf`,
+  `@column` 이 있으면 그 이름), 컬럼 이름이면 대소문자와 상관없이 그 컬럼을 가진 필드의 것(`@column(HALL_ID)` 의 `HALL_ID` 를
+  `hall_id` 로 낮추지 않음 - 리뷰에서 찾은 회귀), 어느 필드도 아니면 Hibernate 의 이름 규칙(`camelToSnake`). `@unique` 필드도
+  데이터셋 필드와 같은 `columnOf` 로 - 그래서 `@unique` 와 같은 컬럼의 유일 `@Index` 는 키 하나
+- 확인: `OssieUniqueKeysTest`(`columnList="hall_id,seatNo"` → `[hall_id, seat_no]`, 두 이름이 모두 데이터셋의 필드) - 고치기
+  전 코드에서 둘 다 실패했다. `@column(BOX_ROW)`·`@column(BOX_NO) @unique` 와 `columnList="BOX_ROW,boxNo"`·`"box_no"` →
+  `[BOX_ROW, BOX_NO]` 와 `[BOX_NO]` 한 번(`aColumnWrittenByColumnKeepsItsCaseAndAKeyIsWrittenOnce`) - 소문자로 바꾸던 코드에서 실패. 커밋된 샘플 둘(petstore·template-ddd)의 `semantic_model.yml` 은 그대로다 - 샘플의 `columnList` 는
+  모두 컬럼 이름이다. 도메인 9개짜리 프로젝트에서 `idx_sequence_info_u(company_id,seqCd)` 의 Hibernate DDL 과 프로젝트 DDL 이
+  모두 `seq_cd` 인 것을 확인했다
+- 관련 파일: `OssieSemanticModelExporter.java`(`uniqueKeys`), `OssieUniqueKeysTest.java`, `elasticore-rule-guide.md`(Ossie 대응 표)
+
+### Bug Fixes (v3 규칙 엔진 - 남은 클래스를 쓰는 파일의 경로)
+
+#### "still uses it" 줄이 개발자 파일을 프로젝트 안의 경로로 말한다 - 링크나 다른 이름으로 받은 프로젝트에서도
+- 왜: DSL 이 더 만들지 않는 생성 클래스를 개발자 코드가 쓰면 `... is no longer generated, but <파일> still uses it - kept`
+  라고 알린다. 그 파일은 소스를 정규 경로(`getCanonicalFile`)로 읽어 찾는데, 줄에 쓸 때는 정규화하지 않은 프로젝트 경로를
+  앞에서 떼어 냈다. 프로젝트 경로가 정규 경로와 다르면 - 링크를 거쳤거나, macOS 의 `/var`(실제 `/private/var`), Windows 의
+  8.3 짧은 이름(`C:\Users\DEVELO~1\...`) - 절대 경로가 그대로 찍혔다. 그래서 `GeneratedMergeTest.aClassNoLongerProducedStaysWhileACodeOfTheDevelopersUsesIt`
+  는 임시 폴더가 짧은 이름인 Windows 에서 실패했다(리눅스 CI 에서는 같은 경로라 통과, macOS 의 `/var` 는 같은 이유로 보이나
+  돌려 보지 않았다)
+- 무엇: `relative` 가 그대로 떼어지지 않으면 파일과 프로젝트 경로를 둘 다 정규화해 다시 뗀다. 화면에 찍는 줄만 바뀐다 -
+  캐시 키는 이 경로를 쓰지 않는다
+- 확인: 새 `GeneratedMergeTest.theCodeThatKeepsAClassIsNamedInTheProjectAlsoThroughALink`(심볼릭 링크로 받은 프로젝트 -
+  링크를 만들 수 없는 곳에서는 건너뜀)가 리눅스(`eclipse-temurin:21-jdk`)에서 고치기 전 그 줄의 단정으로 실패하고 고친 뒤
+  통과한다. Windows(임시 폴더가 8.3 짧은 이름)에서는 위의 기존 테스트가 고치기 전 실패, 고친 뒤 통과(링크 테스트는 권한이
+  없어 건너뜀)
+- 관련 파일: `RulesGenRunner.java`(`relative`), `GeneratedMergeTest.java`
+
 ## 3.0.261030-rc6
 
 `mode: mybatis` 도메인이 `architecture = 'ddd'`·`'hexagonal'` 로도 생성된다 - JPA 가 애그리거트에 하던 일(새 행 판단, 버전,
