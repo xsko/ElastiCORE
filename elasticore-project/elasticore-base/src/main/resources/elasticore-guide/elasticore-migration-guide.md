@@ -139,9 +139,9 @@ elasticore:
 
 **`@fetchjoin`·`table.autoJoin` 은 v3 번들에서도 2.x 처럼 동작합니다(3.0.261029-rc4 부터).** CoreService 에
 `withJoinFetches()` 가 생성되고, 페이지 검색(`findBySearch`)이 그 연관을 루트와 함께 가져옵니다(LEFT JOIN FETCH, count
-쿼리 제외). 확장 서비스에서 `withJoinFetches()` 를 부르는 코드도 컴파일됩니다. 2.x 와 같이 그 연관이 있는 엔티티에만
-생성되고, 페이지 검색 밖(`findAll`, `listBySearch`)에는 적용되지 않습니다. 3.0.261028-rc3 까지의 v3 서비스는 가져오지
-않아 연관을 행마다 따로 읽었고(N+1), 생성할 때 경고만 냈습니다.
+쿼리 제외). 확장 서비스에서 `withJoinFetches()` 를 부르는 코드도 컴파일됩니다. v3 에서는 그 연관이 있는 엔티티에만
+생성되고(2.x 는 모든 CoreService 에 - 아래 표), 페이지 검색 밖(`findAll`, `listBySearch`)에는 적용되지 않습니다.
+3.0.261028-rc3 까지의 v3 서비스는 가져오지 않아 연관을 행마다 따로 읽었고(N+1), 생성할 때 경고만 냈습니다.
 
 ### 2.x 코드에서 옮길 때 손볼 것
 
@@ -154,6 +154,7 @@ elasticore:
 | 키를 받는 엔티티 생성자 | `new Order(id)` | 없음 (기본 생성자만) | 연관에 넣을 참조는 `repository.getReferenceById(id)`, 테스트 데이터는 기본 생성자와 setter 로 만듭니다 |
 | 보호 블록(`// !----` ~ `// ----!`) 안 코드가 쓰는 import | `jakarta.persistence.*`·`java.util.*` 같은 `*` import 덕에 컴파일됨 | 생성 코드가 쓰는 것만 import | 블록이 쓰는 import 를 `package` 아래의 보호 블록에 적습니다 (`elasticore-dev-guide.md` 의 "사용자 코드 보존 블록") |
 | `@fetchjoin`·`table.autoJoin` | `withJoinFetches()` 로 페이지 검색에서 루트와 함께 가져옴 | 같음 - 3.0.261029-rc4 부터 (3.0.261028-rc3 까지의 v3 는 가져오지 않았음, 위) | 없음. rc3 까지의 v3 로 옮기며 `JoinSpec.fetchJoin()` 으로 대신 쓴 쿼리는 그대로 동작합니다 |
+| CoreService 의 `withJoinFetches()` | 모든 CoreService 에 - 가져올 연관이 없으면 아무 조건도 더하지 않는 빈 Specification | 가져올 연관(`@fetchjoin`·`table.autoJoin`)이 있는 엔티티에만 | 연관이 없는 엔티티의 확장 서비스가 부르면 컴파일되지 않습니다. 2.x 에서도 아무것도 하지 않던 호출이므로 `.and(withJoinFetches())` 를 지웁니다 |
 | `@writeonly`·`@nooutput` 값 | 엔티티 → DTO 로 복사 (JSON 응답에서만 빠짐) | 복사하지 않음 | 서버 코드에서 그 값이 필요하면 엔티티에서 읽습니다 |
 | CoreService `save(dto)` | 키가 이미 있으면 그 행을 덮어씀 | 먼저 Bean Validation (`ConstraintViolationException`), 키가 이미 있으면 `DuplicateKeyException` | 있는 행은 `update(dto)` 로 바꿉니다 |
 | CoreService `update(dto)` | 검증 없음 | 먼저 Bean Validation (기본은 보낸 값만) - 없는 키보다 검증 오류가 먼저 납니다 | |

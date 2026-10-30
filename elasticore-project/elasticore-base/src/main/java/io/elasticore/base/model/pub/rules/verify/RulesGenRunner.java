@@ -4307,7 +4307,12 @@ public final class RulesGenRunner {
     private String relative(File f) {
         String p = f.getAbsolutePath().replace('\\', '/');
         String root = new File(projectRoot).getAbsolutePath().replace('\\', '/');
-        return p.startsWith(root + "/") ? p.substring(root.length() + 1) : p;
+        if (p.startsWith(root + "/")) return p.substring(root.length() + 1);
+        // A canonical file (stillUsed's) under a root given another way: through
+        // a link, /var for /private/var on macOS, an 8.3 short name on Windows.
+        String c = canonical(f).getPath().replace('\\', '/');
+        String croot = canonical(new File(projectRoot)).getPath().replace('\\', '/');
+        return c.startsWith(croot + "/") ? c.substring(croot.length() + 1) : p;
     }
 
     /** What was generated last (elasticore.merge), or null when the project does not merge. */

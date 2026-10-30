@@ -877,6 +877,40 @@ public class GeneratedMergeTest {
     }
 
     @Test
+    public void theCodeThatKeepsAClassIsNamedInTheProjectAlsoThroughALink() throws Exception {
+        // The project reached through a link - as /var is /private/var on macOS,
+        // or an 8.3 short name on Windows: the sources are read by their canonical
+        // file, and the line still names the developer's file in the project.
+        File project = project(CUSTOMER + ORDER + coupon("Coupon"));
+        File link = new File(Files.createTempDirectory("elcore-merge-link").toFile(), "project");
+        projects.add(link.getParentFile());
+        try {
+            Files.createSymbolicLink(link.toPath(), project.toPath());
+        } catch (IOException | UnsupportedOperationException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "no symbolic link here: " + e);
+        }
+        run(link, 0);
+        Path dto = java(project, "CouponDTO.java");
+        java.util.regex.Matcher pkg =
+                java.util.regex.Pattern.compile("(?m)^package ([\\w.]+);").matcher(read(dto));
+        assertTrue(pkg.find());
+        Path report = new File(project, "src/main/java/io/acme/dgshop/report/CouponReport.java").toPath();
+        Files.createDirectories(report.getParent());
+        Files.write(
+                report,
+                ("package io.acme.dgshop.report;\n\nimport " + pkg.group(1) + ".CouponDTO;\n\n"
+                                + "public class CouponReport {\n    CouponDTO last;\n}\n")
+                        .getBytes(StandardCharsets.UTF_8));
+
+        model(project, CUSTOMER + ORDER);
+        String log = run(link, 0);
+        assertTrue(
+                log.contains("CouponDTO.java is no longer generated, but src/main/java/io/acme/dgshop/report/"
+                        + "CouponReport.java still uses it - kept"),
+                log);
+    }
+
+    @Test
     public void aKeptMapperKeepsItsXmlAndWhatItUses() throws Exception {
         File project = project(CUSTOMER + ORDER + coupon("Coupon"));
         run(project, 0);
