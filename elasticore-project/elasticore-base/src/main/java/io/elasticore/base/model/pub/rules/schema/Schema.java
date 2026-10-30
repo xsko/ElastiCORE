@@ -34,6 +34,12 @@ public final class Schema {
      * one as a constraint, so a statement by that name waits for review.
      */
     private final Set<String> takenOver = new LinkedHashSet<String>();
+    /**
+     * The databases whose history the names were taken over from - a database
+     * added after the baseline starts from the model, by the model's names.
+     * None said: every database.
+     */
+    private final Set<String> takenOverOn = new LinkedHashSet<String>();
 
     /** Adds a table; one already there by the name stays and the new one's columns are added to it. */
     public Table table(Table t) {
@@ -78,6 +84,10 @@ public final class Schema {
         return takenOver;
     }
 
+    public Set<String> takenOverOn() {
+        return takenOverOn;
+    }
+
     /** Every key and index of the schema, as named by a history this state takes over. */
     public void takeOverKeysAndIndexes() {
         for (Table t : tables.values()) {
@@ -86,12 +96,19 @@ public final class Schema {
         }
     }
 
+    /** The same, from the histories of these databases only. */
+    public void takeOverKeysAndIndexes(java.util.Collection<String> databases) {
+        takeOverKeysAndIndexes();
+        takenOverOn.addAll(databases);
+    }
+
     /** The names of an earlier state taken over that this schema still has a key or an index by. */
     public void keepTakenOver(Schema earlier) {
         for (Table t : tables.values()) {
             for (Table.ForeignKey fk : t.foreignKeys()) if (earlier.takenOver.contains(fk.name)) takenOver.add(fk.name);
             for (Table.Index i : t.indexes()) if (earlier.takenOver.contains(i.name)) takenOver.add(i.name);
         }
+        if (!takenOver.isEmpty()) takenOverOn.addAll(earlier.takenOverOn);
     }
 
     public boolean isEmpty() {
@@ -136,6 +153,10 @@ public final class Schema {
             // Only when there is one: a state of a history these migrations built reads as it did.
             ArrayNode to = root.putArray("takenOver");
             for (String n : takenOver) to.add(n);
+            if (!takenOverOn.isEmpty()) {
+                ArrayNode on = root.putArray("takenOverOn");
+                for (String d : takenOverOn) on.add(d);
+            }
         }
         ArrayNode ts = root.putArray("tables");
         for (Table t : tables.values()) {
@@ -201,6 +222,7 @@ public final class Schema {
         }
         for (JsonNode d : root.path("databases")) s.databases.add(d.asText());
         for (JsonNode n : root.path("takenOver")) s.takenOver.add(n.asText());
+        for (JsonNode d : root.path("takenOverOn")) s.takenOverOn.add(d.asText());
         for (JsonNode tn : root.path("tables")) {
             Table t = new Table(tn.path("name").asText(), tn.path("source").asText(""));
             for (JsonNode cn : tn.path("columns")) {

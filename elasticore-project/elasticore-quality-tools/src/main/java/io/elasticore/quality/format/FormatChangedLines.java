@@ -95,7 +95,6 @@ public final class FormatChangedLines {
 
     /** The text with the given 1-based line ranges formatted, line endings kept. */
     static String format(Formatter formatter, String text, String lineRanges) throws FormatterException {
-        String eol = text.contains("\r\n") ? "\r\n" : "\n";
         String lf = text.replace("\r\n", "\n");
         List<Range<Integer>> ranges = new ArrayList<>();
         int[] starts = lineStarts(lf);
@@ -114,8 +113,49 @@ public final class FormatChangedLines {
         if (ranges.isEmpty()) {
             return text;
         }
-        String out = formatter.formatSource(lf, ranges);
-        return eol.equals("\n") ? out : out.replace("\n", eol);
+        return withEndingsOf(text, formatter.formatSource(lf, ranges));
+    }
+
+    /**
+     * The formatted text, given with \n, ended as the original is: a line the
+     * formatter left as it was keeps its own ending - a file mixing \r\n and \n
+     * is not rewritten for it - and a line it changed takes the file's usual one.
+     */
+    static String withEndingsOf(String text, String formatted) {
+        String[] x = text.replace("\r\n", "\n").split("\n", -1);
+        String[] y = formatted.split("\n", -1);
+        // The ending after each line of the original.
+        List<String> ends = new ArrayList<>();
+        int crlf = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                boolean cr = i > 0 && text.charAt(i - 1) == '\r';
+                ends.add(cr ? "\r\n" : "\n");
+                crlf += cr ? 1 : 0;
+            }
+        }
+        String usual = crlf * 2 > ends.size() ? "\r\n" : "\n";
+        int head = 0;
+        while (head < x.length && head < y.length && x[head].equals(y[head])) {
+            head++;
+        }
+        int tail = 0;
+        while (tail < x.length - head
+                && tail < y.length - head
+                && x[x.length - 1 - tail].equals(y[y.length - 1 - tail])) {
+            tail++;
+        }
+        StringBuilder out = new StringBuilder(formatted.length() + y.length);
+        for (int j = 0; j < y.length; j++) {
+            out.append(y[j]);
+            if (j == y.length - 1) {
+                break;
+            }
+            // The line of the original this one is, when it is one the formatter kept.
+            int k = j < head ? j : j >= y.length - tail ? j + x.length - y.length : -1;
+            out.append(k >= 0 && k < ends.size() ? ends.get(k) : usual);
+        }
+        return out.toString();
     }
 
     /** The offset each line starts at. */

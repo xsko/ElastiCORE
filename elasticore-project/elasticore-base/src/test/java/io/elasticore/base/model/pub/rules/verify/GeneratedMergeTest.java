@@ -902,6 +902,43 @@ public class GeneratedMergeTest {
     }
 
     @Test
+    public void customBlocksOfAStampedFileTheDslDoesNotChangeStayWhereTheyStand() throws Exception {
+        // Blocks in the middle of a stamped source and a stamped mapper, the model as it was: the first
+        // merging run takes the stamp off and moves nothing - 2.x's places are for a file written anew.
+        File project = project(CUSTOMER + ORDER, "jpa", "");
+        System.setProperty("elasticore.merge", "false");
+        run(project, 0);
+        Path dto = java(project, "PurchaseOrderDTO.java");
+        String source = read(dto).replace("\r\n", "\n");
+        int open = source.indexOf("{\n", source.indexOf("class PurchaseOrderDTO")) + 2;
+        String sourceWithBlock = source.substring(0, open)
+                + "    // !---------- mine\n    public String mine() { return \"mine\"; }\n    // ------------!\n"
+                + source.substring(open);
+        Files.write(dto, sourceWithBlock.getBytes(StandardCharsets.UTF_8));
+        File mybatis = project(CUSTOMER + ORDER);
+        run(mybatis, 0);
+        String mapper = xml(mybatis).replace("\r\n", "\n");
+        assertTrue(mapper.contains("</resultMap>\n"), mapper);
+        String mapperWithBlock = mapper.replaceFirst(
+                "</resultMap>\n",
+                "</resultMap>\n    <!-- // !---------- -->\n    <select id=\"mine\" resultType=\"long\">SELECT 1</select>\n"
+                        + "    <!-- // ------------! -->\n");
+        Files.write(xmlPath(mybatis), mapperWithBlock.getBytes(StandardCharsets.UTF_8));
+
+        System.setProperty("elasticore.merge", "true");
+        String log = run(project, 0);
+        assertEquals(
+                sourceWithBlock.substring(sourceWithBlock.indexOf('\n') + 1),
+                read(dto).replace("\r\n", "\n"),
+                log);
+        log = run(mybatis, 0);
+        assertEquals(
+                mapperWithBlock.substring(mapperWithBlock.indexOf('\n') + 1),
+                xml(mybatis).replace("\r\n", "\n"),
+                log);
+    }
+
+    @Test
     public void forceDoesNotThrowEditsAway() throws Exception {
         // The samples' builds set elasticore.rules.force on every run.
         force = true;

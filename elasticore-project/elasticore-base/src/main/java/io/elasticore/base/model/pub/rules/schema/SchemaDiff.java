@@ -93,45 +93,45 @@ public final class SchemaDiff {
             for (Database db : Database.values()) c.sql(db, SchemaWriter.createTable(t, db).trim().replaceAll(";$", ""));
             out.add(c);
         }
+        Set<Database> none = java.util.EnumSet.noneOf(Database.class);
         for (Table t : added) {
-            for (Table.ForeignKey fk : t.foreignKeys()) out.add(addForeignKey(t, fk, false));
-            for (Table.Index i : t.indexes()) out.add(createIndex(t, i, false));
+            for (Table.ForeignKey fk : t.foreignKeys()) out.add(addForeignKey(t, fk, none, before));
+            for (Table.Index i : t.indexes()) out.add(createIndex(t, i, none, before));
         }
 
         // A name the state took over from a history of the project's own may not be the database's:
-        // what drops it, or makes it again after a drop, waits for review.
-        Set<String> takenOver = before.takenOver();
-        boolean sqlServer = before.databases().contains(Database.SQLSERVER.id);
+        // what drops it, or makes it again after a drop, waits for review - where it was taken over.
+        boolean sqlServer =
+                before.databases().contains(Database.SQLSERVER.id) && takenOverFrom(before, Database.SQLSERVER);
         for (Table t : after.tables()) {
             Table old = before.table(t.name);
             if (old == null) continue;
             // What goes, first: SQL Server alters no column an index or a key is still on.
             for (Table.ForeignKey fk : old.foreignKeys()) {
                 if (!t.foreignKeys().contains(fk)) {
-                    boolean taken = takenOver.contains(fk.name);
-                    Change c = new Change("drop foreign key " + fk.name + (taken ? TAKEN_OVER : ""), !taken);
+                    Change c = byName("drop foreign key " + fk.name, takenOverOn(before, fk.name), before);
                     for (Database db : Database.values()) c.sql(db, db.dropConstraint(t.name, fk.name));
                     out.add(c);
                 }
             }
             for (Table.Index i : old.indexes()) {
                 if (!t.indexes().contains(i)) {
-                    boolean taken = takenOver.contains(i.name);
-                    Change c = new Change("drop index " + i.name + (taken ? TAKEN_OVER : ""), !taken);
+                    Change c = byName("drop index " + i.name, takenOverOn(before, i.name), before);
                     for (Database db : Database.values()) c.sql(db, db.dropIndex(t.name, i.name));
                     out.add(c);
                 }
             }
-            columns(old, t, out, sqlServer ? takenOver : java.util.Collections.<String>emptySet());
+            columns(old, t, out, sqlServer ? before.takenOver() : java.util.Collections.<String>emptySet());
             if (!old.primaryKey().equals(t.primaryKey())) {
                 out.add(new Change(String.format("the key of %s is now (%s), was (%s) - change it by hand",
                         t.name, String.join(", ", t.primaryKey()), String.join(", ", old.primaryKey())), false));
             }
             for (Table.ForeignKey fk : t.foreignKeys()) {
-                if (!old.foreignKeys().contains(fk)) out.add(addForeignKey(t, fk, takenOver.contains(fk.name)));
+                if (!old.foreignKeys().contains(fk))
+                    out.add(addForeignKey(t, fk, takenOverOn(before, fk.name), before));
             }
             for (Table.Index i : t.indexes()) {
-                if (!old.indexes().contains(i)) out.add(createIndex(t, i, takenOver.contains(i.name)));
+                if (!old.indexes().contains(i)) out.add(createIndex(t, i, takenOverOn(before, i.name), before));
             }
         }
 
@@ -309,15 +309,41 @@ public final class SchemaDiff {
                         + ", whose names were taken over with -PddlBaseline: use the names they have there";
     }
 
-    /** {@code again}: by a name taken over that this change drops first, so it waits with the drop. */
-    private static Change addForeignKey(Table t, Table.ForeignKey fk, boolean again) {
-        Change c = new Change("foreign key " + fk.name + (again ? TAKEN_OVER : ""), !again);
+    /** Whether the state's names were taken over from this database's history - none said: every one's. */
+    private static boolean takenOverFrom(Schema before, Database db) {
+        return before.takenOverOn().isEmpty() || before.takenOverOn().contains(db.id);
+    }
+
+    /** The databases where a statement by this name names what the state took over. */
+    static Set<Database> takenOverOn(Schema before, String name) {
+        Set<Database> on = java.util.EnumSet.noneOf(Database.class);
+        if (!before.takenOver().contains(name)) return on;
+        for (Database db : Database.values()) if (takenOverFrom(before, db)) on.add(db);
+        return on;
+    }
+
+    /**
+     * A change by a name taken over on some databases: it waits there - everywhere when that is
+     * every database of the state, only there when a database was added after the baseline.
+     */
+    private static Change byName(String description, Set<Database> on, Schema before) {
+        if (on.isEmpty()) return new Change(description, true);
+        boolean everywhere = true;
+        for (String id : before.databases()) everywhere &= on.contains(Database.of(id));
+        Change c = new Change(description + TAKEN_OVER, !everywhere);
+        if (!everywhere) for (Database db : on) c.reviewOn(db);
+        return c;
+    }
+
+    /** {@code again}: where it is by a name taken over that this change drops first, so it waits with the drop. */
+    private static Change addForeignKey(Table t, Table.ForeignKey fk, Set<Database> again, Schema before) {
+        Change c = byName("foreign key " + fk.name, again, before);
         for (Database db : Database.values()) c.sql(db, db.addForeignKey(t.name, fk));
         return c;
     }
 
-    private static Change createIndex(Table t, Table.Index i, boolean again) {
-        Change c = new Change((i.unique ? "unique index " : "index ") + i.name + (again ? TAKEN_OVER : ""), !again);
+    private static Change createIndex(Table t, Table.Index i, Set<Database> again, Schema before) {
+        Change c = byName((i.unique ? "unique index " : "index ") + i.name, again, before);
         for (Database db : Database.values()) c.sql(db, db.createIndex(t, i));
         return c;
     }

@@ -269,15 +269,24 @@ final class DdlRun {
         // classpath:db/migration - is read by Flyway with the folders under it: with more than one
         // database, each database's migrations would run on the other. Whether or not a state is there
         // yet - a database added after the baseline is the same mistake.
-        boolean ownHistory = hasOwnHistory(dir);
+        String ownFile = ownHistoryFile(dir);
+        boolean ownHistory = ownFile != null;
         if (ownHistory && g.databases.size() > 1) {
             String location = "classpath:" + g.dir + "/migration";
             problems.add(String.format(
-                    "[elcore3] ddl: %s holds a Flyway history of the project's own, and %s"
+                    "[elcore3] ddl: %s holds a Flyway history of the project's own (%s), and %s"
                             + " reads the folders under it - with %s, each database's migrations would run on the other."
                             + " Move the history into %s/{db}/ for each database and point spring.flyway.locations at"
-                            + " %s/{vendor}; no migration was written",
-                    relative(dir), location, ids(g.databases), relative(dir), location));
+                            + " %s/{vendor} - or, if Flyway no longer reads %s there, move %s out of it; no migration"
+                            + " was written",
+                    relative(dir),
+                    ownFile,
+                    location,
+                    ids(g.databases),
+                    relative(dir),
+                    location,
+                    relative(dir),
+                    ownFile));
             return;
         }
         if (!stateFile.isFile()) {
@@ -438,7 +447,8 @@ final class DdlRun {
      * waits on them). Both places a history can be: migration/{db}/ and migration/ itself.
      */
     private void startFromTheModel(File stateFile, Schema schema, Group g) throws IOException {
-        schema.takeOverKeysAndIndexes();
+        // From these databases' histories: one added later starts from the model, by its names.
+        schema.takeOverKeysAndIndexes(idSet(g.databases));
         writeState(stateFile, schema, g);
     }
 
@@ -450,19 +460,24 @@ final class DdlRun {
      * locations name it, so it is not counted.
      */
     static boolean hasOwnHistory(File dir) {
-        File[] files = dir.listFiles();
-        if (files == null) return false;
-        for (File f : files) {
-            String n = f.getName();
-            if (f.isFile()
+        return ownHistoryFile(dir) != null;
+    }
+
+    /** The first such migration's name, or null. */
+    static String ownHistoryFile(File dir) {
+        String[] names = dir.list();
+        if (names == null) return null;
+        java.util.Arrays.sort(names);
+        for (String n : names) {
+            if (new File(dir, n).isFile()
                     && n.endsWith(".sql")
                     && n.length() > 1
                     && "VURB".indexOf(n.charAt(0)) >= 0
                     && n.indexOf("__") > 0) {
-                return true;
+                return n;
             }
         }
-        return false;
+        return null;
     }
 
     private static Set<String> idSet(Set<Database> dbs) {

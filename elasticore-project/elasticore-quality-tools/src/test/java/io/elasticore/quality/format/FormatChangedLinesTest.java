@@ -48,6 +48,18 @@ class FormatChangedLinesTest {
     }
 
     @Test
+    void aFileOfMixedLineEndingsKeepsThemAndIsNotUnformattedForThem() throws Exception {
+        String mixed = "class A {\r\n    int   a  =  1;\n    int   b  =  2;\r\n}\n";
+        // The changed line takes the usual ending (\n - not more than half are \r\n); the others keep theirs.
+        assertEquals(
+                "class A {\r\n    int   a  =  1;\n    int b = 2;\n}\n",
+                FormatChangedLines.format(formatter, mixed, "3:3"));
+        String formatted = "class A {\r\n    int   a  =  1;\n    int b = 2;\r\n}\n";
+        assertEquals(formatted, FormatChangedLines.format(formatter, formatted, "3:3"));
+        assertEquals("a\r\nB\r\nc\r\n", FormatChangedLines.withEndingsOf("a\r\nb\nc\r\n", "a\nB\nc\n"));
+    }
+
+    @Test
     void aRangePastTheEndIsIgnored() throws Exception {
         assertEquals(SOURCE, FormatChangedLines.format(formatter, SOURCE, "40:41"));
     }

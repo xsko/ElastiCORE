@@ -18,7 +18,8 @@
   틀린 블록은 `HashUtils` 에게 파일 끝까지라 닫는 중괄호가 블록과 함께 옮겨졌다)만 위처럼 병합하고, 나머지는 전처럼
   블록을 고친 내용으로 그 자리에 둔 채 병합한다. 블록을 뺀 병합이 충돌하면 블록을 둔 채 다시 병합해 그 결과를 쓴다 - 끝 줄을
   덮는 충돌 표시의 한쪽에 블록이 들어가 "yours" 로 해결하면 지워지던 것. `KEPT(yours ...)` 와 `UNCHANGED` 는 파일을 블록이
-  있던 그대로 둔다
+  있던 그대로 둔다. DSL 이 바꾸지 않은 파일은 고치지 않았어도 표시만 떼고 블록을 그 자리에 둔다 - 옮기는 것은 새로 쓰는
+  파일뿐(`customBlocksOfAStampedFileTheDslDoesNotChangeStayWhereTheyStand`, Java 소스와 매퍼 XML)
 - 확인: `GeneratedMergeTest.theCustomBlocksOfATwoXFileComeIntoTheThreeZeroCodeWithoutAConflict`(2.x 가 쓴 DTO 의
   `package` 아래 import 블록과 첫 필드 뒤 블록 - 고치기 전 `CONFLICT` 로 실패, 고친 뒤 두 블록이 2.x 의 자리에 남고,
   이어진 모델 변경도 충돌 없이 병합). `customBlocksOfAStampedFileAreKept`(매퍼 XML)는 그대로 통과. 위 프로젝트의 `-Pv3`

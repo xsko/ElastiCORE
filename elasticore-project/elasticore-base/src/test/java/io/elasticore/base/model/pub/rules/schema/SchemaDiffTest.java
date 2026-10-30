@@ -127,6 +127,45 @@ public class SchemaDiffTest {
     }
 
     @Test
+    public void aNameTakenOverWaitsOnlyOnTheDatabasesItWasTakenOverFrom() {
+        // Taken over from H2's history; PostgreSQL and SQL Server came after, by the model's names.
+        Schema before = of(Column.of("code", ColumnType.TEXT).length(10));
+        before.table("item").index(new Table.Index("ix_item_code", Collections.singletonList("code"), false));
+        before.takeOverKeysAndIndexes(Collections.singletonList(Database.H2.id));
+        before.databases().add(Database.H2.id);
+        before.databases().add(Database.POSTGRESQL.id);
+        before.databases().add(Database.SQLSERVER.id);
+        Schema read = Schema.fromJson(before.toJson());
+        assertEquals(before.takenOverOn(), read.takenOverOn());
+
+        // The index made again with another column: dropped and made by the name - waits on H2 alone.
+        Schema moved = of(Column.of("code", ColumnType.TEXT).length(10));
+        moved.table("item").index(new Table.Index("ix_item_code", java.util.Arrays.asList("code", "item_id"), false));
+        List<SchemaDiff.Change> changes = SchemaDiff.between(read, moved);
+        assertEquals(2, changes.size(), changes.toString());
+        for (SchemaDiff.Change c : changes) {
+            assertTrue(c.description.contains("-PddlBaseline"), c.description);
+            assertFalse(c.safeOn(Database.H2), c.description);
+            assertTrue(c.safeOn(Database.POSTGRESQL) && c.safeOn(Database.SQLSERVER), c.description);
+        }
+        // Widening the column: SQL Server's drop-and-make-again is by its own name there - nothing waits.
+        Schema wider = of(Column.of("code", ColumnType.TEXT).length(20));
+        wider.table("item").index(new Table.Index("ix_item_code", Collections.singletonList("code"), false));
+        SchemaDiff.Change widened = only(read, wider);
+        assertTrue(widened.safeOn(Database.SQLSERVER), widened.description);
+        assertFalse(widened.description.contains("-PddlBaseline"), widened.description);
+
+        // A name kept by the next state stays taken over from H2 alone.
+        Schema next = of(Column.of("code", ColumnType.TEXT).length(10));
+        next.table("item").index(new Table.Index("ix_item_code", Collections.singletonList("code"), false));
+        next.keepTakenOver(read);
+        assertEquals(Collections.singleton(Database.H2.id), next.takenOverOn());
+        Schema gone = of(Column.of("code", ColumnType.TEXT).length(10));
+        gone.keepTakenOver(read);
+        assertTrue(gone.takenOverOn().isEmpty() && !gone.toJson().contains("takenOver"), gone.toJson());
+    }
+
+    @Test
     public void aColumnChangeSaysWhatItIs() {
         SchemaDiff.Change narrows = only(
                 of(Column.of("name", ColumnType.TEXT).length(40)),
