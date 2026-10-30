@@ -152,6 +152,8 @@ abstract class DomainOnDatabase {
         products.save(plain);
 
         assertThat(products.findByNameContaining("0% off " + tag)).extracting(Product::getSku).containsExactly("A" + tag);
+        assertThat(products.findBySkuStartingWith("A" + tag)).extracting(Product::getSku).containsExactly("A" + tag);
+        assertThat(products.findBySkuStartingWith("_" + tag.substring(1))).as("_ is no wildcard").isEmpty();
         assertThat(products.findBySkuIn(java.util.Collections.emptyList())).isEmpty();
         assertThat(products.findBySkuIn(java.util.Arrays.asList("A" + tag, "B" + tag))).hasSize(2);
         List<String> skus = products.findAllByOrderBySkuDesc().stream().map(Product::getSku).collect(Collectors.toList());
@@ -238,6 +240,34 @@ abstract class DomainOnDatabase {
             customers.save(loaded);
         });
         assertThat(profiles(second)).as("the profile let go").isZero();
+
+        // Replaced in memory and deleted without a save: the stored one goes too.
+        VipProfile third = new VipProfile();
+        third.setTier("SILVER");
+        Customer again = customers.findById(id).orElseThrow();
+        io.elasticore.springboot3.mybatis.Rows.set(again, "vipProfile", third);
+        customers.save(again);
+        Long stored = third.getProfileId();
+        Customer replaced = customers.findById(id).orElseThrow();
+        io.elasticore.springboot3.mybatis.Rows.set(replaced, "vipProfile", new VipProfile());
+        customers.delete(replaced);
+        assertThat(profiles(stored)).as("the stored profile of a deleted customer").isZero();
+    }
+
+    /** Read again in one transaction, as JPA's persistence context answers: what changed in memory stays. */
+    @Test
+    @DisplayName("an aggregate read again in its transaction keeps what changed in memory")
+    void readAgainInItsTransaction() {
+        Order order = newOrder(customer("Niklaus", "Wirth"));
+        order.addOrderItem(item(1, "2.00"));
+        order.addOrderItem(item(2, "3.00"));
+        orders.save(order);
+        tx.executeWithoutResult(s -> {
+            Order first = orders.findById(order.getOrderId()).orElseThrow();
+            first.removeOrderItem(first.getItems().get(0));
+            Order second = orders.findById(order.getOrderId()).orElseThrow();
+            assertThat(second.getItems()).hasSize(1);
+        });
     }
 
     private long profiles(Long profileId) {

@@ -14,7 +14,8 @@
   - 멤버 컬렉션은 저장된 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE(멤버 키 유지), 새것 INSERT;
   - to-one 멤버(`@OneToOne @cascade`)는 루트보다 먼저 쓰고, 바뀌거나 빠진 이전 멤버를 지움 - 저장된 행은 `findStoredById`
     (`flushCache="true"`)로 읽음: 트랜잭션 안에서 MyBatis 세션 캐시는 저장 중인 바로 그 객체를 돌려줘 이전 멤버를 못 찾았다;
-  - `delete()` 는 낡은 버전이면 아무것도 지우기 전에 409(`lockVersion` 이 행을 잠금), 멤버·행 DELETE 뒤 이벤트 발행.
+  - `delete()` 는 낡은 버전이면 아무것도 지우기 전에 409(`lockVersion` 이 행을 잠금), 멤버 컬렉션·행·to-one 멤버(저장된
+    것과 메모리에 든 것) DELETE 뒤 이벤트 발행.
     도메인 규칙 루트의 파생 `deleteBy...` 는 행을 읽어 하나씩 `delete()`(삭제 가드·멤버 - Spring Data JPA 처럼);
   - 같은 트랜잭션에서 다시 읽은 행(세션이 주는 같은 객체)은 컬렉션을 다시 채우지 않음(런타임 `mybatis/LoadedRows`) -
     메모리의 변경을 덮지 않게;

@@ -196,7 +196,9 @@ camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬�
 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`) 메서드는 문장만 실행합니다.
 페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
 `ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 순서가 없는 SQL 의 페이지는 SQL Server
-에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음). 정렬은 런타임처럼 입력의 `sortCode`·
+에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음) - 그러니 페이지의 `ORDER BY` 를
+`/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). `/* if */` 블록 안의 `/* if */` 는 런타임처럼
+조건이 아닌 주석으로 남습니다. 정렬은 런타임처럼 입력의 `sortCode`·
 `sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261031
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
@@ -265,12 +267,12 @@ Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 �
 | 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 - 루트도 멤버도 |
 | 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
 | to-one 멤버 cascade (`@OneToOne @cascade` 등) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE(저장된 행을 세션 캐시를 비우고 읽어 비교) |
-| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(행을 잠금), 멤버, 행 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
+| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(행을 잠금), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
 | 파생 `deleteBy...` | 조건의 행을 읽어 하나씩 `delete()` 처럼 지움(삭제 가드·멤버) - Spring Data JPA 의 파생 삭제처럼 |
 | `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
 | `@DomainEvents` 발행 | 저장·삭제 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |
 | `@CreatedDate`·`@CreatedBy` 등 감사 | 저장 때 시각과 `AuditorAware` 의 사람을 넣음 - 멤버의 것도(멤버만 감사 필드를 가져도) |
-| 영속성 컨텍스트(같은 트랜잭션에선 같은 객체) | MyBatis 세션도 같은 객체를 돌려줌 - 어댑터는 트랜잭션에서 처음 본 행만 컬렉션을 채우고 `afterLoad`(메모리의 변경을 덮지 않음) |
+| 영속성 컨텍스트(같은 트랜잭션에선 같은 객체) | MyBatis 세션은 쓰기가 없는 동안 같은 조회에 같은 객체를 돌려줌(쓰기 뒤에는 새 객체) - 어댑터는 트랜잭션에서 처음 본 행만 컬렉션을 채우고 `afterLoad`(메모리의 변경을 덮지 않음) |
 | `EntityManager.find` (참조 검사·`@snapshot`) | 어댑터가 `Lookup.Source` - 런타임이 등록하는 `Lookup` 빈이 타입별로 찾아 줌(JPA 도메인의 루트는 앱의 `EntityManager` 로) |
 | 지연 로딩 | 없음 - 행은 조인한 행과 함께, 컬렉션은 페이지 단위로 한 문장씩 읽음 |
 

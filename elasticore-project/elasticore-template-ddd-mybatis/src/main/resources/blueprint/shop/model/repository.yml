@@ -29,6 +29,12 @@ repository:
           name: string
         return: List<Product>
 
+      # The start of a key, matched as written
+      - id: findBySkuStartingWith
+        params:
+          prefix: string
+        return: List<Product>
+
       # Any of the keys given; none for an empty list
       - id: findBySkuIn
         params:

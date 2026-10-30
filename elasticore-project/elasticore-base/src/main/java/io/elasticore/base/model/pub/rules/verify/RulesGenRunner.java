@@ -487,6 +487,13 @@ public final class RulesGenRunner {
                 if (refusal == null) {
                     java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
                     if (named != null) {
+                        // The sets the names stand for, a MyBatis bundle's included.
+                        java.util.Set<String> sets = new java.util.HashSet<String>();
+                        RuleCatalog catalog = RuleCatalog.standard();
+                        for (String rule : named) {
+                            String mybatis = RulesConfig.mybatisBundleOf(rule);
+                            sets.addAll(catalog.setNamesOf(mybatis != null ? mybatis : rule));
+                        }
                         for (String rule : named) {
                             // The architecture bundles are read as their MyBatis ones
                             // (RulesConfig.mybatisBundleOf); the rest are JPA's own.
@@ -496,7 +503,7 @@ public final class RulesGenRunner {
                                 break;
                             }
                             // The domain rules over MyBatis need what stands in for JPA's callbacks.
-                            if ((rule.startsWith("ddd-") || rule.startsWith("hex-")) && !named.contains("mybatis-ddd")) {
+                            if ((rule.startsWith("ddd-") || rule.startsWith("hex-")) && !sets.contains("mybatis-ddd")) {
                                 refusal = "its publisher.rules names " + rule + " without mybatis-ddd, which turns the"
                                         + " JPA callbacks into the Lifecycle the MyBatis adapter calls"
                                         + " - add mybatis-ddd, or name the architecture's bundle";

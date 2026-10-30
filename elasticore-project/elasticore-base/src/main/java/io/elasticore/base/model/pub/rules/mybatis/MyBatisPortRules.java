@@ -242,7 +242,7 @@ public class MyBatisPortRules implements CodeRules {
                     out.append("<if test=\"").append(test).append("\">\n");
                     block = true;
                 } else {
-                    String kept = line.substring(0, Math.max(0, line.indexOf("/*") - 1));
+                    String kept = line.substring(0, m.start()).replaceAll("\\s+$", "");
                     out.append("<if test=\"").append(test).append("\">").append(text(p, o, kept)).append("</if>\n");
                 }
                 continue;

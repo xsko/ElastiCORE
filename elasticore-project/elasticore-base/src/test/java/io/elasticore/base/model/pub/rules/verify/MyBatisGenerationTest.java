@@ -672,6 +672,14 @@ public class MyBatisGenerationTest {
         Files.write(envOf(project, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
         String log = run(project, 1);
         assertTrue(log.contains("names ddd-aggregate without mybatis-ddd"), log);
+
+        // The MyBatis bundle holds it: not refused.
+        File bundled = project(MODEL, "mybatis");
+        env = new String(Files.readAllBytes(envOf(bundled, "dgshop")), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    publisher:\n      rules: [ddd-mybatis-springboot]\n");
+        Files.write(envOf(bundled, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
+        log = run(bundled, 0);
+        assertNotNull(find(bundled, "PurchaseOrderRepositoryAdapter.java"), log);
     }
 
     @Test

@@ -80,6 +80,17 @@ public final class RuleCatalog {
         return java.util.Collections.unmodifiableSet(bundles.keySet());
     }
 
+    /** The set names a name stands for: a bundle's, through the bundles it names; a set or class name itself. */
+    public java.util.Set<String> setNamesOf(String name) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<String>();
+        if (bundles.containsKey(name)) {
+            for (String member : bundles.get(name)) out.addAll(setNamesOf(member));
+        } else {
+            out.add(name);
+        }
+        return out;
+    }
+
     private List<CodeRules> resolve(String name) {
         List<CodeRules> result = new ArrayList<CodeRules>();
         if (bundles.containsKey(name)) {

@@ -279,6 +279,8 @@ final class DddMyBatisPorts {
              .add("        throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
                     root, id);
         }
+        // The members the stored row holds, which may not be the ones held in memory.
+        if (!singles.isEmpty()) b.add("    Object[] membersBefore = storedMembers(%s);", var);
         for (FieldSpec f : MyBatisSql.collections(e)) {
             if (!MyBatisSql.isMemberCollection(e, f)) continue;
             FieldSpec back = MyBatisSql.backField(e, f);
@@ -286,13 +288,18 @@ final class DddMyBatisPorts {
                     RuleText.capital(back.name()), syntax.getter(var, pk.name()));
         }
         b.add("    %s.deleteById(%s);", mapper, syntax.getter(var, pk.name()));
-        // A member held by a to-one relation goes after the row that holds its key.
-        for (FieldSpec f : singles) {
+        // A member held by a to-one relation goes after the row that holds its key:
+        // the stored one, and the one held in memory when it is another.
+        for (int i = 0; i < singles.size(); i++) {
+            FieldSpec f = singles.get(i);
             EntitySpec target = e.related(f.coreItemType());
             String held = syntax.getter(var, f.name());
-            b.add("    if (%s != null && %s != null) helper.get%s().deleteById(%s);", held,
-                    syntax.getter(held, target.pkField().name()), target.getName(),
-                    syntax.getter(held, target.pkField().name()));
+            String heldKey = syntax.getter(held, target.pkField().name());
+            String memberKey = syntax.nullableType(target.pkField().typeName());
+            b.add("    if (membersBefore[%d] != null) helper.get%s().deleteById((%s) membersBefore[%d]);", i,
+                    target.getName(), memberKey, i)
+             .add("    if (%s != null && %s != null && !%s.equals(membersBefore[%d])) helper.get%s().deleteById(%s);",
+                     held, heldKey, heldKey, i, target.getName(), heldKey);
         }
         b.add("    publish(life);")
          .add("}")
