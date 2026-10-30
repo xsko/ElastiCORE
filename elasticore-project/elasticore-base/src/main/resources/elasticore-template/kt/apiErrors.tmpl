@@ -83,7 +83,11 @@ class ${className}(validator: ObjectProvider<jakarta.validation.Validator>,
 
     @ExceptionHandler(DuplicateKeyException::class)
     fun duplicate(ex: DuplicateKeyException): ProblemDetail =
-        problem(HttpStatus.CONFLICT, "already-exists", "Already exists", ex.message)
+        // The database's, as Spring's JDBC translator says it: the same answer
+        // JPA's DataIntegrityViolationException gets, and never the driver's text.
+        // Otherwise the service's: a create named an identifier that is taken.
+        if (generateSequence(ex.cause) { it.cause?.takeIf { c -> c !== it } }.any { it is java.sql.SQLException }) conflict(ex)
+        else problem(HttpStatus.CONFLICT, "already-exists", "Already exists", ex.message)
 
     @ExceptionHandler(OptimisticLockingFailureException::class)
     fun stale(ex: OptimisticLockingFailureException): ProblemDetail =

@@ -82,10 +82,14 @@ abstract class ShopFlow {
         return (MockHttpSession) r.getRequest().getSession(false);
     }
 
+    static String customer(String login) {
+        return "{\"login\":\"" + login + "\",\"password\":\"force-1234\","
+                + "\"firstName\":\"F\",\"lastName\":\"L\",\"role\":\"A\",\"homeAddress\":{\"street1\":\"1 Main St\","
+                + "\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}";
+    }
+
     MockHttpSession signUp(String login) throws Exception {
-        mvc.perform(json(post("/api/petstore/customer"), "{\"login\":\"" + login + "\",\"password\":\"force-1234\","
-                        + "\"firstName\":\"F\",\"lastName\":\"L\",\"role\":\"A\",\"homeAddress\":{\"street1\":\"1 Main St\","
-                        + "\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}"))
+        mvc.perform(json(post("/api/petstore/customer"), customer(login)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("U"))
                 .andExpect(jsonPath("$.password").doesNotExist());
@@ -328,10 +332,12 @@ abstract class ShopFlow {
     @Test
     void aTakenLoginIsAConflict() throws Exception {
         signUp("obiwan");
-        mvc.perform(json(post("/api/petstore/customer"), "{\"login\":\"obiwan\",\"password\":\"force-1234\","
-                        + "\"firstName\":\"F\",\"lastName\":\"L\",\"homeAddress\":{\"street1\":\"1 Main St\",\"city\":\"Mos Eisley\","
-                        + "\"zipcode\":\"12345\",\"countryCode\":\"US\"}}"))
-                .andExpect(status().isConflict());
+        // The unique index refuses it; Spring's JDBC translator says so as a
+        // DuplicateKeyException, which answers as JPA's integrity violation does.
+        mvc.perform(json(post("/api/petstore/customer"), customer("obiwan")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("unique"))
+                .andExpect(jsonPath("$.detail").value(not(containsString("INSERT"))));
     }
 
     /** A sort the API does not know is the caller's 400, and none of its text reaches the SQL. */

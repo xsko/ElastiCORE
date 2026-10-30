@@ -26,8 +26,10 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *
  * <pre>
  *   EntityNotFoundException              404  the row is not there
- *   DuplicateKeyException                409  a create named a taken identifier
+ *   DuplicateKeyException                409  a create named a taken identifier (already-exists);
+ *                                             from the database (MyBatis): as DataIntegrityViolationException
  *   OptimisticLockingFailureException    409  the version sent is not the row's
+ *   DataIntegrityViolationException      409  unique, referenced, conflict; 400 required - by the SQLSTATE
  *   ConstraintViolationException         400  a value breaks its constraint
  *   InvariantViolationException (cause)  409  a step the state does not allow (state.*)
  *                                        404  a row the request refers to is not there (reference.*)
