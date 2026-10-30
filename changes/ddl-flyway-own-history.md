@@ -16,14 +16,14 @@
     `locations` 를 바꾸지 않아도 된다
   - DB 가 둘 이상: 상태 파일이 있든 없든 실패 - 기본 위치는 아래 폴더를 모두 읽어 한 DB 에 다른 DB 의 마이그레이션을 실행한다
     (baseline 뒤에 둘째 DB 를 더하면 그 `init` 이 첫 DB 의 Flyway 가 읽는 자리에 생겼다). 이력을 DB 별 폴더로 옮기고
-    `locations` 를 `{vendor}` 로 하라고 말하고, 찾은 파일 이름을 대어 Flyway 가 더는 읽지 않는 남은 파일이면 옮기라고 한다
+    `locations` 를 `{vendor}` 로 하라고 말한다
   - 이력이 `db/migration/{db}/` 에 있는 경우는 전과 같다
 - 확인: `DdlMigrationTest.aHistoryOfTheProjectsOwnInTheDefaultLocationIsNotWrittenOver`(거절 → baseline 으로 상태만 →
   모델 변경이 `migration/h2/` 의 마이그레이션 하나), `aHistoryInTheDefaultLocationIsNotForSeveralDatabases` - 둘 다 고치기 전
   코드에서 실패했다(init 을 쓰고 성공). `aBaselineOverTheDefaultLocationTakesTheNamesOverAndASecondDatabaseIsRefusedLater`(이름을
-  넘겨받아 관계를 빼면 검토, baseline 뒤 둘째 DB 는 거절과 파일 이름), `aHistoryOfTheProjectsOwnIsAnyMigrationFlywayReadsOutsideTheDatabasesFolders`.
+  넘겨받아 관계를 빼면 검토, baseline 뒤 둘째 DB 는 거절), `aHistoryOfTheProjectsOwnIsAnyMigrationFlywayReadsOutsideTheDatabasesFolders`.
   Flyway 가 위치 아래 폴더를 읽는 것은 Flyway 10.20.1 의 classpath·파일 스캐너로 확인했다. 도메인 9개짜리 프로젝트
   (`db/migration/V1__baseline.sql`~`V19`, `classpath:db/migration`)에서 고치기 전에는 `-PddlBaseline` 을 줘도
   `db/migration/postgresql/V…__init.sql`(테이블 54개)이 생겼고, 고친 뒤에는 `elcore`(→ `elcoreDdl`)가 마이그레이션 없이 멈추고,
   `-PddlBaseline` 이 `schema-state.json` 만 쓰며, 다시 돌리면 아무것도 쓰지 않는다
-- 관련 파일: `DdlRun.java`(`write`, `startFromTheModel`, `ownHistoryFile`), `DdlMigrationTest.java`, `elasticore-env-guide.md`(9-1 절 - `locations` 와 이력을 깨는 빌드 표)
+- 관련 파일: `DdlRun.java`(`write`, `startFromTheModel`, `hasOwnHistory`), `DdlMigrationTest.java`, `elasticore-env-guide.md`(9-1 절 - `locations` 와 이력을 깨는 빌드 표)
