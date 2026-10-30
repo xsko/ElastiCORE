@@ -4,9 +4,22 @@ on:
   push:
     branches: [main, 'release/**']
   pull_request:
+  # The gates of the change, measured against any base - how long the mutation
+  # job takes for a change as large as a past one, say. Run from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'The commit or branch the change is measured from (the gates compare with its merge base)'
+        required: true
+        default: origin/main
 
 permissions:
   contents: read
+
+# On a manual run, the base it was given (gradle/quality.gradle reads it as
+# -PdiffBase); a pull request's is its base branch.
+env:
+  ORG_GRADLE_PROJECT_diffBase: ${{ inputs.base }}
 
 jobs:
   # How a pull request records its change (changes/README.md, CONTRIBUTING.md):
@@ -33,6 +46,66 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: bash .github/scripts/change-record.sh "origin/$BASE_REF" "$HEAD_SHA" "$HEAD_BRANCH"
 
+  # The gates that look at the lines a pull request adds or edits
+  # (gradle/quality.gradle): formatted as palantir-java-format formats them, and
+  # no Error Prone finding on them - the code older than the gates keeps its
+  # format and its warnings. An Error Prone ERROR fails 'build' anywhere.
+  # Quick, so a contributor hears of these first.
+  static:
+    name: Format and static analysis of the change
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base branch, to compare with
+          fetch-depth: 0
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: The changed lines are formatted, and Error Prone finds nothing on them
+        run: ./gradlew formatCheck diffErrorprone --continue --console=plain
+
+  # Each mutation of a changed library line that a test runs - a condition
+  # negated, a return value replaced, a call removed - must make a test fail
+  # (diffMutation, PIT with the changed-lines filter of elasticore-quality-tools).
+  # A line no test runs is the coverage step's, in 'build'.
+  mutation:
+    name: Mutation testing of the change
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Tests detect the mutations of the changed library lines
+        run: ./gradlew diffMutation --console=plain
+
+      - name: Mutation report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-report
+          path: '**/build/reports/pitest/'
+          if-no-files-found: ignore
+
   build:
     name: Build, test and compatibility checks
     runs-on: ubuntu-latest
@@ -41,6 +114,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The base branch, for the coverage of the change
+          fetch-depth: 0
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -109,6 +184,21 @@ jobs:
 
       - name: Compatibility - every 2.x generated file
         run: ./gradlew :elasticore-project:elasticore-template:elcoreTreeCheck --console=plain
+
+      # From the test runs of 'build' - the libraries' own and the samples', which
+      # run the runtime libraries as an application does. Uncovered changed lines
+      # are annotated on the pull request; below 80% the step fails.
+      - name: Coverage - tests run the library lines the change adds or edits
+        if: github.event_name != 'push'
+        run: ./gradlew diffCoverage --console=plain
+
+      - name: Coverage report
+        if: always() && github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-report
+          path: 'elasticore-project/*/build/reports/jacoco/test/html/'
+          if-no-files-found: ignore
 
       # Reading a job log takes a signed-in GitHub account, so the failing tests and
       # Gradle's own explanation are put in the run summary as annotations.

@@ -12,6 +12,7 @@
 - [ ] Anything said about 2.x's output (comments, history, guides) was checked by generating it with 2.x
 - [ ] Files the build writes into `blueprint/` are committed as regenerated
 - [ ] Tests that fail without the change
+- [ ] `./gradlew prCheck` passes - changed lines formatted, no Error Prone finding on them, run by tests (80%), their mutations detected (70%) (CONTRIBUTING.md, "The gates on the lines you write")
 - [ ] A change fragment, `changes/<topic>.md` (`changes/README.md`) - not an edit to `elasticore-history.md`
 - [ ] Branched from the latest `main`, and not stacked on another open pull request unless it needs it
 - [ ] Guides updated (`elasticore-base/src/main/resources/elasticore-guide/`, English docs in `docs/`)

@@ -181,7 +181,6 @@ public class ECoreModel {
         String targetDomainName = null;
         if(items.length==2) {
             targetDomainName = getConfig(items[0]);
-            modelName = modelName;
         }
         else if(this.internalDomainName!=null) {
             targetDomainName = this.internalDomainName;

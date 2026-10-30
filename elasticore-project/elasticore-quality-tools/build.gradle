@@ -1,0 +1,39 @@
+// Tools of the merge gates (gradle/quality.gradle), not of the product, and not
+// published:
+// - io.elasticore.quality.pitest: PIT's feature CHANGEDLINES, which keeps only
+//   the mutations on the lines a change adds or edits (diffMutation). PIT loads
+//   this module's jar alone, so its dependencies are compileOnly.
+// - io.elasticore.quality.format: formats or checks the changed lines only
+//   (formatCheck, formatChanged), run with the 'formatter' classpath below.
+
+description = 'Tools of the merge gates: changed-line mutation and formatting'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+configurations {
+    formatter
+}
+
+dependencies {
+    compileOnly "org.pitest:pitest-entry:${pitestVersion}"
+    compileOnly "com.palantir.javaformat:palantir-java-format:${palantirJavaFormatVersion}"
+
+    formatter "com.palantir.javaformat:palantir-java-format:${palantirJavaFormatVersion}"
+
+    testImplementation "org.pitest:pitest-entry:${pitestVersion}"
+    testImplementation "com.palantir.javaformat:palantir-java-format:${palantirJavaFormatVersion}"
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// palantir-java-format runs on javac's parser, which JDK 16+ keeps to itself.
+ext.formatterJvmArgs = ['api', 'code', 'file', 'parser', 'tree', 'util'].collect {
+    "--add-exports=jdk.compiler/com.sun.tools.javac.${it}=ALL-UNNAMED"
+}
+tasks.withType(Test).configureEach {
+    jvmArgs formatterJvmArgs
+}

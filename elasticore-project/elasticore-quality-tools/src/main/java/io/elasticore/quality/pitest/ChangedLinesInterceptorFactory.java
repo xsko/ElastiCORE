@@ -22,17 +22,26 @@ import java.util.Set;
  * PIT mutates whole classes; a change of three lines in a class of five hundred
  * would otherwise run every mutant of the five hundred, and report survivors
  * the change did not write.
+ *
+ * With perline[n], at most n mutations of each line are kept - how a change of
+ * thousands of lines stays within the time a pull request can wait, as Google
+ * runs one mutant per changed line ("State of Mutation Testing at Google", 2018).
  */
 public class ChangedLinesInterceptorFactory implements MutationInterceptorFactory {
 
     static final FeatureParameter FILE = FeatureParameter.named("file")
             .withDescription("The file of package/path/File.java:line entries to keep the mutations of");
 
+    static final FeatureParameter PER_LINE = FeatureParameter.named("perline")
+            .withDescription("At most this many mutations of each line; 0 or absent keeps them all");
+
     @Override
     public MutationInterceptor createInterceptor(InterceptorParameters params) {
         String file = params.getString(FILE)
-                .orElseThrow(() -> new IllegalArgumentException("CHANGEDLINES needs file[<path of the changed lines>]"));
-        return new ChangedLinesInterceptor(read(file));
+                .orElseThrow(
+                        () -> new IllegalArgumentException("CHANGEDLINES needs file[<path of the changed lines>]"));
+        int perLine = params.getInteger(PER_LINE).orElse(0);
+        return new ChangedLinesInterceptor(read(file), perLine);
     }
 
     @Override
@@ -40,7 +49,8 @@ public class ChangedLinesInterceptorFactory implements MutationInterceptorFactor
         return Feature.named("CHANGEDLINES")
                 .withOnByDefault(false)
                 .withDescription(description())
-                .withParameter(FILE);
+                .withParameter(FILE)
+                .withParameter(PER_LINE);
     }
 
     @Override

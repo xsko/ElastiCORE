@@ -4,6 +4,7 @@ package io.elasticore.springboot3.dbms.meta;
 import io.elasticore.runtime.port.DbmsService;
 
 import java.lang.annotation.Annotation;
+import java.util.Objects;
 
 /**
  * Implementation of the DbmsService annotation interface.
@@ -73,5 +74,39 @@ public class DbmsServiceImpl implements DbmsService {
     @Override
     public Class<? extends Annotation> annotationType() {
         return DbmsService.class;
+    }
+
+    /**
+     * Equal to any {@code DbmsService} with the same members, the annotation the
+     * JVM makes from a class's {@code @DbmsService} too - the contract of
+     * {@link Annotation#equals(Object)}.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof DbmsService other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id())
+                && Objects.equals(datasource, other.datasource())
+                && Objects.equals(sqlSource, other.sqlSource());
+    }
+
+    /** The hash {@link Annotation#hashCode()} defines, so that it agrees with the JVM's annotations. */
+    @Override
+    public int hashCode() {
+        return member("datasource", datasource) + member("id", id) + member("sqlSource", sqlSource);
+    }
+
+    private static int member(String name, String value) {
+        return (127 * name.hashCode()) ^ (value == null ? 0 : value.hashCode());
+    }
+
+    @Override
+    public String toString() {
+        return "@" + DbmsService.class.getName() + "(datasource=\"" + datasource + "\", id=\"" + id + "\", sqlSource=\""
+                + sqlSource + "\")";
     }
 }

@@ -2,20 +2,23 @@
 // contributor - people and assistants alike - and run the same way here and on
 // CI (CONTRIBUTING.md, "The merge gates"):
 //
-//   ./gradlew spotlessCheck   the libraries' sources are formatted alike (spotlessApply formats them)
-//   ./gradlew errorprone      Error Prone finds no bug pattern in the libraries' main sources
+//   ./gradlew formatCheck     the Java lines a change adds or edits are formatted (formatChanged formats them)
+//   ./gradlew diffErrorprone  Error Prone finds no bug pattern on the library lines a change adds or edits
 //   ./gradlew diffCoverage    tests run the library lines a change adds or edits
 //   ./gradlew diffMutation    tests fail when those lines are mutated
 //   ./gradlew prCheck         all four, with the libraries' tests
 //
-// The coverage and mutation gates look at the change, not at the whole code
-// base: the libraries hold code older than these gates, and a gate on totals is
-// passed by a test written for some other, easier line. The change is what lies
-// between the merge base with origin/main (-PdiffBase=<ref> for another) and the
-// working tree, so a change not yet committed is measured too.
+// Format, coverage and mutation look at the change, not at the whole code base:
+// the libraries hold code older than these gates, a gate on totals is passed by
+// a test written for some other, easier line, and reformatting what a change did
+// not write buries the change and conflicts with every other pull request. The
+// change is what lies between the merge base with origin/main (-PdiffBase=<ref>
+// for another) and the working tree, so a change not yet committed - a new file
+// too - is measured as well.
 
 ext {
     pitestVersion = '1.22.1'
+    palantirJavaFormatVersion = '2.80.0'
 }
 
 // The libraries ElastiCORE ships. elasticore-springboot4 compiles
@@ -80,6 +83,11 @@ def changedLines = { Project p ->
             }
         }
     }
+    // A file git does not track yet is changed throughout.
+    (git(['ls-files', '--others', '--exclude-standard', '--', '*.java']) ?: '').eachLine { String path ->
+        int count = p.rootProject.file(path).readLines('UTF-8').size()
+        (1..Math.max(1, count)).each { changed[path] << it }
+    }
     [base: base, mergeBase: mergeBase, lines: changed.findAll { k, v -> !v.isEmpty() }]
 }
 
@@ -104,11 +112,14 @@ def readXml = { File f ->
 }
 
 def onActions = System.getenv('GITHUB_ACTIONS') == 'true'
-// A GitHub Actions annotation's message cannot hold a raw newline or '%'.
+// A GitHub Actions annotation, escaped as the workflow commands want it. GitHub
+// shows the first few of a step on the pull request; the job summary has all.
+def annotations = 0
 def annotation = { String level, String file, int from, int to, String title, String message ->
-    if (onActions) {
-        String text = message.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
-        println "::${level} file=${file},line=${from},endLine=${to},title=${title}::${text}"
+    if (onActions && annotations++ < 50) {
+        def escape = { String s -> s.replace('%', '%25').replace('\r', '').replace('\n', '%0A') }
+        String property = escape(title).replace(':', '%3A').replace(',', '%2C')
+        println "::${level} file=${file},line=${from},endLine=${to},title=${property}::${escape(message)}"
     }
 }
 def summary = { String markdown ->
@@ -238,8 +249,9 @@ tasks.register('diffCoverage') {
 
 // ------------------------------------------------------------------ mutation
 
-// The PIT plugin that keeps only the mutations on changed lines.
-def changedLinesPlugin = ':elasticore-project:elasticore-pitest-changed-lines'
+// The PIT plugin that keeps only the mutations on changed lines, and the formatter.
+def qualityTools = ':elasticore-project:elasticore-quality-tools'
+def changedLinesPlugin = qualityTools
 def changedLinesFile = layout.buildDirectory.file('quality/changed-lines.txt').get().asFile
 
 librarySources.values().findAll().unique().each { path ->
@@ -253,13 +265,20 @@ librarySources.values().findAll().unique().each { path ->
             junit5PluginVersion = '1.2.3'
             // Set from the change before the task runs (below); this matches nothing.
             targetClasses = ['io.elasticore.quality.none']
-            threads = Math.max(2, Runtime.runtime.availableProcessors() - 1)
+            // Every test of the module; PIT runs those that run a mutated line.
+            targetTests = ['io.elasticore.*']
+            // As in the module's test task: they need a JVM whose machine language
+            // is Korean (springboot3's koreanServerTest task runs them).
+            excludedTestClasses = ['io.elasticore.*OnAKoreanServerTest']
+            // Each thread is a test JVM of its own (-Xmx2g): four on CI's runner,
+            // two on a workstation that runs other things (-PmutationThreads=).
+            threads = (rootProject.findProperty('mutationThreads') ?: (System.getenv('CI') ? 4 : 2)) as int
+            jvmArgs = ['-Xmx2g']
             outputFormats = ['XML', 'HTML']
             timestampedReports = false
             failWhenNoMutations = false
-            features = ["+CHANGEDLINES(file[${changedLinesFile.absolutePath.replace('\\', '/')}])"]
             // PIT runs on 17 whatever the module is compiled for (elasticore-base: 8).
-            jvmPath = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }.get().executablePath.asFile
+            jvmPath = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }.map { it.executablePath }
         }
     }
 }
@@ -285,10 +304,17 @@ gradle.taskGraph.whenReady { graph ->
         def targets = mutationTargets()
         changedLinesFile.parentFile.mkdirs()
         changedLinesFile.setText(targets.keys.join('\n') + '\n', 'UTF-8')
+        // Every mutation of a change up to 300 lines; one per line above that,
+        // so a large change still fits in the job (-PmutationsPerLine=, 0 = all).
+        int perLine = (findProperty('mutationsPerLine') ?: (targets.keys.size() > 300 ? '1' : '0')) as int
+        logger.lifecycle("[diffMutation] ${targets.keys.size()} changed library lines, " +
+                (perLine > 0 ? "at most ${perLine} mutation(s) of each" : 'every mutation of each'))
+        String feature = "+CHANGEDLINES(file[${changedLinesFile.absolutePath.replace('\\', '/')}] perline[${perLine}])"
         pitTasks.each { t ->
             def classes = targets.byModule[t.project.path]
             if (classes) {
                 t.targetClasses.set(classes)
+                t.features.set([feature])
             } else {
                 t.enabled = false
             }
@@ -356,20 +382,90 @@ tasks.register('diffMutation') {
 
 // --------------------------------------------------------------- formatting
 
-// Hand-written Java only: the samples' sources are generated, and
-// elasticore-template's are the 2.x reference output, compared byte by byte.
-(libraryModules + [changedLinesPlugin]).each { path ->
-    project(path) {
-        apply plugin: 'com.diffplug.spotless'
-        spotless {
-            java {
-                target 'src/*/java/**/*.java'
-                palantirJavaFormat('2.80.0')
-                removeUnusedImports()
-                trimTrailingWhitespace()
-                endWithNewline()
-            }
+// Hand-written Java only, main and test: the samples' sources are generated,
+// and elasticore-template's are the 2.x reference output, compared byte by byte.
+def formattedRoots = [
+        'elasticore-project/elasticore-base/src/',
+        'elasticore-project/elasticore-springboot3/src/',
+        'elasticore-project/elasticore-springboot4/src/',
+        'elasticore-project/elasticore-gradle-plugin/src/',
+        'elasticore-project/elasticore-quality-tools/src/',
+]
+
+// Runs FormatChangedLines (elasticore-quality-tools) over the changed lines:
+// 'check' answers the files whose changed lines are not formatted, 'apply'
+// formats them. Lines are 1-based ranges per file.
+def formatChangedLines = { Project p, String mode ->
+    def change = changedLines(p)
+    def entries = (change ? change.lines : [:]).findAll { file, numbers ->
+        file.endsWith('.java') && formattedRoots.any { file.startsWith(it) } && p.rootProject.file(file).isFile()
+    }.collect { file, numbers ->
+        p.rootProject.file(file).absolutePath + '|' + ranges(numbers).collect { a, b -> "${a}:${b}" }.join(',')
+    }
+    if (!entries) {
+        return []
+    }
+    def list = p.layout.buildDirectory.file("quality/format-${mode}.txt").get().asFile
+    list.parentFile.mkdirs()
+    list.setText(entries.join('\n') + '\n', 'UTF-8')
+    def tools = p.project(qualityTools)
+    def out = new ByteArrayOutputStream()
+    def result = p.javaexec {
+        executable = tools.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }.get().executablePath.asFile.absolutePath
+        classpath = tools.sourceSets.main.output + tools.configurations.formatter
+        mainClass = 'io.elasticore.quality.format.FormatChangedLines'
+        jvmArgs tools.formatterJvmArgs
+        args mode, list.absolutePath
+        standardOutput = out
+        ignoreExitValue = true
+    }
+    def lines = out.toString('UTF-8').readLines()
+    def errors = lines.findAll { it.startsWith('ERROR ') }
+    if (errors) {
+        throw new GradleException('The formatter could not read ' + errors.collect { it.substring(6) }.join('; '))
+    }
+    if (result.exitValue > 1) {
+        throw new GradleException("The formatter failed (exit ${result.exitValue})")
+    }
+    String root = p.rootDir.absolutePath + File.separator
+    lines.findAll { it.startsWith('UNFORMATTED ') || it.startsWith('FORMATTED ') }.collect {
+        String rest = it.substring(it.indexOf(' ') + 1)
+        String[] parts = rest.split('\\|')
+        String file = parts[0].startsWith(root) ? parts[0].substring(root.length()).replace('\\', '/') : parts[0]
+        parts.length > 1 ? [file: file, from: parts[1].split(':')[0] as int, to: parts[1].split(':')[1] as int] : [file: file]
+    }
+}
+
+tasks.register('formatCheck') {
+    group = 'verification'
+    description = 'Fails when a Java line the change adds or edits is not formatted (formatChanged formats it)'
+    dependsOn qualityTools + ':classes'
+    doLast {
+        def unformatted = formatChangedLines(project, 'check')
+        if (!unformatted) {
+            logger.lifecycle('[formatCheck] every changed Java line is formatted')
+            return
         }
+        unformatted.each { u ->
+            logger.lifecycle("  not formatted ${u.file}:${u.from}-${u.to}")
+            annotation('error', u.file, u.from, u.to, 'Not formatted',
+                    'The change adds or edits these lines and they are not formatted. Run ./gradlew formatChanged and commit the result.')
+        }
+        summary("### Formatting of the change\n\n**Failed**: ${unformatted.size()} file(s) with changed lines not formatted - " +
+                "run `./gradlew formatChanged` and commit the result.\n\n" + unformatted.collect { "- `${it.file}`:${it.from}-${it.to}" }.join('\n') + '\n\n')
+        throw new GradleException("${unformatted.size()} file(s) have changed lines that are not formatted. " +
+                'Run ./gradlew formatChanged - it formats those lines only - and commit the result.')
+    }
+}
+
+tasks.register('formatChanged') {
+    group = 'formatting'
+    description = 'Formats the Java lines the change adds or edits, and only those (palantir-java-format)'
+    dependsOn qualityTools + ':classes'
+    doLast {
+        def formatted = formatChangedLines(project, 'apply')
+        formatted.each { logger.lifecycle("  formatted ${it.file}") }
+        logger.lifecycle("[formatChanged] ${formatted.size()} file(s) formatted")
     }
 }
 
@@ -377,15 +473,27 @@ tasks.register('diffMutation') {
 
 // Error Prone compiles the main sources once more, on its own JDK and into a
 // directory of its own: the published classes stay those of compileJava (on
-// elasticore-base's JDK 8), and a finding of the ERROR kind fails the task.
+// elasticore-base's JDK 8). A finding of the ERROR kind fails the task
+// anywhere; a WARNING fails diffErrorprone on a line the change adds or edits
+// (the code older than the gate has its warnings, as it has its uncovered
+// lines). A warning that is wrong for a line is suppressed there, with the
+// reason: @SuppressWarnings("CheckName") // why.
+// Error Prone is a javac plugin found on the processor path. Kept to this task
+// alone (not the Gradle plugin, which puts it on every compile's path): javac
+// 17 cannot load Error Prone 2.43+, built for 21.
+def errorproneJdk = 21
+def errorproneJvmArgs = ['api', 'file', 'main', 'model', 'parser', 'processing', 'tree', 'util'].collect {
+    "--add-exports=jdk.compiler/com.sun.tools.javac.${it}=ALL-UNNAMED".toString()
+} + ['code', 'comp'].collect { "--add-opens=jdk.compiler/com.sun.tools.javac.${it}=ALL-UNNAMED".toString() }
+
 libraryModules.each { path ->
     project(path) {
-        apply plugin: 'net.ltgt.errorprone'
+        configurations {
+            errorprone
+        }
         dependencies {
             errorprone 'com.google.errorprone:error_prone_core:2.50.0'
         }
-        tasks.named('compileJava') { options.errorprone.enabled = false }
-        tasks.named('compileTestJava') { options.errorprone.enabled = false }
         def main = sourceSets.main
         def release = path.endsWith('elasticore-base') ? 8 : 17
         def errorprone = tasks.register('errorprone', JavaCompile) {
@@ -393,16 +501,78 @@ libraryModules.each { path ->
             description = 'Compiles the main sources with Error Prone'
             source = main.java
             classpath = main.compileClasspath
-            options.annotationProcessorPath = main.annotationProcessorPath
+            options.annotationProcessorPath = main.annotationProcessorPath + configurations.errorprone
             options.encoding = 'UTF-8'
             options.release = release
-            options.errorprone.enabled = true
-            options.errorprone.disableWarningsInGeneratedCode = true
-            javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+            javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(errorproneJdk) }
+            options.fork = true
+            options.forkOptions.jvmArgs += errorproneJvmArgs
+            options.compilerArgs += ['-XDcompilePolicy=simple', '--should-stop=ifError=FLOW', '-XDaddTypeAnnotationsToSymbol=true',
+                                     '-Xplugin:ErrorProne -XepDisableWarningsInGeneratedCode']
             destinationDirectory = layout.buildDirectory.dir('errorprone/classes')
             options.generatedSourceOutputDirectory = layout.buildDirectory.dir('errorprone/generated')
+            // Every finding, of every file, every time: javac stops listing at
+            // 100, and an incremental compile would report the recompiled files only.
+            options.compilerArgs += ['-Xmaxwarns', '100000', '-Xmaxerrs', '100000']
+            options.incremental = false
+            def findings = layout.buildDirectory.file('errorprone/findings.txt')
+            outputs.file(findings)
+            def captured = new StringBuffer()
+            def listener = { CharSequence s -> captured.append(s) } as StandardOutputListener
+            doFirst {
+                captured.setLength(0)
+                logging.addStandardErrorListener(listener)
+                logging.addStandardOutputListener(listener)
+            }
+            doLast {
+                logging.removeStandardErrorListener(listener)
+                logging.removeStandardOutputListener(listener)
+                findings.get().asFile.setText(captured.toString(), 'UTF-8')
+            }
         }
         tasks.named('check') { dependsOn errorprone }
+    }
+}
+
+tasks.register('diffErrorprone') {
+    group = 'verification'
+    description = 'Fails when Error Prone finds a bug pattern on a library line the change adds or edits'
+    dependsOn libraryModules.collect { it + ':errorprone' }
+    doLast {
+        def changed = changedLibraryLines(project).collectEntries { [(it.file): it.lines] }
+        String root = rootDir.absolutePath.replace('\\', '/') + '/'
+        def found = [] as LinkedHashSet
+        libraryModules.each { path ->
+            def file = project(path).file('build/errorprone/findings.txt')
+            if (!file.isFile()) {
+                return
+            }
+            file.getText('UTF-8').eachLine { String line ->
+                def m = line =~ /^(.+?\.java):(\d+): (warning|error): \[(\w+)\] (.*)$/
+                if (m.find()) {
+                    String f = m.group(1).replace('\\', '/')
+                    f = f.startsWith(root) ? f.substring(root.length()) : f
+                    int nr = m.group(2) as int
+                    if (changed[f]?.contains(nr)) {
+                        found << [file: f, line: nr, check: m.group(4), message: m.group(5)]
+                    }
+                }
+            }
+        }
+        if (!found) {
+            logger.lifecycle('[diffErrorprone] no Error Prone finding on a changed library line')
+            return
+        }
+        found.each { f ->
+            logger.lifecycle("  [${f.check}] ${f.file}:${f.line} ${f.message}")
+            annotation('error', f.file, f.line, f.line, "Error Prone: ${f.check}",
+                    "${f.message}\nhttps://errorprone.info/bugpattern/${f.check}")
+        }
+        summary("### Error Prone on the change\n\n**Failed**: ${found.size()} finding(s) on changed lines.\n\n" +
+                '| Line | Check | Finding |\n|---|---|---|\n' +
+                found.collect { "| `${it.file}:${it.line}` | [${it.check}](https://errorprone.info/bugpattern/${it.check}) | ${it.message.replace('|', '\\|')} |" }.join('\n') + '\n\n')
+        throw new GradleException("Error Prone: ${found.size()} finding(s) on lines the change adds or edits (listed above). " +
+                'Fix them, or suppress one that is wrong for its line with @SuppressWarnings("<check>") and the reason.')
     }
 }
 
@@ -411,7 +581,6 @@ libraryModules.each { path ->
 tasks.register('prCheck') {
     group = 'verification'
     description = 'The merge gates of a pull request: format, Error Prone, coverage and mutation of the change'
-    dependsOn libraryModules.collect { it + ':spotlessCheck' }
-    dependsOn libraryModules.collect { it + ':errorprone' }
+    dependsOn 'formatCheck', 'diffErrorprone'
     dependsOn 'diffCoverage', 'diffMutation'
 }
