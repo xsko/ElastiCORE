@@ -602,6 +602,10 @@ libraryModules.each { path ->
             options.incremental = false
             def findings = layout.buildDirectory.file('errorprone/findings.txt')
             outputs.file(findings)
+            // The findings name files by their absolute path: taken from a build cache filled by
+            // another checkout (org.gradle.caching=true in ~/.gradle), they named that checkout's
+            // files, and no changed line matched (the canary caught it). Compiled here, every time.
+            outputs.cacheIf { false }
             def captured = new StringBuffer()
             def listener = { CharSequence s -> captured.append(s) } as StandardOutputListener
             doFirst {
