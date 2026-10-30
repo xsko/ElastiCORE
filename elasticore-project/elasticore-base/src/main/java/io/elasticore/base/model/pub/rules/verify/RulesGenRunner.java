@@ -4505,8 +4505,9 @@ public final class RulesGenRunner {
         }
         mergedKeys.add(key);
         if (disk.equals(base)) {
-            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, withBlocks(generated, blocks)))
-                return true;
+            // Nor did the DSL change it: the file as it was, its blocks where they stand.
+            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocks(generated, blocks);
+            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, text)) return true;
             cache.put(key, generated);
             if (disk.equals(generated) && !stamped) {
                 unchanged++;
@@ -4675,6 +4676,7 @@ public final class RulesGenRunner {
         }
         boolean stamped = false;
         HashUtils.Response blocks = null;
+        String asOnDisk = null;
         if (base == null) {
             // Written before the project merged: the stamp says whether it is
             // still what was generated then. That text is the base - custom
@@ -4687,6 +4689,7 @@ public final class RulesGenRunner {
                 disk = disk.substring(disk.indexOf('\n') + 1);
                 stamped = true;
                 if (st.hasCustomizedScopeContent() && blocksPutBackWhole(disk)) {
+                    asOnDisk = disk;
                     disk = base;
                     blocks = st;
                 }
@@ -4706,7 +4709,9 @@ public final class RulesGenRunner {
         // run, which merging does anyway, and an edit is never thrown away by
         // a setting. Deleting the file is how to have it generated afresh.
         if (base == null || disk.equals(base)) {
-            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, withBlocks(generated, blocks))) return;
+            // Nor did the DSL change it: the file as it was, its blocks where they stand.
+            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocks(generated, blocks);
+            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, text)) return;
             cache.put(key, generated);
             if (disk.equals(generated) && !stamped) {
                 unchanged++;

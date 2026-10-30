@@ -51,6 +51,14 @@ def sampleModules = rootProject.subprojects.findAll {
     it.path.startsWith(':elasticore-project:elasticore-template') || it.path.startsWith(':elasticore-project:elasticore-sample-')
 }
 
+// A setting of the gates (diffBase, the minimums, mutationsPerLine): a property
+// on a workstation, for trying things; on CI only what the workflow sets in its
+// environment - a gradle.properties in the change does not move its own bar.
+def gateSetting = { Project p, String name ->
+    def value = System.getenv('CI') ? System.getenv('ORG_GRADLE_PROJECT_' + name) : p.findProperty(name)
+    value ? value.toString() : null
+}
+
 // ---------------------------------------------------------------- the change
 
 // The lines between the merge base and the working tree that the change adds
@@ -59,7 +67,7 @@ def sampleModules = rootProject.subprojects.findAll {
 // -PdiffBase given, a base that cannot be found fails the gate - a gate that
 // compares with nothing passes everything.
 def changedLines = { Project p ->
-    String given = p.findProperty('diffBase') ?: null
+    String given = gateSetting(p, 'diffBase')
     String from = given ?: (System.getenv('GITHUB_BASE_REF') ? 'origin/' + System.getenv('GITHUB_BASE_REF') : 'origin/main')
     def git = { List<String> args ->
         def out = new ByteArrayOutputStream()
@@ -207,7 +215,7 @@ tasks.register('diffCoverage') {
     description = 'Fails when tests run less than 80% (-PdiffCoverageMinimum) of the changed library lines'
     dependsOn libraryModules.collect { it + ':jacocoTestReport' }
     doLast {
-        double minimum = (findProperty('diffCoverageMinimum') ?: '80') as double
+        double minimum = (gateSetting(project, 'diffCoverageMinimum') ?: '80') as double
         def changed = changedLibraryLines(project)
         // module -> package/File.java -> line -> [run, branches missed]
         def byModule = [:]
@@ -363,7 +371,7 @@ gradle.taskGraph.whenReady { graph ->
         int lines = targets.keys.values().sum { it.size() } ?: 0
         // Every mutation of a change up to 300 lines; one per line above that,
         // so a large change still fits in the job (-PmutationsPerLine=, 0 = all).
-        int perLine = (findProperty('mutationsPerLine') ?: (lines > 300 ? '1' : '0')) as int
+        int perLine = (gateSetting(project, 'mutationsPerLine') ?: (lines > 300 ? '1' : '0')) as int
         logger.lifecycle("[diffMutation] ${lines} changed library lines, " +
                 (perLine > 0 ? "at most ${perLine} mutation(s) of each" : 'every mutation of each'))
         pitTasks.each { t ->
@@ -388,7 +396,7 @@ tasks.register('diffMutation') {
     description = 'Fails when tests detect less than 70% (-PdiffMutationMinimum) of the mutations on changed library lines they run'
     dependsOn mutatedModules.collect { it + ':pitest' }
     doLast {
-        double minimum = (findProperty('diffMutationMinimum') ?: '70') as double
+        double minimum = (gateSetting(project, 'diffMutationMinimum') ?: '70') as double
         // Only the mutations of lines a test runs: a line none runs is the coverage gate's.
         def detected = 0, survived = []
         mutatedModules.each { path ->

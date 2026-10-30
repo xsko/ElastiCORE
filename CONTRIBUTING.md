@@ -86,10 +86,16 @@ run's artifacts.
 - **Survived** (mutation): PIT changed the line - negated a condition, replaced a
   return value, removed a call - and every test that runs it still passed. The
   test runs the line but does not check what it does; assert the result.
+- **Mutated only under the library's own tests.** PIT runs each library's own
+  unit tests, without the samples' tests and the `*OnAKoreanServerTest` ones that
+  count for coverage: a line only those run passes `diffCoverage` and is not
+  mutated at all. For a runtime line that decides something, write the unit test
+  in its library too - then the gate checks it.
 - **An Error Prone warning that is wrong for its line** is suppressed on the
   smallest element with the reason: `@SuppressWarnings("CheckName") // why`.
 - The thresholds are properties (`-PdiffCoverageMinimum=`, `-PdiffMutationMinimum=`)
-  for trying things locally; CI uses the defaults. `-PdiffBase=<ref>` measures
+  for trying things locally; CI ignores them, also from a `gradle.properties`, and
+  uses the defaults. `-PdiffBase=<ref>` measures
   against another base; on CI, or with `-PdiffBase` given, a base that cannot be
   found fails the gates rather than letting them compare with nothing.
 - Error Prone runs on JDK 21 as a compile of its own (`errorprone`, part of

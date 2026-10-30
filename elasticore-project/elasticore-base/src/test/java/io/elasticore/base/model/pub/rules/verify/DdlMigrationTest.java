@@ -545,7 +545,47 @@ public class DdlMigrationTest {
         System.setProperty("elasticore.ddl.now", "20260103000000");
         String log = run(project, 1);
         assertTrue(log.contains("Move the history into"), log);
+        // The file it found is named, for a stray one Flyway no longer reads there.
+        assertTrue(log.contains("(V1__baseline.sql)") && log.contains("move V1__baseline.sql out of it"), log);
         assertFalse(new File(migration, "postgresql").exists(), "no init beside the history");
+    }
+
+    @Test
+    public void aDatabaseAddedAfterTheBaselineHasTheModelsNames() throws Exception {
+        // H2's history is the project's own, taken over; PostgreSQL comes later and starts from the model,
+        // so its keys are named as the model names them: a drop waits on H2 alone.
+        File project = project(V2);
+        System.setProperty(DdlConfig.MIGRATION, "flyway");
+        System.setProperty(DdlConfig.DATABASES, "h2");
+        File migration = new File(project, "src/main/resources/db/migration");
+        File state = new File(migration, "schema-state.json");
+        File h2 = new File(migration, "h2");
+        assertTrue(h2.mkdirs());
+        Files.write(new File(h2, "V1__mine.sql").toPath(), "-- the project's own\n".getBytes(StandardCharsets.UTF_8));
+        System.setProperty("elasticore.ddl.baseline", "");
+        try {
+            run(project, 0);
+        } finally {
+            System.clearProperty("elasticore.ddl.baseline");
+        }
+        System.setProperty(DdlConfig.DATABASES, "h2,postgresql");
+        System.setProperty("elasticore.ddl.now", "20260101000000");
+        run(project, 0);
+        File postgresql = new File(migration, "postgresql");
+        assertTrue(new File(postgresql, "V20260101000000__init.sql").isFile());
+        assertTrue(read(state).contains("\"takenOverOn\" : [ \"h2\" ]"), read(state));
+
+        String sql = change(project, V2.replace("      customer: Customer @ManyToOne\n", ""), "20260102000000");
+        assertTrue(sql.contains("-- ALTER TABLE visit DROP CONSTRAINT fk_visit_customer;"), sql);
+        File pg = null;
+        for (File each : postgresql.listFiles()) if (each.getName().startsWith("V20260102000000__")) pg = each;
+        assertNotNull(pg);
+        assertTrue(read(pg).contains("\nALTER TABLE visit DROP CONSTRAINT fk_visit_customer;"), read(pg));
+        assertTrue(lastLog.contains("/h2/V20260102000000: drop foreign key fk_visit_customer"), lastLog);
+        assertFalse(
+                lastLog.contains("REVIEW src/main/resources/db/migration/postgresql/")
+                        || lastLog.contains("/*/V20260102000000: drop foreign key"),
+                lastLog);
     }
 
     @Test
@@ -575,5 +615,6 @@ public class DdlMigrationTest {
         // A versioned one straight in migration/: the default location.
         Files.write(new File(migration, "V1__mine.sql").toPath(), new byte[0]);
         assertTrue(DdlRun.hasOwnHistory(migration));
+        assertEquals("V1__mine.sql", DdlRun.ownHistoryFile(migration));
     }
 }
