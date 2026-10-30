@@ -1,0 +1,417 @@
+// The gates a pull request passes before it is merged, the same for every
+// contributor - people and assistants alike - and run the same way here and on
+// CI (CONTRIBUTING.md, "The merge gates"):
+//
+//   ./gradlew spotlessCheck   the libraries' sources are formatted alike (spotlessApply formats them)
+//   ./gradlew errorprone      Error Prone finds no bug pattern in the libraries' main sources
+//   ./gradlew diffCoverage    tests run the library lines a change adds or edits
+//   ./gradlew diffMutation    tests fail when those lines are mutated
+//   ./gradlew prCheck         all four, with the libraries' tests
+//
+// The coverage and mutation gates look at the change, not at the whole code
+// base: the libraries hold code older than these gates, and a gate on totals is
+// passed by a test written for some other, easier line. The change is what lies
+// between the merge base with origin/main (-PdiffBase=<ref> for another) and the
+// working tree, so a change not yet committed is measured too.
+
+ext {
+    pitestVersion = '1.22.1'
+}
+
+// The libraries ElastiCORE ships. elasticore-springboot4 compiles
+// elasticore-springboot3's sources against the Boot 4 stack.
+def libraryModules = [
+        ':elasticore-project:elasticore-base',
+        ':elasticore-project:elasticore-springboot3',
+        ':elasticore-project:elasticore-springboot4',
+]
+// Their main sources, relative to the repository root, and the module whose
+// tests are mutation-tested for them. The part after 'java/' is the path
+// JaCoCo and PIT know a file by. springboot4's own sources are a Jackson 3
+// adapter its tests cover; springboot3's are mutated with springboot3's tests.
+def librarySources = [
+        'elasticore-project/elasticore-base/src/main/java/'        : ':elasticore-project:elasticore-base',
+        'elasticore-project/elasticore-springboot3/src/main/java/' : ':elasticore-project:elasticore-springboot3',
+        'elasticore-project/elasticore-springboot4/src/jackson3/java/': null,
+]
+// The samples' tests run the runtime libraries the way an application does -
+// a line of elasticore-springboot3 a sample's API test runs is run by a test.
+def sampleModules = rootProject.subprojects.findAll {
+    it.path.startsWith(':elasticore-project:elasticore-template') || it.path.startsWith(':elasticore-project:elasticore-sample-')
+}
+
+// ---------------------------------------------------------------- the change
+
+// The lines between the merge base and the working tree that the change adds
+// or edits, as file -> line numbers. Empty when there is nothing to compare
+// with (a push to main, a checkout without origin/main).
+def changedLines = { Project p ->
+    String base = p.findProperty('diffBase') ?: (System.getenv('GITHUB_BASE_REF') ? 'origin/' + System.getenv('GITHUB_BASE_REF') : 'origin/main')
+    def git = { List<String> args ->
+        def out = new ByteArrayOutputStream()
+        def result = p.exec {
+            commandLine(['git'] + args)
+            workingDir p.rootDir
+            standardOutput = out
+            errorOutput = new ByteArrayOutputStream()
+            ignoreExitValue = true
+        }
+        result.exitValue == 0 ? out.toString('UTF-8') : null
+    }
+    String mergeBase = git(['merge-base', base, 'HEAD'])?.trim()
+    if (!mergeBase) {
+        p.logger.lifecycle("[quality] no merge base with ${base} - nothing to compare")
+        return [:]
+    }
+    String diff = git(['diff', '--unified=0', '--no-color', '--no-ext-diff', mergeBase, '--', '*.java'])
+    def changed = [:].withDefault { new TreeSet<Integer>() }
+    String file = null
+    (diff ?: '').eachLine { String line ->
+        if (line.startsWith('+++ ')) {
+            file = line == '+++ /dev/null' ? null : line.substring(6)
+        } else if (file && line.startsWith('@@')) {
+            def m = line =~ /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/
+            if (m.find()) {
+                int start = m.group(1) as int
+                int count = m.group(2) == null ? 1 : (m.group(2) as int)
+                for (int i = 0; i < count; i++) {
+                    changed[file] << start + i
+                }
+            }
+        }
+    }
+    [base: base, mergeBase: mergeBase, lines: changed.findAll { k, v -> !v.isEmpty() }]
+}
+
+// The changed library lines, as [repository path, source root, path after the root, lines].
+def changedLibraryLines = { Project p ->
+    def change = changedLines(p)
+    if (!change) {
+        return []
+    }
+    change.lines.collect { String file, Set<Integer> numbers ->
+        String root = librarySources.keySet().find { file.startsWith(it) }
+        root ? [file: file, root: root, path: file.substring(root.length()), lines: numbers] : null
+    }.findAll()
+}
+
+// An XML report read without fetching its DTD.
+def readXml = { File f ->
+    def slurper = new groovy.xml.XmlSlurper(false, false)
+    slurper.setFeature('http://apache.org/xml/features/nonvalidating/load-external-dtd', false)
+    slurper.setFeature('http://apache.org/xml/features/disallow-doctype-decl', false)
+    slurper.parse(f)
+}
+
+def onActions = System.getenv('GITHUB_ACTIONS') == 'true'
+// A GitHub Actions annotation's message cannot hold a raw newline or '%'.
+def annotation = { String level, String file, int from, int to, String title, String message ->
+    if (onActions) {
+        String text = message.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+        println "::${level} file=${file},line=${from},endLine=${to},title=${title}::${text}"
+    }
+}
+def summary = { String markdown ->
+    String path = System.getenv('GITHUB_STEP_SUMMARY')
+    if (path) {
+        new File(path).append(markdown, 'UTF-8')
+    }
+}
+
+// Runs of consecutive numbers, 3, 4, 5, 9 -> [[3, 5], [9, 9]].
+def ranges = { Collection<Integer> numbers ->
+    def out = []
+    numbers.sort().each { int n ->
+        if (out && out[-1][1] == n - 1) {
+            out[-1][1] = n
+        } else {
+            out << [n, n]
+        }
+    }
+    out
+}
+def rangeText = { Collection<Integer> numbers -> ranges(numbers).collect { a, b -> a == b ? "${a}" : "${a}-${b}" }.join(', ') }
+
+// ------------------------------------------------------------------ coverage
+
+(libraryModules + sampleModules.collect { it.path }).each { path ->
+    project(path) {
+        apply plugin: 'jacoco'
+        jacoco {
+            toolVersion = '0.8.13'
+        }
+    }
+}
+libraryModules.each { path ->
+    project(path) {
+        tasks.named('jacocoTestReport') {
+            dependsOn 'test'
+            // What the samples' tests ran of this library, when they ran in
+            // this build or before it (CI runs them all in 'build'). The report
+            // keeps only this module's classes.
+            mustRunAfter sampleModules.collect { it.path + ':test' }
+            executionData.from(files(sampleModules.collect { it.layout.buildDirectory.file('jacoco/test.exec') }).filter { it.isFile() })
+            reports {
+                xml.required = true
+                html.required = true
+            }
+        }
+    }
+}
+
+tasks.register('diffCoverage') {
+    group = 'verification'
+    description = 'Fails when tests run less than 80% (-PdiffCoverageMinimum) of the changed library lines'
+    dependsOn libraryModules.collect { it + ':jacocoTestReport' }
+    doLast {
+        double minimum = (findProperty('diffCoverageMinimum') ?: '80') as double
+        def changed = changedLibraryLines(project)
+        // package/File.java -> line -> [run, branches missed]; a line is run
+        // when one module's tests run it (springboot3's sources are springboot4's too).
+        def lines = [:].withDefault { [:] }
+        libraryModules.each { path ->
+            def xml = project(path).file('build/reports/jacoco/test/jacocoTestReport.xml')
+            if (!xml.isFile()) {
+                throw new GradleException("No coverage report at ${xml} - run the module's tests first")
+            }
+            readXml(xml).package.each { pkg ->
+                pkg.sourcefile.each { sf ->
+                    def byLine = lines["${pkg.@name}/${sf.@name}"]
+                    sf.line.each { l ->
+                        int nr = l.@nr.toInteger()
+                        boolean run = l.@ci.toInteger() > 0
+                        int missed = run ? l.@mb.toInteger() : Integer.MAX_VALUE
+                        def seen = byLine[nr]
+                        byLine[nr] = seen == null ? [run, missed] : [seen[0] || run, Math.min(seen[1] as int, missed)]
+                    }
+                }
+            }
+        }
+        int total = 0, notRun = 0
+        def report = []
+        changed.each { c ->
+            def byLine = lines.get(c.path)
+            if (byLine == null) {
+                return
+            }
+            def executable = c.lines.findAll { byLine.containsKey(it) }
+            def missed = executable.findAll { !byLine[it][0] }
+            def halfway = executable.findAll { byLine[it][0] && byLine[it][1] > 0 }
+            total += executable.size()
+            notRun += missed.size()
+            if (missed || halfway) {
+                report << [file: c.file, missed: missed, halfway: halfway, executable: executable.size()]
+            }
+        }
+        if (total == 0) {
+            logger.lifecycle('[diffCoverage] the change adds or edits no library line a test could run')
+            return
+        }
+        double covered = 100.0 * (total - notRun) / total
+        boolean passes = covered >= minimum
+        String verdict = String.format(Locale.ROOT, '%.1f%% of the %d changed library lines are run by tests (minimum %.0f%%)',
+                covered, total, minimum)
+        logger.lifecycle("[diffCoverage] ${verdict}")
+        report.each { r ->
+            ranges(r.missed).each { from, to ->
+                logger.lifecycle("  not run       ${r.file}:${from == to ? from : from + '-' + to}")
+                annotation(passes ? 'warning' : 'error', r.file, from, to, 'No test runs this line',
+                        'The change adds or edits this line and no test runs it.')
+            }
+            ranges(r.halfway).each { from, to ->
+                logger.lifecycle("  branch missed ${r.file}:${from == to ? from : from + '-' + to}")
+                annotation('notice', r.file, from, to, 'A branch no test takes', 'Tests run this line, but not every way it can go.')
+            }
+        }
+        def md = new StringBuilder("### Coverage of the change\n\n${passes ? 'Passed' : '**Failed**'}: ${verdict}.\n\n")
+        if (report) {
+            md << '| File | Changed lines run | Not run |\n|---|---|---|\n'
+            report.each { r -> md << "| `${r.file}` | ${r.executable - r.missed.size()}/${r.executable} | ${rangeText(r.missed) ?: '-'} |\n" }
+            md << '\n'
+        }
+        summary(md.toString())
+        if (!passes) {
+            throw new GradleException("${verdict}. Write tests that run the lines listed above - tests that fail without the change.")
+        }
+    }
+}
+
+// ------------------------------------------------------------------ mutation
+
+// The PIT plugin that keeps only the mutations on changed lines.
+def changedLinesPlugin = ':elasticore-project:elasticore-pitest-changed-lines'
+def changedLinesFile = layout.buildDirectory.file('quality/changed-lines.txt').get().asFile
+
+librarySources.values().findAll().unique().each { path ->
+    project(path) {
+        apply plugin: 'info.solidsoft.pitest'
+        dependencies {
+            pitest project(changedLinesPlugin)
+        }
+        pitest {
+            pitestVersion = rootProject.pitestVersion
+            junit5PluginVersion = '1.2.3'
+            // Set from the change before the task runs (below); this matches nothing.
+            targetClasses = ['io.elasticore.quality.none']
+            threads = Math.max(2, Runtime.runtime.availableProcessors() - 1)
+            outputFormats = ['XML', 'HTML']
+            timestampedReports = false
+            failWhenNoMutations = false
+            features = ["+CHANGEDLINES(file[${changedLinesFile.absolutePath.replace('\\', '/')}])"]
+            // PIT runs on 17 whatever the module is compiled for (elasticore-base: 8).
+            jvmPath = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }.get().executablePath.asFile
+        }
+    }
+}
+
+// The mutated classes and lines are the change's, written before PIT starts.
+def mutationTargets = { ->
+    def byModule = [:].withDefault { [] as Set }
+    def keys = []
+    changedLibraryLines(project).each { c ->
+        String module = librarySources[c.root]
+        if (module) {
+            String cls = c.path.replaceAll(/\.java$/, '').replace('/', '.')
+            byModule[module] << cls
+            byModule[module] << cls + '$*'
+            c.lines.each { keys << "${c.path}:${it}" }
+        }
+    }
+    [byModule: byModule, keys: keys]
+}
+gradle.taskGraph.whenReady { graph ->
+    def pitTasks = graph.allTasks.findAll { it.name == 'pitest' }
+    if (pitTasks) {
+        def targets = mutationTargets()
+        changedLinesFile.parentFile.mkdirs()
+        changedLinesFile.setText(targets.keys.join('\n') + '\n', 'UTF-8')
+        pitTasks.each { t ->
+            def classes = targets.byModule[t.project.path]
+            if (classes) {
+                t.targetClasses.set(classes)
+            } else {
+                t.enabled = false
+            }
+        }
+    }
+}
+
+tasks.register('diffMutation') {
+    group = 'verification'
+    description = 'Fails when tests detect less than 70% (-PdiffMutationMinimum) of the mutations on changed library lines they run'
+    dependsOn librarySources.values().findAll().unique().collect { it + ':pitest' }
+    doLast {
+        double minimum = (findProperty('diffMutationMinimum') ?: '70') as double
+        // Only the mutations of lines a test runs: a line none runs is the coverage gate's.
+        def detected = 0, survived = []
+        librarySources.values().findAll().unique().each { path ->
+            def xml = project(path).file('build/reports/pitest/mutations.xml')
+            if (!xml.isFile() || !project(path).tasks.pitest.enabled) {
+                return
+            }
+            String root = librarySources.find { it.value == path }.key
+            readXml(xml).mutation.each { m ->
+                String status = m.@status.toString()
+                if (status == 'NO_COVERAGE') {
+                    return
+                }
+                if (m.@detected.toString() == 'true') {
+                    detected++
+                } else {
+                    String cls = m.mutatedClass.text()
+                    String dir = cls.contains('.') ? cls.substring(0, cls.lastIndexOf('.')).replace('.', '/') + '/' : ''
+                    survived << [file: root + dir + m.sourceFile.text(), line: m.lineNumber.text() as int,
+                                 what: m.description.text(), method: m.mutatedMethod.text()]
+                }
+            }
+        }
+        int total = detected + survived.size()
+        if (total == 0) {
+            logger.lifecycle('[diffMutation] no mutation of a changed library line that a test runs')
+            return
+        }
+        double strength = 100.0 * detected / total
+        boolean passes = strength >= minimum
+        String verdict = String.format(Locale.ROOT, 'tests detect %.1f%% of the %d mutations of changed library lines (minimum %.0f%%)',
+                strength, total, minimum)
+        logger.lifecycle("[diffMutation] ${verdict}")
+        survived.sort { a, b -> a.file <=> b.file ?: a.line <=> b.line }.each { s ->
+            logger.lifecycle("  survived ${s.file}:${s.line} ${s.what}")
+            annotation(passes ? 'warning' : 'error', s.file, s.line, s.line, 'A mutation no test detects',
+                    "${s.what} (in ${s.method}) - every test that runs this line still passes.")
+        }
+        def md = new StringBuilder("### Mutation testing of the change\n\n${passes ? 'Passed' : '**Failed**'}: ${verdict}.\n\n")
+        if (survived) {
+            md << '| Survived | Mutation |\n|---|---|\n'
+            survived.each { s -> md << "| `${s.file}:${s.line}` | ${s.what} |\n" }
+            md << '\n'
+        }
+        summary(md.toString())
+        if (!passes) {
+            throw new GradleException("${verdict}. Each survivor above is a change of the code no test notices - " +
+                    'assert what the line does (build/reports/pitest/index.html has the detail).')
+        }
+    }
+}
+
+// --------------------------------------------------------------- formatting
+
+// Hand-written Java only: the samples' sources are generated, and
+// elasticore-template's are the 2.x reference output, compared byte by byte.
+(libraryModules + [changedLinesPlugin]).each { path ->
+    project(path) {
+        apply plugin: 'com.diffplug.spotless'
+        spotless {
+            java {
+                target 'src/*/java/**/*.java'
+                palantirJavaFormat('2.80.0')
+                removeUnusedImports()
+                trimTrailingWhitespace()
+                endWithNewline()
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------- static analysis
+
+// Error Prone compiles the main sources once more, on its own JDK and into a
+// directory of its own: the published classes stay those of compileJava (on
+// elasticore-base's JDK 8), and a finding of the ERROR kind fails the task.
+libraryModules.each { path ->
+    project(path) {
+        apply plugin: 'net.ltgt.errorprone'
+        dependencies {
+            errorprone 'com.google.errorprone:error_prone_core:2.50.0'
+        }
+        tasks.named('compileJava') { options.errorprone.enabled = false }
+        tasks.named('compileTestJava') { options.errorprone.enabled = false }
+        def main = sourceSets.main
+        def release = path.endsWith('elasticore-base') ? 8 : 17
+        def errorprone = tasks.register('errorprone', JavaCompile) {
+            group = 'verification'
+            description = 'Compiles the main sources with Error Prone'
+            source = main.java
+            classpath = main.compileClasspath
+            options.annotationProcessorPath = main.annotationProcessorPath
+            options.encoding = 'UTF-8'
+            options.release = release
+            options.errorprone.enabled = true
+            options.errorprone.disableWarningsInGeneratedCode = true
+            javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+            destinationDirectory = layout.buildDirectory.dir('errorprone/classes')
+            options.generatedSourceOutputDirectory = layout.buildDirectory.dir('errorprone/generated')
+        }
+        tasks.named('check') { dependsOn errorprone }
+    }
+}
+
+// ------------------------------------------------------------------- all four
+
+tasks.register('prCheck') {
+    group = 'verification'
+    description = 'The merge gates of a pull request: format, Error Prone, coverage and mutation of the change'
+    dependsOn libraryModules.collect { it + ':spotlessCheck' }
+    dependsOn libraryModules.collect { it + ':errorprone' }
+    dependsOn 'diffCoverage', 'diffMutation'
+}

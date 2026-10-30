@@ -1,5 +1,9 @@
 plugins {
     id 'maven-publish'
+    // The merge gates (gradle/quality.gradle) apply these to the libraries.
+    id 'com.diffplug.spotless' version '8.7.0' apply false
+    id 'net.ltgt.errorprone' version '5.1.0' apply false
+    id 'info.solidsoft.pitest' version '1.19.0' apply false
 }
 
 allprojects {
@@ -250,3 +254,6 @@ gradle.taskGraph.whenReady { graph ->
         }
     }
 }
+
+// The merge gates: coverage of the change, and the rest gradle/quality.gradle lists.
+apply from: rootProject.file('gradle/quality.gradle')
