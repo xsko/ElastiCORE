@@ -26,7 +26,7 @@ answers, shortened to one line each.</sub>
   edit and the model change the same lines does it stop, with the usual `<<<<<<<` marks for you to resolve. So the
   code never drifts from the model, and you are never forced to choose between your edit and the next DSL change.
 - **One model, the code you want.** Java or Kotlin; layered, DDD or hexagonal, over JPA or MyBatis (`mode: mybatis` -
-  the domain model and the hexagon too, a generated adapter doing what JPA did for an aggregate); Spring Boot 3 or 4;
+  Java only - the domain model and the hexagon too, a generated adapter doing what JPA did for an aggregate); Spring Boot 3 or 4;
   plus a typed TypeScript client with the server's validation messages.
 
 **Built for** business systems that live for years and pass through many hands — orders, billing, contracts, back

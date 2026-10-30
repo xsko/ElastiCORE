@@ -131,6 +131,10 @@ public final class MyBatisQueries {
         // The shapes the JPA port gives the same declaration, so the ports agree.
         declared = RepositoryBaseRules.pageableOrList(e, m, declared.trim());
         q.returnType = declared;
+        if (declared.matches("(java\\.util\\.stream\\.)?Stream<.*")) {
+            fail(e, q, "answers a Stream, which a MyBatis mapper does not return; answer a List");
+            return null;
+        }
         String arg = RepositoryBaseRules.typeArgument(declared);
         q.container = declared.startsWith("Page<") ? "page"
                 : declared.startsWith("Optional<") ? "optional"
@@ -183,6 +187,24 @@ public final class MyBatisQueries {
     private static final Pattern SUBJECT = Pattern.compile(
             "^(find|read|get|query|search|stream|count|exists|delete|remove)(.*?)By(.+)$");
 
+    /**
+     * Whether a declared deleteBy... of an aggregate root deletes row by row:
+     * where the domain rules bind aggregates, the adapter reads the rows it
+     * names and deletes each as delete() does - its delete guard, its members,
+     * then its row - as Spring Data JPA's derived delete removes each entity.
+     * Elsewhere it is one DELETE statement.
+     */
+    public static boolean deletesRowByRow(EntitySpec e, String methodName) {
+        if (!MyBatisSql.aggregatesBound() || !e.aggregateRoot() || e.pkField() == null) return false;
+        for (io.elasticore.base.model.repo.Method m : e.queryMethods()) {
+            if (!m.isEnable() || !m.getName().equals(methodName)) continue;
+            if (m.getQuery() != null && !m.getQuery().trim().isEmpty()) return false;
+            Matcher mt = SUBJECT.matcher(methodName);
+            return mt.matches() && ("delete".equals(mt.group(1)) || "remove".equals(mt.group(1)));
+        }
+        return false;
+    }
+
     /** A query read from the method's name, as Spring Data's PartTree reads it. */
     private static boolean derived(EntitySpec e, io.elasticore.base.model.repo.Method m, Query q,
                                    boolean root, boolean dto) {
@@ -218,6 +240,7 @@ public final class MyBatisQueries {
                 return false;
             }
             for (FieldSpec f : MyBatisSql.collections(e)) {
+                if (deletesRowByRow(e, q.name)) break;
                 if (MyBatisSql.isMemberCollection(e, f)) {
                     fail(e, q, "deletes rows of " + e.getName() + ", whose members (" + f.name() + ") a DELETE would"
                             + " leave behind - delete each through the service, which deletes its members first");
@@ -257,7 +280,12 @@ public final class MyBatisQueries {
             }
         }
         int next = 0;
-        for (String orPart : splitCamel(predicate, "Or")) {
+        if (predicate.isEmpty() && q.kind != Kind.ROWS && q.kind != Kind.COUNT) {
+            fail(e, q, "names no condition, and would " + (q.kind == Kind.DELETE ? "delete" : "ask about")
+                    + " every row; say the condition (deleteByStatus, existsByEmail)");
+            return false;
+        }
+        for (String orPart : predicate.isEmpty() ? java.util.Collections.<String>emptyList() : splitCamel(predicate, "Or")) {
             List<Condition> group = new ArrayList<Condition>();
             for (String part : splitCamel(orPart, "And")) {
                 Condition c = condition(e, q, part, allIgnoreCase);
@@ -412,9 +440,10 @@ public final class MyBatisQueries {
         return out;
     }
 
+    /** Where a keyword starts a capitalised word, the last time; 0 too - findAllByOrderByX orders all. */
     private static int lastCamelIndex(String text, String keyword) {
         int i = text.lastIndexOf(keyword);
-        while (i > 0) {
+        while (i >= 0) {
             boolean after = i + keyword.length() < text.length() && Character.isUpperCase(text.charAt(i + keyword.length()));
             if (after) return i;
             i = text.lastIndexOf(keyword, i - 1);
@@ -505,8 +534,15 @@ public final class MyBatisQueries {
                     }
                     break;
                 }
-                case COUNT:
                 case DELETE:
+                    if (deletesRowByRow(e, q.name)) {
+                        // The rows it names: the adapter deletes each one whole.
+                        c.varLine("declaredQueries", "List<%s> %sRows(%s);", entity, q.name, params);
+                        break;
+                    }
+                    c.varLine("declaredQueries", "%s %s(%s);", q.returnType, q.name, params);
+                    break;
+                case COUNT:
                     c.varLine("declaredQueries", "%s %s(%s);", q.returnType, q.name, params);
                     break;
                 case EXISTS:
@@ -667,6 +703,11 @@ public final class MyBatisQueries {
                             "SELECT COUNT(*) FROM <include refid=\"from\"/>" + where(e, joins, q, true));
                     break;
                 case DELETE:
+                    if (deletesRowByRow(e, q.name)) {
+                        statement(x, "select", q.name + "Rows", "resultMap=\"row\"", select + where(e, joins, q, true)
+                                + " ORDER BY " + MyBatisSql.ROOT + "." + MyBatisSql.column(pk));
+                        break;
+                    }
                     statement(x, "delete", q.name, "",
                             "DELETE FROM " + table + where(e, joins, q, false));
                     break;
@@ -775,21 +816,29 @@ public final class MyBatisQueries {
             case "contains": return like(col, p, "%", "%", c.ignoreCase, false);
             case "notcontains": return like(col, p, "%", "%", c.ignoreCase, true);
             case "in": case "notin": {
+                // An empty list is IN (), which no database reads: none is in it, all are not.
                 String item = path == null ? "#{v}" : MyBatisMapperRules.paramOf(path.owner, path.leaf, "v");
-                return column + ("notin".equals(c.op) ? " NOT IN " : " IN ") + "<foreach collection=\"" + p.name
-                        + "\" item=\"v\" open=\"(\" separator=\",\" close=\")\">" + item + "</foreach>";
+                boolean notIn = "notin".equals(c.op);
+                return "<choose><when test=\"" + p.name + " == null or " + p.name + ".isEmpty()\">"
+                        + (notIn ? "1 = 1" : "1 = 0") + "</when><otherwise>"
+                        + column + (notIn ? " NOT IN " : " IN ") + "<foreach collection=\"" + p.name
+                        + "\" item=\"v\" open=\"(\" separator=\",\" close=\")\">" + item + "</foreach></otherwise></choose>";
             }
             default: return col + " = " + lower;
         }
     }
 
-    /** A LIKE of a parameter wrapped in %, bound so the % is the statement's, not the caller's. */
+    /**
+     * A LIKE of a parameter wrapped in %, bound so the % is the statement's,
+     * not the caller's: the value's own % and _ are escaped and match as
+     * written, as Spring Data JPA matches them.
+     */
     private static String like(String column, Param p, String before, String after, boolean ignoreCase, boolean not) {
-        String expr = (before.isEmpty() ? "" : "'" + before + "' + ") + p.name
-                + (ignoreCase ? ".toLowerCase(@java.util.Locale@ROOT)" : "") + (after.isEmpty() ? "" : " + '" + after + "'");
+        String expr = "@io.elasticore.springboot3.mybatis.Rows@like(" + p.name + ", '" + before + "', '" + after + "', "
+                + ignoreCase + ", _databaseId)";
         String bind = p.name + "Like";
         return "<bind name=\"" + bind + "\" value=\"" + expr + "\"/>" + column + (not ? " NOT LIKE " : " LIKE ")
-                + "#{" + bind + "}";
+                + "#{" + bind + "} ESCAPE '!'";
     }
 
     private static String param(MyBatisMapperRules.Path path, Param p) {

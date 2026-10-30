@@ -25,12 +25,17 @@ public final class PortRows {
     private PortRows() {
     }
 
-    /** Rows as the type the method answers a list of. */
+    /**
+     * Rows as the type the method answers a list of. MyBatis leaves a NULL
+     * column out of a row's map, and answers a row of NULLs alone as null: an
+     * absent column is a null field, and a null row one of null fields.
+     */
     @SuppressWarnings("unchecked")
     public static <O> List<O> list(List<? extends Map<String, Object>> rows, Class<O> type) {
         List<O> out = new ArrayList<O>();
         if (rows == null) return out;
-        for (Map<String, Object> row : rows) {
+        for (Map<String, Object> read : rows) {
+            Map<String, Object> row = read == null ? new LinkedHashMap<String, Object>() : read;
             if (Map.class.isAssignableFrom(type)) {
                 Map<String, Object> map = new LinkedHashMap<String, Object>();
                 row.forEach((label, value) -> map.put(SqlPortGateway.toCamelCase(label), value));

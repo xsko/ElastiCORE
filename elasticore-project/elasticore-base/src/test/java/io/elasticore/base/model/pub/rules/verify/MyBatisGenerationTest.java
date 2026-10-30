@@ -587,6 +587,140 @@ public class MyBatisGenerationTest {
         assertTrue(read(project, "OrderUseCase.java").contains("interface OrderUseCase"));
     }
 
+    /**
+     * Members the model makes - a root's @OneToMany, a cascade - without
+     * @aggregate, each with a @service the domain rules take away: the root
+     * writes them all the same.
+     */
+    private static final String BASKETS = String.join("\n",
+            "entity:",
+            "  Stamped:",
+            "    meta: entity @abstract",
+            "    fields:",
+            "      createdBy: string(50) @updatable(false) @jpa:org.springframework.data.annotation.CreatedBy",
+            "",
+            "  Basket:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      basketId: long @id @sequence",
+            "      note: string(50)",
+            "      lines: List<BasketLine> @OneToMany(mappedBy=\"basket\")",
+            "      label: BasketLabel @OneToOne @cascade(ALL)",
+            "      version: long @jpa:Version",
+            "",
+            "  BasketLine:",
+            "    meta: entity @service",
+            "    fields:",
+            "      lineId: long @id @sequence",
+            "      basket: Basket @ManyToOne",
+            "      qty: int",
+            "      version: long @jpa:Version",
+            "",
+            "  BasketLabel:",
+            "    meta: entity @service @extend(Stamped)",
+            "    fields:",
+            "      labelId: long @id @sequence",
+            "      text: string(20)",
+            "",
+            "repository:",
+            "  Basket:",
+            "    methods:",
+            "      - id: deleteByNote",
+            "        params:",
+            "          note: string",
+            "        return: long",
+            "");
+
+    @Test
+    public void membersTheModelMakesAreWrittenByTheirRoot() throws Exception {
+        File project = project(BASKETS, "mybatis");
+        System.setProperty("elasticore.architecture", "ddd");
+        run(project, 0);
+
+        String adapter = read(project, "BasketRepositoryAdapter.java");
+        assertTrue(adapter.contains("helper.getBasketLine().findAllByBasketIn(Collections.singletonList(basket.getBasketId()))"), adapter);
+        assertTrue(adapter.contains("writeMemberReferences(basket);"), adapter);
+        // The stored member, not the one this transaction holds.
+        assertTrue(adapter.contains("helper.getBasket().findStoredById(basket.getBasketId())"), adapter);
+        // A member's version counts up in memory too, and starts at the row's 0.
+        assertTrue(adapter.contains("Rows.set(m, \"version\", m.getVersion() == null ? 1L : m.getVersion() + 1);"), adapter);
+        assertTrue(adapter.contains("if (m.getVersion() == null) Rows.set(m, \"version\", 0L);"), adapter);
+        // Only the member records who wrote it: the adapter asks all the same.
+        assertTrue(adapter.contains("private Object currentAuditor() {"), adapter);
+        assertTrue(adapter.contains("ObjectProvider<AuditorAware<?>> auditorAware"), adapter);
+        // A derived delete deletes each row as delete() does; a stale delete is refused.
+        assertTrue(adapter.contains("List<Basket> rows = loaded(helper.getBasket().deleteByNoteRows(note));"), adapter);
+        assertTrue(adapter.contains("for (Basket row : rows) delete(row);"), adapter);
+        assertTrue(adapter.contains("return (long) rows.size();"), adapter);
+        assertTrue(adapter.contains("if (basket.getVersion() != null && helper.getBasket().lockVersion(basket.getBasketId(), basket.getVersion()) == 0"), adapter);
+        assertTrue(adapter.contains("io.elasticore.springboot3.mybatis.LoadedRows.first(row)"), adapter);
+
+        String xml = new String(Files.readAllBytes(findResource(project, "BasketRepository.xml")), StandardCharsets.UTF_8);
+        assertTrue(xml.contains("<select id=\"findStoredById\" resultMap=\"row\" flushCache=\"true\">"), xml);
+        assertTrue(xml.contains("<select id=\"deleteByNoteRows\" resultMap=\"row\">"), xml);
+        assertFalse(xml.contains("<delete id=\"deleteByNote\""), xml);
+        assertTrue(xml.contains("<update id=\"lockVersion\">"), xml);
+        assertNull(find(project, "BasketLineCoreService.java"));
+        assertNull(find(project, "BasketLabelCoreService.java"));
+    }
+
+    @Test
+    public void domainRuleSetsWithoutMyBatisDddAreRefused() throws Exception {
+        File project = project(MODEL, "mybatis");
+        String env = new String(Files.readAllBytes(envOf(project, "dgshop")), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    publisher:\n      rules: [mybatis-springboot, ddd-aggregate]\n");
+        Files.write(envOf(project, "dgshop"), env.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, 1);
+        assertTrue(log.contains("names ddd-aggregate without mybatis-ddd"), log);
+    }
+
+    @Test
+    public void whatMyBatisCannotKeepIsRefusedByName() throws Exception {
+        // Envers' history.
+        String log = run(project(MODEL.replace("@expose(20) @access(*=public)", "@expose(20) @access(*=public) @audited"),
+                "mybatis"), 1);
+        assertTrue(log.contains("@audited (the row's history is Hibernate Envers'"), log);
+        // A member held by a to-one relation, which the layered service does not write.
+        log = run(project(String.join("\n",
+                "entity:",
+                "  Account:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      accountId: long @id @sequence",
+                "      card: Card @OneToOne @cascade(ALL)",
+                "  Card:",
+                "    meta: entity",
+                "    fields:",
+                "      cardId: long @id @sequence",
+                ""), "mybatis"), 1);
+        assertTrue(log.contains("card: a member of Account's aggregate held by a to-one relation"), log);
+        // A mappedBy naming no relation back.
+        log = run(project(String.join("\n",
+                "entity:",
+                "  Person:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      personId: long @id @sequence",
+                "      passport: Passport @OneToOne(mappedBy=\"holder\")",
+                "  Passport:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      passportId: long @id @sequence",
+                ""), "mybatis"), 1);
+        assertTrue(log.contains("names no relation of Passport back to Person"), log);
+        // A Stream, which a mapper does not return.
+        log = run(project(MODEL + "\n" + String.join("\n",
+                "repository:",
+                "  PurchaseOrder:",
+                "    methods:",
+                "      - id: streamByStatus",
+                "        params:",
+                "          status: OrderStatus",
+                "        return: Stream<PurchaseOrder>",
+                ""), "mybatis"), 1);
+        assertTrue(log.contains("answers a Stream"), log);
+    }
+
     @Test
     public void aJpaDomainBesideItIsUnchanged() throws Exception {
         File project = project(MODEL, "jpa");
@@ -771,6 +905,8 @@ public class MyBatisGenerationTest {
             "        params:",
             "          customer: Customer",
             "        return: List<PurchaseOrder>",
+            "      - id: findAllByOrderByOrderNoDesc",
+            "        return: List<PurchaseOrder>",
             "      - id: findLarge",
             "        params:",
             "          min: long",
@@ -808,9 +944,16 @@ public class MyBatisGenerationTest {
         assertTrue(xml.contains("<select id=\"findByOrderNo\" resultMap=\"row\">"), xml);
         assertTrue(xml.contains("WHERE t.order_no = #{orderNo,jdbcType=VARCHAR}"), xml);
         assertTrue(xml.contains("t.amount BETWEEN #{low,jdbcType=BIGINT} AND #{high,jdbcType=BIGINT} ORDER BY t.order_no DESC"), xml);
-        assertTrue(xml.contains("(<bind name=\"nameLike\" value=\"'%' + name.toLowerCase(@java.util.Locale@ROOT) + '%'\"/>LOWER(j1.name) LIKE #{nameLike}) OR (t.owner_id IS NULL)"), xml);
+        // The value's own % and _ match as written, as Spring Data JPA escapes them.
+        assertTrue(xml.contains("(<bind name=\"nameLike\" value=\"@io.elasticore.springboot3.mybatis.Rows@like(name, '%', '%', true, _databaseId)\"/>"
+                + "LOWER(j1.name) LIKE #{nameLike} ESCAPE '!') OR (t.owner_id IS NULL)"), xml);
         assertTrue(xml.contains("FETCH NEXT 3 ROWS ONLY</when><otherwise>LIMIT 3</otherwise>"), xml);
-        assertTrue(xml.contains("t.status IN <foreach collection=\"statuses\""), xml);
+        // An empty list is no IN (), which no database reads.
+        assertTrue(xml.contains("<choose><when test=\"statuses == null or statuses.isEmpty()\">1 = 0</when><otherwise>"
+                + "t.status IN <foreach collection=\"statuses\""), xml);
+        // OrderBy right after By: every row, in that order.
+        assertTrue(repo.contains("List<PurchaseOrder> findAllByOrderByOrderNoDesc();"), repo);
+        assertTrue(xml.contains("<include refid=\"from\"/> ORDER BY t.order_no DESC"), xml);
         assertTrue(xml.contains("WHERE t.customer_customer_id = #{customer.customerId,jdbcType=BIGINT}"), xml);
         assertTrue(xml.contains("<select id=\"findLargeRows\" resultMap=\"row\">"), xml);
         assertTrue(xml.contains("<![CDATA[SELECT * FROM purchase_order WHERE amount >= #{min,jdbcType=BIGINT} ORDER BY amount DESC]]>"), xml);
@@ -878,6 +1021,26 @@ public class MyBatisGenerationTest {
             "        return: int",
             "        nativeQuery: true",
             "        query: UPDATE purchase_order SET amount = :amount WHERE order_no = :orderNo",
+            "      byStatus:",
+            "        meta: method",
+            "        params:",
+            "          status: string",
+            "          pageable: Pageable",
+            "        return: Page<OrderRow>",
+            "        nativeQuery: true",
+            "        query: SELECT order_no as orderNo, amount FROM purchase_order WHERE status = :status",
+            "      orderNos:",
+            "        meta: method",
+            "        return: List<String>",
+            "        nativeQuery: true",
+            "        query: SELECT order_no FROM purchase_order",
+            "      touch:",
+            "        meta: method",
+            "        params:",
+            "          orderNo: string",
+            "        return: void",
+            "        nativeQuery: true",
+            "        query: UPDATE purchase_order SET amount = amount WHERE order_no = :orderNo",
             "");
 
     @Test
@@ -905,6 +1068,17 @@ public class MyBatisGenerationTest {
         assertTrue(adapter.contains("return new PageImpl<>(PortRows.list(rows, OrderRow.class), pageable, total);"), adapter);
         assertTrue(adapter.contains("return mapper.updateAmount(orderNo, amount);"), adapter);
         assertTrue(read(project, "OrderReportMapper.java").contains("@Mapper"));
+
+        // A page of no order: SQL Server pages only ordered rows.
+        String byStatus = xml.substring(xml.indexOf("<select id=\"byStatusRows\""));
+        assertTrue(byStatus.contains("<if test=\"_databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"), byStatus);
+        // One value per row: read from the first column, a NULL as null.
+        assertTrue(xml.contains("<select id=\"orderNos\" resultType=\"string\">"), xml);
+        assertTrue(adapter.contains("return mapper.orderNos();"), adapter);
+        // A method that answers nothing runs its statement.
+        assertTrue(adapter.contains("public void touch(String orderNo) {"), adapter);
+        assertTrue(adapter.contains(" mapper.touch(orderNo);"), adapter);
+        assertFalse(adapter.contains("return mapper.touch("), adapter);
     }
 
     @Test

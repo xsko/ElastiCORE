@@ -180,6 +180,9 @@ Since: 3.0.261031
   `Distinct`, `And`·`Or`, `Is·Not·LessThan(Equal)·GreaterThan(Equal)·Before·After·Between·IsNull·IsNotNull·Like·NotLike·
   StartingWith·EndingWith·Containing·NotContaining·In·NotIn·True·False·IgnoreCase·AllIgnoreCase`, `OrderBy...Asc/Desc`.
   속성은 행·값 객체·조인한 행의 것(`findByCustomerName` 은 `customer.name`). `pageable: true` 면 `Page` 를 count 와 한 페이지로.
+  `findAllByOrderBySkuDesc` 처럼 조건 없이 순서만 적어도 됩니다. `Containing`·`StartingWith`·`EndingWith` 는 값의 `%`·`_` 를
+  글자 그대로 찾고(JPA 처럼), 빈 목록의 `In` 은 행이 없고 `NotIn` 은 모든 행입니다. `Stream` 은 거절(`List` 로).
+  도메인 규칙(DDD·헥사고날)의 루트에서 `deleteBy...` 는 행을 읽어 하나씩 지웁니다(아래 표).
 - **`nativeQuery: true` 인 SQL**: 적은 그대로 실행하고 `:name`(또는 `?1`)을 그 파라미터로 묶습니다. 엔티티를 답하면 키로
   다시 읽어 조인한 행까지 채우고(쿼리가 준 순서대로), DTO 를 답하면 컬럼 별칭으로 채웁니다(`AS customerId`).
   `UPDATE`·`DELETE`·`INSERT` 는 바뀐 행 수를 답합니다.
@@ -189,8 +192,12 @@ Since: 3.0.261031
 (`<Port>Mapper` + XML)와 포트를 구현하는 어댑터(`<Port>Adapter`, 빈)가 `infrastructure.persistence`(없으면 repository 패키지)에
 생깁니다 - 런타임 프록시 대신. SQL 은 포트 DSL 에 적은 그대로이고, `:name` 은 `#{}`, 줄 끝의 `/* if:name */` 는 `<if>`(값이 있을
 때 - 빈 문자열은 없음), 블록 `/* if:name */ ... /* if-end */` 도 같습니다. 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
-camelCase 로 DTO 에, 값 하나면 첫 컬럼). `/* if:` 에 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로.
-Since: 3.0.261031
+camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬럼이 NULL 인 행은 필드가 모두 null 인 DTO). `/* if:` 에
+식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`) 메서드는 문장만 실행합니다.
+페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
+`ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 순서가 없는 SQL 의 페이지는 SQL Server
+에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음). 정렬은 런타임처럼 입력의 `sortCode`·
+`sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261031
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
 라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.
@@ -231,9 +238,11 @@ SQL Server").
 - 시퀀스·UUID 로 만드는 키(`@sequence(SEQUENCE)` 등 - IDENTITY 만), 키가 아닌 `@sequence`
 - 시각 타입이 아닌 `@jpa:CreatedDate`, `@audited`(행의 이력은 Hibernate Envers 의 것 - MyBatis 의 쓰기는 이력을 남기지 않음)
 - 조인한 행보다 먼 검색 경로(`@ref(shop.region.name)`) - 빼면 조건부 수정·삭제가 모든 행에 미치므로
-- repository.yml 의 JPQL, 이름이 쿼리로 읽히지 않는 메서드, 멤버가 있는 루트의 `deleteBy...`(멤버를 남김)
-- 레이어드에서 루트가 1:1 로 갖는 멤버(서비스가 없는 것) - 레이어드 서비스는 그것을 쓰지 않습니다. 그 엔티티에 서비스를
-  주거나 도메인 규칙(`architecture = 'ddd'`·`'hexagonal'`)으로
+- repository.yml 의 JPQL, 이름이 쿼리로 읽히지 않는 메서드, `Stream` 을 답하는 메서드, 레이어드에서 멤버가 있는 루트의
+  `deleteBy...`(멤버를 남김 - 도메인 규칙에서는 하나씩 지움), 조건이 없는 `deleteBy`·`existsBy`
+- 레이어드에서 루트가 to-one 관계(`@OneToOne`·`@ManyToOne` + `@cascade`)로 갖는 서비스 없는 멤버 - 레이어드 서비스는 그것을
+  쓰지 않습니다. 그 엔티티에 서비스를 주거나 도메인 규칙(`architecture = 'ddd'`·`'hexagonal'`)으로
+- 도메인 규칙의 룰셋을 직접 고르면서 `mybatis-ddd` 를 빠뜨린 `publisher.rules`
 - JPA 도메인의 엔티티가 MyBatis 도메인의 엔티티를 가리키는 것(반대는 됨), 2.x 코드를 지키는 도메인과 같은 프로젝트,
   Kotlin(MyBatis 코드는 Java)
 
@@ -253,19 +262,26 @@ Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 �
 | JPA 가 하던 것 | MyBatis 어댑터 |
 |---|---|
 | `save()` 가 새 행인지 판단 | 버전이 없으면(또는 키가 없으면) INSERT, 아니면 UPDATE |
-| 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 |
+| 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 - 루트도 멤버도 |
 | 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
-| 1:1 멤버 cascade (`@OneToOne @cascade`) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE |
+| to-one 멤버 cascade (`@OneToOne @cascade` 등) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE(저장된 행을 세션 캐시를 비우고 읽어 비교) |
+| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(행을 잠금), 멤버, 행 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
+| 파생 `deleteBy...` | 조건의 행을 읽어 하나씩 `delete()` 처럼 지움(삭제 가드·멤버) - Spring Data JPA 의 파생 삭제처럼 |
 | `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
-| `@DomainEvents` 발행 | 저장 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |
-| `@CreatedDate`·`@CreatedBy` 등 감사 | 저장 때 시각과 `AuditorAware` 의 사람을 넣음 |
-| `EntityManager.find` (참조 검사·`@snapshot`) | 어댑터가 `Lookup.Source` - 런타임이 등록하는 `Lookup` 빈이 타입별로 찾아 줌 |
+| `@DomainEvents` 발행 | 저장·삭제 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |
+| `@CreatedDate`·`@CreatedBy` 등 감사 | 저장 때 시각과 `AuditorAware` 의 사람을 넣음 - 멤버의 것도(멤버만 감사 필드를 가져도) |
+| 영속성 컨텍스트(같은 트랜잭션에선 같은 객체) | MyBatis 세션도 같은 객체를 돌려줌 - 어댑터는 트랜잭션에서 처음 본 행만 컬렉션을 채우고 `afterLoad`(메모리의 변경을 덮지 않음) |
+| `EntityManager.find` (참조 검사·`@snapshot`) | 어댑터가 `Lookup.Source` - 런타임이 등록하는 `Lookup` 빈이 타입별로 찾아 줌(JPA 도메인의 루트는 앱의 `EntityManager` 로) |
 | 지연 로딩 | 없음 - 행은 조인한 행과 함께, 컬렉션은 페이지 단위로 한 문장씩 읽음 |
 
 애플리케이션 서비스는 포트만 받습니다(`<Root>RepositoryPort`, `<Root>QueryPort`, `Lookup`) - 확장 서비스의 생성자도
 그 셋입니다. 검색 포트는 `Specification` 대신 검색 DTO 를 받습니다(`findAll(OrderSrchDTO, owner, Pageable)`).
-애그리거트의 멤버(`@aggregate(Order)`)는 `@service` 를 적어도 자기 서비스가 없고 루트가 씁니다. 매퍼(`<Member>Repository`)만
+애그리거트의 멤버는 `@service` 를 적어도 자기 서비스가 없고 루트가 씁니다 - `@aggregate(Order)` 로 적은 것도, 모델이
+멤버로 만든 것(`@cascade` 로 들고 있거나 `@root` 의 `@OneToMany(mappedBy=...)` 가 가진 것)도. 매퍼(`<Member>Repository`)만
 생기며, 그것을 부르는 것은 루트의 어댑터뿐입니다.
+
+`publisher.rules` 로 룰셋을 직접 고르면 `ddd-*`·`hex-*` 와 함께 `mybatis-ddd` 를 적어야 합니다(JPA 콜백을 `Lifecycle` 로
+옮기는 룰셋) - 빠지면 이유를 밝혀 멈춥니다. 묶음(`ddd-springboot`·`hexagonal-springboot`)을 적으면 저절로 들어갑니다.
 
 아웃박스(`outbox: true`)는 MyBatis 매퍼로 쓰고, 릴레이는 DB 마다의 잠금으로 다음 행을 가져갑니다 - PostgreSQL·Oracle
 `FOR UPDATE SKIP LOCKED`, SQL Server `UPDLOCK, READPAST`, H2 `FOR UPDATE`. 테이블은 프로젝트 DDL 에 들어갑니다.

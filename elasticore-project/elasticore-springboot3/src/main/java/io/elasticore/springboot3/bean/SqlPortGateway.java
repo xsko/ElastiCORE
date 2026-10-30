@@ -372,21 +372,51 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
         return page(entry, processedQuery, input, outputType, dataSource, pageable, checkTotalCount);
     }
 
-    /** A query without its own last ORDER BY (one outside any parenthesis), for counting its rows. */
+    private static final Pattern ORDER_BY = Pattern.compile("\\border\\s+by\\b");
+    private static final Pattern PAGES = Pattern.compile("\\b(limit|offset|fetch)\\b");
+
+    /**
+     * A query without its own last ORDER BY - the last at its top level,
+     * outside parentheses, quotes and comments - for counting its rows. One
+     * that a LIMIT, OFFSET or FETCH follows stays: it says which rows there
+     * are, and SQL Server takes it in a derived table.
+     */
     static String withoutOrderBy(String sql) {
-        String lower = sql.toLowerCase(java.util.Locale.ROOT);
-        int depth = 0;
+        String top = topLevel(sql);
+        Matcher m = ORDER_BY.matcher(top);
         int at = -1;
-        for (int i = 0; i < lower.length(); i++) {
-            char ch = lower.charAt(i);
-            if (ch == '(') depth++;
-            else if (ch == ')') depth--;
-            else if (depth == 0 && lower.startsWith("order", i) && (i == 0 || !Character.isLetterOrDigit(lower.charAt(i - 1)))
-                    && lower.substring(i).matches("(?s)^order\\s+by\\b.*")) {
-                at = i;
+        while (m.find()) at = m.start();
+        if (at < 0 || PAGES.matcher(top.substring(at)).find()) return sql;
+        return sql.substring(0, at);
+    }
+
+    /** The SQL in lower case with the text in parentheses, quotes and comments blanked out, each at its place. */
+    static String topLevel(String sql) {
+        char[] out = sql.toLowerCase(java.util.Locale.ROOT).toCharArray();
+        int depth = 0;
+        for (int i = 0; i < out.length; i++) {
+            char ch = out[i];
+            int end = -1;
+            if (ch == '\'' || ch == '"') {
+                end = i + 1;
+                while (end < out.length && out[end] != ch) end++;
+            } else if (ch == '-' && i + 1 < out.length && out[i + 1] == '-') {
+                end = i;
+                while (end < out.length && out[end] != '\n') end++;
+            } else if (ch == '/' && i + 1 < out.length && out[i + 1] == '*') {
+                end = sql.indexOf("*/", i + 2);
+                end = end < 0 ? out.length : end + 1;
             }
+            if (end >= 0) {
+                for (int j = i; j <= end && j < out.length; j++) if (out[j] != '\n') out[j] = ' ';
+                i = end;
+                continue;
+            }
+            if (ch == '(') depth++;
+            if (depth > 0 && ch != '\n') out[i] = ' ';
+            if (ch == ')') depth--;
         }
-        return at < 0 ? sql : sql.substring(0, at);
+        return new String(out);
     }
 
     /** One page of a query's rows, mapped, and how many there are in all when asked. */

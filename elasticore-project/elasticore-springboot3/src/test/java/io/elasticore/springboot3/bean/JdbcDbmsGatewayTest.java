@@ -94,6 +94,21 @@ class JdbcDbmsGatewayTest {
         assertThat(SqlPortGateway.withoutOrderBy("SELECT id FROM t WHERE x IN (SELECT y FROM u ORDER BY y)\nORDER BY id"))
                 .isEqualTo("SELECT id FROM t WHERE x IN (SELECT y FROM u ORDER BY y)\n");
         assertThat(SqlPortGateway.withoutOrderBy("SELECT reorder_by FROM t")).isEqualTo("SELECT reorder_by FROM t");
+        // One a LIMIT or FETCH follows says which rows there are: it stays.
+        String limited = "SELECT id FROM t ORDER BY id DESC LIMIT 10";
+        assertThat(SqlPortGateway.withoutOrderBy(limited)).isEqualTo(limited);
+        String fetched = "SELECT id FROM t ORDER BY id OFFSET 0 ROWS FETCH FIRST 10 ROWS ONLY";
+        assertThat(SqlPortGateway.withoutOrderBy(fetched)).isEqualTo(fetched);
+        // An order by in a literal or a comment is not the query's.
+        String quoted = "SELECT id FROM t WHERE note = 'order by x' -- order by y\n";
+        assertThat(SqlPortGateway.withoutOrderBy(quoted)).isEqualTo(quoted);
+    }
+
+    @Test
+    void aLimitedPageCountsItsRowsOnly() throws Exception {
+        Page<Integer> page = gateway.executePageQuery(entry("SELECT id FROM port_item ORDER BY id DESC LIMIT 2", true),
+                Collections.emptyMap(), Integer.class, null, PageRequest.of(0, 5), true);
+        assertThat(page.getTotalElements()).isEqualTo(2);
     }
 
     @Test

@@ -350,6 +350,7 @@ public final class RulesGenRunner {
         io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
         SpecFactory.applicationSignIns(-1, null);
         io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.forgetOutboxes();
+        io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.aggregateBoundaries(null);
 
         // The generation the build chose: -Pv3 / output = 'v3', or -Pv2 /
         // output = 'v2' for the code 2.x generates. Neither is the default -
@@ -492,6 +493,13 @@ public final class RulesGenRunner {
                             if (RulesConfig.mybatisBundleOf(rule) != null) continue;
                             if (rule.endsWith("-kt") || rule.startsWith("jpa-springboot")) {
                                 refusal = "its publisher.rules names " + rule + ", which is JPA code";
+                                break;
+                            }
+                            // The domain rules over MyBatis need what stands in for JPA's callbacks.
+                            if ((rule.startsWith("ddd-") || rule.startsWith("hex-")) && !named.contains("mybatis-ddd")) {
+                                refusal = "its publisher.rules names " + rule + " without mybatis-ddd, which turns the"
+                                        + " JPA callbacks into the Lifecycle the MyBatis adapter calls"
+                                        + " - add mybatis-ddd, or name the architecture's bundle";
                                 break;
                             }
                         }
@@ -1177,9 +1185,20 @@ public final class RulesGenRunner {
             // Over MyBatis, a member of an aggregate the domain rules bound is
             // written by its root, whatever @service it declares - the rules
             // give it no service, so nothing else would write it.
-            io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.aggregateBoundaries(v3 && !kotlin && !typescript
-                    && persistence() == RulesConfig.Persistence.MYBATIS
-                    && selectsNamed("DddAggregateRules"));
+            // A member is what the model makes one: @aggregate(X), a cascade
+            // or a root's @OneToMany - as the domain rules read it.
+            java.util.Set<String> boundMembers = null;
+            if (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS
+                    && selectsNamed("DddAggregateRules")) {
+                boundMembers = new java.util.HashSet<String>();
+                ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+                for (int i = 0; i < all.size(); i++) {
+                    String name = all.get(i).getIdentity().getName();
+                    String root = SpecFactory.aggregateOfModel(name, model);
+                    if (root != null && !root.equals(name)) boundMembers.add(name);
+                }
+            }
+            io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.aggregateBoundaries(boundMembers);
 
             List<EntitySpec> specs = new ArrayList<EntitySpec>();
             ModelComponentItems<Entity> entities = model.getEntityModels().getItems();
@@ -1895,7 +1914,24 @@ public final class RulesGenRunner {
             if (spec.related(f.coreItemType()) != null) continue;
             EntitySpec target = ownModelSpec(f.coreItemType());
             if (target == null) target = foreignSpec(f.coreItemType());
-            if (target != null) spec.knownRelated(f.coreItemType(), target);
+            if (target != null) {
+                spec.knownRelated(f.coreItemType(), target);
+                // A member written with this row has the columns of what it extends too.
+                relateParentEarly(target);
+            }
+        }
+    }
+
+    /** The classes a related entity extends, for the columns of its row. */
+    private void relateParentEarly(EntitySpec spec) {
+        String parent = spec.parentName() == null ? null : spec.parentName().trim();
+        if (parent != null && !parent.isEmpty() && !parent.equals(spec.getName()) && spec.related(parent) == null) {
+            EntitySpec target = ownModelSpec(parent);
+            if (target == null) target = foreignSpec(parent);
+            if (target != null) {
+                spec.knownRelated(parent, target);
+                relateParentEarly(target);
+            }
         }
     }
 

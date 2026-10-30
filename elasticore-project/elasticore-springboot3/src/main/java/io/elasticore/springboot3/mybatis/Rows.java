@@ -1,6 +1,7 @@
 package io.elasticore.springboot3.mybatis;
 
 import java.lang.reflect.Field;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,7 +18,17 @@ public final class Rows {
     private Rows() {
     }
 
-    private static final Map<String, Field> FIELDS = new ConcurrentHashMap<String, Field>();
+    /**
+     * The fields found, per class: kept with the class itself, so a class
+     * loaded again (a DevTools restart) is looked up afresh and the old one
+     * is not held.
+     */
+    private static final ClassValue<Map<String, Field>> FIELDS = new ClassValue<Map<String, Field>>() {
+        @Override
+        protected Map<String, Field> computeValue(Class<?> type) {
+            return new ConcurrentHashMap<String, Field>();
+        }
+    };
 
     /** Sets the field of that name, declared by the row's class or one it extends. */
     public static void set(Object row, String name, Object value) {
@@ -31,19 +42,44 @@ public final class Rows {
     }
 
     private static Field field(Class<?> type, String name) {
-        String key = type.getName() + "#" + name;
-        Field cached = FIELDS.get(key);
+        Map<String, Field> fields = FIELDS.get(type);
+        Field cached = fields.get(name);
         if (cached != null) return cached;
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);
                 f.setAccessible(true);
-                FIELDS.put(key, f);
+                fields.put(name, f);
                 return f;
             } catch (NoSuchFieldException ignored) {
                 // the class it extends, then
             }
         }
         throw new IllegalStateException(type.getName() + " has no field " + name);
+    }
+
+    /** The escape character of a LIKE the generated statements write: one every database reads in a literal. */
+    public static final char LIKE_ESCAPE = '!';
+
+    /**
+     * The pattern of a StartingWith, EndingWith or Containing query: the value
+     * with its own % and _ escaped - matched as written, as Spring Data JPA
+     * matches it - between the wildcards the query adds. SQL Server also reads
+     * [ as a wildcard, escaped there only: Oracle refuses an escape before any
+     * other character. Null for a null value, which matches no row. The
+     * wildcards are Objects: a statement's OGNL reads '%' as a character.
+     */
+    public static String like(Object value, Object before, Object after, boolean lowerCase, String databaseId) {
+        if (value == null) return null;
+        String text = value.toString();
+        if (lowerCase) text = text.toLowerCase(Locale.ROOT);
+        boolean sqlServer = "sqlserver".equals(databaseId);
+        StringBuilder sb = new StringBuilder(text.length() + 4).append(before == null ? "" : before);
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == LIKE_ESCAPE || ch == '%' || ch == '_' || (sqlServer && ch == '[')) sb.append(LIKE_ESCAPE);
+            sb.append(ch);
+        }
+        return sb.append(after == null ? "" : after).toString();
     }
 }

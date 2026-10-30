@@ -78,6 +78,23 @@ public class MyBatisMapperRules implements CodeRules {
         return !"false".equals(e.config(SERVICED_CONFIG));
     }
 
+    /** Whether the row holds members of its aggregate by a to-one relation, which a save compares with the stored ones. */
+    static boolean holdsMembers(EntitySpec e) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
+            EntitySpec target = e.related(f.coreItemType());
+            if (MyBatisSql.isMemberReference(e, f) && target != null && target.pkField() != null) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether a delete compares the version, as JPA's remove of a stale copy
+     * fails: an aggregate root with a version, where the domain rules write it.
+     */
+    static boolean deletesVersioned(EntitySpec e) {
+        return MyBatisSql.aggregatesBound() && e.aggregateRoot() && MyBatisSql.version(e) != null;
+    }
+
     // ---- the interface -----------------------------------------------------
 
     @Rule(value = "mybatis-repository", target = REPOSITORY, order = 10)
@@ -110,6 +127,18 @@ public class MyBatisMapperRules implements CodeRules {
              .varLine("inboundFinders", "/** Deletes the rows of one %s: its collection, replaced or deleted with it. */",
                      root.getName())
              .varLine("inboundFinders", "int deleteAllBy%s(@Param(\"key\") %s key);", by, rootKey);
+        }
+        if (deletesVersioned(e)) {
+            FieldSpec version = MyBatisSql.version(e);
+            c.varLine("inboundFinders", "")
+             .varLine("inboundFinders", "/** Locks the row while it holds that version, before a delete: 0 when someone else wrote it first. */")
+             .varLine("inboundFinders", "int lockVersion(@Param(\"id\") %s id, @Param(\"version\") %s version);", keyType,
+                     c.syntax().nullableType(version.typeName()));
+        }
+        if (holdsMembers(e)) {
+            c.varLine("inboundFinders", "")
+             .varLine("inboundFinders", "/** The row as stored, not as this transaction holds it: the members it held before a save. */")
+             .varLine("inboundFinders", "Optional<%s> findStoredById(@Param(\"id\") %s id);", entity, keyType);
         }
 
         MyBatisQueries.interfaceLines(c, e, MyBatisQueries.of(e));
@@ -316,6 +345,11 @@ public class MyBatisMapperRules implements CodeRules {
 
         statement(x, "select", "findById", "resultMap=\"row\"",
                 select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam);
+        if (holdsMembers(e)) {
+            // The session's cache would answer the object being saved, already changed.
+            statement(x, "select", "findStoredById", "resultMap=\"row\" flushCache=\"true\"",
+                    select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam);
+        }
         statement(x, "select", "countById", "resultType=\"long\"",
                 "SELECT COUNT(*) FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
         statement(x, "select", "findAll", "resultMap=\"row\"",
@@ -405,6 +439,11 @@ public class MyBatisMapperRules implements CodeRules {
                     "UPDATE " + table + " SET\n" + I + I + I + joinLines(sets) + "\n" + I + I + where.trim());
         }
         statement(x, "delete", "deleteById", "", "DELETE FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
+        if (deletesVersioned(e)) {
+            String vc = MyBatisSql.column(version);
+            statement(x, "update", "lockVersion", "", "UPDATE " + table + " SET " + vc + " = " + vc + " WHERE " + pkColumn
+                    + " = " + pkParam + " AND " + vc + " = " + param(e, version, "version"));
+        }
 
         // What repository.yml declares for the entity.
         MyBatisQueries.statements(x, e, joins, MyBatisQueries.of(e));

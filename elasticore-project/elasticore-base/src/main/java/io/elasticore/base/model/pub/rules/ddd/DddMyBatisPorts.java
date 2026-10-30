@@ -250,10 +250,7 @@ final class DddMyBatisPorts {
             b.add("        if (%s.update(%s) == 0)", mapper, var)
              .add("            throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
                      root, syntax.getter(var, pk.name()));
-            if (version != null) {
-                b.add("        Rows.set(%s, \"%s\", %s == null ? %s : %s + 1);", var, version.name(),
-                        syntax.getter(var, version.name()), one(version), syntax.getter(var, version.name()));
-            }
+            bumpVersion(b, syntax, var, version, "        ");
         } else {
             b.add("        if (!%s.existsById(%s))", mapper, syntax.getter(var, pk.name()))
              .add("            throw new jakarta.persistence.EntityNotFoundException(\"%s \" + %s + \" is not there\");",
@@ -266,10 +263,22 @@ final class DddMyBatisPorts {
          .add("    return %s;", var)
          .add("}")
          .add("")
-         .add("/** Removes it - its delete guard first, then its members, then its row. */")
+         .add("/** Removes it - its delete guard first, then its members, then its row; then publishes what it raised. */")
          .add("@Override")
          .add("public void delete(%s %s) {", root, var)
-         .add("    Lifecycle.of(%s).beforeDelete();", var);
+         .add("    Lifecycle life = Lifecycle.of(%s);", var)
+         .add("    life.beforeDelete();");
+        FieldSpec deleteVersion = MyBatisSql.version(e);
+        if (MyBatisSql.aggregatesBound() && e.aggregateRoot() && deleteVersion != null) {
+            // A stale copy is refused before anything is deleted, as JPA's remove
+            // of one is; a row already gone is not. The row stays locked till the end.
+            String id = syntax.getter(var, pk.name());
+            String ver = syntax.getter(var, deleteVersion.name());
+            b.add("    if (%s%s.lockVersion(%s, %s) == 0 && %s.existsById(%s))",
+                    primitive(deleteVersion) ? "" : ver + " != null && ", mapper, id, ver, mapper, id)
+             .add("        throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
+                    root, id);
+        }
         for (FieldSpec f : MyBatisSql.collections(e)) {
             if (!MyBatisSql.isMemberCollection(e, f)) continue;
             FieldSpec back = MyBatisSql.backField(e, f);
@@ -285,7 +294,8 @@ final class DddMyBatisPorts {
                     syntax.getter(held, target.pkField().name()), target.getName(),
                     syntax.getter(held, target.pkField().name()));
         }
-        b.add("}")
+        b.add("    publish(life);")
+         .add("}")
          .add("")
          .add("@Override")
          .add("public boolean existsById(%s %s) {", pk.typeName(), pk.name())
@@ -345,7 +355,13 @@ final class DddMyBatisPorts {
             String call = String.format("%s.%s(%s)", mapper, q.name, q.args);
             String body;
             boolean rows = root.equals(q.itemType());
-            if ("void".equals(q.returnType)) {
+            if (io.elasticore.base.model.pub.rules.mybatis.MyBatisQueries.deletesRowByRow(e, q.name)) {
+                // Each row deleted whole, as delete() deletes one - as Spring Data JPA's derived delete does.
+                String r = q.returnType.trim();
+                body = String.format("List<%s> rows = loaded(%s.%sRows(%s));%nfor (%s row : rows) delete(row);", root,
+                        mapper, q.name, q.args, root);
+                if (!"void".equals(r)) body += String.format("%nreturn %srows.size();", "long".equals(r) || "Long".equals(r) ? "(long) " : "");
+            } else if ("void".equals(q.returnType)) {
                 body = call + ";";
             } else if (!rows) {
                 body = "return " + call + ";";
@@ -355,6 +371,9 @@ final class DddMyBatisPorts {
                 body = String.format("Page<%s> page = %s;%n        loaded(page.getContent());%n        return page;", root, call);
             } else if (q.returnType.startsWith("List<")) {
                 body = "return loaded(" + call + ");";
+            } else if (q.returnType.matches("(java\\.util\\.)?(Set|Collection|List)<.*")) {
+                body = String.format("%s found = %s;%n        loaded(new ArrayList<>(found));%n        return found;",
+                        q.returnType, call);
             } else {
                 body = String.format("%s row = %s;%n        return row == null ? null : loaded(row);", root, call);
             }
@@ -440,6 +459,31 @@ final class DddMyBatisPorts {
         return "Long".equals(t) || "long".equals(t) ? "1L" : "Short".equals(t) || "short".equals(t) ? "(short) 1" : "1";
     }
 
+    private static boolean primitive(FieldSpec version) {
+        String t = RuleText.simpleName(version.typeName());
+        return version.hasDslAny("primitive", "prim") || "long".equals(t) || "int".equals(t) || "short".equals(t);
+    }
+
+    /** The version an UPDATE counted up, counted up in memory too, as JPA's merge hands it back. */
+    private static void bumpVersion(Lines b, Syntax syntax, String var, FieldSpec version, String indent) {
+        if (version == null) return;
+        String get = syntax.getter(var, version.name());
+        String next = "Short".equals(RuleText.simpleName(version.typeName())) || "short".equals(version.typeName())
+                ? "(short) (" + get + " + 1)" : get + " + 1";
+        if (primitive(version)) {
+            b.add("%sRows.set(%s, \"%s\", %s);", indent, var, version.name(), next);
+        } else {
+            b.add("%sRows.set(%s, \"%s\", %s == null ? %s : %s);", indent, var, version.name(), get, one(version), next);
+        }
+    }
+
+    /** A member just inserted holds the version the row was given (COALESCE(version, 0)). */
+    private static void insertedVersion(Lines b, Syntax syntax, String var, FieldSpec version, String indent) {
+        if (version == null || primitive(version)) return;
+        b.add("%sif (%s == null) Rows.set(%s, \"%s\", %s);", indent, syntax.getter(var, version.name()), var,
+                version.name(), zero(version));
+    }
+
     /** The creation or modification stamps of a row, as the layered MyBatis service writes them. */
     private static void stamps(Lines b, Syntax syntax, EntitySpec e, String var, boolean create) {
         StringBuilder created = new StringBuilder();
@@ -513,10 +557,12 @@ final class DddMyBatisPorts {
             for (String line : updated.toString().split("\n")) {
                 if (!line.trim().isEmpty()) b.add("                %s", setterToRows(line.trim(), "m"));
             }
+            FieldSpec mVersion = MyBatisSql.version(target);
             if (MyBatisSql.hasColumnsToUpdate(target)) {
                 b.add("                if (%s.update(m) == 0)", mm)
                  .add("                    throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
                          item, syntax.getter("m", mpk.name()));
+                bumpVersion(b, syntax, "m", mVersion, "                ");
             }
             b.add("            } else {");
             if (MyBatisSql.generatedKey(mpk) && !mpk.hasDslAny("primitive", "prim")) {
@@ -526,15 +572,15 @@ final class DddMyBatisPorts {
             if (genId != null) {
                 b.add("                if (%s == null) Rows.set(m, \"%s\", %s);", syntax.getter("m", mpk.name()), mpk.name(), genId);
             }
-            FieldSpec mVersion = MyBatisSql.version(target);
-            if (mVersion != null && !mVersion.hasDslAny("primitive", "prim")) {
+            if (mVersion != null && !primitive(mVersion)) {
                 b.add("                Rows.set(m, \"%s\", null);", mVersion.name());
             }
             for (String line : created.toString().split("\n")) {
                 if (!line.trim().isEmpty()) b.add("                %s", setterToRows(line.trim(), "m"));
             }
-            b.add("                %s.insert(m);", mm)
-             .add("            }")
+            b.add("                %s.insert(m);", mm);
+            insertedVersion(b, syntax, "m", mVersion, "                ");
+            b.add("            }")
              .add("        }")
              .add("    }");
         }
@@ -578,10 +624,12 @@ final class DddMyBatisPorts {
             for (String line : updated.toString().split("\n")) {
                 if (!line.trim().isEmpty()) b.add("                %s", setterToRows(line.trim(), "m"));
             }
+            FieldSpec mVersion = MyBatisSql.version(target);
             if (MyBatisSql.hasColumnsToUpdate(target)) {
                 b.add("                if (%s.update(m) == 0)", mm)
                  .add("                    throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
                          item, getKey);
+                bumpVersion(b, syntax, "m", mVersion, "                ");
             }
             b.add("            } else {");
             if (MyBatisSql.generatedKey(mpk) && !mpk.hasDslAny("primitive", "prim")) {
@@ -589,15 +637,15 @@ final class DddMyBatisPorts {
             }
             String genId = MyBatisSql.genIdExpression(mpk);
             if (genId != null) b.add("                if (%s == null) Rows.set(m, \"%s\", %s);", getKey, mpk.name(), genId);
-            FieldSpec mVersion = MyBatisSql.version(target);
-            if (mVersion != null && !mVersion.hasDslAny("primitive", "prim")) {
+            if (mVersion != null && !primitive(mVersion)) {
                 b.add("                Rows.set(m, \"%s\", null);", mVersion.name());
             }
             for (String line : created.toString().split("\n")) {
                 if (!line.trim().isEmpty()) b.add("                %s", setterToRows(line.trim(), "m"));
             }
-            b.add("                %s.insert(m);", mm)
-             .add("            }")
+            b.add("                %s.insert(m);", mm);
+            insertedVersion(b, syntax, "m", mVersion, "                ");
+            b.add("            }")
              .add("        }")
              .add("    }");
         }
@@ -605,7 +653,7 @@ final class DddMyBatisPorts {
          .add("")
          .add("/** The keys of the members the stored row holds, before this save changes them. */")
          .add("private Object[] storedMembers(%s %s) {", root, var)
-         .add("    %s stored = helper.get%s().findById(%s).orElse(null);", root, root, syntax.getter(var, e.pkField().name()))
+         .add("    %s stored = helper.get%s().findStoredById(%s).orElse(null);", root, root, syntax.getter(var, e.pkField().name()))
          .add("    if (stored == null) return new Object[%d];", singles.size())
          .add("    return new Object[]{");
         for (int i = 0; i < singles.size(); i++) {
@@ -642,10 +690,13 @@ final class DddMyBatisPorts {
          .add("/**")
          .add(" * Hands each row the rows of its collections, read for all of them at once -")
          .add(" * one statement per collection, whatever the number of rows - and tells it")
-         .add(" * it was loaded.")
+         .add(" * it was loaded. A row this transaction handed out before is the same")
+         .add(" * object, which may have changed since: it is left as it is.")
          .add(" */")
-         .add("private List<%s> loaded(List<%s> rows) {", root, root)
-         .add("    if (rows.isEmpty()) return rows;");
+         .add("private List<%s> loaded(List<%s> read) {", root, root)
+         .add("    List<%s> rows = new ArrayList<>();", root)
+         .add("    for (%s row : read) if (io.elasticore.springboot3.mybatis.LoadedRows.first(row)) rows.add(row);", root)
+         .add("    if (rows.isEmpty()) return read;");
         List<FieldSpec> collections = MyBatisSql.collections(e);
         if (!collections.isEmpty()) {
             b.add("    java.util.Map<%s, %s> byKey = new java.util.LinkedHashMap<>();", key, root)
@@ -676,7 +727,7 @@ final class DddMyBatisPorts {
             }
         }
         b.add("    for (%s row : rows) Lifecycle.of(row).afterLoad();", root)
-         .add("    return rows;")
+         .add("    return read;")
          .add("}")
          .add("")
          .add("private %s loaded(%s row) {", root, root)

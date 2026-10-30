@@ -29,6 +29,16 @@ port:
           AND c.last_name LIKE CONCAT(CONCAT('%', :lastName), '%') /* if:lastName */
           ORDER BY c.customer_id
 
+      # A page in no order of its own, one value per row (page 0 of 50: the call names none).
+      customerPhones:
+        meta: method
+        params:
+          lastName: string
+        return: Page<String>
+        nativeQuery: true
+        query: |
+          SELECT c.phone FROM shop_customer c WHERE c.last_name = :lastName
+
       # A write that goes around the aggregate on purpose: a bulk correction.
       updateCustomerPhone:
         meta: method

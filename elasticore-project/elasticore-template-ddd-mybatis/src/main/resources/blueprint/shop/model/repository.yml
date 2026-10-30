@@ -23,6 +23,22 @@ repository:
         return: Page<Product>
         pageable: true
 
+      # A part of the name, matched as written: its own % and _ are not wildcards
+      - id: findByNameContaining
+        params:
+          name: string
+        return: List<Product>
+
+      # Any of the keys given; none for an empty list
+      - id: findBySkuIn
+        params:
+          skus: List<String>
+        return: List<Product>
+
+      # Every row, in an order the name says
+      - id: findAllByOrderBySkuDesc
+        return: List<Product>
+
   Order:
     methods:
       # A projection: answered as the DTO, through the application's query port
@@ -30,3 +46,9 @@ repository:
         return: List<CustomerOrderCountDTO>
         query: "SELECT customer_customer_id AS customerId, COUNT(*) AS orderCount FROM shop_order GROUP BY customer_customer_id"
         nativeQuery: true
+
+      # A derived delete: each order deleted whole, its lines with it
+      - id: deleteByTrackingNumber
+        params:
+          trackingNumber: string
+        return: long

@@ -75,6 +75,8 @@ public class MyBatisPortRules implements CodeRules {
         /** A list of objects a write runs once for each of. */
         boolean batch;
         boolean sorts;
+        /** A list or page of one value per row: read as that value from the first column, NULL as null. */
+        boolean values;
         String sql;
     }
 
@@ -86,7 +88,9 @@ public class MyBatisPortRules implements CodeRules {
         o.item = arg != null ? arg : o.returnType;
         String lower = op.name().toLowerCase(Locale.ROOT);
         boolean writes = lower.contains("update") || lower.contains("delete") || lower.contains("insert");
-        if (("Integer".equals(o.returnType) || "int".equals(op.returnType())) && writes) o.kind = Kind.WRITE;
+        // A method that answers nothing runs its statement for what it does.
+        if ("void".equals(o.returnType)) o.kind = Kind.WRITE;
+        else if (("Integer".equals(o.returnType) || "int".equals(op.returnType())) && writes) o.kind = Kind.WRITE;
         else if (o.returnType.startsWith("Page<")) o.kind = Kind.PAGE;
         else if (o.returnType.startsWith("List<") || o.returnType.startsWith("java.util.List<")) o.kind = Kind.LIST;
         else if (singleValue(o.returnType)) o.kind = Kind.VALUE;
@@ -115,6 +119,7 @@ public class MyBatisPortRules implements CodeRules {
             if ("sortCode".equals(param[1]) || "sortColumn".equals(param[1])) carriesSort = true;
         }
         o.sorts = carriesSort && o.kind != Kind.WRITE && o.kind != Kind.VALUE && !hasOrderBy(o.sql);
+        o.values = (o.kind == Kind.LIST || o.kind == Kind.PAGE) && singleValue(o.item);
         return o;
     }
 
@@ -143,30 +148,68 @@ public class MyBatisPortRules implements CodeRules {
         return orderByAt(sql) >= 0;
     }
 
-    /** Where the SQL's own ORDER BY starts, outside any parenthesis; -1 for none. */
-    static int orderByAt(String sql) {
+    private static final Pattern ORDER_BY = Pattern.compile("\\border\\s+by\\b");
+    private static final Pattern PAGES = Pattern.compile("\\b(limit|offset|fetch)\\b");
+
+    /**
+     * The SQL in lower case with what is not its top level blanked out - the
+     * text in parentheses, quotes and comments - each at its own place.
+     */
+    static String topLevel(String sql) {
+        char[] out = sql.toLowerCase(Locale.ROOT).toCharArray();
         int depth = 0;
-        int at = -1;
-        String lower = sql.toLowerCase(Locale.ROOT);
-        for (int i = 0; i < lower.length(); i++) {
-            char ch = lower.charAt(i);
-            if (ch == '(') depth++;
-            else if (ch == ')') depth--;
-            else if (depth == 0 && lower.startsWith("order", i)) {
-                Matcher m = Pattern.compile("^order\\s+by\\b").matcher(lower.substring(i));
-                if (m.find() && (i == 0 || !Character.isLetterOrDigit(lower.charAt(i - 1)))) at = i;
+        for (int i = 0; i < out.length; i++) {
+            char ch = out[i];
+            int end = -1;
+            if (ch == '\'' || ch == '"') {
+                end = i + 1;
+                while (end < out.length && out[end] != ch) end++;
+            } else if (ch == '-' && i + 1 < out.length && out[i + 1] == '-') {
+                end = i;
+                while (end < out.length && out[end] != '\n') end++;
+            } else if (ch == '/' && i + 1 < out.length && out[i + 1] == '*') {
+                end = sql.indexOf("*/", i + 2);
+                end = end < 0 ? out.length : end + 1;
             }
+            if (end >= 0) {
+                for (int j = i; j <= end && j < out.length; j++) if (out[j] != '\n') out[j] = ' ';
+                i = end;
+                continue;
+            }
+            if (ch == '(') depth++;
+            if (depth > 0 && ch != '\n') out[i] = ' ';
+            if (ch == ')') depth--;
         }
+        return new String(out);
+    }
+
+    /** Where the SQL's own ORDER BY starts - the last one at its top level; -1 for none. */
+    static int orderByAt(String sql) {
+        Matcher m = ORDER_BY.matcher(topLevel(sql));
+        int at = -1;
+        while (m.find()) at = m.start();
         return at;
     }
 
     /**
      * The SQL without its own ORDER BY, for the count of a page: SQL Server
-     * refuses one inside a derived table, and a count needs no order.
+     * refuses one inside a derived table, and a count needs no order. One
+     * that a LIMIT, OFFSET or FETCH follows stays: it says which rows there
+     * are, and SQL Server takes it there. A conditional block the ORDER BY
+     * stood in is still closed.
      */
     static String withoutOrderBy(String sql) {
         int at = orderByAt(sql);
-        return at < 0 ? sql : sql.substring(0, at).trim();
+        if (at < 0 || PAGES.matcher(topLevel(sql).substring(at)).find()) return sql;
+        String head = sql.substring(0, at);
+        int open = 0;
+        for (String line : head.replace("\r\n", "\n").split("\n")) {
+            if (line.trim().indexOf("/*") == 0 && IF.matcher(line).find()) open++;
+            else if (line.contains("/*") && line.indexOf("if-end") > 0) open--;
+        }
+        StringBuilder out = new StringBuilder(head.trim());
+        for (int i = 0; i < open; i++) out.append("\n/* if-end */");
+        return out.toString();
     }
 
     private static void fail(PortSpec p, PortSpec.Operation op, String why) {
@@ -281,13 +324,13 @@ public class MyBatisPortRules implements CodeRules {
                         .append(params).append(");\n\n");
                     break;
                 case PAGE:
-                    body.append(I).append("List<java.util.LinkedHashMap<String, Object>> ").append(op.name()).append("Rows(")
+                    body.append(I).append("List<").append(rowType(o)).append("> ").append(op.name()).append("Rows(")
                         .append(join(params, "@Param(\"orderBy\") String orderBy, @Param(\"offset\") long offset,"
                                 + " @Param(\"limit\") int limit")).append(");\n\n");
                     body.append(I).append("long ").append(op.name()).append("Count(").append(params).append(");\n\n");
                     break;
                 default:
-                    body.append(I).append("List<java.util.LinkedHashMap<String, Object>> ").append(op.name()).append('(')
+                    body.append(I).append("List<").append(rowType(o)).append("> ").append(op.name()).append('(')
                         .append(o.sorts ? join(params, "@Param(\"orderBy\") String orderBy") : params).append(");\n\n");
             }
         }
@@ -320,10 +363,10 @@ public class MyBatisPortRules implements CodeRules {
                     break;
                 case PAGE: {
                     // SQL Server pages only ordered rows: an order of no column where none is named.
-                    String unordered = o.sorts
-                            ? "<if test=\"orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"
-                            : "";
-                    statement(x, "select", op.name() + "Rows", "resultType=\"java.util.LinkedHashMap\"",
+                    String unordered = hasOrderBy(o.sql) ? ""
+                            : o.sorts ? "<if test=\"orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"
+                            : "<if test=\"_databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>";
+                    statement(x, "select", op.name() + "Rows", resultType(o),
                             sql + "\n" + order + unordered + PAGE);
                     String counted = o.sql;
                     o.sql = withoutOrderBy(counted);
@@ -334,7 +377,7 @@ public class MyBatisPortRules implements CodeRules {
                     break;
                 }
                 default:
-                    statement(x, "select", op.name(), "resultType=\"java.util.LinkedHashMap\"",
+                    statement(x, "select", op.name(), resultType(o),
                             order.isEmpty() ? sql : sql + "\n" + order);
             }
         }
@@ -366,18 +409,21 @@ public class MyBatisPortRules implements CodeRules {
             String call = args.toString();
             String input = input(o);
             switch (o.kind) {
-                case WRITE:
+                case WRITE: {
+                    boolean answers = !"void".equals(o.returnType);
                     if (o.batch) {
                         String list = o.op.params().get(0)[1];
-                        body.append(I).append(I).append("if (").append(list).append(" == null) return 0;\n")
+                        body.append(I).append(I).append("if (").append(list).append(" == null) return").append(answers ? " 0" : "").append(";\n")
                             .append(I).append(I).append("int total = 0;\n")
                             .append(I).append(I).append("for (").append(o.object[0]).append(" row : ").append(list)
-                            .append(") if (row != null) total += mapper.").append(op.name()).append("(row);\n")
-                            .append(I).append(I).append("return total;\n");
+                            .append(") if (row != null) total += mapper.").append(op.name()).append("(row);\n");
+                        if (answers) body.append(I).append(I).append("return total;\n");
                     } else {
-                        body.append(I).append(I).append("return mapper.").append(op.name()).append('(').append(call).append(");\n");
+                        body.append(I).append(I).append(answers ? "return " : "").append("mapper.").append(op.name()).append('(')
+                            .append(call).append(");\n");
                     }
                     break;
+                }
                 case VALUE:
                     body.append(I).append(I).append("List<").append(o.returnType).append("> rows = mapper.").append(op.name())
                         .append('(').append(call).append(");\n")
@@ -387,13 +433,19 @@ public class MyBatisPortRules implements CodeRules {
                     body.append(I).append(I).append("Object portInput = ").append(input).append(";\n")
                         .append(I).append(I).append("Pageable pageable = PortRows.pageable(").append(pageableOf(o)).append(");\n")
                         .append(I).append(I).append("long total = mapper.").append(op.name()).append("Count(").append(call).append(");\n")
-                        .append(I).append(I).append("List<java.util.LinkedHashMap<String, Object>> rows = mapper.").append(op.name())
+                        .append(I).append(I).append("List<").append(rowType(o)).append("> rows = mapper.").append(op.name())
                         .append("Rows(").append(join(call, "PortRows.orderBy(portInput), pageable.getOffset(), pageable.getPageSize()"))
                         .append(");\n")
-                        .append(I).append(I).append("return new PageImpl<>(PortRows.list(rows, ").append(o.item)
-                        .append(".class), pageable, total);\n");
+                        .append(I).append(I).append("return new PageImpl<>(")
+                        .append(o.values ? "rows" : "PortRows.list(rows, " + o.item + ".class)")
+                        .append(", pageable, total);\n");
                     break;
                 case LIST:
+                    if (o.values) {
+                        body.append(I).append(I).append("return mapper.").append(op.name()).append('(')
+                            .append(o.sorts ? join(call, "PortRows.orderBy(" + input + ")") : call).append(");\n");
+                        break;
+                    }
                     body.append(I).append(I).append("return PortRows.list(mapper.").append(op.name()).append('(')
                         .append(o.sorts ? join(call, "PortRows.orderBy(" + input + ")") : call).append("), ")
                         .append(erasure(o.item)).append(".class);\n");
@@ -412,6 +464,15 @@ public class MyBatisPortRules implements CodeRules {
          .var("mapperName", p.getName() + "Mapper")
          .var("importList", imports(p))
          .var("body", RuleText.stripTrailing(body.toString()));
+    }
+
+    /** What the mapper answers one row as: the value itself, or the row's columns by label. */
+    private static String rowType(Op o) {
+        return o.values ? o.item : "java.util.LinkedHashMap<String, Object>";
+    }
+
+    private static String resultType(Op o) {
+        return "resultType=\"" + (o.values ? valueType(o.item) : "java.util.LinkedHashMap") + "\"";
     }
 
     /** What the call carries, as the runtime reads its sort and page: the one object, or the values by name. */
@@ -465,6 +526,8 @@ public class MyBatisPortRules implements CodeRules {
             case "LocalDate": case "LocalDateTime": case "LocalTime": case "Instant": case "OffsetDateTime":
             case "ZonedDateTime": return "java.time." + t;
             case "Date": return "java.util.Date";
+            case "Character": return "java.lang.Character";
+            case "Byte": return "byte";
             default: return type;
         }
     }

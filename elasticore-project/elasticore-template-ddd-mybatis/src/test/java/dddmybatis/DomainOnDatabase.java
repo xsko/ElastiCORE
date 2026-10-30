@@ -12,6 +12,7 @@ import io.elasticore.sample.dddmybatis.shop.domain.model.Customer;
 import io.elasticore.sample.dddmybatis.shop.domain.model.Order;
 import io.elasticore.sample.dddmybatis.shop.domain.model.OrderItem;
 import io.elasticore.sample.dddmybatis.shop.domain.model.Product;
+import io.elasticore.sample.dddmybatis.shop.domain.model.VipProfile;
 import io.elasticore.sample.dddmybatis.shop.domain.repository.CustomerRepositoryPort;
 import io.elasticore.sample.dddmybatis.shop.domain.repository.OrderRepositoryPort;
 import io.elasticore.sample.dddmybatis.shop.domain.repository.ProductRepositoryPort;
@@ -109,6 +110,65 @@ abstract class DomainOnDatabase {
     }
 
     @Test
+    @DisplayName("a stale copy is not deleted, and the version counts up with each save")
+    void aStaleDeleteIsRefused() {
+        Order order = newOrder(customer("Edsger", "Dijkstra"));
+        order.addOrderItem(item(1, "5.00"));
+        orders.save(order);
+        Order stale = orders.findById(order.getOrderId()).orElseThrow();
+        Order fresh = orders.findById(order.getOrderId()).orElseThrow();
+        fresh.setNotes("moved on");
+        orders.save(fresh);
+        assertThatThrownBy(() -> orders.delete(stale))
+                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+        assertThat(orders.existsById(order.getOrderId())).isTrue();
+
+        // Saved twice in one transaction: the second compares the version the first left.
+        tx.executeWithoutResult(s -> {
+            Order twice = orders.findById(order.getOrderId()).orElseThrow();
+            twice.setNotes("once");
+            orders.save(twice);
+            twice.setNotes("twice");
+            orders.save(twice);
+        });
+        assertThat(orders.findById(order.getOrderId()).orElseThrow().getNotes()).isEqualTo("twice");
+    }
+
+    @Test
+    @DisplayName("derived queries: a value's own % as written, an empty list, an order by name, a delete row by row")
+    void derivedQueries() {
+        String tag = Long.toString(System.nanoTime(), 36);
+        Product percent = new Product();
+        percent.setName("50% off " + tag);
+        percent.setSku("A" + tag);
+        percent.setPrice(new BigDecimal("1.00"));
+        percent.setActive(true);
+        products.save(percent);
+        Product plain = new Product();
+        plain.setName("500 off " + tag);
+        plain.setSku("B" + tag);
+        plain.setPrice(new BigDecimal("1.00"));
+        plain.setActive(true);
+        products.save(plain);
+
+        assertThat(products.findByNameContaining("0% off " + tag)).extracting(Product::getSku).containsExactly("A" + tag);
+        assertThat(products.findBySkuIn(java.util.Collections.emptyList())).isEmpty();
+        assertThat(products.findBySkuIn(java.util.Arrays.asList("A" + tag, "B" + tag))).hasSize(2);
+        List<String> skus = products.findAllByOrderBySkuDesc().stream().map(Product::getSku).collect(Collectors.toList());
+        assertThat(skus.indexOf("B" + tag)).isLessThan(skus.indexOf("A" + tag));
+
+        Order order = newOrder(customer("Barbara", "Liskov"));
+        order.addOrderItem(item(1, "3.00"));
+        io.elasticore.springboot3.mybatis.Rows.set(order, "trackingNumber", "T" + tag);
+        orders.save(order);
+        Long deleted = tx.execute(s -> orderQuery.deleteByTrackingNumber("T" + tag));
+        assertThat(deleted).isEqualTo(1L);
+        assertThat(orders.existsById(order.getOrderId())).isFalse();
+        assertThat(jdbc.queryForObject("select count(*) from shop_order_item where order_order_id = ?", Long.class,
+                order.getOrderId())).as("its lines with it").isZero();
+    }
+
+    @Test
     @DisplayName("a stale aggregate is refused")
     void aStaleAggregateIsRefused() {
         Order order = newOrder(customer("Grace", "Hopper"));
@@ -140,6 +200,48 @@ abstract class DomainOnDatabase {
         JsonNode after = read("/api/v1/shop/customer/" + id).path("vipProfile");
         assertThat(after.path("tier").asText()).isEqualTo("PLATINUM");
         assertThat(after.path("profileId").asLong()).isEqualTo(profileId);
+    }
+
+    /**
+     * Read and saved in one transaction, where MyBatis answers a second read
+     * of the row from its session: the member the root held before must still
+     * be the stored one, or the one replaced is never deleted.
+     */
+    @Test
+    @DisplayName("a one-to-one member the root replaces or lets go is deleted")
+    void aReplacedOneToOneMemberIsDeleted() {
+        Customer c = new Customer();
+        c.creation().setFirstName("Grace");
+        c.creation().setLastName("Hopper");
+        c.creation().setEmail("grace" + System.nanoTime() + "@example.com");
+        VipProfile gold = new VipProfile();
+        gold.setTier("GOLD");
+        c.creation().setVipProfile(gold);
+        Long id = customers.save(c).getCustomerId();
+        Long first = gold.getProfileId();
+        assertThat(profiles(first)).isEqualTo(1);
+
+        Long second = tx.execute(s -> {
+            Customer loaded = customers.findById(id).orElseThrow();
+            VipProfile platinum = new VipProfile();
+            platinum.setTier("PLATINUM");
+            io.elasticore.springboot3.mybatis.Rows.set(loaded, "vipProfile", platinum);
+            customers.save(loaded);
+            return platinum.getProfileId();
+        });
+        assertThat(profiles(first)).as("the profile replaced").isZero();
+        assertThat(profiles(second)).isEqualTo(1);
+
+        tx.executeWithoutResult(s -> {
+            Customer loaded = customers.findById(id).orElseThrow();
+            io.elasticore.springboot3.mybatis.Rows.set(loaded, "vipProfile", null);
+            customers.save(loaded);
+        });
+        assertThat(profiles(second)).as("the profile let go").isZero();
+    }
+
+    private long profiles(Long profileId) {
+        return jdbc.queryForObject("select count(*) from shop_vip_profile where profile_id = ?", Long.class, profileId);
     }
 
     @Test
@@ -194,7 +296,15 @@ abstract class DomainOnDatabase {
         assertThat(revenue.get(0).getTotalRevenue()).isEqualByComparingTo(order.getTotalAmount());
 
         assertThat(reports.customerPage(byName).getTotalElements()).isEqualTo(1L);
+
+        // A page in no order of its own (SQL Server pages only ordered rows), one value per row, a NULL among them.
+        customer("Mary", tag);
+        Page<String> phones = reports.customerPhones(tag);
+        assertThat(phones.getTotalElements()).isEqualTo(2L);
+        assertThat(phones.getContent()).hasSize(2).containsOnlyNulls();
+
         assertThat(reports.updateCustomerPhone(c.getCustomerId(), "010-0000")).isEqualTo(1);
+        assertThat(reports.customerPhones(tag).getContent()).containsExactlyInAnyOrder("010-0000", null);
         assertThat(reports.countOrdersByStatus("none")).isZero();
     }
 

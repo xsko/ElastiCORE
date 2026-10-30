@@ -1007,6 +1007,11 @@ public final class SourceCode {
 
     private final java.util.List<String> entityListeners = new java.util.ArrayList<String>();
 
+    /** The entity listeners registered so far, by simple class name. */
+    public java.util.List<String> entityListeners() {
+        return new java.util.ArrayList<String>(entityListeners);
+    }
+
     /**
      * Registers one JPA entity listener, keeping whatever another rule
      * registered.
@@ -1023,11 +1028,6 @@ public final class SourceCode {
      * class literal that 2.x writes, since the compatibility output is
      * compared to it byte for byte; two or more render as a list.
      */
-    /** The entity listeners registered so far, by simple class name. */
-    public java.util.List<String> entityListeners() {
-        return new java.util.ArrayList<String>(entityListeners);
-    }
-
     public SourceCode addEntityListener(String simpleClassName) {
         if (simpleClassName == null || entityListeners.contains(simpleClassName)) return this;
         entityListeners.add(simpleClassName);

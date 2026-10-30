@@ -29,6 +29,15 @@ public interface Lookup {
 
     /** A Lookup over the sources given, one per type; a type none serves is a mistake, said by name. */
     static Lookup over(Iterable<? extends Source> sources) {
+        return over(sources, null);
+    }
+
+    /**
+     * A Lookup over the sources given, one per type, and what finds the rest -
+     * the JPA roots of an application that keeps some domains on JPA - or
+     * null when a type none serves is a mistake.
+     */
+    static Lookup over(Iterable<? extends Source> sources, Lookup otherwise) {
         final java.util.Map<Class<?>, Source> byType = new java.util.LinkedHashMap<Class<?>, Source>();
         for (Source s : sources) byType.put(s.type(), s);
         return (type, id) -> {
@@ -42,6 +51,7 @@ public interface Lookup {
                     }
                 }
             }
+            if (s == null && otherwise != null) return otherwise.find(type, id);
             if (s == null) {
                 throw new IllegalStateException("No repository finds " + type.getName() + " by its identity;"
                         + " a reference by identity points at a root with a repository port");

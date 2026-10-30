@@ -302,16 +302,26 @@ public final class MyBatisSql {
                 && root.getName().equals(root.aggregateOf(target)) && !hasOwnService(target);
     }
 
-    /** Whether the domain being written is bound into aggregates by the domain rules (ddd-aggregate). */
-    private static volatile boolean aggregateBoundaries;
+    /**
+     * The members of the domain being written when the domain rules bind it
+     * into aggregates (ddd-aggregate), or null when they do not.
+     */
+    private static volatile java.util.Set<String> boundMembers;
 
     /**
-     * Says, per domain, whether the domain rules bind it into aggregates: a
-     * member then has no service, controller or search of its own whatever it
-     * declares (ddd-aggregate takes them away), and its root writes it.
+     * Says, per domain, which entities the domain rules make members - by
+     * @aggregate(X), a cascade or a root's @OneToMany - or null when they bind
+     * no aggregates: a member then has no service, controller or search of its
+     * own whatever it declares (ddd-aggregate takes them away), and its root
+     * writes it.
      */
-    public static void aggregateBoundaries(boolean bound) {
-        aggregateBoundaries = bound;
+    public static void aggregateBoundaries(java.util.Set<String> members) {
+        boundMembers = members == null ? null : java.util.Collections.unmodifiableSet(new java.util.HashSet<String>(members));
+    }
+
+    /** Whether the domain being written is bound into aggregates by the domain rules. */
+    public static boolean aggregatesBound() {
+        return boundMembers != null;
     }
 
     /**
@@ -324,10 +334,8 @@ public final class MyBatisSql {
             io.elasticore.base.model.entity.Entity entity = ctx == null ? null
                     : ctx.findModelComponent(entityName, io.elasticore.base.model.entity.Entity.class);
             if (entity == null) return false;
-            if (aggregateBoundaries) {
-                String aggregate = entity.getMetaInfo().getMetaAnnotationValue("aggregate");
-                if (aggregate != null && !aggregate.trim().isEmpty() && !aggregate.trim().equals(entityName)) return false;
-            }
+            java.util.Set<String> members = boundMembers;
+            if (members != null && members.contains(entityName)) return false;
             return entity.getMetaInfo().hasMetaAnnotation("expose")
                     || entity.getMetaInfo().hasMetaAnnotation("service");
         } catch (RuntimeException ex) {
@@ -435,6 +443,10 @@ public final class MyBatisSql {
         for (FieldSpec f : collections(e)) {
             EntitySpec target = e.related(f.coreItemType());
             if (target != null && isMemberCollection(e, f) && recordsAuditorItself(target)) return true;
+        }
+        for (FieldSpec f : fields(e)) {
+            EntitySpec target = e.related(f.coreItemType());
+            if (target != null && isMemberReference(e, f) && recordsAuditorItself(target)) return true;
         }
         return false;
     }
@@ -546,7 +558,7 @@ public final class MyBatisSql {
                 out.add(f.name() + ": @OneToOne(mappedBy=\"" + mappedBy(f) + "\") names no relation of "
                         + f.coreItemType() + " back to " + e.getName() + " that holds the key");
             }
-            if (!aggregateBoundaries && isMemberReference(e, f)) {
+            if (boundMembers == null && isMemberReference(e, f)) {
                 out.add(f.name() + ": a member of " + e.getName() + "'s aggregate held by a to-one relation, which"
                         + " the layered service does not write - give " + f.coreItemType() + " a service of its own,"
                         + " or let the domain rules write the aggregate (architecture = 'ddd' or 'hexagonal')");
