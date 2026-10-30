@@ -51,7 +51,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x 도 됩니다 - 버전을 읽어 맞춰 생성
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'io.elasticore' version '3.0.261030-rc5'
+    id 'io.elasticore' version '3.0.261030-rc6'
 }
 
 repositories {
@@ -64,8 +64,8 @@ elasticore {
 }
 
 dependencies {
-    implementation 'io.elasticore:elasticore-base:3.0.261030-rc5'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261030-rc5'
+    implementation 'io.elasticore:elasticore-base:3.0.261030-rc6'
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261030-rc6'
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

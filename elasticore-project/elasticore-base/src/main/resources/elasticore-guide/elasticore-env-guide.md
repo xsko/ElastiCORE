@@ -168,14 +168,14 @@ SQL Server 의 `UNIQUE` 는 NULL 을 하나만 받으므로, 값이 없어도 �
 - **1:1 관계의 반대편** (`customer: Customer @OneToOne(mappedBy="vipProfile")`): 키는 상대 행(`Customer.vipProfile`)에
   하나만 있고, 이쪽은 그 컬럼으로 조인해 읽기만 합니다(JPA 처럼 컬럼 하나).
 - **`@abstract` 부모 (`@extend(AuditEntity)`)**: 부모의 필드가 행의 컬럼입니다(JPA 의 `@MappedSuperclass`). 감사 필드를
-  모아 둔 부모가 이 모양입니다. `@abstract` 가 아닌 부모(테이블 상속)는 거절합니다. Since: 3.0.261031
+  모아 둔 부모가 이 모양입니다. `@abstract` 가 아닌 부모(테이블 상속)는 거절합니다. Since: 3.0.261030-rc6
 
 **JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기,
 `@jpa:CreatedBy`·`@jpa:LastModifiedBy` 에 쓴 사람 넣기 - 앱의 `AuditorAware` 빈이 말하는 사람(JPA 감사가 묻는 그 빈.
-없으면 null). Since: 3.0.261031
+없으면 null). Since: 3.0.261030-rc6
 
 **repository.yml 의 쿼리** - 매퍼 인터페이스에 DSL 이 적은 이름·시그니처 그대로 생기고, XML 에 그 문장이 생깁니다.
-Since: 3.0.261031
+Since: 3.0.261030-rc6
 - **이름으로 읽는 쿼리**(`query` 없음): Spring Data 처럼 이름을 읽습니다 - `find·count·exists·delete` + `By`, `First/TopN`,
   `Distinct`, `And`·`Or`, `Is·Not·LessThan(Equal)·GreaterThan(Equal)·Before·After·Between·IsNull·IsNotNull·Like·NotLike·
   StartingWith·EndingWith·Containing·NotContaining·In·NotIn·True·False·IgnoreCase·AllIgnoreCase`, `OrderBy...Asc/Desc`.
@@ -199,7 +199,7 @@ camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬�
 에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음) - 그러니 페이지의 `ORDER BY` 를
 `/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). 블록 안에 블록을 두는 것(중첩)은 런타임처럼
 지원하지 않습니다 - 안쪽 `/* if-end */` 가 바깥 블록을 닫습니다. 정렬은 런타임처럼 입력의 `sortCode`·
-`sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261031
+`sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261030-rc6
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
 라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.
@@ -252,7 +252,7 @@ SQL Server").
 
 도메인 모델과 헥사고날도 MyBatis 로 생성합니다(묶음 `ddd-mybatis-springboot`·`hexagonal-mybatis-springboot` - 빌드의
 `architecture` 와 `mode` 로 저절로 고름. 도메인 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot` 를
-적어도 MyBatis 판으로 읽습니다). Since: 3.0.261031
+적어도 MyBatis 판으로 읽습니다). Since: 3.0.261030-rc6
 
 모델은 JPA 판과 같고, 만들어지는 것도 같습니다 - 루트와 `<Root>Base`, 멤버, 값 객체, 도메인 이벤트, 불변식, 팩토리,
 명세, 명령(`commands:`), 생명주기(`states:`), `@snapshot`·`@compute`, 도메인 서비스·프로세스 매니저, 포트
