@@ -151,8 +151,9 @@ public final class FormatChangedLines {
             if (j == y.length - 1) {
                 break;
             }
-            // The line of the original this one is, when it is one the formatter kept.
-            int k = j < head ? j : j >= y.length - tail ? j + x.length - y.length : -1;
+            // The line of the original this one is: the same one when no line came or went, else
+            // one the formatter kept before or after what it changed.
+            int k = x.length == y.length ? j : j < head ? j : j >= y.length - tail ? j + x.length - y.length : -1;
             out.append(k >= 0 && k < ends.size() ? ends.get(k) : usual);
         }
         return out.toString();

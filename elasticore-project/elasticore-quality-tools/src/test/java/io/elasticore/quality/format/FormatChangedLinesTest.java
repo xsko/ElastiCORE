@@ -50,13 +50,17 @@ class FormatChangedLinesTest {
     @Test
     void aFileOfMixedLineEndingsKeepsThemAndIsNotUnformattedForThem() throws Exception {
         String mixed = "class A {\r\n    int   a  =  1;\n    int   b  =  2;\r\n}\n";
-        // The changed line takes the usual ending (\n - not more than half are \r\n); the others keep theirs.
+        // As many lines as before: every line keeps its ending, the formatted one too.
         assertEquals(
-                "class A {\r\n    int   a  =  1;\n    int b = 2;\n}\n",
+                "class A {\r\n    int   a  =  1;\n    int b = 2;\r\n}\n",
                 FormatChangedLines.format(formatter, mixed, "3:3"));
         String formatted = "class A {\r\n    int   a  =  1;\n    int b = 2;\r\n}\n";
         assertEquals(formatted, FormatChangedLines.format(formatter, formatted, "3:3"));
-        assertEquals("a\r\nB\r\nc\r\n", FormatChangedLines.withEndingsOf("a\r\nb\nc\r\n", "a\nB\nc\n"));
+        assertEquals("a\r\nB\nc\r\n", FormatChangedLines.withEndingsOf("a\r\nb\nc\r\n", "a\nB\nc\n"));
+        // Between two changed lines, as many lines as before: each keeps its own ending.
+        assertEquals("A\r\nb\nC\r\n", FormatChangedLines.withEndingsOf("a\r\nb\nc\r\n", "A\nb\nC\n"));
+        // A line gone: the lines around what changed keep theirs, the changed one takes the usual (\r\n).
+        assertEquals("a\r\nBC\r\nd\n", FormatChangedLines.withEndingsOf("a\r\nb\r\nc\r\nd\n", "a\nBC\nd\n"));
     }
 
     @Test

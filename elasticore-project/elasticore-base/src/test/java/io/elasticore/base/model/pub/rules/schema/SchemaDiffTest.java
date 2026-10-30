@@ -144,7 +144,8 @@ public class SchemaDiffTest {
         List<SchemaDiff.Change> changes = SchemaDiff.between(read, moved);
         assertEquals(2, changes.size(), changes.toString());
         for (SchemaDiff.Change c : changes) {
-            assertTrue(c.description.contains("-PddlBaseline"), c.description);
+            // Said in every database's file: where it holds.
+            assertTrue(c.description.contains(" - on h2, its name was taken over with -PddlBaseline"), c.description);
             assertFalse(c.safeOn(Database.H2), c.description);
             assertTrue(c.safeOn(Database.POSTGRESQL) && c.safeOn(Database.SQLSERVER), c.description);
         }

@@ -6,7 +6,8 @@
   주석이 되었고, 나중에 더한 SQL Server 는 그 이름 위의 컬럼 변경까지 기다렸다 - 주석을 풀지 않으면 그 DB 의 스키마가 모델과
   어긋난 채 남는다
 - 무엇: baseline 이 쓴 상태는 이름을 넘겨받은 DB 들을 `takenOverOn` 으로 함께 적고, 그 이름 때문에 기다리는 문장은 그 DB 의
-  마이그레이션에서만 검토로 쓴다(나머지 DB 는 실행 문장, 빌드의 `REVIEW` 줄은 그 DB 의 폴더). 모델에 그 이름이 남는 동안
+  마이그레이션에서만 검토로 쓴다(나머지 DB 는 실행 문장, 빌드의 `REVIEW` 줄은 그 DB 의 폴더). 모든 DB 의 파일에 붙는 그
+  문장의 설명은 어느 DB 에서 넘겨받은 이름인지 말한다(`- on h2, its name was taken over ...`). 모델에 그 이름이 남는 동안
   `takenOverOn` 도 남는다. `takenOverOn` 이 없는 상태는 모든 DB 에서 넘겨받은 것으로 읽고, `takenOver` 가 없는 상태 파일은
   전과 같다
 - 함께: `db/migration` 바로 아래의 이력 때문에 여러 DB 빌드를 거절할 때(`ddl-flyway-own-history`) 찾은 파일 이름을 대고, 이력을

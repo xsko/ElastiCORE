@@ -330,8 +330,12 @@ public final class SchemaDiff {
         if (on.isEmpty()) return new Change(description, true);
         boolean everywhere = true;
         for (String id : before.databases()) everywhere &= on.contains(Database.of(id));
-        Change c = new Change(description + TAKEN_OVER, !everywhere);
-        if (!everywhere) for (Database db : on) c.reviewOn(db);
+        if (everywhere) return new Change(description + TAKEN_OVER, false);
+        // Said in every database's file, so it names where it holds.
+        List<String> ids = new ArrayList<String>();
+        for (Database db : on) ids.add(db.id);
+        Change c = new Change(description + " - on " + String.join(", ", ids) + "," + TAKEN_OVER.substring(2), true);
+        for (Database db : on) c.reviewOn(db);
         return c;
     }
 
