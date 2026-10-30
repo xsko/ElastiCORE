@@ -88,16 +88,6 @@ abstract class ShopFlow {
                 + "\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}";
     }
 
-    @Test
-    void aTakenLoginIsTheConflictJpaAnswersToo() throws Exception {
-        signUp("taken");
-        // The unique index refuses it; Spring's JDBC translator says so as a
-        // DuplicateKeyException, which must answer as JPA's integrity violation does.
-        mvc.perform(json(post("/api/petstore/customer"), customer("taken")))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("unique"));
-    }
-
     MockHttpSession signUp(String login) throws Exception {
         mvc.perform(json(post("/api/petstore/customer"), customer(login)))
                 .andExpect(status().isOk())
@@ -342,10 +332,12 @@ abstract class ShopFlow {
     @Test
     void aTakenLoginIsAConflict() throws Exception {
         signUp("obiwan");
-        mvc.perform(json(post("/api/petstore/customer"), "{\"login\":\"obiwan\",\"password\":\"force-1234\","
-                        + "\"firstName\":\"F\",\"lastName\":\"L\",\"homeAddress\":{\"street1\":\"1 Main St\",\"city\":\"Mos Eisley\","
-                        + "\"zipcode\":\"12345\",\"countryCode\":\"US\"}}"))
-                .andExpect(status().isConflict());
+        // The unique index refuses it; Spring's JDBC translator says so as a
+        // DuplicateKeyException, which answers as JPA's integrity violation does.
+        mvc.perform(json(post("/api/petstore/customer"), customer("obiwan")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("unique"))
+                .andExpect(jsonPath("$.detail").value(not(containsString("INSERT"))));
     }
 
     /** A sort the API does not know is the caller's 400, and none of its text reaches the SQL. */
