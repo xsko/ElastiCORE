@@ -60,17 +60,19 @@ pull request to the same bar. They look at **the lines your change adds or
 edits** - between the merge base with `origin/main` and your working tree, new
 files and uncommitted edits included - not at the code older than them:
 
+Before you push, every time:
+
 ```bash
-./gradlew formatChanged     # formats your changed Java lines, and only those (palantir-java-format)
+./gradlew formatChanged     # formats your changed Java lines, and only those (palantir-java-format) - then commit
 ./gradlew prCheck           # all four gates below
 ```
 
-| Gate | Fails when | CI job |
-|---|---|---|
-| `formatCheck` | a changed Java line of the libraries, the plugin or the quality tools is not formatted | Format and static analysis of the change |
-| `diffErrorprone` | [Error Prone](https://errorprone.info/bugpatterns) reports a warning on a changed library line (an ERROR fails `build` anywhere) | Format and static analysis of the change |
-| `diffCoverage` | tests run less than 80% of the changed library lines - the samples' tests count for the runtime libraries | Build, test and compatibility checks |
-| `diffMutation` | tests detect less than 70% of PIT's mutations of the changed library lines they run | Mutation testing of the change |
+| Gate | Fails when | When it fails | CI job |
+|---|---|---|---|
+| `formatCheck` | a changed Java line of the libraries, the plugin or the quality tools is not formatted | `./gradlew formatChanged`, commit. Nothing to decide: the job summary shows the change, and the run's artifact **format-patch** is it (`git apply format.patch`) | Format and static analysis of the change |
+| `diffErrorprone` | [Error Prone](https://errorprone.info/bugpatterns) reports a warning on a changed library line (an ERROR fails `build` anywhere) | fix the line, or suppress the check there with the reason (below) | Format and static analysis of the change |
+| `diffCoverage` | tests run less than 80% of the changed library lines - the samples' tests count for the runtime libraries | a test that runs the lines listed (below) | Build, test and compatibility checks |
+| `diffMutation` | tests detect less than 70% of PIT's mutations of the changed library lines they run | an assertion on what the listed line does (below) | Mutation testing of the change |
 
 "The libraries" are `elasticore-base`, `elasticore-springboot3` and
 `elasticore-springboot4`, main sources, the Jackson adapters (`src/jackson2`,

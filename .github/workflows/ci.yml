@@ -73,6 +73,34 @@ jobs:
       - name: The changed lines are formatted, and Error Prone finds nothing on them
         run: ./gradlew formatCheck diffErrorprone --continue --console=plain
 
+      # The fix of a formatting failure is mechanical: what formatChanged would
+      # write, shown in the job summary and as a patch to apply
+      # (git apply format.patch) - or run ./gradlew formatChanged and commit.
+      - name: What formatChanged changes
+        if: failure()
+        run: |
+          ./gradlew formatChanged -q --console=plain > /dev/null 2>&1 || true
+          git diff -- '*.java' > format.patch
+          if [ -s format.patch ]; then
+            {
+              echo '### What `./gradlew formatChanged` changes'
+              echo
+              echo 'Run `./gradlew formatChanged` and commit the result, or apply the artifact **format-patch**: `git apply format.patch`.'
+              echo
+              echo '```diff'
+              head -c 60000 format.patch
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Format patch
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: format-patch
+          path: format.patch
+          if-no-files-found: ignore
+
   # Each mutation of a changed library line that a test runs - a condition
   # negated, a return value replaced, a call removed - must make a test fail
   # (diffMutation, PIT with the changed-lines filter of elasticore-quality-tools).
