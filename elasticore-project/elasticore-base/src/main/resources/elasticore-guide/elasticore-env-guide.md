@@ -1007,6 +1007,10 @@ spring:
   flyway:
     locations: classpath:db/migration/{vendor}
 ```
+이미 Spring Boot 의 기본 위치(`db/migration` 바로 아래)에 직접 쓴 이력이 있고 DB 가 하나인 프로젝트는 `locations` 를
+바꾸지 않습니다 - Flyway 는 `classpath:db/migration` 아래 폴더까지 읽으므로 `db/migration/{db}/` 의 마이그레이션도 그
+이력 뒤에 실행됩니다. `{vendor}` 로 바꾸면 이미 실행한 그 이력을 Flyway 가 찾지 못합니다(아래 표).
+
 의존성: `spring-boot-starter-flyway`(Boot 4; Boot 3 는 `org.flywaydb:flyway-core`)와 DB 별 모듈
 (`flyway-database-postgresql`·`flyway-database-oracle`·`flyway-sqlserver`).
 
@@ -1029,7 +1033,8 @@ spring:
 | 상황 | 할 일 |
 |---|---|
 | `schema-state.json` 이 없는데 마이그레이션이 있다 | 버전 관리에서 상태 파일을 되살립니다 |
-| 이미 직접 쓴 Flyway 이력이 있는 프로젝트에서 처음 켠다 | DB 가 지금 모델과 같은지 확인하고 한 번 `./gradlew elcore -PddlBaseline` - 첫 마이그레이션 없이 상태만 지금 모델로 씁니다 |
+| 이미 직접 쓴 Flyway 이력이 있는 프로젝트에서 처음 켠다 | DB 가 지금 모델과 같은지 확인하고 한 번 `./gradlew elcore -PddlBaseline` - 첫 마이그레이션 없이 상태만 지금 모델로 씁니다. 이력이 `db/migration/{db}/` 에 있어도, Spring Boot 기본 위치인 `db/migration` 바로 아래에 있어도 같습니다 - baseline 없이 켜면 빌드가 멈춥니다(그 아래 폴더에 쓴 첫 마이그레이션이 모든 테이블을 다시 만들 것이므로) |
+| 기본 위치의 이력에 DB 가 둘 이상 | 빌드가 멈춥니다 - `classpath:db/migration` 은 아래 폴더를 모두 읽어 한 DB 에 다른 DB 의 마이그레이션까지 실행합니다. 이력을 DB 마다 `db/migration/{db}/` 로 옮기고 `locations` 를 `classpath:db/migration/{vendor}` 로 한 뒤 `-PddlBaseline` |
 | `schema-state.json` 을 읽을 수 없다 (병합 충돌 표시) | 두 브랜치가 각자 마이그레이션을 썼습니다. 마이그레이션은 둘 다 두고, 상태는 나중 것의 것을 택한 뒤 다시 빌드합니다 |
 | `databases` 에서 뺐던 DB 를 다시 넣었다 | 그 DB 폴더의 이력을 손으로 지금 모델까지 맞춘 뒤, 상태 파일의 `databases` 에 그 DB 를 더합니다 |
 | 이번 빌드의 버전(`V{시각}__`)인 파일이 이미 있다 | 다시 빌드합니다 (시각이 바뀝니다) |
