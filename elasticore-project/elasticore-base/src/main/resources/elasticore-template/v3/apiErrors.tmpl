@@ -98,6 +98,12 @@ public class ${className} {
 
     @ExceptionHandler(DuplicateKeyException.class)
     public ProblemDetail duplicate(DuplicateKeyException ex) {
+        // The database's unique rule, as Spring's JDBC translator says it
+        // (MyBatis): the same answer JPA's DataIntegrityViolationException gets.
+        if (!integrityKind(ex).isEmpty()) {
+            return conflict(ex);
+        }
+        // The service's: a create named an identifier that is taken.
         return problem(HttpStatus.CONFLICT, "already-exists", "Already exists", ex.getMessage());
     }
 

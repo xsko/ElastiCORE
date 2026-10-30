@@ -82,10 +82,24 @@ abstract class ShopFlow {
         return (MockHttpSession) r.getRequest().getSession(false);
     }
 
+    static String customer(String login) {
+        return "{\"login\":\"" + login + "\",\"password\":\"force-1234\","
+                + "\"firstName\":\"F\",\"lastName\":\"L\",\"role\":\"A\",\"homeAddress\":{\"street1\":\"1 Main St\","
+                + "\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}";
+    }
+
+    @Test
+    void aTakenLoginIsTheConflictJpaAnswersToo() throws Exception {
+        signUp("taken");
+        // The unique index refuses it; Spring's JDBC translator says so as a
+        // DuplicateKeyException, which must answer as JPA's integrity violation does.
+        mvc.perform(json(post("/api/petstore/customer"), customer("taken")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("unique"));
+    }
+
     MockHttpSession signUp(String login) throws Exception {
-        mvc.perform(json(post("/api/petstore/customer"), "{\"login\":\"" + login + "\",\"password\":\"force-1234\","
-                        + "\"firstName\":\"F\",\"lastName\":\"L\",\"role\":\"A\",\"homeAddress\":{\"street1\":\"1 Main St\","
-                        + "\"city\":\"Mos Eisley\",\"zipcode\":\"12345\",\"countryCode\":\"US\"}}"))
+        mvc.perform(json(post("/api/petstore/customer"), customer(login)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("U"))
                 .andExpect(jsonPath("$.password").doesNotExist());
