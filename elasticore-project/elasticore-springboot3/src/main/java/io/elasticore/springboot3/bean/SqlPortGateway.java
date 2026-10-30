@@ -372,13 +372,31 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
         return page(entry, processedQuery, input, outputType, dataSource, pageable, checkTotalCount);
     }
 
+    /** A query without its own last ORDER BY (one outside any parenthesis), for counting its rows. */
+    static String withoutOrderBy(String sql) {
+        String lower = sql.toLowerCase(java.util.Locale.ROOT);
+        int depth = 0;
+        int at = -1;
+        for (int i = 0; i < lower.length(); i++) {
+            char ch = lower.charAt(i);
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            else if (depth == 0 && lower.startsWith("order", i) && (i == 0 || !Character.isLetterOrDigit(lower.charAt(i - 1)))
+                    && lower.substring(i).matches("(?s)^order\\s+by\\b.*")) {
+                at = i;
+            }
+        }
+        return at < 0 ? sql : sql.substring(0, at);
+    }
+
     /** One page of a query's rows, mapped, and how many there are in all when asked. */
     private <I, O> Page<O> page(SqlQueryInfo entry, String processedQuery, I input, Class<O> outputType, String dataSource,
                                 Pageable pageable, boolean checkTotalCount) {
         int totalRows = 0;
         if (checkTotalCount) {
-            // No AS before the alias: Oracle takes none for a derived table.
-            String countQueryStr = "SELECT COUNT(*) FROM (" + processedQuery + ") X";
+            // No AS before the alias: Oracle takes none for a derived table. And
+            // no ORDER BY inside it: SQL Server refuses one there, and a count needs none.
+            String countQueryStr = "SELECT COUNT(*) FROM (" + withoutOrderBy(processedQuery) + ") X";
             totalRows = (int) count(countQueryStr, input, dataSource);
         }
         List<Map<String, Object>> resultList = rows(entry, processedQuery, input, dataSource,

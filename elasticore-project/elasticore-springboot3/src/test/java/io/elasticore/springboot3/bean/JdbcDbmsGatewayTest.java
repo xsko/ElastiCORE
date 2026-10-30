@@ -88,6 +88,14 @@ class JdbcDbmsGatewayTest {
         assertThat(page.getContent()).containsExactly(3);
     }
 
+    /** SQL Server refuses an ORDER BY inside the derived table a page is counted over. */
+    @Test
+    void aPageIsCountedWithoutTheQuerysOrder() {
+        assertThat(SqlPortGateway.withoutOrderBy("SELECT id FROM t WHERE x IN (SELECT y FROM u ORDER BY y)\nORDER BY id"))
+                .isEqualTo("SELECT id FROM t WHERE x IN (SELECT y FROM u ORDER BY y)\n");
+        assertThat(SqlPortGateway.withoutOrderBy("SELECT reorder_by FROM t")).isEqualTo("SELECT reorder_by FROM t");
+    }
+
     @Test
     void aWriteAnswersTheRowsItChanged() {
         Map<String, Object> input = new LinkedHashMap<String, Object>();

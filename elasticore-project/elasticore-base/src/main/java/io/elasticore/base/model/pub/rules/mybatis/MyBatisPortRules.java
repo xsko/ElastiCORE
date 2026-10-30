@@ -140,7 +140,13 @@ public class MyBatisPortRules implements CodeRules {
 
     /** Whether the SQL orders its rows itself, outside any parenthesis (its last ORDER BY). */
     private static boolean hasOrderBy(String sql) {
+        return orderByAt(sql) >= 0;
+    }
+
+    /** Where the SQL's own ORDER BY starts, outside any parenthesis; -1 for none. */
+    static int orderByAt(String sql) {
         int depth = 0;
+        int at = -1;
         String lower = sql.toLowerCase(Locale.ROOT);
         for (int i = 0; i < lower.length(); i++) {
             char ch = lower.charAt(i);
@@ -148,10 +154,19 @@ public class MyBatisPortRules implements CodeRules {
             else if (ch == ')') depth--;
             else if (depth == 0 && lower.startsWith("order", i)) {
                 Matcher m = Pattern.compile("^order\\s+by\\b").matcher(lower.substring(i));
-                if (m.find() && (i == 0 || !Character.isLetterOrDigit(lower.charAt(i - 1)))) return true;
+                if (m.find() && (i == 0 || !Character.isLetterOrDigit(lower.charAt(i - 1)))) at = i;
             }
         }
-        return false;
+        return at;
+    }
+
+    /**
+     * The SQL without its own ORDER BY, for the count of a page: SQL Server
+     * refuses one inside a derived table, and a count needs no order.
+     */
+    static String withoutOrderBy(String sql) {
+        int at = orderByAt(sql);
+        return at < 0 ? sql : sql.substring(0, at).trim();
     }
 
     private static void fail(PortSpec p, PortSpec.Operation op, String why) {
@@ -310,8 +325,12 @@ public class MyBatisPortRules implements CodeRules {
                             : "";
                     statement(x, "select", op.name() + "Rows", "resultType=\"java.util.LinkedHashMap\"",
                             sql + "\n" + order + unordered + PAGE);
+                    String counted = o.sql;
+                    o.sql = withoutOrderBy(counted);
+                    String countSql = translate(p, o);
+                    o.sql = counted;
                     statement(x, "select", op.name() + "Count", "resultType=\"long\"",
-                            "SELECT COUNT(*) FROM (\n" + sql + "\n" + I + I + ") X");
+                            "SELECT COUNT(*) FROM (\n" + countSql + "\n" + I + I + ") X");
                     break;
                 }
                 default:
