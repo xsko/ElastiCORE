@@ -320,6 +320,23 @@ public final class SourceCode {
         return this;
     }
 
+    /**
+     * Rewrites the lines a slot's paragraph holds, each through the function;
+     * a null answer drops the line. For a rule that reads what the rules
+     * before it wrote - MyBatis taking JPA's callbacks out of a class body.
+     */
+    public SourceCode rewriteVarLines(String name, java.util.function.UnaryOperator<String> rewrite) {
+        CodeTemplate.Paragraph p = paragraphVars.get(name);
+        if (p == null) return this;
+        CodeTemplate.Paragraph out = CodeTemplate.newParagraph();
+        for (int i = 0; i < p.size(); i++) {
+            String line = rewrite.apply(p.toString(i));
+            if (line != null) out.add((Object) line);
+        }
+        paragraphVars.put(name, out);
+        return this;
+    }
+
     /** True once a slot's paragraph has been given a line. */
     public boolean hasVarLines(String name) {
         CodeTemplate.Paragraph p = paragraphVars.get(name);
@@ -1006,6 +1023,11 @@ public final class SourceCode {
      * class literal that 2.x writes, since the compatibility output is
      * compared to it byte for byte; two or more render as a list.
      */
+    /** The entity listeners registered so far, by simple class name. */
+    public java.util.List<String> entityListeners() {
+        return new java.util.ArrayList<String>(entityListeners);
+    }
+
     public SourceCode addEntityListener(String simpleClassName) {
         if (simpleClassName == null || entityListeners.contains(simpleClassName)) return this;
         entityListeners.add(simpleClassName);

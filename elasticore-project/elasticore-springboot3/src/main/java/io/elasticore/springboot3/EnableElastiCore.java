@@ -17,7 +17,8 @@ import io.elasticore.springboot3.bean.*;
  * components for the application, including:</p>
  * <ul>
  *   <li>{@link PortServiceRegistrar} - Registers port services for dependency injection</li>
- *   <li>{@link DbTransactionGateway} - Provides database transaction and query execution capabilities</li>
+ *   <li>{@link DbTransactionGateway} - Provides database transaction and query execution capabilities
+ *       ({@link JdbcDbmsGateway} where the application has no JPA)</li>
  *   <li>{@link ApplicationContextProvider} - Enables static access to the Spring ApplicationContext</li>
  * </ul>
  * 
@@ -48,6 +49,6 @@ import io.elasticore.springboot3.bean.*;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@Import({PortServiceRegistrar.class, DbTransactionGateway.class, ApplicationContextProvider.class, ElastiCoreBannerPrinter.class})
+@Import({PortServiceRegistrar.class, DbmsGatewayRegistrar.class, ApplicationContextProvider.class, ElastiCoreBannerPrinter.class})
 public @interface EnableElastiCore {
 }

@@ -62,7 +62,10 @@ import java.util.Set;
  */
 @AutoConfiguration(afterName = {
         "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration",
-        "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration"})
+        "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
+        // and the DataSource, which an application without JPA runs its ports on
+        "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
+        "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"})
 @ConditionalOnProperty(prefix = "elasticore.autoconfigure", name = "enabled", havingValue = "true", matchIfMissing = true)
 @Conditional(ElastiCoreAutoConfiguration.OnApplicationPorts.class)
 @Import(ElastiCoreAutoConfiguration.ApplicationPorts.class)
@@ -91,6 +94,23 @@ public class ElastiCoreAutoConfiguration {
         public DbTransactionGateway elastiCoreDbTransactionGateway(EntityManagerFactory entityManagerFactory)
                 throws IOException {
             return new DbTransactionGateway(entityManagerFactory);
+        }
+    }
+
+    /**
+     * The DBMS ports' executor in an application without JPA - a MyBatis one:
+     * their SQL through JDBC, on the application's DataSource.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")
+    @ConditionalOnMissingBean(type = "jakarta.persistence.EntityManagerFactory")
+    public static class JdbcDbmsPorts {
+
+        @Bean
+        @ConditionalOnSingleCandidate(javax.sql.DataSource.class)
+        @ConditionalOnMissingBean(DbmsSqlExecutor.class)
+        public io.elasticore.springboot3.bean.JdbcDbmsGateway elastiCoreJdbcDbmsGateway(javax.sql.DataSource dataSource) {
+            return new io.elasticore.springboot3.bean.JdbcDbmsGateway(dataSource);
         }
     }
 

@@ -75,22 +75,46 @@ public class DddOutboxRules implements CodeRules, DomainArtifactContributor {
     void message(DomainSpec d) {
         SourceCode c = ctx(d);
         c.requireSyntaxAnyOf("ddd-outbox", Syntax.JAVA, Syntax.KOTLIN);
-        String prefix = d.config("table.prefix");
+        // Over MyBatis the message is a plain class, its table in the schema the domain's tables are.
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
+            c.template("mybatis_outboxMessage");
+            io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.outboxOf(d.getName(),
+                    tableName(d.config("table.prefix"), d.className()));
+        }
         c.var("packageName", pkgOr(d, "persistence"))
          .var("className", messageName(d))
          .var("domainName", d.className())
-         // Each domain its own table: with a prefix it is the domain's already,
-         // without one two domains would map two entities onto one table.
-         .var("tableName", prefix != null && !prefix.isEmpty() ? prefix + "outbox"
-                 : io.elasticore.base.util.StringUtils.camelToSnake(d.className()) + "_outbox");
+         .var("tableName", tableName(d.config("table.prefix"), d.className()));
+    }
+
+    /**
+     * The outbox's table. Each domain its own: with a prefix it is the
+     * domain's already, without one two domains would map two entities onto
+     * one table.
+     */
+    public static String tableName(String prefix, String domainClassName) {
+        return prefix != null && !prefix.isEmpty() ? prefix + "outbox"
+                : io.elasticore.base.util.StringUtils.camelToSnake(domainClassName) + "_outbox";
+    }
+
+    /** Whether a domain writes an outbox: outbox: true, and a root of it declares events. */
+    public static boolean writesOutbox(String outboxConfig, List<EntitySpec> entities) {
+        if (!"true".equalsIgnoreCase(outboxConfig == null ? "" : outboxConfig.trim())) return false;
+        for (EntitySpec e : entities) {
+            if (!DddDomainEventRules.declaredEvents(e).isEmpty()) return true;
+        }
+        return false;
     }
 
     @Rule(value = "ddd-outbox-repository", target = "outboxRepository", order = 10)
     void repository(DomainSpec d) {
         SourceCode c = ctx(d);
+        // Over MyBatis a mapper with the same method names, its SQL locking per database.
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) c.template("mybatis_outboxRepository");
         c.var("packageName", pkgOr(d, "repository"))
          .var("className", repositoryName(d))
          .var("messageName", messageName(d))
+         .var("tableName", tableName(d.config("table.prefix"), d.className()))
          .var("messageImport", "");
     }
 
@@ -131,6 +155,8 @@ public class DddOutboxRules implements CodeRules, DomainArtifactContributor {
     @Rule(value = "ddd-outbox-relay", target = "outboxRelay", order = 10)
     void relay(DomainSpec d) {
         SourceCode c = ctx(d);
+        // Over MyBatis the relay writes each message it changed; nothing tracks it.
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) c.template("mybatis_outboxRelay");
         String pkg = pkgOr(d, "service");
         List<String> imports = new ArrayList<String>();
         c.var("packageName", pkg)

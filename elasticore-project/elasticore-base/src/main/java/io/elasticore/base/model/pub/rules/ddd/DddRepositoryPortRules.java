@@ -116,6 +116,10 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
     void queryPort(EntitySpec e) {
         SourceCode c = ctx(e);
         c.requireSyntaxAnyOf("ddd-query-port", Syntax.JAVA, Syntax.KOTLIN);
+        if (DddMyBatisPorts.applies(e, c)) {
+            DddMyBatisPorts.queryPort(c, e);
+            return;
+        }
 
         boolean kotlin = c.syntax() == Syntax.KOTLIN;
         String root = e.getName();
@@ -177,6 +181,10 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
     void serviceTakesPorts(EntitySpec e) {
         if (!usesPorts(e)) return;
         SourceCode c = ctx(e);
+        if (DddMyBatisPorts.applies(e, c)) {
+            DddMyBatisPorts.serviceTakesPorts(c, e);
+            return;
+        }
         boolean kotlin = c.syntax() == Syntax.KOTLIN;
         String port = portName(e);
         String query = queryPortName(e);
@@ -258,6 +266,10 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
     void extensionHandsPortsOn(EntitySpec e) {
         if (!usesPorts(e)) return;
         SourceCode c = ctx(e);
+        if (DddMyBatisPorts.applies(e, c)) {
+            DddMyBatisPorts.extensionHandsPortsOn(c, e);
+            return;
+        }
         boolean kotlin = c.syntax() == Syntax.KOTLIN;
         String port = portName(e);
         String query = queryPortPackage(e) + "." + queryPortName(e);
@@ -327,6 +339,10 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
     void adapter(EntitySpec e) {
         SourceCode c = ctx(e);
         c.requireSyntaxAnyOf("ddd-repository-adapter", Syntax.JAVA, Syntax.KOTLIN);
+        if (DddMyBatisPorts.applies(e, c)) {
+            DddMyBatisPorts.adapter(c, e);
+            return;
+        }
 
         boolean kotlin = c.syntax() == Syntax.KOTLIN;
         String root = e.getName();
@@ -486,6 +502,12 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
         final java.util.List<String> types = new java.util.ArrayList<String>();
         private Syntax syntax;
 
+        /** What one row of the answer is: the type argument of a List, Optional or Page, or the type itself. */
+        String itemType() {
+            String item = io.elasticore.base.model.pub.rules.base.RepositoryBaseRules.typeArgument(returnType);
+            return (item != null ? item : returnType).trim();
+        }
+
         String signature(String modifier) {
             return syntax.methodSignature(modifier, returnType, name, params);
         }
@@ -605,7 +627,7 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
      * choose. Declining is the same answer the other DDD rules give where the
      * model has not said enough.
      */
-    static boolean applies(EntitySpec e) {
+    public static boolean applies(EntitySpec e) {
         // A root nothing serves has no Spring Data repository generated, so
         // an adapter for it would import a class that does not exist.
         return e.aggregateRoot() && e.pkCount() == 1 && e.pkField() != null

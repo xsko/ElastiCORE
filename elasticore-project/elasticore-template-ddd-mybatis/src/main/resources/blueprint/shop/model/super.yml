@@ -1,0 +1,18 @@
+entity:
+  AuditEntity:
+    meta: entity @abstract
+    fields:
+      # Filled by Spring Data auditing, never by a request: the mapper does not
+      # write these from a DTO, so a client cannot say who changed a row.
+      createdBy: string(50) @updatable(false) @jpa:org.springframework.data.annotation.CreatedBy
+      createDate: datetime @updatable(false) @jpa:org.springframework.data.annotation.CreatedDate
+      lastModifiedBy: string(50) @jpa:org.springframework.data.annotation.LastModifiedBy
+      lastModifiedDate: datetime @jpa:org.springframework.data.annotation.LastModifiedDate
+
+  # Regression test: abstract parent with a field whose type (PaymentMethod enum) lives in the
+  # SAME domain but is inherited by a child entity in ANOTHER domain. Verifies that Q.java
+  # import generation walks inherited fields from @extend parents across domains.
+  AuditableWithEnum:
+    meta: entity @abstract @extend(AuditEntity)
+    fields:
+      inheritedPaymentMethod: PaymentMethod

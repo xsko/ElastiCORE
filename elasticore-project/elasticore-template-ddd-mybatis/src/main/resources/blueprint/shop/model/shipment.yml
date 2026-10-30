@@ -1,0 +1,42 @@
+# One command, two lifecycles (states:): cancelling a shipment that was paid
+# for cancels it and refunds the fee - both or neither. Each lifecycle is
+# checked before either moves, so a refusal leaves the shipment as it was.
+
+enumeration:
+  ShipmentStatus:
+    meta: enum @db(code) @json(code) -- 배송 상태
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      READY:     RDY, Ready
+      SENT:      SNT, Sent
+      CANCELLED: CAN, Cancelled
+
+  FeeStatus:
+    meta: enum @db(code) @json(code) -- 배송비 상태
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      DUE:      DUE, Due
+      PAID:     PAD, Paid
+      REFUNDED: REF, Refunded
+
+entity:
+  Shipment:
+    meta: entity @root @expose(20) @event(Sent, Cancelled, Refunded) -- 배송
+    fields:
+      shipmentId: string(36) @id @genid
+      carrier:    string(30)
+      status:     ShipmentStatus
+      fee:        FeeStatus
+    states:
+      status:
+        initial: READY
+        send:    READY -> SENT
+        cancel:  READY -> CANCELLED
+      fee:
+        initial: DUE
+        pay:     DUE -> PAID
+        cancel:  PAID -> REFUNDED      # the same command: both lifecycles move together

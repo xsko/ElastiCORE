@@ -1,0 +1,27 @@
+# Every value type of the DSL in one entity, generated, stored and read back
+# over HTTP (TypeRoundTripTest). The comment after each field is the portable
+# data type of Apache Ossie (core-spec "Data types") the type is exported as.
+entity:
+  Reading:
+    meta: entity @expose(10) -- 측정값 (모든 값 타입)
+    fields:
+      readingId:   long @id @sequence           # Integer
+      label:       string(40)                   # String
+      note:        text                         # String  (TEXT column)
+      rawText:     clob                         # String  (@Lob)
+      payload:     json                         # String  (JSON column)
+      readCount:   int                          # Integer
+      totalCount:  long                         # Integer
+      bigCount:    biginteger                   # Integer
+      units:       quantity                     # Integer (a count, never negative)
+      ratio:       decimal(5.2)                 # Decimal
+      exactValue:  decimal                      # Decimal
+      amount:      money(12.2)                  # Decimal (an amount)
+      score:       double                       # Float
+      weight:      float                        # Float
+      active:      boolean                      # Boolean
+      readDate:    date                         # Date
+      readTime:    time                         # Time
+      localAt:     datetime                     # DateTime   (no zone)
+      measuredAt:  timestamp                    # DateTimeTz (an instant)
+      image:       blob                         # Opaque  (bytes, @Lob)

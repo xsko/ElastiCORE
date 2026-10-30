@@ -1,0 +1,52 @@
+# The outbound side of the hexagon, in its two generated forms.
+#
+# The aggregate answers writes; what it deliberately cannot answer is a view
+# that spans aggregates - revenue by customer is Order data grouped by
+# Customer data, and loading either aggregate to compute it would be using a
+# consistency boundary as a query engine. That is what a read model is for,
+# and the dbms port is how one is declared: the SQL is the model, the
+# interface is generated into application.port.out, and the adapter is a
+# runtime proxy - no generated persistence code, which is why the interface
+# lives on the application side of the hexagon.
+port:
+  ShopReportService:
+    meta: dbms
+    methods:
+      countOrdersByStatus:
+        meta: method
+        params:
+          status: string
+        return: long
+        nativeQuery: true
+        query: |
+          SELECT COUNT(*) FROM shop_order WHERE status = :status
+
+      revenueByCustomer:
+        meta: method
+        params:
+          input: RevenueSearchInput
+        return: List<CustomerRevenueDTO>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customerId,
+                 c.first_name as firstName,
+                 c.last_name as lastName,
+                 COUNT(o.order_id) as orderCount,
+                 COALESCE(SUM(o.total_amount), 0) as totalRevenue
+          FROM shop_customer c
+          LEFT JOIN shop_order o ON o.customer_customer_id = c.customer_id
+          WHERE 1=1
+          AND c.last_name LIKE CONCAT('%', :lastName, '%') /* if:lastName */
+          GROUP BY c.customer_id, c.first_name, c.last_name
+          ORDER BY totalRevenue DESC
+
+      orderTotals:
+        meta: method
+        params:
+        return: OrderTotalsDTO
+        nativeQuery: true
+        query: |
+          SELECT COUNT(*) as orderCount,
+                 COALESCE(SUM(total_amount), 0) as revenue,
+                 COALESCE(AVG(total_amount), 0) as averageOrder
+          FROM shop_order

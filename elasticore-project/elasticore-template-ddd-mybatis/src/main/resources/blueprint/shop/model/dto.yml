@@ -1,0 +1,73 @@
+dto:
+  ProductDTO:
+    meta: dto @template(Product)
+    fields:
+      categoryName: string @ref(category.name)
+      categoryCatId: long @ref(category.catId)
+      lastModifiedDate: --
+      createDate: --
+      thumbnail: --
+      manualContent: --
+
+  ProductInputDTO:
+    meta: dto @template(Product)
+    fields:
+      orderItems: --
+      createDate: --
+      lastModifiedDate: --
+      thumbnail: --
+      manualContent: --
+
+  ProductSrchDTO:
+    meta: dto @searchable(entity=Product, pageSize=20)
+    fields:
+      categoryName: string @search(like) @ref(category.name)
+
+  CategoryDTO:
+    meta: dto @template(Category)
+    fields:
+      # A category names its parent by identity. Another instance of the same
+      # root is another aggregate, so this crosses a boundary like any other.
+      parentCatId: long @ref(parentCategory.catId)
+      subCategories: List<CategoryDTO>
+
+  OrderDTO:
+    meta: dto @template(Order)
+    fields:
+      # The identity of the other aggregate: what a caller sets, and the only
+      # thing about a Customer this DTO is allowed to change.
+      customerId: long @ref(customer.customerId)
+      customerFirstName: string @ref(customer.firstName)
+      customerEmail: string @ref(customer.email)
+      items: List<OrderItemDTO>
+
+  OrderItemDTO:
+    meta: dto @template(OrderItem)
+    fields:
+      # A line names its product by identity. Without this the line could be
+      # created and never given one - the boundary severed the write path and
+      # nothing replaced it.
+      productId: string @ref(product.productId)
+      productName: string @ref(product.name)
+      productSku: string @ref(product.sku)
+
+  CustomerDTO:
+    meta: dto @template(Customer)
+    fields:
+      orders: --
+      # A member of this aggregate: it has no endpoint of its own, so the
+      # root's DTO is the only way to read or write it. Dropping it here
+      # would leave it unreachable.
+      vipProfile: VipProfileDTO
+
+  OrderSrchDTO:
+    meta: dto @searchable(entity=Order, pageSize=30)
+    fields:
+      customerName: string @search(like) @ref(customer.firstName)
+
+  # A read-side projection: rows of a query, not an aggregate.
+  CustomerOrderCountDTO:
+    meta: dto
+    fields:
+      customerId: long
+      orderCount: long

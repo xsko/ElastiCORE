@@ -473,6 +473,11 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules();
             }
         });
+        c.register("mybatis-ddd", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mybatis.MyBatisDddRules();
+            }
+        });
 
         // Everything a JPA Spring Boot project got from the 2.x pipeline.
         // Not a generator: the set is the opt-in for the Apache Ossie
@@ -548,6 +553,20 @@ public final class RuleCatalog {
         // in the blueprint and generated whenever one is.
         c.bundle("hexagonal-springboot",
                 "ddd-springboot", "hex-usecase");
+        // The same two over MyBatis: the MyBatis layered bundle with the
+        // domain rules on top, and mybatis-ddd for what JPA did by itself -
+        // the callbacks become the aggregate's Lifecycle, which the
+        // generated repository adapter calls, and the JPA annotations the
+        // domain rules write go.
+        c.bundle("ddd-mybatis-springboot",
+                "mybatis-springboot",
+                "ddd-aggregate", "ddd-reference", "ddd-mapper-ref",
+                "ddd-collection", "ddd-value-object", "ddd-event",
+                "ddd-invariant", "ddd-factory", "ddd-specification", "ddd-domain-service",
+                "ddd-repository-port", "ddd-behavior", "ddd-command", "ddd-outbox",
+                "ddd-state", "ddd-derive", "mybatis-ddd");
+        c.bundle("hexagonal-mybatis-springboot",
+                "ddd-mybatis-springboot", "hex-usecase");
 
         // Kotlin. The field rules are the Java ones - an annotation reads the
         // same in both - and only the file shell is written per language.

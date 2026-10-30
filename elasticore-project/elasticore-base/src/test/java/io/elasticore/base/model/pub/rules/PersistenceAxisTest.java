@@ -53,11 +53,19 @@ public class PersistenceAxisTest {
     }
 
     @Test
-    public void myBatisIsLayeredJava() {
+    public void myBatisIsJavaInEveryArchitecture() {
         assertEquals(RulesConfig.MYBATIS_BUNDLE, RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA, RulesConfig.Persistence.MYBATIS));
-        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+        assertEquals("ddd-mybatis-springboot", RulesConfig.bundleFor(
+                RulesConfig.Architecture.DOMAIN_MODEL, RulesConfig.Language.JAVA, RulesConfig.Persistence.MYBATIS));
+        assertEquals("hexagonal-mybatis-springboot", RulesConfig.bundleFor(
                 RulesConfig.Architecture.HEXAGONAL, RulesConfig.Language.JAVA, RulesConfig.Persistence.MYBATIS));
+        // A domain naming its architecture's bundle gets the MyBatis one of it.
+        assertEquals("hexagonal-mybatis-springboot", RulesConfig.mybatisBundleOf("hexagonal-springboot"));
+        assertEquals("ddd-mybatis-springboot", RulesConfig.mybatisBundleOf("ddd-springboot"));
+        assertEquals(RulesConfig.MYBATIS_BUNDLE, RulesConfig.mybatisBundleOf("jpa-springboot-v3"));
+        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
+                RulesConfig.Architecture.HEXAGONAL, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MYBATIS));
         assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MYBATIS));
         assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(

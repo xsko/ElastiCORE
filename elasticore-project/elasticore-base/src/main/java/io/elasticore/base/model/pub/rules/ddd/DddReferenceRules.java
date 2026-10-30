@@ -123,6 +123,8 @@ public class DddReferenceRules implements CodeRules, io.elasticore.base.model.pu
     @Rule(value = "ddd-reference-read-back", target = "service", order = 16)
     void readBackAfterSave(EntitySpec e) {
         if (!readsBack(e)) return;
+        // A MyBatis service reads every write back through its port (mybatis-ddd-service).
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)) return;
         SourceCode c = ctx(e);
         String em = c.varValue("emRef") == null ? "entityManager" : c.varValue("emRef");
         c.var("readBackOpen", "readBack(").var("readBackClose", ")");

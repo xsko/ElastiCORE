@@ -44,7 +44,7 @@ public final class MyBatisTables {
         String name = MyBatisSql.table(e);
         Table t = new Table(name, e.domainClassName() + "." + e.getName());
         FieldSpec pk = e.pkField();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f)) {
                 Column c = column(e, f, MyBatisSql.column(f));
                 if (f == pk) c = c.nullable(false).identity(MyBatisSql.generatedKey(pk));
@@ -63,8 +63,8 @@ public final class MyBatisTables {
             }
         }
         t.primaryKey(MyBatisSql.column(pk));
-        for (FieldSpec f : e.fields()) {
-            if (!MyBatisSql.isJoined(e, f)) continue;
+        for (FieldSpec f : MyBatisSql.fields(e)) {
+            if (!MyBatisSql.holdsKey(e, f)) continue;
             EntitySpec target = e.related(f.coreItemType());
             // A table of another domain is created by that domain's schema.
             if (target == null || target.pkField() == null || !tables.contains(target.getName())) continue;
@@ -72,7 +72,7 @@ public final class MyBatisTables {
                     Collections.singletonList(MyBatisSql.keyColumn(e, f, target)), MyBatisSql.table(target),
                     Collections.singletonList(MyBatisSql.column(target.pkField()))));
         }
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f != pk && f.hasDsl("unique") && !"false".equals(f.dslValue("unique")) && MyBatisSql.isValue(e, f)) {
                 t.index(new Table.Index(Table.constraintName("uk_", name, MyBatisSql.springName(f.name())),
                         Collections.singletonList(MyBatisSql.column(f)), true));
@@ -91,6 +91,47 @@ public final class MyBatisTables {
                     : Table.constraintName(unique ? "uk_" : "ix_", name, String.join("_", cols));
             t.index(new Table.Index(idxName, cols, unique));
         }
+        return t;
+    }
+
+    /** The outbox table of each MyBatis domain whose outbox the domain rules wrote this run. */
+    private static final java.util.Map<String, String> OUTBOXES = new java.util.concurrent.ConcurrentHashMap<String, String>();
+
+    /** Says a MyBatis domain's outbox table, as the outbox rules write its mapper: the DDL adds it by name. */
+    public static void outboxOf(String domain, String table) {
+        OUTBOXES.put(domain, table);
+    }
+
+    /** The outbox table the run wrote for a MyBatis domain, or null. */
+    public static String outboxOf(String domain) {
+        return domain == null ? null : OUTBOXES.get(domain);
+    }
+
+    /** Forgets the outboxes of an earlier run in the same process. */
+    public static void forgetOutboxes() {
+        OUTBOXES.clear();
+    }
+
+    /**
+     * The transactional outbox's table of a domain over MyBatis (the domain
+     * rules' outbox: true): the columns the generated outbox mapper reads
+     * and writes, and the index its relay reads the pending rows by.
+     */
+    public static Table outbox(String name, String source) {
+        Table t = new Table(name, source);
+        t.column(Column.of("id", ColumnType.BIGINT).nullable(false).identity(true));
+        t.column(Column.of("aggregate_type", ColumnType.TEXT).length(100).nullable(false));
+        t.column(Column.of("aggregate_id", ColumnType.TEXT).length(200));
+        t.column(Column.of("event_type", ColumnType.TEXT).length(300).nullable(false));
+        t.column(Column.of("payload", ColumnType.LONG_TEXT).nullable(false));
+        t.column(Column.of("occurred_on", ColumnType.TIMESTAMP));
+        t.column(Column.of("recorded_at", ColumnType.TIMESTAMP).nullable(false));
+        t.column(Column.of("published_at", ColumnType.TIMESTAMP));
+        t.column(Column.of("attempts", ColumnType.INTEGER).nullable(false));
+        t.column(Column.of("last_error", ColumnType.TEXT).length(500));
+        t.primaryKey("id");
+        t.index(new Table.Index(Table.constraintName("ix_", name, "pending"),
+                java.util.Arrays.asList("published_at", "id"), false));
         return t;
     }
 
@@ -113,6 +154,7 @@ public final class MyBatisTables {
             }
             case "CLOB": return Column.of(name, ColumnType.LONG_TEXT);
             case "BLOB": return Column.of(name, ColumnType.LONG_BINARY);
+            case "NUMERIC": return Column.of(name, ColumnType.DECIMAL).decimal(f.precision() > 0 ? f.precision() : 38, 0);
             case "DECIMAL": return Column.of(name, ColumnType.DECIMAL).decimal(f.precision(), Math.max(0, f.scale()));
             case "TIMESTAMP_WITH_TIMEZONE": return Column.of(name, ColumnType.TIMESTAMP_TZ);
             case "BIGINT": case "INTEGER": case "SMALLINT": case "TINYINT": case "BOOLEAN": case "DOUBLE": case "REAL":

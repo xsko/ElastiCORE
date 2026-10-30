@@ -57,6 +57,13 @@ public class RepositoryHelperBaseRules implements CodeRules {
                         : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.collections(e)) {
                     held.add(f.coreItemType());
                 }
+                // and a member a root holds by a to-one relation, written with it
+                for (io.elasticore.base.model.pub.rules.FieldSpec f
+                        : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(e)) {
+                    if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isMemberReference(e, f)) {
+                        held.add(f.coreItemType());
+                    }
+                }
             }
         }
 

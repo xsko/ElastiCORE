@@ -1,0 +1,15 @@
+# Generated on every build; the module exists to compile and run what the
+# domain rules write over MyBatis, not to keep it. What is committed is the
+# blueprint and the tests.
+src/main/java/
+src/test/java/io/
+/src/main/resources/io/
+/src/main/resources/db/
+
+# The message bundle the generator writes beside the error handler.
+/src/main/resources/i18n/*-messages.properties
+
+# What the generator last wrote, merged against (elasticore-env-guide.md 9-2). A project
+# commits it with its generated files; this one keeps most of those out of git and
+# regenerates them on every build, so the cache stays local with them.
+/.elasticore/

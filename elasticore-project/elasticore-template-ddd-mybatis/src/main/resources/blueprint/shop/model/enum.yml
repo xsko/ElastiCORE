@@ -1,0 +1,36 @@
+enumeration:
+  OrderStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code: string(3) @code
+      name: string(30)
+    enum:
+      PENDING: PEN,Pending
+      CONFIRMED: CFM,Confirmed
+      PROCESSING: PRC,Processing
+      SHIPPED: SHP,Shipped
+      DELIVERED: DLV,Delivered
+      CANCELLED: CAN,Cancelled
+      REFUNDED: RFD,Refunded
+
+  PaymentMethod:
+    meta: enum @db(code) @json(code)
+    fields:
+      code: string(2) @code
+      name: string(30)
+    enum:
+      CREDIT_CARD: CC,Credit Card
+      DEBIT_CARD: DC,Debit Card
+      BANK_TRANSFER: BT,Bank Transfer
+      PAYPAL: PP,PayPal
+      CASH: CA,Cash
+
+  CustomerType:
+    meta: enum @db(code) @json(code)
+    fields:
+      code: string(1) @code
+      description: string(20)
+    enum:
+      INDIVIDUAL: I,Individual
+      BUSINESS: B,Business
+      WHOLESALE: W,Wholesale

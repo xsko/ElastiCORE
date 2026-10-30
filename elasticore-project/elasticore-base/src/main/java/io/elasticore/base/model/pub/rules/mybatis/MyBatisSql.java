@@ -40,6 +40,36 @@ public final class MyBatisSql {
         return d != null && RulesConfig.mybatis(d.config("mode"));
     }
 
+    /**
+     * The fields whose columns lie in the entity's row: those of the @abstract
+     * class it extends (@extend, a mapped superclass - audit columns, say),
+     * and that one's in turn, then its own. A field it declares again under
+     * the same name replaces the inherited one.
+     *
+     * The parent is the entity's related spec of that name, which the runner
+     * hands over; without it only the entity's own fields are known.
+     */
+    public static List<FieldSpec> fields(EntitySpec e) {
+        EntitySpec parent = abstractParent(e);
+        if (parent == null) return e.fields();
+        List<FieldSpec> out = new ArrayList<FieldSpec>();
+        java.util.Set<String> own = new java.util.HashSet<String>();
+        for (FieldSpec f : e.fields()) own.add(f.name());
+        for (FieldSpec f : fields(parent)) {
+            if (!own.contains(f.name())) out.add(f);
+        }
+        out.addAll(e.fields());
+        return out;
+    }
+
+    /** The @abstract class the entity extends, when the run knows it; null for none or a concrete one. */
+    public static EntitySpec abstractParent(EntitySpec e) {
+        String name = e.parentName();
+        if (name == null || name.trim().isEmpty() || name.trim().equals(e.getName())) return null;
+        EntitySpec parent = e.related(name.trim());
+        return parent != null && parent.hasMeta("abstract") ? parent : null;
+    }
+
     /** The table, with its schema when the entity names one. */
     public static String table(EntitySpec e) {
         String explicit = e.metaValue("table");
@@ -94,7 +124,31 @@ public final class MyBatisSql {
     /** A to-one relation the row holds the key of. */
     public static boolean isToOne(FieldSpec f) {
         return f.isEntityRef() && !f.isList() && !f.hasDsl("embedded")
-                && f.dslValueAny("joinby", "joinfield") == null;
+                && f.dslValueAny("joinby", "joinfield") == null && mappedBy(f) == null;
+    }
+
+    /** The mappedBy of a one-to-one: the other row holds the key, this one is read through it. */
+    private static String mappedBy(FieldSpec f) {
+        String mappedBy = f.dslProperty("onetoone", "mappedBy");
+        return mappedBy == null || mappedBy.trim().isEmpty() ? null : mappedBy.trim();
+    }
+
+    /**
+     * The field of the other row that holds this row's key, for a one-to-one
+     * this row does not hold (@OneToOne(mappedBy="...")): read by joining the
+     * other row on it, written by the other row only - as JPA keeps one
+     * column for the pair. Null for any other field.
+     */
+    public static FieldSpec inverseOf(EntitySpec e, FieldSpec f) {
+        if (!f.isEntityRef() || f.isList() || isEmbedded(e, f)) return null;
+        String mappedBy = mappedBy(f);
+        if (mappedBy == null) return null;
+        EntitySpec target = e.related(f.coreItemType());
+        if (target == null || e.pkField() == null) return null;
+        for (FieldSpec b : fields(target)) {
+            if (b.name().equals(mappedBy) && isToOne(target, b) && e.getName().equals(b.coreItemType())) return b;
+        }
+        return null;
     }
 
     /** A to-one relation the row holds the key of, in an entity that may embed values. */
@@ -112,15 +166,35 @@ public final class MyBatisSql {
         if (!f.isEntityRef() || f.isList() || isEmbedded(e, f)) return null;
         String by = f.dslValueAny("joinby", "joinfield");
         if (by == null || by.trim().isEmpty()) return null;
-        for (FieldSpec o : e.fields()) {
+        for (FieldSpec o : fields(e)) {
             if (o.name().equals(by.trim()) && isValue(e, o)) return o;
         }
         return null;
     }
 
-    /** A to-one relation read with the row: one whose key column it holds, or one read through an id field. */
+    /**
+     * A to-one relation read with the row: one whose key column it holds, one
+     * read through an id field, or the inverse of a one-to-one the other row holds.
+     */
     public static boolean isJoined(EntitySpec e, FieldSpec f) {
+        return isToOne(e, f) || joinedBy(e, f) != null || inverseOf(e, f) != null;
+    }
+
+    /** A to-one relation whose key the row itself holds: its own column, or an id field's. */
+    public static boolean holdsKey(EntitySpec e, FieldSpec f) {
         return isToOne(e, f) || joinedBy(e, f) != null;
+    }
+
+    /**
+     * A to-one relation to a member of this root's aggregate whose key the
+     * row holds - written with the root, as JPA's cascade writes it: inserted
+     * before the root takes its key, updated in place, deleted when the root
+     * lets it go. Only where the member has no service of its own to write it.
+     */
+    public static boolean isMemberReference(EntitySpec e, FieldSpec f) {
+        if (!isToOne(e, f)) return false;
+        String target = f.coreItemType();
+        return target != null && !target.equals(e.getName()) && isMemberOf(e, target);
     }
 
     /** The column of the row that holds a relation's key: the id field's for @joinBy, the relation's own otherwise. */
@@ -201,8 +275,8 @@ public final class MyBatisSql {
         if (mappedBy == null || mappedBy.isEmpty()) return null;
         EntitySpec target = e.related(f.coreItemType());
         if (target == null || target.pkField() == null) return null;
-        for (FieldSpec b : target.fields()) {
-            if (b.name().equals(mappedBy) && isJoined(target, b) && e.getName().equals(b.coreItemType())) return b;
+        for (FieldSpec b : fields(target)) {
+            if (b.name().equals(mappedBy) && holdsKey(target, b) && e.getName().equals(b.coreItemType())) return b;
         }
         return null;
     }
@@ -228,14 +302,34 @@ public final class MyBatisSql {
                 && root.getName().equals(root.aggregateOf(target)) && !hasOwnService(target);
     }
 
-    /** Whether an entity of the run has a service of its own (@expose or @service). */
+    /** Whether the domain being written is bound into aggregates by the domain rules (ddd-aggregate). */
+    private static volatile boolean aggregateBoundaries;
+
+    /**
+     * Says, per domain, whether the domain rules bind it into aggregates: a
+     * member then has no service, controller or search of its own whatever it
+     * declares (ddd-aggregate takes them away), and its root writes it.
+     */
+    public static void aggregateBoundaries(boolean bound) {
+        aggregateBoundaries = bound;
+    }
+
+    /**
+     * Whether an entity of the run has a service of its own (@expose or
+     * @service) - none for a member where the domain rules bind aggregates.
+     */
     public static boolean hasOwnService(String entityName) {
         try {
             io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
             io.elasticore.base.model.entity.Entity entity = ctx == null ? null
                     : ctx.findModelComponent(entityName, io.elasticore.base.model.entity.Entity.class);
-            return entity != null && (entity.getMetaInfo().hasMetaAnnotation("expose")
-                    || entity.getMetaInfo().hasMetaAnnotation("service"));
+            if (entity == null) return false;
+            if (aggregateBoundaries) {
+                String aggregate = entity.getMetaInfo().getMetaAnnotationValue("aggregate");
+                if (aggregate != null && !aggregate.trim().isEmpty() && !aggregate.trim().equals(entityName)) return false;
+            }
+            return entity.getMetaInfo().hasMetaAnnotation("expose")
+                    || entity.getMetaInfo().hasMetaAnnotation("service");
         } catch (RuntimeException ex) {
             return false;
         }
@@ -248,7 +342,7 @@ public final class MyBatisSql {
      */
     public static boolean hasColumnsToUpdate(EntitySpec e) {
         FieldSpec pk = e.pkField();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : fields(e)) {
             if (f == pk || !updatable(f)) continue;
             if (isValue(e, f) || isEmbedded(e, f) || isToOne(e, f)) return true;
         }
@@ -258,7 +352,7 @@ public final class MyBatisSql {
     /** The collections of an entity the MyBatis code reads with it. */
     public static List<FieldSpec> collections(EntitySpec e) {
         List<FieldSpec> out = new ArrayList<FieldSpec>();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : fields(e)) {
             if (backField(e, f) != null) out.add(f);
         }
         return out;
@@ -304,7 +398,7 @@ public final class MyBatisSql {
     /** The version field when the entity declares a numeric one; null otherwise. */
     public static FieldSpec version(EntitySpec e) {
         // The entity's own fields, the same instances the mapper walks.
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : fields(e)) {
             if (!f.isVersion()) continue;
             String t = RuleText.simpleName(f.typeName()).toLowerCase(Locale.ROOT);
             if (t.equals("long") || t.equals("integer") || t.equals("int") || t.equals("short")) return f;
@@ -320,6 +414,36 @@ public final class MyBatisSql {
     /** A field stamped with the time a row is last written (@LastModifiedDate). */
     public static boolean lastModifiedDate(FieldSpec f) {
         return nativeNames(f, "LastModifiedDate");
+    }
+
+    /** A field stamped with who created the row (@CreatedBy), from the application's AuditorAware. */
+    public static boolean createdBy(FieldSpec f) {
+        return nativeNames(f, "CreatedBy");
+    }
+
+    /** A field stamped with who last wrote the row (@LastModifiedBy). */
+    public static boolean lastModifiedBy(FieldSpec f) {
+        return nativeNames(f, "LastModifiedBy");
+    }
+
+    /**
+     * Whether writing the entity - or the members its service writes with it -
+     * records who wrote: the service then asks the application's AuditorAware.
+     */
+    public static boolean recordsAuditor(EntitySpec e) {
+        if (recordsAuditorItself(e)) return true;
+        for (FieldSpec f : collections(e)) {
+            EntitySpec target = e.related(f.coreItemType());
+            if (target != null && isMemberCollection(e, f) && recordsAuditorItself(target)) return true;
+        }
+        return false;
+    }
+
+    private static boolean recordsAuditorItself(EntitySpec e) {
+        for (FieldSpec f : fields(e)) {
+            if (isValue(e, f) && (createdBy(f) || lastModifiedBy(f))) return true;
+        }
+        return false;
     }
 
     private static boolean nativeNames(FieldSpec f, String annotation) {
@@ -363,7 +487,8 @@ public final class MyBatisSql {
             case "Double": case "double": return "DOUBLE";
             case "Float": case "float": return "REAL";
             case "BigDecimal": return "DECIMAL";
-            case "BigInteger": return "BIGINT";
+            // A whole number past BIGINT: JPA keeps it as NUMERIC(38,0).
+            case "BigInteger": return "NUMERIC";
             case "LocalDate": return "DATE";
             case "LocalDateTime": case "Instant": case "Date": return "TIMESTAMP";
             case "OffsetDateTime": case "ZonedDateTime": return "TIMESTAMP_WITH_TIMEZONE";
@@ -405,11 +530,27 @@ public final class MyBatisSql {
     public static List<String> unsupported(EntitySpec e) {
         List<String> out = new ArrayList<String>();
         if (e.pkCount() > 1) out.add("a key of " + e.pkCount() + " fields (@IdClass)");
-        if (e.parentName() != null && !e.parentName().isEmpty()) {
-            out.add("extends " + e.parentName() + " (inheritance)");
+        if (e.parentName() != null && !e.parentName().trim().isEmpty() && abstractParent(e) == null) {
+            // An @abstract parent is a mapped superclass: its columns are the
+            // row's. A concrete one is table inheritance, which is JPA's.
+            out.add("extends " + e.parentName() + ", which is not @abstract (table inheritance)");
+        }
+        if (e.hasMeta("audited")) {
+            out.add("@audited (the row's history is Hibernate Envers'; a MyBatis write keeps none - drop it, or record"
+                    + " the history in the extension service)");
         }
         FieldSpec pk = e.pkField();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : fields(e)) {
+            if (!f.isList() && f.isEntityRef() && !isEmbedded(e, f) && mappedBy(f) != null
+                    && e.related(f.coreItemType()) != null && inverseOf(e, f) == null) {
+                out.add(f.name() + ": @OneToOne(mappedBy=\"" + mappedBy(f) + "\") names no relation of "
+                        + f.coreItemType() + " back to " + e.getName() + " that holds the key");
+            }
+            if (!aggregateBoundaries && isMemberReference(e, f)) {
+                out.add(f.name() + ": a member of " + e.getName() + "'s aggregate held by a to-one relation, which"
+                        + " the layered service does not write - give " + f.coreItemType() + " a service of its own,"
+                        + " or let the domain rules write the aggregate (architecture = 'ddd' or 'hexagonal')");
+            }
             if (f.isList() && f.isEntityRef()) {
                 if (!e.getName().equals(e.ownAggregate()) && !hasOwnService(e.getName())) {
                     // Its rows would arrive with the root's request and be
@@ -433,8 +574,6 @@ public final class MyBatisSql {
                         + ") names no value field of " + e.getName() + " that holds the key");
             } else if (!f.isEntityRef() && !isEnum(e, f) && !f.hasDsl("formula") && "OTHER".equals(jdbcType(e, f))) {
                 out.add(f.name() + ": type " + f.typeName());
-            } else if (nativeNames(f, "CreatedBy") || nativeNames(f, "LastModifiedBy")) {
-                out.add(f.name() + ": who wrote the row (@jpa:CreatedBy / LastModifiedBy)");
             } else if ((createdDate(f) || lastModifiedDate(f)) && nowType(f) == null) {
                 out.add(f.name() + ": a time stamp of type " + f.typeName());
             } else if (f != pk && (f.hasDsl("sequence") || f.generationType() != null)) {

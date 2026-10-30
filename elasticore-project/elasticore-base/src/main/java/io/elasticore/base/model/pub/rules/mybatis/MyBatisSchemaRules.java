@@ -37,6 +37,12 @@ public class MyBatisSchemaRules implements CodeRules {
         SourceCode c = ctx(d);
         c.template("mybatis_schema");
         Schema schema = MyBatisTables.of(d.entities());
+        // The outbox the domain rules write, where they write one.
+        if (c.hasRule("ddd-outbox-message") && io.elasticore.base.model.pub.rules.ddd.DddOutboxRules.writesOutbox(
+                d.config("outbox"), d.entities())) {
+            schema.table(MyBatisTables.outbox(io.elasticore.base.model.pub.rules.ddd.DddOutboxRules.tableName(
+                    d.config("table.prefix"), d.className()), d.className() + " outbox"));
+        }
         if (schema.isEmpty()) {
             c.dontMake();
             return;
@@ -80,7 +86,7 @@ public class MyBatisSchemaRules implements CodeRules {
         String bare = table.indexOf('.') >= 0 ? table.substring(table.indexOf('.') + 1) : table;
         List<String> found = new ArrayList<String>();
         if (RESERVED.contains(bare)) found.add("the table " + bare);
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f) && RESERVED.contains(MyBatisSql.column(f))) {
                 found.add("the column " + MyBatisSql.column(f));
             } else if (MyBatisSql.isEmbedded(e, f)) {

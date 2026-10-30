@@ -177,6 +177,13 @@ final class DdlRun {
                 Schema part = p.mybatis != null
                         ? io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.of(p.mybatis)
                         : reader.schema(entitiesOf.get(p));
+                // A MyBatis domain's outbox has no entity to read its table off: the outbox rules name it.
+                String outbox = p.mybatis == null ? null
+                        : io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.outboxOf(p.domain);
+                if (outbox != null) {
+                    part.table(io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.outbox(outbox,
+                            p.domain + " outbox"));
+                }
                 for (Schema.Sequence s : part.sequences()) schema.sequence(s);
                 for (Table t : part.tables()) schema.table(t);
             }

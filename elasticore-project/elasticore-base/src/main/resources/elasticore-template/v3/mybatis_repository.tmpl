@@ -11,7 +11,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Optional;${queryImportList}
 
 /**
  * MyBatis mapper of ${entityClassName}. Its statements are in ${className}.xml,
@@ -58,6 +58,7 @@ public interface ${className} {
     int deleteById(@Param("id") ${keyType} id);
     ${loginFinder}
     ${inboundFinders}
+    ${declaredQueries}
 
     /** Whether the search narrows the rows at all: an update by condition needs it to. */
     static boolean hasCondition(${searchDTOClassName} search) {

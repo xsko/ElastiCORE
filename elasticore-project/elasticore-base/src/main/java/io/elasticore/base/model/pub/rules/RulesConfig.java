@@ -95,23 +95,38 @@ public final class RulesConfig {
         return persistenceOfMode(mode) == Persistence.MYBATIS;
     }
 
+    /** The domain model over MyBatis: the MyBatis bundle with the DDD rules, and what JPA did by itself said out loud. */
+    public static final String MYBATIS_DDD_BUNDLE = "ddd-mybatis-springboot";
+
+    /** The hexagon over MyBatis: the domain model over MyBatis plus the inbound port. */
+    public static final String MYBATIS_HEXAGONAL_BUNDLE = "hexagonal-mybatis-springboot";
+
     /**
      * Why an architecture and language cannot be generated as MyBatis code, or
-     * null when they can. MyBatis code is layered Java: the domain model and
-     * the hexagon rest on JPA's change tracking and lifecycle callbacks, and
-     * the Kotlin service is the JPA one.
+     * null when they can. MyBatis code is Java - the Kotlin service is the JPA
+     * one; every architecture is written for it.
      */
     public static String mybatisRefusal(Architecture architecture, Language language) {
         if (language == Language.TYPESCRIPT) return null;
         if (language == Language.KOTLIN) {
             return "MyBatis code is written in Java; language = 'kotlin' is generated for JPA only";
         }
-        if (architecture == Architecture.DOMAIN_MODEL || architecture == Architecture.HEXAGONAL) {
-            return "MyBatis code is layered (architecture = 'layered'); architecture = '"
-                    + (architecture == Architecture.DOMAIN_MODEL ? "ddd" : "hexagonal")
-                    + "' is generated for JPA only";
-        }
         return null;
+    }
+
+    /**
+     * The MyBatis bundle of a JPA one a domain names (publisher.rules): mode
+     * says the persistence and the bundle the architecture, so a domain moved
+     * to MyBatis keeps naming its architecture. Null for a name without one.
+     */
+    public static String mybatisBundleOf(String bundle) {
+        if (bundle == null) return null;
+        switch (bundle.trim()) {
+            case "ddd-springboot": return MYBATIS_DDD_BUNDLE;
+            case "hexagonal-springboot": return MYBATIS_HEXAGONAL_BUNDLE;
+            case "jpa-springboot-v3": return MYBATIS_BUNDLE;
+            default: return null;
+        }
     }
 
     /**
@@ -158,6 +173,8 @@ public final class RulesConfig {
         if (persistence == Persistence.MYBATIS) {
             String refusal = mybatisRefusal(architecture, language);
             if (refusal != null) throw new IllegalArgumentException(refusal + ".");
+            if (architecture == Architecture.DOMAIN_MODEL) return MYBATIS_DDD_BUNDLE;
+            if (architecture == Architecture.HEXAGONAL) return MYBATIS_HEXAGONAL_BUNDLE;
             return MYBATIS_BUNDLE;
         }
         throw new IllegalArgumentException("No rule bundle writes " + persistence.name().toLowerCase()

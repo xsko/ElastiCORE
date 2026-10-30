@@ -66,9 +66,24 @@ public class DddAggregateRules implements CodeRules {
      */
     @Rule(value = "ddd-repository-helper", target = "repositoryHelper", order = 15)
     void repositoryHelper(io.elasticore.base.model.pub.rules.DomainSpec d) {
+        // Over MyBatis a root's adapter writes its members through their
+        // mappers, so the helper keeps the members a root holds.
+        java.util.Set<String> held = new java.util.HashSet<String>();
+        if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
+            for (EntitySpec e : d.entities()) {
+                for (io.elasticore.base.model.pub.rules.FieldSpec f
+                        : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(e)) {
+                    if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isMemberCollection(e, f)
+                            || io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isMemberReference(e, f)) {
+                        held.add(f.coreItemType());
+                    }
+                }
+            }
+        }
         java.util.Iterator<EntitySpec> it = d.entities().iterator();
         while (it.hasNext()) {
-            if (!it.next().aggregateRoot()) it.remove();
+            EntitySpec e = it.next();
+            if (!e.aggregateRoot() && !held.contains(e.getName())) it.remove();
         }
     }
 

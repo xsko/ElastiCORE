@@ -1,0 +1,21 @@
+entity:
+  Author:
+    meta: entity @expose(10)
+    fields:
+      authorId: long @id @sequence
+      name: string(50)! @search(like)
+
+  # A database-generated key, an optimistic lock, a length, a bound and a
+  # reference: everything the v3 service now checks before it writes.
+  Book:
+    meta: entity @expose(10)
+    fields:
+      bookId: long @id @sequence
+      title: string(100)! @search(like)
+      isbn: string(13) @search(eq)
+      price: bigdecimal(10.2) @min(0)
+      author: Author @ManyToOne
+      version: long @jpa:Version
+      # Written by Spring Data auditing, never by a request - in the plain
+      # v3 bundle too.
+      lastModifiedBy: string(50) @jpa:org.springframework.data.annotation.LastModifiedBy

@@ -1,0 +1,108 @@
+entity:
+  Address:
+    meta: entity @embeddable
+    fields:
+      street: string(200)
+      city: string(100)
+      state: string(50)
+      zipCode: string(10)
+      country: string(50) @default("US")
+
+  # A root: fetched by identity, changed on its own. Master data, edited
+  # field by field on purpose - @editable keeps it plain, with public setters.
+  Category:
+    meta: entity @root @editable @expose(30) @extend(AuditEntity) @Index(name="idx_shop_cat_name", columnList="name")
+    fields:
+      catId: long @id @sequence
+      name: string(100)! @search(like)
+      description: text
+      sortOrder: int @default(0) @min(0) @max(999)
+      active: boolean @default(true)
+      parentCategory: Category @ManyToOne
+      subCategories: List<Category> @OneToMany(mappedBy="parentCategory") @dtype(List<CategoryDTO>)
+
+  # A root that promises something about a number rather than a collection.
+  Product:
+    meta: entity @root @editable @expose(20) @invariant(price > 0, 'a product has a price') @extend(AuditEntity) @pageable @table(shop_products) @Index(name="idx_shop_prod_sku", columnList="sku", unique="true")
+    fields:
+      productId: string(36) @id @genid
+      name: string(200)! @search(like)
+      sku: string(50)! @search(eq)
+      description: text
+      price: bigdecimal(12.2)! @min(0) @search(between)
+      costPrice: bigdecimal(12.2) @min(0)
+      stockQuantity: int @default(0) @min(0) @search(>=)
+      weight: float
+      rating: double @default(0.0) @min(0) @max(5)
+      active: boolean @default(true) @search(eq)
+      launchDate: date @search(between)
+      lastRestocked: datetime
+      uuid: string(36)
+      metadata: text
+      thumbnail: string(500)
+      manualContent: text
+      category: Category @dtype(CategoryDTO) @ManyToOne @fetchjoin
+      orderItems: List<OrderItem> @OneToMany(mappedBy="product")
+
+  # A root with a behaviour class of its own (the default for a root): its
+  # values are given when it is made and change through its methods after
+  # that. The contact details a customer edits are opened with @editable.
+  Customer:
+    meta: entity @root @expose(25) @extend(AuditEntity) @Index(name="idx_shop_cust_email", columnList="email", unique="true")
+    fields:
+      customerId: long @id @sequence
+      firstName: string(50)! @search(like)
+      lastName: string(50)! @search(like)
+      email: string(100)! @search(eq)
+      phone: string(20) @editable
+      dateOfBirth: date @search(between)
+      loyaltyPoints: long @default(0) @min(0)
+      customerType: CustomerType @search(eq)
+      billingAddress: Address @Embedded @editable
+      vipProfile: VipProfile @OneToOne @cascade(ALL) @dtype(VipProfileDTO)
+      orders: List<Order> @OneToMany(mappedBy="customer") @dtype(List<OrderDTO>)
+
+  # A member: reached through the root that owns it, never on its own.
+  VipProfile:
+    meta: entity @aggregate(Customer) @service
+    fields:
+      profileId: long @id @sequence
+      tier: string(20) @default("SILVER")
+      discountRate: double @default(0.0) @min(0) @max(50)
+      enrollDate: date
+      customer: Customer @OneToOne(mappedBy="vipProfile")
+
+  # A root that says what happens to it. The names are the domain's; when
+  # each one is raised is the domain's too - the generator writes the class
+  # and the raise method, never the call.
+  Order:
+    meta: entity @root @expose(30) @behavior @event(Placed(totalAmount), Cancelled) @invariant(items.size > 0, 'an order has at least one line') @factory(place) @specification(highValue, totalAmount > 100) @specification(hasLines, items notEmpty) @extend(AuditEntity) @Index(name="idx_shop_ord_date", columnList="order_date")
+    fields:
+      orderId: string(36) @id @genid
+      orderDate: datetime! @search(between)
+      totalAmount: bigdecimal(14.2) @default(0)
+      status: OrderStatus @search(in) @behavior
+      paymentMethod: PaymentMethod @search(eq)
+      customer: Customer @ManyToOne @fetchjoin
+      items: List<OrderItem> @OneToMany(mappedBy="order") @dtype(List<OrderItemDTO>) @editable
+      shippingAddress: Address @Embedded
+      notes: text @editable
+      trackingNumber: string(50)
+      version: long @jpa:Version
+    # What the order is asked to do. Each is an endpoint, a use case and a
+    # service method; the rule is the Order class's to write.
+    commands:
+      ship:
+        trackingNumber: string(50)!
+      cancel:
+
+  OrderItem:
+    meta: entity @aggregate(Order) @service
+    fields:
+      orderItemId: string(36) @id @genid
+      order: Order @ManyToOne @fetchjoin
+      itemSeq: int
+      product: Product @ManyToOne @fetchjoin
+      quantity: int! @min(1) @max(9999)
+      unitPrice: bigdecimal(12.2)!
+      discount: bigdecimal(8.2) @default(0)

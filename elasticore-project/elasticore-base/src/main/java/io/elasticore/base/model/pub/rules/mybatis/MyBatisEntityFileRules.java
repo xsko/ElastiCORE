@@ -56,10 +56,14 @@ public class MyBatisEntityFileRules implements CodeRules {
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("entity"));
         }
         String modifier = e.hasMeta("abstract") ? "public abstract" : "public";
+        // An @abstract parent is a class of the same package whose columns are
+        // the row's (MyBatisSql.fields); a concrete one is refused before here.
+        String parent = e.parentName() == null ? "" : e.parentName().trim();
+        String extendsClause = parent.isEmpty() || parent.equals(e.getName()) ? "" : " extends " + parent;
         c.var("packageName", e.pkg("entity"))
          .var("className", e.getName())
          .var("classAnnotationList", c.renderClassAnnotations())
-         .var("classDeclaration", "%s class %s implements java.io.Serializable {", modifier, e.getName())
+         .var("classDeclaration", "%s class %s%s implements java.io.Serializable {", modifier, e.getName(), extendsClause)
          .var("importList", RuleText.stripTrailing(c.renderImports()))
          .varLines("fieldList", RuleText.linesOf(RuleText.stripTrailing(c.renderFieldBlock())));
     }

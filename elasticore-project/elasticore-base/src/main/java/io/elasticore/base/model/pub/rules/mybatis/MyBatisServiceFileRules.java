@@ -113,19 +113,9 @@ public class MyBatisServiceFileRules implements CodeRules {
 
         StringBuilder create = new StringBuilder();
         StringBuilder update = new StringBuilder();
-        for (FieldSpec f : e.fields()) {
-            if (!MyBatisSql.isValue(e, f)) continue;
-            String now = nowOf(f);
-            if (now == null) continue;
-            String set = syntax.statement(syntax.setter("entity", f.name(), now));
-            if (MyBatisSql.createdDate(f)) {
-                create.append(nl).append(String.format("if (%s == null) %s", syntax.getter("entity", f.name()), set));
-            } else if (MyBatisSql.lastModifiedDate(f)) {
-                create.append(nl).append(set);
-                update.append(nl).append(set);
-            }
-        }
+        stamps(syntax, e, "entity", nl, create, update);
         c.var("stampCreate", create.toString()).var("stampUpdate", update.toString());
+        c.var("auditorMembers", MyBatisSql.recordsAuditor(e) ? AUDITOR_MEMBERS : "");
 
         String repository = syntax.getter("helper", RuleText.uncapital(e.getName()));
         String key = syntax.getter("entity", pk.name());
@@ -241,17 +231,10 @@ public class MyBatisServiceFileRules implements CodeRules {
                 if (mVersion != null && !mVersion.hasDslAny("primitive", "prim")) {
                     methods.append(n3).append(String.format("    %s", syntax.statement(syntax.setter("m", mVersion.name(), "null"))));
                 }
-                for (FieldSpec mf : target.fields()) {
-                    if (!MyBatisSql.isValue(target, mf)) continue;
-                    String now = nowOf(mf);
-                    if (now == null) continue;
-                    String set = syntax.statement(syntax.setter("m", mf.name(), now));
-                    if (MyBatisSql.createdDate(mf)) {
-                        methods.append(n3).append(String.format("    if (%s == null) %s", syntax.getter("m", mf.name()), set));
-                    } else {
-                        methods.append(n3).append("    ").append(set);
-                    }
-                }
+                // A member is inserted afresh each time: what a create stamps.
+                StringBuilder memberStamps = new StringBuilder();
+                stamps(syntax, target, "m", n3 + "    ", memberStamps, new StringBuilder());
+                methods.append(memberStamps);
                 methods.append(n3).append(String.format("    %s.insert(m);", mapper))
                        .append(n2).append("    }")
                        .append(n2).append("}")
@@ -277,11 +260,47 @@ public class MyBatisServiceFileRules implements CodeRules {
          .var("memberMethods", methods.toString());
     }
 
-    /** The current time in the field's type, for a creation or modification stamp. */
-    private static String nowOf(FieldSpec f) {
-        if (!MyBatisSql.createdDate(f) && !MyBatisSql.lastModifiedDate(f)) return null;
-        return MyBatisSql.nowType(f);
+    /**
+     * What a create and an update set of the auditing columns, as Spring
+     * Data's auditing does for JPA: when the row was created and by whom
+     * (kept once set), when it was last written and by whom.
+     */
+    public static void stamps(Syntax syntax, EntitySpec e, String var, String nl, StringBuilder create, StringBuilder update) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
+            if (!MyBatisSql.isValue(e, f)) continue;
+            String value;
+            if (MyBatisSql.createdDate(f) || MyBatisSql.lastModifiedDate(f)) {
+                value = MyBatisSql.nowType(f);
+            } else if (MyBatisSql.createdBy(f) || MyBatisSql.lastModifiedBy(f)) {
+                value = String.format("(%s) currentAuditor()", syntax.nullableType(f.typeName()));
+            } else {
+                continue;
+            }
+            if (value == null) continue;
+            String set = syntax.statement(syntax.setter(var, f.name(), value));
+            if (MyBatisSql.createdDate(f) || MyBatisSql.createdBy(f)) {
+                create.append(nl).append(String.format("if (%s == null) %s", syntax.getter(var, f.name()), set));
+            } else {
+                create.append(nl).append(set);
+                update.append(nl).append(set);
+            }
+        }
     }
+
+    /** Who writes, for @CreatedBy / @LastModifiedBy: the application's AuditorAware, as JPA auditing asks it. */
+    static final String AUDITOR_MEMBERS = "\n\n"
+            + "    /** Who is writing: the application's AuditorAware, when it has one. */\n"
+            + "    private org.springframework.data.domain.AuditorAware<?> auditorAware;\n"
+            + "\n"
+            + "    @org.springframework.beans.factory.annotation.Autowired(required = false)\n"
+            + "    protected void setAuditorAware(org.springframework.data.domain.AuditorAware<?> auditorAware) {\n"
+            + "        this.auditorAware = auditorAware;\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The current auditor, or null without an AuditorAware or a signed-in one. */\n"
+            + "    protected Object currentAuditor() {\n"
+            + "        return auditorAware == null ? null : auditorAware.getCurrentAuditor().orElse(null);\n"
+            + "    }";
 
     /** The service keeps the methods the controller keeps, as the JPA one does. */
     @Rule(value = "mybatis-service-method-filter", target = "service", order = 20)

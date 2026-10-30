@@ -349,6 +349,7 @@ public final class RulesGenRunner {
         io.elasticore.base.model.pub.rules.ModelCheck.reset();
         io.elasticore.base.model.pub.rules.SourceCode.resetWarnings();
         SpecFactory.applicationSignIns(-1, null);
+        io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.forgetOutboxes();
 
         // The generation the build chose: -Pv3 / output = 'v3', or -Pv2 /
         // output = 'v2' for the code 2.x generates. Neither is the default -
@@ -459,7 +460,7 @@ public final class RulesGenRunner {
         // A domain whose modes leave out jpa is refused; documents beside it
         // are said to be the 2.x generator's.
         // The persistence is one word of that mode (RulesConfig.persistenceOfMode):
-        // jpa, or mybatis, which the rule engine writes as layered Java.
+        // jpa, or mybatis, which the rule engine writes in Java, in every architecture.
         String mybatisDomain = null;
         for (ECoreModel model : loader.allModels()) {
             String mode = String.valueOf(model.getConfig("mode", "jpa"));
@@ -486,8 +487,10 @@ public final class RulesGenRunner {
                     java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
                     if (named != null) {
                         for (String rule : named) {
-                            if (rule.startsWith("ddd-") || rule.startsWith("hexagonal-") || rule.startsWith("hex-")
-                                    || rule.endsWith("-kt") || rule.startsWith("jpa-springboot")) {
+                            // The architecture bundles are read as their MyBatis ones
+                            // (RulesConfig.mybatisBundleOf); the rest are JPA's own.
+                            if (RulesConfig.mybatisBundleOf(rule) != null) continue;
+                            if (rule.endsWith("-kt") || rule.startsWith("jpa-springboot")) {
                                 refusal = "its publisher.rules names " + rule + ", which is JPA code";
                                 break;
                             }
@@ -1171,6 +1174,12 @@ public final class RulesGenRunner {
             // A required reference is required through its key in the DTO;
             // 2.x requires the nested object, which only the response fills.
             SpecFactory.referenceRequiredByKey(shaped);
+            // Over MyBatis, a member of an aggregate the domain rules bound is
+            // written by its root, whatever @service it declares - the rules
+            // give it no service, so nothing else would write it.
+            io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.aggregateBoundaries(v3 && !kotlin && !typescript
+                    && persistence() == RulesConfig.Persistence.MYBATIS
+                    && selectsNamed("DddAggregateRules"));
 
             List<EntitySpec> specs = new ArrayList<EntitySpec>();
             ModelComponentItems<Entity> entities = model.getEntityModels().getItems();
@@ -1731,6 +1740,19 @@ public final class RulesGenRunner {
                 }
             }
         }
+        // A member a root holds by a to-one relation: its mapper too, for the
+        // root's adapter to write it with the root (MyBatisSql.isMemberReference).
+        for (EntitySpec spec : specs) {
+            for (io.elasticore.base.model.pub.rules.FieldSpec f
+                    : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(spec)) {
+                if (!io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isMemberReference(spec, f)) continue;
+                for (EntitySpec s : specs) {
+                    if (!s.getName().equals(f.coreItemType()) || mybatisMapped.contains(s)) continue;
+                    s.config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.SERVICED_CONFIG, "false");
+                    mybatisMapped.add(s);
+                }
+            }
+        }
         for (Map.Entry<EntitySpec, List<String>> in : inbound.entrySet()) {
             in.getKey().config(io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.INBOUND_CONFIG,
                     String.join("\n", in.getValue()));
@@ -1763,7 +1785,34 @@ public final class RulesGenRunner {
      * collection. One of another domain is built from its model.
      */
     private void relateMyBatis(EntitySpec spec, List<EntitySpec> specs) {
-        for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
+        relateMyBatis(spec, specs, new java.util.HashSet<EntitySpec>());
+    }
+
+    private void relateMyBatis(EntitySpec spec, List<EntitySpec> specs, java.util.Set<EntitySpec> seen) {
+        // Each spec once: relations may run in a cycle (a department's parent).
+        if (!seen.add(spec)) return;
+        // The class it extends first: an @abstract one's columns are the
+        // row's, and its relations are read with the row like the entity's own.
+        String parent = spec.parentName() == null ? null : spec.parentName().trim();
+        if (parent != null && !parent.isEmpty() && !parent.equals(spec.getName())) {
+            EntitySpec own = null;
+            for (EntitySpec s : specs) {
+                if (s.getName().equals(parent)) own = s;
+            }
+            EntitySpec known = spec.related(parent);
+            if (known == null || (own != null && known != own)) {
+                EntitySpec target = own != null ? own : ownModelSpec(parent);
+                if (target == null) target = foreignSpec(parent);
+                if (target != null) {
+                    spec.knownRelated(parent, target);
+                    relateMyBatis(target, specs, seen);
+                }
+            } else {
+                relateMyBatis(known, specs, seen);
+            }
+        }
+        for (io.elasticore.base.model.pub.rules.FieldSpec f
+                : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(spec)) {
             if (!f.isEntityRef() && !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isEmbedded(spec, f)) continue;
             String type = f.coreItemType();
             EntitySpec own = null;
@@ -1774,11 +1823,16 @@ public final class RulesGenRunner {
             // was built from the model alone; the domain's own spec, which
             // knows the run's enums, takes its place.
             EntitySpec known = spec.related(type);
-            if (known != null && (own == null || known == own)) continue;
+            if (known != null && (own == null || known == own)) {
+                // Its own relations still have to be known - one related early
+                // (relateMyBatisEarly) was not walked further.
+                if (known != spec) relateMyBatis(known, specs, seen);
+                continue;
+            }
             EntitySpec target = own != null ? own : foreignSpec(type);
             if (target == null) continue;
             spec.knownRelated(type, target);
-            if (target != spec) relateMyBatis(target, specs);
+            if (target != spec) relateMyBatis(target, specs, seen);
         }
     }
 
@@ -1789,9 +1843,23 @@ public final class RulesGenRunner {
      * are built from the model, and relateMyBatis replaces them.
      */
     private void relateMyBatisEarly(EntitySpec spec) {
-        for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
+        // The class it extends, and the one that extends in turn: whether it
+        // is @abstract decides whether its columns are this row's.
+        String parent = spec.parentName() == null ? null : spec.parentName().trim();
+        if (parent != null && !parent.isEmpty() && !parent.equals(spec.getName()) && spec.related(parent) == null) {
+            EntitySpec target = ownModelSpec(parent);
+            if (target == null) target = foreignSpec(parent);
+            if (target != null) {
+                spec.knownRelated(parent, target);
+                relateMyBatisEarly(target);
+            }
+        }
+        for (io.elasticore.base.model.pub.rules.FieldSpec f
+                : io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(spec)) {
             boolean embedded = io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.isEmbedded(spec, f);
-            if (!embedded && !(f.isList() && f.isEntityRef())) continue;
+            // An embedded type's parts, a collection's rows, and a to-one's
+            // target (whether it holds this row's key, mappedBy).
+            if (!embedded && !f.isEntityRef()) continue;
             if (spec.related(f.coreItemType()) != null) continue;
             EntitySpec target = ownModelSpec(f.coreItemType());
             if (target == null) target = foreignSpec(f.coreItemType());
@@ -2361,9 +2429,20 @@ public final class RulesGenRunner {
 
     /** A rule selection this domain declares in its own env.yml, or null. */
     private java.util.List<String> domainConfig(String key) {
-        return currentModel == null
+        java.util.List<String> named = currentModel == null
                 ? null
                 : RulesConfig.configuredList(currentModel.getConfig(key));
+        // A MyBatis domain naming its architecture's bundle gets the MyBatis
+        // one of it: mode says the persistence, the bundle the architecture.
+        if (named != null && "publisher.rules".equals(key) && persistence() == RulesConfig.Persistence.MYBATIS) {
+            java.util.List<String> out = new ArrayList<String>();
+            for (String rule : named) {
+                String mybatis = RulesConfig.mybatisBundleOf(rule);
+                out.add(mybatis != null ? mybatis : rule);
+            }
+            return out;
+        }
+        return named;
     }
 
     private void generateEntityArtifacts(Entity entity, EntitySpec spec, ECoreModel model) {
@@ -2373,6 +2452,12 @@ public final class RulesGenRunner {
         boolean hasPk = spec.pkField() != null;
 
         System.out.println("  " + name);
+
+        // Over MyBatis the artifacts a rule set contributes - the repository
+        // adapter writing the aggregate's members - read the related entities.
+        if (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS) {
+            relateMyBatisEarly(spec);
+        }
 
         // What the configured rule sets bring of their own, before the
         // built-in list. The built-ins are what every project gets; these
@@ -2461,9 +2546,13 @@ public final class RulesGenRunner {
                         String.join("; ", unsupported)));
                 return;
             }
+            // A root the domain rules split (OrderBase + Order) is written as its base.
             emit(spec, "entity",
-                    ArtifactTarget.java(model.getNamespace("entity"), name),
+                    ArtifactTarget.java(model.getNamespace("entity"), entityClassName(spec)),
                     "jpa-entity", "mybatis-entity-file");
+            // A member of a bound aggregate is its root's to write (hasOwnService).
+            serviced = serviced && io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.hasOwnService(name);
+            exposed = exposed && serviced;
             if (serviced && hasPk) {
                 coreOk = emitSucceeded(spec, "service",
                         ArtifactTarget.java(model.getNamespace("service"),

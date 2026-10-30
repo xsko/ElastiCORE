@@ -1,0 +1,32 @@
+repository:
+  Product:
+    methods:
+      # SQL: answers with the root, so it is on the domain's port too
+      - id: findByPriceRange
+        params:
+          minPrice: bigdecimal
+          maxPrice: bigdecimal
+        return: List<Product>
+        query: "SELECT * FROM shop_products WHERE price BETWEEN :minPrice AND :maxPrice ORDER BY price"
+        nativeQuery: true
+
+      # Derived from the name: no query, Spring Data reads it
+      - id: findBySku
+        params:
+          sku: string
+        return: Optional<Product>
+
+      # A page is a screen's question: the application's query port
+      - id: findByActive
+        params:
+          active: boolean
+        return: Page<Product>
+        pageable: true
+
+  Order:
+    methods:
+      # A projection: answered as the DTO, through the application's query port
+      - id: countByCustomer
+        return: List<CustomerOrderCountDTO>
+        query: "SELECT customer_customer_id AS customerId, COUNT(*) AS orderCount FROM shop_order GROUP BY customer_customer_id"
+        nativeQuery: true

@@ -1,0 +1,24 @@
+# The shapes the read model answers in. They view no entity - a report row is
+# not an aggregate and must not look like one, which is the other half of why
+# the queries live in a port rather than on a repository.
+dto:
+  RevenueSearchInput:
+    meta: dto
+    fields:
+      lastName: string
+
+  CustomerRevenueDTO:
+    meta: dto
+    fields:
+      customerId: long
+      firstName: string
+      lastName: string
+      orderCount: long
+      totalRevenue: bigdecimal
+
+  OrderTotalsDTO:
+    meta: dto
+    fields:
+      orderCount: long
+      revenue: bigdecimal
+      averageOrder: bigdecimal

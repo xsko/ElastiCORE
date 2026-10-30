@@ -112,6 +112,8 @@ public class MyBatisMapperRules implements CodeRules {
              .varLine("inboundFinders", "int deleteAllBy%s(@Param(\"key\") %s key);", by, rootKey);
         }
 
+        MyBatisQueries.interfaceLines(c, e, MyBatisQueries.of(e));
+
         if (!serviced) return;
 
         String srch = e.searchDtoClassName();
@@ -172,7 +174,7 @@ public class MyBatisMapperRules implements CodeRules {
     static Map<String, String> sortColumns(EntitySpec e) {
         // A large value is not in the list: Oracle cannot sort by one.
         Map<String, String> m = new LinkedHashMap<String, String>();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f)) {
                 if (!MyBatisSql.isLob(e, f)) m.put(f.name(), MyBatisSql.ROOT + "." + MyBatisSql.column(f));
             } else if (MyBatisSql.isEmbedded(e, f)) {
@@ -183,8 +185,8 @@ public class MyBatisMapperRules implements CodeRules {
         }
         for (Join jn : joins(e)) {
             FieldSpec tpk = jn.target.pkField();
-            m.put(jn.field.name() + "." + tpk.name(), MyBatisSql.ROOT + "." + jn.key);
-            for (FieldSpec tf : jn.target.fields()) {
+            m.put(jn.field.name() + "." + tpk.name(), jn.keyOfJoined());
+            for (FieldSpec tf : MyBatisSql.fields(jn.target)) {
                 if (tf == tpk) continue;
                 if (MyBatisSql.isValue(jn.target, tf)) {
                     if (!MyBatisSql.isLob(jn.target, tf)) {
@@ -225,12 +227,12 @@ public class MyBatisMapperRules implements CodeRules {
         // resultMap - the DTD's order: id, the results, then the associations
         x.append(I).append("<resultMap id=\"row\" type=\"").append(entityType).append("\">\n");
         x.append(I).append(I).append("<id property=\"").append(pk.name()).append("\" column=\"").append(pkColumn).append("\"/>\n");
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f != pk && MyBatisSql.isValue(e, f)) {
                 x.append(I).append(I).append(result(e, f, MyBatisSql.column(f))).append("\n");
             }
         }
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isEmbedded(e, f)) embeddedResult(x, e, f, I + I);
         }
         for (Join jn : joins) {
@@ -240,16 +242,16 @@ public class MyBatisMapperRules implements CodeRules {
              .append("\" columnPrefix=\"").append(jn.prefix).append("\">\n");
             x.append(I).append(I).append(I).append("<id property=\"").append(t.pkField().name())
              .append("\" column=\"").append(MyBatisSql.column(t.pkField())).append("\"/>\n");
-            for (FieldSpec tf : t.fields()) {
+            for (FieldSpec tf : MyBatisSql.fields(t)) {
                 if (tf != t.pkField() && MyBatisSql.isValue(t, tf)) {
                     x.append(I).append(I).append(I).append(result(t, tf, MyBatisSql.column(tf))).append("\n");
                 }
             }
-            for (FieldSpec tf : t.fields()) {
+            for (FieldSpec tf : MyBatisSql.fields(t)) {
                 if (tf == t.pkField()) continue;
                 if (MyBatisSql.isEmbedded(t, tf)) {
                     embeddedResult(x, t, tf, I + I + I);
-                } else if (MyBatisSql.isJoined(t, tf)) {
+                } else if (MyBatisSql.holdsKey(t, tf)) {
                     // A relation of the joined row: its key, which is a column of that row.
                     EntitySpec tt = t.related(tf.coreItemType());
                     if (tt == null || tt.pkField() == null) continue;
@@ -266,7 +268,7 @@ public class MyBatisMapperRules implements CodeRules {
 
         // columns and from
         List<String> cols = new ArrayList<String>();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f)) {
                 cols.add(MyBatisSql.ROOT + "." + MyBatisSql.column(f));
             } else if (MyBatisSql.isEmbedded(e, f)) {
@@ -286,7 +288,7 @@ public class MyBatisMapperRules implements CodeRules {
         x.append(I).append(I).append(table).append(' ').append(MyBatisSql.ROOT).append("\n");
         for (Join jn : joins) {
             x.append(I).append(I).append("LEFT JOIN ").append(MyBatisSql.table(jn.target)).append(' ').append(jn.alias)
-             .append(" ON ").append(jn.alias).append('.').append(MyBatisSql.column(jn.target.pkField()))
+             .append(" ON ").append(jn.alias).append('.').append(jn.targetColumn)
              .append(" = ").append(MyBatisSql.ROOT).append('.').append(jn.key).append("\n");
         }
         x.append(I).append("</sql>\n\n");
@@ -347,7 +349,7 @@ public class MyBatisMapperRules implements CodeRules {
         boolean generated = MyBatisSql.generatedKey(pk);
         List<String> insertCols = new ArrayList<String>();
         List<String> insertVals = new ArrayList<String>();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f == pk && generated) continue;
             if (MyBatisSql.isValue(e, f)) {
                 insertCols.add(MyBatisSql.column(f));
@@ -373,7 +375,7 @@ public class MyBatisMapperRules implements CodeRules {
 
         // update
         List<String> sets = new ArrayList<String>();
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f == pk) continue;
             // Kept as first written, as JPA's @Column(updatable = false) keeps it.
             if (!MyBatisSql.updatable(f)) continue;
@@ -403,6 +405,9 @@ public class MyBatisMapperRules implements CodeRules {
                     "UPDATE " + table + " SET\n" + I + I + I + joinLines(sets) + "\n" + I + I + where.trim());
         }
         statement(x, "delete", "deleteById", "", "DELETE FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
+
+        // What repository.yml declares for the entity.
+        MyBatisQueries.statements(x, e, joins, MyBatisQueries.of(e));
 
         c.var("body", RuleText.stripTrailing(x.toString()));
     }
@@ -454,7 +459,7 @@ public class MyBatisMapperRules implements CodeRules {
     /** The columns read of a joined row: its values, its embedded values' and its relations' keys. */
     private static List<String> joinedColumns(Join jn) {
         List<String> out = new ArrayList<String>();
-        for (FieldSpec tf : jn.target.fields()) {
+        for (FieldSpec tf : MyBatisSql.fields(jn.target)) {
             if (MyBatisSql.isValue(jn.target, tf)) {
                 out.add(MyBatisSql.column(tf));
             } else if (MyBatisSql.isEmbedded(jn.target, tf)) {
@@ -472,7 +477,7 @@ public class MyBatisMapperRules implements CodeRules {
     static List<Join> joins(EntitySpec e) {
         List<Join> joins = new ArrayList<Join>();
         int n = 0;
-        for (FieldSpec f : e.fields()) {
+        for (FieldSpec f : MyBatisSql.fields(e)) {
             if (!MyBatisSql.isJoined(e, f)) continue;
             n++;
             EntitySpec target = e.related(f.coreItemType());
@@ -483,13 +488,17 @@ public class MyBatisMapperRules implements CodeRules {
                 continue;
             }
             String alias = "j" + n;
-            String key = MyBatisSql.keyColumn(e, f, target);
-            Join jn = new Join(f, target, alias, f.name() + "__", key);
+            FieldSpec inverse = MyBatisSql.inverseOf(e, f);
+            Join jn = inverse != null
+                    // The other row holds this one's key: joined on its column.
+                    ? new Join(f, target, alias, f.name() + "__", MyBatisSql.column(e.pkField()),
+                            MyBatisSql.foreignKey(inverse, e), true)
+                    : new Join(f, target, alias, f.name() + "__", MyBatisSql.keyColumn(e, f, target));
             // A column label PostgreSQL would cut short is read under the
             // alias's prefix instead, which every database keeps whole.
             for (String col : joinedColumns(jn)) {
                 if ((jn.prefix + col).length() > ALIAS_LIMIT) {
-                    jn = new Join(f, target, alias, alias + "_", key);
+                    jn = jn.withPrefix(alias + "_");
                     break;
                 }
             }
@@ -542,15 +551,35 @@ public class MyBatisMapperRules implements CodeRules {
         final EntitySpec target;
         final String alias;
         final String prefix;
-        /** The row's column that holds the joined row's key. */
+        /** The row's column the join compares: the joined row's key it holds, or its own key for an inverse one. */
         final String key;
+        /** The joined row's column the join compares: its key, or the column that holds this row's key. */
+        final String targetColumn;
+        /** A one-to-one the other row holds (mappedBy): joined on the other row's column. */
+        final boolean inverse;
 
         Join(FieldSpec field, EntitySpec target, String alias, String prefix, String key) {
+            this(field, target, alias, prefix, key, MyBatisSql.column(target.pkField()), false);
+        }
+
+        Join(FieldSpec field, EntitySpec target, String alias, String prefix, String key, String targetColumn,
+             boolean inverse) {
             this.field = field;
             this.target = target;
             this.alias = alias;
             this.prefix = prefix;
             this.key = key;
+            this.targetColumn = targetColumn;
+            this.inverse = inverse;
+        }
+
+        /** Where the joined row's key is read: the row's column, or the joined row's own for an inverse one. */
+        String keyOfJoined() {
+            return inverse ? alias + "." + MyBatisSql.column(target.pkField()) : MyBatisSql.ROOT + "." + key;
+        }
+
+        Join withPrefix(String newPrefix) {
+            return new Join(field, target, alias, newPrefix, key, targetColumn, inverse);
         }
     }
 
@@ -580,7 +609,7 @@ public class MyBatisMapperRules implements CodeRules {
         for (Join jn : joins) {
             if (!jn.field.name().equals(seg[0])) continue;
             if (seg.length == 2 && seg[1].equals(jn.target.pkField().name())) {
-                return new Path(MyBatisSql.ROOT + "." + jn.key,
+                return new Path(jn.keyOfJoined(),
                         jn.target.pkField(), jn.target);
             }
             return within(jn.target, jn.alias, seg, 1);
@@ -614,7 +643,7 @@ public class MyBatisMapperRules implements CodeRules {
         if (text == null || text.isEmpty()) return out;
         for (String name : text.split("\n")) {
             FieldSpec f = field(e, name.trim());
-            if (f == null || !MyBatisSql.isJoined(e, f)) continue;
+            if (f == null || !MyBatisSql.holdsKey(e, f)) continue;
             EntitySpec root = e.related(f.coreItemType());
             if (root == null || root.pkField() == null) continue;
             out.add(f);
@@ -666,6 +695,11 @@ public class MyBatisMapperRules implements CodeRules {
         return (known != null ? known : pkg) + "." + simple;
     }
 
+    /** A bound parameter of a column's value (MyBatisQueries binds a declared query's through it). */
+    static String paramOf(EntitySpec e, FieldSpec f, String expression) {
+        return param(e, f, expression);
+    }
+
     /** A bound parameter with its JDBC type, and the handler for an enum, Money or Quantity. */
     private static String param(EntitySpec e, FieldSpec f, String expression) {
         if (MyBatisSql.isEnum(e, f)) {
@@ -693,7 +727,7 @@ public class MyBatisMapperRules implements CodeRules {
     }
 
     private static FieldSpec field(EntitySpec e, String name) {
-        for (FieldSpec f : e.fields()) if (f.name().equals(name)) return f;
+        for (FieldSpec f : MyBatisSql.fields(e)) if (f.name().equals(name)) return f;
         return null;
     }
 

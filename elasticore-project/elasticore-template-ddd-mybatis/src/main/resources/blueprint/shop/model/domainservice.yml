@@ -1,0 +1,27 @@
+# An operation the domain performs that belongs to no single aggregate.
+#
+# Declared here rather than on a root, and the section is the argument: a
+# domain service exists precisely because the operation is nobody's. 'uses'
+# names what it spans - it is what gets wired in, and it is the sentence that
+# justifies the service existing at all.
+domainService:
+
+  Pricing:
+    desc: What an order costs once the products it names are priced
+    # The aggregates this operation spans. Each becomes the repository
+    # port the domain owns.
+    #
+    # A declared dbms or http port cannot go here: its contract is
+    # written in application DTOs, so a domain service taking one would
+    # depend on the layer above it. The generator says so and drops it.
+    # An outbound port is used by the service that calls it, which is
+    # the application service - see HexagonalPortTest.
+    uses: [Order, Product]
+
+# A process manager: what the order being placed means for the customer.
+# Reacts after the order's transaction committed, in a transaction of its own.
+processManager:
+  Loyalty:
+    desc: Counts the orders a customer has placed
+    on: [OrderPlaced]
+    uses: [Customer]
