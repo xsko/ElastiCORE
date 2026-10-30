@@ -19,7 +19,8 @@
     git 설정(`diff.noprefix`, `core.quotePath`)과 무관한 diff.
   - 소스 루트별로 셈: springboot3 의 `src/main/java` 는 springboot3·4 어느 테스트가 실행해도, `src/jackson2/java`(3)와
     `src/jackson3/java`(4)는 같은 이름의 파일이 있어 각 모듈 것만. Korean 서버 테스트(`koreanServerTest`)의 실행도 셈.
-  - 큰 변경(300줄 초과)은 줄마다 mutation 1개(`perline`) - PR #52 크기(4993줄)로 CI 에서 9.5분.
+  - 큰 변경(300줄 초과)은 줄마다 mutation 1개(`perline`) - PR #52 크기(4993줄)로 CI 에서 9.5분. PIT 는 빌드가 병렬
+    (`org.gradle.parallel`)이어도 한 번에 하나(build service) - 셋이 함께 돌면 32GB 작업 PC 의 메모리가 바닥났다.
 - CI: 새 job `Format and static analysis of the change`·`Mutation testing of the change`, `Build, test and compatibility
   checks` 에 커버리지 단계. CONTRIBUTING.md 에 "The gates on the lines you write", PR 템플릿에 `prCheck`.
 - 게이트가 찾은 기존 코드의 결함(ERROR 2건):

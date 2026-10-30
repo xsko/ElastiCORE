@@ -302,9 +302,20 @@ def changedLinesPlugin = qualityTools
 // springboot3's jackson2 and springboot4's jackson3 hold files of the same names.
 def changedLinesFile = { String module -> layout.buildDirectory.file("quality/changed-lines${module.replace(':', '-')}.txt").get().asFile }
 
+// One PIT run at a time, however parallel the build: each is a JVM with test
+// JVMs of its own, and three side by side (org.gradle.parallel) ran a 32 GB
+// workstation out of memory.
+abstract class PitestSlot implements org.gradle.api.services.BuildService<org.gradle.api.services.BuildServiceParameters.None> {}
+def pitestSlot = gradle.sharedServices.registerIfAbsent('elasticorePitestSlot', PitestSlot) {
+    maxParallelUsages = 1
+}
+
 mutatedModules.each { path ->
     project(path) {
         apply plugin: 'info.solidsoft.pitest'
+        tasks.named('pitest') {
+            usesService(pitestSlot)
+        }
         dependencies {
             pitest project(changedLinesPlugin)
         }
@@ -622,6 +633,9 @@ tasks.register('diffErrorprone') {
                 throw new GradleException("No Error Prone findings at ${file} - the errorprone task did not run")
             }
             boolean canarySeen = false
+            // This module's canary: in a parallel build a listener also hears
+            // the other modules' compiles.
+            String ownCanary = project(path).file('build/errorprone/canary').absolutePath.replace('\\', '/') + '/'
             file.getText('UTF-8').eachLine { String line ->
                 // Error Prone names its checks in CamelCase; javac's own lint
                 // categories ([deprecation], [removal]) are lower case.
@@ -629,7 +643,7 @@ tasks.register('diffErrorprone') {
                 if (m.find()) {
                     String f = m.group(1).replace('\\', '/')
                     if (f.endsWith('/ErrorProneCanary.java')) {
-                        canarySeen = true
+                        canarySeen |= f.startsWith(ownCanary)
                         return
                     }
                     f = f.startsWith(root) ? f.substring(root.length()) : f
