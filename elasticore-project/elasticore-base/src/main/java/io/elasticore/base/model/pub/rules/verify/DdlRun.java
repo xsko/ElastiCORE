@@ -265,14 +265,27 @@ final class DdlRun {
             }
         }
         boolean baseline = System.getProperty(BASELINE) != null && !"false".equals(System.getProperty(BASELINE));
+        // A history of the project's own straight in migration/ - Spring Boot's default location,
+        // classpath:db/migration - is read by Flyway with the folders under it: with more than one
+        // database, each database's migrations would run on the other. Whether or not a state is there
+        // yet - a database added after the baseline is the same mistake.
+        boolean ownHistory = hasOwnHistory(dir);
+        if (ownHistory && g.databases.size() > 1) {
+            String location = "classpath:" + g.dir + "/migration";
+            problems.add(String.format(
+                    "[elcore3] ddl: %s holds a Flyway history of the project's own, and %s"
+                            + " reads the folders under it - with %s, each database's migrations would run on the other."
+                            + " Move the history into %s/{db}/ for each database and point spring.flyway.locations at"
+                            + " %s/{vendor}; no migration was written",
+                    relative(dir), location, ids(g.databases), relative(dir), location));
+            return;
+        }
         if (!stateFile.isFile()) {
             for (Database db : Database.values()) {
                 if (!hasMigrations(new File(dir, db.id))) continue;
                 if (baseline) {
-                    // The project's own history built the tables: the state starts from the model, with no init -
-                    // and its keys and indexes by names the database may not have (SchemaDiff waits on them).
-                    schema.takeOverKeysAndIndexes();
-                    writeState(stateFile, schema, g);
+                    // The project's own history built the tables: the state starts from the model, with no init.
+                    startFromTheModel(stateFile, schema, g);
                     messages.add(String.format("[elcore3] ddl: %s starts from the model as it is - check that the database"
                             + " matches it; the next change is a migration", relative(stateFile)));
                     return;
@@ -281,6 +294,32 @@ final class DdlRun {
                 problems.add(String.format("[elcore3] ddl: %s holds migrations but no schema-state.json - restore it from"
                         + " version control, or, for a Flyway history of the project's own that the database is already"
                         + " up to the model with, build once with -PddlBaseline; no migration was written", relative(dir)));
+                return;
+            }
+            // That history with one database: a first migration in migration/{db}/ would run after it
+            // and create every table again.
+            if (ownHistory) {
+                String location = "classpath:" + g.dir + "/migration";
+                if (baseline) {
+                    startFromTheModel(stateFile, schema, g);
+                    messages.add(String.format(
+                            "[elcore3] ddl: %s starts from the model as it is, after the history beside"
+                                    + " it - check that the database matches it; the next change is a migration in %s/%s/, which"
+                                    + " %s reads too",
+                            relative(stateFile),
+                            relative(dir),
+                            g.databases.isEmpty()
+                                    ? "{db}"
+                                    : g.databases.iterator().next().id,
+                            location));
+                    return;
+                }
+                problems.add(String.format(
+                        "[elcore3] ddl: %s holds a Flyway history of the project's own - a first"
+                                + " migration in a folder under it would create every table again, since %s reads the folders"
+                                + " under it. For a database already up to the model, build once with -PddlBaseline; no migration"
+                                + " was written",
+                        relative(dir), location));
                 return;
             }
         }
@@ -390,6 +429,39 @@ final class DdlRun {
         String[] names = vendorDir.list();
         if (names == null) return false;
         for (String n : names) if (n.startsWith("V") && n.endsWith(".sql")) return true;
+        return false;
+    }
+
+    /**
+     * -PddlBaseline: the state starts from the model over a history of the project's own, and
+     * takes its keys' and indexes' names over - the database may call them otherwise (SchemaDiff
+     * waits on them). Both places a history can be: migration/{db}/ and migration/ itself.
+     */
+    private void startFromTheModel(File stateFile, Schema schema, Group g) throws IOException {
+        schema.takeOverKeysAndIndexes();
+        writeState(stateFile, schema, g);
+    }
+
+    /**
+     * Whether migration/ itself holds a Flyway history of the project's own - a migration Flyway
+     * reads (versioned V, undo U, repeatable R, baseline B) straight in it, the sign that Spring
+     * Boot's default location, which takes the folders under it too, is in use. A folder of its own
+     * under migration/ (Flyway's "common" beside "{vendor}") is read only where the project's
+     * locations name it, so it is not counted.
+     */
+    static boolean hasOwnHistory(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            String n = f.getName();
+            if (f.isFile()
+                    && n.endsWith(".sql")
+                    && n.length() > 1
+                    && "VURB".indexOf(n.charAt(0)) >= 0
+                    && n.indexOf("__") > 0) {
+                return true;
+            }
+        }
         return false;
     }
 
