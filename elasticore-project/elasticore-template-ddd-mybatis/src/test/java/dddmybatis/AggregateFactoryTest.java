@@ -42,7 +42,10 @@ class AggregateFactoryTest {
     @Test
     @DisplayName("the signature is the root's required fields, and not its generated id")
     void theSignatureIsWhatTheModelCouldSay() {
-        Method[] methods = OrderFactory.class.getDeclaredMethods();
+        // What the source declares; a coverage agent adds a synthetic method of its own.
+        Method[] methods = java.util.Arrays.stream(OrderFactory.class.getDeclaredMethods())
+                .filter(m -> !m.isSynthetic())
+                .toArray(Method[]::new);
 
         assertThat(methods)
                 .as("one declared name, one method")
