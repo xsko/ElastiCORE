@@ -30,8 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class GuideTranslationTest {
 
-    /** A heading's level and its section number - "2.3", "1." - not a number that is part of a word. */
-    private static final Pattern HEADING = Pattern.compile("^(#{1,6}) +(?:([0-9][0-9.]*)(?=\\s|$))?");
+    /** A heading's level and its section number - "2.3", "1.", "9-2." - not a number that is part of a word. */
+    private static final Pattern HEADING = Pattern.compile("^(#{1,6}) +(?:([0-9][0-9.-]*)(?=\\s|$))?");
+
     private static final Pattern HANGUL = Pattern.compile("[\\uac00-\\ud7a3\\u3131-\\u318e]");
     private static final Pattern INLINE_CODE = Pattern.compile("`[^`]*`");
     private static final Pattern LINK_TARGET = Pattern.compile("\\]\\([^)]*\\)");
@@ -49,8 +50,9 @@ public class GuideTranslationTest {
             String difference = firstDifference(shape(en), shape(ko));
             if (difference != null) problems.add(guide + ": " + difference);
         }
-        assertTrue(problems.isEmpty(), "the guides differ between the languages - change both:\n"
-                + String.join("\n", problems));
+        assertTrue(
+                problems.isEmpty(),
+                "the guides differ between the languages - change both:\n" + String.join("\n", problems));
     }
 
     @Test
@@ -67,7 +69,9 @@ public class GuideTranslationTest {
                     continue;
                 }
                 if (fence) continue;
-                String prose = LINK_TARGET.matcher(INLINE_CODE.matcher(line).replaceAll("")).replaceAll("]");
+                String prose = LINK_TARGET
+                        .matcher(INLINE_CODE.matcher(line).replaceAll(""))
+                        .replaceAll("]");
                 if (HANGUL.matcher(prose).find()) problems.add(guide + ":" + (i + 1) + "  " + line);
             }
         }
@@ -86,6 +90,13 @@ public class GuideTranslationTest {
 
         List<String> d = Arrays.asList("# Guide", "## 2.3 Rules", "Text.", "```yaml", "a: 1", "b: 2", "```");
         assertTrue(firstDifference(shape(a), shape(d)).contains("code block"));
+
+        // "9-2." is a section number; "1단계" is a word that starts with a digit.
+        assertTrue(firstDifference(shape(Arrays.asList("## 9-2. Merge")), shape(Arrays.asList("## 9-3. 병합")))
+                .contains("9-2."));
+        assertEquals(
+                null,
+                firstDifference(shape(Arrays.asList("#### Stage 1: load")), shape(Arrays.asList("#### 1단계: 로딩"))));
     }
 
     /** The headings (level and number) and code blocks (fence and length) in order, with their line. */
@@ -103,8 +114,9 @@ public class GuideTranslationTest {
                     opener = line.trim();
                 } else {
                     fence = false;
-                    shape.add(new String[]{"code block " + opener + " of " + (i - start - 1) + " lines",
-                            String.valueOf(start + 1)});
+                    shape.add(new String[] {
+                        "code block " + opener + " of " + (i - start - 1) + " lines", String.valueOf(start + 1)
+                    });
                 }
                 continue;
             }
@@ -112,7 +124,7 @@ public class GuideTranslationTest {
             Matcher m = HEADING.matcher(line);
             if (m.find()) {
                 String number = m.group(2) == null ? "" : " " + m.group(2);
-                shape.add(new String[]{"heading " + m.group(1) + number, String.valueOf(i + 1)});
+                shape.add(new String[] {"heading " + m.group(1) + number, String.valueOf(i + 1)});
             }
         }
         return shape;

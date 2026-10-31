@@ -56,7 +56,7 @@ public final class GuideDeployer {
     public static final String LANGUAGE_PROPERTY = "elasticore.guides";
 
     /** The languages the guides are written in, the default first. */
-    public static final String[] LANGUAGES = {"en", "ko"};
+    private static final String[] LANGUAGES = {"en", "ko"};
 
     private static final String CLASSPATH_DIR = "/elasticore-guide/";
 

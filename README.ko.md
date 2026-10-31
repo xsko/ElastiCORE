@@ -180,7 +180,8 @@ Gradle 플러그인을 쓰는 프로젝트는 2.x 의 코드를 유지한다고 
 | [포트](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-dsl-port-guide.md) | HTTP, DB, gRPC 포트 |
 
 가이드는 빌드할 때마다 프로젝트의 `blueprint/` 로 복사되므로, AI 도구는 지금 쓰는 버전의 문법을 그대로 읽습니다
-(기본은 영어). 한국어 가이드는 `elasticore { guides = 'ko' }` 로 받습니다 - 파일 이름은 같습니다.
+(3.0.261031-rc7 까지는 한국어). 다음 릴리스부터는 영어가 기본이고, 한국어 가이드는
+`elasticore { guides = 'ko' }` 로 받습니다 - 파일 이름은 같습니다.
 
 ## 참여하기 · 라이선스
 

@@ -163,7 +163,8 @@ public class GuideIndexTest {
     }
 
     @Test
-    @DisplayName("English guides by default, Korean ones under the same names when asked, English for a language they are not in")
+    @DisplayName(
+            "English guides by default, Korean ones under the same names when asked, English for a language they are not in")
     public void theLanguageIsChosen(@TempDir Path root) throws IOException {
         Pattern hangul = Pattern.compile("[\\uac00-\\ud7a3]");
         String guide = GuideDeployer.GUIDE_FILES[0];
