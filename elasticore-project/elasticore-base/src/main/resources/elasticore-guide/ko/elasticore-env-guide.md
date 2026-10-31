@@ -322,25 +322,17 @@ config:
 
 ---
 
-## 3. supportAI 설정
+## 3. supportAI (제거됨)
 
-> **Deprecated** - `supportAI`는 이후 릴리스에서 제거되며, 이 설정으로 생성하면 경고가 출력됩니다. 도구는 아래와 같이 계속 생성됩니다. 대신 에이전트에게 REST API(OpenAPI)를 주세요: 도구는 그 API를 반복할 뿐이고, 조건 삭제를 모델에게 맡기게 됩니다.
+`supportAI`는 확장 서비스(`XxxService`)를 Spring AI 도구(`@Tool`)로 생성하던 설정입니다. 제거되었습니다: 설정은 무시되고, 서비스는 도구 없이 생성되며, `supportAI: true`를 만나면 생성할 때 경고가 출력됩니다. `env.yml`에서 이 줄을 빼 주세요.
 
-```yaml
-config:
-  supportAI: "true"    # AI 지원 서비스 템플릿 사용 (기본값: "false")
-```
-
-- `"true"` 설정 시 `service_extend_ai.tmpl` 기반의 확장 서비스 클래스를 생성
-- `"false"` (기본값) 설정 시 `service_extend.tmpl` 사용
-- AI 기능 통합을 위한 확장 포인트를 제공하며, 서비스 레이어에 AI 관련 메서드 템플릿이 추가됨
-- 생성되는 `XxxService`의 메서드에 Spring AI `@Tool`/`@ToolParam`이 붙습니다. Spring AI 1.x와 2.0 모두 같은 어노테이션입니다.
-- `@readonly` 엔티티(또는 `@restExclude`로 뺀 메서드)는 조회 도구만 생깁니다 (3.0 규칙엔진). 쓰기 메서드가 없는 서비스에 쓰기 도구를 만들지 않습니다.
-- Spring Boot 4 + Spring AI 2.0은 아래 3-1 참고.
+- 이유: 도구는 에이전트가 이미 호출할 수 있는 REST API를 반복했고(대신 OpenAPI 문서를 주세요), 엔티티마다 도구가 십여 개씩 늘었으며, 조건 삭제를 모델에게 맡기게 했습니다.
+- 이전 버전이 도구를 넣어 생성한 서비스: 손대지 않은 파일은 도구 없이 다시 생성됩니다. 고친 파일은 도구 메서드만 빠지고, 고친 줄과 겹치지 않으면 고친 내용이 남습니다(`MERGED(your edits kept)`, 9-2).
+- `KEPT(yours ...)`나 `SKIP(user-owned)`로 남았다면 `@Tool` 메서드를 직접 지우세요 - 또는 필요한 것은 Spring AI 의존성과 함께 직접 작성한 코드로 남겨 두세요.
 
 ---
 
-## 3-1. Spring Boot 4 / Spring AI 2.0 (ElastiCORE 3.0)
+## 3-1. Spring Boot 4 (ElastiCORE 3.0)
 
 ElastiCORE **3.0**은 Spring Boot 3과 4 둘 다 지원합니다. 2.2는 Spring Boot 3만 지원합니다.
 확인한 버전: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
@@ -358,10 +350,6 @@ dependencies {
     implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.x'   // springboot3 대신
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'      // Boot 4: starter-web 의 새 이름
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'  // Boot 4 용 3.x
-
-    // supportAI 를 쓸 때
-    implementation platform('org.springframework.ai:spring-ai-bom:2.0.1')
-    implementation 'org.springframework.ai:spring-ai-model'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'  // MockMvc 테스트
 }
@@ -410,21 +398,6 @@ ElastiCORE가 만들지 않은 코드는 Spring Boot 4 마이그레이션 가이
 | `package org.springframework.boot.test.autoconfigure.web.servlet does not exist` | `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc` + `spring-boot-starter-webmvc-test` |
 | `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4는 Jackson 3 매퍼를 등록) |
 | `JsonNode.asText()` 경고 | Jackson 3: `asString()` |
-
-`supportAI`(deprecated, 3절)를 나중에 켜도 이미 생성된 개발자 소유 `XxxService`에 `@Tool`이 들어옵니다: 손대지 않은 파일은 다시 생성되고, 고친 파일은 고친 줄과 겹치지 않으면 병합됩니다(`MERGED(your edits kept)`, 9-2). 겹쳐서 `KEPT(yours ...)`로 남았거나 병합 전 버전이 만든 파일을 고쳐 `SKIP(user-owned)`로 남았다면 직접 붙입니다.
-
-### Spring AI 2.0에서 도구 쓰기
-
-생성된 서비스의 `@Tool` 메서드를 등록합니다:
-
-```java
-@Bean
-ToolCallbackProvider erpTools(PartnerService partners, ItemService items) {
-    return MethodToolCallbackProvider.builder().toolObjects(partners, items).build();
-}
-```
-
-도구의 인자는 Jackson 3로 읽으므로, 위의 enum 변경이 있어야 도구 호출과 REST API가 같은 값(`"DRF"`)을 씁니다.
 
 ---
 
@@ -1192,7 +1165,6 @@ elasticore:
     mode: jpa
     j2ee: 17
     apiPath: "/api/v1"
-    supportAI: "false"
     testCode: "true"
 
     table:

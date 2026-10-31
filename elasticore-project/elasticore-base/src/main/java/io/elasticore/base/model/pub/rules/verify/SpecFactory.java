@@ -476,7 +476,6 @@ public final class SpecFactory {
         io.elasticore.base.model.dto.DataTransfer srch = searchDtoOf(entity, model);
         if (srch != null) spec.searchDtoClassName(srch.getIdentity().getName());
         spec.testCode("true".equals(model.getConfig("testCode", "false")));
-        spec.supportAI("true".equals(model.getConfig("supportAI", "false")));
 
         spec.searchPageable(srch != null
                 && srch.getMetaInfo().getMetaAnnotationValue("searchable.pageSize") != null);

@@ -322,25 +322,17 @@ config:
 
 ---
 
-## 3. supportAI setting
+## 3. supportAI (removed)
 
-> **Deprecated** - `supportAI` will be removed in a later release, and a generation that uses it prints a warning. The tools are still generated as below. Give an agent the REST API (OpenAPI) instead: the tools repeat that API, and they put deletes by condition in a model's hands.
+`supportAI` wrote the extension service (`XxxService`) as Spring AI tools (`@Tool`). It is removed: the setting is ignored, the service is generated without tools, and a generation that finds `supportAI: true` prints a warning. Take the line out of `env.yml`.
 
-```yaml
-config:
-  supportAI: "true"    # use the AI-support service template (default: "false")
-```
-
-- With `"true"`, the extension service class is generated from `service_extend_ai.tmpl`
-- With `"false"` (default), `service_extend.tmpl` is used
-- It provides extension points for AI integration, and AI-related method templates are added to the service layer
-- Spring AI `@Tool`/`@ToolParam` are put on the methods of the generated `XxxService`. Spring AI 1.x and 2.0 use the same annotations.
-- A `@readonly` entity (or a method left out with `@restExclude`) gets read tools only (3.0 rule engine). A service with no write methods gets no write tools.
-- For Spring Boot 4 + Spring AI 2.0, see 3-1 below.
+- Why: the tools repeated the REST API that an agent can already call - give it the OpenAPI document instead - added about a dozen tools per entity, and put deletes by condition in a model's hands.
+- A service an earlier version wrote with tools: a file you did not touch is generated again without them. In a file you edited, the tool methods are taken out and your edits are kept where they do not overlap them (`MERGED(your edits kept)`, 9-2).
+- Where it stays `KEPT(yours ...)` or `SKIP(user-owned)`, delete the `@Tool` methods by hand - or keep the ones you want, with the Spring AI dependency, as your own code.
 
 ---
 
-## 3-1. Spring Boot 4 / Spring AI 2.0 (ElastiCORE 3.0)
+## 3-1. Spring Boot 4 (ElastiCORE 3.0)
 
 ElastiCORE **3.0** supports both Spring Boot 3 and 4. 2.2 supports only Spring Boot 3.
 Verified versions: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
@@ -358,10 +350,6 @@ dependencies {
     implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.x'   // instead of springboot3
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'      // Boot 4: the new name of starter-web
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'  // 3.x for Boot 4
-
-    // when you use supportAI
-    implementation platform('org.springframework.ai:spring-ai-bom:2.0.1')
-    implementation 'org.springframework.ai:spring-ai-model'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'  // MockMvc tests
 }
@@ -410,21 +398,6 @@ For code that ElastiCORE did not generate, follow the Spring Boot 4 migration gu
 | `package org.springframework.boot.test.autoconfigure.web.servlet does not exist` | `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc` + `spring-boot-starter-webmvc-test` |
 | `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4 registers a Jackson 3 mapper) |
 | `JsonNode.asText()` warning | Jackson 3: `asString()` |
-
-Even if you turn on `supportAI` (deprecated, section 3) later, `@Tool` is added to the developer-owned `XxxService` that was already generated: a file you did not touch is generated again, and a file you edited is merged if your edits do not overlap the changed lines (`MERGED(your edits kept)`, 9-2). If it stayed as `KEPT(yours ...)` because of an overlap, or you edited a file made by a version before the merge and it stayed as `SKIP(user-owned)`, add it by hand.
-
-### Writing tools with Spring AI 2.0
-
-Register the `@Tool` methods of the generated service:
-
-```java
-@Bean
-ToolCallbackProvider erpTools(PartnerService partners, ItemService items) {
-    return MethodToolCallbackProvider.builder().toolObjects(partners, items).build();
-}
-```
-
-The arguments of a tool are read with Jackson 3, so with the enum change above, a tool call and the REST API use the same value (`"DRF"`).
 
 ---
 
@@ -1192,7 +1165,6 @@ elasticore:
     mode: jpa
     j2ee: 17
     apiPath: "/api/v1"
-    supportAI: "false"
     testCode: "true"
 
     table:

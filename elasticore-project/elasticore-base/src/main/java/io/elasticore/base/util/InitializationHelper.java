@@ -368,7 +368,6 @@ public class InitializationHelper {
         content.append("    mode: jpa\n");
         content.append("    j2ee: jakarta\n");
         content.append("\n");
-        content.append("    supportAI: false\n");
         content.append("    testCode: false\n\n");
 
         content.append("    interface:\n");

@@ -79,8 +79,6 @@ dependencies {
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
 	implementation 'io.swagger.core.v3:swagger-annotations:2.2.15'
 	implementation 'org.hibernate:hibernate-envers:6.6.13.Final'
-	// A domain with supportAI writes its extension service as Spring AI tools.
-	implementation 'org.springframework.ai:spring-ai-core:1.0.0-M6'
 
 	implementation project(':elasticore-project:elasticore-base')
 	implementation project(':elasticore-project:elasticore-springboot3')

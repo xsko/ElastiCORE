@@ -174,9 +174,9 @@ v3 CoreService 는 다른 메서드를 부르므로(`deleteById` 는 `findById` 
 
 ---
 
-## Spring Boot 4 / Spring AI 2.0으로 올리기 (3.0만)
+## Spring Boot 4로 올리기 (3.0만)
 
-ElastiCORE 3.0은 Spring Boot 4.0과 Spring AI 2.0을 지원합니다(2.2는 Spring Boot 3까지).
+ElastiCORE 3.0은 Spring Boot 4.0을 지원합니다(2.2는 Spring Boot 3까지). `supportAI` 도구는 3.0에서 제거되었습니다(`elasticore-env-guide.md` 3장).
 런타임 의존성을 `elasticore-springboot3` -> `elasticore-springboot4`로 바꾸고 Boot 플러그인을 4.x로 올리면,
 ElastiCORE가 Boot 버전을 읽어 enum과 outbox를 Jackson 3에 맞게 생성합니다.
 자세한 절차와 직접 고칠 것은 `elasticore-env-guide.md` 3-1장.

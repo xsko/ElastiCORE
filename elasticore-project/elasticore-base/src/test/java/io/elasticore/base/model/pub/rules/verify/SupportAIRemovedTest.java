@@ -1,7 +1,6 @@
 package io.elasticore.base.model.pub.rules.verify;
 
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -20,70 +19,85 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The extension service of a domain with supportAI describes its tools by
- * the entity's name with the label beside it - "Accident (car accident)" -
- * as 2.x writes it. The rule engine wrote the label alone, so a model lost
- * the name a request is put in. An entity without a label is described by
- * its name, as before. supportAI is deprecated: each generator says so once
- * per domain and still writes the tools.
+ * supportAI was removed. A domain that still sets it gets the plain extension
+ * service - no Spring AI tools, no Spring AI import - from every generator,
+ * and the run that writes the services says, once per domain, that the
+ * setting is ignored. A domain without it, and the TypeScript client's run,
+ * say nothing.
  */
-public class AiToolDescriptionTest {
+public class SupportAIRemovedTest {
 
-    private static final String MODEL = String.join("\n",
+    private static final String MODEL = String.join(
+            "\n",
             "entity:",
             "  Accident:",
             "    meta: entity @expose -- car accident",
             "    fields:",
             "      accidentId: long @id @sequence",
-            "  Garage:",
-            "    meta: entity @expose",
-            "    fields:",
-            "      garageId: long @id @sequence",
             "");
+
+    private static final String REMOVED = "[ElastiCORE] domain 'claim': supportAI was removed and is ignored";
 
     private static final List<File> projects = new ArrayList<File>();
 
-    private static final String DEPRECATED = "[ElastiCORE] domain 'claim': supportAI is deprecated";
-
-    private static File compat;
-    private static File clean;
-
-    @BeforeAll
-    static void generate() throws Exception {
-        compat = project("elcore-ai-tool-compat", true);
-        generate(compat, "elasticore.rules.v2");
-        clean = project("elcore-ai-tool-v3", true);
-        generate(clean, "elasticore.rules.v3");
+    @AfterAll
+    static void cleanUp() throws Exception {
+        java.lang.reflect.Field tmp =
+                io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
+        tmp.setAccessible(true);
+        tmp.set(null, null);
+        for (File project : projects) delete(project);
     }
 
     // The runs whose words are read happen in the tests themselves, so that a
     // mutation test sees which test runs the lines that say them.
     @Test
-    public void supportAIIsSaidToBeDeprecatedOncePerDomain() throws Exception {
+    public void theRuleEngineWritesThePlainServiceAndSaysSoOnce() throws Exception {
         for (String run : new String[] {"elasticore.rules.v2", "elasticore.rules.v3"}) {
-            String log = logOf(project("elcore-ai-tool-said", true), run);
-            assertTrue(log.contains(DEPRECATED), log);
-            assertEquals(log.indexOf(DEPRECATED), log.lastIndexOf(DEPRECATED), "once per domain:\n" + log);
+            File project = project("elcore-ai-removed", true);
+            String log = logOf(project, run);
+            assertTrue(log.contains(REMOVED), log);
+            assertEquals(log.indexOf(REMOVED), log.lastIndexOf(REMOVED), "once per domain:\n" + log);
+            assertPlain(found(project, "AccidentService.java"));
         }
     }
 
     @Test
-    public void aDomainWithoutSupportAIIsNotWarned() throws Exception {
-        String log = logOf(project("elcore-ai-tool-off", false), "elasticore.rules.v3");
+    public void aDomainWithoutSupportAIIsNotTold() throws Exception {
+        String log = logOf(project("elcore-ai-off", false), "elasticore.rules.v3");
         assertFalse(log.contains("supportAI"), log);
     }
 
-    /** The TypeScript client's run writes no service, so it has nothing to say about the tools. */
+    /** What both generators call: said for "true" alone, and it answers whether it was said. */
+    @Test
+    public void theWarningIsSaidForTrueAlone() throws Exception {
+        for (String value : new String[] {"true", "false", null}) {
+            java.io.PrintStream out = System.out;
+            java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+            System.setOut(new java.io.PrintStream(captured, true, "UTF-8"));
+            boolean said;
+            try {
+                said = io.elasticore.base.model.pub.jpa.ServiceSrcPublisher.warnIfSupportAI("claim", value);
+            } finally {
+                System.setOut(out);
+            }
+            String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+            assertEquals("true".equals(value), said, String.valueOf(value));
+            assertEquals("true".equals(value), log.contains(REMOVED), log);
+        }
+    }
+
+    /** The TypeScript client's run writes no service, so it has nothing to say about it. */
     @Test
     public void theTypeScriptRunSaysNothing() throws Exception {
-        String log = logOf(project("elcore-ai-tool-ts", true), "elasticore.rules.ts");
+        String log = logOf(project("elcore-ai-ts", true), "elasticore.rules.ts");
         assertFalse(log.contains("supportAI"), log);
     }
 
-    /** The 2.x generator (./gradlew elcore) says it too, and still writes the tools. */
+    /** The 2.x generator (./gradlew elcore) says it too, and writes the plain service. */
     @Test
-    public void theTemplateGeneratorSaysItAndStillWritesTheTools() throws Exception {
-        File project = project("elcore-ai-tool-2x", true);
+    public void theTemplateGeneratorWritesThePlainServiceAndSaysSoOnce() throws Exception {
+        File project = project("elcore-ai-removed-2x", true);
         // A JVM of its own, as './gradlew elcore' runs: the extractor keeps the
         // loaded model in static state that the other tests expect empty.
         File log = new File(project, "gen.log");
@@ -107,33 +121,14 @@ public class AiToolDescriptionTest {
         }
         String genLog = new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8);
         assertEquals(0, p.exitValue(), genLog);
-        assertTrue(genLog.contains(DEPRECATED), genLog);
-        assertEquals(genLog.indexOf(DEPRECATED), genLog.lastIndexOf(DEPRECATED), "once per domain:\n" + genLog);
-        assertTrue(found(project, "AccidentService.java").contains("@Tool(name = \"findAllAccident\""), genLog);
+        assertTrue(genLog.contains(REMOVED), genLog);
+        assertEquals(genLog.indexOf(REMOVED), genLog.lastIndexOf(REMOVED), "once per domain:\n" + genLog);
+        assertPlain(found(project, "AccidentService.java"));
     }
 
-    @AfterAll
-    static void cleanUp() throws Exception {
-        java.lang.reflect.Field tmp = io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
-        tmp.setAccessible(true);
-        tmp.set(null, null);
-        for (File project : projects) delete(project);
-    }
-
-    @Test
-    public void aLabelledEntityIsNamedWithItsLabelBeside() throws Exception {
-        for (File project : new File[]{compat, clean}) {
-            String service = found(project, "AccidentService.java");
-            assertTrue(service.contains("\"Retrieves all Accident (car accident) records without sorting\""), service);
-        }
-    }
-
-    @Test
-    public void anEntityWithoutALabelIsNamedAlone() throws Exception {
-        for (File project : new File[]{compat, clean}) {
-            String service = found(project, "GarageService.java");
-            assertTrue(service.contains("\"Retrieves all Garage records without sorting\""), service);
-        }
+    private static void assertPlain(String service) {
+        assertTrue(service.contains("class AccidentService extends AccidentCoreService"), service);
+        assertFalse(service.contains("@Tool") || service.contains("org.springframework.ai"), service);
     }
 
     private static File project(String name, boolean supportAI) throws Exception {
@@ -179,8 +174,15 @@ public class AiToolDescriptionTest {
 
     /** {@code run}: elasticore.rules.v2 (the 2.x bundle), .v3, or .ts (the TypeScript client). */
     private static void generate(File project, String run) throws Exception {
-        String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
-                "elasticore.rules.force", "elasticore.rules.v3", "elasticore.rules.v2", "elasticore.rules.ts"};
+        String[] keys = {
+            "elasticore.base.path",
+            "elasticore.architecture",
+            "elasticore.language",
+            "elasticore.rules.force",
+            "elasticore.rules.v3",
+            "elasticore.rules.v2",
+            "elasticore.rules.ts"
+        };
         String[] saved = new String[keys.length];
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
         try {

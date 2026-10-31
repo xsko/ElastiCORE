@@ -104,25 +104,6 @@ public class SpringBoot4Test {
         assertFalse(out.contains("com.fasterxml.jackson.databind"), out);
     }
 
-    /** An AI tool calls the core service method of its name; a @readonly root has no writes to call. */
-    @Test
-    public void aReadonlyRootOffersNoWriteTools() {
-        EntitySpec invoice = new EntitySpec("Invoice").domain("erp", "Erp").meta("root", "").meta("readonly", "")
-                .meta("expose", "20").pkg("service", "com.acme.erp.application").pkg("dto", "com.acme.erp.application.dto")
-                .pkg("entity", "com.acme.erp.domain.model").pkg("repository", "com.acme.erp.infrastructure.persistence")
-                .field("invoiceId", "string(36) @id").supportAI(true);
-        String out = RuleCatalog.standard().engineFor("hexagonal-springboot").templateSet(SourceCode.TemplateSet.V3)
-                .run(invoice, "service_extend").render();
-        assertTrue(out.contains("listExposedInvoice"), out);
-        assertFalse(out.contains("saveInvoice") || out.contains("updateInvoice") || out.contains("bulkDeleteInvoice")
-                || out.contains("deleteInvoiceBySearch") || out.contains("updateInvoiceBySpec"), out);
-
-        String writable = RuleCatalog.standard().engineFor("hexagonal-springboot").templateSet(SourceCode.TemplateSet.V3)
-                .run(new EntitySpec("Partner").domain("erp", "Erp").meta("root", "").meta("expose", "20")
-                        .field("partnerId", "long @id").supportAI(true), "service_extend").render();
-        assertTrue(writable.contains("savePartner") && writable.contains("bulkDeletePartner"), writable);
-    }
-
     /**
      * Spring Data 4 declares Specification with JSpecify: Kotlin needs the
      * entity type parameter non-null, and Page.map a function that returns a
