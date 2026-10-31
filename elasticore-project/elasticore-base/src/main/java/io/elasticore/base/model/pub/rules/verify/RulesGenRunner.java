@@ -744,6 +744,18 @@ public final class RulesGenRunner {
             String domainDirName = loader.domainDirNameOf(en.getKey());
             if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
             runner.domainRoot = loader.moduleRootOf(en.getKey());
+            // Said by the run that writes the domain's Java or Kotlin services,
+            // not by the TypeScript one or a listing beside it.
+            if (!typescript && captured == null && !Boolean.getBoolean("elasticore.rules.list")) {
+                for (ECoreModel m : loader.modelsOf(en.getKey())) {
+                    if ("true".equals(m.getConfig("supportAI", "false"))) {
+                        io.elasticore.base.util.ConsoleLog.printWarn(
+                                io.elasticore.base.model.pub.jpa.ServiceSrcPublisher.supportAIDeprecated(
+                                        m.getInternalDomainName()));
+                        break;
+                    }
+                }
+            }
             runner.generate(domainDirName, loader.modelsOf(en.getKey()), allModels);
         }
         // twoXBases wanted the files' texts only: nothing after this writes for it.

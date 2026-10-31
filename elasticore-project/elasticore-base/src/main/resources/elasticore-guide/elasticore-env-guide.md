@@ -324,6 +324,8 @@ config:
 
 ## 3. supportAI setting
 
+> **Deprecated** - `supportAI` will be removed in a later release, and a generation that uses it prints a warning. The tools are still generated as below. Give an agent the REST API (OpenAPI) instead: the tools repeat that API, and they put deletes by condition in a model's hands.
+
 ```yaml
 config:
   supportAI: "true"    # use the AI-support service template (default: "false")
@@ -409,7 +411,7 @@ For code that ElastiCORE did not generate, follow the Spring Boot 4 migration gu
 | `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4 registers a Jackson 3 mapper) |
 | `JsonNode.asText()` warning | Jackson 3: `asString()` |
 
-Even if you turn on `supportAI` later, `@Tool` is added to the developer-owned `XxxService` that was already generated: a file you did not touch is generated again, and a file you edited is merged if your edits do not overlap the changed lines (`MERGED(your edits kept)`, 9-2). If it stayed as `KEPT(yours ...)` because of an overlap, or you edited a file made by a version before the merge and it stayed as `SKIP(user-owned)`, add it by hand.
+Even if you turn on `supportAI` (deprecated, section 3) later, `@Tool` is added to the developer-owned `XxxService` that was already generated: a file you did not touch is generated again, and a file you edited is merged if your edits do not overlap the changed lines (`MERGED(your edits kept)`, 9-2). If it stayed as `KEPT(yours ...)` because of an overlap, or you edited a file made by a version before the merge and it stayed as `SKIP(user-owned)`, add it by hand.
 
 ### Writing tools with Spring AI 2.0
 
