@@ -75,6 +75,7 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
         if("true".equals(aiConfig)) {
             isSupportAI = true;
             extendServiceTmplName = "service_extend_ai.tmpl";
+            io.elasticore.base.util.ConsoleLog.printWarn(supportAIDeprecated(model.getInternalDomainName()));
         }
 
         this.extendSvcCodeTmpl = createCodeTemplate(publisher, "template.serviceExt", extendServiceTmplName);
@@ -83,7 +84,15 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
 
     }
 
-
+    /**
+     * supportAI is deprecated: CRUD as Spring AI tools repeats the REST API an
+     * agent can already call, and puts deletes by condition in a model's hands.
+     * The tools are still generated; both generators say so with these words.
+     */
+    public static String supportAIDeprecated(String domainName) {
+        return "[ElastiCORE] domain '" + domainName + "': supportAI is deprecated and will be removed in a later"
+                + " release. The Spring AI tools are still generated; give an agent the REST API (OpenAPI) instead.";
+    }
 
     private boolean isPageable(DataTransfer searchDTO) {
         Annotation annotation = searchDTO.getMetaInfo().getMetaAnnotation(DataTransferAnnotation.META_SEARCHABLE);

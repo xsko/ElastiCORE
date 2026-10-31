@@ -324,6 +324,8 @@ config:
 
 ## 3. supportAI setting
 
+> **Deprecated** - `supportAI` will be removed in a later release, and a generation that uses it prints a warning. The tools are still generated as below. Give an agent the REST API (OpenAPI) instead: the tools repeat that API, and they put deletes by condition in a model's hands.
+
 ```yaml
 config:
   supportAI: "true"    # use the AI-support service template (default: "false")

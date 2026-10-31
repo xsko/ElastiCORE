@@ -324,6 +324,8 @@ config:
 
 ## 3. supportAI 설정
 
+> **Deprecated** - `supportAI`는 이후 릴리스에서 제거되며, 이 설정으로 생성하면 경고가 출력됩니다. 도구는 아래와 같이 계속 생성됩니다. 대신 에이전트에게 REST API(OpenAPI)를 주세요: 도구는 그 API를 반복할 뿐이고, 조건 삭제를 모델에게 맡기게 됩니다.
+
 ```yaml
 config:
   supportAI: "true"    # AI 지원 서비스 템플릿 사용 (기본값: "false")

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -23,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the entity's name with the label beside it - "Accident (car accident)" -
  * as 2.x writes it. The rule engine wrote the label alone, so a model lost
  * the name a request is put in. An entity without a label is described by
- * its name, as before.
+ * its name, as before. supportAI is deprecated: each generator says so once
+ * per domain and still writes the tools.
  */
 public class AiToolDescriptionTest {
 
@@ -41,13 +43,63 @@ public class AiToolDescriptionTest {
 
     private static final List<File> projects = new ArrayList<File>();
 
+    private static final String DEPRECATED = "[ElastiCORE] domain 'claim': supportAI is deprecated";
+
     private static File compat;
     private static File clean;
+    private static String compatLog;
+    private static String cleanLog;
+    private static String offLog;
 
     @BeforeAll
     static void generate() throws Exception {
-        compat = run("elcore-ai-tool-compat", false);
-        clean = run("elcore-ai-tool-v3", true);
+        compat = run("elcore-ai-tool-compat", false, true);
+        compatLog = lastLog;
+        clean = run("elcore-ai-tool-v3", true, true);
+        cleanLog = lastLog;
+        run("elcore-ai-tool-off", true, false);
+        offLog = lastLog;
+    }
+
+    private static String lastLog;
+
+    @Test
+    public void supportAIIsSaidToBeDeprecated() {
+        for (String log : new String[] {compatLog, cleanLog}) {
+            assertTrue(log.contains(DEPRECATED), log);
+            assertEquals(log.indexOf(DEPRECATED), log.lastIndexOf(DEPRECATED), "once per domain:\n" + log);
+        }
+        assertFalse(offLog.contains("supportAI"), offLog);
+    }
+
+    /** The 2.x generator (./gradlew elcore) says it too, and still writes the tools. */
+    @Test
+    public void theTemplateGeneratorSaysItAndStillWritesTheTools() throws Exception {
+        File project = project("elcore-ai-tool-2x", true);
+        // A JVM of its own, as './gradlew elcore' runs: the extractor keeps the
+        // loaded model in static state that the other tests expect empty.
+        File log = new File(project, "gen.log");
+        Process p = new ProcessBuilder(
+                        new File(new File(System.getProperty("java.home"), "bin"), "java").getPath(),
+                        "-Xmx256m",
+                        "-Dfile.encoding=UTF-8",
+                        "-Delasticore.base.path=" + project.getAbsolutePath(),
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        io.elasticore.base.extract.ModelExtractor.class.getName())
+                .directory(project)
+                .redirectErrorStream(true)
+                .redirectOutput(log)
+                .start();
+        try {
+            assertTrue(p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS), "generation did not finish");
+        } finally {
+            p.destroyForcibly();
+        }
+        String genLog = new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8);
+        assertEquals(0, p.exitValue(), genLog);
+        assertTrue(genLog.contains(DEPRECATED), genLog);
+        assertTrue(found(project, "AccidentService.java").contains("@Tool(name = \"findAllAccident\""), genLog);
     }
 
     @AfterAll
@@ -74,20 +126,50 @@ public class AiToolDescriptionTest {
         }
     }
 
-    private static File run(String name, boolean v3) throws Exception {
+    private static File project(String name, boolean supportAI) throws Exception {
         File project = Files.createTempDirectory(name).toFile();
         projects.add(project);
         File dir = new File(project, "src/main/resources/blueprint/claim");
         assertTrue(new File(dir, "model").mkdirs());
-        Files.write(new File(dir, "env.yml").toPath(), String.join("\n",
-                "elasticore:", "  enable: true", "  config:", "    domainName: claim", "    framework: springboot",
-                "    mode: jpa", "    j2ee: jakarta", "    supportAI: true", "  namespace:",
-                "    entity: io.acme.claim.entity", "    dto: io.acme.claim.dto",
-                "    repository: io.acme.claim.repository", "    service: io.acme.claim.service",
-                "    control: io.acme.claim.controller", "")
-                .getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(dir, "env.yml").toPath(),
+                String.join(
+                                "\n",
+                                "elasticore:",
+                                "  enable: true",
+                                "  config:",
+                                "    domainName: claim",
+                                "    framework: springboot",
+                                "    mode: jpa",
+                                "    j2ee: jakarta",
+                                "    supportAI: " + supportAI,
+                                "  namespace:",
+                                "    entity: io.acme.claim.entity",
+                                "    dto: io.acme.claim.dto",
+                                "    repository: io.acme.claim.repository",
+                                "    service: io.acme.claim.service",
+                                "    control: io.acme.claim.controller",
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
         Files.write(new File(dir, "model/model.yml").toPath(), MODEL.getBytes(StandardCharsets.UTF_8));
+        return project;
+    }
 
+    private static File run(String name, boolean v3, boolean supportAI) throws Exception {
+        File project = project(name, supportAI);
+        java.io.PrintStream out = System.out;
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(captured, true, "UTF-8"));
+        try {
+            generate(project, v3);
+        } finally {
+            System.setOut(out);
+            lastLog = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        }
+        return project;
+    }
+
+    private static void generate(File project, boolean v3) throws Exception {
         String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
                 "elasticore.rules.force", "elasticore.rules.v3", "elasticore.rules.v2", "elasticore.rules.ts"};
         String[] saved = new String[keys.length];
@@ -106,7 +188,6 @@ public class AiToolDescriptionTest {
                 else System.setProperty(keys[i], saved[i]);
             }
         }
-        return project;
     }
 
     private static String found(File project, String fileName) throws IOException {

@@ -476,6 +476,11 @@ public final class RulesGenRunner {
         // jpa, or mybatis, which the rule engine writes in Java, in every architecture.
         String mybatisDomain = null;
         for (ECoreModel model : loader.allModels()) {
+            if ("true".equals(model.getConfig("supportAI", "false"))) {
+                io.elasticore.base.util.ConsoleLog.printWarn(
+                        io.elasticore.base.model.pub.jpa.ServiceSrcPublisher.supportAIDeprecated(
+                                model.getInternalDomainName()));
+            }
             String mode = String.valueOf(model.getConfig("mode", "jpa"));
             java.util.List<String> modes = new ArrayList<String>();
             for (String m : mode.split(",")) {
