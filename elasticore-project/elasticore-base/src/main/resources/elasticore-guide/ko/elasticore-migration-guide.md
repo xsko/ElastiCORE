@@ -99,6 +99,12 @@ IDE 가 생성된 컨트롤러의 호출부에 raw type 경고를 표시하던 �
 적용됩니다. 2.x 모델에는 해당 문법이 없으므로 `-Pmode=valid` CI 가 갑자기
 실패하지 않습니다.
 
+### 5. `supportAI` 가 제거되었습니다
+
+`supportAI: true` 도메인은 Spring AI 도구 없이 서비스가 생성되고, 생성할 때 경고가 출력됩니다.
+**할 일**: `env.yml` 에서 이 줄을 빼고, 2.x 가 생성한 `XxxService` 에 남은 `@Tool` 메서드를 지우세요
+(`elasticore-env-guide.md` 3장).
+
 ---
 
 ## 3.0 기능을 쓰고 싶다면 (선택)
@@ -176,7 +182,7 @@ v3 CoreService 는 다른 메서드를 부르므로(`deleteById` 는 `findById` 
 
 ## Spring Boot 4로 올리기 (3.0만)
 
-ElastiCORE 3.0은 Spring Boot 4.0을 지원합니다(2.2는 Spring Boot 3까지). `supportAI` 도구는 3.0에서 제거되었습니다(`elasticore-env-guide.md` 3장).
+ElastiCORE 3.0은 Spring Boot 4.0을 지원합니다(2.2는 Spring Boot 3까지).
 런타임 의존성을 `elasticore-springboot3` -> `elasticore-springboot4`로 바꾸고 Boot 플러그인을 4.x로 올리면,
 ElastiCORE가 Boot 버전을 읽어 enum과 outbox를 Jackson 3에 맞게 생성합니다.
 자세한 절차와 직접 고칠 것은 `elasticore-env-guide.md` 3-1장.

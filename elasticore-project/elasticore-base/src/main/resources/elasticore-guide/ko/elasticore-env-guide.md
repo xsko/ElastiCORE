@@ -327,15 +327,15 @@ config:
 `supportAI`는 확장 서비스(`XxxService`)를 Spring AI 도구(`@Tool`)로 생성하던 설정입니다. 제거되었습니다: 설정은 무시되고, 서비스는 도구 없이 생성되며, `supportAI: true`를 만나면 생성할 때 경고가 출력됩니다. `env.yml`에서 이 줄을 빼 주세요.
 
 - 이유: 도구는 에이전트가 이미 호출할 수 있는 REST API를 반복했고(대신 OpenAPI 문서를 주세요), 엔티티마다 도구가 십여 개씩 늘었으며, 조건 삭제를 모델에게 맡기게 했습니다.
-- 이전 버전이 도구를 넣어 생성한 서비스: 손대지 않은 파일은 도구 없이 다시 생성됩니다. 고친 파일은 도구 메서드만 빠지고, 고친 줄과 겹치지 않으면 고친 내용이 남습니다(`MERGED(your edits kept)`, 9-2).
-- `KEPT(yours ...)`나 `SKIP(user-owned)`로 남았다면 `@Tool` 메서드를 직접 지우세요 - 또는 필요한 것은 Spring AI 의존성과 함께 직접 작성한 코드로 남겨 두세요.
+- 이전 버전이 도구를 넣어 생성한 서비스, 3.0 코드(`elcore3`)일 때: 손대지 않은 파일은 도구 없이 다시 생성됩니다. 고친 파일은 도구 메서드만 빠지고, 고친 줄과 겹치지 않으면 고친 내용이 남습니다(`MERGED(your edits kept)`, 9-2). 새 파일에는 다른 확장 서비스와 같이 `@Primary`가 없습니다.
+- 2.x 코드(`output = 'v2'`, `-Pv2`, `merge = false`)에서는 서비스가 한 번만 생성되고 다시 쓰이지 않으므로 도구가 남습니다. `KEPT(yours ...)`나 `SKIP(user-owned)`로 남은 파일도 같습니다. Spring AI 의존성을 빼기 전에 `@Tool` 메서드를 직접 지우세요(다시 생성하려면 파일을 지우세요) - 또는 필요한 것은 그 의존성과 함께 직접 작성한 코드로 남겨 두세요.
 
 ---
 
 ## 3-1. Spring Boot 4 (ElastiCORE 3.0)
 
 ElastiCORE **3.0**은 Spring Boot 3과 4 둘 다 지원합니다. 2.2는 Spring Boot 3만 지원합니다.
-확인한 버전: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
+확인한 버전: Spring Boot 4.0.8, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
 
 ### 프로젝트에서 바꿀 것
 

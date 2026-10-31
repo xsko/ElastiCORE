@@ -327,15 +327,15 @@ config:
 `supportAI` wrote the extension service (`XxxService`) as Spring AI tools (`@Tool`). It is removed: the setting is ignored, the service is generated without tools, and a generation that finds `supportAI: true` prints a warning. Take the line out of `env.yml`.
 
 - Why: the tools repeated the REST API that an agent can already call - give it the OpenAPI document instead - added about a dozen tools per entity, and put deletes by condition in a model's hands.
-- A service an earlier version wrote with tools: a file you did not touch is generated again without them. In a file you edited, the tool methods are taken out and your edits are kept where they do not overlap them (`MERGED(your edits kept)`, 9-2).
-- Where it stays `KEPT(yours ...)` or `SKIP(user-owned)`, delete the `@Tool` methods by hand - or keep the ones you want, with the Spring AI dependency, as your own code.
+- A service an earlier version wrote with tools, under 3.0 code (`elcore3`): a file you did not touch is generated again without them. In a file you edited, the tool methods are taken out and your edits are kept where they do not overlap them (`MERGED(your edits kept)`, 9-2). The new file has no `@Primary`, as every other extension service.
+- Under the 2.x code (`output = 'v2'`, `-Pv2`, `merge = false`) the service is written once and never again, so it keeps its tools; so does one that stays `KEPT(yours ...)` or `SKIP(user-owned)`. Delete the `@Tool` methods by hand (or the file, to have it written again) before you drop the Spring AI dependency - or keep the ones you want, with that dependency, as your own code.
 
 ---
 
 ## 3-1. Spring Boot 4 (ElastiCORE 3.0)
 
 ElastiCORE **3.0** supports both Spring Boot 3 and 4. 2.2 supports only Spring Boot 3.
-Verified versions: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
+Verified versions: Spring Boot 4.0.8, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
 
 ### What to change in the project
 

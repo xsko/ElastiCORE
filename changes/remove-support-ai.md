@@ -14,11 +14,14 @@
   of `ServiceExtendBaseRules` are gone; the setup wizard no longer writes `supportAI: false`, and the
   samples no longer set it (the Kotlin sample's `hr` domain set `true`, with a Spring AI milestone
   dependency, both removed).
-- Upgrading a project that used it: a `XxxService` the earlier version wrote and nobody touched is written
-  again without the tools; an edited one loses the tool methods and keeps the edits where they do not
-  overlap (`MERGED(your edits kept)`). One left `KEPT` or `SKIP(user-owned)` keeps them until they are
-  deleted by hand. A `ToolCallbackProvider` bean the project registered has no tools left to find. Take
-  `supportAI` out of `env.yml`.
+- Upgrading a project that used it, on 3.0 code (`elcore3`): a `XxxService` the earlier version wrote and
+  nobody touched is written again without the tools (and, like every extension service, without
+  `@Primary`); an edited one loses the tool methods and keeps the edits where they do not overlap
+  (`MERGED(your edits kept)`). On the 2.x code (`output = 'v2'`, `-Pv2`, `merge = false`) the service is
+  written once and never again, so it keeps its tools, as does one left `KEPT` or `SKIP(user-owned)`:
+  delete the `@Tool` methods (or the file, to have it written again) before dropping the Spring AI
+  dependency. A `ToolCallbackProvider` bean the project registered finds no tools in a regenerated service.
+  Take `supportAI` out of `env.yml`. The env guide (chapter 3) and the migration guide (item 5) say so.
 - Generated code: unchanged for every domain without `supportAI: true`.
 - Checked: `SupportAIRemovedTest` - the rule engine (2.x bundle and v3) and the 2.x generator in its own
   JVM write the plain service and warn once; no warning without the setting or in the TypeScript run.

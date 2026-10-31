@@ -91,8 +91,8 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
 
     static String supportAIRemoved(String domainName) {
         return "[ElastiCORE] domain '" + domainName + "': supportAI was removed and is ignored - the service is"
-                + " generated without Spring AI tools. Give an agent the REST API (OpenAPI) instead, or keep @Tool"
-                + " methods you need in XxxService by hand.";
+                + " generated without Spring AI tools. An XxxService that keeps @Tool methods (one written once by"
+                + " 2.x, or edited) keeps them until you delete them; give an agent the REST API (OpenAPI) instead.";
     }
 
     private boolean isPageable(DataTransfer searchDTO) {
@@ -184,15 +184,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
         return sb.toString();
     }
 
-    protected String getEntityDescName(Entity entity) {
-        String entityName =  targetEntityName(entity);
-        String desc = entity.getMetaInfo().getLabel();
-        if(desc==null || desc.isEmpty()) {
-            return entityName;
-        }
-        return entityName+" ("+desc+")";
-    }
-
 
     public void publish(ModelDomain domain, Entity entity, DataTransfer dto, DataTransfer searchDto) {
 
@@ -214,7 +205,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
 
         String orgEntityClassName = entity.getIdentity().getName();
         String entityClassName = targetEntityName(entity); //for rollup
-        String entityDescName = getEntityDescName(entity); //for rollup
         String mappingCode ="";
         String orgEntityConvert= "";
         if(!orgEntityClassName.equals(entityClassName)) {
@@ -339,7 +329,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
                 .set("className", className)
                 .set("domainName", StringUtils.capitalize(domainName))
                 .set("entityClassName", entityClassName)
-                .set("entityDescName", entityDescName)
 
                 .set("orgEntityClassName", orgEntityClassName)
                 .set("orgEntityConvert", orgEntityConvert)
