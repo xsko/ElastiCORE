@@ -1,52 +1,52 @@
-# ElastiCORE 규칙 개발 가이드
+# ElastiCORE Rule Development Guide
 
-ElastiCORE는 YAML(DSL)을 읽어 엔티티, DTO, 서비스, 컨트롤러 코드를 만들어 줍니다.
-그런데 회사마다 원하는 것이 있습니다. "모든 엔티티에 우리 어노테이션을 붙이고 싶다", "특정 필드는 응답에 나가면 안 된다" 같은 것들입니다.
+ElastiCORE reads YAML (the DSL) and generates entity, DTO, service and controller code for you.
+But every company wants something of its own. "Put our annotation on every entity", "this field must never go out in a response", and so on.
 
-생성된 파일을 매번 손으로 고치면 다음 생성 때 사라집니다. 대신 **규칙(rule)** 을 하나 만들어 두면, ElastiCORE가 코드를 만들 때마다 그 규칙을 적용합니다.
-규칙은 평범한 Java 클래스이고, 메서드 하나가 규칙 하나입니다.
+If you fix the generated files by hand every time, your changes vanish the next time you generate. Instead, create a **rule** once, and ElastiCORE applies it every time it generates code.
+A rule is a plain Java class, and one method is one rule.
 
-이 문서는 헥사고날 ERP 예제 프로젝트(Partner, Item, SalesOrder …)에 규칙을 더해 가며 설명합니다. 예제의 모든 코드는 실제로 빌드하고 테스트했습니다.
+This document builds up the explanation by adding rules to a hexagonal ERP example project (Partner, Item, SalesOrder ...). All the code in the examples was actually built and tested.
 
-| 장 | 무엇을 배우나 | 결과 |
+| Chapter | What you learn | Result |
 |---|---|---|
-| 0 | 규칙이 언제, 어디서 동작하나 (그림) | 전체 흐름과 내 코드가 끼어드는 자리를 이해 |
-| 1 | 규칙을 둘 곳 만들기 | 빌드할 때 우리 규칙이 실행됨 |
-| 2 | 클래스에 어노테이션 붙이기 | 루트 엔티티마다 `@AggregateRoot` |
-| 3 | 필드에 어노테이션 붙이기 | 식별자 필드마다 `@Identity` |
-| 4 | YAML에 우리만의 표시 만들기 | `@secret` 필드는 API 응답에서 빠짐 |
-| 5 | 잘못된 모델을 빌드에서 막기 | 규칙 위반이면 빌드 실패 |
-| 6 | 다른 YAML 파일에도 규칙 걸기 | `dto.yml`, 검색 DTO, `repository.yml`(SQL), `port.yml`(외부 연동), `enum.yml` |
-| 7 | 규칙 테스트하기 | 프로젝트 없이 규칙만 빠르게 확인 |
-| 8, 9 | 완성된 규칙 클래스, 자주 쓰는 것 | 복사해서 시작할 전체 코드, 한 장 요약 |
-| 10 | 규칙 API 레퍼런스 | `@Rule`, `EntitySpec`·`FieldSpec`, `SourceCode`(`addMethod`, `excludeMethod`, `dontMake` …), `AnnoCode`, `ModelCheck`, 새 파일, `Syntax` |
+| 0 | When and where rules run (diagrams) | You understand the whole flow and where your code steps in |
+| 1 | Create a place for rules | Your rules run during the build |
+| 2 | Put an annotation on a class | `@AggregateRoot` on every root entity |
+| 3 | Put an annotation on a field | `@Identity` on every identifier field |
+| 4 | Create your own marker in YAML | `@secret` fields are left out of the API response |
+| 5 | Stop a wrong model in the build | A rule violation fails the build |
+| 6 | Apply rules to other YAML files too | `dto.yml`, search DTOs, `repository.yml` (SQL), `port.yml` (external integration), `enum.yml` |
+| 7 | Test a rule | Check a rule quickly, without a project |
+| 8, 9 | A complete rule class, the commonly used things | The full code to copy and start from, a one-page summary |
+| 10 | Rule API reference | `@Rule`, `EntitySpec` and `FieldSpec`, `SourceCode` (`addMethod`, `excludeMethod`, `dontMake` ...), `AnnoCode`, `ModelCheck`, new files, `Syntax` |
 
 ---
 
-## 0. 규칙이 언제, 어디서 동작하나
+## 0. When and where rules run
 
-### 전체 흐름
+### The whole flow
 
-`./gradlew build`를 실행하면 컴파일 **전에** ElastiCORE가 먼저 돌면서 Java 파일을 만듭니다. 우리 규칙은 그 과정의 ④에 끼어듭니다.
+When you run `./gradlew build`, ElastiCORE runs first, **before** compilation, and generates the Java files. Our rule steps in at ④ of that process.
 
 ```mermaid
 flowchart LR
-    A["entity.yml<br/>env.yml"] --> B["① YAML 읽기<br/>엔티티·필드 정보"]
-    B --> C["② 만들 파일 정하기<br/>Partner.java,<br/>PartnerDTO.java …"]
-    C --> D["③ ElastiCORE 기본 규칙<br/>@Entity, @Column,<br/>@NotNull …"]
-    D --> E["④ 우리 규칙<br/>AcmeRules"]
-    E --> F["⑤ .java 파일 쓰기"]
-    F --> G["⑥ 컴파일"]
+    A["entity.yml<br/>env.yml"] --> B["① Read YAML<br/>entity and field info"]
+    B --> C["② Decide the files to make<br/>Partner.java,<br/>PartnerDTO.java …"]
+    C --> D["③ ElastiCORE default rules<br/>@Entity, @Column,<br/>@NotNull …"]
+    D --> E["④ Our rule<br/>AcmeRules"]
+    E --> F["⑤ Write the .java file"]
+    F --> G["⑥ Compile"]
     style E fill:#1583bd,color:#fff,stroke:#0d5f8a
 ```
 
-- ③과 ④는 **파일 하나마다** 반복됩니다. `Partner.java`를 만들 때 한 번, `PartnerDTO.java`를 만들 때 또 한 번.
-- ④는 항상 ③ 뒤입니다. 그래서 우리 규칙은 기본 규칙이 붙인 것을 빼거나, 그 위에 더 붙일 수 있습니다.
-- ⑤에서 쓰인 파일은 평범한 Java 소스입니다. ⑥은 보통의 컴파일입니다.
+- ③ and ④ repeat for **each file**. Once when it makes `Partner.java`, and again when it makes `PartnerDTO.java`.
+- ④ always comes after ③. So our rule can remove what a default rule added, or add more on top of it.
+- The file written in ⑤ is plain Java source. ⑥ is an ordinary compilation.
 
-### 엔티티 하나에서 파일이 여러 개
+### Several files from one entity
 
-YAML의 엔티티 하나(`Partner`)에서 파일이 여러 개 만들어집니다. 각 파일 종류에는 이름이 있고, 이것을 **target**이라고 부릅니다. 규칙은 "어느 target에 적용할지"를 정합니다.
+Several files are generated from one entity (`Partner`) in the YAML. Each kind of file has a name, and this name is called the **target**. A rule decides "which target it applies to".
 
 ```mermaid
 flowchart LR
@@ -58,84 +58,84 @@ flowchart LR
     P --> E6["…"]
 ```
 
-target을 적지 않은 규칙은 `entity`(엔티티 클래스 파일)에 적용됩니다.
+A rule with no target applies to `entity` (the entity class file).
 
-### 파일 하나를 만들 때 내 메서드가 불리는 순서
+### The order in which your method is called while one file is made
 
-규칙 메서드는 우리가 부르지 않습니다. ElastiCORE가 파일을 만들다가 불러 줍니다. 메서드의 **파라미터 모양**에 따라 불리는 횟수가 다릅니다.
+We never call a rule method. ElastiCORE calls it while it makes a file. How often it is called depends on the **shape of the method's parameters**.
 
 ```mermaid
 sequenceDiagram
     participant G as ElastiCORE
-    participant R as AcmeRules (우리 규칙)
-    Note over G: Partner.java 를 만든다 (target = entity)
-    G->>G: 기본 규칙 (@Entity, @Table, @Column …)
+    participant R as AcmeRules (our rule)
+    Note over G: Make Partner.java (target = entity)
+    G->>G: Default rules (@Entity, @Table, @Column …)
     G->>R: aggregateRoot(Partner)
-    Note right of R: (EntitySpec) → 파일마다 1번
+    Note right of R: (EntitySpec) → once per file
     G->>R: identity(Partner, partnerId)
     G->>R: identity(Partner, name)
     G->>R: identity(Partner, bizNo)
-    Note right of R: (EntitySpec, FieldSpec) → 필드마다 1번
-    G->>G: Partner.java 쓰기
-    Note over G: PartnerDTO.java 를 만든다 (target = dto)
-    G->>G: 기본 규칙 (@Schema, @NotNull …)
+    Note right of R: (EntitySpec, FieldSpec) → once per field
+    G->>G: Write Partner.java
+    Note over G: Make PartnerDTO.java (target = dto)
+    G->>G: Default rules (@Schema, @NotNull …)
     G->>R: secret(Partner, partnerId), secret(Partner, bizNo) …
-    Note right of R: target = "dto" 인 규칙만
-    G->>G: PartnerDTO.java 쓰기
+    Note right of R: Only rules with target = "dto"
+    G->>G: Write PartnerDTO.java
 ```
 
-### 규칙 메서드 안에서 하는 일: 읽고, 판단하고, 쓴다
+### What happens inside a rule method: read, decide, write
 
-모든 규칙은 같은 모양입니다.
+Every rule has the same shape.
 
 ```mermaid
 flowchart LR
-    A["<b>읽기</b><br/>EntitySpec entity<br/>FieldSpec field"] --> B["<b>판단</b><br/>if (...)"] --> C["<b>쓰기</b><br/>ctx(entity)"]
+    A["<b>Read</b><br/>EntitySpec entity<br/>FieldSpec field"] --> B["<b>Decide</b><br/>if (...)"] --> C["<b>Write</b><br/>ctx(entity)"]
 ```
 
-| 단계 | 쓰는 것 | 예 |
+| Step | What you use | Example |
 |---|---|---|
-| 읽기 | `EntitySpec entity` — 지금 파일을 만드는 엔티티의 YAML 정보 | `entity.aggregateRoot()` |
-| | `FieldSpec field` — 그중 필드 하나의 YAML 정보 | `field.hasDsl("id")` |
-| 판단 | 평범한 Java `if` | `if (field.hasDsl("id"))` |
-| 쓰기 | `ctx(entity)` — 지금 만들고 있는 Java 파일 | `ctx(entity).field(field).ensure(...)` |
+| Read | `EntitySpec entity` — the YAML information of the entity whose file is being made now | `entity.aggregateRoot()` |
+| | `FieldSpec field` — the YAML information of one of its fields | `field.hasDsl("id")` |
+| Decide | A plain Java `if` | `if (field.hasDsl("id"))` |
+| Write | `ctx(entity)` — the Java file being made now | `ctx(entity).field(field).ensure(...)` |
 
-`EntitySpec`/`FieldSpec`은 YAML을 그대로 옮긴 것입니다:
+`EntitySpec` and `FieldSpec` are a direct transcription of the YAML:
 
-| YAML (`entity.yml`) | 규칙에서 읽으면 |
+| YAML (`entity.yml`) | When you read it in a rule |
 |---|---|
 | `Partner:` | `entity.getName()` → `"Partner"` |
 | `meta: entity @root @expose(20)` | `entity.aggregateRoot()` → `true`, `entity.hasMeta("expose")` → `true`, `entity.metaValue("expose")` → `"20"` |
 | `partnerId: long @id @sequence` | `field.name()` → `"partnerId"`, `field.hasDsl("id")` → `true` |
 | `bizNo: string(12)! @search(eq) @secret` | `field.required()` → `true`, `field.hasDsl("secret")` → `true`, `field.dslValue("search")` → `"eq"` |
 
-`ctx(entity)`로 쓴 것은 ⑤에서 파일에 들어갑니다. 그 사이에 import 정리, 어노테이션 줄 배치 같은 것은 ElastiCORE가 합니다.
+What you write with `ctx(entity)` goes into the file at ⑤. ElastiCORE handles things in between, such as organizing imports and placing annotation lines.
 
-이 그림 세 개가 이 문서의 전부입니다. 1장부터는 이 흐름에 실제 코드를 채웁니다.
+These three diagrams are all of this document. From Chapter 1 on, we fill this flow with real code.
 
 ---
 
-## 1. 규칙을 둘 곳 만들기
+## 1. Create a place for rules
 
-규칙은 애플리케이션과 **다른 모듈**에 둡니다. ElastiCORE는 애플리케이션을 컴파일하기 전에 코드를 만들기 때문에, 규칙이 먼저 컴파일되어 있어야 합니다.
+Put rules in a **different module** from the application. ElastiCORE generates code before it compiles the application, so the rules must already be compiled.
 
 ```
 erp/
-├── settings.gradle          ← 모듈 추가
-├── build.gradle             ← 규칙 연결
-├── acme-rules/              ← 새 모듈 (이름은 자유)
+├── settings.gradle          ← add the module
+├── build.gradle             ← connect the rules
+├── acme-rules/              ← new module (any name)
 │   ├── build.gradle
 │   └── src/main/java/com/acme/rules/AcmeRules.java
-└── src/ …                   ← 기존 애플리케이션
+└── src/ …                   ← existing application
 ```
 
-**① `settings.gradle`** 에 한 줄 추가:
+**① Add one line to `settings.gradle`**:
 
 ```gradle
 include 'acme-rules'
 ```
 
-**② `acme-rules/build.gradle`** (새 파일):
+**② `acme-rules/build.gradle`** (new file):
 
 ```gradle
 plugins {
@@ -149,7 +149,7 @@ repositories {
 }
 
 dependencies {
-    // ElastiCORE 버전은 루트 build.gradle 의 id 'io.elasticore' version 과 같게
+    // Use the same ElastiCORE version as id 'io.elasticore' version in the root build.gradle
     compileOnly 'io.elasticore:elasticore-base:3.0.261031-rc7'
 
     testImplementation 'io.elasticore:elasticore-base:3.0.261031-rc7'
@@ -160,25 +160,25 @@ dependencies {
 tasks.named('test') { useJUnitPlatform() }
 ```
 
-**③ 루트 `build.gradle`** 두 곳에 추가:
+**③ Add to two places in the root `build.gradle`**:
 
 ```gradle
 elasticore {
     architecture = 'hexagonal'
     language     = 'java'
-    rules        = ['com.acme.rules.AcmeRules']        // ← 추가: 우리 규칙 클래스
+    rules        = ['com.acme.rules.AcmeRules']        // ← added: our rule class
 }
 
 dependencies {
-    elasticore project(':acme-rules')                     // ← 추가: ElastiCORE가 규칙을 찾는 곳
-    implementation 'org.jmolecules:jmolecules-ddd:1.10.0'  // ← 추가: 2~3장에서 붙일 어노테이션
-    // ... 기존 의존성 그대로
+    elasticore project(':acme-rules')                     // ← added: where ElastiCORE finds the rules
+    implementation 'org.jmolecules:jmolecules-ddd:1.10.0'  // ← added: the annotations we attach in chapters 2-3
+    // ... keep the existing dependencies
 }
 ```
 
-`elasticore project(':acme-rules')`는 "코드를 만들 때 이 모듈을 쓴다"는 뜻입니다. 애플리케이션 실행에는 들어가지 않습니다.
+`elasticore project(':acme-rules')` means "use this module when generating code". It is not part of running the application.
 
-**④ 규칙 클래스** — 우선 빈 클래스로 만듭니다.
+**④ The rule class** — start with an empty class.
 
 ```java
 package com.acme.rules;
@@ -190,16 +190,16 @@ public class AcmeRules implements CodeRules {
 }
 ```
 
-이제 `./gradlew build`를 실행해 보세요. 전과 똑같이 빌드되면 준비가 끝난 것입니다.
+Now run `./gradlew build`. If it builds exactly as before, you are ready.
 
 ---
 
-## 2. 클래스에 어노테이션 붙이기
+## 2. Put an annotation on a class
 
-**하고 싶은 것**: 애그리거트 루트 엔티티(ERP에서는 Partner, Item, SalesOrder, Stock, Invoice)에 jMolecules의 `@AggregateRoot`를 붙인다.
-(jMolecules는 "이 클래스가 DDD에서 어떤 역할인가"를 어노테이션으로 표시하는 라이브러리입니다. 아키텍처 검사 도구가 이 표시를 읽습니다.)
+**What we want**: put jMolecules' `@AggregateRoot` on the aggregate root entities (in the ERP: Partner, Item, SalesOrder, Stock, Invoice).
+(jMolecules is a library that marks "what role this class plays in DDD" with annotations. Architecture check tools read these marks.)
 
-`AcmeRules`에 메서드 하나를 추가합니다.
+Add one method to `AcmeRules`.
 
 ```java
     /** Every aggregate root class gets @AggregateRoot. */
@@ -211,18 +211,18 @@ public class AcmeRules implements CodeRules {
     }
 ```
 
-한 줄씩:
+Line by line:
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `@Rule("acme-aggregate-root")` | 이 메서드는 규칙이다. 괄호 안은 규칙 이름 (아무 이름이나, 다른 규칙과 겹치지 않게 팀 접두사를 붙이세요) |
-| `EntitySpec entity` | 지금 코드를 만들고 있는 **엔티티의 정보**. YAML에 적은 내용을 여기서 읽습니다 |
-| `entity.aggregateRoot()` | 이 엔티티가 애그리거트 루트인가 (다른 엔티티에 속한 멤버가 아닌가) |
-| `ctx(entity)` | 지금 만들고 있는 **Java 파일** |
-| `.ensureClassAnnotation(...)` | 그 클래스에 어노테이션을 붙인다. `import`도 알아서 들어갑니다 |
-| `AnnoCode.of("…AggregateRoot")` | 붙일 어노테이션. 패키지를 포함한 전체 이름으로 씁니다 |
+| `@Rule("acme-aggregate-root")` | This method is a rule. The name in parentheses can be anything (give it your team's prefix so it does not collide with other rules) |
+| `EntitySpec entity` | The **information of the entity** whose code is being made now. You read what you wrote in the YAML from here |
+| `entity.aggregateRoot()` | Is this entity an aggregate root (not a member that belongs to another entity)? |
+| `ctx(entity)` | The **Java file** being made now |
+| `.ensureClassAnnotation(...)` | Puts the annotation on that class. The `import` is added for you |
+| `AnnoCode.of("…AggregateRoot")` | The annotation to attach. Write it with the full name, including the package |
 
-이 메서드는 **엔티티마다 한 번** 불립니다. 파일 위쪽 import는 다음과 같습니다.
+This method is called **once per entity**. The imports at the top of the file are as follows.
 
 ```java
 import io.elasticore.base.model.pub.rules.AnnoCode;
@@ -233,7 +233,7 @@ import io.elasticore.base.model.pub.rules.Rule;
 import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 ```
 
-`./gradlew build` 후 생성된 `Partner.java`:
+`Partner.java` generated after `./gradlew build`:
 
 ```java
 @Entity
@@ -243,21 +243,21 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 @Setter
 @NoArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
-@AggregateRoot                                   // ← 우리 규칙이 붙임
+@AggregateRoot                                   // ← added by our rule
 public class Partner implements java.io.Serializable {
 ```
 
-### 이미 만들어져 내가 고친 파일에도 붙습니다
+### It is also added to files that were already generated and that I edited
 
-`SalesOrder.java`처럼 **개발자가 코드를 채워 넣는 파일**(`// Initially generated by ElastiCORE` 줄이 있는 파일)은 개발자 파일이지만, 규칙은 계속 닿습니다.
-손대지 않았으면 규칙대로 다시 생성되고, 고쳤으면 규칙이 바꾸는 부분이 개발자가 고친 줄과 겹치지 않을 때 병합됩니다(빌드 로그 `MERGED(your edits kept)`).
-그래서 규칙을 나중에 추가해도 생성기가 만든 루트의 개발자 클래스에는 `@AggregateRoot`가 붙고, 개발자가 쓴 메서드는 그대로 남습니다
+**Files where developers fill in code** such as `SalesOrder.java` (files with the `// Initially generated by ElastiCORE` line) are developer files, but rules still reach them.
+If you have not touched the file, it is generated again according to the rules. If you edited it, the change is merged when the part the rule changes does not overlap the lines you edited (build log `MERGED(your edits kept)`).
+So even if you add a rule later, the developer class of a generator-made root gets `@AggregateRoot`, and the methods the developer wrote stay as they are
 (`elasticore-env-guide.md` 9-2).
 
-규칙이 바꾸는 줄을 개발자도 고쳤다면 파일을 그대로 두고(`KEPT(yours ...)`), 빠진 어노테이션을 빌드 로그로 알려 줍니다.
-병합을 끈 프로젝트(`merge = false`)에서 고친 파일과, 병합 전 버전이 만든 파일을 고친 경우(`SKIP(user-owned)`)도 마찬가지입니다.
-표시 줄이 없는 파일은 규칙이 닿지 않고 알림도 없습니다(`SKIP(no ElastiCORE header - yours)`). ERP 예제의 `SalesOrder.java`, `Stock.java`,
-`Invoice.java`는 헥사고날 가이드에서 통째로 복사해 표시 줄이 없으므로, 이런 경우처럼 직접 붙입니다:
+If the developer also edited the line the rule changes, the file is left as it is (`KEPT(yours ...)`), and the build log tells you about the missing annotation.
+The same applies to a file edited in a project with merging turned off (`merge = false`), and to a file made by a pre-merge version that was then edited (`SKIP(user-owned)`).
+A file without the marker line is not reached by rules, and there is no notice either (`SKIP(no ElastiCORE header - yours)`). `SalesOrder.java`, `Stock.java` and
+`Invoice.java` in the ERP example were copied whole from the hexagonal guide and have no marker line, so in a case like this you add it yourself:
 
 ```java
 import org.jmolecules.ddd.annotation.AggregateRoot;
@@ -270,9 +270,9 @@ public class SalesOrder extends SalesOrderBase {
 
 ---
 
-## 3. 필드에 어노테이션 붙이기
+## 3. Put an annotation on a field
 
-**하고 싶은 것**: 모든 엔티티의 식별자(`@id`) 필드에 `@Identity`를 붙인다.
+**What we want**: put `@Identity` on the identifier (`@id`) field of every entity.
 
 ```java
     /** Every id field gets @Identity. */
@@ -284,40 +284,40 @@ public class SalesOrder extends SalesOrderBase {
     }
 ```
 
-2장과 다른 점은 두 가지입니다.
+There are two differences from chapter 2.
 
-| | 2장 | 3장 |
+| | Chapter 2 | Chapter 3 |
 |---|---|---|
-| 메서드 파라미터 | `(EntitySpec entity)` → 엔티티마다 한 번 | `(EntitySpec entity, FieldSpec field)` → **필드마다** 한 번 |
-| 붙이는 곳 | `ctx(entity).ensureClassAnnotation(...)` | `ctx(entity).field(field).ensure(...)` |
+| Method parameters | `(EntitySpec entity)` → once per entity | `(EntitySpec entity, FieldSpec field)` → once **per field** |
+| Where it is attached | `ctx(entity).ensureClassAnnotation(...)` | `ctx(entity).field(field).ensure(...)` |
 
-`field.hasDsl("id")`는 "YAML에서 이 필드에 `@id`를 적었는가"입니다. (import에 `FieldSpec` 추가)
+`field.hasDsl("id")` means "did you write `@id` on this field in the YAML?" (Add `FieldSpec` to the imports.)
 
-결과:
+Result:
 
 ```java
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	@Column(name = "partner_id")
-	@Identity                                    // ← 우리 규칙이 붙임
+	@Identity                                    // ← added by our rule
 	private Long partnerId;
 ```
 
 ---
 
-## 4. YAML에 우리만의 표시 만들기
+## 4. Create your own marker in YAML
 
-**하고 싶은 것**: YAML에서 필드에 `@secret`이라고 적으면, 그 필드는 **요청으로는 받지만 응답에는 나가지 않게** 한다 (예: 사업자번호).
+**What we want**: when you write `@secret` on a field in the YAML, that field is **accepted in a request but not sent in the response** (for example, a business registration number).
 
-**① YAML에 표시** — `model/entity.yml`의 Partner:
+**① Mark it in the YAML** — Partner in `model/entity.yml`:
 
 ```yaml
-      bizNo:     string(12)! @search(eq) @secret   # 사업자번호, 검색 시 완전일치
+      bizNo:     string(12)! @search(eq) @secret   # business registration number, exact match when searching
 ```
 
-`@secret`은 ElastiCORE가 모르는 단어입니다. ElastiCORE는 모르는 단어를 오류로 보지 않고 보관만 하므로, 우리 규칙이 읽을 수 있습니다.
+`@secret` is a word ElastiCORE does not know. ElastiCORE does not treat an unknown word as an error. It only keeps it, so our rule can read it.
 
-**② 규칙** — 이번에는 엔티티가 아니라 **DTO** 파일에 붙입니다.
+**② The rule** — this time we attach it not to the entity but to the **DTO** file.
 
 ```java
     /** A field marked @secret in the DSL is accepted in requests but never sent back in responses. */
@@ -330,50 +330,50 @@ public class SalesOrder extends SalesOrderBase {
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `target = "dto"` | 이 규칙은 **DTO 파일**을 만들 때 실행. 적지 않으면 `"entity"` (2·3장) |
-| `.valRaw("access", "JsonProperty.Access.WRITE_ONLY")` | 어노테이션 속성. 따옴표 없이 그대로 씀 → `access = JsonProperty.Access.WRITE_ONLY` |
-| (참고) `.val("name", "x")` | 문자열 속성. 따옴표를 붙여 줌 → `name = "x"` |
+| `target = "dto"` | This rule runs when the **DTO file** is made. If you leave it out, it is `"entity"` (chapters 2 and 3) |
+| `.valRaw("access", "JsonProperty.Access.WRITE_ONLY")` | An annotation attribute. Written as is, without quotes → `access = JsonProperty.Access.WRITE_ONLY` |
+| (note) `.val("name", "x")` | A string attribute. Quotes are added for you → `name = "x"` |
 
-결과 `PartnerDTO.java`:
+Resulting `PartnerDTO.java`:
 
 ```java
 	@Schema(description = "bizNo" , requiredMode=Schema.RequiredMode.REQUIRED )
 	@NotNull
 	@Size(max=12)
-	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)   // ← 우리 규칙이 붙임
+	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)   // ← added by our rule
 	private String bizNo;
 ```
 
-이제 거래처를 등록하면 `bizNo`는 저장되지만 응답 JSON에는 없습니다.
+Now when you register a partner, `bizNo` is saved but is not in the response JSON.
 
-### 규칙을 어느 파일에 적용하나 — `target`
+### Which file a rule applies to - `target`
 
-`target`에 파일 종류를 적습니다. 자주 쓰는 것:
+Write the kind of file in `target`. The commonly used ones:
 
-| `target` | 만들어지는 파일 (ERP 예) |
+| `target` | File that is made (ERP example) |
 |---|---|
-| `"entity"` (기본) | 엔티티 `Partner.java`. 파일이 둘로 나뉜 루트는 `SalesOrderBase.java`와 `SalesOrder.java` 둘 다 (클래스 어노테이션). `addMethod`로 더한 메서드는 `SalesOrderBase.java`에만 - `SalesOrder.java`는 그것을 상속받음. `SalesOrder.java`에만 더하려면 `target = "behavior"` |
+| `"entity"` (default) | The entity `Partner.java`. For a root split into two files, both `SalesOrderBase.java` and `SalesOrder.java` (class annotations). A method added with `addMethod` goes only into `SalesOrderBase.java` - `SalesOrder.java` inherits it. To add only to `SalesOrder.java`, use `target = "behavior"` |
 | `"dto"` | `PartnerDTO.java` |
-| `"srchdto"` | 검색 조건 DTO `PartnerSrchDTO.java` |
-| `"repository"` | `repository.yml`의 쿼리가 들어가는 `SalesOrderRepository.java` |
-| `"port"` | `port.yml`의 외부 연동 인터페이스 `CreditCheckPort.java` |
-| `"enum"` | `enum.yml`의 `OrderStatus.java` |
-| `"event"` | 도메인 이벤트 `SalesOrderShippedEvent.java` |
+| `"srchdto"` | The search condition DTO `PartnerSrchDTO.java` |
+| `"repository"` | `SalesOrderRepository.java`, which holds the queries from `repository.yml` |
+| `"port"` | The external integration interface `CreditCheckPort.java` from `port.yml` |
+| `"enum"` | `OrderStatus.java` from `enum.yml` |
+| `"event"` | The domain event `SalesOrderShippedEvent.java` |
 | `"repositoryPort"` | `PartnerRepositoryPort.java` |
 
-어떤 파일이 어떤 `target`인지는 빌드 로그 각 줄의 첫 단어입니다: `dto  src/main/java/.../PartnerDTO.java  WROTE`.
-`dto.yml`, `repository.yml`, `port.yml`, `enum.yml`에 거는 방법은 6장에서 예제와 함께 봅니다.
-컨트롤러(`control`)와 `XxxService`도 개발자 파일이지만 규칙은 계속 적용됩니다: 손대지 않았으면 다시 생성되고, 고쳤으면 고친 줄과 겹치지 않는 변경만 병합됩니다(2장 끝).
+Which file has which `target` is the first word of each line in the build log: `dto  src/main/java/.../PartnerDTO.java  WROTE`.
+How to apply rules to `dto.yml`, `repository.yml`, `port.yml` and `enum.yml` is shown with examples in chapter 6.
+The controller (`control`) and `XxxService` are also developer files, but rules still apply: if you have not touched them they are generated again, and if you edited them only changes that do not overlap the lines you edited are merged (the end of chapter 2).
 
 ---
 
-## 5. 잘못된 모델을 빌드에서 막기
+## 5. Stop a wrong model in the build
 
-규칙은 코드를 바꾸지 않고 **검사만** 할 수도 있습니다.
+A rule can also **only check**, without changing code.
 
-**하고 싶은 것**: 업무 명령(`commands:`)이 있는 루트는 반드시 `@event`를 선언하게 한다. 없으면 빌드 실패.
+**What we want**: a root that has business commands (`commands:`) must declare `@event`. If it does not, the build fails.
 
 ```java
     /** A root that takes commands must declare what it announces (@event). Otherwise the build fails. */
@@ -385,14 +385,14 @@ public class SalesOrder extends SalesOrderBase {
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `entity.commands()` | YAML `commands:`에 적은 명령 목록 |
-| `entity.events()` | `@event(...)`에 적은 이벤트 이름 목록 |
-| `ModelCheck.fail(메시지)` | 빌드 실패. 코드 생성은 끝까지 한 뒤, 모든 실패 메시지를 모아 보여 주고 멈춥니다 |
-| `ModelCheck.warn(메시지)` | 경고만 (빌드는 계속) |
+| `entity.commands()` | The list of commands written in the YAML `commands:` |
+| `entity.events()` | The list of event names written in `@event(...)` |
+| `ModelCheck.fail(message)` | Fails the build. Code generation runs to the end, then all the failure messages are collected, shown, and the build stops |
+| `ModelCheck.warn(message)` | Only a warning (the build continues) |
 
-`SalesOrder`의 `@event(...)`를 잠깐 지우고 빌드하면:
+If you delete `SalesOrder`'s `@event(...)` for a moment and build:
 
 ```
 SalesOrder has commands but no @event. Add @event(...) to its meta.
@@ -400,16 +400,16 @@ SalesOrder has commands but no @event. Add @event(...) to its meta.
   SalesOrder has commands but no @event. Add @event(...) to its meta.
 ```
 
-규칙에서 예외를 던지지는 마세요. 그 파일 하나만 만들어지지 않고 원인을 찾기 어렵습니다.
+Do not throw an exception from a rule. Only that one file is not made, and the cause is hard to find.
 
 ---
 
-## 6. 다른 YAML 파일에도 규칙 걸기 (DTO, 검색, SQL, 외부 연동, enum)
+## 6. Apply rules to other YAML files too (DTO, search, SQL, external integration, enum)
 
-지금까지는 `entity.yml`의 엔티티에 규칙을 걸었습니다. ElastiCORE의 YAML은 그 밖에도 `dto.yml`, `repository.yml`, `port.yml`, `enum.yml`이 있고, **모두 같은 방법**으로 규칙을 겁니다. 달라지는 것은 두 가지뿐입니다.
+So far we applied rules to the entities in `entity.yml`. ElastiCORE's YAML also has `dto.yml`, `repository.yml`, `port.yml` and `enum.yml`, and you apply rules to **all of them in the same way**. Only two things change.
 
-1. `target` — 어느 파일에 거나
-2. 규칙 메서드의 **파라미터** — 무엇을 읽나
+1. `target` - which file you apply it to
+2. The **parameters** of the rule method - what you read
 
 ```mermaid
 flowchart LR
@@ -417,35 +417,35 @@ flowchart LR
     Y1 --> F2["PartnerDTO.java<br/><b>dto</b>"]
     Y1 --> F3["PartnerSrchDTO.java<br/><b>srchdto</b>"]
     Y2["dto.yml<br/>CreditResultDTO"] --> F4["CreditResultDTO.java<br/><b>dto</b>"]
-    Y3["repository.yml<br/>SalesOrder 쿼리"] --> F5["SalesOrderRepository.java<br/><b>repository</b>"]
+    Y3["repository.yml<br/>SalesOrder queries"] --> F5["SalesOrderRepository.java<br/><b>repository</b>"]
     Y4["port.yml<br/>CreditCheckPort"] --> F6["CreditCheckPort.java<br/><b>port</b>"]
     Y5["enum.yml<br/>OrderStatus"] --> F7["OrderStatus.java<br/><b>enum</b>"]
 ```
 
-| YAML | 만들어지는 파일 (ERP 예) | `target` | 규칙 메서드 모양 | 규칙이 읽는 것 |
+| YAML | File that is made (ERP example) | `target` | Rule method shape | What the rule reads |
 |---|---|---|---|---|
-| `entity.yml` | `Partner.java` | `"entity"` (기본) | `(EntitySpec entity)`, `(EntitySpec entity, FieldSpec field)` | 엔티티, 필드 |
-| `entity.yml`, `dto.yml` | `PartnerDTO.java`, `CreditResultDTO.java` | `"dto"` | `(EntitySpec dto, FieldSpec field)` | DTO 이름, 필드 |
-| 필드의 `@search(...)` | `PartnerSrchDTO.java` | `"srchdto"` | `(EntitySpec search, FieldSpec field)` | 검색 필드 |
-| `repository.yml` | `SalesOrderRepository.java` | `"repository"` | `(EntitySpec entity)` | `entity.queries()` — 쿼리 메서드 |
-| `port.yml` | `CreditCheckPort.java` | `"port"` | `(PortSpec port)` | `port.operations()` — 외부 호출 |
-| `enum.yml` | `OrderStatus.java` | `"enum"` | `(EnumSpec enumeration)` | `enumeration.constants()` — 값 |
+| `entity.yml` | `Partner.java` | `"entity"` (default) | `(EntitySpec entity)`, `(EntitySpec entity, FieldSpec field)` | Entity, field |
+| `entity.yml`, `dto.yml` | `PartnerDTO.java`, `CreditResultDTO.java` | `"dto"` | `(EntitySpec dto, FieldSpec field)` | DTO name, field |
+| `@search(...)` on a field | `PartnerSrchDTO.java` | `"srchdto"` | `(EntitySpec search, FieldSpec field)` | Search field |
+| `repository.yml` | `SalesOrderRepository.java` | `"repository"` | `(EntitySpec entity)` | `entity.queries()` — query methods |
+| `port.yml` | `CreditCheckPort.java` | `"port"` | `(PortSpec port)` | `port.operations()` — external calls |
+| `enum.yml` | `OrderStatus.java` | `"enum"` | `(EnumSpec enumeration)` | `enumeration.constants()` — values |
 
-`dto.yml`의 DTO도 `EntitySpec`으로 받습니다. 엔티티와 같은 방법으로 이름(`dto.getName()` → `"CreditResultDTO"`)과 필드를 읽습니다.
+A DTO in `dto.yml` is also received as an `EntitySpec`. You read its name (`dto.getName()` → `"CreditResultDTO"`) and fields the same way as for an entity.
 
-아래 다섯 개 예제는 모두 앞의 `AcmeRules` 클래스에 메서드로 더합니다.
+All five examples below are added as methods to the `AcmeRules` class from before.
 
-### DTO (`dto.yml`) — 내부용 필드를 API 문서에서 숨기기
+### DTO (`dto.yml`) - hide internal fields from the API docs
 
-**하고 싶은 것**: `dto.yml` 필드에 `@internal`이라고 적으면, 그 필드는 API 문서(Swagger)에 나오지 않게 한다.
+**What we want**: when you write `@internal` on a `dto.yml` field, that field does not appear in the API docs (Swagger).
 
 ```yaml
-  CreditResultDTO:                               # 신용 조회 결과 (외부 시스템 응답)
+  CreditResultDTO:                               # credit check result (response from the external system)
     meta: dto
     fields:
       bizNo:       string(12)
       grade:       string(2)
-      creditLimit: bigdecimal(14.2) @internal     # 내부용 - API 문서에서 숨김
+      creditLimit: bigdecimal(14.2) @internal     # internal use - hidden from the API docs
 ```
 
 ```java
@@ -459,29 +459,29 @@ flowchart LR
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `.merge(...)` | **이미 붙어 있는** 어노테이션에 속성만 더함. 없으면 새로 붙임 |
-| (비교) `.ensure(...)` | 같은 어노테이션이 이미 있으면 **아무것도 안 함** |
-| `.val("hidden", true)` | `hidden = true` (숫자·true/false는 따옴표 없이) |
+| `.merge(...)` | Only adds the attribute to an annotation that is **already there**. If there is none, it adds the annotation fresh |
+| (compare) `.ensure(...)` | If the same annotation is already there, it **does nothing** |
+| `.val("hidden", true)` | `hidden = true` (numbers and true/false without quotes) |
 
-DTO 필드에는 ElastiCORE가 `@Schema(description = ...)`를 이미 붙입니다. 그래서 `ensure`를 쓰면 아무 일도 일어나지 않고, `merge`를 써야 `hidden = true`가 더해집니다.
+ElastiCORE already puts `@Schema(description = ...)` on DTO fields. So with `ensure` nothing happens, and you must use `merge` for `hidden = true` to be added.
 
-결과 `CreditResultDTO.java`:
+Resulting `CreditResultDTO.java`:
 
 ```java
-	@Schema(description = "creditLimit", hidden = true)   // ← hidden 을 우리 규칙이 더함
+	@Schema(description = "creditLimit", hidden = true)   // ← hidden is added by our rule
 	private BigDecimal creditLimit;
 ```
 
-> 우리 표시를 만들기 전에, 같은 이름이 ElastiCORE에 이미 있는지 확인하세요. 예를 들어 `@example(A1)`은 ElastiCORE가 이미 `@Schema(example="A1")`로 만들어 줍니다(`elasticore-annotation-guide.md`). 규칙을 지워 보고 결과가 그대로면 이미 있는 기능입니다.
+> Before you create your own marker, check whether ElastiCORE already has the same name. For example, `@example(A1)` is already turned into `@Schema(example="A1")` by ElastiCORE (`elasticore-annotation-guide.md`). If you delete your rule and the result stays the same, the feature already exists.
 
-### 검색 DTO — LIKE 검색은 2글자 이상
+### Search DTO - a LIKE search needs 2 or more characters
 
-**하고 싶은 것**: `@search(like)` 필드로 검색할 때 한 글자만 넣으면 테이블 전체를 훑게 된다. 검색어를 2글자 이상으로 제한한다.
+**What we want**: when you search with a `@search(like)` field and enter just one character, the whole table gets scanned. Limit the search term to 2 or more characters.
 
 ```yaml
-      name:      string(100)! @search(like)  # entity.yml 의 Partner
+      name:      string(100)! @search(like)  # Partner in entity.yml
 ```
 
 ```java
@@ -494,27 +494,27 @@ DTO 필드에는 ElastiCORE가 `@Schema(description = ...)`를 이미 붙입니�
     }
 ```
 
-결과 `PartnerSrchDTO.java`:
+Resulting `PartnerSrchDTO.java`:
 
 ```java
 	@Schema(description = "Field matches pattern. field:name"  )
-	@Size(min = 2)                                    // ← 우리 규칙이 붙임
+	@Size(min = 2)                                    // ← added by our rule
 	private String name;
 ```
 
-검색 엔드포인트는 요청을 `@Valid` 로 받으므로 한 글자 검색(`{"name":"A"}`)은 400 입니다
-(`"code":"invalid"`, `fieldErrors` 에 `{"field":"name","code":"Size"}`). 이미 고친 컨트롤러라면
-`search(@Valid @RequestBody ...)` 의 `@Valid` 가 있는지 보세요 - 3.0.261027-rc2 전에 생성된 컨트롤러에는 없습니다.
+The search endpoint receives the request with `@Valid`, so a one-character search (`{"name":"A"}`) returns 400
+(`"code":"invalid"`, and `fieldErrors` holds `{"field":"name","code":"Size"}`). If you have already edited the controller,
+check that `search(@Valid @RequestBody ...)` has the `@Valid` - controllers generated before 3.0.261027-rc2 do not have it.
 
-### SQL (`repository.yml`) — 조회 쿼리는 읽기 전용, `SELECT *`는 금지
+### SQL (`repository.yml`) - read queries are read-only, `SELECT *` is forbidden
 
-**하고 싶은 것**: 두 가지.
-- `repository.yml`에 쿼리를 직접 쓴 메서드 중 **조회(SELECT)** 는 읽기 전용 트랜잭션으로 실행한다.
-- `SELECT *`는 빌드에서 막는다 (컬럼이 바뀌면 조용히 깨지므로).
+**What we want**: two things.
+- Among the methods where you wrote a query directly in `repository.yml`, a **read (SELECT)** runs in a read-only transaction.
+- `SELECT *` is stopped in the build (because it breaks silently when a column changes).
 
 ```yaml
 repository:
-  SalesOrder:                                     # 키는 엔티티 이름
+  SalesOrder:                                     # the key is the entity name
     methods:
       - id: summarizeByPartner
         params:
@@ -543,34 +543,34 @@ repository:
     }
 ```
 
-| 코드 | 뜻 (YAML) |
+| Code | Meaning (YAML) |
 |---|---|
-| `entity.queries()` | 이 엔티티에 대해 `repository.yml`에 적은 메서드 목록 |
+| `entity.queries()` | The list of methods written in `repository.yml` for this entity |
 | `query.name()` | `id:` → `"summarizeByPartner"` |
-| `query.sql()` | `query:` 문자열. 없으면(이름만으로 만드는 메서드) `null` |
-| `query.isSelect()` | 조회 쿼리인가 (UPDATE·DELETE면 `false`) |
-| `query.isNative()` | `nativeQuery: true`로 DB SQL을 직접 썼나 |
+| `query.sql()` | The `query:` string. `null` if there is none (a method made from its name alone) |
+| `query.isSelect()` | Is it a read query? (`false` for UPDATE and DELETE) |
+| `query.isNative()` | Did you write DB SQL directly with `nativeQuery: true`? |
 | `query.returnType()`, `query.params()` | `return:`, `params:` |
-| `ctx(entity).method("이름").ensure(...)` | 그 이름의 **메서드**에 어노테이션. 같은 이름의 메서드가 여러 개면 모두 |
+| `ctx(entity).method("name").ensure(...)` | An annotation on the **method** of that name. If several methods have the same name, on all of them |
 
-결과 `SalesOrderRepository.java`:
+Resulting `SalesOrderRepository.java`:
 
 ```java
     @Query(nativeQuery=false, value=" SELECT o.partner.partnerId AS partnerId, ...")
-    @Transactional(readOnly = true)                   // ← 우리 규칙이 붙임
+    @Transactional(readOnly = true)                   // ← added by our rule
     List<PartnerSalesDTO> summarizeByPartner(@Param("status") OrderStatus status);
 ```
 
-import(`org.springframework.transaction.annotation.Transactional`)도 ElastiCORE가 넣습니다.
-메서드 이름을 잘못 적으면 파일은 그대로 두고 빌드 로그에 알려 줍니다: `[rule] method 'summarize' is not declared in SalesOrderRepository (repository file); its annotations were not written`.
+ElastiCORE also adds the import (`org.springframework.transaction.annotation.Transactional`).
+If you write a method name wrongly, the file is left as it is and the build log tells you: `[rule] method 'summarize' is not declared in SalesOrderRepository (repository file); its annotations were not written`.
 
-### 외부 연동 (`port.yml`) — 외부 호출에 표시 달기
+### External integration (`port.yml`) - mark external calls
 
-**하고 싶은 것**: 외부 시스템을 부르는 인터페이스와 그 메서드에 "어느 시스템의 어느 주소를 부르는지"를 표시한다. 모니터링·감사 로그에서 이 표시를 읽는다.
+**What we want**: mark the interface that calls an external system, and its methods, with "which system and which address it calls". Monitoring and audit logs read this mark.
 
 ```yaml
 port:
-  CreditCheckPort:                               # 외부 신용평가 시스템
+  CreditCheckPort:                               # external credit rating system
     meta: http @url("https://credit.example.com/api") @timeout(connect=2000, read=5000)
     methods:
       checkCredit:
@@ -580,12 +580,12 @@ port:
         return: CreditResultDTO
 ```
 
-표시로 쓸 어노테이션 두 개는 애플리케이션에 직접 만듭니다 (`src/main/java/com/acme/erp/support/`):
+You create the two annotations used as marks directly in the application (`src/main/java/com/acme/erp/support/`):
 
 ```java
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface ExternalSystem { String value(); }     // ExternalCall 은 ElementType.METHOD
+public @interface ExternalSystem { String value(); }     // ExternalCall uses ElementType.METHOD
 ```
 
 ```java
@@ -602,33 +602,33 @@ public @interface ExternalSystem { String value(); }     // ExternalCall 은 Ele
     }
 ```
 
-| 코드 | 뜻 (YAML) |
+| Code | Meaning (YAML) |
 |---|---|
-| `(PortSpec port)` | 포트 하나마다 1번 실행. 필드가 없으므로 `FieldSpec` 모양은 없음 |
+| `(PortSpec port)` | Runs once per port. There are no fields, so there is no `FieldSpec` shape |
 | `port.getName()` | `CreditCheckPort` |
-| `port.protocol()` | `meta: http` → `"http"`, DB 포트면 `"dbms"` |
+| `port.protocol()` | `meta: http` → `"http"`, `"dbms"` for a DB port |
 | `port.url()` | `@url(...)` |
-| `port.operations()` | `methods:` 목록 |
+| `port.operations()` | The `methods:` list |
 | `op.name()`, `op.httpMethod()`, `op.url()` | `checkCredit`, `GET`, `/partners/{bizNo}/credit` |
 | `op.returnType()`, `op.params()` | `return:`, `params:` |
-| `.value("...")` | 이름 없는 속성 → `@ExternalSystem("CreditCheckPort")` |
+| `.value("...")` | An unnamed attribute → `@ExternalSystem("CreditCheckPort")` |
 
-결과 `CreditCheckPort.java`:
+Resulting `CreditCheckPort.java`:
 
 ```java
 @ExternalService(protocol="http", id="erp.CreditCheckPort" ,url="https://credit.example.com/api", connectTimeout=2000, readTimeout=5000)
-@ExternalSystem("CreditCheckPort")                        // ← 우리 규칙
+@ExternalSystem("CreditCheckPort")                        // ← our rule
 public interface CreditCheckPort   {
 
     @HttpEndpoint(url="/partners/{bizNo}/credit", method="GET", contentType="application/json", paramNames="bizNo")
-    @ExternalCall("GET /partners/{bizNo}/credit")         // ← 우리 규칙
+    @ExternalCall("GET /partners/{bizNo}/credit")         // ← our rule
     CreditResultDTO checkCredit(String bizNo);
 }
 ```
 
-### enum (`enum.yml`) — API 문서에 enum을 한 번만
+### enum (`enum.yml`) - describe an enum once in the API docs
 
-**하고 싶은 것**: Swagger 문서에서 enum이 쓰일 때마다 값 목록이 반복되지 않고, 한 번 정의한 것을 참조하게 한다.
+**What you want**: In the Swagger docs, the value list of an enum is not repeated wherever the enum is used. It is defined once and referenced.
 
 ```java
     /** enum.yml: every enum is described once in the API docs and referenced from there. */
@@ -639,29 +639,29 @@ public interface CreditCheckPort   {
     }
 ```
 
-| 코드 | 뜻 (YAML) |
+| Code | Meaning (YAML) |
 |---|---|
 | `enumeration.getName()` | `OrderStatus` |
-| `enumeration.constants()` | `enum:` 아래 값들. 각 값의 `c.name()` → `"DRAFT"`, `c.values()` → `["DRF", "초안"]` |
+| `enumeration.constants()` | The values under `enum:`. For each value, `c.name()` -> `"DRAFT"`, `c.values()` -> `["DRF", "Draft"]` |
 | `enumeration.fields()` | `fields:` (`code`, `label`) |
 
-결과 `OrderStatus.java`:
+The resulting `OrderStatus.java`:
 
 ```java
-@Schema(enumAsRef = true)          // ← 우리 규칙
+@Schema(enumAsRef = true)          // ← our rule
 @Getter
 public enum OrderStatus {
 ```
 
-### 무엇이 어디로 가나 — 한 번에 확인
+### What goes where - check it in one step
 
-`./gradlew elcore3 -PlistRules`를 실행하면 파일 종류(`target`)마다 실행되는 규칙 목록이 나옵니다. 위 다섯 개 규칙 이름(`acme-internal`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`)이 각자의 `target` 아래 보이면 연결된 것입니다.
+Run `./gradlew elcore3 -PlistRules` to get the list of rules that run for each file kind (`target`). If the five rule names above (`acme-internal`, `acme-like-min`, `acme-queries`, `acme-external-call`, `acme-enum-schema`) appear under their own `target`, they are connected.
 
 ---
 
-## 7. 규칙 테스트하기
+## 7. Testing rules
 
-매번 전체 빌드로 확인하면 느립니다. 규칙 모듈 안에서 **작은 모델을 직접 만들어** 규칙만 실행해 볼 수 있습니다.
+Checking with a full build every time is slow. Inside the rule module you can **build a small model by hand** and run only the rules.
 
 **`acme-rules/src/test/java/com/acme/rules/AcmeRulesTest.java`**
 
@@ -804,7 +804,7 @@ class AcmeRulesTest {
 
     @Test
     void enumeration() {
-        EnumSpec status = new EnumSpec("OrderStatus").constant("DRAFT", "DRF", "초안")
+        EnumSpec status = new EnumSpec("OrderStatus").constant("DRAFT", "DRF", "Draft")
                 .pkg("enumeration", "com.acme.erp.domain.model");
         String code = engine.run(status, "enum").render();
         assertTrue(code.contains("@Schema(enumAsRef = true)"), code);
@@ -812,16 +812,16 @@ class AcmeRulesTest {
 }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `new EntitySpec("Partner").meta("root", "")` | YAML의 `Partner:` + `meta: entity @root` |
-| `.field("bizNo", "string(12)! @secret")` | YAML 필드 한 줄을 그대로 |
-| `new EntitySpec("CreditResultDTO").field("creditLimit", "bigdecimal(14.2) @internal")` | `dto.yml`의 DTO도 같은 방법 |
-| `.query("summarize", "List<Object[]>", "SELECT ...")` | `repository.yml`의 메서드 하나 (`nativeQuery(...)`는 `nativeQuery: true`) |
-| `new PortSpec("CreditCheckPort", "erp").protocol("http")` + `port.operation(...)` | `port.yml`의 포트와 메서드 |
-| `new EnumSpec("OrderStatus").constant("DRAFT", "DRF", "초안")` | `enum.yml`의 enum과 값 |
-| `engine.run(모델, "dto").render()` | 그 모델로 DTO 파일을 만들어 **문자열로** 돌려줌. `"repository"`, `"port"`, `"enum"`도 같음 |
-| `System.out.println(code)` | 결과가 궁금하면 그냥 출력해 보세요. 생성될 파일 전체가 보입니다 |
+| `new EntitySpec("Partner").meta("root", "")` | `Partner:` in YAML + `meta: entity @root` |
+| `.field("bizNo", "string(12)! @secret")` | One YAML field line, as it is |
+| `new EntitySpec("CreditResultDTO").field("creditLimit", "bigdecimal(14.2) @internal")` | A DTO from `dto.yml` works the same way |
+| `.query("summarize", "List<Object[]>", "SELECT ...")` | One method of `repository.yml` (`nativeQuery(...)` is `nativeQuery: true`) |
+| `new PortSpec("CreditCheckPort", "erp").protocol("http")` + `port.operation(...)` | A port and its methods from `port.yml` |
+| `new EnumSpec("OrderStatus").constant("DRAFT", "DRF", "Draft")` | An enum and its values from `enum.yml` |
+| `engine.run(model, "dto").render()` | Builds the DTO file for that model and returns it **as a string**. `"repository"`, `"port"` and `"enum"` work the same way |
+| `System.out.println(code)` | To see the result, just print it. You see the whole file that would be generated |
 
 ```bash
 ./gradlew :acme-rules:test
@@ -829,7 +829,7 @@ class AcmeRulesTest {
 
 ---
 
-## 8. 완성된 규칙 클래스
+## 8. The finished rule class
 
 ```java
 package com.acme.rules;
@@ -937,158 +937,158 @@ public class AcmeRules implements CodeRules {
 
 ---
 
-## 9. 자주 쓰는 것
+## 9. Common things
 
-**엔티티에서 읽기** (`EntitySpec entity`)
+**Reading from an entity** (`EntitySpec entity`)
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `entity.getName()` | 엔티티 이름 `Partner` |
-| `entity.aggregateRoot()` | 루트인가 |
-| `entity.hasMeta("expose")` / `entity.metaValue("expose")` | meta에 `@expose`가 있나 / 괄호 안의 값 |
-| `entity.fields()` | 필드 목록 |
-| `entity.commands()`, `entity.events()` | 업무 명령, 이벤트 |
-| `entity.config("acme.x")` | `env.yml`의 `elasticore.config.acme.x` 값 (팀 설정을 규칙에 주고 싶을 때) |
+| `entity.getName()` | The entity name `Partner` |
+| `entity.aggregateRoot()` | Is it a root |
+| `entity.hasMeta("expose")` / `entity.metaValue("expose")` | Does the meta have `@expose` / the value in its parentheses |
+| `entity.fields()` | The list of fields |
+| `entity.commands()`, `entity.events()` | Business commands, events |
+| `entity.config("acme.x")` | The value of `elasticore.config.acme.x` in `env.yml` (when you want to give a team setting to a rule) |
 
-**필드에서 읽기** (`FieldSpec field`)
+**Reading from a field** (`FieldSpec field`)
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `field.name()`, `field.typeName()` | 이름, 타입 |
-| `field.hasDsl("secret")` / `field.dslValue("length")` | `@secret`이 있나 / `@length(200)`의 `200` |
-| `field.required()` | `!`로 필수 표시했나 |
+| `field.name()`, `field.typeName()` | Name, type |
+| `field.hasDsl("secret")` / `field.dslValue("length")` | Is `@secret` there / the `200` of `@length(200)` |
+| `field.required()` | Is it marked required with `!` |
 
-**다른 YAML에서 읽기** (6장)
+**Reading from other YAML files** (chapter 6)
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `entity.queries()` → `query.name()`, `sql()`, `isSelect()`, `isNative()` | `repository.yml`의 메서드 (target `"repository"`) |
-| `port.getName()`, `port.protocol()`, `port.operations()` → `op.name()`, `op.httpMethod()`, `op.url()` | `port.yml` (target `"port"`, 메서드 모양 `(PortSpec port)`) |
-| `enumeration.getName()`, `enumeration.constants()` | `enum.yml` (target `"enum"`, 메서드 모양 `(EnumSpec enumeration)`) |
+| `entity.queries()` -> `query.name()`, `sql()`, `isSelect()`, `isNative()` | A method of `repository.yml` (target `"repository"`) |
+| `port.getName()`, `port.protocol()`, `port.operations()` -> `op.name()`, `op.httpMethod()`, `op.url()` | `port.yml` (target `"port"`, method shape `(PortSpec port)`) |
+| `enumeration.getName()`, `enumeration.constants()` | `enum.yml` (target `"enum"`, method shape `(EnumSpec enumeration)`) |
 
-**코드에 쓰기** (`ctx(entity)`)
+**Writing to the code** (`ctx(entity)`)
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `ensureClassAnnotation(AnnoCode.of("a.b.C"))` | 클래스에 어노테이션 (있으면 두 번 안 붙임) |
-| `removeClassAnnotation("a.b.C")` | 클래스에서 어노테이션 빼기 (기본으로 붙는 것도) |
-| `field(field).ensure(AnnoCode.of("a.b.C"))` | 필드에 어노테이션 |
-| `field(field).removeAnnotation("a.b.C")` | 필드에서 어노테이션 빼기 |
-| `field(field).merge(AnnoCode.of("a.b.C").val("x", "y"))` | 이미 붙은 어노테이션에 속성 더하기 (없으면 붙임) |
-| `method("이름").ensure(AnnoCode.of("a.b.C"))` | 메서드에 어노테이션 (쿼리 메서드, 포트 메서드 등) |
+| `ensureClassAnnotation(AnnoCode.of("a.b.C"))` | An annotation on the class (not added twice if it is already there) |
+| `removeClassAnnotation("a.b.C")` | Remove an annotation from the class (also one that is added by default) |
+| `field(field).ensure(AnnoCode.of("a.b.C"))` | An annotation on a field |
+| `field(field).removeAnnotation("a.b.C")` | Remove an annotation from a field |
+| `field(field).merge(AnnoCode.of("a.b.C").val("x", "y"))` | Add attributes to an annotation that is already there (adds the annotation if it is missing) |
+| `method("name").ensure(AnnoCode.of("a.b.C"))` | An annotation on a method (query method, port method and so on) |
 
-`ctx(...)`에는 규칙이 받은 것을 그대로 넣습니다: `ctx(entity)`, `ctx(dto)`, `ctx(port)`, `ctx(enumeration)`.
+Pass `ctx(...)` exactly what the rule received: `ctx(entity)`, `ctx(dto)`, `ctx(port)`, `ctx(enumeration)`.
 
-**문제가 생기면**
+**When something goes wrong**
 
-| 증상 | 확인할 것 |
+| Symptom | What to check |
 |---|---|
-| `Rule set class '…' is not on the generator's classpath` | 루트 `build.gradle`의 `rules` 클래스 이름, `elasticore project(':acme-rules')` |
-| 규칙이 도는지 모르겠다 | `./gradlew elcore3 -PlistRules` — 파일 종류별로 실행되는 규칙이 나옵니다. 우리 규칙 이름이 보이면 연결된 것 |
-| 결과가 안 보인다 | 그 파일이 빌드 로그에 `KEPT`·`SKIP`으로 남았는지(2장 끝), `target`이 맞는지(4장 표, 6장 표). 7장 테스트에서 `println`으로 결과 확인 |
-| 생성 코드가 이상하다 | 7장처럼 `engine.run(...).render()`를 출력해서 규칙만 따로 확인 |
+| `Rule set class '…' is not on the generator's classpath` | The `rules` class name in the root `build.gradle`, and `elasticore project(':acme-rules')` |
+| You do not know whether a rule runs | `./gradlew elcore3 -PlistRules` - it lists the rules that run for each file kind. If you see your rule names, they are connected |
+| You do not see the result | Whether that file is logged as `KEPT` or `SKIP` in the build log (end of chapter 2), and whether the `target` is right (table in chapter 4, table in chapter 6). In the chapter 7 test, check the result with `println` |
+| The generated code looks wrong | Print `engine.run(...).render()` as in chapter 7 and check the rule on its own |
 
-규칙의 실행 순서는 신경 쓰지 않아도 됩니다. 우리 규칙은 항상 ElastiCORE 기본 규칙이 끝난 **뒤에** 실행되므로, 붙이거나 뺀 것이 그대로 남습니다.
+You do not need to care about the order in which rules run. Our rules always run **after** the ElastiCORE default rules, so what you add or remove stays.
 
 ---
 
-## 10. 규칙 API 레퍼런스
+## 10. Rule API reference
 
-모든 타입은 `io.elasticore.base.model.pub.rules` 패키지에 있습니다. 여기에는 팀 규칙에 쓰는 것만 모았습니다. 나머지 공개
-메서드는 ElastiCORE 자신의 규칙이 쓰는 것이라 버전 사이에 바뀔 수 있습니다.
+All types are in the package `io.elasticore.base.model.pub.rules`. This section lists only what team rules use. The other public
+methods are used by ElastiCORE's own rules and can change between versions.
 
 ```java
 import io.elasticore.base.model.pub.rules.*;
 import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 ```
 
-### `@Rule` 속성과 메서드 모양
+### `@Rule` attributes and method shapes
 
-`CodeRules` 는 구현할 메서드가 없는 표식 인터페이스이고, `@Rule` 이 붙은 메서드 하나가 규칙 하나입니다. 메서드는 `void`,
-클래스에는 인자 없는 생성자가 있어야 합니다.
+`CodeRules` is a marker interface with no method to implement, and each method annotated with `@Rule` is one rule. The method is `void`,
+and the class needs a constructor with no arguments.
 
-| 속성 | 기본값 | 뜻 |
+| Attribute | Default | Meaning |
 |---|---|---|
-| `value` | (필수) | 규칙 id. `-PlistRules` 에 나오고 `suppress` 에 씁니다. 팀 접두사를 붙이세요 (`acme-…`) |
-| `target` | `"entity"` | 기여하는 파일 종류 (4장 표, 6장) |
-| `order` | `0` | 같은 단계 안에서 작은 것부터. 같으면 등록 순서 |
-| `phase` | `HEAD` | 파일 단위 규칙이 필드 규칙보다 먼저(`HEAD`)인지 나중(`TAIL`)인지. 필드 규칙에는 의미 없음 |
+| `value` | (required) | The rule id. It shows in `-PlistRules` and is used in `suppress`. Add a team prefix (`acme-…`) |
+| `target` | `"entity"` | The file kind the rule contributes to (table in chapter 4, chapter 6) |
+| `order` | `0` | Within the same phase, smaller first. If equal, registration order |
+| `phase` | `HEAD` | Whether a file-level rule runs before (`HEAD`) or after (`TAIL`) the field rules. Meaningless for field rules |
 
-| 파라미터 | 불리는 때 | `target` 예 |
+| Parameter | Called | Example `target` |
 |---|---|---|
-| `(EntitySpec e)` | 그 엔티티의 파일을 만들 때마다 한 번 | `entity`, `dto`, `srchdto`, `repository`, `control`, `service`, `behavior` |
-| `(EntitySpec e, FieldSpec f)` | 그 파일의 필드마다 한 번 | `entity`, `dto`, `srchdto` |
-| `(DomainSpec d)` | 도메인 단위 파일마다 한 번 | `mapper`, `apiErrors`, 직접 만든 도메인 파일 |
-| `(EnumSpec e)` | 열거형마다 한 번 | `enum` |
-| `(PortSpec p)` | 외부 연동 포트마다 한 번 | `port` |
-| `(ProtoServiceSpec p)` | proto 포트마다 한 번 | `proto` |
+| `(EntitySpec e)` | Once each time the file of that entity is built | `entity`, `dto`, `srchdto`, `repository`, `control`, `service`, `behavior` |
+| `(EntitySpec e, FieldSpec f)` | Once for each field of that file | `entity`, `dto`, `srchdto` |
+| `(DomainSpec d)` | Once for each domain-level file | `mapper`, `apiErrors`, domain files you create yourself |
+| `(EnumSpec e)` | Once for each enum | `enum` |
+| `(PortSpec p)` | Once for each external integration port | `port` |
+| `(ProtoServiceSpec p)` | Once for each proto port | `proto` |
 
-한 파일 안의 순서는 `HEAD` 파일 규칙 → 필드 규칙(필드마다) → `TAIL` 파일 규칙입니다.
+Within one file, the order is `HEAD` file rules -> field rules (for each field) -> `TAIL` file rules.
 
-### `EntitySpec` - 엔티티, `dto.yml` 의 DTO, 검색 DTO
+### `EntitySpec` - an entity, a DTO from `dto.yml`, a search DTO
 
-| 메서드 | DSL 에서 |
+| Method | In the DSL |
 |---|---|
-| `getName()`, `domainName()`, `domainClassName()` | 엔티티 이름, 도메인 (`"erp"`, `"Erp"`) |
-| `hasMeta("x")`, `metaValue("x")`, `metaValues("x")` | `meta:` 의 `@x`, `@x(값)` 의 값, 여러 번 쓴 값 모두 |
-| `metaText("access")` | `@access(read=public, update=owner)` 처럼 짝으로 된 값의 원문 |
-| `aggregateRoot()`, `containedIn()` | 루트인가 / 멤버면 소속 루트 이름 |
-| `isSplitForBehavior(e.getName())` | 두 파일로 나뉘는 루트인가 (`XxxBase` + 개발자 클래스) |
-| `fields()`, `allFields()`, `dtoFields()`, `pkFields()` | 자기 필드 / 상속 포함 / DTO 쪽 / 식별자 |
-| `events()`, `eventClassName(ev)`, `eventPackage()` | `@event(...)` 이름들, 생성된 이벤트 클래스 이름·패키지 |
-| `commands()` → `name()`, `params()` | `commands:` 의 업무 명령 |
-| `queries()` → `name()`, `sql()`, `isSelect()`, `isNative()`, `returnType()`, `params()` | `repository.yml` 의 메서드 (target `repository`). 메서드 이름으로 만드는 쿼리면 `sql()` 이 `null` |
-| `pkg("dto")` | `env.yml` 네임스페이스 키의 패키지 |
-| `config("acme.maxPageSize")` | 그 도메인 `env.yml` 의 `elasticore.config.acme.maxPageSize`, 없으면 `null` |
+| `getName()`, `domainName()`, `domainClassName()` | The entity name, the domain (`"erp"`, `"Erp"`) |
+| `hasMeta("x")`, `metaValue("x")`, `metaValues("x")` | `@x` in `meta:`, the value of `@x(value)`, all values when written several times |
+| `metaText("access")` | The original text of a paired value such as `@access(read=public, update=owner)` |
+| `aggregateRoot()`, `containedIn()` | Is it a root / for a member, the name of its root |
+| `isSplitForBehavior(e.getName())` | Is it a root split into two files (`XxxBase` + a developer class) |
+| `fields()`, `allFields()`, `dtoFields()`, `pkFields()` | Own fields / including inherited / DTO side / identifiers |
+| `events()`, `eventClassName(ev)`, `eventPackage()` | The names in `@event(...)`, the name and package of the generated event class |
+| `commands()` -> `name()`, `params()` | The business commands in `commands:` |
+| `queries()` -> `name()`, `sql()`, `isSelect()`, `isNative()`, `returnType()`, `params()` | The methods of `repository.yml` (target `repository`). For a query made from the method name, `sql()` is `null` |
+| `pkg("dto")` | The package of an `env.yml` namespace key |
+| `config("acme.maxPageSize")` | `elasticore.config.acme.maxPageSize` in the `env.yml` of that domain, `null` if missing |
 | `tablePrefix()`, `apiPath()` | `config.table.prefix`, `config.apiPath` |
 
-### `FieldSpec` - 필드 한 줄
+### `FieldSpec` - one field line
 
-| 메서드 | DSL 에서 |
+| Method | In the DSL |
 |---|---|
-| `name()`, `capitalName()` | 필드 이름, 접근자용 (`"email"`, `"Email"`) |
-| `typeName()`, `coreItemType()` | 선언 타입 / `List<X>` 의 `X` |
+| `name()`, `capitalName()` | The field name, and the form for accessors (`"email"`, `"Email"`) |
+| `typeName()`, `coreItemType()` | The declared type / the `X` of `List<X>` |
 | `required()` | `!` |
-| `hasDsl("x")`, `hasDslAny("x", "y")` | `@x` 가 있나 (대소문자 무시) |
-| `dslValue("x")`, `dslValueAny(...)` | `@x(값)` 의 값 - `dslValue("search")` → `"like"` |
-| `dslProperty("onetomany", "mappedBy")` | `@OneToMany(mappedBy="parent")` 처럼 이름 붙은 속성 |
-| `maxLength()` | `string(100)` 또는 `@length` (없으면 0) |
-| `description()` | `--` 뒤의 설명 |
-| `label()` | `--` 설명, 없으면 `@label` |
-| `dbColumnName()` | `@column` 또는 snake_case 이름 |
-| `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | 컬렉션 / 다른 엔티티 참조 / 기본 타입 / 문자열 |
+| `hasDsl("x")`, `hasDslAny("x", "y")` | Is `@x` there (case-insensitive) |
+| `dslValue("x")`, `dslValueAny(...)` | The value of `@x(value)` - `dslValue("search")` -> `"like"` |
+| `dslProperty("onetomany", "mappedBy")` | A named attribute such as `@OneToMany(mappedBy="parent")` |
+| `maxLength()` | `string(100)` or `@length` (0 if none) |
+| `description()` | The description after `--` |
+| `label()` | The `--` description, or `@label` if there is none |
+| `dbColumnName()` | `@column` or the snake_case name |
+| `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | Collection / reference to another entity / basic type / string |
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
 
-`DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")`(없으면 `null`), `config("a.b")`, `isOn("a.b")`.
-`EnumSpec`: `getName()`, `constants()` → `name()`, `values()`, `fields()`.
-`PortSpec`: `getName()`, `protocol()`, `url()`, `operations()` → `name()`, `httpMethod()`, `url()`, `returnType()`, `params()`.
+`DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")` (`null` if missing), `config("a.b")`, `isOn("a.b")`.
+`EnumSpec`: `getName()`, `constants()` -> `name()`, `values()`, `fields()`.
+`PortSpec`: `getName()`, `protocol()`, `url()`, `operations()` -> `name()`, `httpMethod()`, `url()`, `returnType()`, `params()`.
 
-### `SourceCode` - `ctx(spec)` 이 돌려주는 지금 만드는 파일
+### `SourceCode` - the file being built now, returned by `ctx(spec)`
 
-| 메서드 | 하는 일 |
+| Method | What it does |
 |---|---|
-| `ensureClassAnnotation(anno)` | 클래스 어노테이션. 이미 있으면 두 번 붙이지 않음. import 자동 |
-| `removeClassAnnotation(fqcn)` | 클래스 어노테이션 빼기 (기본 규칙이 붙인 것도) |
-| `field(f)` → `FieldCode` | 그 필드의 선언 |
-| `removeField(f)` | 그 필드를 이 파일에서 뺌 |
-| `method("이름").ensure(anno)` | 이름이 같은 메서드 모두에 어노테이션 (`repository`, `port` …). 없는 이름이면 빌드 로그에 알림 |
-| `addMethod(source)` | 손으로 쓴 메서드를 클래스 끝(닫는 중괄호 앞)에 더함 |
-| `excludeMethod("deleteById", …)` | 생성되는 컨트롤러의 엔드포인트 메서드를 뺌 (아래) |
-| `addImport(fqcn)` | import 등록 (실제로 쓰는 것만 렌더) |
-| `dontMake()` | 이 파일을 만들지 않음 (로그에 `SKIP(dontMake)`) |
-| `var(k, v)`, `varLine(k, fmt, args…)`, `varLines(k, list)` | 스켈레톤의 `${k}` 를 채움 / 줄을 더함. `null` 은 무시 - 빈 값은 `""` |
-| `syntax()`, `requireSyntaxAnyOf(ruleId, Syntax…)` | 이 파일의 언어 / 다른 언어 생성에 쓰이면 그 파일을 실패로 |
-| `render()`, `unfilledSlots()` | 테스트에서: 파일 전체 문자열 / 채워지지 않은 `${…}` 이름 |
+| `ensureClassAnnotation(anno)` | A class annotation. Not added twice if it is already there. Imports are automatic |
+| `removeClassAnnotation(fqcn)` | Remove a class annotation (also one that a default rule added) |
+| `field(f)` -> `FieldCode` | The declaration of that field |
+| `removeField(f)` | Remove that field from this file |
+| `method("name").ensure(anno)` | An annotation on every method with that name (`repository`, `port` …). If the name does not exist, the build log shows a notice |
+| `addMethod(source)` | Add a hand-written method at the end of the class (before the closing brace) |
+| `excludeMethod("deleteById", …)` | Remove an endpoint method from the generated controller (below) |
+| `addImport(fqcn)` | Register an import (only the ones actually used are rendered) |
+| `dontMake()` | Do not create this file (the log shows `SKIP(dontMake)`) |
+| `var(k, v)`, `varLine(k, fmt, args…)`, `varLines(k, list)` | Fill the `${k}` of the skeleton / add a line. `null` is ignored - use `""` for an empty value |
+| `syntax()`, `requireSyntaxAnyOf(ruleId, Syntax…)` | The language of this file / fails the file if it is used to generate another language |
+| `render()`, `unfilledSlots()` | In tests: the whole file as a string / the names of the `${…}` that were not filled |
 
-`addMethod` 는 메서드 본문을 규칙이 쓴 그대로 넣으므로 언어를 가립니다 - Kotlin 프로젝트에서도 쓰려면 `ctx(e).syntax()` 로
-나누세요. 두 파일로 나뉜 루트(`SalesOrderBase` + 개발자의 `SalesOrder`)에서는 엔티티 규칙의 메서드가 `SalesOrderBase` 에만
-들어가고 개발자 클래스는 그것을 상속받습니다. 개발자 클래스에만 더하려면 `@Rule(target = "behavior")` 로 쓰세요 - 처음 생성될
-때만 적용됩니다. 3.0.261022-rc1 에서는 메서드가 하나도 없는 클래스에서 `addMethod` 가 버려지고 개발자 클래스에도 한 번 더
-들어갑니다. rc1 에서는 필드 규칙의 `ctx(e).field(id).after("…")` 로 멤버를 더하세요.
+`addMethod` puts the method body in exactly as the rule wrote it, so it depends on the language - to use it in a Kotlin project too, branch on `ctx(e).syntax()`.
+In a root split into two files (`SalesOrderBase` + the developer's `SalesOrder`), the methods of an entity rule go only into `SalesOrderBase`,
+and the developer class inherits them. To add to the developer class only, write it with `@Rule(target = "behavior")` - it applies only when the file is first generated.
+In 3.0.261022-rc1, `addMethod` is dropped on a class with no methods at all, and it is added once more to the developer class.
+In rc1, add the member with `ctx(e).field(id).after("…")` in a field rule.
 
-`excludeMethod` 이름과 엔드포인트:
+`excludeMethod` names and endpoints:
 
-| 이름 | 엔드포인트 |
+| Name | Endpoint |
 |---|---|
 | `create` | `POST /` |
 | `read` | `GET /{id}` |
@@ -1097,69 +1097,69 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `deleteById`, `deleteBatch` | `DELETE /{id}`, `POST /delete` |
 | `schemaInfo` | `GET /schema/info` |
 
-v3 출력(`hexagonal`, `ddd`, Kotlin)에서는 `deleteById` 를 빼면 `deleteBatch` 도, `update` 를 빼면 `batchUpdate` 도 빠집니다.
-2.x 호환 번들(`jpa-springboot`)은 적힌 이름만 빼므로 `excludeMethod("deleteById", "deleteBatch")` 처럼 둘 다 적으세요. **컨트롤러에만**(`target = "control"`)
-쓰세요: 헥사고날의 유스케이스 포트는 팀 규칙보다 먼저 만들어지므로, 서비스(`service`)에서 빼면 `XxxService implements
-XxxUseCase` 가 컴파일되지 않습니다. 서비스와 포트에서까지 빼려면 DSL 의 `@restExclude(deleteById)` 를 쓰세요. 컨트롤러는
-개발자 파일이라, 이미 고친 컨트롤러에는 적용되지 않습니다.
+In v3 output (`hexagonal`, `ddd`, Kotlin), removing `deleteById` also removes `deleteBatch`, and removing `update` also removes `batchUpdate`.
+The 2.x-compatible bundle (`jpa-springboot`) removes only the names you list, so list both, as in `excludeMethod("deleteById", "deleteBatch")`. Use it **only on the controller** (`target = "control"`):
+the use case port of hexagonal is built before team rules, so removing a method from the service (`service`) leaves `XxxService implements
+XxxUseCase` uncompilable. To remove it from the service and the port as well, use `@restExclude(deleteById)` in the DSL. The controller is
+a developer file, so this does not apply to a controller that has already been edited.
 
-### `FieldCode` - 필드 하나
+### `FieldCode` - one field
 
-| 메서드 | 하는 일 |
+| Method | What it does |
 |---|---|
-| `ensure(anno)` | 같은 어노테이션이 없을 때만 붙임 (보통 이것) |
-| `add(anno)` | 무조건 붙임 (반복 가능한 어노테이션) |
-| `merge(anno)` | 이미 붙은 같은 어노테이션에 속성만 더함, 없으면 붙임 (기본 규칙의 `@Schema`, `@Column` 에 더할 때) |
-| `replace(anno)` | 같은 어노테이션을 이것으로 바꿈 |
-| `removeAnnotation(fqcn)` | 빼기 |
-| `type("String")`, `rename("x")`, `initial("0")` | 선언 타입 / 이름 / 초기값 |
-| `comment(fmt, …)`, `before(fmt, …)`, `after(fmt, …)` | 주석 / 선언 위 줄 / 선언 뒤 멤버 (여러 번 부르면 줄이 이어짐) |
+| `ensure(anno)` | Adds the annotation only if the same one is not there (usually this one) |
+| `add(anno)` | Always adds it (for repeatable annotations) |
+| `merge(anno)` | Adds only the attributes to the same annotation that is already there, adds the annotation if missing (use it to add to the `@Schema`, `@Column` of the default rules) |
+| `replace(anno)` | Replaces the same annotation with this one |
+| `removeAnnotation(fqcn)` | Remove it |
+| `type("String")`, `rename("x")`, `initial("0")` | The declared type / the name / the initial value |
+| `comment(fmt, …)`, `before(fmt, …)`, `after(fmt, …)` | A comment / a line above the declaration / a member after the declaration (calling it several times continues the lines) |
 
-### `AnnoCode` - 어노테이션
+### `AnnoCode` - an annotation
 
-어노테이션을 문자열로 이어 붙이지 마세요. `AnnoCode` 가 Java(`{}`)와 Kotlin(`[]`) 문법, import, 따옴표를 맡습니다.
-어노테이션 클래스는 생성기 클래스패스에 없어도 됩니다 - 애플리케이션이 컴파일할 때 필요합니다.
+Do not build an annotation by joining strings. `AnnoCode` handles the Java (`{}`) and Kotlin (`[]`) syntax, imports and quotes.
+The annotation class does not need to be on the generator's classpath - the application needs it when it compiles.
 
-| 코드 | 결과 |
+| Code | Result |
 |---|---|
 | `AnnoCode.of("jakarta.persistence.Column")` | `@Column` + import |
-| `AnnoCode.of("org.jmolecules.ddd.annotation.%s", "Identity")` | 포맷으로 이름 만들기 |
-| `.val("name", "user_id")` | `name = "user_id"` (문자열 - 따옴표 붙음) |
+| `AnnoCode.of("org.jmolecules.ddd.annotation.%s", "Identity")` | Build the name with a format |
+| `.val("name", "user_id")` | `name = "user_id"` (a string - quotes are added) |
 | `.val("hidden", true)`, `.val("min", 2)` | `hidden = true`, `min = 2` |
-| `.valRaw("access", "JsonProperty.Access.WRITE_ONLY")` | 그대로 - 상수, 클래스 리터럴 |
-| `.valRaw("length", "%d", 200)` | 포맷 |
-| `.value("x")`, `.valueRaw("A.B")` | 이름 없는 속성 - `@X("x")`, `@X(A.B)` |
-| `.qualified()` | 전체 이름으로 (`jakarta.persistence.Entity` 와 이름이 겹칠 때) |
-| `AnnoCode.AnnoList.of(...)` | `indexes = {...}` 같은 어노테이션 목록 |
+| `.valRaw("access", "JsonProperty.Access.WRITE_ONLY")` | As it is - constants, class literals |
+| `.valRaw("length", "%d", 200)` | A format |
+| `.value("x")`, `.valueRaw("A.B")` | An unnamed attribute - `@X("x")`, `@X(A.B)` |
+| `.qualified()` | With the full name (when it clashes with `jakarta.persistence.Entity`) |
+| `AnnoCode.AnnoList.of(...)` | A list of annotations such as `indexes = {...}` |
 
-### `ModelCheck` - 검사
+### `ModelCheck` - checks
 
-| 메서드 | 결과 |
+| Method | Result |
 |---|---|
-| `ModelCheck.warn(msg)` | 경고만. 같은 메시지는 한 번 |
-| `ModelCheck.fail(msg)` | 생성을 끝까지 한 뒤 모든 실패를 모아 보여 주고 빌드 실패 (`elcore3` 종료 코드 1) |
-| `ModelCheck.failures()`, `ModelCheck.reset()` | 테스트에서 결과 확인 / 테스트 사이 초기화 |
+| `ModelCheck.warn(msg)` | A warning only. The same message appears once |
+| `ModelCheck.fail(msg)` | Generation runs to the end, then all failures are collected and shown, and the build fails (`elcore3` exit code 1) |
+| `ModelCheck.failures()`, `ModelCheck.reset()` | Check the result in a test / reset between tests |
 
-규칙에서 예외를 던지지 마세요. 그 규칙이 쓰던 파일 하나만 실패로 남아 원인을 찾기 어렵습니다.
+Do not throw an exception in a rule. Only the one file that rule was writing is left as a failure, and the cause is hard to find.
 
-### 새 파일 - `ArtifactContributor`
+### New files - `ArtifactContributor`
 
-| 타입 | 하는 일 |
+| Type | What it does |
 |---|---|
-| `ArtifactContributor` → `artifactsFor(EntitySpec e)` | 엔티티마다 파일을 선언 |
-| `DomainArtifactContributor` → `artifactsFor(DomainSpec d)` | 도메인마다 파일을 선언 |
-| `ContributedArtifact.of(target, namespaceKey, className)` | 새 target 이름(= 스켈레톤 이름), 패키지 키, 클래스 이름 |
-| `.orNamespace("entity")` | 그 패키지 키가 없는 프로젝트에서 쓸 키 |
+| `ArtifactContributor` -> `artifactsFor(EntitySpec e)` | Declares a file for each entity |
+| `DomainArtifactContributor` -> `artifactsFor(DomainSpec d)` | Declares a file for each domain |
+| `ContributedArtifact.of(target, namespaceKey, className)` | The new target name (= the skeleton name), the package key, the class name |
+| `.orNamespace("entity")` | The key to use in a project that does not have that package key |
 
-스켈레톤은 규칙 모듈의 `src/main/resources/elasticore-template/v3/<target>.tmpl` (Java),
-`elasticore-template/kt/<target>.tmpl` (Kotlin). 예제는 `elasticore-ddd-customize-guide.md`.
+The skeleton is `src/main/resources/elasticore-template/v3/<target>.tmpl` (Java) in the rule module, and
+`elasticore-template/kt/<target>.tmpl` (Kotlin). For an example, see `elasticore-ddd-customize-guide.md`.
 
-### `Syntax` - 언어 이음새
+### `Syntax` - the language seam
 
-어노테이션·import 는 생성기가 언어에 맞게 쓰므로 팀 규칙에는 보통 언어 분기가 필요 없습니다. 코드 조각을 직접 쓸 때(새 파일의
-줄, `addMethod`)만 `ctx(e).syntax()` 로 나누거나 `Syntax` 에 묻습니다:
+The generator writes annotations and imports for the language, so team rules usually need no language branch. Only when you write code fragments yourself (lines of a new file,
+`addMethod`), branch with `ctx(e).syntax()` or ask `Syntax`:
 
-| 호출 | Java | Kotlin |
+| Call | Java | Kotlin |
 |---|---|---|
 | `s.statement("return x")` | `return x;` | `return x` |
 | `s.getter("dto", "name")` | `dto.getName()` | `dto.name` |
@@ -1169,11 +1169,11 @@ XxxUseCase` 가 컴파일되지 않습니다. 서비스와 포트에서까지 �
 | `s.nullableType("String")` | `String` | `String?` |
 | `s.classLiteral("X")` | `X.class` | `X::class` |
 
-팀 규칙은 서버(Java·Kotlin) 생성에만 더해지고 TypeScript 클라이언트에는 들어가지 않습니다.
+Team rules are added only to server (Java, Kotlin) generation and do not go into the TypeScript client.
 
 ---
 
-## 더 알아보기
+## Learn more
 
-- **새 파일을 만드는 규칙**(예: 이벤트마다 메시지 토픽 상수 클래스), 기본 생성물 끄기, 팀 설정 읽기, Kotlin: `elasticore-ddd-customize-guide.md`
-- 규칙 API 전체: `elasticore-rule-guide.md`
+- **Rules that create new files** (for example, a message topic constant class for each event), turning off default output, reading team settings, Kotlin: `elasticore-ddd-customize-guide.md`
+- The full rule API: `elasticore-rule-guide.md`

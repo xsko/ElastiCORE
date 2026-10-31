@@ -186,7 +186,8 @@ reason in the [history](elasticore-project/elasticore-base/src/main/resources/el
 | [Ports](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-dsl-port-guide.md) | HTTP, DB and gRPC ports |
 
 The guides are copied into the project's `blueprint/` on every build, so an AI assistant reads the grammar of exactly
-the version in use. They are written in Korean today; English editions are in progress.
+the version in use. They are in English; a team that prefers Korean sets `elasticore { guides = 'ko' }` and gets the
+[Korean guides](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/) under the same names.
 
 ## Contributing · License
 

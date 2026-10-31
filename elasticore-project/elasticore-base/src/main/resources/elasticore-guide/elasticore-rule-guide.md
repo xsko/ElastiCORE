@@ -1,38 +1,38 @@
 # ElastiCORE Rule Guide
 
-코드 생성 규칙(rule)을 **고르고**, **끄고**, **직접 작성하는** 방법.
+How to **choose**, **switch off** and **write your own** code generation rules.
 
-DSL로 모델을 쓰는 것이 목적이라면 `elasticore-dsl-guide.md`를,
-생성된 코드를 쓰는 것이 목적이라면 `elasticore-dev-guide.md`를 보세요.
-이 문서는 **생성되는 코드 자체를 바꾸려는 사람**을 위한 것입니다.
+If you want to write a model in the DSL, read `elasticore-dsl-guide.md`.
+If you want to work with the generated code, read `elasticore-dev-guide.md`.
+This document is for **people who want to change the generated code itself**.
 
 ---
 
-## 1. 규칙이란 무엇인가
+## 1. What a rule is
 
-ElastiCORE 3.0의 생성기는 두 부분으로 나뉩니다.
+The ElastiCORE 3.0 generator has two parts.
 
-| | 무엇을 결정하나 | 어디에 있나 |
+| | What it decides | Where it lives |
 |---|---|---|
-| **규칙(rule)** | *무엇을* 낼지 — 이 필드에 `@Column(length=200)`이 붙는가 | Java 클래스 (`CodeRules`) |
-| **스켈레톤(template)** | 그것이 *어디에* 놓이는지 — 파일의 뼈대 | `.tmpl` 파일 |
+| **Rule** | *What* to emit - does this field get `@Column(length=200)`? | Java class (`CodeRules`) |
+| **Skeleton (template)** | *Where* it goes - the frame of the file | `.tmpl` file |
 
-규칙은 모델을 읽고 판단만 합니다. 문자열을 어떻게 쓰는지 — 세미콜론, import 형태,
-프로퍼티 선언 — 는 **언어 이음새(`Syntax`)**가 답합니다. 이 분리가 같은 규칙으로
-Java와 Kotlin을 모두 생성할 수 있게 하는 이유입니다.
+A rule reads the model and only decides. How a string is written - semicolons, the shape of imports,
+property declarations - is answered by the **language seam (`Syntax`)**. This separation is why the same rules
+can generate both Java and Kotlin.
 
 ```
-모델(DSL) ──▶ Spec ──▶ 규칙들 ──▶ SourceCode ──▶ 스켈레톤 ──▶ 파일
+Model (DSL) ──▶ Spec ──▶ rules ──▶ SourceCode ──▶ skeleton ──▶ file
                                       │
-                                   Syntax(언어)
+                                   Syntax (language)
 ```
 
 ---
 
-## 2. 규칙 고르기 (env.yml)
+## 2. Choosing rules (env.yml)
 
-규칙 선택은 도메인의 `env.yml`에서 합니다. **이 설정을 쓰지 않으면 기본 번들이 적용되므로,
-대부분의 프로젝트는 이 절을 몰라도 됩니다.**
+You choose rules in the domain's `env.yml`. **If you do not use this setting, the default bundle applies,
+so most projects do not need to know this section.**
 
 ```yaml
 elasticore:
@@ -42,425 +42,425 @@ elasticore:
       suppress: [jpa-comment]
 ```
 
-| 키 | 의미 |
+| Key | Meaning |
 |---|---|
-| `rules` | 사용할 규칙 집합. **기본값을 대체**합니다 |
-| `suppress` | 끌 규칙의 id. **누적**됩니다 |
+| `rules` | The rule sets to use. **Replaces the default** |
+| `suppress` | The ids of the rules to switch off. **Accumulates** |
 
-값은 세 가지 형태를 모두 받습니다: `[a, b]`, `a, b`, `a`.
+The value accepts all three forms: `[a, b]`, `a, b`, `a`.
 
-### 우선순위
+### Priority
 
 ```
-env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기본 번들
+env.yml publisher.rules  >  system property elasticore.publisher.rules  >  default bundle
 ```
 
-### 이름이 가리키는 것
+### What a name refers to
 
-`rules`의 각 이름은 셋 중 하나로 해석됩니다.
+Each name in `rules` resolves to one of three things.
 
-1. 등록된 **번들** — 여러 규칙 집합의 묶음
-2. 등록된 **규칙 집합** — 하나의 `CodeRules` 클래스
-3. **완전한 클래스 이름** — 직접 작성한 `CodeRules` 구현체
+1. A registered **bundle** - a group of rule sets
+2. A registered **rule set** - one `CodeRules` class
+3. A **fully qualified class name** - a `CodeRules` implementation you wrote yourself
 
-### 기본 제공 번들
+### Built-in bundles
 
-| 번들 | 무엇을 생성하나 |
+| Bundle | What it generates |
 |---|---|
-| `jpa-springboot` | 2.x 파이프라인과 **같은** 출력 (이력에 적은 2.x 버그 수정 제외 - `elcoreRulesCheck`·`elcoreTreeCheck` 가 비교) |
-| `jpa-springboot-v3` | 정리된 출력 — 실제 사용하는 import만, 규칙이 만드는 클래스 애노테이션 |
-| `jpa-springboot-kt` | Kotlin 출력 |
-| `ddd-springboot` | v3 + 애그리거트 경계 — 루트만 repository/service/controller, 값 객체 불변, 도메인 이벤트 |
-| `ddd-springboot-kt` | 위와 같은 읽기의 Kotlin 판 |
-| `hexagonal-springboot` | `ddd-springboot` + 인바운드 포트(`<Entity>UseCase`) |
-| `hexagonal-springboot-kt` | 위와 같은 육각형의 Kotlin 판 |
-| `ts-model` | TypeScript — DTO·enum·검색DTO + 컨트롤러 호출 클라이언트 |
-| `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
-| `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.3) |
-| `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + 인바운드 포트 — `architecture = 'hexagonal'` + `mode: mybatis` |
+| `jpa-springboot` | The **same** output as the 2.x pipeline (except the 2.x bug fixes noted in the history - `elcoreRulesCheck` and `elcoreTreeCheck` compare them) |
+| `jpa-springboot-v3` | Cleaned-up output - only the imports actually used, class annotations that rules produce |
+| `jpa-springboot-kt` | Kotlin output |
+| `ddd-springboot` | v3 + aggregate boundaries - repository/service/controller only for roots, immutable value objects, domain events |
+| `ddd-springboot-kt` | The Kotlin version of the same reading |
+| `hexagonal-springboot` | `ddd-springboot` + an inbound port (`<Entity>UseCase`) |
+| `hexagonal-springboot-kt` | The Kotlin version of the same hexagonal design |
+| `ts-model` | TypeScript - DTOs, enums, search DTOs + a client that calls the controllers |
+| `mybatis-springboot` | Layered Java on MyBatis - taken by domains with `mode: mybatis` (mapper interfaces, XML and schema instead of the JPA entity shell, Repository and Specification; env guide 2.3) |
+| `ddd-mybatis-springboot` | `ddd-springboot` on MyBatis - taken by domains with `architecture = 'ddd'` + `mode: mybatis`. What JPA did by itself (member cascade, orphan removal, version, callbacks, publishing domain events) is done by the generated repository adapter (env guide 2.3) |
+| `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + an inbound port - `architecture = 'hexagonal'` + `mode: mybatis` |
 
-`mode: mybatis` 인 도메인이 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot`·`jpa-springboot-v3` 를
-적으면 각각의 MyBatis 번들로 읽습니다 — mode 는 저장 방식을, 번들은 아키텍처를 말합니다.
+If a domain with `mode: mybatis` writes `ddd-springboot`, `hexagonal-springboot` or `jpa-springboot-v3` in the `publisher.rules` of env.yml,
+each is read as its MyBatis bundle - mode says how data is stored, the bundle says the architecture.
 
-#### 육각형 번들이 더 만드는 것
+#### What the hexagonal bundle adds
 
-`hexagonal-springboot`는 노출된 애그리거트 루트마다 인바운드 포트를 하나
-선언합니다.
+For each exposed aggregate root, `hexagonal-springboot` declares one
+inbound port.
 
 ```
-application/port/in/OrderUseCase   <- 애플리케이션이 밖에서 불리는 면
-application/OrderService           <- implements OrderUseCase (확장 서비스)
-interfaces/rest/OrderController    <- OrderUseCase 를 주입받음 (구현 클래스가 아니라)
+application/port/in/OrderUseCase   <- the face through which the application is called from outside
+application/OrderService           <- implements OrderUseCase (extended service)
+interfaces/rest/OrderController    <- gets OrderUseCase injected (not the implementation class)
 ```
 
-놓일 자리는 `namespace.inboundPort` 로 정합니다. 선언하지 않으면 `service` 와 같은
-패키지에 놓이므로, **기존 프로젝트는 아무 변화도 겪지 않습니다.** 두 방향을 나누고
-싶으면 `inboundPort` 를 선언하세요 — 그러면 `port.in` 과 `port.out` 이 나란히 섭니다.
+`namespace.inboundPort` decides where it goes. If you do not declare it, it goes in the same
+package as `service`, so **existing projects see no change at all.** If you want to separate the two directions,
+declare `inboundPort` - then `port.in` and `port.out` stand side by side.
 
-포트의 메서드 목록은 생성된 서비스의 면을 그대로 옮긴 것이라, "서비스가 포트를
-구현한다"는 주장을 **컴파일러가 매번 검사**합니다. 아웃바운드 포트는 이미
-`port` DSL 이 하던 일입니다 — 어댑터가 런타임 프록시라 생성할 코드가 없을 뿐입니다.
+The port's method list is a direct copy of the generated service's surface, so the claim "the service
+implements the port" is **checked by the compiler every time**. The outbound port is already
+what the `port` DSL did - there is just no code to generate because the adapter is a runtime proxy.
 
-Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(dto: OrderDTO): OrderDTO?`).
-그 언어에서는 널 허용이 시그니처의 일부라, 맞지 않으면 애초에 컴파일되지 않습니다.
+The Kotlin version also matches nullability in the signature to the service (`save(dto: OrderDTO): OrderDTO?`).
+In that language nullability is part of the signature, so if they do not match it does not compile in the first place.
 
-#### 언어별로 다르게 도달하는 규칙
+#### Rules that reach each language differently
 
-| 규칙 | Java | Kotlin | TS | 비고 |
+| Rule | Java | Kotlin | TS | Note |
 |---|---|---|---|---|
-| `ddd-aggregate` / `ddd-reference` | O | O | - | 경계는 모델의 사실. TS 에서는 엔드포인트가 없다는 형태로 이미 닿아 있음 |
-| `ddd-collection` (cascade·orphanRemoval) | O | O | - | ORM 에게 하는 말이라 브라우저에 대응물 없음 |
-| `ddd-collection` (add/remove/replace) | O | O | - | Kotlin 프로퍼티를 `MutableList` 로 선언 |
-| `ddd-collection` (setter 봉인) | O | O | - | 아래 참고 |
-| `ddd-mapper-ref` (쓰기 차단 + 멤버 왕복) | O | O | - | 매퍼는 서버의 것 |
-| `ddd-value-object` / `ddd-value-object-kt` | 각자 | 각자 | - | 불변을 Lombok 으로 만드느냐 언어로 만드느냐의 차이 |
-| `ddd-event` | O | O | - | 저장 시점에 매여 있음 |
-| `ddd-invariant` | O | O | **O** | TS 에서는 강제가 아니라 사전 확인 |
+| `ddd-aggregate` / `ddd-reference` | O | O | - | The boundary is a fact of the model. In TS it already shows up as the absence of endpoints |
+| `ddd-collection` (cascade, orphanRemoval) | O | O | - | It speaks to the ORM, so the browser has no counterpart |
+| `ddd-collection` (add/remove/replace) | O | O | - | Declares the Kotlin property as `MutableList` |
+| `ddd-collection` (setter sealing) | O | O | - | See below |
+| `ddd-mapper-ref` (write blocking + member round trip) | O | O | - | The mapper belongs to the server |
+| `ddd-value-object` / `ddd-value-object-kt` | each | each | - | The difference is whether immutability comes from Lombok or from the language |
+| `ddd-event` | O | O | - | Tied to the moment of saving |
+| `ddd-invariant` | O | O | **O** | In TS it is a pre-check, not enforcement |
 | `ddd-specification` | O | O | **O** | |
-| `ddd-factory` | O | O | - | 애그리거트를 만드는 일은 서버의 것 |
-| `ddd-domain-service` | O | O | - | 포트를 주입받음 |
-| `ddd-behavior` | O | O | - | `XxxBase`(재생성) + `Xxx`(개발자 소유) 로 분리 |
-| `ddd-command` | O | O | - | `commands:` -> 엔드포인트·명령 DTO·유스케이스·서비스·추상 메서드 |
-| `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
-| `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값. TS 는 `canShip(dto)` |
-| `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
-| `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
-| `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
-| 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
-| `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
-| `hex-usecase` | O | O | - | 두 언어의 스켈레톤이 모두 있음 |
+| `ddd-factory` | O | O | - | Creating the aggregate belongs to the server |
+| `ddd-domain-service` | O | O | - | Gets ports injected |
+| `ddd-behavior` | O | O | - | Split into `XxxBase` (regenerated) + `Xxx` (owned by the developer) |
+| `ddd-command` | O | O | - | `commands:` -> endpoint, command DTO, use case, service, abstract method |
+| `ddd-outbox` | O | O | - | When `outbox: true` in `env.yml` |
+| `ddd-state` | O | O | **O** | `states:` -> state transition per command, `canX()`, initial value. In TS it is `canShip(dto)` |
+| `ddd-derive` | O | O | - | `@snapshot`, `@compute` -> `derive(lookup)`, which the service calls before saving |
+| `jpa-service-access` | O | O | - | `@access`, `@owner`, `@password`, `@login` -> CoreService checks, hashing, `authenticate`; with `@signin`, `me()`, the controller's signin, signout, me, and the unique login column (all v3 bundles) |
+| `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |
+| Process manager (`processManager:` of `ddd-domain-service`) | O | O | - | After the event commits, in a separate transaction |
+| `ddd-repository-port` / `-adapter` | O | O | - | The browser has no repository |
+| `hex-usecase` | O | O | - | Skeletons exist for both languages |
 
-> **Kotlin 에서 setter 를 봉인하는 법.** `private set` 만 쓰면 컴파일이
-> 거부합니다 — *"Private setters are not allowed for open properties"*. 엔티티
-> 프로퍼티가 `open` 인 것은 all-open 플러그인 때문이고, 그게 없으면 Hibernate 가
-> 프록시를 못 만듭니다. 한동안 이건 **ORM 의 요구와 캡슐화가 서로를 배제하는**
-> 것으로 기록돼 있었습니다.
+> **How to seal a setter in Kotlin.** With `private set` alone the compiler
+> refuses - *"Private setters are not allowed for open properties"*. Entity
+> properties are `open` because of the all-open plugin, and without it Hibernate cannot create
+> a proxy. For a while this was recorded as **the ORM's requirement and encapsulation excluding
+> each other**.
 >
-> 배제하지 않습니다. 플러그인은 **기본값이 final 인 것을 열 뿐, 명시적 `final` 은
-> 그대로 둡니다.** 그래서 생성물은 이렇습니다:
+> They do not exclude each other. The plugin **only opens what is final by default; an explicit `final`
+> is left alone.** So the generated code looks like this:
 >
 > ```kotlin
 > final var items: MutableList<OrderItem>? = null
 >     private set
 > ```
 >
-> 프로퍼티는 봉인되고 클래스는 열린 채로 남습니다 — 양쪽이 실제로 필요로 하던
-> 것이 각각 그것이었습니다. Hibernate 는 프로퍼티가 아니라 필드에 쓰므로 영향이
-> 없습니다.
+> The property is sealed and the class stays open - each side really needed
+> exactly that. Hibernate writes to the field, not the property, so it is
+> not affected.
 
-여기서 X 인 항목은 조용히 빠지지 않습니다. 언어 전용 규칙은 자기가 쓰는 언어를
-말하고(`requireSyntax`), 다른 언어에서 선택되면 그 자리에서 멈춥니다.
-"자기 언어에서는 할 일이 없다"고 스스로 판단해 넘어가는 규칙(`ddd-collection`의
-메서드 절반)만 아무 말 없이 지나갑니다.
+An item marked X here is not silently dropped. A language-specific rule names the language it uses
+(`requireSyntax`), and if it is selected for another language it stops on the spot.
+Only a rule that decides by itself "there is nothing to do in my language" and moves on (half of the methods of `ddd-collection`)
+passes without a word.
 
-#### 도메인 이벤트 (`ddd-event`)
+#### Domain events (`ddd-event`)
 
-애그리거트 루트가 `@event(Placed, Cancelled)` 를 선언하면:
+If an aggregate root declares `@event(Placed, Cancelled)`:
 
 ```java
-OrderPlacedEvent, OrderCancelledEvent   // 루트의 식별자와 발생 시각을 담은 클래스
-order.raisePlaced()                     // 루트에 생기는 발생 메서드
+OrderPlacedEvent, OrderCancelledEvent   // classes holding the root's identifier and the time of occurrence
+order.raisePlaced()                     // raise method added to the root
 ```
 
-발생한 이벤트는 그 루트가 **다음에 저장될 때** Spring Data 가 읽어서 발행합니다
-(`@DomainEvents` / `@AfterDomainEventPublication`). 저장이 실패하면 발행되지
-않고, 발행된 뒤에는 지워지므로 두 번 발행되지 않습니다.
+A raised event is read and published by Spring Data **the next time that root is saved**
+(`@DomainEvents` / `@AfterDomainEventPublication`). If the save fails, nothing is
+published, and after publishing the events are cleared, so they are not published twice.
 
-**언제 발생하는지는 생성하지 않습니다.** 주문이 취소될 수 있다는 것은 모델에
-있지만 무엇이 취소인지는 없기 때문입니다 — 호출은 개발자가 소유한 확장 서비스에서
-합니다.
+**When it is raised is not generated.** The model says an order can be cancelled,
+but not what counts as a cancellation - so the call is made in the extended service
+owned by the developer.
 
-이벤트 클래스가 놓일 자리는 `namespace.event` 로 정합니다. 선언하지 않으면
-엔티티와 같은 패키지에 놓입니다.
+`namespace.event` decides where the event classes go. If you do not declare it, they go
+in the same package as the entity.
 
-#### 불변식 (`ddd-invariant`)
+#### Invariants (`ddd-invariant`)
 
-애그리거트가 **항상 참으로 유지하겠다고 약속한 것**입니다. 경계 규칙이 "누가 쓸 수
-있는가"를 정한다면, 불변식은 "쓰인 뒤에 무엇이어도 되는가"를 정합니다.
+An invariant is something the aggregate **promises to keep always true**. If the boundary rules decide "who can
+write", the invariant decides "what is allowed to be true after it is written".
 
 ```yaml
 Order:
   meta: entity @root @invariant(items.size > 0, 'an order has at least one line')
 ```
 
-여러 번 쓸 수 있습니다. 각 선언이 별개의 약속입니다.
+You can write it several times. Each declaration is a separate promise.
 
-생성물은 `OrderInvariants` **리스너 클래스**이고 루트의 `@EntityListeners` 에
-등록됩니다. 루트의 메서드가 아닌 이유는 JPA 가 클래스당 콜백 하나만 허용하는데
-`@genid` 루트는 이미 `@PrePersist` 를 쓰고 있기 때문입니다 — 두 개면 경고가 아니라
-**퍼시스턴스 유닛이 아예 뜨지 않습니다.**
+The generated code is an `OrderInvariants` **listener class**, registered in the root's
+`@EntityListeners`. It is not a method on the root because JPA allows only one callback per class, and
+an `@genid` root already uses `@PrePersist` - with two, it is not a warning:
+**the persistence unit does not start at all.**
 
-검사는 `@PrePersist` / `@PreUpdate` 에서, 즉 **행이 쓰일 때** 실행됩니다. 어떤
-경로로 저장하든 지나칠 수 없습니다. 어기면 `IllegalStateException` 입니다 —
-사용자 입력을 거절하는 것이 아니라 도메인이 "약속한 적 없는 상태가 되었다"고
-말하는 것이므로, 검증 메시지(`@length` 등이 만드는 Bean Validation)와는 다릅니다.
+The check runs in `@PrePersist` / `@PreUpdate`, that is, **when the row is written**. Whatever
+path saves it cannot get past. A violation throws `IllegalStateException` -
+this is not the rejection of user input but the domain saying "it became a state it never promised",
+so it differs from validation messages (the Bean Validation that `@length` and others produce).
 
-> **멤버가 빠지는 것도 루트의 쓰기입니다.** 마지막 멤버를 지우면 멤버의 행만
-> 지워지고 루트의 행은 그대로라, 루트의 리스너만으로는 검사가 실행되지 않습니다.
-> 그래서 멤버에 `OrderItemRemovalCheck` 리스너가 붙어, 멤버 행이 지워질 때(flush)
-> 루트의 불변식을 남은 상태로 검사합니다. remove 메서드 안에서 검사하지 않는 이유는
-> replace 메서드가 전체 교체를 위해 먼저 비우기 때문입니다 — flush 때는 이미 다시
-> 채워져 있으므로 교체는 허용됩니다. 루트를 지우는 중이면 검사하지 않습니다.
-> 멤버에 루트를 가리키는 필드가 없으면 검사를 만들 수 없어 DSL 경고가 납니다.
-> 샘플 테스트: `AggregateInvariantTest` (`emptyingAnOrderIsCaught`,
+> **A member leaving is also a write to the root.** When you delete the last member, only the member's row is
+> deleted and the root's row stays as it is, so the root's listener alone would not run the check.
+> So an `OrderItemRemovalCheck` listener is attached to the member, and when the member row is deleted (flush)
+> it checks the root's invariants against the remaining state. The check is not in the remove method because
+> the replace method empties the collection first to replace everything - by flush time it has already been
+> refilled, so a replacement is allowed. While the root is being deleted, the check is skipped.
+> If the member has no field pointing to the root, the check cannot be made and the DSL gives a warning.
+> Sample tests: `AggregateInvariantTest` (`emptyingAnOrderIsCaught`,
 > `replacingEveryLineIsStillAllowed`, `deletingTheRootIsNotRefused`).
 
-#### 팩토리 (`ddd-factory`)
+#### Factory (`ddd-factory`)
 
-불변식이 있는 루트는 필드를 하나씩 세팅해서 만들 수 없습니다 — 중간이 유효하지
-않기 때문입니다. 유효해지는 순간을 책임질 자리가 팩토리입니다.
+A root with invariants cannot be built by setting fields one at a time - the middle states are not
+valid. The factory is the place that takes responsibility for the moment it becomes valid.
 
 ```yaml
 Order:
   meta: entity @root @invariant(items.size > 0, '...') @factory(place)
 ```
 
-생성물은 `OrderFactory` 이고 **generate-once 마커**를 답니다. 본문을 쓰기 전에는 시그니처가
-모델을 따라가고, 쓴 뒤에는 깔끔하게 합쳐지는 변경만 들어옵니다 - 루트에 필수 필드를 더하면 시그니처가 개발자가 쓴
-본문 바로 위라 합쳐지지 않아, 파일을 그대로 두고 손으로 옮기라고 알립니다(`KEPT(yours ...)`,
-`elasticore-env-guide.md` 9-2). 본문은 던지는 스텁입니다 — 조용히 무언가
-반환하는 스텁은 운영까지 가기 때문입니다.
+The generated code is `OrderFactory`, and it carries a **generate-once marker**. Before you write the body, the signature
+follows the model; after that, only changes that merge cleanly come in - if you add a required field to the root, the signature is right above the body the developer wrote,
+so it does not merge, and the generator tells you to leave the file as it is and move the change by hand (`KEPT(yours ...)`,
+`elasticore-env-guide.md` 9-2). The body is a stub that throws - because a stub that quietly
+returns something makes it to production.
 
-시그니처는 루트의 필수 필드입니다(생성되는 식별자와 컬렉션은 제외). 모델이 말할
-수 있는 최대치이고, 그 다음은 개발자의 파일입니다.
+The signature is the root's required fields (the generated identifier and collections are excluded). It is the most the model can
+say; what comes next is the developer's file.
 
-#### 명세 (`ddd-specification`)
+#### Specification (`ddd-specification`)
 
-이름을 가질 만한 도메인 규칙입니다. 같은 비교가 서비스와 리포트와 테스트에 각각
-다시 타이핑되다가 하나만 다르게 타이핑되는 것을 막습니다.
+A domain rule worth giving a name. It stops the same comparison from being retyped in the service, in the report and in the test,
+with one of them typed differently.
 
 ```yaml
 Order:
   meta: entity @root @specification(highValue, totalAmount > 100)
 ```
 
-생성물은 `OrderSpecifications.highValue()` 이고 `Predicate<Order>` 를 돌려줍니다.
-boolean 이 아니라 predicate 인 이유는 **조합이 이 패턴의 요점**이기 때문입니다:
-`highValue().and(hasLines())` 는 규칙으로 만든 규칙입니다.
+The generated code is `OrderSpecifications.highValue()`, and it returns a `Predicate<Order>`.
+It is a predicate, not a boolean, because **composition is the point of this pattern**:
+`highValue().and(hasLines())` is a rule made of rules.
 
-**쿼리가 아닙니다.** Spring Data `Specification<Order>` 로 내보내 SQL 로 밀어넣는
-편이 더 나은 아티팩트겠지만, criteria API 로 표현되는 규칙에서만 그렇습니다.
-어떤 규칙은 DB 에서 어떤 규칙은 메모리에서 동작하는데 **어느 쪽인지 알 수 없는**
-것은 생성물이 가질 수 있는 최악의 성질입니다. 이미 읽어온 것에서 고릅니다.
+**It is not a query.** Exporting it as a Spring Data `Specification<Order>` and pushing it down into SQL
+would be a better artifact, but only for rules that the criteria API can express.
+Some rules running in the DB and some in memory, with **no way to tell which**,
+is the worst property a generated artifact can have. It selects from what has already been read.
 
-#### 조건 문법 (`@invariant` 와 `@specification` 공통)
+#### Condition syntax (shared by `@invariant` and `@specification`)
 
-두 패턴은 같은 문장을 다르게 쓸 뿐이라 문법을 공유합니다.
+The two patterns only write the same sentence differently, so they share a syntax.
 
-| 형태 | 뜻 |
+| Form | Meaning |
 |---|---|
-| `items.size > 0` | to-many 의 멤버 수가 그 값보다 큼 |
-| `totalAmount > 100` | 숫자가 그 값보다 큼 (`<` 도 가능) |
-| `notes notNull` | 필드가 설정되어 있음 |
-| `items notEmpty` | to-many 에 무언가 들어 있음 |
+| `items.size > 0` | The number of members of a to-many is greater than the value |
+| `totalAmount > 100` | The number is greater than the value (`<` also works) |
+| `notes notNull` | The field is set |
+| `items notEmpty` | The to-many holds something |
 
-필드·비교·리터럴, 그 이상은 없습니다. 임의 표현식을 받으면 파서를 만들어야 하고,
-**거의 맞는 파서는 명백히 제한된 형태보다 나쁩니다** — DSL 이 로직을 넣는 자리처럼
-보이기 시작하는데, 그것만은 아닙니다.
+A field, a comparison and a literal, nothing more. Accepting an arbitrary expression means writing a parser, and
+**an almost-right parser is worse than an obviously limited form** - the DSL starts to
+look like a place to put logic, and it is not only that.
 
-> `>=` 와 `<=` 는 **쓸 수 없습니다.** DSL 애노테이션 파서가 인자 안의 `=` 를
-> 키/값 목록의 시작으로 읽기 때문입니다. 빠뜨린 것이 아니라 쓸 수 없는 것이고,
-> 대신 `notNull` / `notEmpty` 같은 낱말 형태를 씁니다. 같은 이유로 `:` 도 쓰지
-> 않습니다 — meta 줄은 YAML 스칼라라 `이름: ` 을 매핑 시작으로 읽고 파일이 아예
-> 로드되지 않습니다.
+> You **cannot use** `>=` and `<=`. The DSL annotation parser reads an `=` inside an argument
+> as the start of a key/value list. This is not an omission but a limit, and
+> you use word forms such as `notNull` / `notEmpty` instead. For the same reason `:` is not used
+> either - the meta line is a YAML scalar, so `name: ` is read as the start of a mapping and the file does not
+> load at all.
 
-값은 항상 **접근자로** 읽습니다. 두 생성물 모두 엔티티 바깥에 있어 필드가 보이지
-않고, 지연 로딩 to-many 는 게터로 읽어야 초기화됩니다.
+Values are always read **through accessors**. Both generated artifacts live outside the entity, so fields are not
+visible, and a lazy-loaded to-many is initialized only when read through the getter.
 
-#### 값 객체의 교체 (`ddd-value-object`)
+#### Replacing a value object (`ddd-value-object`)
 
-세터를 주지 않는 것은 "값 객체는 바뀌지 않는다"는 말이고, **어떻게 다른 것을
-얻는가**에는 답하지 않았습니다. 이제 필드마다 with 메서드가 생깁니다:
+Giving no setter says "a value object does not change", and it did not answer
+**how you get a different one**. Now each field gets a with method:
 
 ```java
-Address moved = address.withCity("Rotterdam");   // 원본은 그대로
+Address moved = address.withCity("Rotterdam");   // the original stays as it is
 ```
 
-전에는 전체 인자 생성자가 유일한 방법이었는데, 나머지 필드를 호출부에서 위치
-순서대로 다시 나열하는 방식이라 둘이 뒤바뀌기 좋았습니다.
+Before, the all-args constructor was the only way, and it made the call site list the remaining fields again in positional
+order, so it was easy to swap two of them.
 
-#### Kotlin 에서 달라지는 것
+#### What changes in Kotlin
 
-규칙이 쓰는 것은 같고, 각 언어가 그것을 말하는 방식만 다릅니다.
+What the rule emits is the same; only the way each language says it differs.
 
 | | Java | Kotlin |
 |---|---|---|
-| 이벤트 클래스 | 필드 + 생성자 + 게터 | 주 생성자의 `val` |
-| 명세 클래스 | `private` 생성자 | `object` |
-| 팩토리 | `private` 생성자 + `static` | `object` + `fun` |
-| 도메인 서비스·프로세스 매니저의 포트 | `XxxBase` 의 `@Autowired protected` 필드 | `XxxBase` 의 `@Autowired protected lateinit var` |
-| 조건식 | `order.getItems()` | `order.items!!` |
-| 불변식 리스너 | `@EntityListeners({A.class, B.class})` | `@EntityListeners(A::class, B::class)` — 배열 속성을 vararg 로 받으므로 대괄호를 쓰면 컴파일되지 않습니다 |
+| Event class | Fields + constructor + getters | `val` in the primary constructor |
+| Specification class | `private` constructor | `object` |
+| Factory | `private` constructor + `static` | `object` + `fun` |
+| Port of a domain service / process manager | `@Autowired protected` field of `XxxBase` | `@Autowired protected lateinit var` of `XxxBase` |
+| Condition expression | `order.getItems()` | `order.items!!` |
+| Invariant listener | `@EntityListeners({A.class, B.class})` | `@EntityListeners(A::class, B::class)` - an array attribute takes a vararg, so brackets do not compile |
 
-#### 엔티티 행위 (`ddd-behavior`) - Generation Gap
+#### Entity behavior (`ddd-behavior`) - Generation Gap
 
-엔티티 파일은 DSL 이 바뀔 때마다 다시 생성되므로, 그 안에 쓴 `confirm()` 같은 메서드는
-사라집니다. 그래서 행위가 서비스로 빠지고 빈약한 도메인 모델이 됩니다. DDD 번들에서
-**루트는 기본으로** 둘로 나뉩니다 (`@behavior` 를 적지 않아도 됩니다).
+The entity file is regenerated every time the DSL changes, so a method like `confirm()` written inside it
+disappears. So behavior moves out into the service and you get an anemic domain model. In the DDD bundles
+**a root is split in two by default** (you do not need to write `@behavior`).
 
-| 파일 | 성격 | 내용 |
+| File | Nature | Content |
 |---|---|---|
-| `SalesOrderBase` | 재생성 (`@MappedSuperclass`, abstract) | 필드, 이벤트 발생 메서드, 컬렉션·불변식 배관 |
-| `SalesOrder` | **generate-once** (`@Entity`, `extends SalesOrderBase`) | 개발자가 쓰는 업무 메서드 |
+| `SalesOrderBase` | Regenerated (`@MappedSuperclass`, abstract) | Fields, event raise methods, collection and invariant plumbing |
+| `SalesOrder` | **generate-once** (`@Entity`, `extends SalesOrderBase`) | Business methods the developer writes |
 
 ```yaml
 SalesOrder:
   meta: entity @root @expose(20) @behavior @event(Confirmed)
   fields:
-    status: OrderStatus @behavior        # 행위로만 바뀐다
+    status: OrderStatus @behavior        # changes only through behavior
     totalAmount: bigdecimal(14.2) @behavior
 ```
 
 ```java
 public class SalesOrder extends SalesOrderBase {
     public void confirm() {
-        if (getStatus() != OrderStatus.DRAFT) throw new InvariantViolationException("초안만 확정");
+        if (getStatus() != OrderStatus.DRAFT) throw new InvariantViolationException("only a draft can be confirmed");
         setStatus(OrderStatus.CONFIRMED);   // protected setter
         raiseConfirmed();
     }
 }
 ```
 
-- **구체 클래스가 엔티티 이름을 그대로 가집니다.** 매퍼·리포지터리·포트·DTO 는 바뀌지 않고
-  상위 클래스 하나가 추가될 뿐입니다 (Core Data mogenerator, Apache Cayenne 와 같은 분리).
-- **필드 `@behavior`**: setter 가 `protected` (Java: `@Setter(AccessLevel.PROTECTED)`,
-  Kotlin: `protected set`), 매퍼가 쓰지 않고, DTO 는 `READ_ONLY` 로 받습니다.
-  클라이언트는 상태를 보낼 수 없고 서비스도 직접 바꿀 수 없어, 행위 메서드만이 바꿉니다.
-  루트는 적지 않아도 나뉘므로 필드 `@behavior` 만 쓰면 됩니다. 나뉘지 않는 엔티티(`@editable` 루트,
-  멤버)의 필드 `@behavior` 는 DSL 경고를 내고 무시합니다.
-- **테이블 어노테이션**(`@Entity`, `@Table`, `@DynamicUpdate` …)은 JPA 가 읽는 구체 클래스에
-  있습니다. 이 파일은 재생성되지 않으므로 DSL 에서 테이블명·스키마·인덱스를 바꾸면
-  생성기가 차이와 새 어노테이션을 출력합니다 - 직접 옮겨 적으세요.
-- **기존 프로젝트 전환**: `@behavior` 를 추가하고 생성하면, 생성기가 관리하던 `SalesOrder.java`
-  가 얇은 구체 클래스로 바뀌고 필드는 `SalesOrderBase.java` 로 옮겨집니다.
-  사용자가 수정한 파일이면 `-Pforce` 없이는 건너뜁니다.
-- 적용되지 않는 모양: `@embeddable`, `@abstract`, `@rollup`, 판별자(single table) 계층,
-  복합 키. 이들은 JPA 가 상속을 다르게 다루므로 분리하지 않습니다.
+- **The concrete class keeps the entity name.** Mappers, repositories, ports and DTOs do not change;
+  one superclass is just added (the same split as Core Data mogenerator and Apache Cayenne).
+- **Field `@behavior`**: the setter is `protected` (Java: `@Setter(AccessLevel.PROTECTED)`,
+  Kotlin: `protected set`), the mapper does not write it, and the DTO takes it as `READ_ONLY`.
+  A client cannot send the state and a service cannot change it directly, so only behavior methods change it.
+  A root is split even if you write nothing, so you only need the field `@behavior`. On an entity that is not split (an `@editable` root,
+  a member), a field `@behavior` gives a DSL warning and is ignored.
+- **Table annotations** (`@Entity`, `@Table`, `@DynamicUpdate` ...) are on the concrete class
+  that JPA reads. This file is not regenerated, so if you change the table name, schema or indexes in the DSL,
+  the generator prints the difference and the new annotations - copy them by hand.
+- **Moving an existing project**: add `@behavior` and generate, and `SalesOrder.java`, which the generator managed,
+  turns into a thin concrete class and its fields move to `SalesOrderBase.java`.
+  If the user modified the file, it is skipped without `-Pforce`.
+- Shapes where it does not apply: `@embeddable`, `@abstract`, `@rollup`, discriminator (single table) hierarchies,
+  composite keys. JPA handles inheritance differently for these, so they are not split.
 
-##### 루트는 기본으로 잠긴다 (sealed) - `@editable` 로 연다
+##### A root is locked by default (sealed) - open it with `@editable`
 
-DDD 번들에서 루트의 필드는 **기본으로 잠깁니다**. 공개 setter 가 없는 모델이 기본이고,
-빈약한 모델은 `@editable` 로 **명시적으로 고른** 경우에만 생깁니다.
+In the DDD bundles the fields of a root are **locked by default**. A model with no public setters is the default, and
+an anemic model arises only when you **explicitly choose** it with `@editable`.
 
-| 필드 종류 | setter | 요청(POST) | 요청(PUT) | 바꾸는 방법 |
+| Field kind | setter | Request (POST) | Request (PUT) | How to change it |
 |---|---|---|---|---|
-| 기본 (잠김) | `protected` | 받음 | 같은 값이면 통과, 다르면 **422** | 루트의 메서드 |
-| `@behavior` | `protected` | 받지 않음 (`READ_ONLY`) | 받지 않음 | 루트의 메서드 |
-| `@readonly` / `@noinput` | `protected` (`@editable` 루트는 `public`) | 받지 않음 (`READ_ONLY`) | 받지 않음 | 서버 코드: 새 루트는 `creation()`, 그 뒤는 루트의 메서드 (`@editable` 루트는 `beforeSave` 의 setter) |
-| `@editable` | `public` | 받음 | 받음 | setter, PUT |
-| id, `@jpa:Version`, 감사 필드 | 그대로 | - | - | 영속성 계층 |
+| Default (locked) | `protected` | Accepted | Passes if the value is the same, **422** if different | A method of the root |
+| `@behavior` | `protected` | Not accepted (`READ_ONLY`) | Not accepted | A method of the root |
+| `@readonly` / `@noinput` | `protected` (`public` on an `@editable` root) | Not accepted (`READ_ONLY`) | Not accepted | Server code: `creation()` for a new root, a method of the root after that (for an `@editable` root, the setter in `beforeSave`) |
+| `@editable` | `public` | Accepted | Accepted | setter, PUT |
+| id, `@jpa:Version`, audit fields | As they are | - | - | Persistence layer |
 
 ```yaml
 SalesOrder:
   meta: entity @root @expose(20) @event(Confirmed)
   fields:
     orderId: string(36) @id @genid
-    orderNo: string(20)!          # 만들 때 정하고, 그 뒤로는 메서드로만
-    status: OrderStatus @behavior # 요청은 보낼 수도 없다
-    memo: string(500) @editable   # 아무 때나 고친다
+    orderNo: string(20)!          # set at creation, after that only through methods
+    status: OrderStatus @behavior # the request cannot even send it
+    memo: string(500) @editable   # edited any time
     lines: List<SalesOrderLine> @OneToMany(mappedBy="order") @editable
 
-Item:                             # 기준정보 - 필드 단위로 고치는 게 맞는 루트
+Item:                             # master data - a root where editing field by field is right
   meta: entity @root @editable @expose(20)
 ```
 
-- **만드는 길은 `creation()`**: 매퍼는 잠긴 필드를 `to.creation()::setOrderNo` 로 씁니다.
-  새 루트에는 무엇이든 받고, 저장되었거나 조회된 루트(`@PostLoad`/`@PostPersist` 로 표시)에는
-  **지금 값과 같은 값만** 받습니다. PUT 에 객체 전체를 되돌려 보내는 것은 통과하고, 잠긴 값을
-  바꾸려 하면 `InvariantViolationException` - 422 입니다 (`FixedAtCreation`).
-  같은 값의 판단: `BigDecimal` 은 `compareTo`(10 과 10.00 은 같다), 참조는 식별자, 값 객체는 구성 요소.
-- **코드에서 만들 때**도 같은 길입니다: `order.creation().setOrderNo("SO-1")`
-  (Kotlin: `order.creation().orderNo = "SO-1"`). 도메인 쪽이라면 구체 클래스에 팩토리를 두는 편이
-  더 좋습니다: `Invoice.issueFor(orderId, orderNo, amount)`.
-- **새 루트의 null**: 요청이 값을 보내지 않으면(null) 엔티티의 기본값(`@default`)을 덮어쓰지 않습니다.
-  잠긴 필드와 `@behavior` 필드의 DTO 는 기본값을 들고 다니지 않습니다 - 들고 다니면 일부만 보내는
-  PUT 이 기본값(예: 합계 0)을 함께 보내 잠긴 값을 바꾸려는 요청이 되기 때문입니다.
-  같은 이유로 **`creation().setX(null)` 은 새 루트에서 아무 일도 하지 않습니다** (`if (!settled && value == null) return;`).
-  서비스의 `beforeSave` 에서 클라이언트가 보낸 값을 지우는 길이 아닙니다. 요청으로 받지 않을 필드는
-  `@readonly`(서버가 정함) 나 `@behavior`(루트의 메서드만 바꿈) 로 선언하면 매퍼가 처음부터 쓰지 않고,
-  값을 지우는 일은 루트의 메서드가 `protected` setter 로 합니다.
-- **컬렉션**: 루트의 멤버 컬렉션도 잠깁니다 (`creation().replaceLines(...)` 는 새 루트에만).
-  초안 편집처럼 요청으로 바꿔야 하면 `@editable` 을 붙입니다.
-- **생성 서비스 테스트**도 `creation()` 으로 픽스처를 만듭니다.
-- **2.x·일반 v3 번들에는 영향이 없습니다.** 루트가 기본으로 나뉘는 것은 `ddd-behavior` 가
-  선택된 도메인(= `ddd-springboot`, `hexagonal-springboot` 및 Kotlin 번들)뿐입니다.
+- **The way in is `creation()`**: the mapper writes a locked field as `to.creation()::setOrderNo`.
+  A new root accepts anything; a saved or loaded root (marked by `@PostLoad`/`@PostPersist`) accepts
+  **only the same value as now**. Sending the whole object back in a PUT passes, but trying to
+  change a locked value throws `InvariantViolationException` - 422 (`FixedAtCreation`).
+  Judging "the same value": `BigDecimal` by `compareTo` (10 and 10.00 are equal), a reference by identifier, a value object by its components.
+- **Creating in code** takes the same way: `order.creation().setOrderNo("SO-1")`
+  (Kotlin: `order.creation().orderNo = "SO-1"`). On the domain side, a factory on the concrete class is
+  better: `Invoice.issueFor(orderId, orderNo, amount)`.
+- **Null on a new root**: if the request does not send a value (null), the entity's default (`@default`) is not overwritten.
+  The DTO of a locked field and of a `@behavior` field does not carry a default - if it did, a partial
+  PUT would send the default along (for example total 0) and become a request to change a locked value.
+  For the same reason **`creation().setX(null)` does nothing on a new root** (`if (!settled && value == null) return;`).
+  It is not a way to erase a client-sent value in the service's `beforeSave`. A field you do not want to accept from the request
+  is declared `@readonly` (the server decides it) or `@behavior` (only the root's methods change it), and the mapper does not write it from the start;
+  erasing the value is done by a method of the root with the `protected` setter.
+- **Collections**: the root's member collections are locked too (`creation().replaceLines(...)` only on a new root).
+  If a request must change it, like editing a draft, add `@editable`.
+- **Generated service tests** also build their fixtures with `creation()`.
+- **2.x and the plain v3 bundles are not affected.** A root is split by default only in domains where `ddd-behavior` is
+  selected (= `ddd-springboot`, `hexagonal-springboot` and the Kotlin bundles).
 
-#### 생성기가 더는 만들지 않는 파일 (elcore3)
+#### Files the generator no longer produces (elcore3)
 
-DSL 에서 사라진 것이 만들던 파일 - 마지막 `@min` 이 값 타입으로 옮겨 간 루트의 `XxxInvariants`, 이름이
-바뀐 명령의 DTO - 는 예전에는 그대로 남아 모양이 바뀐 상위 클래스를 참조하며 빌드를 깨뜨렸습니다.
-이제 **모든 도메인을 생성한 실행**의 끝에서, 생성한 디렉터리에 있지만 이번 실행이 만들지 않은 파일 중
-다음을 만족하는 것을 지웁니다 (`REMOVED(the DSL no longer produces it)`).
+Files that something removed from the DSL used to produce - the `XxxInvariants` of a root whose last `@min` moved to a value type, the DTO of a command that was
+renamed - used to stay behind, refer to a superclass whose shape had changed, and break the build.
+Now, at the end of **a run that generated every domain**, among the files in the generated directory that this run did not produce,
+those that meet the following are deleted (`REMOVED(the DSL no longer produces it)`).
 
-- 첫 줄이 3.0 해시 줄이고, 넘겨준 파일(`Initially generated ...`)이 아니며, 생성기가 쓴 그대로인 파일.
-- 수정된 파일은 지우지 않고 경고만 합니다. `-Pdomain=...` 으로 일부 도메인만 생성할 때와
-  실패한 산출물이 있을 때는 정리하지 않습니다.
+- Files whose first line is a 3.0 hash line, that are not handed-over files (`Initially generated ...`), and that are exactly as the generator wrote them.
+- A modified file is not deleted, only a warning is given. Nothing is cleaned up when only some domains are generated with `-Pdomain=...`
+  or when there is a failed artifact.
 
-#### 업무 명령 (`ddd-command`)
+#### Business commands (`ddd-command`)
 
-엔티티의 `commands:` 에 선언한 명령마다 `POST /{id}/<명령>` -> `XxxUseCase` -> `XxxCoreService`
-(불러오기·호출·저장) -> `XxxBase` 의 추상 메서드 -> `Xxx` 의 규칙으로 이어지는 한 길을 만듭니다.
-DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을 보세요.
+For each command declared in an entity's `commands:`, it builds one path: `POST /{id}/<command>` -> `XxxUseCase` -> `XxxCoreService`
+(load, call, save) -> the abstract method of `XxxBase` -> the rule in `Xxx`.
+For the DSL syntax and the table of generated code, see "Business commands" in `elasticore-dsl-guide.md`.
 
-- 추상 메서드이므로, 이미 있는 행위 클래스에 명령을 추가하면 규칙을 쓸 때까지 컴파일되지 않습니다 - 빠뜨릴 수 없습니다.
-  행위 클래스를 처음 만들 때는 예외를 던지는 틀이 함께 생기므로, 그 상태로 호출하면 500 입니다.
-- 행위 클래스를 처음 쓸 때 각 명령의 틀이 들어갑니다 (Java: `UnsupportedOperationException`,
-  Kotlin: `TODO()`). 이미 있는 행위 클래스에는 추가되지 않으므로 직접 씁니다 (컴파일러가 알려 줍니다).
-- 컨트롤러는 개발자 소유 파일입니다. 손대지 않은 컨트롤러는 다시 생성되어 명령 엔드포인트가
-  들어가고, 고친 컨트롤러는 그대로 둡니다.
-- `@editable` 필드가 없는 루트는 PUT 을 만들지 않습니다 (컨트롤러와 유스케이스 모두).
+- The method is abstract, so if you add a command to an existing behavior class, it does not compile until you write the rule - it cannot be forgotten.
+  When the behavior class is first created, a stub that throws comes with it, so calling it in that state gives 500.
+- The first time the behavior class is written, a stub for each command goes in (Java: `UnsupportedOperationException`,
+  Kotlin: `TODO()`). It is not added to an existing behavior class, so you write it yourself (the compiler tells you).
+- The controller is a developer-owned file. A controller you have not touched is regenerated and gets the
+  command endpoint; a controller you edited is left as it is.
+- A root with no `@editable` field gets no PUT (neither in the controller nor in the use case).
 
-#### 생명주기 (`ddd-state`)
+#### Lifecycle (`ddd-state`)
 
-엔티티의 `states:` 가 상태 필드와 명령마다의 이동을 선언하면, 명령은 **추상 메서드가 아니라
-`XxxBase` 의 구체 메서드**로 생성됩니다. 문법은 `elasticore-dsl-guide.md` 의 "생명주기" 를 보세요.
+When an entity's `states:` declares the state field and the move for each command, the command is generated as a **concrete method of
+`XxxBase`, not an abstract method**. For the syntax, see "Lifecycle" in `elasticore-dsl-guide.md`.
 
-- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
-  코드는 `state.PurchaseOrder.status.ship` 이고 요청 언어로 번역할 수 있습니다 (아래 "오류 코드와 다국어").
-- 대상 상태와 같은 이름의 이벤트가 `@event` 에 있으면 발행합니다 (`SHIPPED` -> `raiseShipped()`).
-- `canShip()` 이 함께 생기고, TypeScript 클라이언트에도 `canShip(dto)` 가 생깁니다 (버튼 표시용).
-- 더 할 일이 있으면 행위 클래스에서 override 하고 `super.ship()` 으로 이동시킵니다.
-- 상태 필드는 요청으로 쓸 수 없습니다 (`@behavior` 와 같은 취급).
-- `states:` 아래 키는 **필드 이름**, 상태 이름은 그 필드 타입인 enum 의 **상수 이름**입니다. enum 에 없는 이름이면
-  DSL 경고(`... names SHIPED, which OrderStatus does not have (it has ...)`) 후 생명주기를 생략합니다.
-- 나가는 이동이 없는 상태는 끝 상태입니다. `moveXxx` 의 Javadoc 에 시작·이동·끝·도달하지 않는 상태가 정리됩니다.
-- 같은 명령이 두 생명주기(두 enum 필드)에 있으면 그 명령은 모든 생명주기의 시작 상태를 먼저 확인(`requireXxx`)한 뒤
-  함께 이동합니다. 하나라도 아니면 409 이고 아무 필드도 바뀌지 않습니다. `canX()` 는 조건의 AND.
+- If the command arrives when the entity is not in a starting state, it throws `InvariantViolationException` - the API returns 409 (conflict with the current state): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
+  The code is `state.PurchaseOrder.status.ship`, and it can be translated into the request language (see "Error codes and multiple languages" below).
+- If `@event` has an event with the same name as the target state, it is published (`SHIPPED` -> `raiseShipped()`).
+- `canShip()` is generated too, and the TypeScript client also gets `canShip(dto)` (for showing buttons).
+- If there is more to do, override it in the behavior class and make the move with `super.ship()`.
+- The state field cannot be written by a request (treated the same as `@behavior`).
+- The keys under `states:` are **field names**, and the state names are the **constant names** of the enum that is that field's type. If a name is not in the enum,
+  the DSL gives a warning (`... names SHIPED, which OrderStatus does not have (it has ...)`) and the lifecycle is left out.
+- A state with no outgoing move is an end state. The Javadoc of `moveXxx` lists the start, move, end and unreachable states.
+- If the same command is in two lifecycles (two enum fields), the command first checks the start state of all lifecycles (`requireXxx`) and then
+  moves them together. If any one fails, it is 409 and no field changes. `canX()` is the AND of the conditions.
 
-#### 파생 값 (`ddd-derive`)
+#### Derived values (`ddd-derive`)
 
-`@snapshot(item.unitCost)` 은 참조한 행의 값을 **한 번** 복사하고(없는 행이면 404),
-`@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` 는 매번 계산합니다.
-엔티티에 `derive(lookup)` 이 생기고 CoreService 가 생성·수정·일괄 수정·조건 수정·명령 뒤 저장 전에
-`entity.derive(entityManager::find)` 를 부릅니다. 멤버가 먼저 계산되므로 합계는 최신 줄을 더합니다.
-식은 `a * b`, `a + b`, `a - b`(필드나 숫자), `sum(멤버목록.필드)` 만 지원하고, 타입별로
-`Money.times/plus`, `BigDecimal.multiply/add`, 정수 연산으로 씁니다. 못 읽는 식은 DSL 경고 후 건너뜁니다.
+`@snapshot(item.unitCost)` copies the value of the referenced row **once** (404 if the row does not exist),
+and `@compute(unitCost * quantity)` and `@compute(sum(lines.subTotal))` calculate every time.
+The entity gets `derive(lookup)`, and CoreService calls
+`entity.derive(entityManager::find)` before saving on create, update, bulk update, conditional update and after a command. Members are calculated first, so the total adds up the latest lines.
+Only the expressions `a * b`, `a + b`, `a - b` (fields or numbers) and `sum(memberList.field)` are supported, and by type they are written as
+`Money.times/plus`, `BigDecimal.multiply/add` and integer arithmetic. An expression it cannot read gives a DSL warning and is skipped.
 
-#### 권한·소유·비밀번호 (`jpa-service-access`)
+#### Access, owner and password (`jpa-service-access`)
 
-`@access(read=owner, create=user, ship=admin)`, `@owner(customerId)`, 필드의 `@password`·`@login`·
-`@access(admin)` 을 **재생성되는 CoreService** 에서 검사합니다 - 개발자 소유인 컨트롤러가 아니라서,
-DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노테이션 표는 `elasticore-annotation-guide.md`
-의 "@access / @owner" 를 보세요.
+`@access(read=owner, create=user, ship=admin)`, `@owner(customerId)`, and the field-level `@password`, `@login` and
+`@access(admin)` are checked in the **regenerated CoreService** - not the developer-owned controller,
+so if you fix the DSL, it reaches every entry point in the next build. For the table of annotations, see `elasticore-annotation-guide.md`,
+"@access / @owner".
 
-- 템플릿의 슬롯(`${accessCreate}` 등)은 선언이 없으면 비어 있어 생성물이 바뀌지 않습니다.
-- 런타임: `io.elasticore.springboot3.security` 의 `CurrentUser`(기본 `SessionCurrentUser`),
-  `AccessPolicy`, `PasswordHasher`(기본 PBKDF2), 401·403 예외. 빈을 등록하면 그것을 씁니다.
-- `@login` + `@password` 엔티티의 CoreService·유스케이스에는 `authenticate` 가 생깁니다. 엔티티 줄에 `@signin` 까지
-  있으면 `me()` 와 그 컨트롤러의 `signin`·`signout`·`me` 엔드포인트도 이 규칙이 쓰고, 로그인 컬럼은 unique 가 됩니다
-  (unique 는 `@signin` 만으로 - 아래 조건에 걸려 엔드포인트를 만들지 않을 때도).
-  조건은 행의 비밀번호를 본인과 관리자만 바꿀 수 있을 것(`update=owner` 와 키를 가리키는 `@owner`, 또는
-  `update=admin`·`none`), 요청이 정하는 키면 삭제도 그럴 것(`delete=owner` 와 키의 `@owner`, 또는 `admin`·`none`),
-  `@expose`, 키 하나, 그리고 애플리케이션에 `@signin` 하나 - 단일 모듈 프로젝트는 모든 도메인이
-  하나의 애플리케이션, 멀티 모듈은 컨트롤러가 생기는 모듈마다입니다. 못 만드는 이유는 엔티티마다 DSL 경고로 나옵니다.
-  컨트롤러는 개발자 소유라 손댄 컨트롤러에는 들어가지 않고, 생성 로그가 빠진 엔드포인트도, DSL 이 더는 만들지 않는데
-  남아 있는 로그인(`POST /signin`·`GET /me`, 세션에 넣는 역할)도 DSL 경고로 알려 줍니다.
+- The template's slots (`${accessCreate}` and so on) are empty when there is no declaration, so the generated code does not change.
+- Runtime: `CurrentUser` (default `SessionCurrentUser`) of `io.elasticore.springboot3.security`,
+  `AccessPolicy`, `PasswordHasher` (default PBKDF2), and the 401 and 403 exceptions. If you register a bean, it is used.
+- The CoreService and use case of an `@login` + `@password` entity get `authenticate`. If the entity line also has `@signin`,
+  this rule also writes `me()` and the controller's `signin`, `signout` and `me` endpoints, and the login column becomes unique
+  (unique comes from `@signin` alone - even when the conditions below stop the endpoints from being produced).
+  The conditions are: only the owner and an admin can change the row's password (`update=owner` with an `@owner` pointing to the key, or
+  `update=admin` or `none`); if the request decides the key, delete must be the same (`delete=owner` with an `@owner` on the key, or `admin` or `none`);
+  `@expose`; a single key; and one `@signin` in the application - in a single-module project all domains are
+  one application, in a multi-module project it is each module where a controller is generated. The reasons it cannot be produced come out as a DSL warning per entity.
+  The controller is developer-owned, so nothing goes into a controller you touched, and the generation log reports a missing endpoint, and also a login
+  that is still there though the DSL no longer produces it (`POST /signin`, `GET /me`, the role put in the session), as a DSL warning.
 
-#### 트랜잭션 Outbox (`ddd-outbox`)
+#### Transactional Outbox (`ddd-outbox`)
 
-Spring Data 가 발행하는 도메인 이벤트는 **같은 JVM 안**에만 전달됩니다. 거기서 브로커로 보내면
-롤백될 트랜잭션의 메시지가 나가거나, 커밋 후 전송 실패로 메시지를 잃습니다. Outbox 는 이벤트를
-**같은 트랜잭션**에서 테이블에 적고, 커밋 후 따로 보냅니다.
+Domain events published by Spring Data are delivered **only inside the same JVM**. Sending from there to a broker
+sends a message of a transaction that will roll back, or loses the message when sending fails after the commit. The outbox writes the event
+to a table **in the same transaction** and sends it separately after the commit.
 
 ```yaml
 # env.yml
@@ -469,17 +469,17 @@ elasticore:
     outbox: true
 ```
 
-도메인마다 **infrastructure 패키지**(`namespace.persistence`, 없으면 `repository`)에 생성 — Outbox 는 어댑터이므로
-도메인·애플리케이션은 이를 모릅니다(모두 재생성 관리 파일). `@EntityScan` 을 직접 지정하는 앱은 이 패키지를 포함하세요:
+For each domain it is generated in the **infrastructure package** (`namespace.persistence`, or `repository` if there is none) - the outbox is an adapter, so
+the domain and application do not know about it (all are regenerated, managed files). An app that sets `@EntityScan` itself must include this package:
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `<Domain>OutboxMessage` | 엔티티 (`<prefix>outbox` 테이블): 애그리거트 종류·ID, 이벤트 타입, JSON, 발생 시각, 발행 시각, 시도 횟수, 마지막 오류 |
-| `<Domain>OutboxRepository` | 미발행 100건을 순서대로 잠가서 읽는 조회 |
-| `<Domain>OutboxRecorder` | 모든 이벤트를 `BEFORE_COMMIT` 에 JSON 으로 기록 — 변경이 커밋되면 메시지도 있고, 롤백되면 없다 |
-| `<Domain>OutboxRelay` | `relay()`: 미발행 메시지를 `OutboxPublisher` 로 보내고 성공 시 발행 처리. 실패하면 그 애그리거트의 뒤 메시지는 멈추고(순서 보장) 다음 번에 재시도. `elasticore.outbox.max-attempts`(기본 10)번 실패한 메시지는 따로 빼 두어 뒤를 막지 않는다. `@Scheduled(fixedDelayString = "${elasticore.outbox.relay-delay-ms:5000}")` — 앱이 `@EnableScheduling` 하면 주기 실행 |
+| `<Domain>OutboxMessage` | Entity (`<prefix>outbox` table): aggregate kind and ID, event type, JSON, time of occurrence, time of publishing, number of attempts, last error |
+| `<Domain>OutboxRepository` | Query that locks and reads 100 unpublished messages in order |
+| `<Domain>OutboxRecorder` | Records every event as JSON at `BEFORE_COMMIT` - if the change commits, the message exists; if it rolls back, it does not |
+| `<Domain>OutboxRelay` | `relay()`: sends unpublished messages with `OutboxPublisher` and marks them published on success. On failure, the later messages of that aggregate stop (order is kept) and are retried next time. A message that fails `elasticore.outbox.max-attempts` (default 10) times is set aside so it does not block the ones behind it. `@Scheduled(fixedDelayString = "${elasticore.outbox.relay-delay-ms:5000}")` - runs periodically if the app has `@EnableScheduling` |
 
-애플리케이션이 쓰는 것은 전송 하나입니다:
+What the application writes is the transport, one bean:
 
 ```java
 @Bean
@@ -488,30 +488,30 @@ OutboxPublisher kafka(KafkaTemplate<String, String> kafka) {
 }
 ```
 
-- 전달은 **최소 한 번**(at least once). 소비자는 `OutboxEnvelope.getId()` 로 중복을 거릅니다.
-- `OutboxPublisher` 빈이 없으면 Relay 는 아무것도 하지 않고 메시지는 테이블에 쌓입니다.
-- `pending()` 으로 대기 건수를 볼 수 있습니다(모니터링).
+- Delivery is **at least once**. The consumer filters duplicates with `OutboxEnvelope.getId()`.
+- If there is no `OutboxPublisher` bean, the relay does nothing and messages pile up in the table.
+- You can see the number of waiting messages with `pending()` (monitoring).
 
-#### 프로세스 매니저 (사가) — `processManager:`
+#### Process manager (saga) - `processManager:`
 
-한 애그리거트의 이벤트가 **다른 애그리거트의 다음 단계**를 부르는 흐름(주문이 들어오면 영수증 발행)입니다.
-`elasticore-template-ddd` 의 `billing` 이 그대로의 예입니다.
+A flow where the events of one aggregate call **the next step of another aggregate** (when an order comes in, issue a receipt).
+The `billing` of `elasticore-template-ddd` is exactly such an example.
 
 ```yaml
 # blueprint/billing/model/domainservice.yml
 processManager:
   Receipting:
-    desc: 주문이 들어오면 영수증을 한 장 만든다
-    on: [shop:OrderPlaced]       # (컨텍스트:)루트 이름 + 이벤트 이름 (Event 접미사 없이)
-    uses: [Receipt]              # 주입받을 애그리거트의 도메인 포트
+    desc: When an order comes in, create one receipt
+    on: [shop:OrderPlaced]       # (context:)root name + event name (without the Event suffix)
+    uses: [Receipt]              # domain port of the aggregate to be injected
 ```
 
-생성물은 두 파일입니다 (application 패키지 또는 `namespace.processManager`). 업무 명령의 `XxxBase` + `Xxx` 와 같은
-나눔이라, DSL 을 고치면 연결은 다시 생성되고 개발자가 쓴 단계는 그대로 남습니다. 실제 생성물에서 import 와 클래스
-주석만 뺐습니다:
+The generated code is two files (in the application package or `namespace.processManager`). It is the same split as `XxxBase` + `Xxx` of a business command,
+so if you fix the DSL the wiring is regenerated and the steps the developer wrote stay. This is the real generated code with only the imports and the class
+comments removed:
 
 ```java
-// ReceiptingProcessManagerBase - 매번 재생성 (규칙 ddd-process-manager-base)
+// ReceiptingProcessManagerBase - regenerated every time (rule ddd-process-manager-base)
 public abstract class ReceiptingProcessManagerBase {
 
 	@Autowired
@@ -529,7 +529,7 @@ public abstract class ReceiptingProcessManagerBase {
 
 }
 
-// ReceiptingProcessManager - 한 번 생성, 이후 개발자 소유 (규칙 ddd-process-manager)
+// ReceiptingProcessManager - generated once, then owned by the developer (rule ddd-process-manager)
 @Component
 
 public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
@@ -542,23 +542,23 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 }
 ```
 
-- `on` 에 이벤트를 더하면 Base 에 추상 `handle(새 이벤트)` 가 생겨, 개발자 클래스에 쓰기 전까지 컴파일되지 않습니다
-  (빠뜨릴 수 없음). `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
-  생성자가 아니라 필드로 주입하는 이유입니다. 개발자 파일을 고친 적이 없다면 그것도 다시 생성됩니다.
-- 이벤트를 낸 트랜잭션이 **커밋된 뒤, 자기 트랜잭션에서** 실행됩니다. 여기서 실패해도 이미 일어난
-  출고는 되돌려지지 않습니다 — 재시도·보상은 `handle` 이 정합니다(사가의 보상 단계).
-- 이벤트 내용(payload)에 필요한 값을 실어 두면 원래 애그리거트를 다시 읽지 않아도 됩니다.
-- 중복 전달에 대비해 멱등하게 작성하세요(예: `findByOrderId` 로 이미 발행했는지 확인).
-- 선언한 이벤트가 어느 루트의 `@event` 에도 없으면 DSL 경고.
-- 다른 바운디드 컨텍스트의 이벤트는 `on: [shop:OrderPlaced]` 로 받습니다. 생성기가 컨텍스트 지도에서 그 컨텍스트의
-  이벤트 클래스를 찾아 import 하고(`on` 의 두 이벤트가 단순 이름이 같으면 나중에 적은 쪽을 전체 이름으로 씀), `config.context` 의
-  `uses`·`publishes` 로 검사합니다. 문법과 한계(같은 애플리케이션 안에서만 전달)는 `elasticore-dsl-guide.md` 의
-  "프로세스 매니저".
+- If you add an event to `on`, the Base gets an abstract `handle(new event)`, and it does not compile until you write it in the developer class
+  (it cannot be forgotten). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
+  injected as a field, not through the constructor. If you have never edited the developer file, it is regenerated too.
+- It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, the shipment that has already
+  happened is not undone - retry and compensation are decided by `handle` (the compensation step of a saga).
+- If you put the needed values in the event content (payload), you do not have to read the original aggregate again.
+- Write it idempotent, to be ready for duplicate delivery (for example, check with `findByOrderId` whether it was already issued).
+- If a declared event is not in the `@event` of any root, the DSL gives a warning.
+- You receive an event of another bounded context with `on: [shop:OrderPlaced]`. The generator finds that context's
+  event class in the context map and imports it (if two events in `on` have the same simple name, the one written later is written with its full name), and checks with the `uses` and
+  `publishes` of `config.context`. For the syntax and the limit (delivery only inside the same application), see
+  "Process manager" in `elasticore-dsl-guide.md`.
 
-#### 읽기 모델 — 투영 쿼리
+#### Read model - projection queries
 
-화면·보고서용 조회는 애그리거트가 아니라 **DTO 로 투영**합니다. repository DSL 에서 반환 타입을
-DTO 로 적고, JPQL/SQL 의 컬럼 별칭을 DTO 속성 이름에 맞춥니다.
+A query for a screen or report is **projected to a DTO**, not an aggregate. In the repository DSL, write the return type as a
+DTO, and match the column aliases of the JPQL/SQL to the DTO's property names.
 
 ```yaml
 repository:
@@ -570,97 +570,97 @@ repository:
         query: "SELECT o.partner.partnerId AS partnerId, o.partner.name AS partnerName, COUNT(o) AS orderCount, SUM(o.totalAmount) AS totalAmount FROM SalesOrder o WHERE o.status = :status GROUP BY o.partner.partnerId, o.partner.name"
 ```
 
-- v3/Kotlin: 리포지터리는 `List<Tuple>` 을 반환하고, 쿼리 포트는 `List<PartnerSalesDTO>` 를 반환합니다.
-  어댑터가 `TupleMapper` 로 별칭 → 속성(대소문자·밑줄 무시, 타입 변환 포함)을 채웁니다.
-  `List`, `Page`, `Optional`, 단건 모두 지원. 2.x 호환 모드는 기존대로 `List<Object[]>`.
-- 별칭이 없는 컬럼은 오류로 알려 줍니다.
-- DB 뷰가 이미 있다면 `@immutable(view_name)` 엔티티 + 쿼리 포트로 읽기 모델을 둘 수도 있습니다.
+- v3/Kotlin: the repository returns `List<Tuple>`, and the query port returns `List<PartnerSalesDTO>`.
+  The adapter fills alias -> property with `TupleMapper` (ignoring case and underscores, including type conversion).
+  `List`, `Page`, `Optional` and a single result are all supported. The 2.x compatibility mode stays `List<Object[]>` as before.
+- A column without an alias is reported as an error.
+- If a DB view already exists, you can also build a read model with an `@immutable(view_name)` entity + a query port.
 
-#### 값 객체 (`@embeddable`)
+#### Value object (`@embeddable`)
 
-`@embeddable` 은 불변 값 객체(`ddd-value-object`: 세터 없음, `withXxx()` 로 새 값)로 생성되고,
-v3/Kotlin 에서는 **DTO 에 그대로 실려** API 로 주고받습니다(요청 JSON 의 중첩 객체). 바뀔 때는
-통째로 교체됩니다. 식별자 타입 래핑(`OrderId` 같은 타입 있는 PK)은 지원하지 않습니다 — JPA 가
-`@Id` 에 변환기를 허용하지 않아 `@EmbeddedId` 로 모든 계층이 바뀌어야 하기 때문입니다.
+`@embeddable` is generated as an immutable value object (`ddd-value-object`: no setters, a new value through `withXxx()`), and
+in v3/Kotlin it is **carried as it is in the DTO** and exchanged through the API (a nested object in the request JSON). When it changes,
+it is replaced as a whole. Wrapping identifier types (a typed PK such as `OrderId`) is not supported - JPA does not allow a converter on
+`@Id`, so every layer would have to change to `@EmbeddedId`.
 
-#### 다른 애그리거트는 ID 로 참조 (`ddd-reference`)
+#### Refer to another aggregate by ID (`ddd-reference`)
 
-DDD 번들에서 **다른 루트를 가리키는 to-one 참조**는 ID 필드로 바뀝니다. DSL 은 그대로 씁니다.
+In the DDD bundles a **to-one reference to another root** is turned into an ID field. You write the DSL as usual.
 
 ```yaml
 SalesOrder:
   fields:
-    partner: Partner @ManyToOne        # 쓰는 그대로
+    partner: Partner @ManyToOne        # as you always write it
 ```
 
-생성 결과:
+Generated result:
 
 ```java
 @Column(name = "partner_partner_id")
-@Setter(AccessLevel.PROTECTED)          // 잠김 - 만들 때 정하고, 이후엔 메서드로
-private Long partnerId;                 // 참조는 이 필드
+@Setter(AccessLevel.PROTECTED)          // locked - set at creation, afterwards through methods
+private Long partnerId;                 // the reference is this field
 
 /** Another aggregate, to read. The reference is partnerId; ... */
 @ManyToOne(fetch = FetchType.LAZY)
 @JoinColumn(name = "partner_partner_id", insertable = false, updatable = false)
 @Setter(AccessLevel.NONE)
-private Partner partner;                // 같은 컬럼의 읽기 전용 조인 - setter 없음
+private Partner partner;                // read-only join on the same column - no setter
 ```
 
-- 애그리거트는 다른 루트의 **식별자만** 가지고, 그 객체로 쓸 수 있는 길이 없습니다. 참조를 바꾸는 것은
-  `partnerId` 를 바꾸는 것뿐이고, 다른 루트를 고치는 것은 그 루트의 일입니다.
-- 관계는 **읽기 전용**으로 남아 조회가 그대로 됩니다: JPQL `o.partner.name`, 파생 쿼리
-  `findByPartnerPartnerId`, DTO 의 `partnerName @ref(partner.name)` 표시.
-- 컬럼은 관계가 원래 쓰던 이름(`<필드>_<대상 키 컬럼>`, `@db` 가 있으면 그것)이라 **테이블은 바뀌지 않습니다**.
-- 필드 이름: 대상 키 이름이 참조 이름으로 시작하면 그 이름(`partner` -> `partnerId`, `item` -> `itemCode`),
-  아니면 `참조 + 키`(`category` -> `categoryCatId`). 같은 이름의 필드가 이미 있으면 DSL 경고 후 객체 참조 유지.
-- 저장 요청이 보내는 것은 이 ID 필드입니다. 필수 참조(`member: Member!`)이면 DTO 에서 ID 필드가 필수이고,
-  응답용 중첩 DTO 는 선택입니다 (3.0.261022-rc1 부터. 이전에는 중첩 DTO 도 `@NotNull` 이라 ID 만 보낸 요청이
-  `@Valid` 검증에서 거절되었습니다). `member: Member!`, `book: Book!`(Book 의 키 `isbn`) 의 `LoanDTO`:
+- The aggregate holds **only the identifier** of another root, and there is no way to use that object. Changing the reference is
+  only changing `partnerId`, and fixing another root is that root's job.
+- The relation stays **read-only**, so queries work as before: JPQL `o.partner.name`, the derived query
+  `findByPartnerPartnerId`, and the DTO's `partnerName @ref(partner.name)` display.
+- The column keeps the name the relation used (`<field>_<target key column>`, or the `@db` name if there is one), so **the table does not change**.
+- Field name: if the target key name starts with the reference name, that name (`partner` -> `partnerId`, `item` -> `itemCode`),
+  otherwise `reference + key` (`category` -> `categoryCatId`). If a field of the same name already exists, the DSL gives a warning and keeps the object reference.
+- What a save request sends is this ID field. For a required reference (`member: Member!`), the ID field is required in the DTO,
+  and the nested DTO for the response is optional (from 3.0.261022-rc1. Before that, the nested DTO was also `@NotNull`, so a request that sent only the ID
+  was refused by `@Valid` validation). The `LoanDTO` for `member: Member!` and `book: Book!` (Book's key is `isbn`):
 
   ```java
   @Schema(description = "borrower" , accessMode = Schema.AccessMode.READ_ONLY )
-  private MemberDTO member;            // 응답용 - 요청에서는 선택
+  private MemberDTO member;            // for the response - optional in the request
   ...
   @Schema(description = "memberId" , requiredMode=Schema.RequiredMode.REQUIRED )
   @NotNull
-  private Long memberId;               // 저장 요청에 필수
+  private Long memberId;               // required in the save request
 
   @Schema(description = "bookIsbn" , requiredMode=Schema.RequiredMode.REQUIRED )
   @NotNull
   @Size(max=13)
   private String bookIsbn;
   ```
-- 매퍼는 `@ref(partner.partnerId)` 를 `partnerId` 로 씁니다 (관계 객체는 쓰지 않음).
-- 적용 대상: 같은 도메인의, 키가 하나인 다른 루트를 가리키는 to-one (`cascade`, `@embedded`, 역방향
-  `@OneToOne(mappedBy)`, 이미 `@joinBy` 를 쓴 필드는 제외). 자기 루트를 가리키는 멤버의 역참조는 그대로.
-- 객체 참조로 두려면 `@objectref`.
-- 코드에서: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
+- The mapper writes `@ref(partner.partnerId)` as `partnerId` (it does not write the relation object).
+- Applies to: a to-one that points to another root of the same domain with a single key (`cascade`, `@embedded`, the reverse
+  `@OneToOne(mappedBy)` and fields that already use `@joinBy` are excluded). A member's back reference to its own root stays as it is.
+- To keep an object reference, use `@objectref`.
+- In code: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
 
-#### 도메인에서 JPA 걷어내기 (`mapping: xml`) 와 아키텍처 테스트 (`archTest`)
+#### Removing JPA from the domain (`mapping: xml`) and the architecture test (`archTest`)
 
-`env.yml` 의 `mapping: xml` 이면 생성기는 도메인 클래스를 평소대로 만든 뒤 JPA 어노테이션을 떼어 내고 같은
-내용을 `META-INF/orm.xml` 에 씁니다 (`OrmMapping`). XML 요소 순서는 JPA 3.1 스키마를 따릅니다
+With `mapping: xml` in `env.yml`, the generator creates the domain classes as usual, strips the JPA annotations, and writes the same
+content to `META-INF/orm.xml` (`OrmMapping`). The XML element order follows the JPA 3.1 schema
 (`id`, `basic`, `version`, `many-to-one`, `one-to-many`, `one-to-one`, `many-to-many`, `embedded`, `transient`).
-엔티티 리스너(`XxxInvariants`)의 콜백도 XML 로 선언되어, 도메인 패키지에는 `jakarta.persistence` 가 남지 않습니다.
-`archTest: true` 는 이것과 헥사고날 경계를 ArchUnit 규칙으로 생성합니다. 자세한 설정은
-`elasticore-env-guide.md` 6.1.2, 6.1.3.
+The callbacks of the entity listener (`XxxInvariants`) are declared in XML too, so no `jakarta.persistence` is left in the domain package.
+`archTest: true` generates this and the hexagonal boundary as ArchUnit rules. For the settings, see
+`elasticore-env-guide.md` 6.1.2 and 6.1.3.
 
-한 메서드에 콜백 두 개를 걸지 않습니다: XML 매핑은 메서드 하나에 콜백 하나만 붙이므로, 잠금 표시는
-`settleOnLoad()`(`@PostLoad`) 와 `settleOnPersist()`(`@PostPersist`) 두 메서드입니다.
+Never attach two callbacks to one method: XML mapping attaches only one callback to a method, so the lock marker is
+two methods, `settleOnLoad()` (`@PostLoad`) and `settleOnPersist()` (`@PostPersist`).
 
-#### 바운디드 컨텍스트 경계
+#### Bounded context boundary
 
-다른 도메인(blueprint)의 엔티티를 직접 참조하면 DDD 번들이 경고합니다. 두 컨텍스트가 같은 테이블
-모양을 공유하게 되므로, 상대의 식별자를 컬럼으로 두고 포트(`port:` DSL)로 조회해 이쪽 모델로
-변환하는 것을 권장합니다(Anti-Corruption Layer). 생성은 막지 않습니다.
+If you reference an entity of another domain (blueprint) directly, the DDD bundle warns. The two contexts would share the same table
+shape, so keep the other side's identifier as a column, look it up through a port (the `port:` DSL), and
+convert it to your own model (Anti-Corruption Layer). The generator does not block it.
 
-#### 도메인 서비스 (`ddd-domain-service`)
+#### Domain service (`ddd-domain-service`)
 
-어느 애그리거트에도 속하지 않는 연산입니다. **엔티티가 아니라 도메인에 선언**합니다 —
-다른 DDD 애노테이션은 전부 엔티티에 쓰는데, 도메인 서비스는 "누구의 것도 아니다"가
-정의이기 때문입니다. 루트 하나를 골라 매다는 것이 값싼 선택이었지만, 그러면 이
-패턴이기를 그만두고 "누가 애그리거트에 넣는 걸 잊은 메서드"가 됩니다.
+An operation that belongs to no aggregate. **Declare it on the domain, not on an entity** -
+every other DDD annotation goes on an entity, but a domain service is defined by "belonging to no one".
+Picking one root and hanging it there would be the cheap choice, but then it
+stops being this pattern and becomes "a method someone forgot to put in an aggregate".
 
 ```yaml
 # model/domainservice.yml
@@ -670,80 +670,80 @@ domainService:
     uses: [Order, Product]
 ```
 
-`uses` 는 장식이 아닙니다. **생성기가 주입하는 대상**이고, 이 서비스가 존재할 이유를
-말하는 문장입니다. 하나만 적으면 DSL 경고가 납니다 — 애그리거트 하나에 대한 연산은
-보통 그 애그리거트의 메서드입니다.
+`uses` is not decoration. It is **what the generator injects**, and it is the sentence
+that says why this service exists. If you list only one, the DSL warns - an operation on a single aggregate
+is usually a method of that aggregate.
 
-생성물은 두 파일입니다. `PricingDomainServiceBase` 는 **매번 재생성**되며 명명한 애그리거트의 도메인 포트
-(`OrderRepositoryPort`, `ProductRepositoryPort`)를 주입받는 필드를 갖고(규칙 `ddd-domain-service-base`),
-`PricingDomainService` 는 그것을 상속하는 **generate-once** 클래스입니다(규칙 `ddd-domain-service`). `uses` 에
-애그리거트를 더하면 Base 에 포트가 생기고 개발자 클래스는 고치지 않습니다. 연산 자체는 생성하지 않습니다 —
-`@factory` 와 같은 이유로, 모델은 데이터를 선언하므로 생성할 수 있는 것은 행위가 아니라 자리와 연결입니다.
+The output is two files. `PricingDomainServiceBase` is **regenerated every time** and has fields that receive the domain ports
+of the named aggregates (`OrderRepositoryPort`, `ProductRepositoryPort`) (rule `ddd-domain-service-base`);
+`PricingDomainService` is a **generate-once** class that extends it (rule `ddd-domain-service`). When you add an
+aggregate to `uses`, the Base gets a port and the developer class is not touched. The operation itself is not generated -
+for the same reason as `@factory`: the model declares data, so what can be generated is the place and the wiring, not the behavior.
 
-놓일 자리는 `namespace.domainService` 로 정합니다. 선언하지 않으면 엔티티와 같은
-패키지입니다. **application 네임스페이스에 두지 마세요** — 도메인 코드라서 유스케이스
-옆에 있으면 의존 방향이 뒤집힙니다.
+The place is set by `namespace.domainService`. If you do not declare it, it is the same
+package as the entity. **Do not put it in the application namespace** - it is domain code, and next to the use cases
+the dependency direction is reversed.
 
-#### TypeScript 에 닿는 것 (`ts-model`)
+#### What reaches TypeScript (`ts-model`)
 
-브라우저가 받는 것은 엔티티가 아니라 DTO 입니다. 그래서 서버의 모든 규칙이 여기
-오는 것이 아니라, **브라우저가 정직하게 가질 수 있는 것만** 옵니다.
+What the browser receives is a DTO, not an entity. So not every server rule
+comes here - **only what the browser can honestly hold** does.
 
-| 규칙 | TS | 이유 |
+| Rule | TS | Reason |
 |---|---|---|
-| `ddd-specification` | O | 이미 가진 데이터에 대한 질문입니다 |
-| `ddd-invariant` | O | 서버가 거절할 것을 미리 물어보는 것 (강제 아님) |
-| 애그리거트 경계 | **이미 닿아 있음** | 멤버는 엔드포인트가 없으므로 `ts-api` 가 클라이언트를 만들지 않습니다 |
-| `ddd-event` / `ddd-factory` / `ddd-domain-service` | X | 저장 시점·리포지터리에 매인 것들이라 브라우저에 대응물이 없습니다 |
+| `ddd-specification` | Yes | It is a question about data you already have |
+| `ddd-invariant` | Yes | Asks in advance what the server will refuse (not enforcement) |
+| Aggregate boundary | **Already reached** | Members have no endpoints, so `ts-api` does not create a client |
+| `ddd-event` / `ddd-factory` / `ddd-domain-service` | No | They are tied to save time and to the repository, so the browser has no counterpart |
 
-##### 왜 명세를 생성할 가치가 있는가
+##### Why it is worth generating the specification
 
-이 언어에서는 손으로 쓴 사본이 단순 중복이 아니라 **대개 틀립니다.**
+In this language a hand-written copy is not just a duplicate - **it is usually wrong.**
 
 ```ts
-// 손으로 쓰면
+// hand-written
 order.totalAmount > 100
 
-// 생성되면
+// generated
 Number(order.totalAmount) > 100
 ```
 
-금액은 TS 에서 `number` 로 선언됩니다 - Jackson 의 기본은 소수를 **JSON 숫자로** 보내고,
-`JSON.parse` 는 선언과 무관하게 number 를 줍니다. 그런데 서버가 정밀도 때문에 소수를
-**문자열로** 보내도록 설정되어 있으면(`@JsonFormat(shape = STRING)` 등)
-첫 줄은 문자열과 숫자를 비교하고, JavaScript 는 금액과 무관하게 false 를 답합니다.
-생성된 `Number(...)` 는 두 경우 모두 맞습니다.
+An amount is declared as `number` in TS - Jackson by default sends a decimal **as a JSON number**, and
+`JSON.parse` gives a number whatever the declaration says. But if the server is set to send decimals
+**as strings** for precision (`@JsonFormat(shape = STRING)` and so on),
+the first line compares a string with a number, and JavaScript answers false whatever the amount.
+The generated `Number(...)` is right in both cases.
 
-같은 이유로 TS 모델은 **서버가 고른 규칙으로** 모양을 정합니다. `ts-model` 번들이 아니라
-같은 빌드의 Java/Kotlin 선택이 식별자 참조(`customerId`)·값 객체 인라인(`deliveryAddress`)을
-쓰면 TS DTO 도 그렇고, 값 객체마다 인터페이스(`Address.ts`)가 생깁니다. `XxxApi.ts` 는
-컨트롤러에 없는 엔드포인트(`@readonly`, `@restExclude`, 명령만 받는 루트의 `update`)를 만들지
-않고, `@writeonly` 필드는 응답에 없으니 optional 입니다. 검색 DTO 의 조건은 모두 optional 이고
-`pageNumber`·`pageSize`·`sortColumn`·`sortAscending` 을 가집니다.
+For the same reason the TS model takes its shape **from the rules the server chose**. Not the `ts-model` bundle but
+the Java/Kotlin choice in the same build decides: if it uses an identifier reference (`customerId`) or a value object inline (`deliveryAddress`),
+the TS DTO does too, and each value object gets an interface (`Address.ts`). `XxxApi.ts` does not create
+endpoints that the controller does not have (`@readonly`, `@restExclude`, `update` of a root that accepts only commands), and
+a `@writeonly` field is optional because it is not in the response. All conditions of a search DTO are optional, and
+it has `pageNumber`, `pageSize`, `sortColumn` and `sortAscending`.
 
-컬렉션도 마찬가지로 `.size()` 가 아니라 `.length` 이고, 프로퍼티는 옵셔널이라
-모든 읽기 앞에 `!= null` 가드가 붙습니다.
+For collections too, it is `.length`, not `.size()`, and properties are optional, so
+every read is preceded by a `!= null` guard.
 
-##### 불변식은 강제가 아닙니다
+##### An invariant is not enforcement
 
-생성된 파일이 그렇게 말합니다. 서버가 행을 쓸 때 거절하는 것이 약속을 참으로
-만드는 것이고, 브라우저는 신뢰 대상이 아닙니다. 여기서 얻는 것은 다른 것입니다 —
-요청을 보내기 전에 **도메인 자신의 문장으로** 무엇이 잘못됐는지 폼에 말해주는 것.
+The generated file says so. The server refusing when it writes a row is what makes the promise true, and
+the browser is not to be trusted. What you get here is something else -
+telling the form, **in the domain's own sentences**, what is wrong before the request is sent.
 
 ```ts
-violations(order)   // 어긴 약속들. 폼은 한 번에 다 보여주고 싶으므로 목록
-isValid(order)      // 하나도 어기지 않았는가
+violations(order)   // the promises that were broken. The form wants to show them all at once, so it is a list
+isValid(order)      // whether none was broken
 ```
 
-#### 포트의 두 방향
+#### The two directions of a port
 
-헥사고날에는 방향이 둘 있고, 생성물도 둘로 나뉩니다.
+Hexagonal has two directions, and the output is split in two.
 
-| 방향 | 무엇 | 네임스페이스 | 어댑터 |
+| Direction | What | Namespace | Adapter |
 |---|---|---|---|
-| **인바운드** | `OrderUseCase` — 애플리케이션에 들어가는 문 | `inboundPort` (대체: `service`) | 컨트롤러 (생성됨) |
-| **아웃바운드 (영속)** | `OrderRepositoryPort` — 도메인이 소유 | `domainRepository` (대체: `entity`) | `OrderRepositoryAdapter` (생성됨) |
-| **아웃바운드 (sql/http)** | DSL `port:` 선언 | `port` | **런타임 프록시** (생성물 없음) |
+| **Inbound** | `OrderUseCase` - the door into the application | `inboundPort` (fallback: `service`) | Controller (generated) |
+| **Outbound (persistence)** | `OrderRepositoryPort` - owned by the domain | `domainRepository` (fallback: `entity`) | `OrderRepositoryAdapter` (generated) |
+| **Outbound (sql/http)** | DSL `port:` declaration | `port` | **Runtime proxy** (nothing generated) |
 
 ```yaml
 namespace:
@@ -751,37 +751,37 @@ namespace:
   port:        com.acme.shop.application.port.out
 ```
 
-##### sql/http 포트는 애플리케이션의 것입니다
+##### sql/http ports belong to the application
 
-`dbms` / `http` 포트의 계약은 **application DTO** 로 쓰이고, 페이징하면 Spring 의
-`Page` 도 씁니다. 그래서 이건 **애플리케이션의 아웃바운드 포트**입니다.
+The contract of a `dbms` / `http` port is written in **application DTOs**, and when it pages it uses Spring's
+`Page` too. So this is an **outbound port of the application**.
 
-도메인 서비스의 `uses:` 에 적으면 **경고와 함께 무시됩니다** — 도메인 코드가 위
-계층에 의존하게 되기 때문입니다. 도메인은 애그리거트(=리포지터리 포트)를 받고,
-sql/http 포트는 그것을 호출하는 서비스가 씁니다.
+If you list it in the `uses:` of a domain service, it is **ignored with a warning** - because the domain code would depend on the layer
+above. The domain receives aggregates (= repository ports), and
+the service that calls them uses the sql/http ports.
 
-##### 어댑터는 빈이어야 합니다
+##### The adapter must be a bean
 
-생성물은 인터페이스뿐이고 어댑터는 런타임 프록시입니다. 그런데 **아무도 등록하지
-않은 프록시는 주입할 수 없는 포트**입니다:
+The output is only an interface, and the adapter is a runtime proxy. But **a proxy that nobody registers
+is a port that cannot be injected**:
 
 ```
 No qualifying bean of type 'ShopReportService'
 ```
 
-Spring Boot 애플리케이션에서는 런타임 라이브러리의 자동 구성이 스캔으로 처리합니다 (3.0.261027-rc2 부터 - 그 전에는
-`@EnableElastiCore` 가 있어야 했고, 지금도 붙여 두면 그대로 동작합니다). 찾는 곳은 `@SpringBootApplication` 클래스의
-패키지와 그 아래이므로, 그 클래스를 띄우는 `@SpringBootTest` 도 포트 빈을 받습니다. 같은 포트에 직접 선언한
-`@Bean` 이 있으면 그것을 씁니다. `DddSampleApp` 은 생성된 코드(`io.elasticore.sample.ddd`)와 다른 패키지(`ddd`)에 있는
-테스트 구성이라 스캔이 포트에 닿지 않고, `@Bean` 하나로 직접 등록합니다 — 이음매가 정확히 어디인지 읽기에 가장 좋은
-자리이기도 합니다. 자세한 것은 포트 가이드 5장.
+In a Spring Boot application, the auto-configuration of the runtime library handles it by scanning (from 3.0.261027-rc2 - before that
+`@EnableElastiCore` was required, and it still works if you leave it on). It searches the package of the `@SpringBootApplication` class
+and below, so a `@SpringBootTest` that starts that class also gets the port beans. If a `@Bean` is declared directly for the same port,
+that one is used. `DddSampleApp` is a test configuration in a different package (`ddd`) from the generated code (`io.elasticore.sample.ddd`),
+so the scan does not reach the port, and one `@Bean` registers it directly - it is also the best place to read exactly where the seam is.
+For details, see chapter 5 of the port guide.
 
-#### 리포지터리 포트 (`ddd-repository-port`)
+#### Repository port (`ddd-repository-port`)
 
-도메인이 소유하는 인터페이스와, Spring Data 를 아는 구현으로 나눕니다.
+It is split into an interface owned by the domain and an implementation that knows Spring Data.
 
 ```java
-// domain.repository — Spring 타입이 하나도 없습니다
+// domain.repository - no Spring type at all
 public interface OrderRepositoryPort {
     Optional<Order> findById(String orderId);
     Order save(Order order);
@@ -794,45 +794,45 @@ public interface OrderRepositoryPort {
 public class OrderRepositoryAdapter implements OrderRepositoryPort { ... }
 ```
 
-##### 왜 지금인가
+##### Why now
 
-`hexagonal-review` 2-B 는 이걸 "우선순위 낮음"으로 판정했고, 이유는 **"JPA 를 걷어낼
-수 있다"는 이득이 실무에서 거의 실현되지 않는다** 였습니다. 그 이유는 지금도 맞습니다.
+`hexagonal-review` 2-B judged this "low priority", for the reason that **the benefit of "being able to strip out JPA"
+is hardly ever realized in practice**. That reason is still true.
 
-바뀐 것은 이득이 하나 더 생겼다는 것이고, 그건 이 생성기가 스스로 만든 것입니다 —
-도메인 서비스가 도착하면서:
+What changed is that there is one more benefit, and this generator made it itself -
+when the domain service arrived:
 
 ```java
 package ...domain.service;
 import ...domain.repository.OrderRepository;   // extends JpaRepository
 ```
 
-**도메인 서비스는 정의상 도메인 코드인데 영속 메커니즘을 주입받고 있었습니다.**
-가장 안쪽 계층의 의존이 바깥을 향하는 것 — 이 번들이 이름을 딴 아키텍처가 하지 말라는
-바로 그 한 가지입니다. JPA 를 걷어내든 말든 고칠 값이 있습니다.
+**A domain service is domain code by definition, yet it was receiving a persistence mechanism.**
+A dependency of the innermost layer pointing outward - the one thing the architecture this bundle is named after says not to do.
+It is worth fixing whether or not you strip out JPA.
 
-##### 포트가 좁은 이유
+##### Why the port is narrow
 
-Spring Data 리포지터리를 그대로 흉내 내고 포트라 부르기는 쉽습니다. 그리고 무의미
-합니다 — 검색·페이징·명세는 **질의 표면**이고, 그걸 도메인이 소유한 인터페이스 뒤에
-두면 `Pageable` 과 `Specification` 이 결국 도메인에 들어옵니다. 의존을 없앤 게 아니라
-이름만 바꾼 것입니다.
+It is easy to imitate the Spring Data repository as it is and call it a port. And it is pointless -
+search, paging and specifications are the **query surface**, and if you put them behind an interface owned by the domain,
+`Pageable` and `Specification` end up in the domain after all. You did not remove the dependency; you only
+renamed it.
 
-애그리거트를 넘거나 페이징하는 질의는 **read model 의 일**입니다(17장). 그래서 검색은
-도메인 포트가 아니라 **응용 계층의 조회 포트**로 갑니다.
+A query that crosses aggregates or pages is **the job of a read model** (chapter 17). So search goes to
+an **application-layer query port**, not to the domain port.
 
-##### 응용 서비스는 포트만 받습니다
+##### The application service receives only ports
 
-이전에는 응용 서비스가 검색을 위해 Spring Data 리포지터리를 직접 썼습니다("응용 계층은
-자기 인프라를 알아도 된다"). 그 결과 **모든 응용 서비스가
-`infrastructure.persistence` 를 import** 했고, 헥사고날이 금지하는 바로 그 방향이었습니다.
-샘플의 계층 테스트가 `.infrastructure.` 를 검사하지 않아 드러나지 않았습니다.
+Before, the application service used the Spring Data repository directly for search ("the application layer
+may know its own infrastructure"). As a result **every application service imported
+`infrastructure.persistence`**, which is exactly the direction hexagonal forbids.
+It went unnoticed because the sample's layer test did not check `.infrastructure.`.
 
-지금은 루트마다 파일이 하나 더 생기고, 응용 서비스는 포트 둘과 `EntityManager`
-(매퍼가 식별자를 참조로 바꿀 때만 사용)만 받습니다.
+Now each root gets one more file, and the application service receives two ports and an `EntityManager`
+(used only when the mapper turns an identifier into a reference).
 
 ```java
-// application.port.out — 응용 계층의 검색 포트. Specification/Pageable 은 여기서만
+// application.port.out - the application layer's search port. Specification/Pageable appear only here
 public interface OrderQueryPort {
     List<Order> findAll(Specification<Order> spec);
     Page<Order> findAll(Specification<Order> spec, Pageable pageable);
@@ -840,179 +840,179 @@ public interface OrderQueryPort {
     // findAll(), findAll(Sort), findAll(spec, Sort)
 }
 
-// application — infrastructure 를 import 하지 않습니다
+// application - does not import infrastructure
 public class OrderCoreService {
-    protected final OrderRepositoryPort repository;   // 찾기·저장·삭제 (도메인 포트)
-    protected final OrderQueryPort query;             // 검색·페이징 (조회 포트)
-    protected final EntityManager entityManager;      // 참조 해석 전용
+    protected final OrderRepositoryPort repository;   // find, save, delete (domain port)
+    protected final OrderQueryPort query;             // search, paging (query port)
+    protected final EntityManager entityManager;      // for resolving references only
 }
 
-// infrastructure.persistence — 두 포트를 한 어댑터가 구현
+// infrastructure.persistence - one adapter implements both ports
 public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPort { ... }
 ```
 
-> **기존 3.0 스냅샷으로 만든 헥사고날/DDD 프로젝트:** `OrderService` 는 generate-once 라
-> 재생성되지 않습니다. 생성자를 `(OrderRepositoryPort repository, OrderQueryPort query,
-> EntityManager entityManager)` 로 바꾸고 `super(repository, query, entityManager)` 를
-> 호출하도록 고쳐 주세요. **생성기가 이를 감지해 알려 줍니다** — 소유 파일의 생성자
-> 호출이 지금 생성될 것과 다르면 `constructor out of date ... the generator now writes
-> super(...)` 경고를 출력합니다. `supportAI: true` 도메인도 같은 포트를 받습니다.
+> **A hexagonal/DDD project made with an existing 3.0 snapshot:** `OrderService` is generate-once, so
+> it is not regenerated. Change the constructor to `(OrderRepositoryPort repository, OrderQueryPort query,
+> EntityManager entityManager)` and fix it to call `super(repository, query, entityManager)`.
+> **The generator detects this and tells you** - if the constructor call in an owned file differs from what would be generated now,
+> it prints the warning `constructor out of date ... the generator now writes
+> super(...)`. A `supportAI: true` domain receives the same ports.
 
-##### 네임스페이스
+##### Namespaces
 
-| 키 | 무엇 | 대체 |
+| Key | What | Fallback |
 |---|---|---|
-| `domainRepository` | 포트 (도메인) | `entity` |
-| `queryPort` | 조회 포트 (응용 계층) | `service` |
-| `persistence` | 어댑터 + Spring Data (인프라) | `repository` |
+| `domainRepository` | Port (domain) | `entity` |
+| `queryPort` | Query port (application layer) | `service` |
+| `persistence` | Adapter + Spring Data (infrastructure) | `repository` |
 
-`repository` 를 `.domain.` 아래 두면 도메인이 `JpaRepository` 를 알게 됩니다. 샘플은
-`repository` 를 인프라로 옮기고 `domainRepository` 에 포트를 둡니다.
+If you put `repository` under `.domain.`, the domain comes to know `JpaRepository`. The sample
+moves `repository` to infrastructure and puts the port in `domainRepository`.
 
-> **복합키 루트는 생성하지 않습니다.** 식별자가 별도 클래스라 어느 클래스인지가
-> 아티팩트에 대한 결정인데, 이 룰셋이 조용히 정할 일이 아닙니다.
+> **Roots with a composite key are not generated.** The identifier is a separate class, so which class it is
+> is a decision about the artifact, and this rule set must not make it silently.
 
-#### 쓰기 경로가 지키는 것 (v3 서비스 공통)
+#### What the write path guards (common to v3 services)
 
-생성된 코어 서비스(`jpa-springboot-v3`, `ddd-springboot`, `hexagonal-springboot`, Kotlin 판
-포함)는 쓰기 전에 다음을 확인합니다. 2.x 호환 번들(`jpa-springboot`)은 바뀌지 않습니다.
+The generated core services (`jpa-springboot-v3`, `ddd-springboot`, `hexagonal-springboot`, including the Kotlin
+versions) check the following before writing. The 2.x-compatible bundle (`jpa-springboot`) does not change.
 
-| 경우 | 동작 | API 응답 (`spring-api-errors`, 모든 v3 번들에 포함) |
+| Case | Behavior | API response (`spring-api-errors`, in every v3 bundle) |
 |---|---|---|
-| 생성(`save`)에 이미 있는 식별자 | 거절 (`DuplicateKeyException`). 덮어쓰지 않음 | 409 |
-| 수정에 보낸 `version` 이 행의 것과 다름 | 거절 (`ObjectOptimisticLockingFailureException`) | 409 |
-| 수정이 보낸 값이 제약 위반 (`@Size` 등) | 거절 (`ConstraintViolationException`). 보낸 필드만 검사 | 400 |
-| 없는 행 수정 | `EntityNotFoundException` | 404 |
-| 요청이 가리킨 행이 없음 - 다른 애그리거트를 id 로 참조 (`loan.memberId`, 주문 줄의 `itemId`) | `InvariantViolationException`, 코드 `reference.<Entity>.<relation>` (DDD 번들, 저장 전 `requireReferences`) | 404 - `Member 99 does not exist` |
-| 지금 상태로는 할 수 없는 명령·삭제 (`states:`) | `InvariantViolationException`, 코드 `state.…` | 409 |
-| 다른 불변식 위반 | `InvariantViolationException` (`IllegalStateException` 하위) | 422 |
-| 손으로 쓴 규칙이 거절 (`beforeSave`, 루트 메서드) | `io.elasticore.springboot3.validation.BadRequestException` (잘못된 요청), `NotFoundException` (가리킨 행이 없음), `ConflictException` (저장된 것과 충돌 - 빌려줄 권수가 없다, 이미 반납했다), `security.ForbiddenException`, `security.NotSignedInException`, `http.PortCallException` (부른 다른 시스템이 실패) | 400, 404, 409, 403, 401, 502 - 던진 메시지가 `detail` 로 나간다. 메시지 코드를 주면 요청 언어로 번역된다 (아래 "손으로 쓴 거절을 번역하기") |
-| 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
-| 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
-| 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261022-rc1 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
+| Create (`save`) with an identifier that already exists | Refuses (`DuplicateKeyException`). Does not overwrite | 409 |
+| The `version` sent with an update differs from the row's | Refuses (`ObjectOptimisticLockingFailureException`) | 409 |
+| A value sent with an update violates a constraint (`@Size` etc.) | Refuses (`ConstraintViolationException`). Checks only the fields sent | 400 |
+| Update of a row that does not exist | `EntityNotFoundException` | 404 |
+| The row the request points to does not exist - references another aggregate by id (`loan.memberId`, `itemId` of an order line) | `InvariantViolationException`, code `reference.<Entity>.<relation>` (DDD bundle, `requireReferences` before save) | 404 - `Member 99 does not exist` |
+| A command or delete that cannot be done in the current state (`states:`) | `InvariantViolationException`, code `state.…` | 409 |
+| Any other invariant violation | `InvariantViolationException` (subclass of `IllegalStateException`) | 422 |
+| A hand-written rule refuses (`beforeSave`, root method) | `io.elasticore.springboot3.validation.BadRequestException` (bad request), `NotFoundException` (the row pointed to does not exist), `ConflictException` (conflicts with what is stored - no copies left to lend, already returned), `security.ForbiddenException`, `security.NotSignedInException`, `http.PortCallException` (the other system that was called failed) | 400, 404, 409, 403, 401, 502 - the message thrown goes out as `detail`. If you give a message code, it is translated to the request language (see "Translating a hand-written refusal" below) |
+| Delete by condition `delete(srchDTO)` | Reads and deletes one at a time - members and listeners work together | - |
+| Update by condition `updateBySpecification` | Reads one at a time and applies through the mapper - version, audit and invariants apply | - |
+| Batch update `batchUpdate` (`PUT /batch`) | Calls `update(dto)` for each row in one transaction (from 3.0.261022-rc1) - a rule that overrides `update()` in the extension service also applies to the batch update, and each row gets the same checks, `readBack` and 409 conversion | Same as a single update |
 
-**`@restExclude(...)`** 는 서비스·컨트롤러·유스케이스·TypeScript 클라이언트에서 메서드를 뺍니다. 이름은 서비스 메서드
-(`save`, `update`, `batchUpdate`, `delete`(목록 삭제), `deleteById`, `updateBySpecification`)와 컨트롤러 엔드포인트
-(`create`, `read`, `search`, `update`, `batchUpdate`, `deleteBatch`(`POST /delete`), `deleteById`, `schemaInfo`)입니다.
-v3 출력에서는 빠진 메서드를 부르는 것도 함께 빠져 컴파일이 깨지지 않습니다: `update` 는 `batchUpdate` 를, `deleteById` 는
-`delete`·`deleteBatch` 를, `delete` 는 `deleteBatch` 를, `save` 는 `create` 를 데려갑니다. 헥사고날의 유스케이스
-인터페이스도 서비스가 뺀 메서드를 약속하지 않습니다(전에는 `@restExclude(batchUpdate)` 가 `XxxService is not abstract
-and does not override abstract method batchUpdate` 로 컴파일되지 않았음). Kotlin 서비스는 메서드를 빼지 않고 그대로 두며,
-컨트롤러·유스케이스만 따릅니다. 2.x 호환 번들은 적힌 대로만 뺍니다. 프로젝트 규칙이 `ctx(e).excludeMethod("update")` 로
-직접 뺄 때도 v3 출력은 같이 데려갑니다(`batchUpdate` 가 없는 `update` 를 부르지 않음). TypeScript 클라이언트는 서버를
-따라, 서버가 2.x 호환 출력이면 적힌 것만 뺍니다(`@restExclude(update)` 여도 2.x 서버에 남는 `PUT /batch` 의 `batchUpdate` 는
-클라이언트에도 남음). 서버의 모드는 `elcore3ts` 자신의 설정(아키텍처·언어·`output`·`-Pv2`/`-Pv3`·도메인의 규칙)으로
-압니다. 아무것도 정하지 않았으면 서버도 기본값인 v3 로 봅니다 - 다만 2.x 가 생성한 소스가 있는 프로젝트이거나, 서버를
-마지막으로 만든 `elcore3` 가 `build/elasticore/server.mode` 에 2.x 호환이라고 남겼으면 2.x 서버를 따릅니다.
+**`@restExclude(...)`** removes methods from the service, controller, use case and TypeScript client. The names are the service methods
+(`save`, `update`, `batchUpdate`, `delete` (list delete), `deleteById`, `updateBySpecification`) and the controller endpoints
+(`create`, `read`, `search`, `update`, `batchUpdate`, `deleteBatch` (`POST /delete`), `deleteById`, `schemaInfo`).
+In v3 output, the calls to a removed method are removed with it, so the compile does not break: `update` takes `batchUpdate` with it, `deleteById` takes
+`delete` and `deleteBatch`, `delete` takes `deleteBatch`, and `save` takes `create`. The hexagonal use case
+interface does not promise a method that the service removed either (before, `@restExclude(batchUpdate)` did not compile, with `XxxService is not abstract
+and does not override abstract method batchUpdate`). The Kotlin service does not remove methods and leaves them as they are,
+and only the controller and use case follow. The 2.x-compatible bundle removes only what is written. When a project rule removes a method itself with `ctx(e).excludeMethod("update")`,
+v3 output takes the dependents with it too (`update` without `batchUpdate` is not called). The TypeScript client follows the server;
+if the server is 2.x-compatible output, it removes only what is written (even with `@restExclude(update)`, `batchUpdate` of the `PUT /batch` that stays on a 2.x server
+also stays in the client). The server's mode is known from the settings of `elcore3ts` itself (architecture, language, `output`, `-Pv2`/`-Pv3`, the domain's rules).
+If nothing is set, it also treats the server as the default, v3 - but it follows a 2.x server if the project has sources generated by 2.x, or if the `elcore3` that last generated the server
+left `build/elasticore/server.mode` saying 2.x-compatible.
 
-- **버전 비교**는 DTO 의 `version` 속성을 이름으로 읽습니다(`VersionCheck`). DTO 에 버전이
-  없거나 요청이 보내지 않으면 검사하지 않습니다.
-- **부분 수정 검증**(`BeanValidation.validatePresent`)은 값이 있는 속성의 제약만 봅니다.
-  skip-null 병합은 빠진 필드를 건드리지 않으므로 `@NotNull` 을 요구하지 않습니다.
-  `@dynamicupdate(false)` 엔티티는 전체 검증입니다.
-- **코어 서비스는 더 이상 `@Service` 빈이 아닙니다.** 확장 서비스만 빈이라 타입당 한
-  인스턴스입니다.
+- **The version comparison** reads the `version` property of the DTO by name (`VersionCheck`). If the DTO has no version
+  or the request does not send it, nothing is checked.
+- **Partial-update validation** (`BeanValidation.validatePresent`) looks only at the constraints of properties that have a value.
+  The skip-null merge does not touch missing fields, so it does not require `@NotNull`.
+  An `@dynamicupdate(false)` entity gets full validation.
+- **The core service is no longer a `@Service` bean.** Only the extension service is a bean, so there is one
+  instance per type.
 
-DDD 번들의 매퍼는 여기에 더해 **`@jpa:Version` 과 Spring Data 감사 필드
-(`@jpa:...CreatedBy/CreatedDate/LastModifiedBy/LastModifiedDate`)를 DTO 에서 엔티티로
-쓰지 않습니다.** 응답에는 그대로 나가지만(클라이언트가 버전을 되보내야 하므로), 요청으로
-감사 기록을 위조할 수 없습니다.
+On top of this, the mapper of the DDD bundle **does not write `@jpa:Version` and the Spring Data audit fields
+(`@jpa:...CreatedBy/CreatedDate/LastModifiedBy/LastModifiedDate`) from the DTO to the entity.**
+They still go out in the response (the client has to send the version back), but a request
+cannot forge the audit record.
 
-#### API 오류 응답 (`spring-api-errors`)
+#### API error responses (`spring-api-errors`)
 
-`jpa-springboot-v3` 와 `jpa-springboot-kt` 에 포함되어 모든 v3 번들(DDD·헥사고날 포함)이
-받습니다. 2.x 호환 번들 `jpa-springboot` 에는 없습니다. 노출된 엔티티가 있는 도메인마다 컨트롤러
-패키지에 `ShopApiErrors` (`@RestControllerAdvice`, RFC 9457 `ProblemDetail`) 를 한 번
-생성합니다. 위 표의 상태 코드를 답하고, 그 패키지의 컨트롤러에만 적용됩니다.
-generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Spring 이 구성한 Validator 를
-`BeanValidation.use(...)` 로 넘겨, 서비스 측 검증도 주입이 필요한 커스텀 제약과
-애플리케이션 메시지를 씁니다. 불변식이 실려 오는 두 래퍼(`InvalidDataAccessApiUsageException`,
-`TransactionSystemException`)만 잡으므로 unique 충돌 같은 다른 데이터 접근 오류는 사용자의
-핸들러로 갑니다.
+It is included in `jpa-springboot-v3` and `jpa-springboot-kt`, and every v3 bundle (including DDD and hexagonal) receives
+it. The 2.x-compatible bundle `jpa-springboot` does not have it. For each domain that has exposed entities, it generates in the controller
+package `ShopApiErrors` (`@RestControllerAdvice`, RFC 9457 `ProblemDetail`) once.
+It answers with the status codes in the table above, and applies only to the controllers in that package.
+It is generate-once, so the response format belongs to the developer. In the constructor it passes the Validator that Spring configured to
+`BeanValidation.use(...)`, so service-side validation also uses custom constraints that need injection and
+the application's messages. It catches only the two wrappers that carry invariants (`InvalidDataAccessApiUsageException`,
+`TransactionSystemException`), so other data-access errors such as a unique conflict go to the user's
+handler.
 
-**컨트롤러에 닿기 전의 거절 (`RequestShapeErrors`).** 생성된 `ShopApiErrors` 는 런타임의
-`io.elasticore.springboot3.validation.RequestShapeErrors` 를 `@Import` 합니다. Spring MVC 가 컨트롤러 메서드를 부르기
-전에 거절한 요청을 **애플리케이션 전체에서** 같은 모양(`ProblemDetail` + `code`)으로 답합니다 - 다른 패키지에 손으로 쓴
-컨트롤러도 포함합니다. 전에는 Spring Boot 의 기본 본문 `{timestamp, status, error, path}` 였고 `code` 가 없었습니다.
-상태 코드는 전과 같습니다.
+**Refusals before the controller (`RequestShapeErrors`).** The generated `ShopApiErrors` does an `@Import` of the runtime's
+`io.elasticore.springboot3.validation.RequestShapeErrors`. For a request that Spring MVC refuses before
+it calls the controller method, it answers in the same shape (`ProblemDetail` + `code`) **across the whole application** - including
+hand-written controllers in other packages. Before, it was Spring Boot's default body `{timestamp, status, error, path}` with no `code`.
+The status codes are the same as before.
 
-| 요청 | 상태 | `code` | 예 (Pet Store 에서 확인) |
+| Request | Status | `code` | Example (checked in the Pet Store) |
 |---|---|---|---|
-| 본문이 없거나 JSON 이 아님 | 400 | `unreadable` | 본문 `{"lines":` |
-| 타입이 받지 않는 값 - 숫자 자리에 글자, 없는 enum 코드, 음수 `quantity`, int 범위 밖 | 400 | `invalid`, `fieldErrors[].code` 는 `typeMismatch` | `lines[0].quantity: a quantity cannot be negative: -1`, `creditCard.creditCardType: Unknown CreditCardType code: DINERS`, `GET /item/abc` -> `itemId: must be a number` |
-| 필수 쿼리 파라미터 없음 | 400 | `invalid`, `fieldErrors[].code` 는 `NotNull` | 손으로 쓴 `@RequestParam` |
-| 파라미터 제약 (`@RequestParam @Min(1) int page`) | 400 | `invalid`, 제약 이름 (`Min`) | 손으로 쓴 컨트롤러 |
-| 손으로 쓴 컨트롤러의 `@Valid` 본문 | 400 | `invalid` | (생성된 컨트롤러의 것은 `ShopApiErrors` 가 답함) |
-| 없는 경로 | 404 | `not-found` | `GET /api/petstore/nothing/here` |
-| 그 경로에 없는 메서드 | 405 (`Allow` 헤더 그대로) | `method-not-allowed` | `@editable` 이 아닌 루트에 `PUT` |
-| 줄 수 없는 응답 형식 (`Accept: image/png`) | 406 | `not-acceptable` | |
-| 읽을 수 없는 본문 형식 (`Content-Type: text/plain`) | 415 | `unsupported-media-type` | |
+| No body, or not JSON | 400 | `unreadable` | body `{"lines":` |
+| A value the type does not accept - letters where a number goes, an enum code that does not exist, a negative `quantity`, outside the int range | 400 | `invalid`, `fieldErrors[].code` is `typeMismatch` | `lines[0].quantity: a quantity cannot be negative: -1`, `creditCard.creditCardType: Unknown CreditCardType code: DINERS`, `GET /item/abc` -> `itemId: must be a number` |
+| A required query parameter is missing | 400 | `invalid`, `fieldErrors[].code` is `NotNull` | hand-written `@RequestParam` |
+| Parameter constraint (`@RequestParam @Min(1) int page`) | 400 | `invalid`, the constraint name (`Min`) | hand-written controller |
+| `@Valid` body of a hand-written controller | 400 | `invalid` | (for a generated controller, `ShopApiErrors` answers) |
+| A path that does not exist | 404 | `not-found` | `GET /api/petstore/nothing/here` |
+| A method that does not exist on that path | 405 (`Allow` header as it is) | `method-not-allowed` | `PUT` on a root that is not `@editable` |
+| A response format it cannot give (`Accept: image/png`) | 406 | `not-acceptable` | |
+| A body format it cannot read (`Content-Type: text/plain`) | 415 | `unsupported-media-type` | |
 
-- 브라우저가 페이지를 달라고 하면(`Accept` 에 `text/html`) 404·405 는 Spring Boot 의 오류 페이지(Whitelabel 이나
-  `error/404.html`)가 그대로 나옵니다.
-- 생성된 컨트롤러의 `findById`·`delete` 가 없는 행에 답하던 **빈 본문의 404** 도 이제 같은 모양입니다
-  (`NotFoundException`, `"code": "not-found"`, `"detail": "Item not found"`). `NotFoundException` 은 `@ResponseStatus(404)` 라서
-  `spring-api-errors` 를 꺼도 404 입니다 (본문은 Spring Boot 의 것).
-- **다르게 답하려면** 그 예외를 `ShopApiErrors` 에서 처리하세요 - 그 파일이 먼저 불립니다. 회사 공통
-  `@RestControllerAdvice` 도 `RequestShapeErrors` 가 등록한 처리기(`RequestShapeAdvice`)보다 먼저입니다(그 처리기는 맨 뒤). 확실히 하려면 공통
-  advice 에 `@Order` 를 붙이세요.
-- `spring.mvc.problemdetails.enabled=true` 는 켜지 마세요. Spring Boot 의 처리기가 맨 앞(`@Order(0)`)에 서서 필드 검증
-  응답(`fieldErrors`)까지 가져갑니다.
-- 자동 구성이 아닙니다. `ShopApiErrors` 가 가져올 때만 생기므로, 같은 런타임 라이브러리를 쓰는 2.x 애플리케이션은 그대로입니다.
-  `spring-api-errors` 를 끄면 함께 빠집니다. `RequestShapeErrors` 는 처리기(`RequestShapeAdvice`)를 등록만 하는 클래스이고,
-  처리기는 `@ComponentScan("io.elasticore.springboot3")` 에 잡히지 않습니다 (예전 포트 가이드가 2.x 앱에 권하던 스캔).
-  여러 도메인의 `XxxApiErrors` 가 모두 가져와도 처리기는 하나입니다.
-- **이미 있는 `XxxApiErrors` 를 고친 적이 있으면** 다시 생성되지 않으니 클래스에 한 줄을 붙이세요
-  (손대지 않았으면 다시 생성되어 붙습니다):
+- When a browser asks for a page (`Accept` has `text/html`), 404 and 405 show Spring Boot's error page (Whitelabel or
+  `error/404.html`) as it is.
+- The **404 with an empty body** that `findById` and `delete` of a generated controller used to answer for a row that does not exist now has the same shape
+  (`NotFoundException`, `"code": "not-found"`, `"detail": "Item not found"`). `NotFoundException` is `@ResponseStatus(404)`, so
+  it is a 404 even if you turn off `spring-api-errors` (the body is Spring Boot's).
+- **To answer differently**, handle that exception in `ShopApiErrors` - that file is called first. A company-wide
+  `@RestControllerAdvice` also comes before the handler that `RequestShapeErrors` registers (`RequestShapeAdvice`) (that handler is last). To be sure, put `@Order` on the common
+  advice.
+- Do not turn on `spring.mvc.problemdetails.enabled=true`. Spring Boot's handler stands first (`@Order(0)`) and takes even the field validation
+  response (`fieldErrors`).
+- It is not an auto-configuration. It exists only when `ShopApiErrors` imports it, so a 2.x application that uses the same runtime library is unchanged.
+  If you turn off `spring-api-errors`, it goes away with it. `RequestShapeErrors` is a class that only registers the handler (`RequestShapeAdvice`),
+  and the handler is not picked up by `@ComponentScan("io.elasticore.springboot3")` (the scan that the old port guide recommended to 2.x apps).
+  Even if the `XxxApiErrors` of several domains all import it, there is one handler.
+- **If you have edited an existing `XxxApiErrors`**, it is not regenerated, so add one line to the class
+  (if you have not touched it, it is regenerated and gets the line):
   ```java
   @org.springframework.context.annotation.Import(io.elasticore.springboot3.validation.RequestShapeErrors.class)
   ```
-  Kotlin 은 `@org.springframework.context.annotation.Import(io.elasticore.springboot3.validation.RequestShapeErrors::class)`.
-- Spring Framework 6.1 (Spring Boot 3.2) 이상이 필요합니다 (`NoResourceFoundException`, `HandlerMethodValidationException`).
-  샘플은 Spring Boot 3.3.2 와 4.0.8 에서 확인합니다.
-- **다른 시스템 호출 실패 (502)**: 포트를 부른 코드가 실패라고 판단하면 `io.elasticore.springboot3.http.PortCallException` 을
-  던집니다. `ShopApiErrors` 가 502, `"code": "upstream"` 으로 답합니다. 언제 무엇을 실패로 볼지는
-  `elasticore-dsl-port-guide.md` 2.8 에 있습니다.
+  For Kotlin, `@org.springframework.context.annotation.Import(io.elasticore.springboot3.validation.RequestShapeErrors::class)`.
+- It needs Spring Framework 6.1 (Spring Boot 3.2) or later (`NoResourceFoundException`, `HandlerMethodValidationException`).
+  The samples are checked with Spring Boot 3.3.2 and 4.0.8.
+- **A call to another system fails (502)**: when the code that called a port decides that it failed, it throws `io.elasticore.springboot3.http.PortCallException`.
+  `ShopApiErrors` answers 502 with `"code": "upstream"`. When to treat what as a failure is in
+  `elasticore-dsl-port-guide.md` 2.8.
 
-#### 오류 코드와 다국어 (Accept-Language)
+#### Error codes and languages (Accept-Language)
 
-모든 오류 응답에 프로그램이 분기할 수 있는 `code` 가 있고, 문구는 **한 응답에 한 언어**로 나갑니다:
+Every error response has a `code` that a program can branch on, and the text goes out in **one language per response**:
 
-1. `Accept-Language` 에 적힌 언어를 순서대로 보아, **애플리케이션이 번역한 언어**(classpath 의 `messages_<언어>`, 도메인 번들
-   옆 `<도메인>-messages_<언어>`, `ValidationMessages_<언어>` 파일이 있는 언어), 기본 언어, 영어 중 처음 나온 것.
-2. 그런 것이 없으면(헤더가 없거나 번역이 없는 언어) **기본 언어**: Spring Boot 의 `spring.web.locale` (Boot 3·4 같은 이름).
-   설정하지 않았으면 번들의 기본 문구(영어, 또는 DSL 에 적은 문장)입니다.
-3. Bean Validation 의 기본 메시지(`Size`, `NotNull`, `Min` ...)도 같은 언어로, 숫자를 넣어 다시 말합니다
-   (`size must be between 0 and 10` / `크기가 0에서 10 사이여야 합니다`). DSL 에 적은 문장은 적은 그대로입니다.
+1. Look at the languages in `Accept-Language` in order, and take the first of: a **language the application has translated** (a language that has a `messages_<language>` on the classpath, a `<domain>-messages_<language>` next to
+   the domain bundle, or a `ValidationMessages_<language>` file), the default language, English.
+2. If there is none (no header, or a language with no translation), the **default language**: Spring Boot's `spring.web.locale` (the same name in Boot 3 and 4).
+   If it is not set, it is the bundle's default text (English, or the sentence written in the DSL).
+3. The default messages of Bean Validation (`Size`, `NotNull`, `Min` ...) are also restated in the same language, with the numbers filled in
+   (`size must be between 0 and 10` / `크기가 0에서 10 사이여야 합니다`). A sentence written in the DSL stays as written.
 
-**서버 머신의 언어는 쓰지 않습니다.** 한국어 OS 의 서버도 헤더 없는 요청, `en`, `sv` 에 영어로 답합니다 - Pet Store 를
-`-Duser.language=ko -Duser.country=KR` 로 띄워 확인했고, `ShopFlowTest` 가 한국어 JVM 에서 같은 것을 확인합니다.
+**The language of the server machine is not used.** A server on a Korean OS also answers a request with no header, `en`, or `sv` in English - checked by starting the Pet Store with
+`-Duser.language=ko -Duser.country=KR`, and `ShopFlowTest` checks the same on a Korean JVM.
 
 ```yaml
-# application.yml - 헤더 없는 요청을 한국어로 (번역 파일 _ko 가 있어야 의미가 있음)
+# application.yml - answer requests with no header in Korean (only meaningful if a translation file _ko exists)
 spring:
   web:
     locale: ko
 ```
 
-- 영어는 번들의 기본 문구라서, `spring.web.locale: ko` 여도 `Accept-Language: en` 이면 영어입니다.
-- Hibernate Validator 에 프랑스어가 있어도 애플리케이션이 번역하지 않았으면 `fr` 요청은 기본 언어로 나갑니다 - DSL 문장과
-  기본 메시지가 섞이지 않게.
-- 세션·쿠키 등 다른 `LocaleResolver` (`spring.web.locale-resolver: fixed` 포함)를 쓰면 그 resolver 가 정한 언어를 따릅니다.
-  헤더도 없고 resolver 가 컨테이너의 언어를 그대로 돌려준 요청(아무도 정하지 않은 요청)만 번들의 기본 문구입니다.
+- English is the bundle's default text, so even with `spring.web.locale: ko`, `Accept-Language: en` gives English.
+- Even if Hibernate Validator has French, a `fr` request goes out in the default language unless the application has translated it - so that the DSL sentences and
+  the default messages do not get mixed.
+- If you use another `LocaleResolver` such as session or cookie (including `spring.web.locale-resolver: fixed`), it follows the language that resolver decided.
+  Only a request with no header where the resolver returned the container's language as it is (a request nobody decided for) gets the bundle's default text.
 
-번역되는 것:
+What is translated:
 
-| 응답 | `title` | `detail` |
+| Response | `title` | `detail` |
 |---|---|---|
-| 409 (생명주기), 404 (참조한 행 없음), 422 (불변식) | O | O (규칙의 코드로) |
-| 409·400 의 데이터베이스 거절 (`stale`, `required`, `unique`, `referenced`, `conflict`) | O | O (`error.<code>`) |
-| 400 필드 검증 (`@Valid`, 서비스 측 검증 모두) | O | 필드 메시지 O (`<제약>.<필드>`, 예 `Size.lines`). 번역이 없는 기본 메시지는 요청 언어로 |
-| 컨트롤러 전의 거절 (`RequestShapeErrors`) | O | O (`error.unreadable`, `error.method-not-allowed` ..., 필드는 `typeMismatch.<필드>`) |
-| 손으로 쓴 거절에 메시지 코드를 준 것 | O | O (그 코드로) |
-| 404·409(이미 있음)·401·403·502·기타 400 중 코드 없이 던진 것 | O | X — 예외 메시지(영어, 식별자 포함) 그대로 |
+| 409 (lifecycle), 404 (referenced row missing), 422 (invariant) | Yes | Yes (by the rule's code) |
+| Database refusals as 409/400 (`stale`, `required`, `unique`, `referenced`, `conflict`) | Yes | Yes (`error.<code>`) |
+| 400 field validation (`@Valid`, and service-side validation) | Yes | Field message: yes (`<constraint>.<field>`, e.g. `Size.lines`). A default message with no translation goes in the request language |
+| Refusal before the controller (`RequestShapeErrors`) | Yes | Yes (`error.unreadable`, `error.method-not-allowed` ..., a field is `typeMismatch.<field>`) |
+| A hand-written refusal that was given a message code | Yes | Yes (by that code) |
+| 404, 409 (already exists), 401, 403, 502 and other 400 thrown without a code | Yes | No - the exception message as it is (English, with the identifier) |
 
-Pet Store 에서 배송된 주문을 취소하면 (`ShopFlowTest` 로 확인):
+When you cancel a shipped order in the Pet Store (checked with `ShopFlowTest`):
 
 ```http
 POST /api/petstore/purchaseOrder/{id}/cancel
@@ -1024,36 +1024,36 @@ HTTP/1.1 409
   "code": "state.PurchaseOrder.status.cancel", "status": 409 }
 ```
 
-3.0.261022-rc1 부터 생명주기 거절은 409, 참조한 행이 없으면 404 입니다 (전에는 생명주기 거절이 422, 없는 행을 id 로
-참조한 저장은 외래 키 위반의 409 "Conflicts with stored data", `@snapshot` 이 원본 행을 못 찾을 때만 422). 이미 있는 프로젝트에서는
-`<도메인>ApiErrors` 를 **손댄 적이 없으면** 다시 생성되어(`REGENERATED(owned, never edited)`) 새 응답으로 바뀌고 -
-422 로 분기하던 클라이언트가 있으면 함께 고칩니다 - **손댄 적이 있으면** 그대로라 생명주기 거절도, 없는 참조도 422 로
-답합니다. 그 파일의 `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고치세요.
+From 3.0.261022-rc1, a lifecycle refusal is 409 and a missing referenced row is 404 (before, a lifecycle refusal was 422, a save that referenced a row that does not exist by id was
+409 "Conflicts with stored data" from the foreign key violation, and 422 only when a `@snapshot` could not find the source row). In an existing project, if you have **never edited**
+`<Domain>ApiErrors`, it is regenerated (`REGENERATED(owned, never edited)`) and changes to the new responses -
+fix any client that branched on 422 too - and if you **have edited** it, it stays as it is, so a lifecycle refusal and a missing reference both
+still answer 422. Change the `refused(...)` in that file as if it had been newly generated: `state.` to 409, `reference.` to 404.
 
-`Accept-Language` 가 없거나 번역이 없는 언어면
-`"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"` 입니다.
+With no `Accept-Language`, or a language with no translation, it is
+`"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"`.
 
-**코드 체계**
+**The code scheme**
 
-| 코드 | 언제 | 값 (`{0}`, `{1}`) |
+| Code | When | Values (`{0}`, `{1}`) |
 |---|---|---|
-| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
-| `state.<Entity>.<field>.<command>` | 생명주기: 시작 상태가 아닌데 명령이 옴 (`states:`) | 지금 상태, 가능한 상태 |
-| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | - |
-| `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | - |
-| `reference.<Entity>.<relation>` | 요청이 id 로 가리킨 행이 없음 - 다른 애그리거트 참조(저장 전 확인), `@snapshot` 의 원본 (404) | 식별자 |
-| `upstream` | 다른 시스템 호출 실패 (`PortCallException`, 502) | - |
-| `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable` | 컨트롤러 전의 거절 (`RequestShapeErrors`; 제목 `error.<code>.title`, 문장 `error.<code>`) | 405 `{0}` 메서드, 415 `{0}` 본문 형식, 406 `{0}` 낼 수 있는 형식 |
-| `error.no-such-path`, `error.missing-value` | 없는 경로(404 `not-found`)의 문장, 없는 파라미터의 필드 메시지 | `{0}` 경로 / - |
-| `typeMismatch.<필드>` | 타입이 받지 않는 값의 필드 메시지. `typeMismatch.lines[0].quantity` 그 줄만, `typeMismatch.lines.quantity` 모든 줄. 둘 다 없으면 타입이 거절한 메시지(`Quantity`, enum 의 `fromCode` - 영어), 그것도 없으면 `error.type.number` / `.boolean` / `.text` / `.datetime` / `.enum` / `.other` | `.enum` 의 `{0}` 가능한 값 |
-| (손으로 쓴 코드) | 손으로 쓴 거절에 준 메시지 코드 (아래) | 준 값 |
+| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | Common to all domains (title `error.<code>.title`, sentence `error.<code>`) | - |
+| `state.<Entity>.<field>.<command>` | Lifecycle: a command came when not in a start state (`states:`) | current state, allowed states |
+| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | Field range invariant | - |
+| `invariant.<Entity>.<condition>` | `@invariant(condition, 'sentence')` - a name made from the condition expression (`items.size > 0` -> `items-size-gt-0`) | - |
+| `reference.<Entity>.<relation>` | The row the request pointed to by id does not exist - reference to another aggregate (checked before save), the source of a `@snapshot` (404) | identifier |
+| `upstream` | A call to another system failed (`PortCallException`, 502) | - |
+| `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable` | Refusal before the controller (`RequestShapeErrors`; title `error.<code>.title`, sentence `error.<code>`) | 405 `{0}` method, 415 `{0}` body format, 406 `{0}` formats it can give |
+| `error.no-such-path`, `error.missing-value` | The sentence for a path that does not exist (404 `not-found`), the field message for a missing parameter | `{0}` path / - |
+| `typeMismatch.<field>` | The field message for a value the type does not accept. `typeMismatch.lines[0].quantity` is that line only, `typeMismatch.lines.quantity` is all lines. If neither exists, the message the type refused with (`Quantity`, `fromCode` of an enum - English), and if that does not exist either, `error.type.number` / `.boolean` / `.text` / `.datetime` / `.enum` / `.other` | `{0}` of `.enum` is the allowed values |
+| (hand-written code) | The message code given to a hand-written refusal (below) | the values given |
 
-**번역하는 법**
+**How to translate**
 
-1. 빌드하면 도메인마다 `src/main/resources/i18n/<도메인>-messages.properties` 가 생깁니다.
-   그 도메인이 답할 수 있는 **모든 코드와 기본 문구**가 들어 있습니다 (생성물: 고치지 마세요).
-2. 같은 폴더에 `<도메인>-messages_ko.properties` 를 만들어 필요한 키만 번역합니다
-   (UTF-8 로 저장해도 됩니다). 빠진 키는 기본 문구로 나갑니다.
+1. When you build, `src/main/resources/i18n/<domain>-messages.properties` is created for each domain.
+   It holds **every code and default text** that the domain can answer with (generated: do not edit).
+2. In the same folder, create `<domain>-messages_ko.properties` and translate only the keys you need
+   (you may save it in UTF-8). A missing key goes out as the default text.
 
 ```properties
 # src/main/resources/i18n/petstore-messages_ko.properties
@@ -1063,45 +1063,45 @@ invariant.PurchaseOrder.lines.minsize=장바구니가 비어 있습니다
 Size.lines=장바구니가 비어 있습니다
 NotNull.lines=장바구니가 비어 있습니다
 
-# 컨트롤러 전의 거절 - RequestShapeErrors 도 모든 도메인 번들과 그 옆 번역을 읽습니다
+# Refusals before the controller - RequestShapeErrors also reads every domain bundle and the translation next to it
 error.unreadable=요청 본문이 없거나 JSON 이 아닙니다.
 error.method-not-allowed={0} 메서드는 여기서 쓸 수 없습니다.
 typeMismatch.lines.quantity=수량은 0 이상의 정수입니다
 ```
 
-- 필드의 값은 Spring 의 순서입니다: `{0}` 필드, 그다음 제약 속성의 이름순 (`Size` 는 `{1}` max, `{2}` min).
-  `Size.login=로그인은 {1}자까지` 는 `@Valid` 와 서비스 측 검증 모두에 같은 값으로 나갑니다.
-- **필드 없는 코드(`Size=`, `NotNull=`)는 쓰지 마세요.** 그 언어의 모든 `@Size` DSL 문장을 덮어 버리고, 범위는 위치
-  (`{1}`, `{2}`)로만 받습니다. 필드마다(`Size.login`) 쓰거나, 쓰지 않으면 기본 메시지가 요청 언어로 숫자와 함께 나갑니다.
-- **`ValidationMessages*.properties` 로 언어를 맞추지 마세요.** 기본 파일(`ValidationMessages.properties`)은 다른 모든
-  언어의 Hibernate Validator 번역을 덮고, `_<언어>` 파일만 두면 그 파일이 없는 언어의 요청에 서버 머신의 언어로 답하게
-  됩니다(JDK 의 bundle fallback). 위의 규칙이 이미 한 응답을 한 언어로 맞춥니다.
+- The values of a field are in Spring's order: `{0}` is the field, then the constraint attributes in name order (for `Size`, `{1}` is max and `{2}` is min).
+  `Size.login=로그인은 {1}자까지` goes out with the same values for both `@Valid` and service-side validation.
+- **Do not write codes without a field (`Size=`, `NotNull=`).** They override every `@Size` DSL sentence in that language, and the range is received
+  only by position (`{1}`, `{2}`). Write it per field (`Size.login`), or do not write it, and the default message goes out in the request language with the numbers.
+- **Do not set the language with `ValidationMessages*.properties`.** The default file (`ValidationMessages.properties`) overrides the Hibernate Validator translation of every other
+  language, and if you put only a `_<language>` file, a request in a language that has no such file is answered in the language of the server machine
+  (the JDK's bundle fallback). The rules above already make one response one language.
 
-찾는 순서: classpath 의 `messages_<언어>.properties` -> 도메인 번들과 그 옆 번역 ->
-애플리케이션의 `MessageSource` (예: `spring.messages.basename` 으로 바꾼 번들) -> 기본 문구. 설정은 필요 없습니다.
-앞의 둘은 **요청 언어의 파일을 먼저** 봅니다: `messages_ko`, 모든 도메인의 `_ko` 파일을 다 본 뒤에야 기본 파일(영어)을 봅니다.
-그래서 도메인이 여럿이어도(`billing`, `shop`) `shop-messages_ko` 에만 둔 `error.unreadable` 번역이, 이름순으로 앞선
-`billing-messages.properties` 의 영어에 가려지지 않습니다.
-다만 `spring.messages.basename` 을 바꿔 둔 번역은 도메인 번들(영어 기본 문구)보다 뒤에 찾으므로, 도메인 코드의
-번역은 `messages_<언어>.properties` 나 도메인 번들 옆 파일에 두세요.
+Lookup order: `messages_<language>.properties` on the classpath -> the domain bundle and the translation next to it ->
+the application's `MessageSource` (for example a bundle changed with `spring.messages.basename`) -> the default text. No setting is needed.
+The first two look at **the file of the request language first**: only after looking at `messages_ko` and the `_ko` files of all domains do they look at the default file (English).
+So even with several domains (`billing`, `shop`), a translation of `error.unreadable` placed only in `shop-messages_ko` is not hidden by the English of
+`billing-messages.properties`, which comes earlier by name.
+But a translation in a bundle changed with `spring.messages.basename` is looked up after the domain bundle (the English default text), so put the translations of domain codes in
+`messages_<language>.properties` or in the file next to the domain bundle.
 
-- **작은따옴표**: 값(`{0}`)이 들어가는 문장(`state.*`, `reference.*`)은 Java `MessageFormat` 규칙을 따라 `'` 를
-  `''` 로 적습니다 (`can''t`). 값이 없는 문장은 그대로 적습니다.
-- 같은 엔티티의 두 `@invariant` 가 같은 이름이 되면 두 번째에 `-2` 가 붙습니다. 조건식의 `+ - * /` 와 한글 등은
-  이름에 구분되어 들어갑니다 (`a + b > 0` -> `a-plus-b-gt-0`).
+- **Single quotes**: a sentence that takes values (`{0}`) (`state.*`, `reference.*`) follows the Java `MessageFormat` rule and writes `'` as
+  `''` (`can''t`). A sentence with no values is written as it is.
+- If two `@invariant`s of the same entity get the same name, `-2` is added to the second. The `+ - * /` and Korean letters and so on in a condition expression
+  are put into the name in a distinguishable form (`a + b > 0` -> `a-plus-b-gt-0`).
 
-**손으로 쓴 거절을 번역하기**
+**Translating a hand-written refusal**
 
-`beforeSave`·루트 메서드·서비스 오버라이드·포트를 부르는 코드에서 던지는 런타임의 예외는 **메시지 코드**를 받습니다.
-생성된 거절과 같은 순서로 번역을 찾고, 없으면 두 번째 인자(기본 문구, 값이 있으면 `MessageFormat` 패턴)가 나가며,
-응답의 `code` 가 그 코드가 됩니다:
+The runtime exceptions thrown from `beforeSave`, root methods, service overrides and code that calls a port take a **message code**.
+The translation is looked up in the same order as for a generated refusal, and if there is none, the second argument (the default text, a `MessageFormat` pattern if it has values) goes out,
+and the `code` of the response becomes that code:
 
 ```java
 throw new ConflictException("loan.no-copy-left", "No copy of {0} is left to lend", isbn);
 ```
 
 ```properties
-# src/main/resources/i18n/library-messages_ko.properties (도메인 번들 옆, 개발자 파일) 또는 messages_ko.properties
+# src/main/resources/i18n/library-messages_ko.properties (next to the domain bundle, a developer file) or messages_ko.properties
 loan.no-copy-left=빌려줄 수 있는 {0} 이(가) 없습니다
 ```
 
@@ -1109,11 +1109,11 @@ loan.no-copy-left=빌려줄 수 있는 {0} 이(가) 없습니다
 HTTP/1.1 409                       (Accept-Language: ko)
 { "title": "...", "detail": "빌려줄 수 있는 978-0-00 이(가) 없습니다", "code": "loan.no-copy-left", "status": 409 }
 
-HTTP/1.1 409                       (헤더 없음)
+HTTP/1.1 409                       (no header)
 { "title": "Conflicts with stored data", "detail": "No copy of 978-0-00 is left to lend", "code": "loan.no-copy-left", "status": 409 }
 ```
 
-| 예외 (`io.elasticore.springboot3.`) | 상태 | 코드 없이 던지면 `code` |
+| Exception (`io.elasticore.springboot3.`) | Status | `code` when thrown without a code |
 |---|---|---|
 | `validation.BadRequestException(code, message, args...)` | 400 | `bad-request` |
 | `security.NotSignedInException(code, message, args...)` | 401 | `not-signed-in` |
@@ -1122,126 +1122,126 @@ HTTP/1.1 409                       (헤더 없음)
 | `validation.ConflictException(code, message, args...)` | 409 | `conflict` |
 | `http.PortCallException(code, message, args...)` | 502 | `upstream` |
 
-- 기본 문구는 코드에 적습니다. 생성되는 `<도메인>-messages.properties` 는 손으로 쓴 코드를 모르고 빌드마다 다시 쓰이므로
-  거기에 적지 마세요. 번역만 그 옆 `_ko` 파일이나 `messages_ko.properties` 에 둡니다.
-- 값이 있는 문장은 `'` 를 `''` 로 적습니다 (기본 문구도). 예외의 `getMessage()` 는 값을 넣은 기본 문구입니다(로그에 그대로).
-- 코드 없이 던지면(`new ConflictException("...")`) 예전처럼 그 메시지 그대로 나가고 `code` 는 표의 마지막 칸입니다.
-- 불변식처럼 상태를 코드로 고르는 거절은 `InvariantViolationException(code, message, args...)` 입니다 (`state.` 409,
-  `reference.` 404, 그 밖 422).
-- 확인: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (테스트용 컨트롤러가 던진 것).
-- 고친 적이 있는 `XxxApiErrors` 는 다시 생성되지 않아 처리기가 `ex.getMessage()` 만 씁니다. 새로 생성된 파일처럼
-  `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())` 로 고치세요.
+- Write the default text in the code. The generated `<domain>-messages.properties` does not know hand-written codes and is rewritten on every build, so
+  do not write them there. Put only the translation in the `_ko` file next to it or in `messages_ko.properties`.
+- Write `'` as `''` in a sentence that has values (the default text too). The `getMessage()` of the exception is the default text with the values filled in (as it is in the log).
+- If you throw without a code (`new ConflictException("...")`), that message goes out as it did before, and `code` is the last column of the table.
+- A refusal that picks the state by code, like an invariant, is `InvariantViolationException(code, message, args...)` (`state.` is 409,
+  `reference.` is 404, anything else 422).
+- Checked in: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (what a test controller threw).
+- An `XxxApiErrors` that has been edited is not regenerated, so the handler uses only `ex.getMessage()`. Change it, as in a newly generated file, to
+  `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())`.
 
-**400 (필드 검증)** 은 `errors` (`"필드: 메시지"` 목록, 예전과 같음) 에 더해 `fieldErrors` 를 보냅니다:
-`[{ "field": "lines", "code": "Size", "message": "장바구니가 비어 있습니다" }]`. 필드 메시지는 Spring 의
-메시지 코드(`Size.lines`, `NotNull.customerDTO.login`, `NotNull` ...)로 같은 번들에서 찾습니다.
-생성된 TypeScript 클라이언트의 `ApiError` 는 `code` 와 `fieldErrors` (필드 -> 메시지)를 읽습니다.
+**400 (field validation)** sends `fieldErrors` in addition to `errors` (a list of `"field: message"`, same as before):
+`[{ "field": "lines", "code": "Size", "message": "장바구니가 비어 있습니다" }]`. The field message is looked up in the same bundle by Spring's
+message codes (`Size.lines`, `NotNull.customerDTO.login`, `NotNull` ...).
+The `ApiError` of the generated TypeScript client reads `code` and `fieldErrors` (field -> message).
 
-- 런타임: `io.elasticore.springboot3.validation.ErrorMessages` (`text`, 서비스 측 검증의 `violation`),
+- Runtime: `io.elasticore.springboot3.validation.ErrorMessages` (`text`, and `violation` for service-side validation),
   `RequestShapeErrors`, `InvariantViolationException(code, message, args...)`.
-- 이미 있는 `XxxApiErrors` 는 개발자 파일(generate-once)입니다. 한 번도 고치지 않았다면 다시 생성되고,
-  고쳤다면 그대로 둡니다. 새 형식을 쓰려면 파일을 지우고 다시 빌드하세요. 고친 파일도 런타임만 올리면 `@Valid` 의
-  기본 메시지는 요청 언어로 나갑니다(`messages.text(f)`). 서비스 측 검증은 `messages.text(code + "." + field, v.getMessage())`
-  를 `messages.violation(code + "." + field, v, v.getMessage())` 로 바꿔야 같아집니다.
-- `MessageSource` 빈이 여럿이고 primary 가 없으면 애플리케이션의 것은 쓰지 않습니다 (기동은 됨). classpath 의
-  `messages_<언어>.properties` 와 도메인 번들은 그대로 찾습니다.
-- 번역이 있는지는 classpath 의 파일(`messages_<언어>`, 도메인 번들, `ValidationMessages`)로 봅니다. `spring.messages.basename`
-  으로 바꾼 번들에만 있는 언어는 번역으로 보지 않습니다 - 그 언어도 쓰려면 위 파일 중 하나를 두세요.
-- 생성기와 **런타임 라이브러리(`elasticore-springboot3`/`4`)를 같은 버전으로** 올리세요. 생성된 엔티티가 런타임의
-  `InvariantViolationException(code, message, args...)` 와 `ErrorMessages` 를, 생성된 `XxxApiErrors` 가 `RequestShapeErrors`
-  를 씁니다 (예전 런타임에는 없어서 컴파일되지 않음).
+- An existing `XxxApiErrors` is a developer file (generate-once). If you never edited it, it is regenerated,
+  and if you edited it, it is left as it is. To use the new format, delete the file and build again. Even an edited file, if you only upgrade the runtime, sends the default message of `@Valid`
+  in the request language (`messages.text(f)`). For service-side validation to be the same, change `messages.text(code + "." + field, v.getMessage())`
+  to `messages.violation(code + "." + field, v, v.getMessage())`.
+- If there are several `MessageSource` beans and none is primary, the application's is not used (startup still works). The `messages_<language>.properties` on the classpath
+  and the domain bundle are still found.
+- Whether a translation exists is judged by the files on the classpath (`messages_<language>`, the domain bundle, `ValidationMessages`). A language that exists only in a bundle changed with `spring.messages.basename`
+  is not counted as translated - to use that language too, put one of the files above.
+- Upgrade the generator and the **runtime library (`elasticore-springboot3`/`4`) to the same version**. The generated entities use the runtime's
+  `InvariantViolationException(code, message, args...)` and `ErrorMessages`, and the generated `XxxApiErrors` uses `RequestShapeErrors`
+  (an old runtime does not have them, so it does not compile).
 
-#### Kotlin 에서 생성물이 부팅되기 위한 것
+#### What the generated code needs to boot in Kotlin
 
-Kotlin 샘플을 Spring Boot 로 실제 기동하며(`ShopApiContractTest`) 드러난 세 가지를 고쳤습니다.
-`kotlin-spring` 플러그인이 없어도 동작합니다.
+Starting the Kotlin sample for real with Spring Boot (`ShopApiContractTest`) exposed three things, and they are fixed.
+It works without the `kotlin-spring` plugin.
 
-- 확장 서비스(`OrderService`)는 `@Transactional` 을 상속하므로 `open class` 입니다.
-- 리포지터리 어댑터는 `@Repository` 예외 변환 프록시 대상이라 `open class` 입니다.
-- 엔티티 컬렉션은 `MutableList<X>` 입니다. `List<X>` 는 열린 엔티티 타입에 대해
-  `List<? extends X>` 로 컴파일되어 Hibernate 가 raw 컬렉션으로 거절합니다.
+- The extension service (`OrderService`) inherits `@Transactional`, so it is an `open class`.
+- The repository adapter is the target of the `@Repository` exception-translation proxy, so it is an `open class`.
+- Entity collections are `MutableList<X>`. `List<X>` compiles to `List<? extends X>` for an open entity type,
+  and Hibernate refuses it as a raw collection.
 
-Spring 을 쓰는 Kotlin 앱은 `org.jetbrains.kotlin:kotlin-reflect` 가 필요합니다.
+A Kotlin app that uses Spring needs `org.jetbrains.kotlin:kotlin-reflect`.
 
-#### 애그리거트 멤버 — 쓰기는 루트로만
+#### Aggregate members - write only through the root
 
-- **컬렉션 멤버**의 게터는 읽기 전용 뷰를 돌려줍니다 — Java 는
-  `Collections.unmodifiableList`, Kotlin 은 프로퍼티 getter 가 `MemberList.view(field)`.
-  `order.getItems().add(x)` 는 `UnsupportedOperationException` — 전에는 소유자가 설정되지
-  않은 채 저장 시 조용히 사라졌습니다. 추가·삭제는 `addOrderItem` / `removeOrderItem` /
-  `replaceItems` 로.
-- **멤버 삭제도 루트의 쓰기입니다.** 불변식을 선언한 루트의 멤버에는
-  `OrderItemRemovalCheck` 리스너가 붙어, 멤버 행이 삭제될 때(flush) 루트의 불변식을
-  남은 상태로 검사합니다. 마지막 주문 상품을 지우는 것이 이제 거절됩니다. 교체
-  (`replaceItems`)는 flush 시점에 이미 채워져 있으므로 허용됩니다. 이를 위해
-  `removeX()` 는 멤버의 루트 참조를 비우지 않습니다(행은 같은 flush 에 삭제).
-- **1:1 멤버**(`@OneToOne` + 같은 애그리거트)는 루트 DTO 로 오가며, 수정 시 기존 멤버를
-  **제자리에서 갱신**합니다(새 행으로 바꾸지 않음). 멤버는 자기 엔드포인트가 없으므로
-  루트 DTO 에서 `--` 로 빼면 도달할 길이 없습니다.
-- **도메인 이벤트**의 `occurredOn` 은 `raiseX()` 를 부른 시각입니다. 이벤트 객체는
-  식별자가 생긴 뒤(발행 시)에 만들어지지만 시각은 raise 때 고정됩니다.
+- The getter of a **collection member** returns a read-only view - in Java
+  `Collections.unmodifiableList`, in Kotlin the property getter is `MemberList.view(field)`.
+  `order.getItems().add(x)` throws `UnsupportedOperationException` - before, it silently disappeared at save with the owner
+  not set. Add and remove with `addOrderItem` / `removeOrderItem` /
+  `replaceItems`.
+- **Deleting a member is also a write of the root.** A member of a root that declares invariants gets
+  an `OrderItemRemovalCheck` listener, and when the member row is deleted (flush), it checks the root's invariants
+  against the remaining state. Deleting the last order item is now refused. A replacement
+  (`replaceItems`) is allowed because it is already filled at flush time. For this,
+  `removeX()` does not clear the member's reference to the root (the row is deleted in the same flush).
+- A **1:1 member** (`@OneToOne` + the same aggregate) travels in the root DTO, and on update it
+  **updates the existing member in place** (it does not replace it with a new row). A member has no endpoint of its own, so
+  if you remove it from the root DTO with `--`, there is no way to reach it.
+- `occurredOn` of a **domain event** is the time `raiseX()` was called. The event object is
+  created after the identifier exists (at publish), but the time is fixed at raise.
 
-### 잘못 조합하면 실패합니다
+### A wrong combination fails
 
-파일 셸은 정의상 언어 전용입니다. 번들은 이름의 목록일 뿐이라 잘못 조합해도
-**아무도 눈치채지 못합니다** — 템플릿은 텍스트고, `.kt` 파일 속 Java는 컴파일러가
-돌 때에야 드러납니다.
+A file shell is language-specific by definition. A bundle is only a list of names, so a wrong combination
+**goes unnoticed** - a template is text, and Java inside a `.kt` file shows up only when the compiler
+runs.
 
-그래서 셸은 자기가 쓰는 언어를 말합니다:
+So a shell says which language it writes:
 
 ```java
 c.requireSyntax(Syntax.KOTLIN, "kt-dto-file");
 ```
 
-어긋나면 어느 규칙이 어느 언어를 쓰려 했는지와 함께 그 자리에서 멈춥니다.
+If it does not match, it stops on the spot, saying which rule tried to use which language.
 
-### 언어별 규칙 선택
+### Choosing rules per language
 
-`publisher.rules`는 **서버의 규칙**을 정합니다. Java와 Kotlin은 둘 다 서버라
-같은 키를 씁니다. TypeScript는 산출물이 다른 프로그램이라 **자기 키**를 씁니다.
+`publisher.rules` sets **the server's rules**. Java and Kotlin are both servers, so
+they use the same key. TypeScript uses **its own key**, because its output is a different program.
 
-| 키 | 적용 대상 |
+| Key | Applies to |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin (있으면 위보다 우선) |
+| `publisher.rules.kt` | Kotlin (takes precedence over the one above if present) |
 | `publisher.rules.ts` | TypeScript |
 
-`publisher.rules`에 Kotlin 번들을 적어두면 TypeScript 생성이 그걸 물려받아
-`.ts` 파일에 Kotlin 규칙이 들어갑니다 — 그래서 TypeScript는 물려받지 않습니다.
+If you write a Kotlin bundle in `publisher.rules`, TypeScript generation inherits it and
+Kotlin rules end up in `.ts` files - so TypeScript does not inherit.
 
-### 번들 조합
+### Combining bundles
 
-번들은 이름을 나열해 조합합니다. 언어 번들과 아키텍처 규칙은 **서로 다른 축**이라
-같이 적습니다.
-
-```yaml
-    publisher:
-      rules: [jpa-springboot-kt, ddd-aggregate]   # Kotlin + 애그리거트 경계
-```
-
-언어별로 미리 묶인 번들이 있으면 그걸 쓰는 편이 낫습니다 — `ddd-springboot` 와
-`ddd-springboot-kt` 는 같은 읽기의 두 언어 판이고, 다른 점은 언어가 정하는 것뿐입니다
-(값 객체를 Lombok 으로 만드느냐, 언어로 만드느냐). 위의 "언어별로 다르게 도달하는
-규칙" 표가 각 규칙이 어느 언어에 닿는지를 말합니다.
-
-### 규칙 하나만 끄기
+You combine bundles by listing names. A language bundle and an architecture rule are **different axes**, so
+you write them together.
 
 ```yaml
     publisher:
-      suppress: [jpa-comment]   # @Comment 애노테이션을 더 이상 붙이지 않음
+      rules: [jpa-springboot-kt, ddd-aggregate]   # Kotlin + aggregate boundary
 ```
 
-`suppress`의 값은 `@Rule(value = ...)`에 적힌 id입니다.
+If a bundle is already pre-combined for a language, it is better to use that - `ddd-springboot` and
+`ddd-springboot-kt` are two language versions of the same reading, and the only differences are what the language decides
+(whether a value object is made with Lombok or with the language). The table "Rules that reach each language differently" above says
+which language each rule reaches.
+
+### Turning off just one rule
+
+```yaml
+    publisher:
+      suppress: [jpa-comment]   # no longer attach the @Comment annotation
+```
+
+The values of `suppress` are the ids written in `@Rule(value = ...)`.
 
 ---
 
-## 3. 규칙 작성
+## 3. Writing rules
 
-> **프로젝트에서 우리 팀 규칙을 더하려는 경우**(규칙 모듈, `elasticore { rules = [...] }`, 새 파일 종류,
-> 테스트까지)는 예제 중심의 `elasticore-ddd-customize-guide.md` 를 먼저 보세요.
-> 이 장은 ElastiCORE 자체의 규칙을 고치는 사람을 위한 API 참조입니다.
+> **If you want to add your team's rules in a project** (a rule module, `elasticore { rules = [...] }`, a new file kind,
+> even tests), read the example-centered `elasticore-ddd-customize-guide.md` first.
+> This chapter is an API reference for people who modify ElastiCORE's own rules.
 
-### 3.1 최소 형태
+### 3.1 Minimal form
 
 ```java
 package kr.co.acme;
@@ -1256,7 +1256,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 
 public class AcmeRules implements CodeRules {
 
-    /** @masked 필드에 사내 표준 애노테이션을 붙인다. */
+    /** Attach the company-standard annotation to @masked fields. */
     @Rule(value = "acme-masked", target = "dto", order = 50)
     void masked(EntitySpec e, FieldSpec f) {
         if (!f.hasDsl("masked")) return;
@@ -1265,158 +1265,158 @@ public class AcmeRules implements CodeRules {
 }
 ```
 
-`CodeRules`는 표식(marker) 인터페이스입니다. 구현할 메서드가 없고,
-`@Rule`이 붙은 메서드가 규칙이 됩니다.
+`CodeRules` is a marker interface. It has no method to implement, and
+a method with `@Rule` becomes a rule.
 
-### 3.2 `@Rule` 속성
+### 3.2 `@Rule` attributes
 
-| 속성 | 기본값 | 의미 |
+| Attribute | Default | Meaning |
 |---|---|---|
-| `value` | (필수) | 규칙 id. 추적과 `suppress`에 쓰입니다 |
-| `target` | `"entity"` | 어떤 아티팩트에 기여하는가 |
-| `order` | `0` | 낮을수록 먼저. 같으면 등록 순서 |
-| `phase` | `HEAD` | `HEAD`는 필드 규칙보다 먼저, `TAIL`은 나중 |
+| `value` | (required) | The rule id. Used for tracing and `suppress` |
+| `target` | `"entity"` | Which artifact it contributes to |
+| `order` | `0` | Lower runs first. If equal, registration order |
+| `phase` | `HEAD` | `HEAD` is before the field rules, `TAIL` is after |
 
-`target`은 env.yml의 네임스페이스 키와 같은 단어를 씁니다:
-`entity`, `dto`, `srchdto`, `enum`, `repository`, `service`, `control`, `mapper`, `port`, `Q` 등.
+`target` uses the same words as the namespace keys in env.yml:
+`entity`, `dto`, `srchdto`, `enum`, `repository`, `service`, `control`, `mapper`, `port`, `Q` and so on.
 
-### 3.3 메서드 시그니처가 호출 시점을 정합니다
+### 3.3 The method signature decides when it is called
 
-| 시그니처 | 언제 |
+| Signature | When |
 |---|---|
-| `(EntitySpec e)` | 엔티티마다 한 번 |
-| `(EntitySpec e, FieldSpec f)` | 필드마다 한 번 |
-| `(DomainSpec d)` | 도메인마다 한 번 (Q, mapper, 지원 타입) |
-| `(EnumSpec e)` | 열거형마다 한 번 |
-| `(ProtoServiceSpec p)` | proto 포트마다 한 번 |
+| `(EntitySpec e)` | Once per entity |
+| `(EntitySpec e, FieldSpec f)` | Once per field |
+| `(DomainSpec d)` | Once per domain (Q, mapper, support types) |
+| `(EnumSpec e)` | Once per enum |
+| `(ProtoServiceSpec p)` | Once per proto port |
 
-메서드는 `void`이고 접근 제어자는 없어도 됩니다.
+The method returns `void` and needs no access modifier.
 
-### 3.4 실행 순서
+### 3.4 Execution order
 
 ```
-HEAD 엔티티 규칙  →  필드 규칙(필드별)  →  TAIL 엔티티 규칙
+HEAD entity rules  ->  field rules (per field)  ->  TAIL entity rules
 ```
 
-파일 셸 규칙(`importList`, `classDeclaration` 등을 채우는 것)은 보통
-`phase = TAIL, order = 90`입니다 — 모든 필드 규칙이 import를 등록한 **뒤에**
-import 목록을 렌더링해야 하기 때문입니다.
+File shell rules (the ones that fill `importList`, `classDeclaration` and so on) are usually
+`phase = TAIL, order = 90` - the import list must be rendered **after** all field rules have registered
+their imports.
 
 ---
 
-## 4. 모델 읽기 — Spec
+## 4. Reading the model - Spec
 
-### `FieldSpec` — 자주 쓰는 것
+### `FieldSpec` - the common ones
 
 ```java
-f.name()                 // 필드 이름
-f.capitalName()          // 접근자용 대문자 시작 이름
-f.typeName()             // 선언 타입
-f.coreItemType()         // List<X>의 X, 아니면 자기 타입
-f.required()             // ! 로 표시됐는가
-f.isList()               // List<...> 인가
-f.isBaseType()           // 원시/래퍼/문자열인가
-f.isBaseItemType()       // 아이템 타입이 그런가
-f.isEntityRef()          // 엔티티 참조인가
-f.label()                // 주석에 쓸 설명
+f.name()                 // field name
+f.capitalName()          // name with a capital first letter, for accessors
+f.typeName()             // declared type
+f.coreItemType()         // X of List<X>, otherwise its own type
+f.required()             // marked with !
+f.isList()               // is it List<...>
+f.isBaseType()           // primitive / wrapper / string
+f.isBaseItemType()       // is the item type one of those
+f.isEntityRef()          // is it an entity reference
+f.label()                // description for comments
 
-f.hasDsl("id")                     // @id 가 있는가 (대소문자 무시)
-f.hasDslAny("min", "minval")       // 별칭 중 하나라도
-f.dslValue("length")               // @length(200) 의 200
-f.dslValueAny("label", "desc")     // 먼저 맞는 것
+f.hasDsl("id")                     // has @id (case-insensitive)
+f.hasDslAny("min", "minval")       // any one of the aliases
+f.dslValue("length")               // the 200 of @length(200)
+f.dslValueAny("label", "desc")     // the first one that matches
 ```
 
 ### `EntitySpec`
 
 ```java
-e.getName()              // 엔티티 이름
-e.pkg("dto")             // 네임스페이스 (env.yml의 키)
-e.fields()               // 자기 필드
-e.allFields()            // 상속 포함
-e.dtoFields()            // DTO 쪽 필드
-e.pkFields()             // @id/@pk 필드들
-e.parentName()           // @extend 대상
-e.hasMeta("expose")      // 메타 애노테이션
+e.getName()              // entity name
+e.pkg("dto")             // namespace (key in env.yml)
+e.fields()               // own fields
+e.allFields()            // including inherited ones
+e.dtoFields()            // fields on the DTO side
+e.pkFields()             // @id/@pk fields
+e.parentName()           // @extend target
+e.hasMeta("expose")      // meta annotation
 e.metaValue("dynamicupdate")
-e.isKnownEnum(type)      // 모델이 아는 열거형인가
+e.isKnownEnum(type)      // is it an enum the model knows
 ```
 
-> `Field.getType()`은 private입니다. 타입은 `FieldSpec`을 통해 읽으세요.
+> `Field.getType()` is private. Read the type through `FieldSpec`.
 
 ---
 
-## 5. 코드 쓰기 — `SourceCode` / `FieldCode` / `AnnoCode`
+## 5. Writing code - `SourceCode` / `FieldCode` / `AnnoCode`
 
-`ctx(spec)`이 그 아티팩트의 `SourceCode`를 돌려줍니다.
+`ctx(spec)` returns the `SourceCode` of that artifact.
 
-### 5.1 필드 단위 — `FieldCode`
+### 5.1 Per field - `FieldCode`
 
 ```java
 ctx(e).field(f)
-      .ensure(anno)          // 없으면 추가 (권장)
-      .add(anno)             // 무조건 추가
-      .merge(anno)           // 같은 애노테이션에 속성 병합
-      .replace(anno)         // 교체
+      .ensure(anno)          // add if missing (recommended)
+      .add(anno)             // always add
+      .merge(anno)           // merge attributes into the same annotation
+      .replace(anno)         // replace
       .removeAnnotation(fqcn)
-      .type("String")        // 선언 타입 변경
-      .rename("nameFrom")    // 이름 변경
-      .initial("0")          // 초기값
-      .before("/* ... */")   // 선언 위에
-      .after("...")          // 선언 아래에 (별도 멤버)
+      .type("String")        // change the declared type
+      .rename("nameFrom")    // change the name
+      .initial("0")          // initial value
+      .before("/* ... */")   // above the declaration
+      .after("...")          // below the declaration (a separate member)
       .comment("...");
 ```
 
-필드를 아예 빼려면 `ctx(e).removeField(f)`,
-아티팩트 자체를 만들지 않으려면 `ctx(e).dontMake()`.
+To drop a field entirely, use `ctx(e).removeField(f)`.
+To not create the artifact at all, use `ctx(e).dontMake()`.
 
-### 5.2 애노테이션 — `AnnoCode`
+### 5.2 Annotations - `AnnoCode`
 
-**문자열을 이어 붙여 애노테이션을 만들지 마세요.** `AnnoCode`가 그 일을 합니다.
+**Do not build annotations by concatenating strings.** `AnnoCode` does that job.
 
 ```java
 AnnoCode.of("jakarta.persistence.Column")
-        .val("name", "user_id")        // name = "user_id"  (따옴표 붙음)
-        .valRaw("length", "%d", 200)   // length = 200      (그대로)
+        .val("name", "user_id")        // name = "user_id"  (quoted)
+        .valRaw("length", "%d", 200)   // length = 200      (as is)
 
-AnnoCode.of(VALIDATION, "NotNull")     // 포맷 + 단순 이름
+AnnoCode.of(VALIDATION, "NotNull")     // format + simple name
 AnnoCode.of("...JsonInclude").valueRaw("...Include.NON_NULL")   // value = ...
-AnnoCode.of("...").qualified()         // 완전한 이름으로 렌더링
-AnnoCode.of("...").block("  ")         // 속성을 줄마다
+AnnoCode.of("...").qualified()         // render with the fully qualified name
+AnnoCode.of("...").block("  ")         // one attribute per line
 ```
 
-중첩 목록(`indexes = {...}`)은 `AnnoCode.AnnoList.of(...)`를 씁니다.
-괄호가 Java의 `{}`인지 Kotlin의 `[]`인지는 렌더러가 압니다.
+For a nested list (`indexes = {...}`) use `AnnoCode.AnnoList.of(...)`.
+The renderer knows whether the brackets are Java `{}` or Kotlin `[]`.
 
-### 5.3 템플릿 슬롯 — `SourceCode`
+### 5.3 Template slots - `SourceCode`
 
 ```java
 c.var("packageName", e.pkg("dto"))          // ${packageName}
-c.var("className", "%sDTO", e.getName())    // 포맷 사용
-c.varLine("methodList", "...")              // 슬롯에 한 줄 추가
-c.varLines("importList", list)              // 여러 줄
-c.line("forward", "...")                    // 이름 붙은 블록에 (mapper 등)
-c.addImport("%s.%s", pkg, name)             // import 등록
-c.renderImports()                           // 실제 사용된 것만 렌더
-c.renderFieldBlock(1)                       // 필드 블록 (빈 줄 수)
+c.var("className", "%sDTO", e.getName())    // with a format
+c.varLine("methodList", "...")              // add one line to a slot
+c.varLines("importList", list)              // several lines
+c.line("forward", "...")                    // to a named block (mapper etc.)
+c.addImport("%s.%s", pkg, name)             // register an import
+c.renderImports()                           // render only what is actually used
+c.renderFieldBlock(1)                       // field block (number of blank lines)
 c.ensureClassAnnotation(anno)
 c.renderClassAnnotations()
-c.template("dto")                           // 다른 스켈레톤 사용
+c.template("dto")                           // use another skeleton
 ```
 
-> `var(key, null)`은 **무시**됩니다(저장 안 함). 빈 문자열을 원하면 `""`를 넘기세요.
-> 해결되지 않은 `${key}`가 있는 줄은 통째로 빈 줄이 됩니다 — 오류가 아닙니다.
+> `var(key, null)` is **ignored** (not stored). To get an empty string, pass `""`.
+> A line with an unresolved `${key}` becomes a blank line as a whole - this is not an error.
 
 ---
 
-## 6. 언어 이음새 — `Syntax`
+## 6. The language seam - `Syntax`
 
-**이것이 이 아키텍처에서 가장 중요한 규칙입니다.**
+**This is the most important rule in this architecture.**
 
-> 규칙 안에 언어 분기(`if (kotlin) ... else ...`)를 넣지 마세요.
-> 규칙은 *무엇을* 낼지만 말하고, *어떻게* 쓸지는 `Syntax`가 답합니다.
+> Do not put a language branch (`if (kotlin) ... else ...`) in a rule.
+> A rule says only *what* to emit; `Syntax` answers *how* to write it.
 
-이유: 공통 규칙에 분기를 하나 넣을 때마다 **Kotlin을 고치다 Java를 깨뜨릴 자리**가
-하나씩 늘어납니다. 이음새를 거치면 그 자리가 구조적으로 생기지 않습니다.
+The reason: every branch you add to a common rule adds one more place where **fixing Kotlin breaks Java**.
+If you go through the seam, that place never exists structurally.
 
 ```java
 Syntax s = ctx(e).syntax();
@@ -1442,146 +1442,146 @@ s.escapeName("in")                  // in             /  `in`
 s.cast("short", "1")                // (short) 1      /  1.toShort()
 s.overriding()                      // public         /  override
 s.injectedProperty(type, name)      // private final T x;  /  val x: T,
-s.needsImport(fqcn)                 // 이미 스코프에 있는 타입은 제외
+s.needsImport(fqcn)                 // excludes types already in scope
 ```
 
-### 이음새가 JVM 모양인 부분
+### The parts of the seam that are JVM-shaped
 
-TypeScript를 붙여보고 알게 된 것: **27개 중 8개는 JVM 개념**입니다.
+What we learned when we added TypeScript: **8 of the 27 are JVM concepts**.
 `classLiteral`, `javaClassLiteral`, `sam`, `samBlockOpen`, `samBlockClose`,
 `lambdaReturn`, `injectedProperty`, `overriding`.
 
-TypeScript는 이들을 **답하지 않고 예외를 던집니다.** 그럴듯한 값을 돌려주면
-JVM을 가정한 규칙이 조용히 통과해서 말이 안 되는 코드를 내기 때문입니다.
-실제로 `dto-jsonview`가 여기 걸렸고, 그래서 그 규칙이 `supportsAnnotations()`를
-먼저 묻도록 고쳤습니다.
+TypeScript **does not answer them - it throws an exception.** If it returned a plausible value,
+a rule that assumes the JVM would pass silently and emit code that makes no sense.
+In practice `dto-jsonview` hit exactly this, so that rule was fixed to
+ask `supportsAnnotations()` first.
 
-`importLine`은 **진짜로 깨진 하나**입니다. 완전한 이름이 곧 import인 언어를
-전제로 만들어졌는데, TypeScript의 import는 **모듈 경로 + 이름**이고 완전한
-이름은 경로에 대해 아무 말도 하지 않습니다.
+`importLine` is **the one that is really broken.** It was built for a language where the fully
+qualified name is the import, but a TypeScript import is **a module path + a name**, and the fully
+qualified name says nothing about the path.
 
-### 이음새로 풀 수 없는 것
+### What the seam cannot solve
 
-문법이 아니라 **역할**이 다르면 이음새로 풀리지 않습니다. 그럴 때는
-**규칙을 분리하고 번들이 고르게** 하세요 — 분기가 아니라.
+When the **role** differs, not the syntax, the seam cannot solve it. In that case,
+**split the rule and let the bundle choose** - not a branch.
 
-예:
+Examples:
 
-- Lombok은 Java 전용 도구입니다. `@Builder.Default`는 Kotlin에서 "다르게 쓰는" 게
-  아니라 **아예 없는 개념**입니다 → Java 전용 규칙으로 분리
-- Java는 `Specification sp` 파라미터를 재대입하며 조건을 누적하지만,
-  **Kotlin은 파라미터를 재대입할 수 없습니다** → 셸을 언어별로 분리
+- Lombok is a Java-only tool. `@Builder.Default` is not something Kotlin "writes differently" - it is
+  **a concept that does not exist** there -> split it into a Java-only rule
+- Java accumulates conditions by reassigning the `Specification sp` parameter,
+  but **Kotlin cannot reassign a parameter** -> split the shell per language
 
-이것이 `MapperBaseRules`(공유 결정)와 `MapperAssembleRules` /
-`KotlinMapperAssembleRules`(언어별 셸)로 나뉜 이유입니다.
+This is why it is divided into `MapperBaseRules` (the shared decisions) and `MapperAssembleRules` /
+`KotlinMapperAssembleRules` (the per-language shells).
 
 ---
 
-## 7. 스켈레톤(`.tmpl`)
+## 7. Skeletons (`.tmpl`)
 
 ```
 resources/elasticore-template/
-    entity.tmpl          # 2.x 호환
-    v3/entity.tmpl       # 정리 모드
+    entity.tmpl          # 2.x compatible
+    v3/entity.tmpl       # clean mode
     kt/entity.tmpl       # Kotlin
     ts/dto.tmpl          # TypeScript
 ```
 
-`target`, 템플릿 파일 이름, env.yml 네임스페이스 키는 **같은 단어**입니다.
-따로 매핑표가 없으므로 어긋날 일이 없습니다.
+`target`, the template file name and the env.yml namespace key are **the same word**.
+There is no separate mapping table, so they cannot drift apart.
 
-v3에 자기 스켈레톤이 없는 타깃은 호환 스켈레톤으로 떨어집니다.
-**단, 언어가 다르면 떨어지지 않고 예외가 납니다** — 폴백은 Java로 쓰여 있어서
-`.kt` 파일에 Java가 조용히 들어가는 것을 막습니다. `.proto`처럼 어느 언어도 아닌
-아티팩트만 예외입니다.
+A target that has no skeleton of its own in v3 falls back to the compatible skeleton.
+**But if the language differs, it does not fall back - it throws an exception.** The fallback is written
+in Java, and this stops Java from silently entering a `.kt` file. Only an artifact that is
+no language at all, such as `.proto`, is the exception.
 
 ---
 
-## 7.5 생성 파일의 소유권 (elcore3)
+## 7.5 Ownership of generated files (elcore3)
 
-3.0 코드의 생성 파일은 Java·Kotlin 을 포함해 모두 첫 줄 표시 없이 **병합**됩니다: 고친 내용은 남고 DSL 의 변경도
-들어오며, 한 번만 생성하는 파일은 깔끔하게 합쳐지는 변경만 받고 나머지는 경고합니다(`.elasticore/cache`,
-`elasticore-env-guide.md` 9-2 절). 아래 표는 **첫 줄 표시가 있는 파일**의 규칙입니다 - `output = 'v2'`, `merge = false`,
-그리고 병합하는 프로젝트에서 기준을 확인할 수 없어 아직 표시가 남은 파일(9-2 "표시가 있던 프로젝트"). 표시를 쓸 때 매퍼
-XML·SQL·properties·`.proto`·TypeScript 는 `<!-- //ecd:... -->`, `-- //ecd:...`, `//ecd:...` 이고, `orm.xml` 과 메시지
-파일은 매번 새로 씁니다.
+In 3.0 code, all generated files, Java and Kotlin included, are **merged** without a first-line mark: your edits stay and DSL changes come in too,
+and a generate-once file accepts only changes that merge cleanly and warns about the rest (`.elasticore/cache`,
+`elasticore-env-guide.md` section 9-2). The table below is the rule for **files that have a first-line mark** - `output = 'v2'`, `merge = false`,
+and files in a merging project where the base cannot be confirmed, so the mark is still there (9-2 "projects that had marks"). When marks are written, mapper
+XML, SQL, properties, `.proto` and TypeScript use `<!-- //ecd:... -->`, `-- //ecd:...` and `//ecd:...`, and `orm.xml` and message
+files are rewritten every time.
 
-| 파일 상태 | 동작 |
+| File state | Behavior |
 |---|---|
-| `//ecd:` 해시 + 관리 파일, 내용이 해시와 같음 | DSL 에 맞춰 다시 씀 |
-| `//ecd:` 해시 + 관리 파일, 사용자가 수정함 | 건너뜀 (`-Pforce` 로 덮어씀) |
-| `Initially generated ... no longer managed` 표식, **한 번도 수정 안 함** (해시 일치) | DSL 에 맞춰 다시 씀 — 예: 엔티티에 `@readonly` 를 추가하면 컨트롤러의 쓰기 엔드포인트가 사라짐 |
-| 같은 표식, 사용자가 수정함 | 사용자 것 — 건너뜀. 단 아래 두 가지는 계속 맞춰 줌 |
-| `//ecd:` 줄이 없음 | 사용자 것 — 건너뜀 (2.x 와 동일) |
+| `//ecd:` hash + managed file, content equals the hash | Rewritten to match the DSL |
+| `//ecd:` hash + managed file, the user modified it | Skipped (overwritten with `-Pforce`) |
+| `Initially generated ... no longer managed` mark, **never modified** (hash matches) | Rewritten to match the DSL - for example, adding `@readonly` to an entity removes the write endpoints from the controller |
+| The same mark, the user modified it | The user's - skipped. But the two things below are still kept in sync |
+| No `//ecd:` line | The user's - skipped (same as 2.x) |
 
-사용자 소유가 된 파일에 대해 생성기가 여전히 해 주는 일:
+What the generator still does for a file that has become user-owned:
 
-- **`@behavior` 엔티티의 테이블 어노테이션**: `@Entity`/`@Table`/`@DynamicUpdate`/`@Audited` 등은
-  DSL 에 맞춰 교체하고, 사용자가 붙인 다른 어노테이션과 본문은 그대로 둡니다.
-  여러 줄로 나눠 쓴 어노테이션은 건드리지 않고 경고합니다.
-- **확장 서비스의 생성자**: 코어 서비스 생성자가 바뀌었을 때(예: 헥사고날 전환) 파일에 생성자 외
-  코드가 없으면 다시 쓰고, 있으면 새 `super(...)` 를 경고로 알려 줍니다.
-- 코어 서비스 생성이 실패한 실행에서는 확장 서비스·컨트롤러를 만들지 않습니다
-  (실패한 모양으로 한 번만 생성된 파일이 남지 않도록).
-- 보존 블록(`// !---------- ... ------------!`) 안의 코드는 관리 파일이 다시 쓰일 때도 유지됩니다.
+- **Table annotations of a `@behavior` entity**: `@Entity`/`@Table`/`@DynamicUpdate`/`@Audited` and so on are
+  replaced to match the DSL; other annotations the user added and the body are left alone.
+  An annotation split over several lines is not touched, and a warning is given.
+- **The constructor of an extension service**: when the core service constructor changed (for example, a switch to hexagonal), the file is
+  rewritten if it holds no code other than the constructor; if it does, the new `super(...)` is reported as a warning.
+- In a run where the core service generation failed, the extension service and the controller are not created
+  (so that no file generated once in a failed shape is left behind).
+- Code inside a preserved block (`// !---------- ... ------------!`) is kept even when a managed file is rewritten.
 
-### Kotlin 예약어가 든 패키지
+### Packages that contain a Kotlin reserved word
 
-헥사고날 관례 패키지 `adapter.in.web` 의 `in` 은 Kotlin 예약어입니다. Kotlin 산출물에서는
-패키지·import·정규화 이름의 예약어 조각을 자동으로 `` `in` `` 처럼 감쌉니다(문자열 리터럴 제외).
-직접 작성하는 Kotlin 파일에서도 `package com.acme.adapter.`in`.web` 로 써야 합니다.
+The `in` in the hexagonal convention package `adapter.in.web` is a Kotlin reserved word. In Kotlin output,
+reserved-word parts of packages, imports and qualified names are wrapped automatically, like `` `in` `` (string literals excluded).
+In a Kotlin file you write yourself, you must also write `package com.acme.adapter.`in`.web`.
 
-## 8. 지켜야 할 것
+## 8. What to keep to
 
-1. **문자열 이어붙이기 금지.** `"@Column(name = \"" + n + "\")"` 대신 `AnnoCode`,
-   그 외에는 `String.format` 또는 `Formatted`를 쓰세요.
-   `Formatted.text(fmt, args)`는 포맷 인자 개수를 **호출 지점에서** 검증합니다.
-2. **주석은 영어로.** `elasticore-base`의 Java 소스에는 **ASCII만** 씁니다 —
-   한글 Windows(MS949)에서 컴파일이 깨집니다. `→` 대신 `->`.
-3. **파일 입출력은 UTF-8.** `FileWriter`/`FileReader` 금지.
-4. **공통 규칙에 언어 분기 금지.** 6절 참조.
-5. **새 규칙은 경고를 내되 예외를 던지지 않습니다.** 모델 로딩 중 검증은
-   `DSL_WARN`으로 기록합니다.
+1. **No string concatenation.** Use `AnnoCode` instead of `"@Column(name = \"" + n + "\")"`,
+   and `String.format` or `Formatted` for anything else.
+   `Formatted.text(fmt, args)` checks the number of format arguments **at the call site**.
+2. **Comments in English.** Write **ASCII only** in the Java sources of `elasticore-base` -
+   compilation breaks on Korean Windows (MS949). Use `->` instead of `→`.
+3. **File I/O in UTF-8.** No `FileWriter`/`FileReader`.
+4. **No language branch in a common rule.** See section 6.
+5. **A new rule emits a warning but does not throw.** Validation while the model loads is recorded
+   as `DSL_WARN`.
 
 ---
 
-## 9. 검증
+## 9. Verification
 
-규칙을 고쳤으면 **반드시** 아래를 통과시키세요.
+After you change a rule, you **must** pass the following.
 
 ```bash
-# 1. 단위 테스트
+# 1. Unit tests
 ./gradlew :elasticore-project:elasticore-base:test
 
-# 2. 2.x 출력과 같은가 (호환 모드)
+# 2. Same as the 2.x output (compatibility mode)
 ./gradlew elcoreRulesCheck -Pstrict
 
-# 3. 생성 -> 컴파일 -> 실행 (Kotlin + TypeScript)
+# 3. Generate -> compile -> run (Kotlin + TypeScript)
 ./gradlew :elasticore-project:elasticore-template-kt:elcore3Verify
 
-# 4. 생성된 TypeScript 를 node 로 실행
+# 4. Run the generated TypeScript with node
 ./gradlew :elasticore-project:elasticore-template-kt:elcore3tsTest
 ```
 
-> **타입 체크만으로는 부족한 이유가 이 언어에 하나 있습니다.** 소수가 문자열로
-> 오므로, 손으로 쓴 `order.totalAmount > 100` 은 컴파일러가 받아들이고 JavaScript 가
-> 금액과 무관하게 false 를 답합니다 — 이 언어가 부르는 유일한 결함이 정확히 타입
-> 체크가 볼 수 없는 것입니다. 그래서 생성된 명세·불변식은 node 로 **실행**됩니다.
+> **There is one reason in this language why a type check alone is not enough.** Decimals
+> arrive as strings, so a hand-written `order.totalAmount > 100` is accepted by the compiler and JavaScript
+> answers false regardless of the amount - the only defect this language causes is exactly what a type
+> check cannot see. That is why the generated specifications and invariants are **run** with node.
 
-> 검증 태스크는 **생성 트리를 먼저 비웁니다.** generate-once 마커가 붙은 파일은
-> 규칙을 고쳐도 재생성되지 않아서, 낡은 파일이 검사되고 통과로 보고될 수 있습니다.
-> 실제로 이 프로젝트에서 한 번 그렇게 됐습니다.
+> The verification tasks **empty the generated tree first.** A file with a generate-once marker is
+> not regenerated when you fix a rule, so a stale file can be checked and reported as passing.
+> This happened once in this project.
 
-**2번이 핵심입니다.** 호환 모드의 출력이 2.x와 한 글자라도 달라지면 실패합니다.
-기존 사용자의 생성 코드가 바뀌지 않는다는 보증이 이것입니다.
+**Number 2 is the key.** It fails if the compatibility-mode output differs from 2.x by a single character.
+This is the guarantee that the generated code of existing users does not change.
 
-의도한 차이는 `RulesVerifyRunner.ACCEPTED_DIFFS`에 **이유와 함께** 등록합니다.
+Register an intended difference in `RulesVerifyRunner.ACCEPTED_DIFFS` **with its reason**.
 
-### Gradle 플러그인 (권장)
+### Gradle plugin (recommended)
 
-태스크를 손으로 쓰는 대신 플러그인을 적용합니다.
+Instead of writing tasks by hand, apply the plugin.
 
-`settings.gradle` (프로젝트당 한 번):
+`settings.gradle` (once per project):
 
 ```gradle
 pluginManagement {
@@ -1605,133 +1605,133 @@ elasticore {
 }
 ```
 
-`elcore` 와 `elcore3` 태스크가 생기고, `compileJava` 는 생성을 기다립니다.
+The `elcore` and `elcore3` tasks appear, and `compileJava` waits for generation.
 
-**`elasticore { }` 블록을 쓰지 않으면 아무것도 달라지지 않습니다.** 규칙
-프로퍼티가 하나도 전달되지 않고, 생성기는 원래 가던 길을 그대로 갑니다.
-기본값을 `layered` 로 "정해두는" 것과 아예 전달하지 않는 것은 다릅니다.
+**If you do not use the `elasticore { }` block, nothing changes.** No rule
+property is passed at all, and the generator takes the path it always took.
+"Fixing" the default to `layered` is not the same as passing nothing.
 
-**아키텍처와 언어는 따로 적을 수 없습니다.** 두 단어가 `RulesConfig` 에서
-하나의 번들과 하나의 언어 스위치로 합성되므로, 번들과 스위치가 어긋나는
-경우가 생기지 않습니다. 플러그인은 이 표를 갖고 있지 않고 두 단어를 그대로
-넘깁니다.
+**You cannot set architecture and language separately.** The two words are composed in `RulesConfig` into
+one bundle and one language switch, so a bundle and a switch cannot
+disagree. The plugin does not hold this table;
+it passes the two words on as they are.
 
-#### 멀티 모듈
+#### Multi-module
 
-루트에 적용하면 `src/main/resources/blueprint` 를 가진 하위 모듈을 자동으로
-찾습니다. 손으로 쓰던 태스크와 달리 특정 모듈 이름이 박히지 않습니다.
-
-```gradle
-elasticore {
-    modules = ['core-domain', 'app-admin']   // 자동 탐색을 덮어쓰고 싶을 때만
-}
-```
-
-#### 기존 스위치
-
-`-Pdomain=shop`, `-Pmode=valid`, `-Pforce`, `-Pv3`, `-Pv2`, `-Pkt`, `-Pts` 모두 그대로
-전달됩니다. 플러그인을 도입한다고 명령어가 바뀌지 않습니다.
-
-#### 어느 세대의 코드인가 (`output`)
-
-3.0.261028-rc3 부터 플러그인은 아무것도 선언하지 않은 레이어드 Java 프로젝트에 **3.0 코드**(`jpa-springboot-v3`)를
-생성합니다. 2.x 생성기가 쓰던 코드를 유지하는 프로젝트는 한 줄로 정합니다:
+Apply it at the root, and it finds the submodules that have `src/main/resources/blueprint` automatically.
+Unlike the hand-written tasks, no particular module name is hard-coded.
 
 ```gradle
 elasticore {
-    output = 'v2'      // 2.x 의 코드. 빌드는 2.x 생성기(elcore)를 부르고, elcore3 도 2.x 호환 코드를 씁니다
+    modules = ['core-domain', 'app-admin']   // only when you want to override auto-discovery
 }
 ```
 
-| 설정 | 생성되는 코드 |
+#### Existing switches
+
+`-Pdomain=shop`, `-Pmode=valid`, `-Pforce`, `-Pv3`, `-Pv2`, `-Pkt`, `-Pts` are all passed
+through as they are. Adopting the plugin does not change your commands.
+
+#### Which generation of code (`output`)
+
+From 3.0.261028-rc3, the plugin generates **3.0 code** (`jpa-springboot-v3`) for a layered Java project that declares nothing. A project that keeps the code the 2.x generator wrote
+decides it with one line:
+
+```gradle
+elasticore {
+    output = 'v2'      // 2.x code. The build calls the 2.x generator (elcore), and elcore3 also writes 2.x compatible code
+}
+```
+
+| Setting | Generated code |
 |---|---|
-| 없음 | 3.0 코드. 단 2.x 가 생성한 소스(첫 줄 `//ecd:..._V1.x`/`_V2.x`)가 있거나 마지막 `elcore3` 실행이 2.x 호환이었으면(`build/elasticore/server.mode`) **아무 소스도 쓰지 않고 멈추고** 고르라고 알립니다 |
-| `output = 'v3'` / `-Pv3` | 3.0 코드 (2.x 소스가 있어도 - 옮기겠다는 선택) |
-| `output = 'v2'` / `-Pv2` | 2.x 코드. 레이어드 Java 만 됩니다 - 헥사고날·DDD·Kotlin·프로젝트 규칙과 함께 쓰거나, 도메인 `env.yml` 이 v3 에만 있는 규칙(`jpa-springboot-v3`, `ddd-...` 등)을 적고 있으면 거절합니다. `rules = ['ossie-export']` 는 함께 쓸 수 있습니다 - 코드를 쓰지 않고, 2.x 생성기도 시맨틱 모델을 내보냅니다 |
-| 도메인 `env.yml` 의 `publisher.rules: [jpa-springboot]` | 2.x 코드 (3.0.261028-rc3 전의 초기화 마법사가 레이어드 Java 에 적던 값) |
+| None | 3.0 code. But if there is source generated by 2.x (first line `//ecd:..._V1.x`/`_V2.x`) or the last `elcore3` run was 2.x compatible (`build/elasticore/server.mode`), it **stops without writing any source** and tells you to choose |
+| `output = 'v3'` / `-Pv3` | 3.0 code (even if 2.x source exists - the choice to move over) |
+| `output = 'v2'` / `-Pv2` | 2.x code. Only layered Java works - it refuses when combined with hexagonal, DDD, Kotlin or project rules, or when the domain `env.yml` lists rules that exist only in v3 (`jpa-springboot-v3`, `ddd-...` and so on). `rules = ['ossie-export']` can be combined - it writes no code, and the 2.x generator also exports the semantic model |
+| `publisher.rules: [jpa-springboot]` in the domain `env.yml` | 2.x code (the value the setup wizard before 3.0.261028-rc3 wrote for layered Java) |
 
-`-Pv2`·`-Pv3` 는 그 한 번의 실행만 정합니다. 매번 적는 것을 잊으면 다른 코드가 생성되므로, 프로젝트의 선택은
-`output` 으로 적습니다. 3.0 코드로 옮길 때 달라지는 동작은 `elasticore-migration-guide.md` 에 있습니다.
+`-Pv2` and `-Pv3` decide that one run only. If you forget to write them every time, different code is generated, so write the project's choice
+as `output`. The behaviors that change when you move to 3.0 code are in `elasticore-migration-guide.md`.
 
-#### TypeScript 클라이언트 (`elcore3ts`, `typescriptClient`)
+#### TypeScript client (`elcore3ts`, `typescriptClient`)
 
-`src/main/ts` 의 TypeScript 클라이언트는 `elcore3ts` 태스크만 씁니다. `build`·`compileJava` 는 그 태스크를 부르지 않으므로,
-모델을 바꾼 뒤 그대로 두면 클라이언트에 새 필드·엔티티가 없습니다. 빌드가 함께 쓰게 하려면:
+The TypeScript client in `src/main/ts` uses only the `elcore3ts` task. `build` and `compileJava` do not call that task,
+so if you leave it after a model change, the client lacks the new fields and entities. To make the build use it as well:
 
 ```gradle
 elasticore {
     architecture     = 'hexagonal'
-    typescriptClient = true      // 기본 false. elcore3 다음, 컴파일 전에 elcore3ts 를 실행
+    typescriptClient = true      // default false. Runs elcore3ts after elcore3, before compile
 }
 ```
 
-이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(`.elasticore/cache` 에 있거나 첫 줄이 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
-`elcore3` 가 끝에 한 번 경고합니다:
+Without this setting, if `src/main/ts` holds a generated `.ts` (in `.elasticore/cache`, or with `//ecd:` on the first line) and that client was not made from the current model,
+`elcore3` warns once at the end:
 `[elcore3] .../src/main/ts holds a generated TypeScript client made from an older model - run the elcore3ts task after a
 model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
-`elcore3ts` 는 만든 모델(블루프린트 도메인 폴더의 `.yml` 전부, 그리고 `architecture`·`language`·`rules` 설정과 ElastiCORE
-버전)의 지문을 `build/elasticore/ts-client.model` 에 남기고, `elcore3` 는 그 지문이 지금과 같으면 말하지 않습니다 - 빌드
-스크립트의 다른 태스크(`webBuild` 등)가 `elcore3ts` 를 부르는 프로젝트도 바꾼 것이 없으면 조용합니다. `build` 폴더를
-지우면 `elcore3ts` 를 다시 돌릴 때까지 `elcore3` 가 매번 알려 줍니다.
+`elcore3ts` leaves a fingerprint of the model it used (all `.yml` files of the blueprint domain folders, plus the `architecture`, `language` and `rules` settings and the ElastiCORE
+version) in `build/elasticore/ts-client.model`, and `elcore3` says nothing if that fingerprint equals the current one - a project in which another task of the build
+script (`webBuild` and so on) calls `elcore3ts` is also quiet if nothing changed. If you delete the `build` folder,
+`elcore3` tells you every time until you run `elcore3ts` again.
 
-`-PlistRules` 는 생성하지 않고, 도메인마다 지금 선택된 규칙을 파일 종류(target)별로 실행 순서대로
-보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다.
+`-PlistRules` does not generate; for each domain it shows the currently selected rules per file kind (target) in
+execution order (including the id used in `suppress`). It creates and deletes no files.
 
-#### 프로젝트의 규칙 더하기
+#### Adding project rules
 
 ```gradle
 elasticore {
-    rules = ['com.acme.rules.AcmeDddRules']   // 고른 번들 뒤에 더해짐
+    rules = ['com.acme.rules.AcmeDddRules']   // added after the chosen bundle
 }
 dependencies {
-    elasticore project(':acme-rules')          // 생성기 클래스패스 (애플리케이션에는 안 들어감)
+    elasticore project(':acme-rules')          // generator classpath (does not go into the application)
 }
 ```
 
-`elasticore` 설정에 무엇을 더해도 `elasticore-base` 는 빠지지 않고, 여기 선언한 모듈은 생성을 기다리지
-않고 먼저 컴파일됩니다. 예제와 테스트 방법은 `elasticore-ddd-customize-guide.md`.
+Whatever you add to the `elasticore` configuration, `elasticore-base` is not removed, and the module you declare here is compiled first, without
+waiting for generation. For examples and how to test, see `elasticore-ddd-customize-guide.md`.
 
-### Apache Ossie 시맨틱 모델 내보내기 (`ossie-export`)
+### Apache Ossie semantic model export (`ossie-export`)
 
-[Apache Ossie](https://github.com/apache/ossie) (incubating) 는 분석·BI·AI 플랫폼 간에 시맨틱 메타데이터 -
-dataset(테이블), field(컬럼), relationship(조인), metric(지표) - 를 교환하는 ASF 의 벤더 중립 표준입니다.
-ElastiCORE blueprint 는 dataset 쪽이 요구하는 것을 이미 다 말하고 있으므로, 같은 내용을 두 번 선언하지 않고
-내보냅니다. **core spec `0.2.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`) 기준입니다.
+[Apache Ossie](https://github.com/apache/ossie) (incubating) is the ASF's vendor-neutral standard for exchanging semantic metadata between analytics, BI and AI platforms -
+dataset (table), field (column), relationship (join), metric (measure).
+The ElastiCORE blueprint already says everything the dataset side requires, so it exports it
+without declaring the same content twice. It is based on **core spec `0.2.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`).
 
-켜는 방법 (둘 중 하나):
+How to turn it on (either one):
 
 ```gradle
 elasticore {
-    rules = ['ossie-export']          // 번들은 그대로, 내보내기만 추가
+    rules = ['ossie-export']          // the bundle stays; only the export is added
 }
 ```
 
-2.x 코드를 지키는 프로젝트(`output = 'v2'`, `./gradlew elcore`)도 같은 줄로 켭니다 - 이 규칙은 코드를 쓰지 않으므로
-`output = 'v2'` 와 함께 써도 거절되지 않습니다.
+A project that keeps 2.x code (`output = 'v2'`, `./gradlew elcore`) turns it on with the same line - this rule writes no code,
+so it is not refused together with `output = 'v2'`.
 
 ```yaml
     publisher:
-      rules: [hexagonal-springboot, ossie-export]   # env.yml: 번들과 함께 적기
+      rules: [hexagonal-springboot, ossie-export]   # env.yml: write it together with the bundle
 ```
 
-생성할 때마다 blueprint 루트에 `semantic_model.yml` 이 다시 만들어집니다 (프로젝트 전체가 **한 모델** -
-도메인을 넘는 관계가 끊기지 않게).
+Every time you generate, `semantic_model.yml` is rebuilt in the blueprint root (the whole project is **one model** -
+so that relationships across domains are not cut).
 
-모델 이름(`name`)은 도메인 이름을 `_` 로 이은 것입니다 (`billing_catalog_shop`). 도메인이 많으면 BI·AI 도구가 모델을
-문장 같은 이름으로 보여 주므로, 이름을 정할 수 있습니다 - 적지 않으면 이전과 같은 이름입니다:
+The model name (`name`) is the domain names joined with `_` (`billing_catalog_shop`). With many domains, BI and AI tools show the model as a
+sentence-like name, so you can choose the name - if you do not write it, the name is the same as before:
 
 ```gradle
 elasticore {
     rules     = ['ossie-export']
-    ossieName = 'acme_erp'            // -Delasticore.ossie.name=acme_erp (플러그인 없이)
+    ossieName = 'acme_erp'            // -Delasticore.ossie.name=acme_erp (without the plugin)
 }
 ```
 
-이름은 영문·숫자·`_` 로 씁니다. 다른 글자는 `_` 로 바뀌고 생성할 때 `[ossie] model name 'acme-erp' is written as
-acme_erp` 경고가 나옵니다. 바뀌는 것은 `name` 뿐이고 `description` 과 `custom_extensions` 의 `domains` 는 그대로
-도메인을 적습니다.
+Write the name with letters, digits and `_`. Other characters become `_`, and generation prints the warning `[ossie] model name 'acme-erp' is written as
+acme_erp`. Only `name` changes; `description` and the `domains` of `custom_extensions` still list the
+domains as they are.
 
-Pet Store 의 일부:
+Part of the Pet Store:
 
 ```yaml
 version: 0.2.0.dev0
@@ -1740,7 +1740,7 @@ datasets:
   - name: PurchaseOrder
     source: ps_purchase_order
     primary_key: [order_id]
-    description: "주문"
+    description: "Order"
     fields:
       - name: status
         expression:
@@ -1750,7 +1750,7 @@ datasets:
       - name: total
         expression: { sql: "total" }
         datatype: Decimal
-      - name: city                       # 임베디드 값(deliveryAddress)의 컬럼
+      - name: city                       # a column of the embedded value (deliveryAddress)
         description: "deliveryAddress.city"
     custom_extensions:
       - vendor_name: ELASTICORE
@@ -1765,74 +1765,74 @@ relationships:
     to_columns: [customer_id]
 ```
 
-**DSL → Ossie 대응**
+**DSL -> Ossie mapping**
 
-| DSL | Ossie | 비고 |
+| DSL | Ossie | Note |
 |---|---|---|
-| 엔티티 (`@abstract`·`@embeddable` 제외) | `datasets[]` | `source` = 테이블 (`@table` 또는 `table.prefix` + 이름) |
-| `-- 라벨` | `description` | |
-| `@id` 필드 (복합 키 포함) | `primary_key` | |
-| `@unique`, `@Index(unique="true")` | `unique_keys` | 데이터셋 필드의 컬럼 이름으로 - `columnList` 의 속성 이름(`seatNo`)은 그 필드의 컬럼(`seat_no`, `@column` 이면 그 이름), 컬럼 이름은 대소문자와 상관없이 그 필드의 것(`@column(HALL_ID)` 이면 `HALL_ID`), 그 밖의 이름은 Hibernate 처럼(`seqCd` → `seq_cd`). 같은 키는 한 번 |
-| 값 필드 | `fields[]` + `expression.sql`(컬럼) + `datatype` | 타입 대응은 DSL 가이드 "값 타입 한눈에" 표 |
-| `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `expression.sql`, 서브쿼리(SELECT)가 들어 있으면 `dialects` 의 `ANSI_SQL` 항목 하나 - 아래 "식의 형태" |
-| `@extend(Parent)` 의 필드 | 자식 dataset 의 `fields` | 상속된 컬럼도 그 테이블에 있으므로 |
-| `@Embedded` 값 객체 | 그 컬럼들 (`deliveryAddress.city`) | `@embedded(prefix)` 면 `prefix_city` |
-| enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | 테이블에는 코드만 있으므로 뜻을 함께 |
-| 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
-| `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
-| `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
-| `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `custom_extensions` | 파생 규칙과 값 타입 |
-| `metrics:` 의 지표 | `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표" |
-| `@terms(…)` (엔티티·필드·지표) | `ai_context.synonyms` | 업무 용어 |
+| Entity (except `@abstract` and `@embeddable`) | `datasets[]` | `source` = the table (`@table`, or `table.prefix` + name) |
+| `-- label` | `description` | |
+| `@id` field (including a composite key) | `primary_key` | |
+| `@unique`, `@Index(unique="true")` | `unique_keys` | By the column name of the dataset field - an attribute name in `columnList` (`seatNo`) becomes the column of that field (`seat_no`, or the `@column` name if there is one), a column name belongs to that field regardless of case (`HALL_ID` if `@column(HALL_ID)`), and any other name follows Hibernate (`seqCd` -> `seq_cd`). The same key appears once |
+| Value field | `fields[]` + `expression.sql` (column) + `datatype` | The type mapping is the "Value types at a glance" table in the DSL guide |
+| `@formula(sql)` | `expression` = that SQL | A computed column. An expression goes in `expression.sql`; if it contains a subquery (SELECT), one `ANSI_SQL` entry in `dialects` - see "Form of the expression" below |
+| Fields of `@extend(Parent)` | `fields` of the child dataset | Because the inherited columns are also in that table |
+| `@Embedded` value object | Its columns (`deliveryAddress.city`) | `prefix_city` if `@embedded(prefix)` |
+| enum field | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | The table holds only codes, so the meaning goes with them |
+| Reference to another entity | `relationships[]` + join column field | The actual join column (`customer_id` if `referenceColumn: short`) |
+| `@password`, `@writeonly` | **Not exported** | Values the application does not read back either. Recorded in `omitted_columns` |
+| `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |
+| `@compute`, `@snapshot`, `money`/`quantity` | `custom_extensions` of the field | Derived rules and value types |
+| A metric in `metrics:` | `metrics[]` (`expression.sql`, `datatype`, `description`) | Only what you declare. The syntax is "Business metrics" in the DSL guide |
+| `@terms(…)` (entity, field, metric) | `ai_context.synonyms` | Business terms |
 
-**식의 형태**: Ossie 의 `expression` 은 최상위 `sql` 과 `dialects` 목록 중 하나 이상을 가집니다. 최상위 `sql` 은
-이식 가능한 형태로, 스펙이 의미를 정의한 유일한 dialect 인 `OSSIE_SQL_2026` 으로 씁니다
-(`core-spec/expression_language.md` - 컬럼 참조, 산술·비교·논리 연산, `CASE WHEN`, 집계, `COALESCE`·`NULLIF`·`CAST`
-같은 함수). 둘 다 있으면 `sql` 이 우선합니다. `dialects` 의 dialect 이름은 자유 문자열이라 `ANSI_SQL` 같은 항목은 소비자가
-**무시해도 됩니다**. 그래서 컬럼 이름인 필드 식과 `metrics:` 에서 만든 지표 식은 모두 최상위 `sql` 로 내보냅니다.
-`@formula` 는 식에 따라 갈립니다:
+**Form of the expression**: The Ossie `expression` has a top-level `sql` and/or a `dialects` list, at least one of them. The top-level `sql` is
+the portable form, written in `OSSIE_SQL_2026`, the only dialect whose meaning the spec defines
+(`core-spec/expression_language.md` - column references, arithmetic, comparison and logical operators, `CASE WHEN`, aggregates, functions such as `COALESCE`, `NULLIF` and `CAST`).
+If both are present, `sql` wins. The dialect name in `dialects` is a free string, so a consumer **may ignore** an entry such as `ANSI_SQL`.
+That is why field expressions that are column names and metric expressions built from `metrics:` are all exported as the top-level `sql`.
+`@formula` splits by expression:
 
 ```yaml
-# @formula("unit_price * quantity") - 그 언어 안의 식
+# @formula("unit_price * quantity") - an expression within that language
 expression:
   sql: "unit_price * quantity"
 
-# @formula("(select count(*) from ...)") - 서브쿼리
+# @formula("(select count(*) from ...)") - a subquery
 expression:
   dialects:
     - dialect: ANSI_SQL
       expression: "(select count(*) from ...)"
 ```
 
-서브쿼리는 그 언어로 쓸 수 없으므로(스펙 "Not Supported in Expressions": SELECT/FROM/JOIN, 서브쿼리, CTE) 최상위 `sql`
-없이 `ANSI_SQL` 항목 하나만 내보냅니다 - 읽는 쪽이 그 SQL 을 이해하면 쓰고, 아니면 건너뜁니다. `@formula` 필드는
-`custom_extensions` 에 `"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
-3.0.261027-rc2 까지는 모든 식을 `dialects` 목록으로 내보냈습니다(이식 가능한 식은 `dialect: OSSIE_SQL_2026`). Ossie 가 최상위
-`sql` 을 이식 가능한 형태로 정한 뒤(apache/ossie #617) 지금 형태로 바뀌었습니다 - 식의 내용은 같습니다.
+A subquery cannot be written in that language (spec "Not Supported in Expressions": SELECT/FROM/JOIN, subqueries, CTE), so only one `ANSI_SQL` entry is exported,
+without a top-level `sql` - the reader uses that SQL if it understands it, and skips it if not. A `@formula` field
+carries `"formula": "database"` in `custom_extensions` to say that the database computes the column.
+Up to 3.0.261027-rc2, every expression was exported as a `dialects` list (a portable expression was `dialect: OSSIE_SQL_2026`). After Ossie fixed the top-level
+`sql` as the portable form (apache/ossie #617), it changed to the current form - the content of the expression is the same.
 
-**내보내지 않는 것**: 선언하지 않은 지표 - 엔티티 필드에서 매출 공식을 지어내는 것은 추측을 내보내는 일입니다.
-`is_time` 은 쓰지 않습니다 - 스펙이 `datatype`(Date/Time/DateTime/DateTimeTz)
-에서 기본값을 정하고, 그 답이 이 모델의 답입니다.
+**What is not exported**: metrics you did not declare - inventing a revenue formula from entity fields would be exporting a guess.
+`is_time` is not used - the spec decides the default from `datatype` (Date/Time/DateTime/DateTimeTz),
+and that answer is this model's answer.
 
-**검증**: `elasticore-sample-petstore` 와 `elasticore-template-ddd` 의 `SemanticModelTest` 가 내보낸 모든
-테이블·컬럼·기본 키·조인 컬럼이 실제 DB 에 있는지 빌드마다 확인합니다. 두 파일을 Ossie 의 `ossie-schema.json` 으로
-검증한 결과는 오류 0 이었고 (2026-10-03), 최상위 `sql` 로 바꾼 뒤 Ossie 의 `validation/validate.py` 로 두 파일과
-서브쿼리 `@formula` 형태를 검증한 결과도 통과였습니다 (2026-10-28) - 둘 다 직접 실행, 빌드 테스트에는 없음. 이전 출력(`semantic_model:` 배열, `expression` 없음, `money` → String, enum·임베디드 컬럼
-누락, 2.x 식 조인 컬럼, 비밀번호 컬럼 포함)은 스펙에 맞지 않았습니다 - 3.0.260925 에서 고쳤습니다.
+**Verification**: `SemanticModelTest` in `elasticore-sample-petstore` and `elasticore-template-ddd` checks on every build that every exported
+table, column, primary key and join column exists in the real DB. Validating the two files with Ossie's `ossie-schema.json`
+gave 0 errors (2026-10-03), and after the switch to the top-level `sql`, validating the two files and the
+subquery `@formula` form with Ossie's `validation/validate.py` also passed (2026-10-28) - both were run by hand and are not in the build tests. The earlier output (a `semantic_model:` array, no `expression`, `money` -> String, enum and embedded columns
+missing, 2.x-style join columns, password columns included) did not match the spec - this was fixed in 3.0.260925.
 
-내보내기 실패는 빌드가 아니라 내보내기만 저하시킵니다. schema.yml 과 같은 성격의 사이드카로, 항상
-재생성되며 손으로 편집하지 않습니다. 스펙이 아직 `dev` 버전이라 바뀔 수 있습니다.
+A failed export degrades only the export, not the build. It is a sidecar of the same kind as schema.yml: it is always
+regenerated and you do not edit it by hand. The spec is still a `dev` version, so it may change.
 
-### 플러그인 없이 실행하기 (수동 구성)
+### Running without the plugin (manual configuration)
 
-**`publisher.rules`는 규칙엔진이 읽습니다. 규칙엔진은 `@ElastiCore` 애노테이션
-프로세서와 별개의 진입점이고, 일반 빌드는 이 설정을 보지 않습니다.** 번들을
-적어두기만 하면 파일은 설정된 것처럼 보이고, 빌드는 그것을 무시하며, 아무 경고도
-나오지 않습니다 — 가능한 세 상태 중 가장 나쁜 것입니다.
+**`publisher.rules` is read by the rule engine. The rule engine is an entry point separate from the `@ElastiCore` annotation
+processor, and a normal build does not look at this setting.** If you only write a bundle
+down, the file looks configured, the build ignores it, and no warning
+appears - the worst of the three possible states.
 
-**플러그인이 이 태스크를 자동으로 등록하므로, 플러그인을 적용했다면 이 절은
-필요 없습니다.** 플러그인을 쓸 수 없는 환경(사내 저장소 접근 불가 등)에서만
-수동으로 구성하십시오:
+**The plugin registers this task automatically, so if you applied the plugin, you do not need
+this section.** Configure it manually only in an environment
+where the plugin cannot be used (no access to the internal repository, for example):
 
 ```gradle
 task elcore3(type: JavaExec) {
@@ -1848,115 +1848,115 @@ task elcore3(type: JavaExec) {
 ./gradlew elcore3 && ./gradlew build
 ```
 
-> **애플리케이션 클래스에 `@ElastiCore`를 붙이지 마세요.** 두 경로는 같은 파일을
-> 서로 다른 규칙으로 생성하므로, 번들을 쓰는 프로젝트는 태스크만 사용합니다.
-> `elasticore-template-ddd` 모듈이 정확히 이 구성이며 — `@ElastiCore`가
-> 한 군데도 없습니다.
+> **Do not put `@ElastiCore` on an application class.** The two paths generate the same files
+> with different rules, so a project that uses a bundle uses only the task.
+> The `elasticore-template-ddd` module is exactly this configuration - it has no `@ElastiCore`
+> anywhere.
 
-도메인 초기화 마법사는 레이어드가 아닌 아키텍처를 선택하면 이 태스크를 그대로
-출력합니다.
+The domain setup wizard prints this task as it is
+when you choose an architecture other than layered.
 
-### 생성해보기 (이 저장소의 샘플 모듈에서)
+### Try generating (in the sample modules of this repository)
 
 ```bash
-./gradlew elcore3                 # 프로젝트의 설정대로 (아무것도 없으면 3.0 코드 - 정리 모드)
-./gradlew elcore3 -Pv3            # 정리 모드 (3.0 코드)
-./gradlew elcore3 -Pv2            # 호환 모드 (2.x와 동일한 출력)
-./gradlew elcore3 -Pkt            # Kotlin (src/main/kotlin 에 .kt)
-./gradlew elcore3 -Pts            # TypeScript (src/main/ts 에 .ts) - 플러그인에서는 elcore3ts, 빌드와 함께는 typescriptClient = true
-./gradlew elcore3 -Pdomain=shop   # 도메인 한정
-./gradlew elcore3 -Pforce         # 수정된 파일도 덮어쓰기
+./gradlew elcore3                 # as the project is configured (3.0 code - clean mode - if nothing is set)
+./gradlew elcore3 -Pv3            # clean mode (3.0 code)
+./gradlew elcore3 -Pv2            # compatibility mode (same output as 2.x)
+./gradlew elcore3 -Pkt            # Kotlin (.kt in src/main/kotlin)
+./gradlew elcore3 -Pts            # TypeScript (.ts in src/main/ts) - elcore3ts in the plugin, typescriptClient = true to run with the build
+./gradlew elcore3 -Pdomain=shop   # one domain only
+./gradlew elcore3 -Pforce         # overwrite modified files too
 ```
 
-> **언어와 규칙 선택은 서로 다른 스위치입니다.**
-> env.yml의 `publisher.rules`는 *어떤 규칙을 쓸지*만 정하고,
-> *어느 트리에 어떤 확장자로 쓸지*와 *어느 스켈레톤을 쓸지*는 `-Pkt`가 정합니다.
-> `publisher.rules: [jpa-springboot-kt]`만 적어서는 `.kt` 파일이 나오지 않습니다.
+> **Language and rule selection are different switches.**
+> `publisher.rules` in env.yml decides only *which rules to use*;
+> *which tree and which extension to write to* and *which skeleton to use* are decided by `-Pkt`.
+> Writing only `publisher.rules: [jpa-springboot-kt]` does not produce `.kt` files.
 
-> `elasticore-template`의 생성 소스는 **골든 파일**입니다. 이 모듈은 `output = 'v2'` 라
-> `elcore3` 도 호환 모드로 씁니다. `-Pv3`/`-Pforce`로 덮어썼다면 되돌리세요.
+> The generated sources of `elasticore-template` are **golden files**. This module has `output = 'v2'`, so
+> `elcore3` also writes in compatibility mode. If you overwrote them with `-Pv3`/`-Pforce`, revert them.
 
 ---
 
-## 10. 체크리스트
+## 10. Checklist
 
-### 새 규칙을 추가할 때
+### When you add a new rule
 
-- [ ] `@Rule(value = ...)` id가 유일한가
-- [ ] `target`이 맞는가
-- [ ] `order`/`phase`가 의도한 시점인가 (셸 규칙은 `TAIL`)
-- [ ] 문자열을 이어붙이지 않았는가
-- [ ] 언어 분기가 없는가 — 필요하면 `Syntax`에 추가
-- [ ] `RuleCatalog.standard()`에 등록하고 번들에 넣었는가
-- [ ] 위 3가지 검증을 통과하는가
+- [ ] Is the `@Rule(value = ...)` id unique
+- [ ] Is the `target` right
+- [ ] Are `order`/`phase` the moment you intended (shell rules are `TAIL`)
+- [ ] Did you avoid concatenating strings
+- [ ] Is there no language branch - if you need one, add it to `Syntax`
+- [ ] Did you register it in `RuleCatalog.standard()` and put it in a bundle
+- [ ] Does it pass the 3 verifications above
 
-### 새 아티팩트를 추가할 때
+### When you add a new artifact
 
-- [ ] `.tmpl` 스켈레톤 (필요한 템플릿 세트마다)
-- [ ] 규칙 클래스 — 결정은 `base/`, 파일 셸은 `lang/<언어>/`
-- [ ] `RuleCatalog`에 등록 + 번들
-- [ ] `RulesGenRunner`에 emit 추가 (`ArtifactTarget`)
+- [ ] The `.tmpl` skeleton (for each template set that needs it)
+- [ ] The rule class - decisions in `base/`, file shells in `lang/<language>/`
+- [ ] Register in `RuleCatalog` + bundle
+- [ ] Add the emit to `RulesGenRunner` (`ArtifactTarget`)
 
-### 새 아티팩트 종류를 추가할 때 (확장점)
+### When you add a new kind of artifact (extension point)
 
-러너는 새 파일 종류의 이름을 배우지 않습니다. 룰셋이 스스로 선언합니다.
+The runner does not learn the name of a new file kind. The rule set declares it itself.
 
-| 대상 | 인터페이스 | 답하는 것 |
+| Target | Interface | What it answers |
 |---|---|---|
-| 엔티티마다 하나 | `ArtifactContributor` | `artifactsFor(EntitySpec)` |
-| 도메인마다 하나 | `DomainArtifactContributor` | `artifactsFor(DomainSpec)` |
+| One per entity | `ArtifactContributor` | `artifactsFor(EntitySpec)` |
+| One per domain | `DomainArtifactContributor` | `artifactsFor(DomainSpec)` |
 
 ```java
 public List<ContributedArtifact> artifactsFor(EntitySpec e) {
-    if (!e.aggregateRoot()) return Collections.emptyList();   // 조건은 코드입니다
+    if (!e.aggregateRoot()) return Collections.emptyList();   // the condition is code
 
     return Collections.singletonList(
             ContributedArtifact.of("event", "event", e.getName() + "PlacedEvent")
-                    .orNamespace("entity"));                  // 대체 네임스페이스
+                    .orNamespace("entity"));                  // fallback namespace
 }
 ```
 
-지켜야 할 것:
+What to keep to:
 
-- **`orNamespace(...)` 를 주세요.** 새 아티팩트는 새 자리와 함께 오는데, 기존
-  `env.yml` 은 그 키가 생기기 전에 쓰였습니다. 대체가 없으면 프로젝트가
-  네임스페이스를 먼저 고쳐야 하거나 `null` 패키지가 나옵니다.
-- **한 target 으로 여러 개를 선언할 수 있습니다.** 그럴 때 규칙은
-  `SourceCode.artifactName()` 으로 지금 무엇을 쓰는지 압니다. 이걸 읽지 않으면
-  전부 같은 내용이 나오고 마지막 것만 남습니다.
-- **조건은 코드입니다.** 적용되지 않으면 빈 목록을 답하세요. 조건 언어는 없습니다 —
-  spec 이 이미 말할 수 있는 것을 두 번 표현하게 될 뿐입니다.
-- **언어를 가정하지 마세요.** 파일이 놓일 트리와 확장자는 실행이 정합니다. 규칙은
-  `requireSyntaxAnyOf(...)` 로 자기가 쓸 수 있는 언어를 말하고, 나머지는 러너의
-  일입니다.
-- **스켈레톤은 언어마다 필요합니다.** `v3/<target>.tmpl` 과 `kt/<target>.tmpl` 이
-  없으면 그 언어에서는 실패합니다 — 조용히 Java 를 쓰는 대신에.
+- **Give `orNamespace(...)`.** A new artifact comes with a new place, but an existing
+  `env.yml` was written before that key existed. Without a fallback, the project must
+  fix its namespaces first, or a `null` package comes out.
+- **You can declare several with one target.** In that case the rule knows which one it is
+  writing now from `SourceCode.artifactName()`. If you do not read it,
+  all of them come out with the same content and only the last one remains.
+- **The condition is code.** If it does not apply, answer an empty list. There is no condition language -
+  it would only make you express twice what the spec can already say.
+- **Do not assume a language.** The tree and the extension the file goes to are decided by the run. The rule
+  says which languages it can be used with through `requireSyntaxAnyOf(...)`, and the rest is the runner's
+  job.
+- **A skeleton is needed for each language.** If `v3/<target>.tmpl` and `kt/<target>.tmpl` do not
+  exist, it fails in that language - instead of silently using Java.
 
-### 새 언어를 추가할 때
+### When you add a new language
 
-- [ ] `Syntax`에 항목 추가
-- [ ] `SourceCode.TemplateSet`에 항목 추가
-- [ ] `resources/elasticore-template/<언어>/` 스켈레톤
-- [ ] `lang/<언어>/` 파일 셸 규칙 (결정 규칙은 `base/`에서 그대로 공유)
-- [ ] 번들 등록
-- [ ] **생성물을 실제로 컴파일하는 검증 모듈** —
-      `elasticore-template-kt`가 그 예입니다. 문자열 비교만으로는
-      "그 언어처럼 보이지만 컴파일 안 되는" 출력을 잡지 못합니다
+- [ ] Add an entry to `Syntax`
+- [ ] Add an entry to `SourceCode.TemplateSet`
+- [ ] Skeletons in `resources/elasticore-template/<language>/`
+- [ ] File shell rules in `lang/<language>/` (decision rules are shared as they are from `base/`)
+- [ ] Register the bundle
+- [ ] **A verification module that really compiles the generated output** -
+      `elasticore-template-kt` is the example. String comparison alone cannot catch output that
+      "looks like that language but does not compile"
 
 ---
 
-## 11. 패키지 구조
+## 11. Package structure
 
 ```
 pub/rules/
     Rule.java, CodeRules.java, RuleEngine.java, RuleCatalog.java, RulesConfig.java
     EntitySpec, FieldSpec, DomainSpec, EnumSpec, ProtoServiceSpec
     SourceCode, FieldCode, AnnoCode, Syntax, Formatted
-    base/          # 언어 중립 규칙 + 공유 헬퍼
-    lang/java/     # Java 파일 셸
-    lang/kotlin/   # Kotlin 파일 셸
-    verify/        # elcoreRulesCheck, elcore3 실행기
+    base/          # language-neutral rules + shared helpers
+    lang/java/     # Java file shells
+    lang/kotlin/   # Kotlin file shells
+    verify/        # elcoreRulesCheck, elcore3 runner
 ```
 
-**새 언어를 추가할 때 다시 써야 하는 것은 파일 셸뿐입니다.**
-어떤 필드에 무엇이 붙는지 결정하는 규칙은 `base/`에서 그대로 공유됩니다.
+**Only the file shells have to be rewritten when you add a new language.**
+The rules that decide what goes on which field are shared as they are from `base/`.

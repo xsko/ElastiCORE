@@ -77,7 +77,7 @@ public final class GuideIndex {
         out.add("Written with the guides on every generation - do not edit. One line per section:");
         out.add("`<guide>:<first line>-<last line>  <heading>  [words it is about]`.");
         out.add("Search this file for a word - an annotation such as `@access`, a key such as");
-        out.add("`publisher.rules`, a Korean term - then read only those lines of that guide,");
+        out.add("`publisher.rules`, a term of the guides' language - then read only those lines of that guide,");
         out.add("not the whole guide.");
         for (String guide : guides) {
             Path file = blueprint.resolve(guide);

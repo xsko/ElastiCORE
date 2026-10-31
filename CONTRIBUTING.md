@@ -197,8 +197,11 @@ they recur.
 - One concern per pull request. A rule change and a refactor in the same diff
   makes the compatibility report impossible to read.
 - Include the `elcoreRulesCheck -Pstrict` summary line in the description.
-- Write comments in English. The guides are Korean prose with English code; the
-  source is English throughout.
+- Write comments in English. Each guide is written twice, in English
+  (`elasticore-guide/`, what a project gets by default) and in Korean
+  (`elasticore-guide/ko/`, `guides = 'ko'`): change both, at the same lines.
+  `GuideTranslationTest` fails when their lines, headings or code blocks differ,
+  or when the English prose holds Korean. The source is English throughout.
 - Record user-visible changes as a fragment of their own, `changes/<topic>.md`
   (`changes/README.md` has the form), with the files involved - not as an edit to
   `elasticore-history.md`: every pull request editing the top of the history

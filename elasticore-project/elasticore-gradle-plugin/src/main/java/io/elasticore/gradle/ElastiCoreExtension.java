@@ -91,6 +91,13 @@ public abstract class ElastiCoreExtension {
     public abstract Property<String> getOssieName();
 
     /**
+     * The language of the guides every generation copies into the blueprint
+     * directory: {@code en} (the default) or {@code ko}. The file names are the
+     * same in both.
+     */
+    public abstract Property<String> getGuides();
+
+    /**
      * Whether compilation waits for generation. Default true.
      *
      * Off by default would reproduce a failure this project has hit: Gradle is

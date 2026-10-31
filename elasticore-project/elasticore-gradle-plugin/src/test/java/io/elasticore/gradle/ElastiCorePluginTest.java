@@ -150,6 +150,19 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("the guides' language is passed, and only when one is given")
+    public void theGuidesLanguageIsPassed() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { guides = 'ko' }", REPORTER);
+        assertTrue(reportOf(run("reportElcore")).contains("elasticore.guides=ko"));
+
+        // Unset, the generator copies the English guides.
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { architecture = 'hexagonal' }", REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.guides"), reported);
+    }
+
+    @Test
     @DisplayName("a framework version the project declares is left as written")
     public void aDeclaredFrameworkIsLeftAlone() throws IOException {
         writeSettings("single");

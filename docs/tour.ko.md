@@ -39,7 +39,7 @@ unitCost:  money(10.2)!  @min(0.01, 'price must be positive')  @terms(price, 가
 | 다른 컨텍스트의 이벤트 | `shop:OrderPlaced` |
 
 그래서 기능마다 새 문법이 늘지 않습니다.
-[DSL 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-dsl-guide.md)가 이 원칙으로 시작합니다.
+[DSL 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-dsl-guide.md)가 이 원칙으로 시작합니다.
 
 ## 무엇이 다른가
 
@@ -139,7 +139,7 @@ dependencies { elasticore project(':acme-rules') }
 ```
 
 ElastiCORE 자신의 Java·Kotlin·TypeScript·DDD·헥사고날 생성도 모두 같은 방식의 규칙입니다.
-[규칙 개발 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-rule-dev-guide.md)는
+[규칙 개발 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-rule-dev-guide.md)는
 처음 만드는 사람을 위해 단계마다 결과를 보여 줍니다.
 
 ---

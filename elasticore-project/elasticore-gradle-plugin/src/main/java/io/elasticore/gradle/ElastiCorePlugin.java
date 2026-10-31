@@ -266,6 +266,9 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (extension.getOssieName().isPresent()) {
             task.systemProperty("elasticore.ossie.name", extension.getOssieName().get());
         }
+        if (extension.getGuides().isPresent()) {
+            task.systemProperty("elasticore.guides", extension.getGuides().get());
+        }
         // The project's DDL: the databases its schema is written for, and migrations.
         List<String> databases = extension.getDdl().getDatabases().getOrElse(new ArrayList<>());
         if (!databases.isEmpty()) {

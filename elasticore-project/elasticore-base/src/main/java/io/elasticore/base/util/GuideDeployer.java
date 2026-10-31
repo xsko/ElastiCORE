@@ -26,6 +26,13 @@ import java.nio.file.StandardCopyOption;
  * After the copy it writes {@link GuideIndex#FILE_NAME}: every section of the
  * guides with its line range, so a reader can open one section instead of a
  * whole guide.
+ *
+ * The guides are written twice: in English, the default, and in Korean, the
+ * language they were first written in ({@code ko/}). A project asks for the
+ * Korean ones with {@code elasticore { guides = 'ko' }}, which the Gradle
+ * plugin passes on as {@link #LANGUAGE_PROPERTY}. Either way the files keep
+ * their names, so what points a reader at {@code elasticore-rule-guide.md}
+ * holds in both.
  */
 public final class GuideDeployer {
 
@@ -45,9 +52,40 @@ public final class GuideDeployer {
             "elasticore-migration-guide.md"
     };
 
+    /** The system property naming the guides' language: {@code en} (default) or {@code ko}. */
+    public static final String LANGUAGE_PROPERTY = "elasticore.guides";
+
+    /** The languages the guides are written in, the default first. */
+    public static final String[] LANGUAGES = {"en", "ko"};
+
     private static final String CLASSPATH_DIR = "/elasticore-guide/";
 
     private GuideDeployer() {
+    }
+
+    /**
+     * The guides' directory below {@code elasticore-guide/} for a language:
+     * the English ones at its top, every other language in a directory named
+     * after it.
+     */
+    public static String directoryOf(String language) {
+        return LANGUAGES[0].equals(language) ? "" : language + "/";
+    }
+
+    /**
+     * The language asked for, or English. A language the guides are not
+     * written in is a warning, not a failure, like every other problem here.
+     */
+    static String language() {
+        String asked = System.getProperty(LANGUAGE_PROPERTY);
+        if (asked == null || asked.trim().isEmpty()) return LANGUAGES[0];
+        String language = asked.trim().toLowerCase(java.util.Locale.ROOT);
+        for (String known : LANGUAGES) {
+            if (known.equals(language)) return known;
+        }
+        ConsoleLog.printWarn("The guides are not written in '" + asked + "' (" + String.join(", ", LANGUAGES)
+                + "); copying the English ones.");
+        return LANGUAGES[0];
     }
 
     /**
@@ -61,13 +99,14 @@ public final class GuideDeployer {
     public static void deployTo(String blueprintRootPath, String developmentRoot) {
         if (blueprintRootPath == null) return;
 
-        ConsoleLog.printInfo("Copying guide files to blueprint root: " + blueprintRootPath);
+        String language = language();
+        ConsoleLog.printInfo("Copying guide files (" + language + ") to blueprint root: " + blueprintRootPath);
         try {
             File source = developmentSource(developmentRoot);
             if (source == null) {
-                copyFromClasspath(blueprintRootPath);
+                copyFromClasspath(CLASSPATH_DIR + directoryOf(language), blueprintRootPath);
             } else {
-                copyFromDirectory(source, blueprintRootPath);
+                copyFromDirectory(new File(source, directoryOf(language)), blueprintRootPath);
             }
         } catch (Exception e) {
             ConsoleLog.printWarn("Error copying guide files to blueprint root: " + e.getMessage());
@@ -129,8 +168,8 @@ public final class GuideDeployer {
         }
     }
 
-    private static void copyFromClasspath(String blueprintRootPath) {
-        if (GuideDeployer.class.getResourceAsStream(CLASSPATH_DIR + GUIDE_FILES[0]) == null) {
+    private static void copyFromClasspath(String directory, String blueprintRootPath) {
+        if (GuideDeployer.class.getResourceAsStream(directory + GUIDE_FILES[0]) == null) {
             ConsoleLog.printWarn("Guide files not found in classpath or file system."
                     + " Skipping guide file copying.");
             return;
@@ -138,7 +177,7 @@ public final class GuideDeployer {
 
         Path blueprint = Paths.get(blueprintRootPath);
         for (String guide : GUIDE_FILES) {
-            String resource = CLASSPATH_DIR + guide;
+            String resource = directory + guide;
             InputStream in = GuideDeployer.class.getResourceAsStream(resource);
             if (in == null) {
                 ConsoleLog.printWarn("Guide file not found in classpath: " + resource);

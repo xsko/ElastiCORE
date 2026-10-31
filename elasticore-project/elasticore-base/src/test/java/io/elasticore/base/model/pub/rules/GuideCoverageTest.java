@@ -25,8 +25,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the guide, not a judgement about whether the paragraph around it is any
  * good - because the strong version cannot be automated and the weak version
  * catches the failure that actually occurs.
+ *
+ * It reads the English guides; {@link GuideCoverageKoTest} runs every check
+ * again on the Korean ones.
  */
 public class GuideCoverageTest {
+
+    /** The guides' directory below {@code elasticore-guide/}: the English ones here. */
+    protected String directory() {
+        return io.elasticore.base.util.GuideDeployer.directoryOf("en");
+    }
 
     private static final String RULE_GUIDE = "/elasticore-guide/elasticore-rule-guide.md";
     private static final String ANNOTATION_GUIDE = "/elasticore-guide/elasticore-annotation-guide.md";
@@ -93,7 +101,7 @@ public class GuideCoverageTest {
         // behind it produces a warning during generation and a manual with a
         // hole in it, and nobody reads generation warnings.
         for (String guide : io.elasticore.base.util.GuideDeployer.GUIDE_FILES) {
-            if (getClass().getResourceAsStream("/elasticore-guide/" + guide) == null) {
+            if (getClass().getResourceAsStream("/elasticore-guide/" + directory() + guide) == null) {
                 missing.add(guide);
             }
         }
@@ -204,7 +212,8 @@ public class GuideCoverageTest {
                 "and the thing that normally does the registering");
     }
 
-    private String read(String resource) throws IOException {
+    private String read(String englishResource) throws IOException {
+        String resource = englishResource.replace("/elasticore-guide/", "/elasticore-guide/" + directory());
         InputStream in = GuideCoverageTest.class.getResourceAsStream(resource);
         assertNotNull(in, resource + " is not on the classpath - the guide is shipped, so it should be");
         try {
