@@ -161,4 +161,42 @@ public class GuideIndexTest {
         }
         assertFalse(index.contains("## not a heading"));
     }
+
+    @Test
+    @DisplayName(
+            "English guides by default, Korean ones under the same names when asked, English for a language they are not in")
+    public void theLanguageIsChosen(@TempDir Path root) throws IOException {
+        Pattern hangul = Pattern.compile("[\\uac00-\\ud7a3]");
+        String guide = GuideDeployer.GUIDE_FILES[0];
+        String before = System.getProperty(GuideDeployer.LANGUAGE_PROPERTY);
+        try {
+            System.clearProperty(GuideDeployer.LANGUAGE_PROPERTY);
+            Path en = Files.createDirectories(root.resolve("en"));
+            GuideDeployer.deployTo(en.toString(), System.getProperty("user.dir"));
+            assertFalse(hangul.matcher(heading(en.resolve(guide))).find(), heading(en.resolve(guide)));
+            assertTrue(Files.isRegularFile(en.resolve(GuideIndex.FILE_NAME)));
+
+            System.setProperty(GuideDeployer.LANGUAGE_PROPERTY, "ko");
+            Path ko = Files.createDirectories(root.resolve("ko"));
+            GuideDeployer.deployTo(ko.toString(), System.getProperty("user.dir"));
+            for (String g : GuideDeployer.GUIDE_FILES) {
+                assertTrue(Files.isRegularFile(ko.resolve(g)), g);
+            }
+            String korean = new String(Files.readAllBytes(ko.resolve(guide)), StandardCharsets.UTF_8);
+            assertTrue(hangul.matcher(korean).find(), "the Korean guide holds no Korean");
+            assertTrue(Files.isRegularFile(ko.resolve(GuideIndex.FILE_NAME)));
+
+            System.setProperty(GuideDeployer.LANGUAGE_PROPERTY, "fr");
+            Path fr = Files.createDirectories(root.resolve("fr"));
+            GuideDeployer.deployTo(fr.toString(), System.getProperty("user.dir"));
+            assertEquals(heading(en.resolve(guide)), heading(fr.resolve(guide)));
+        } finally {
+            if (before == null) System.clearProperty(GuideDeployer.LANGUAGE_PROPERTY);
+            else System.setProperty(GuideDeployer.LANGUAGE_PROPERTY, before);
+        }
+    }
+
+    private static String heading(Path guide) throws IOException {
+        return Files.readAllLines(guide, StandardCharsets.UTF_8).get(0);
+    }
 }

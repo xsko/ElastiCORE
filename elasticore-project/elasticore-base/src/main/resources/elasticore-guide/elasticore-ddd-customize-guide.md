@@ -1,143 +1,143 @@
-# ElastiCORE DDD 룰셋 커스터마이즈 가이드 (심화)
+# ElastiCORE DDD Rule Set Customization Guide (Advanced)
 
-> **규칙을 처음 만든다면 `elasticore-rule-dev-guide.md`부터 보세요.** 그 문서만으로 어노테이션 붙이기·빼기, 우리만의 YAML 표시, 빌드 검사, 테스트까지 할 수 있습니다.
-> 이 문서는 그다음 단계(새 파일 만들기, 끄기, 팀 설정, 내부 동작)를 다룹니다.
+> **If you are writing rules for the first time, start with `elasticore-rule-dev-guide.md`.** That document alone takes you through adding and removing annotations, your own YAML markers, build checks and tests.
+> This document covers the next step (new files, switching things off, team settings, internals).
 
-DDD(헥사고날) 번들이 만들어 주는 코드에 **우리 팀의 규칙을 더하는** 방법입니다.
-생성된 파일을 하나씩 손으로 고치는 대신 생성 규칙을 추가해서, 모든 도메인·모든 엔티티에 같은 방식으로 적용되게 합니다.
+This is how you **add your team's rules** to the code that the DDD (hexagonal) bundle generates.
+Instead of editing generated files one by one, you add generation rules, so they apply the same way to every domain and every entity.
 
-**읽기 전에**: "ElastiCORE 헥사고날 ERP 가이드"의 예제(Partner·Item·SalesOrder·Stock·Invoice)를 따라 해 본 상태를 가정합니다.
-이 문서의 예제는 모두 그 프로젝트에 더하는 방식이고, 이 문서에 나오는 코드만으로 프로젝트를 만들어 빌드·테스트까지 확인했습니다.
-Java 기준으로 쓰고, Kotlin에서 다른 점은 10장에 모았습니다.
+**Before you read**: this guide assumes you have followed the examples of the "ElastiCORE Hexagonal ERP Guide" (Partner, Item, SalesOrder, Stock, Invoice).
+Every example here is added to that project, and a project built from only the code in this document was built and tested.
+It is written for Java; the differences in Kotlin are collected in chapter 10.
 
-| 이 문서 | 다른 문서 |
+| This document | Other documents |
 |---|---|
-| 우리 규칙을 **만들어 더하는** 방법 (예제 중심) | 규칙 API 전체 목록: `elasticore-rule-guide.md` 3~6장 |
-| | 번들 고르기·기본 규칙 설명: `elasticore-rule-guide.md` 2장 |
+| How to **create and add** your own rules (example-driven) | Full list of the rule API: `elasticore-rule-guide.md` chapters 3-6 |
+| | Choosing a bundle and the default rules: `elasticore-rule-guide.md` chapter 2 |
 
 ---
 
-## 0. 다 하고 나면
+## 0. When you are done
 
-ERP 프로젝트에 규칙 모듈(`acme-rules`)이 하나 생기고, `./gradlew build` 할 때마다 다음이 자동으로 됩니다.
+The ERP project has one rule module (`acme-rules`), and every `./gradlew build` does the following automatically.
 
-| 예제 | DSL·설정에 쓰는 것 | 결과 |
+| Example | What you use in the DSL or settings | Result |
 |---|---|---|
-| 1. 끄기 (4장) | `env.yml`에 `suppress: [...]` | 원하지 않는 생성물이 사라짐 (방법만 보고, ERP에는 적용하지 않음) |
-| 2. 역할 표시 (5장) | 없음 (모델에서 읽음) | 루트에 `@AggregateRoot`, 멤버에 `@Entity`, 값 객체에 `@ValueObject`, 식별자 필드에 `@Identity` (jMolecules) |
-| 3. 새 DSL 단어 + 새 파일 (6장) | 루트 meta에 `@topic(erp.sales)` | `ErpEventTopics` 클래스: 이벤트마다 메시지 토픽 이름 |
-| 4. 모델 검사 (7장) | `env.yml`에 `acme.requireTopic: true` | 규칙 위반 시 경고, 또는 빌드 실패 |
+| 1. Switch off (chapter 4) | `suppress: [...]` in `env.yml` | An unwanted generated file disappears (method only, not applied to the ERP) |
+| 2. Role markers (chapter 5) | None (read from the model) | `@AggregateRoot` on roots, `@Entity` on members, `@ValueObject` on value objects, `@Identity` on identifier fields (jMolecules) |
+| 3. New DSL word + new file (chapter 6) | `@topic(erp.sales)` in the root meta | An `ErpEventTopics` class: the message topic name of each event |
+| 4. Model check (chapter 7) | `acme.requireTopic: true` in `env.yml` | A warning on a rule violation, or a build failure |
 
 ---
 
-## 1. 규칙이 코드를 만드는 방식
+## 1. How rules generate code
 
 ```
-DSL(yml) ──▶ Spec ──▶ 규칙들 ──▶ 스켈레톤(.tmpl) ──▶ 파일
-           (모델)    (판단)      (파일 뼈대)
+DSL(yml) ──▶ Spec ──▶ rules ──▶ skeleton(.tmpl) ──▶ file
+           (model)   (decide)   (file outline)
 ```
 
-| 용어 | 뜻 | 예 |
+| Term | Meaning | Example |
 |---|---|---|
-| **도메인** | `blueprint/` 아래 폴더 하나 (그 안의 `env.yml` + `model/*.yml`). DDD의 "도메인"과 같은 단어지만 여기서는 이 폴더 단위 | `blueprint/erp` → 도메인 `erp` |
-| **Spec** | 규칙이 읽는 모델. 엔티티는 `EntitySpec`, 필드는 `FieldSpec`, 도메인 전체는 `DomainSpec` | `e.aggregateRoot()`, `e.events()` |
-| **규칙(rule)** | `@Rule`이 붙은 메서드 하나. 모델을 읽고 "무엇을 쓸지"만 정함 | "루트면 `@AggregateRoot`를 붙인다" |
-| **룰셋** | 규칙 메서드를 모은 클래스 (`CodeRules` 구현) | `AcmeDddRules` |
-| **번들** | 룰셋 여러 개의 묶음. 빌드의 `architecture`·`language`가 정함 | `hexagonal-springboot` |
-| **target** | 규칙이 기여하는 **파일 종류**의 이름 | `entity`, `behavior`, `dto` … (아래 표) |
-| **스켈레톤** | 파일의 뼈대. `${packageName}` 같은 빈칸을 규칙이 채움 | `elasticore-template/v3/eventTopics.tmpl` |
+| **Domain** | One folder under `blueprint/` (the `env.yml` and `model/*.yml` inside it). The same word as the DDD "domain", but here it means this folder unit | `blueprint/erp` -> domain `erp` |
+| **Spec** | The model that rules read. `EntitySpec` for an entity, `FieldSpec` for a field, `DomainSpec` for a whole domain | `e.aggregateRoot()`, `e.events()` |
+| **Rule** | One method with `@Rule`. It reads the model and only decides "what to write" | "If it is a root, put `@AggregateRoot` on it" |
+| **Rule set** | A class that collects rule methods (implements `CodeRules`) | `AcmeDddRules` |
+| **Bundle** | A group of several rule sets. Chosen by `architecture` and `language` in the build | `hexagonal-springboot` |
+| **target** | The name of the **kind of file** a rule contributes to | `entity`, `behavior`, `dto` ... (table below) |
+| **Skeleton** | The outline of a file. Rules fill blanks such as `${packageName}` | `elasticore-template/v3/eventTopics.tmpl` |
 
-규칙은 파일을 직접 쓰지 않습니다. "이 클래스에 이 어노테이션", "이 빈칸에 이 값"을 말하면, import 정리와 파일 쓰기는 생성기가 합니다.
-그래서 같은 규칙이 Java와 Kotlin 모두에 적용되고, 여러 규칙이 한 파일에 함께 기여할 수 있습니다.
+A rule does not write a file directly. It says "this annotation on this class" or "this value in this blank", and the generator does the import cleanup and the file writing.
+So the same rule applies to both Java and Kotlin, and several rules can contribute to one file.
 
-### 파일 종류(target) — 헥사고날 ERP에서
+### Kinds of files (targets) - in the hexagonal ERP
 
-생성 로그(`./gradlew elcore3`)의 각 줄 첫 단어가 target입니다: `entity  src/main/java/.../Partner.java  WROTE`.
+The first word of each line in the generation log (`./gradlew elcore3`) is the target: `entity  src/main/java/.../Partner.java  WROTE`.
 
-| target | 예 (ERP) | 누구 것 | 클래스 어노테이션을 그리는 규칙 |
+| target | Example (ERP) | Whose | Rule that draws the class annotations |
 |---|---|---|---|
-| `entity` | `Partner.java`, 나뉜 루트는 `SalesOrderBase.java` | 생성기 | `v3-file-vars` (tail 90) |
-| `behavior` | `SalesOrder.java` (나뉜 루트의 개발자 클래스) | **개발자** | `ddd-behavior-entity` (head 10) |
-| `dto`, `srchdto` | `SalesOrderDTO.java`, `PartnerSrchDTO.java` | 생성기 | `v3-dto-file`, `v3-srchdto-file` (tail 90) |
-| `event` | `SalesOrderShippedEvent.java` | 생성기 | `ddd-event` (head 10) |
-| `repositoryPort`, `queryPort`, `usecase` | `PartnerRepositoryPort.java`, `PartnerQueryPort.java`, `PartnerUseCase.java` | 생성기 | `ddd-repository-port`, `ddd-query-port`, `hex-usecase` (head 10) |
-| `domainServiceBase`, `processManagerBase` | `ShippingDomainServiceBase.java`, `BillingProcessManagerBase.java` | 생성기 (포트, 리스너, 추상 `handle`) | `ddd-domain-service-base`, `ddd-process-manager-base` (10 — 도메인 단위) |
-| `domainService`, `processManager` | `ShippingDomainService.java`, `BillingProcessManager.java` | **개발자** | `ddd-domain-service`, `ddd-process-manager` (once 10 — 도메인 단위) |
-| `service` / `service_extend` | `PartnerCoreService.java` / `PartnerService.java` | 생성기 / **개발자** | 없음 |
-| `control` | `PartnerController.java` | **개발자** | 없음 |
-| `invariants`, `removalCheck`, `factory`, `specifications`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` … | 생성기 (`factory`는 **개발자**) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-specification`, `ddd-repository-adapter` (head 10) |
-| `mapper`, `repository`, `repositoryHelper`, `outbox…` | `ErpMapper.java`, `PartnerRepository.java` … | 생성기 | 없음 |
+| `entity` | `Partner.java`, and `SalesOrderBase.java` for a split root | Generator | `v3-file-vars` (tail 90) |
+| `behavior` | `SalesOrder.java` (the developer class of a split root) | **Developer** | `ddd-behavior-entity` (head 10) |
+| `dto`, `srchdto` | `SalesOrderDTO.java`, `PartnerSrchDTO.java` | Generator | `v3-dto-file`, `v3-srchdto-file` (tail 90) |
+| `event` | `SalesOrderShippedEvent.java` | Generator | `ddd-event` (head 10) |
+| `repositoryPort`, `queryPort`, `usecase` | `PartnerRepositoryPort.java`, `PartnerQueryPort.java`, `PartnerUseCase.java` | Generator | `ddd-repository-port`, `ddd-query-port`, `hex-usecase` (head 10) |
+| `domainServiceBase`, `processManagerBase` | `ShippingDomainServiceBase.java`, `BillingProcessManagerBase.java` | Generator (ports, listeners, abstract `handle`) | `ddd-domain-service-base`, `ddd-process-manager-base` (10 - per domain) |
+| `domainService`, `processManager` | `ShippingDomainService.java`, `BillingProcessManager.java` | **Developer** | `ddd-domain-service`, `ddd-process-manager` (once 10 - per domain) |
+| `service` / `service_extend` | `PartnerCoreService.java` / `PartnerService.java` | Generator / **Developer** | None |
+| `control` | `PartnerController.java` | **Developer** | None |
+| `invariants`, `removalCheck`, `factory`, `specifications`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` ... | Generator (`factory` is the **developer's**) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-specification`, `ddd-repository-adapter` (head 10) |
+| `mapper`, `repository`, `repositoryHelper`, `outbox...` | `ErpMapper.java`, `PartnerRepository.java` ... | Generator | None |
 
-"없음"인 파일에는 클래스 어노테이션을 붙일 수 없습니다(붙여도 아무 일도 일어나지 않음).
-"once"인 파일은 엔티티가 아니라 **도메인 단위**로 만들어집니다. 그 파일의 규칙은 `(DomainSpec d)`를 받고, 여러 개 중 어느 파일인지는 `ctx(d).artifactName()`으로 압니다 (`(EntitySpec e)`로 쓰면 돌지 않고 경고가 나옵니다). 전체 target 목록은 `./gradlew elcore3 -PlistRules`(3장)에 나옵니다.
-Kotlin에서는 `entity`·`dto`·`srchdto`를 `kt-entity-file`·`kt-dto-file`·`kt-srchdto-file` (tail 90)이 그립니다.
+You cannot put a class annotation on a file marked "None" (if you try, nothing happens).
+A file marked "once" is created **per domain**, not per entity. Its rule takes `(DomainSpec d)`, and you tell which of several files it is with `ctx(d).artifactName()` (written as `(EntitySpec e)`, it does not run and a warning appears). The full list of targets is in the output of `./gradlew elcore3 -PlistRules` (chapter 3).
+In Kotlin, `kt-entity-file`, `kt-dto-file` and `kt-srchdto-file` (tail 90) draw `entity`, `dto` and `srchdto`.
 
-### 루트와 멤버
+### Roots and members
 
-`e.aggregateRoot()`는 "멤버도 값 객체도 아니다"라는 뜻입니다.
+`e.aggregateRoot()` means "neither a member nor a value object".
 
-| 엔티티 | 판단 (위에서부터 먼저 맞는 것) | ERP 예 |
+| Entity | Decision (the first one that matches, from the top) | ERP example |
 |---|---|---|
-| 루트 | 자기에게 `@root`(또는 값 없는 `@aggregate`)를 붙였음 | ERP의 다섯 루트 모두 (`Partner`, `Item`, `SalesOrder`, `Stock`, `Invoice`) |
-| 멤버 | 자기에게 `@aggregate(X)`를 붙였음 | |
-| 멤버 | 다른 엔티티가 `@cascade`가 붙은 관계로 가지고 있음 | |
-| 멤버 | `@root`를 붙인 엔티티 **하나만** `List<X> @OneToMany`로 가지고 있음 (둘 이상이면 판단하지 않음 → `@aggregate(X)`로 정하기) | `SalesOrderLine` |
-| 값 객체 | `@embeddable` | (없음) |
-| 루트 | 그 밖의 모든 엔티티 (`@root`를 안 붙였어도) | |
+| Root | It has `@root` (or `@aggregate` without a value) on itself | All five ERP roots (`Partner`, `Item`, `SalesOrder`, `Stock`, `Invoice`) |
+| Member | It has `@aggregate(X)` on itself | |
+| Member | Another entity holds it in a relation marked `@cascade` | |
+| Member | **Exactly one** entity marked `@root` holds it as `List<X> @OneToMany` (with two or more, it does not decide -> set it with `@aggregate(X)`) | `SalesOrderLine` |
+| Value object | `@embeddable` | (none) |
+| Root | Every other entity (even without `@root`) | |
 
-그래서 `@root`가 아닌 엔티티가 `List<X> @OneToMany`를 가져도 `X`는 멤버가 되지 않습니다. 의도와 다르면 가진 쪽에 `@root`를 붙이거나 `X`에 `@aggregate(...)`를 붙이세요.
+So even when an entity that is not `@root` has a `List<X> @OneToMany`, `X` does not become a member. If that is not what you want, put `@root` on the holder or `@aggregate(...)` on `X`.
 
 ---
 
-## 2. 무엇을 어떻게 바꾸나
+## 2. What you change and how
 
-| 하고 싶은 것 | 방법 | 예제 |
+| What you want | How | Example |
 |---|---|---|
-| 기본 생성물 일부를 빼기 | `env.yml`의 `suppress` | 4장 |
-| 생성되는 클래스·필드에 무언가 더하기 | 기존 target에 규칙 추가 | 5장 |
-| DSL에 우리만의 단어를 만들기 | 규칙이 `e.metaValue("단어")`, `f.dslValue("단어")`로 읽음 | 6장 |
-| 새로운 파일 만들기 | `ArtifactContributor`(엔티티마다) / `DomainArtifactContributor`(도메인마다) + 스켈레톤 | 6장 |
-| 팀 설정값을 규칙에 주기 | `env.yml`의 `config:` 아래에 적고 `e.config("키")`로 읽음 | 7장 |
-| 모델이 팀 규칙을 지키는지 검사 | `ModelCheck.warn` / `ModelCheck.fail` | 7장 |
-| 기본 스켈레톤(.tmpl)을 통째로 바꾸기 | **하지 마세요.** 버전이 오를 때마다 따라가야 합니다. 끄고(4장) 새 파일을 만드세요(6장) | - |
+| Remove some of the default generated files | `suppress` in `env.yml` | Chapter 4 |
+| Add something to generated classes and fields | Add a rule to an existing target | Chapter 5 |
+| Create your own words in the DSL | A rule reads them with `e.metaValue("word")`, `f.dslValue("word")` | Chapter 6 |
+| Create a new file | `ArtifactContributor` (per entity) / `DomainArtifactContributor` (per domain) + a skeleton | Chapter 6 |
+| Give team settings to rules | Write them under `config:` in `env.yml` and read with `e.config("key")` | Chapter 7 |
+| Check that the model follows the team rules | `ModelCheck.warn` / `ModelCheck.fail` | Chapter 7 |
+| Replace a default skeleton (.tmpl) entirely | **Don't.** You would have to follow it every time the version goes up. Switch it off (chapter 4) and create a new file (chapter 6) | - |
 
-생성된 파일을 손으로 고치면 어떻게 되나:
+What happens when you edit a generated file by hand:
 
-| 파일 | 손으로 고치면 |
+| File | If you edit it by hand |
 |---|---|
-| 생성기 것 (`entity`, `dto` …) | 다음 생성 때 **건너뛰고 알려 줍니다** (`-Pforce`로 덮어씀). 고친 내용은 DSL과 어긋난 채 남으므로, 바꾸고 싶은 것은 규칙으로 |
-| 개발자 것 (`behavior`, `control`, `service_extend` …) | 그대로 둡니다. 한 번도 고치지 않은 동안에는 DSL에 맞춰 다시 써 줍니다 |
+| The generator's (`entity`, `dto` ...) | The next generation **skips it and tells you** (`-Pforce` overwrites it). The edit stays out of step with the DSL, so use a rule for what you want to change |
+| The developer's (`behavior`, `control`, `service_extend` ...) | Left as it is. As long as you have never edited it, it is rewritten to follow the DSL |
 
 ---
 
-## 3. 준비: 규칙 모듈 만들기
+## 3. Preparation: create the rule module
 
-규칙은 **별도 모듈**에 둡니다. 생성기는 애플리케이션을 컴파일하기 **전에** 돌기 때문에, 애플리케이션 소스 안에 둔 규칙은 생성기가 볼 수 없습니다.
+Put rules in a **separate module**. The generator runs **before** the application is compiled, so it cannot see rules placed in the application sources.
 
 ```
 erp/
 ├── settings.gradle
-├── build.gradle                 ← 규칙 모듈을 생성기에 연결
-├── acme-rules/                  ← 새 모듈: 우리 규칙
+├── build.gradle                 ← connects the rule module to the generator
+├── acme-rules/                  ← new module: our rules
 │   ├── build.gradle
 │   └── src/
 │       ├── main/java/com/acme/rules/AcmeDddRules.java
-│       ├── main/resources/elasticore-template/v3/eventTopics.tmpl   ← Java 스켈레톤
-│       ├── main/resources/elasticore-template/kt/eventTopics.tmpl   ← Kotlin 스켈레톤
+│       ├── main/resources/elasticore-template/v3/eventTopics.tmpl   ← Java skeleton
+│       ├── main/resources/elasticore-template/kt/eventTopics.tmpl   ← Kotlin skeleton
 │       ├── test/java/com/acme/rules/AcmeDddRulesTest.java
-│       ├── test/java/com/acme/rules/NoDynamicUpdateRules.java       ← 4장 예제
-│       ├── test/java/com/acme/rules/PerRootExampleRules.java        ← 6.7 예제
-│       └── test/resources/elasticore-template/v3/rootEvents.tmpl    ← 6.7 예제
-└── src/ …                       ← 기존 ERP 애플리케이션
+│       ├── test/java/com/acme/rules/NoDynamicUpdateRules.java       ← chapter 4 example
+│       ├── test/java/com/acme/rules/PerRootExampleRules.java        ← 6.7 example
+│       └── test/resources/elasticore-template/v3/rootEvents.tmpl    ← 6.7 example
+└── src/ …                       ← the existing ERP application
 ```
 
-**`settings.gradle`** 에 한 줄 추가:
+Add one line to **`settings.gradle`**:
 
 ```gradle
 include 'acme-rules'
 ```
 
-**파일: `acme-rules/build.gradle`**
+**File: `acme-rules/build.gradle`**
 
 ```gradle
 plugins {
@@ -162,11 +162,11 @@ dependencies {
 tasks.named('test') { useJUnitPlatform() }
 ```
 
-`elasticore-base` 버전은 루트 `build.gradle`의 `id 'io.elasticore' version '...'`과 **같게** 적습니다. 규칙이 컴파일된 API와 생성기가 다르면 실행 중에 메서드를 못 찾습니다.
+Write the `elasticore-base` version **the same as** `id 'io.elasticore' version '...'` in the root `build.gradle`. If the API the rules were compiled against differs from the generator's, it cannot find methods at run time.
 
-룰셋 클래스는 5~7장에서 채웁니다. 지금은 빈 틀만 만들어 두면 이후 단계마다 빌드해 볼 수 있습니다.
+You fill in the rule set class in chapters 5-7. For now, create only an empty shell, so you can build at each later step.
 
-**파일: `acme-rules/src/main/java/com/acme/rules/AcmeDddRules.java`** (빈 틀 — 완성본은 부록 A)
+**File: `acme-rules/src/main/java/com/acme/rules/AcmeDddRules.java`** (empty shell - the finished version is in appendix A)
 
 ```java
 package com.acme.rules;
@@ -178,38 +178,38 @@ public class AcmeDddRules implements CodeRules {
 }
 ```
 
-**루트 `build.gradle`** 의 두 곳을 바꿉니다:
+Change two places in the **root `build.gradle`**:
 
 ```gradle
 elasticore {
     architecture = 'hexagonal'
     language     = 'java'
-    rules        = ['com.acme.rules.AcmeDddRules']     // 우리 규칙 (기본 번들에 더해짐)
+    rules        = ['com.acme.rules.AcmeDddRules']     // our rules (added to the default bundle)
 }
 
 dependencies {
-    elasticore project(':acme-rules')                     // 생성기가 우리 규칙을 찾는 곳
-    implementation 'org.jmolecules:jmolecules-ddd:1.10.0'  // 5장이 붙이는 어노테이션
-    // ... 기존 의존성 그대로
+    elasticore project(':acme-rules')                     // where the generator finds our rules
+    implementation 'org.jmolecules:jmolecules-ddd:1.10.0'  // the annotations chapter 5 adds
+    // ... the existing dependencies stay as they are
 }
 ```
 
-| 줄 | 뜻 |
+| Line | Meaning |
 |---|---|
-| `rules = [...]` | 룰셋 클래스의 전체 이름. 아키텍처·언어가 고른 번들 **뒤에 더해집니다** (번들을 다시 적을 필요 없음). `architecture`와 함께 쓰세요 — 없으면 2.x 호환 모드로 생성되어 DDD 규칙과 `v3/` 스켈레톤이 쓰이지 않습니다 |
-| `elasticore project(':acme-rules')` | `elasticore`는 **생성기의 클래스패스**입니다. 애플리케이션 실행에는 들어가지 않습니다. 이 모듈은 생성보다 먼저 컴파일됩니다 |
+| `rules = [...]` | The full names of the rule set classes. They are **added after** the bundle that the architecture and language chose (you do not need to write the bundle again). Use it together with `architecture` - without it, generation runs in 2.x compatibility mode and neither the DDD rules nor the `v3/` skeletons are used |
+| `elasticore project(':acme-rules')` | `elasticore` is **the generator's classpath**. It is not part of running the application. This module is compiled before generation |
 
-> **`env.yml`의 `elasticore.config.publisher.rules`와의 차이**: `env.yml`에 `rules: [...]`를 쓰면 번들을 **대체**합니다.
-> 그때는 `rules: [hexagonal-springboot, com.acme.rules.AcmeDddRules]`처럼 번들도 적어야 하고, Kotlin이면 `hexagonal-springboot-kt`를 적어야 합니다.
-> 모든 도메인에 적용할 규칙은 빌드의 `rules`가 간단하고 틀릴 곳이 없습니다. 특정 도메인에만 적용할 때만 `env.yml`을 쓰세요.
+> **The difference from `elasticore.config.publisher.rules` in `env.yml`**: writing `rules: [...]` in `env.yml` **replaces** the bundle.
+> Then you must list the bundle too, as in `rules: [hexagonal-springboot, com.acme.rules.AcmeDddRules]`, and for Kotlin you must list `hexagonal-springboot-kt`.
+> For rules that apply to every domain, `rules` in the build is simpler and leaves no room for mistakes. Use `env.yml` only when the rules apply to a specific domain.
 
-### 지금 어떤 규칙이 도는지 보기: `-PlistRules`
+### See which rules run now: `-PlistRules`
 
 ```bash
 ./gradlew elcore3 -PlistRules
 ```
 
-5~7장을 마친 뒤에는 이렇게 나옵니다 (지금은 `acme-` 줄이 없습니다):
+After you finish chapters 5-7, it looks like this (for now there are no `acme-` lines):
 
 ```
 [rules] erp: hexagonal-springboot + com.acme.rules.AcmeDddRules
@@ -226,41 +226,41 @@ dependencies {
        90 tail  v3-file-vars                         JpaEntityFileRules
 ```
 
-| 칸 | 뜻 |
+| Column | Meaning |
 |---|---|
-| `behavior`, `entity` … | target (파일 종류) |
-| `5`, `10` … | `order`. 같은 단계 안에서 작은 것부터 |
-| `head` / `field` / `tail` | 단계. 파일마다 `head` 규칙 → 필드마다 `field` 규칙 → `tail` 규칙 순으로 돕니다 |
-| `once` | 도메인·enum·port 단위 규칙. 단계 없이 `order` 순으로 한 번 |
-| `acme-role` | 규칙 id. `suppress`에 쓰는 이름 |
-| `AcmeDddRules` | 규칙이 든 클래스 |
+| `behavior`, `entity` ... | The target (kind of file) |
+| `5`, `10` ... | The `order`. Smaller runs first within the same stage |
+| `head` / `field` / `tail` | The stage. For each file, the `head` rules run, then the `field` rules for each field, then the `tail` rules |
+| `once` | A rule per domain, enum or port. It runs once, in `order`, with no stage |
+| `acme-role` | The rule id. The name you use in `suppress` |
+| `AcmeDddRules` | The class that holds the rule |
 
-이 명령은 파일을 만들거나 지우지 않고, 도메인마다 지금 선택된 규칙을 **실제로 도는 순서대로** 보여 줍니다.
-우리 규칙(`acme-…`)은 각 단계에서 ElastiCORE 규칙이 모두 끝난 **뒤에** 돕니다. 그래서 `order`를 적지 않아도 되고, 우리 규칙끼리의 순서가 필요할 때만 씁니다.
+This command neither creates nor deletes files. For each domain it shows the rules selected now, **in the order they actually run**.
+Our rules (`acme-...`) run **after** all the ElastiCORE rules in each stage. So you do not need to write `order`; you use it only when our rules need an order among themselves.
 
 ---
 
-## 4. 예제 1 — 기본 생성물 끄기
+## 4. Example 1 - switch off a default generated file
 
-회사에 공통 오류 처리기(`@RestControllerAdvice`)가 이미 있어서, 도메인마다 생기는 `ErpApiErrors`가 필요 없다고 합시다.
+Suppose your company already has a common error handler (`@RestControllerAdvice`), so you do not need the `ErpApiErrors` that is created for each domain.
 
-> **이 장은 방법만 보세요. ERP 예제에는 적용하지 마세요.** ERP에는 공통 오류 처리기가 없어서, 끄면 404·409·422 응답이 모두 500이 됩니다.
+> **Read this chapter for the method only. Do not apply it to the ERP example.** The ERP has no common error handler, so switching it off turns every 404, 409 and 422 response into a 500.
 
-1. `./gradlew elcore3 -PlistRules`에서 그 파일(target `apiErrors`)을 만드는 규칙을 찾습니다:
+1. In `./gradlew elcore3 -PlistRules`, find the rule that creates that file (target `apiErrors`):
    ```
      apiErrors
           10 once  spring-api-errors                    ApiErrorRules
    ```
-2. `env.yml`의 `config:` 아래에 적습니다:
+2. Write it under `config:` in `env.yml`:
    ```yaml
    elasticore:
      config:
        publisher:
          suppress: [spring-api-errors]
    ```
-3. 이미 만들어진 `ErpApiErrors.java`는 개발자 것이라 지워지지 않습니다. 필요 없으면 직접 지우세요.
+3. An `ErpApiErrors.java` that already exists is the developer's, so it is not deleted. Delete it yourself if you do not need it.
 
-모든 도메인에서 끄려면 도메인마다 적지 않고 빌드에 한 번 적습니다 (각 `env.yml`의 `suppress`와 합쳐짐):
+To switch it off in every domain, write it once in the build instead of in each domain (it is merged with the `suppress` of each `env.yml`):
 
 ```gradle
 elasticore {
@@ -268,20 +268,20 @@ elasticore {
 }
 ```
 
-- 한 파일 종류의 규칙을 **모두** 끄면 그 파일은 만들어지지 않습니다 (생성 로그에 `SKIP(dontMake)`).
-- 일부만 끄면 그 부분만 빠집니다. 예: `jpa-comment`를 끄면 엔티티 필드의 `@Comment`만 사라집니다.
-- **동작이 바뀝니다.** `ErpApiErrors`는 "없는 대상 404, 중복·지금 상태와 충돌 409, 업무 규칙 위반 422"를 정하는 파일입니다. 끄면 그 응답은 회사 처리기가 정해야 합니다(없으면 500).
-- 컨트롤러에 닿기 전의 거절(JSON 이 아닌 본문, 타입이 틀린 값, 없는 경로·메서드 - `code` 가 있는 같은 모양)도 함께 빠집니다. 그 응답을 맡는 런타임의 `RequestShapeErrors` 는 `ErpApiErrors` 가 `@Import` 해서 생기기 때문입니다. 회사 처리기에서도 쓰려면 그 처리기에 `@Import(io.elasticore.springboot3.validation.RequestShapeErrors.class)` 한 줄을 붙이세요(회사 처리기에 `@Order` 를 주면 그쪽이 먼저입니다). 생성된 컨트롤러의 `findById`·`delete` 가 없는 행에 던지는 `NotFoundException` 은 `@ResponseStatus(404)` 라서 끄더라도 404 입니다.
+- If you switch off **all** the rules of one kind of file, that file is not created (`SKIP(dontMake)` in the generation log).
+- If you switch off only some, only that part is dropped. Example: switching off `jpa-comment` removes only the `@Comment` on entity fields.
+- **Behavior changes.** `ErpApiErrors` is the file that decides "404 for a missing target, 409 for a duplicate or a conflict with the current state, 422 for a business rule violation". Switch it off and your company's handler must decide those responses (otherwise 500).
+- The refusals that happen before a request reaches a controller (a body that is not JSON, a value of the wrong type, a path or method that does not exist - the same shape with a `code`) also go away. That is because the runtime's `RequestShapeErrors`, which handles those responses, is brought in by `ErpApiErrors` with `@Import`. To use it in your company's handler too, add one line to that handler: `@Import(io.elasticore.springboot3.validation.RequestShapeErrors.class)` (if you give your company's handler an `@Order`, it goes first). The `NotFoundException` that the generated controller's `findById` and `delete` throw for a missing row is `@ResponseStatus(404)`, so it stays 404 even if you switch it off.
 
-> **끄면 안 되는 것**: 파일의 뼈대를 채우는 규칙 — `${packageName}`, `${className}` 같은 빈칸을 채우는 규칙(1장 표의 마지막 칸에 있는 규칙, 그리고 `controller-vars`, `v3-service-vars` 같은 `*-vars`, `*-file`) — 을 일부만 끄면 빈칸이 비어 파일이 깨집니다.
-> `suppress`는 "무언가를 더 붙이는" 규칙을 끄거나, 파일 하나의 규칙을 모두 꺼서 통째로 뺄 때 쓰세요.
+> **Do not switch off**: rules that fill in the outline of a file - rules that fill blanks such as `${packageName}` and `${className}` (the rules in the last column of the table in chapter 1, and the `*-vars` and `*-file` rules such as `controller-vars` and `v3-service-vars`). If you switch off only some of them, the blanks stay empty and the file breaks.
+> Use `suppress` to switch off a rule that "adds something more", or to remove a file entirely by switching off all the rules of that one file.
 
-### 규칙이 하는 일 중 하나만 빼기
+### Remove only one of the things a rule does
 
-`suppress`는 규칙 단위입니다. 한 규칙이 여러 가지를 하는데 **하나만** 빼려면, 우리 규칙이 그 뒤에 지웁니다.
-예: 엔티티마다 붙는 `@DynamicUpdate`만 빼기 (`v3-class-annotations`는 여러 어노테이션을 붙이므로 통째로 끌 수 없음):
+`suppress` works per rule. When one rule does several things and you want to remove **only one**, our rule removes it afterwards.
+Example: remove only the `@DynamicUpdate` that is put on every entity (`v3-class-annotations` puts on several annotations, so you cannot switch it off as a whole):
 
-**파일: `acme-rules/src/test/java/com/acme/rules/NoDynamicUpdateRules.java`** (예제라 테스트에만 둠. 실제로 쓰려면 `src/main/java`로 옮기고 빌드의 `rules` 목록에 추가)
+**File: `acme-rules/src/test/java/com/acme/rules/NoDynamicUpdateRules.java`** (kept in tests only because it is an example. To use it for real, move it to `src/main/java` and add it to the `rules` list in the build)
 
 ```java
 package com.acme.rules;
@@ -303,23 +303,23 @@ public class NoDynamicUpdateRules implements CodeRules {
 }
 ```
 
-`c.removeClassAnnotation(...)`, `c.removeField(f)`, `c.field(f).removeAnnotation(...)`이 같은 방식입니다. 우리 규칙은 기본 규칙 뒤에 돌므로 뺀 것이 다시 붙지 않고, 나뉜 루트의 개발자 클래스(`SalesOrder.java`)에서도 빠집니다.
-(`@DynamicUpdate`는 DSL로도 뺄 수 있습니다: 엔티티 meta에 `@dynamicupdate(false)`.)
+`c.removeClassAnnotation(...)`, `c.removeField(f)` and `c.field(f).removeAnnotation(...)` work the same way. Our rules run after the default rules, so what you removed is not put back, and it is also removed from the developer class of a split root (`SalesOrder.java`).
+(You can also remove `@DynamicUpdate` with the DSL: `@dynamicupdate(false)` in the entity meta.)
 
 ---
 
-## 5. 예제 2 — 모든 클래스에 DDD 역할 표시하기 (jMolecules)
+## 5. Example 2 - mark every class with its DDD role (jMolecules)
 
-[jMolecules](https://github.com/xmolecules/jmolecules)는 "이 클래스는 애그리거트 루트다" 같은 DDD 역할을 어노테이션으로 표시하는 라이브러리입니다.
-ArchUnit·IDE 같은 도구가 이 표시를 읽고 경계 위반을 찾아 줍니다.
-ElastiCORE 모델은 역할을 이미 알고 있으므로(`@root`, 멤버, `@embeddable`, `@id`) 사람이 손으로 붙일 필요가 없습니다.
+[jMolecules](https://github.com/xmolecules/jmolecules) is a library that marks DDD roles such as "this class is an aggregate root" with annotations.
+Tools such as ArchUnit and IDEs read these markers and find boundary violations.
+The ElastiCORE model already knows the roles (`@root`, member, `@embeddable`, `@id`), so nobody needs to add them by hand.
 
-아래는 `AcmeDddRules.java`의 1번 부분입니다 (전체 파일은 6.6).
+Below is part 1 of `AcmeDddRules.java` (the whole file is in 6.6).
 
-3장의 빈 틀에 아래를 채웁니다(import는 부록 A 참고. IDE가 채워 줍니다).
+Fill the empty shell from chapter 3 with the following (see appendix A for the imports; the IDE fills them in).
 
 ```java
-public class AcmeDddRules implements CodeRules {      // DomainArtifactContributor 는 6.3에서 추가
+public class AcmeDddRules implements CodeRules {      // DomainArtifactContributor is added in 6.3
 
     private static final String JMOLECULES = "org.jmolecules.ddd.annotation.%s";
 
@@ -346,45 +346,45 @@ public class AcmeDddRules implements CodeRules {      // DomainArtifactContribut
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `@Rule("acme-role")` | 엔티티 파일을 만들 때 실행(`target`을 적지 않으면 `"entity"`). 괄호 안은 id — 우리 규칙은 `acme-`로 시작하게 지어 기본 규칙과 겹치지 않게 합니다 |
-| 메서드의 **파라미터** | 언제 불리는지를 정합니다. `(EntitySpec e)`는 파일마다 한 번, `(EntitySpec e, FieldSpec f)`는 **필드마다** 한 번 (`acme-identity`) |
-| `ctx(e)` | 지금 만들고 있는 파일(`SourceCode`) |
-| `ensureClassAnnotation(...)` | 클래스에 어노테이션. 이미 있으면 두 번 붙이지 않음. **import는 자동** |
-| `ctx(e).field(f).ensure(...)` | 그 필드에 어노테이션 |
-| `AnnoCode.of(JMOLECULES, "Entity").qualified()` | `jakarta.persistence.Entity`와 이름이 같아 전체 이름으로 씀 → `@org.jmolecules.ddd.annotation.Entity` |
-| `e.aggregateRoot()` | 루트인가 (멤버·값 객체면 false) |
-| `e.hasMeta("abstract")` | `@abstract` 엔티티는 다른 엔티티가 상속하는 틀이라 역할이 없음 |
+| `@Rule("acme-role")` | Runs when an entity file is made (if you do not write `target`, it is `"entity"`). The text in parentheses is the id - name our rules so they start with `acme-`, so they do not collide with the default rules |
+| The method's **parameters** | They decide when it is called. `(EntitySpec e)` is called once per file; `(EntitySpec e, FieldSpec f)` is called once **per field** (`acme-identity`) |
+| `ctx(e)` | The file being made now (`SourceCode`) |
+| `ensureClassAnnotation(...)` | An annotation on the class. If it is already there, it is not added twice. **Imports are automatic** |
+| `ctx(e).field(f).ensure(...)` | An annotation on that field |
+| `AnnoCode.of(JMOLECULES, "Entity").qualified()` | The name is the same as `jakarta.persistence.Entity`, so it is written in full -> `@org.jmolecules.ddd.annotation.Entity` |
+| `e.aggregateRoot()` | Is it a root (false for a member or a value object) |
+| `e.hasMeta("abstract")` | An `@abstract` entity is a frame that other entities inherit, so it has no role |
 
-### 두 파일로 나뉜 루트
+### A root split into two files
 
-DDD 번들에서 **`@editable`이 아닌 루트**는 두 파일로 나뉩니다. ERP에서는 `SalesOrder`, `Stock`, `Invoice`가 나뉘고, `@editable`인 `Partner`, `Item`은 한 파일입니다.
+In the DDD bundle, a **root that is not `@editable`** is split into two files. In the ERP, `SalesOrder`, `Stock` and `Invoice` are split, and `Partner` and `Item`, which are `@editable`, are one file.
 
-| 파일 | target | 누구 것 |
+| File | target | Whose |
 |---|---|---|
-| `SalesOrderBase.java` (필드) | `entity` | 생성기 (매번 다시 씀) |
-| `SalesOrder.java` (규칙 메서드) | `behavior` | **개발자** |
+| `SalesOrderBase.java` (fields) | `entity` | Generator (rewritten every time) |
+| `SalesOrder.java` (rule methods) | `behavior` | **Developer** |
 
-`target = "entity"`인 우리 규칙은 **두 파일 모두에** 적용됩니다. 규칙을 쓸 때 나뉘었는지 신경 쓰지 않아도 됩니다.
-(나뉘었는지 알아야 할 때는 `e.isSplitForBehavior(e.getName())`. 조건은 "`@editable`이 아니고 식별자가 하나인 루트, 또는 `@behavior`를 붙인 엔티티"이고, `@abstract`·`@embeddable`·`@rollup`이거나 `@discriminator` 필드가 있으면 나뉘지 않습니다.)
+Our rule with `target = "entity"` applies to **both files**. When you write a rule, you do not need to care whether it is split.
+(When you need to know whether it is split, use `e.isSplitForBehavior(e.getName())`. The condition is "a root that is not `@editable` and has a single identifier, or an entity with `@behavior`", and it is not split if it is `@abstract`, `@embeddable` or `@rollup`, or has a `@discriminator` field.)
 
-### 순서(order)는 신경 쓰지 않아도 됩니다
+### You do not need to care about order
 
-우리 규칙은 각 단계(파일 단위 `head` → 필드 단위 `field` → `tail`)에서 ElastiCORE 규칙이 모두 끝난 **뒤에** 돕니다.
-그래서 우리 규칙이 붙이거나 뺀 것은 그대로 남습니다. `order`는 우리 규칙끼리 순서가 필요할 때만 적습니다.
+Our rules run **after** all the ElastiCORE rules in each stage (`head` per file -> `field` per field -> `tail`).
+So what our rules add or remove stays. Write `order` only when our rules need an order among themselves.
 
-> 1장 표에서 "없음"인 파일에는 붙지 않습니다. 규칙 테스트(9장)에서 렌더링해 보면 바로 확인됩니다.
+> It is not put on the files marked "None" in the table of chapter 1. You can confirm it right away by rendering in a rule test (chapter 9).
 
-### 이미 있는 내 파일
+### A file of yours that already exists
 
-`SalesOrder.java`처럼 **개발자 것**인 파일이라도 생성기가 만든 소유 파일(첫 줄 근처에 `// Initially generated by ElastiCORE; no longer managed` 줄이 있는 파일)이면 나중에 추가한 규칙이 닿습니다.
-손대지 않았으면 다시 생성되고, 고쳤으면 규칙이 바꾸는 부분이 고친 줄과 겹치지 않을 때 병합됩니다(`MERGED(your edits kept)`, `elasticore-env-guide.md` 9-2). 컨트롤러·서비스도 같습니다.
+Even a file that is the **developer's**, such as `SalesOrder.java`, is reached by a rule you add later if it is an owned file made by the generator (a file with the line `// Initially generated by ElastiCORE; no longer managed` near its first line).
+If you have not touched it, it is generated again; if you edited it, it is merged when the part the rule changes does not overlap the lines you edited (`MERGED(your edits kept)`, `elasticore-env-guide.md` 9-2). The same goes for controllers and services.
 
-겹치면 파일을 그대로 두고(`KEPT(yours ...)`) 겹친 곳이 몇 군데인지 알립니다(`the DSL changes this file of yours where you changed it too`) - 그 부분을 손으로 옮깁니다.
-병합을 끈 프로젝트(`merge = false`)에서 고친 파일과 병합 전 버전이 만든 파일을 고친 경우(`SKIP(user-owned)`)는 규칙이 닿지 않습니다.
+If they overlap, the file is left as it is (`KEPT(yours ...)`) and the generator tells you how many places overlap (`the DSL changes this file of yours where you changed it too`) - you move that part by hand.
+Rules do not reach a file you edited in a project with merging turned off (`merge = false`), or a file made by a version before merging and then edited by you (`SKIP(user-owned)`).
 
-이렇게 남은 파일이 **나뉜 엔티티의 개발자 클래스**면, 빠진 클래스 어노테이션을 따로 알려 줍니다. 예를 들어 새 루트 `Shipment`의 `Shipment.java`가 그렇다면:
+If a file left this way is the **developer class of a split entity**, the class annotations that are missing are reported separately. For example, if it is `Shipment.java` of a new root `Shipment`:
 
 ```
 [elcore3] src/main/java/com/acme/erp/domain/model/Shipment.java: the rules also put these on the class,
@@ -392,9 +392,9 @@ which this file does not have - it is yours, so add them by hand if they apply:
     @AggregateRoot
 ```
 
-이 알림은 엔티티 클래스에만 나옵니다. 컨트롤러·서비스처럼 다른 개발자 파일이 남았을 때 무엇이 빠졌는지는 팀에 공유하세요.
+This notice appears only for entity classes. When other developer files such as controllers and services are left, share with your team what is missing.
 
-헥사고날 가이드에서 통째로 복사한 `SalesOrder.java`, `Stock.java`, `Invoice.java`는 그 표시 줄이 없어서 알림도 없습니다. 세 파일에 직접 붙이세요:
+The `SalesOrder.java`, `Stock.java` and `Invoice.java` that you copied whole from the hexagonal guide do not have that marker line, so there is no notice either. Add the annotation to the three files yourself:
 
 ```java
 import org.jmolecules.ddd.annotation.AggregateRoot;
@@ -405,31 +405,31 @@ import org.jmolecules.ddd.annotation.AggregateRoot;
 public class Stock extends StockBase {
 ```
 
-위 `Shipment`처럼 생성기가 만든 파일은 알림을 보고, 이 세 파일은 알림 없이 직접 붙입니다.
+A file the generator made, like `Shipment` above, gives you the notice; these three files you edit by hand, without a notice.
 
 ---
 
-## 6. 예제 3 — 우리만의 DSL 단어로 새 파일 만들기 (`@topic`)
+## 6. Example 3 - create a new file with our own DSL word (`@topic`)
 
-도메인 이벤트를 Kafka 같은 메시지 브로커로 보낼 때, 이벤트마다 **토픽 이름**이 필요합니다.
-이것을 코드 곳곳에 문자열로 흩어 두지 않고, DSL에 한 번 적고 상수 클래스로 생성하겠습니다.
+When you send domain events to a message broker such as Kafka, each event needs a **topic name**.
+Instead of scattering this as strings through the code, we write it once in the DSL and generate a constants class.
 
-### 6.1 DSL에 쓰기
+### 6.1 Write it in the DSL
 
-`src/main/resources/blueprint/erp/model/entity.yml`의 `SalesOrder` meta 끝에 `@topic(erp.sales)`를 더합니다:
+Add `@topic(erp.sales)` to the end of the `SalesOrder` meta in `src/main/resources/blueprint/erp/model/entity.yml`:
 
 ```yaml
   SalesOrder:
     meta: entity @root @expose(20) @event(Confirmed(totalAmount), Shipped(orderNo, shipWarehouse, totalAmount), Cancelled) @topic(erp.sales) @Index(name="uk_erp_sales_order_no", columnList="order_no", unique="true")
 ```
 
-ElastiCORE는 모르는 단어를 오류로 보지 않고 **보관만** 합니다. 생성 코드에는 아무것도 나오지 않고, 규칙이 `e.metaValue("topic")`으로 `erp.sales`를 읽습니다.
-필드에 붙인 단어(`bizNo: string(12) @masked`)는 `f.hasDsl("masked")`, `f.dslValue("masked")`로 읽습니다.
+ElastiCORE does not treat an unknown word as an error; it **only keeps** it. Nothing appears in the generated code, and a rule reads `erp.sales` with `e.metaValue("topic")`.
+A word put on a field (`bizNo: string(12) @masked`) is read with `f.hasDsl("masked")` and `f.dslValue("masked")`.
 
-> 철자를 틀려도(`@topci`) 오류가 나지 않고 조용히 무시됩니다. 중요한 단어라면 7장처럼 검사 규칙을 두세요.
-> ElastiCORE가 이미 쓰는 단어(`@event`, `@search`, `@label` … `elasticore-annotation-guide.md`)와 겹치지 않게 지으세요. 걱정되면 팀 접두사를 붙입니다(예: `@acmeTopic`).
+> A misspelling (`@topci`) causes no error and is silently ignored. If the word is important, add a check rule as in chapter 7.
+> Name it so it does not collide with words ElastiCORE already uses (`@event`, `@search`, `@label` ... `elasticore-annotation-guide.md`). If you are worried, add a team prefix (for example `@acmeTopic`).
 
-### 6.2 생성될 파일
+### 6.2 The file that will be generated
 
 ```java
 public final class ErpEventTopics {
@@ -438,21 +438,21 @@ public final class ErpEventTopics {
     public static final String SALES_ORDER_SHIPPED = "erp.sales.shipped";
     public static final String SALES_ORDER_CANCELLED = "erp.sales.cancelled";
     …
-    public static String topicOf(String eventType) { … }   // 이벤트 클래스의 전체 이름 → 토픽
+    public static String topicOf(String eventType) { … }   // full name of the event class -> topic
 }
 ```
 
-### 6.3 파일을 선언하기 — `DomainArtifactContributor`
+### 6.3 Declare the file - `DomainArtifactContributor`
 
-> 6.3~6.4의 조각은 설명용입니다. 여기서 쓰는 도우미 메서드(`topicOf`, `className`, `upperSnake`, `kebab`)와 `implements … DomainArtifactContributor`는 부록 A에 있으니,
-> 빌드해 볼 때는 6.6처럼 부록 A로 파일을 바꾸세요.
+> The pieces in 6.3-6.4 are for explanation. The helper methods used here (`topicOf`, `className`, `upperSnake`, `kebab`) and `implements … DomainArtifactContributor` are in appendix A,
+> so to build it, replace the file with appendix A, as in 6.6.
 
-생성기는 새 파일 종류를 **미리 알지 못합니다**. 룰셋이 "이 도메인에는 이런 파일이 하나 있다"고 알려 줘야 합니다.
+The generator **does not know in advance** about a new kind of file. The rule set must tell it "this domain has a file like this".
 
-| 파일이 | 구현할 인터페이스 | 메서드 |
+| If the file is | Interface to implement | Method |
 |---|---|---|
-| 도메인마다 하나 | `DomainArtifactContributor` | `artifactsFor(DomainSpec d)` |
-| 엔티티마다 하나 | `ArtifactContributor` | `artifactsFor(EntitySpec e)` (6.7) |
+| One per domain | `DomainArtifactContributor` | `artifactsFor(DomainSpec d)` |
+| One per entity | `ArtifactContributor` | `artifactsFor(EntitySpec e)` (6.7) |
 
 ```java
     @Override
@@ -467,18 +467,18 @@ public final class ErpEventTopics {
     }
 ```
 
-`ContributedArtifact.of("eventTopics", "event", "ErpEventTopics")`의 값:
+The values of `ContributedArtifact.of("eventTopics", "event", "ErpEventTopics")`:
 
-| 값 | 뜻 |
+| Value | Meaning |
 |---|---|
-| `"eventTopics"` | **새 target 이름**. 이 파일을 채울 규칙의 `target`, 그리고 스켈레톤 파일 이름(`eventTopics.tmpl`) |
-| `"event"` | 파일이 놓일 **패키지를 찾는 키** (`env.yml`의 `namespace`). `namespace: base: com.acme.erp`면 `com.acme.erp.domain.event`. target `event`(이벤트 클래스)와는 다른 것으로, 같은 패키지에 두려고 같은 키를 썼습니다 |
-| `"ErpEventTopics"` | 클래스(파일) 이름 |
-| `.orNamespace("entity")` | `event` 키가 없는 프로젝트에서 대신 쓸 키 |
+| `"eventTopics"` | The **new target name**. It is the `target` of the rule that fills this file, and the skeleton file name (`eventTopics.tmpl`) |
+| `"event"` | The **key that finds the package** the file goes in (`namespace` in `env.yml`). With `namespace: base: com.acme.erp`, it is `com.acme.erp.domain.event`. It is not the same thing as the target `event` (the event classes); the same key was used to put them in the same package |
+| `"ErpEventTopics"` | The class (file) name |
+| `.orNamespace("entity")` | The key to use instead in a project that has no `event` key |
 
-패키지 키는 `env.yml`의 `namespace` 아래 이름이면 무엇이든 됩니다. `namespace: base: com.acme.erp`가 만들어 주는 키:
+The package key can be any name under `namespace` in `env.yml`. The keys that `namespace: base: com.acme.erp` creates:
 
-| 키 | 패키지 |
+| Key | Package |
 |---|---|
 | `entity`, `enumeration` | `…domain.model` |
 | `event` | `…domain.event` |
@@ -488,10 +488,10 @@ public final class ErpEventTopics {
 | `repository`, `persistence` | `…infrastructure.persistence` |
 | `control` | `…adapter.in.web` |
 
-우리 파일만의 자리가 필요하면 `namespace`에 한 줄 더 쓰고(`messaging: com.acme.erp.infrastructure.messaging`) 그 키를 씁니다. `base`와 함께 써도 됩니다.
-만들 것이 없으면 빈 목록을 돌려줍니다. 이 도메인에 `@topic`이 없으면 파일도 없습니다.
+If you need a place of its own for your file, write one more line in `namespace` (`messaging: com.acme.erp.infrastructure.messaging`) and use that key. You can use it together with `base`.
+If there is nothing to create, return an empty list. If this domain has no `@topic`, there is no file.
 
-### 6.4 빈칸 채우기 — 규칙
+### 6.4 Fill the blanks - the rule
 
 ```java
     @Rule(value = "acme-event-topics", target = "eventTopics")
@@ -520,26 +520,26 @@ public final class ErpEventTopics {
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `(DomainSpec d)` | 도메인마다 한 번 불림 |
-| `e.events()` | 이 루트의 `@event` 이름들: `[Confirmed, Shipped, Cancelled]` |
-| `e.eventClassName(event)`, `e.eventPackage()` | 생성된 이벤트 클래스의 이름·패키지: `SalesOrderShippedEvent`, `com.acme.erp.domain.event` |
-| `c.var("이름", 값)` | 스켈레톤의 `${이름}`을 채움 |
-| `c.varLine("이름", ...)` | `${이름}` 자리에 줄을 하나씩 추가 |
-| `requireSyntaxAnyOf(...)` | 이 규칙이 쓸 수 있는 언어. 다른 언어의 생성에 쓰이면 이상한 파일을 조용히 만드는 대신 그 파일을 실패(`ERROR`)로 남김 |
-| `${packageName}` | 규칙이 채우지 않습니다. 생성기가 `artifactsFor`에서 고른 패키지를 미리 넣어 두므로, 파일 위치와 `package` 줄이 어긋날 수 없습니다 |
+| `(DomainSpec d)` | Called once per domain |
+| `e.events()` | The `@event` names of this root: `[Confirmed, Shipped, Cancelled]` |
+| `e.eventClassName(event)`, `e.eventPackage()` | The name and package of the generated event class: `SalesOrderShippedEvent`, `com.acme.erp.domain.event` |
+| `c.var("name", value)` | Fills `${name}` in the skeleton |
+| `c.varLine("name", ...)` | Adds one line at a time at the place of `${name}` |
+| `requireSyntaxAnyOf(...)` | The languages this rule can be used with. If it is used to generate another language, it records that file as a failure (`ERROR`) instead of silently making a strange file |
+| `${packageName}` | The rule does not fill it. The generator puts in the package chosen in `artifactsFor` beforehand, so the file location and the `package` line cannot disagree |
 
-### 6.5 스켈레톤
+### 6.5 The skeleton
 
-스켈레톤은 규칙 모듈의 `src/main/resources/elasticore-template/` 아래, **언어별 폴더**에 **target 이름**으로 둡니다.
+Put the skeleton under `src/main/resources/elasticore-template/` of the rule module, in the **folder for the language**, named by the **target name**.
 
-| 언어 | 경로 |
+| Language | Path |
 |---|---|
 | Java | `elasticore-template/v3/eventTopics.tmpl` |
-| Kotlin | `elasticore-template/kt/eventTopics.tmpl` (10장) |
+| Kotlin | `elasticore-template/kt/eventTopics.tmpl` (chapter 10) |
 
-**파일: `acme-rules/src/main/resources/elasticore-template/v3/eventTopics.tmpl`**
+**File: `acme-rules/src/main/resources/elasticore-template/v3/eventTopics.tmpl`**
 
 ```java
 package ${packageName};
@@ -572,32 +572,32 @@ ${entryList}
 }
 ```
 
-스켈레톤에 `${importList}`나 `${classAnnotationList}`를 **한 줄로** 두면, 우리 규칙에서 `c.addImport(...)`·`c.ensureClassAnnotation(...)`한 것이 그 자리에 자동으로 들어갑니다
-(그 파일의 규칙이 모두 우리 룰셋 — `io.elasticore` 패키지가 아닌 것 — 일 때. 룰셋 패키지를 `io.elasticore`로 짓지 마세요).
-위 예제는 import가 고정이라 직접 적었습니다.
+If you put `${importList}` or `${classAnnotationList}` **on a line of its own** in the skeleton, what our rules did with `c.addImport(...)` and `c.ensureClassAnnotation(...)` is put in that place automatically
+(when all the rules for that file belong to our rule set - one whose package is not `io.elasticore`. Do not name your rule set package `io.elasticore`).
+The example above has fixed imports, so they are written out directly.
 
-누가 이 파일을 관리하는지는 스켈레톤의 첫 줄로 정합니다.
+The first line of the skeleton decides who manages this file.
 
-| 스켈레톤 첫 줄 | 생성된 파일은 |
+| First line of the skeleton | The generated file is |
 |---|---|
-| (표시 없음) — 위 예제 | **생성기 것**. DSL이 바뀌면 다시 씀. 손으로 고치면 고친 내용을 남기고 DSL의 변경을 병합 (같은 줄을 양쪽이 바꾸면 충돌로 빌드가 멈춤, `elasticore-env-guide.md` 9-2) |
-| `// Initially generated by ElastiCORE; no longer managed - do not remove this line.` | **개발자 것**. 고치기 전에는 DSL을 따라가고, 고친 뒤에는 겹치지 않는 변경만 받음 - 겹치면 그대로 두고 알림 (컨트롤러처럼 채워 넣을 틀에 사용) |
+| (no marker) - the example above | **The generator's**. Rewritten when the DSL changes. If you edit it by hand, your edit is kept and the DSL change is merged (if both sides change the same line, it is a conflict and the build stops, `elasticore-env-guide.md` 9-2) |
+| `// Initially generated by ElastiCORE; no longer managed - do not remove this line.` | **The developer's**. Until you edit it, it follows the DSL; after you edit it, it accepts only the changes that do not overlap - if they overlap, it is left as it is and you are told (use it for a frame to be filled in, like a controller) |
 
-### 6.6 전체 규칙 파일
+### 6.6 The whole rule file
 
-5~7장의 조각을 합친 `AcmeDddRules.java` 완성본은 **부록 A**에 있습니다. 3장의 빈 틀을 그 내용으로 바꾸세요.
+The finished `AcmeDddRules.java`, with the pieces of chapters 5-7 put together, is in **appendix A**. Replace the empty shell from chapter 3 with that content.
 
-### 6.7 변형: 엔티티마다 파일 하나
+### 6.7 Variation: one file per entity
 
-도메인에 하나가 아니라 **루트마다** 하나를 만들려면(예: `SalesOrderEvents`) 세 곳이 다릅니다.
+To create one file per **root** instead of one per domain (for example `SalesOrderEvents`), three places differ.
 
-| | 도메인마다 (6.3~6.4) | 엔티티마다 |
+| | Per domain (6.3-6.4) | Per entity |
 |---|---|---|
-| 인터페이스 | `DomainArtifactContributor` | `ArtifactContributor` |
-| 선언 | `artifactsFor(DomainSpec d)` | `artifactsFor(EntitySpec e)` — 엔티티마다 불림 |
-| 규칙 파라미터 | `(DomainSpec d)` | `(EntitySpec e)` |
+| Interface | `DomainArtifactContributor` | `ArtifactContributor` |
+| Declaration | `artifactsFor(DomainSpec d)` | `artifactsFor(EntitySpec e)` - called for each entity |
+| Rule parameter | `(DomainSpec d)` | `(EntitySpec e)` |
 
-**파일: `acme-rules/src/test/java/com/acme/rules/PerRootExampleRules.java`** (이 가이드에서는 테스트에서만 씀)
+**File: `acme-rules/src/test/java/com/acme/rules/PerRootExampleRules.java`** (used in tests only in this guide)
 
 ```java
 package com.acme.rules;
@@ -635,31 +635,31 @@ public class PerRootExampleRules implements CodeRules, ArtifactContributor {
 }
 ```
 
-스켈레톤은 같은 방식으로 `elasticore-template/v3/rootEvents.tmpl`에 둡니다(9.1).
-이 예제는 규칙 테스트에서만 씁니다. 실제로 쓰려면 클래스를 `src/main/java`로, 스켈레톤을 `src/main/resources`로 옮기고 빌드의 `rules` 목록에 `'com.acme.rules.PerRootExampleRules'`를 더합니다(룰셋은 여러 개여도 됩니다).
-Kotlin 프로젝트에서도 쓰려면 `kt/rootEvents.tmpl`을 만들고 규칙에 `requireSyntaxAnyOf(...)`를 넣으세요(6.4, 12장).
+Put the skeleton the same way in `elasticore-template/v3/rootEvents.tmpl` (9.1).
+This example is used only in rule tests. To use it for real, move the class to `src/main/java` and the skeleton to `src/main/resources`, and add `'com.acme.rules.PerRootExampleRules'` to the `rules` list in the build (you may have several rule sets).
+To use it in a Kotlin project too, create `kt/rootEvents.tmpl` and put `requireSyntaxAnyOf(...)` in the rule (6.4, chapter 12).
 
-### 6.8 생성된 클래스 쓰기 — Outbox로 토픽에 보내기
+### 6.8 Writing a generated class - sending to a topic through the Outbox
 
-이벤트를 브로커로 보내려면 두 가지를 켭니다.
+To send events to a broker, turn on two things.
 
-1. `env.yml`의 `config:` 아래:
+1. In `env.yml`, under `config:`:
    ```yaml
        apiPath: "/api"
-       outbox: true                # 이벤트를 Outbox 테이블을 거쳐 내보냄
+       outbox: true                # send events through the Outbox table
    ```
-2. 메인 클래스에 `@EnableScheduling` — 보내는 일(Relay)이 주기 실행(기본 5초)이라 이것이 없으면 메시지가 테이블에 쌓이기만 합니다.
+2. `@EnableScheduling` on the main class - the sender (Relay) runs periodically (every 5 seconds by default), so without it messages only pile up in the table.
    ```java
    @SpringBootApplication
    @EnableScheduling                 // the outbox relay sends on a schedule
-   @EnableJpaAuditing          // 작성자·작성시각 자동 기록
+   @EnableJpaAuditing          // records the author and time automatically
    public class ErpApplication {
    ```
 
-흐름: 이벤트가 저장과 **같은 트랜잭션**에서 Outbox 테이블에 기록되고, 생성된 `ErpOutboxRelay`가 커밋 뒤에 `OutboxPublisher` 빈으로 넘깁니다.
-`OutboxPublisher`를 구현해 토픽을 고릅니다.
+The flow: the event is written to the Outbox table in the **same transaction** as the save, and the generated `ErpOutboxRelay` hands it to the `OutboxPublisher` bean after the commit.
+Implement `OutboxPublisher` to choose the topic.
 
-**파일: `src/main/java/com/acme/erp/infrastructure/messaging/TopicOutboxPublisher.java`**
+**File: `src/main/java/com/acme/erp/infrastructure/messaging/TopicOutboxPublisher.java`**
 
 ```java
 package com.acme.erp.infrastructure.messaging;
@@ -687,19 +687,19 @@ public class TopicOutboxPublisher implements OutboxPublisher {
 }
 ```
 
-| `publish`가 | 결과 |
+| When `publish` | Result |
 |---|---|
-| 정상 반환 | 발행 완료로 표시 |
-| 예외 | 발행되지 않은 채 남고 다음 주기에 다시 시도. 그동안 **뒤의 모든 메시지(다른 애그리거트 것 포함)가 기다립니다** — 발행 순서 보장 |
-| 10번 실패 (`application.yml`의 `elasticore.outbox.max-attempts`) | 따로 빼 두고 오류 로그. 그 뒤 메시지부터 다시 나감 |
+| returns normally | The message is marked as published |
+| throws an exception | It stays unpublished and is retried in the next cycle. Meanwhile **all later messages (including those of other aggregates) wait** - publishing order is guaranteed |
+| fails 10 times (`elasticore.outbox.max-attempts` in `application.yml`) | It is set aside and an error is logged. The messages after it go out again |
 
-토픽이 없는 이벤트는 예외로 알리므로 조용히 버려지지 않습니다.
+An event without a topic is reported with an exception, so it is never dropped silently.
 
 ---
 
-## 7. 예제 4 — 모델 검사하기 (팀 설정과 함께)
+## 7. Example 4 - Checking the model (with a team setting)
 
-규칙은 코드를 쓰지 않고 **모델만 검사**할 수도 있습니다. 전체 파일의 3번 부분입니다.
+A rule can also **only check the model**, without writing code. This is part 3 of the full file.
 
 ```java
     @Rule("acme-model-check")
@@ -720,22 +720,22 @@ public class TopicOutboxPublisher implements OutboxPublisher {
     }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `ModelCheck.warn(msg)` | 경고만. 같은 메시지는 한 번만 출력 |
-| `ModelCheck.fail(msg)` | 생성은 끝까지 하고(모든 문제를 한 번에 보이도록) 마지막에 **빌드를 실패**시킴 |
-| `e.config("acme.requireTopic")` | 그 도메인 `env.yml`의 `elasticore.config.acme.requireTopic` 값 (없으면 `null`). 도메인 규칙에서는 `d.config(...)` |
-| `e.commands()` | `commands:`에 선언한 명령들. 각각 `name()`, `params()` |
+| `ModelCheck.warn(msg)` | A warning only. The same message is printed once |
+| `ModelCheck.fail(msg)` | Generation runs to the end (so all problems show at once), and then the **build fails** |
+| `e.config("acme.requireTopic")` | The value of `elasticore.config.acme.requireTopic` in that domain's `env.yml` (`null` if absent). In a domain rule, use `d.config(...)` |
+| `e.commands()` | The commands declared under `commands:`. Each has `name()` and `params()` |
 
-팀 설정을 `env.yml`의 `config:` 아래에 적습니다:
+Write the team setting under `config:` in `env.yml`:
 
 ```yaml
-    outbox: true                # 이벤트를 Outbox 테이블을 거쳐 내보냄
+    outbox: true                # send events through the Outbox table
     acme:
-      requireTopic: true        # 우리 규칙의 설정: 이벤트가 있는 루트는 @topic 필수
+      requireTopic: true        # a setting of our rule: a root with events must have @topic
 ```
 
-확인해 보기: `SalesOrder`의 `@topic(erp.sales)`를 잠깐 지우고 `./gradlew elcore3`를 실행하면:
+Try it: remove `@topic(erp.sales)` from `SalesOrder` for a moment and run `./gradlew elcore3`:
 
 ```
 [acme] SalesOrder declares events but no @topic - add @topic(...) to its meta.
@@ -744,21 +744,21 @@ public class TopicOutboxPublisher implements OutboxPublisher {
   [acme] SalesOrder declares events but no @topic - add @topic(...) to its meta.
 ```
 
-빌드가 실패합니다(`elcore3` 종료 코드 1). 다시 붙이면 통과합니다.
-ERP 모델은 명령이 있는 루트(`SalesOrder`)가 이벤트도 선언하므로 `warn` 쪽은 나오지 않습니다. `SalesOrder`의 `@event(...)`를 지워 보면 나옵니다.
+The build fails (`elcore3` exits with code 1). Put it back and it passes.
+In the ERP model, the root with commands (`SalesOrder`) also declares events, so the `warn` side does not appear. Remove the `@event(...)` of `SalesOrder` and it does.
 
-> **규칙에서 예외를 던지지 마세요.** 그 규칙이 쓰던 **파일 하나만** 실패(`ERROR`)로 남고 나머지는 생성된 뒤 종료 코드 1로 끝납니다.
-> 어느 파일이 왜 빠졌는지 찾기 어렵습니다. 모델 문제는 `ModelCheck.fail`로 알리세요.
+> **Do not throw exceptions in a rule.** Only the **one file** that rule was writing is left as a failure (`ERROR`); the rest is generated and the run ends with exit code 1.
+> It is hard to find which file is missing and why. Report model problems with `ModelCheck.fail`.
 
 ---
 
-## 8. 조립: 전체 빌드
+## 8. Putting it together: the full build
 
 ```bash
-./gradlew build        # 규칙 모듈 컴파일 → 생성(elcore3) → 애플리케이션 컴파일 → 테스트
+./gradlew build        # compile the rule module -> generate (elcore3) -> compile the application -> test
 ```
 
-생성 로그에 새 파일이 보입니다:
+The generation log shows the new file:
 
 ```
     eventTopics  src/main/java/com/acme/erp/domain/event/ErpEventTopics.java  WROTE
@@ -766,13 +766,13 @@ ERP 모델은 명령이 있는 루트(`SalesOrder`)가 이벤트도 선언하므
 
 ---
 
-## 9. 규칙 테스트하기
+## 9. Testing the rules
 
-### 9.1 규칙만 테스트 (빠름, 프로젝트 없이)
+### 9.1 Test only the rules (fast, no project)
 
-모델을 테스트 안에서 만들고, 번들 + 우리 룰셋으로 파일 하나를 만들어 봅니다.
+Build the model inside the test and produce a single file with the bundle plus our rule set.
 
-**파일: `acme-rules/src/test/java/com/acme/rules/AcmeDddRulesTest.java`**
+**File: `acme-rules/src/test/java/com/acme/rules/AcmeDddRulesTest.java`**
 
 ```java
 package com.acme.rules;
@@ -900,22 +900,22 @@ class AcmeDddRulesTest {
 }
 ```
 
-| 코드 | 뜻 |
+| Code | Meaning |
 |---|---|
-| `.meta("root", "")` | DSL의 `meta: entity @root`. `.meta("topic", "erp.sales")`는 `@topic(erp.sales)` |
-| `.field("orderId", "string(36) @id")` | DSL의 필드 한 줄을 그대로 |
-| `.containedIn("SalesOrder")` | 멤버 엔티티 (그 루트에 속함) |
-| `.entitySplitForBehavior("SalesOrder")` | 두 파일로 나뉘는 루트로 만듦 → 개발자 클래스(`behavior`)도 테스트할 수 있음 |
-| `.config("acme.requireTopic", "true")` | `env.yml` 설정 대신 |
-| `engineFor("hexagonal-springboot").register(new AcmeDddRules())` | 프로젝트와 같은 조합: 번들 + 우리 룰셋 |
-| `run(spec, "entity").render()` | 그 target의 파일 내용 (문자열) |
-| `code.unfilledSlots()` | `render()` 후, 값이 없어 빈 줄이 된 `${빈칸}` 이름들. 빈칸은 오류 없이 빈 줄이 되므로 이것으로 확인 (이름 오타가 여기서 드러남) |
-| `ModelCheck.reset()` | 테스트끼리 검사 결과가 섞이지 않게 |
-| `.packageName("…")` | 생성기가 넣어 주는 `${packageName}`을 테스트에서 대신 넣음 |
+| `.meta("root", "")` | The DSL's `meta: entity @root`. `.meta("topic", "erp.sales")` is `@topic(erp.sales)` |
+| `.field("orderId", "string(36) @id")` | One field line of the DSL, as it is |
+| `.containedIn("SalesOrder")` | A member entity (belongs to that root) |
+| `.entitySplitForBehavior("SalesOrder")` | Makes it a root split into two files -> the developer's class (`behavior`) can be tested too |
+| `.config("acme.requireTopic", "true")` | Instead of the `env.yml` setting |
+| `engineFor("hexagonal-springboot").register(new AcmeDddRules())` | The same combination as the project: bundle + our rule set |
+| `run(spec, "entity").render()` | The content (a string) of the file of that target |
+| `code.unfilledSlots()` | After `render()`, the names of the `${slots}` that had no value and became an empty line. A slot becomes an empty line without an error, so check it with this (a typo in a name shows up here) |
+| `ModelCheck.reset()` | So that check results do not mix between tests |
+| `.packageName("…")` | Supplies in the test the `${packageName}` that the generator normally provides |
 
-6.7의 변형 규칙은 `elasticore-template/v3/rootEvents.tmpl`을 **테스트 리소스**(`acme-rules/src/test/resources/`)에 둡니다:
+The variant rule of 6.7 puts `elasticore-template/v3/rootEvents.tmpl` in the **test resources** (`acme-rules/src/test/resources/`):
 
-**파일: `acme-rules/src/test/resources/elasticore-template/v3/rootEvents.tmpl`**
+**File: `acme-rules/src/test/resources/elasticore-template/v3/rootEvents.tmpl`**
 
 ```java
 package ${packageName};
@@ -936,9 +936,9 @@ ${eventList}
 ./gradlew :acme-rules:test
 ```
 
-### 9.2 애플리케이션에서 확인 (결과가 실제로 동작하는가)
+### 9.2 Check in the application (does the result really work?)
 
-**파일: `src/test/java/com/acme/erp/AcmeRulesAppliedTest.java`**
+**File: `src/test/java/com/acme/erp/AcmeRulesAppliedTest.java`**
 
 ```java
 package com.acme.erp;
@@ -1000,9 +1000,9 @@ class AcmeRulesAppliedTest {
 
     @Test
     void theOutboxSendsToTheTopic() throws Exception {
-        String partnerId = json.readTree(post("/api/erp/partner", "{\"name\":\"토픽상사\",\"bizNo\":\"555-55-55555\"}"))
+        String partnerId = json.readTree(post("/api/erp/partner", "{\"name\":\"Topic Trading\",\"bizNo\":\"555-55-55555\"}"))
                 .path("partnerId").asText();
-        post("/api/erp/item", "{\"itemCode\":\"TPC\",\"name\":\"토픽\",\"unitPrice\":10}");
+        post("/api/erp/item", "{\"itemCode\":\"TPC\",\"name\":\"Topic\",\"unitPrice\":10}");
         post("/api/erp/stock/receive", "{\"itemCode\":\"TPC\",\"warehouse\":\"TOPIC\",\"qty\":5}");
         String orderId = json.readTree(post("/api/erp/salesOrder", "{\"orderNo\":\"SO-TOPIC\",\"partnerId\":" + partnerId
                 + ",\"orderDate\":\"2026-09-25\",\"lines\":[{\"itemCode\":\"TPC\",\"qty\":1,\"unitPrice\":10}]}")).path("orderId").asText();
@@ -1023,24 +1023,24 @@ class AcmeRulesAppliedTest {
 }
 ```
 
-`theOutboxSendsToTheTopic`은 수주를 출고한 뒤 Relay를 직접 한 번 돌리고(`relay.relay()`) 남은 메시지가 없는지 봅니다.
-토픽이 없는 이벤트가 있으면 `TopicOutboxPublisher`가 예외를 던져 메시지가 남으므로 실패합니다.
-주기 실행되는 Relay와 테스트의 직접 호출이 겹치지 않도록, 테스트에서는 주기를 한 시간으로 늘렸습니다(`@SpringBootTest(properties = ...)`).
+`theOutboxSendsToTheTopic` ships a sales order, runs the Relay once by hand (`relay.relay()`), and checks that no message is left.
+If an event has no topic, `TopicOutboxPublisher` throws and the message stays, so the test fails.
+So that the scheduled Relay and the test's direct call do not overlap, the test stretches the period to one hour (`@SpringBootTest(properties = ...)`).
 
 ---
 
-## 10. Kotlin 프로젝트에서
+## 10. In a Kotlin project
 
-같은 룰셋이 그대로 동작합니다. 루트 `build.gradle`의 `language = 'kotlin'`만 다릅니다.
+The same rule set works as it is. Only `language = 'kotlin'` in the root `build.gradle` differs.
 
-| 무엇 | Kotlin에서 |
+| What | In Kotlin |
 |---|---|
-| 클래스·필드 어노테이션 | 그대로. 생성기가 Kotlin 문법으로 씀 |
-| 새 파일 | `elasticore-template/kt/<target>.tmpl`이 **따로 있어야** 합니다. 없으면 Java 스켈레톤으로 떨어지지 않고 그 파일이 실패(`ERROR`)로 남습니다 (생성은 종료 코드 1) |
-| 줄 단위로 채우는 빈칸 | 문법이 다르므로 6.4처럼 `c.syntax() == Syntax.KOTLIN`으로 나눕니다 (새 파일의 규칙에서만) |
-| 이미 있는 내 파일 | Java와 같습니다(5장): 병합되고, 남은 파일의 알림도 Kotlin 파일에 나옵니다. 직접 붙일 때는 `@AggregateRoot`를 `class` 위에 |
+| Class and field annotations | The same. The generator writes them in Kotlin syntax |
+| New file | `elasticore-template/kt/<target>.tmpl` **must exist separately**. If it is missing, it does not fall back to the Java skeleton; that file is left as a failure (`ERROR`) (generation exits with code 1) |
+| Slots filled line by line | The syntax differs, so branch on `c.syntax() == Syntax.KOTLIN` as in 6.4 (only in the rule of a new file) |
+| Your existing file | The same as Java (chapter 5): it is merged, and the notice for a remaining file also appears for the Kotlin file. When you add it by hand, put `@AggregateRoot` above `class` |
 
-**파일: `acme-rules/src/main/resources/elasticore-template/kt/eventTopics.tmpl`**
+**File: `acme-rules/src/main/resources/elasticore-template/kt/eventTopics.tmpl`**
 
 ```kotlin
 package ${packageName}
@@ -1066,75 +1066,75 @@ ${entryList}
 
 ---
 
-## 11. 자주 막히는 곳
+## 11. Common sticking points
 
-| 증상 | 원인 | 해결 |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `Rule set class 'com.acme...' is not on the generator's classpath` | 클래스 이름 오타, 또는 `elasticore project(':acme-rules')` 누락 | 이름과 의존성 확인. 고친 뒤 `-PlistRules` 첫 줄에 우리 룰셋이 보이면 됨 |
-| `NoSuchMethodError` 등이 생성 중에 남 | `acme-rules`의 `elasticore-base` 버전이 플러그인 버전과 다름 | 3장처럼 같은 버전으로 |
-| 규칙이 도는데 결과가 없다 | 그 파일에 어노테이션 자리가 없음(1장 표 "없음"), 또는 `target`이 다름 | 규칙 테스트로 렌더링해서 출력해 보기 (9.1) |
-| 내 파일(`SalesOrder.java`)에 반영이 안 된다 | 빌드 로그에 `KEPT`·`SKIP`으로 남은 개발자 파일, 또는 표시 줄 없이 복사한 파일 | 생성기 알림대로 직접 붙이기 (5장) |
-| 생성된 파일에 빈 줄이 생기고 값이 없다 | 채우지 않은 `${빈칸}` — 오류가 아니라 빈 줄이 됨 | 9.1처럼 `code.unfilledSlots()`로 어느 빈칸인지 확인 (대개 이름 오타) |
-| `env.yml`에 `rules:`를 쓰니 헥사고날 파일이 사라졌다 | `env.yml`의 `rules`는 번들을 **대체** | 빌드의 `rules = [...]`를 쓰거나 번들 이름도 함께 적기 |
-| TypeScript 클라이언트(`elcore3ts`)에 우리 규칙이 안 들어간다 | 의도된 동작. 더한 규칙은 서버(Java·Kotlin)에만 적용 | TypeScript용은 따로 만듭니다: TypeScript를 쓰는 규칙과 `elasticore-template/ts/` 스켈레톤을 만들고 `env.yml`의 `publisher.rules.ts`에 `ts-model`과 함께 적기 |
-| Outbox 메시지가 나가지 않는다 | `@EnableScheduling` 없음, 또는 `OutboxPublisher` 빈 없음 | 6.8 |
-| 규칙을 고쳤는데 결과가 그대로 | 생성기 것이 아닌 파일이거나 손으로 고친 파일 | 생성 로그의 `SKIP(...)` 이유 확인 |
+| `Rule set class 'com.acme...' is not on the generator's classpath` | A typo in the class name, or `elasticore project(':acme-rules')` is missing | Check the name and the dependency. After the fix, our rule set should show on the first lines of `-PlistRules` |
+| `NoSuchMethodError` or similar during generation | The `elasticore-base` version in `acme-rules` differs from the plugin version | Use the same version, as in chapter 3 |
+| The rule runs but there is no result | That file has no place for an annotation (chapter 1 table, "none"), or the `target` is different | Render and print it in a rule test (9.1) |
+| My file (`SalesOrder.java`) does not change | A developer file left as `KEPT` or `SKIP` in the build log, or a file copied without the marker line | Add it by hand as the generator's notice says (chapter 5) |
+| The generated file has an empty line and no value | An unfilled `${slot}` - not an error, it becomes an empty line | Find which slot with `code.unfilledSlots()` as in 9.1 (usually a typo in the name) |
+| After writing `rules:` in `env.yml`, the hexagonal files disappeared | `rules` in `env.yml` **replaces** the bundle | Use `rules = [...]` in the build, or list the bundle name too |
+| Our rule does not reach the TypeScript client (`elcore3ts`) | Intended. Added rules apply only to the server (Java, Kotlin) | Make a separate one for TypeScript: a rule that uses TypeScript and an `elasticore-template/ts/` skeleton, and list it with `ts-model` in `publisher.rules.ts` in `env.yml` |
+| Outbox messages do not go out | No `@EnableScheduling`, or no `OutboxPublisher` bean | 6.8 |
+| I changed the rule but the result is the same | The file is not the generator's, or it was edited by hand | Check the reason of `SKIP(...)` in the generation log |
 
 ---
 
-## 12. 체크리스트
+## 12. Checklist
 
-새 규칙을 더할 때:
+When you add a new rule:
 
-- [ ] 규칙 id가 팀 접두사로 시작한다 (`acme-…`)
-- [ ] `target`이 맞다 (엔티티는 `entity` — 나뉜 루트의 두 파일 모두에 적용됨)
-- [ ] 문자열을 이어 붙여 어노테이션을 만들지 않았다 (`AnnoCode` 사용)
-- [ ] 새 파일이면: 조건이 안 맞을 때 빈 목록, `orNamespace`, 스켈레톤이 `v3/`와 `kt/`에 모두 있다
-- [ ] 규칙 테스트(9.1)가 있고, `unfilledSlots()`가 비어 있는지 확인한다
-- [ ] 예외를 던지지 않는다 (`ModelCheck` 사용)
-- [ ] 이미 있는 개발자 파일에 필요한 변경을 팀에 알렸다
+- [ ] The rule id starts with the team prefix (`acme-…`)
+- [ ] The `target` is right (for an entity it is `entity` - it applies to both files of a split root)
+- [ ] Annotations are not built by joining strings (use `AnnoCode`)
+- [ ] For a new file: an empty list when the condition does not hold, `orNamespace`, and a skeleton in both `v3/` and `kt/`
+- [ ] A rule test (9.1) exists, and you checked that `unfilledSlots()` is empty
+- [ ] It throws no exceptions (use `ModelCheck`)
+- [ ] You told the team about the changes needed in existing developer files
 
-## 13. 자주 쓰는 API
+## 13. Frequently used API
 
-| 읽기 (`EntitySpec e`) | |
+| Read (`EntitySpec e`) | |
 |---|---|
 | `e.getName()`, `e.domainClassName()` | `SalesOrder`, `Erp` |
-| `e.aggregateRoot()`, `e.containedIn()` | 루트인가 / 멤버라면 소속 루트 이름 |
-| `e.isSplitForBehavior(e.getName())` | 두 파일로 나뉘는 엔티티인가 |
-| `e.hasMeta("x")`, `e.metaValue("x")` | meta 단어가 있나 / 괄호 안 값 |
-| `e.events()`, `e.eventClassName(ev)`, `e.eventPackage()` | 도메인 이벤트 |
-| `e.commands()` → `name()`, `params()` | 업무 명령 |
-| `e.fields()`, `e.pkField()`, `e.pkg("dto")` | 필드 / 식별자 / 네임스페이스 패키지 |
-| `e.config("a.b")` (`d.config`도 같음) | `env.yml`의 `elasticore.config.a.b` |
+| `e.aggregateRoot()`, `e.containedIn()` | Is it a root / for a member, the name of its root |
+| `e.isSplitForBehavior(e.getName())` | Is the entity split into two files |
+| `e.hasMeta("x")`, `e.metaValue("x")` | Is the meta word present / the value in parentheses |
+| `e.events()`, `e.eventClassName(ev)`, `e.eventPackage()` | Domain events |
+| `e.commands()` -> `name()`, `params()` | Business commands |
+| `e.fields()`, `e.pkField()`, `e.pkg("dto")` | Fields / identifier / namespace package |
+| `e.config("a.b")` (same for `d.config`) | `elasticore.config.a.b` in `env.yml` |
 
-| 읽기 (`DomainSpec d`) | |
+| Read (`DomainSpec d`) | |
 |---|---|
 | `d.getName()`, `d.className()` | `erp`, `Erp` |
-| `d.entities()` | 도메인의 모든 엔티티 (`EntitySpec`) |
-| `d.namespace("dto")`, `d.config("a.b")` | `namespace` 키(6.3의 표, 직접 쓴 키 포함)의 패키지 / `env.yml` 설정 |
+| `d.entities()` | All entities of the domain (`EntitySpec`) |
+| `d.namespace("dto")`, `d.config("a.b")` | The package of a `namespace` key (the table in 6.3, including keys you wrote yourself) / the `env.yml` setting |
 
-| 읽기 (`FieldSpec f`) | |
+| Read (`FieldSpec f`) | |
 |---|---|
-| `f.name()`, `f.typeName()`, `f.required()` | 이름 / 타입 / `!` 여부 |
-| `f.hasDsl("x")`, `f.hasDslAny("x", "y")`, `f.dslValue("x")` | 필드 어노테이션 `@x` / 값 |
-| `f.isList()`, `f.isEntityRef()` | 컬렉션인가 / 다른 엔티티 참조인가 |
+| `f.name()`, `f.typeName()`, `f.required()` | Name / type / whether `!` is present |
+| `f.hasDsl("x")`, `f.hasDslAny("x", "y")`, `f.dslValue("x")` | Field annotation `@x` / its value |
+| `f.isList()`, `f.isEntityRef()` | Is it a collection / a reference to another entity |
 
-| 쓰기 (`SourceCode c = ctx(e)`) | |
+| Write (`SourceCode c = ctx(e)`) | |
 |---|---|
-| `c.ensureClassAnnotation(AnnoCode.of("a.b.C"))` | 클래스 어노테이션 (import 자동) |
-| `c.field(f).ensure(AnnoCode.of(...))` | 필드 어노테이션 |
-| `AnnoCode.of("a.b.C").val("name", "x").valRaw("length", "%d", 10)` | 속성 (`val`은 따옴표를 붙임, `valRaw`는 그대로) |
-| `c.var("k", v)`, `c.varLine("k", fmt, args)` | 스켈레톤 빈칸 |
-| `c.dontMake()` | 이 파일은 만들지 않음 |
-| `ModelCheck.warn(msg)`, `ModelCheck.fail(msg)` | 모델 검사 결과 |
+| `c.ensureClassAnnotation(AnnoCode.of("a.b.C"))` | Class annotation (import is automatic) |
+| `c.field(f).ensure(AnnoCode.of(...))` | Field annotation |
+| `AnnoCode.of("a.b.C").val("name", "x").valRaw("length", "%d", 10)` | Attributes (`val` adds quotes, `valRaw` writes as is) |
+| `c.var("k", v)`, `c.varLine("k", fmt, args)` | Skeleton slots |
+| `c.dontMake()` | Do not make this file |
+| `ModelCheck.warn(msg)`, `ModelCheck.fail(msg)` | Model check results |
 
-전체 목록은 `elasticore-rule-guide.md`의 4·5장에 있습니다.
+The full list is in chapters 4 and 5 of `elasticore-rule-guide.md`.
 
 ---
 
-## 부록 A. `AcmeDddRules.java` 완성본
+## Appendix A. The complete `AcmeDddRules.java`
 
-**파일: `acme-rules/src/main/java/com/acme/rules/AcmeDddRules.java`**
+**File: `acme-rules/src/main/java/com/acme/rules/AcmeDddRules.java`**
 
 ```java
 package com.acme.rules;

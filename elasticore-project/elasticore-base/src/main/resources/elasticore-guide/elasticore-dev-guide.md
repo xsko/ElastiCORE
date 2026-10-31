@@ -1,37 +1,37 @@
 # ElastiCORE Developer Guide
 
-## 1. 코드 생성 파이프라인
+## 1. Code generation pipeline
 
 ```bash
-./gradlew elcore                # 코드 생성 (기본)
-./gradlew elcore -Pmode=valid   # 검증 모드 (파일 쓰기 없이 diff 확인)
-./gradlew elcore -Pmode=clean   # 생성 코드 삭제
+./gradlew elcore                # generate code (default)
+./gradlew elcore -Pmode=valid   # validation mode (shows the diff without writing files)
+./gradlew elcore -Pmode=clean   # delete generated code
 ```
 
-- `@ElastiCore` 어노테이션 프로세서가 `src/main/resources/blueprint/{domain}/` 하위 YAML 모델 파일을 로드
-- 모드별 퍼블리셔(Entity, DTO, Repository, Service, Controller)가 Java 소스를 생성
-- 생성 위치: `env.yml`의 namespace 설정에 따른 패키지 경로
-- 퍼블리셔 순서: Entity -> Enum -> DTO -> Mapper -> Repository -> Service -> Controller
+- The `@ElastiCore` annotation processor loads the YAML model files under `src/main/resources/blueprint/{domain}/`
+- The publishers for each mode (Entity, DTO, Repository, Service, Controller) generate the Java sources
+- Output location: the package path set by the namespace setting in `env.yml`
+- Publisher order: Entity -> Enum -> DTO -> Mapper -> Repository -> Service -> Controller
 
-### Validation 모드 (`-Pmode=valid`)
+### Validation mode (`-Pmode=valid`)
 
-빌드 전 생성 코드 정합성을 검증합니다. 실제 파일을 쓰지 않고 현재 DSL과 기존 생성 코드를 비교합니다.
+Checks that the generated code is consistent before the build. It writes no files; it compares the current DSL with the existing generated code.
 
-| 상태 | 출력 | 빌드 |
+| State | Output | Build |
 |------|------|------|
-| DSL 변경 후 미생성 (stale) | `[ERROR]` + diff 표시 | 실패 (exit 1) |
-| 새 파일 미생성 | `[WARN]` 표시 | 실패 (exit 1) |
-| 사용자 수정 파일 | `[INFO]` 스킵 | 통과 |
-| 정상 (일치) | `[OK]` | 통과 |
+| Stale (DSL changed, not regenerated) | `[ERROR]` + diff | Fails (exit 1) |
+| New file not generated | `[WARN]` | Fails (exit 1) |
+| File modified by the user | `[INFO]` skipped | Passes |
+| Consistent (match) | `[OK]` | Passes |
 
-- 원격 리소스(HTTP) 다운로드를 스킵하고 로컬 캐시만 사용
-- CI/CD 파이프라인에서 `./gradlew elcore -Pmode=valid` 를 빌드 전 단계로 활용 가능
+- Skips downloading remote (HTTP) resources and uses the local cache only
+- In a CI/CD pipeline, you can use `./gradlew elcore -Pmode=valid` as a step before the build
 
-### 멀티 모듈 통합 생성
+### Multi-module generation
 
-멀티 모듈 프로젝트에서 모든 모듈의 코드를 한 번에 생성하고, cross-module 모델 정보를 공유합니다.
+In a multi-module project, this generates the code of all modules at once and shares cross-module model information.
 
-**root build.gradle 설정:**
+**root build.gradle setting:**
 ```groovy
 task elcore(type: JavaExec) {
     group = 'elasticore'
@@ -39,7 +39,7 @@ task elcore(type: JavaExec) {
     mainClass = 'io.elasticore.base.extract.ModelExtractor'
     standardInput = System.in
 
-    // blueprint 디렉토리가 있는 모듈을 자동 수집
+    // collect the modules that have a blueprint directory
     def modulePaths = subprojects.findAll {
         file("${it.projectDir}/src/main/resources/blueprint").exists()
     }.collect { it.projectDir.absolutePath }
@@ -56,16 +56,16 @@ task elcore(type: JavaExec) {
 }
 ```
 
-- `elasticore.modules` 가 설정되면 멀티 모듈 모드로 동작
-- 모든 모듈의 모델을 먼저 로드한 후, 각 모듈의 `src/main/java`에 코드 생성
-- cross-module entity 참조 시 import가 정상 생성됨
-- `-Pmode=valid` 검증 모드도 멀티 모듈에서 동작
+- When `elasticore.modules` is set, the generator runs in multi-module mode
+- It loads the models of all modules first, then generates code into each module's `src/main/java`
+- For cross-module entity references, the imports are generated correctly
+- The `-Pmode=valid` validation mode also works in multi-module projects
 
 ---
 
-## 2. 생성 코드 구조
+## 2. Generated code structure
 
-기본(계층 분리 없음):
+Default (no layer separation):
 
 ```
 src/main/java/{namespace}/
@@ -77,46 +77,46 @@ src/main/java/{namespace}/
   enums/       - Enum class
 ```
 
-`hexagonal-springboot` 번들과 계층을 나눈 네임스페이스를 쓰면 같은 파일들이 이렇게
-놓입니다 — 무엇이 생성되는지는 같고, 어디에 놓이는지가 다릅니다:
+With the `hexagonal-springboot` bundle and a namespace split into layers, the same files are
+placed like this - what is generated is the same, where it goes is different:
 
 ```
-interfaces/rest/            - REST Controller (인바운드 어댑터)
-application/port/in/        - UseCase (인바운드 포트)
+interfaces/rest/            - REST Controller (inbound adapter)
+application/port/in/        - UseCase (inbound port)
 application/                - CoreService + Service
 application/dto/            - DTO, Mapper
-application/port/out/       - http / dbms 포트 (어댑터는 런타임 프록시)
-domain/model/               - Entity, 값 객체, 불변식 리스너, 명세, 팩토리
-domain/event/               - 도메인 이벤트
-domain/repository/          - 리포지터리 포트 (도메인 소유)
-domain/service/             - 도메인 서비스
-infrastructure/persistence/ - Spring Data + 리포지터리 어댑터
+application/port/out/       - http / dbms ports (the adapter is a runtime proxy)
+domain/model/               - Entity, value object, invariant listener, specification, factory
+domain/event/               - domain event
+domain/repository/          - repository port (owned by the domain)
+domain/service/             - domain service
+infrastructure/persistence/ - Spring Data + repository adapter
 ```
 
-자세한 내용은 `elasticore-rule-guide.md` 를 보세요.
+For details, see `elasticore-rule-guide.md`.
 
 ---
 
-## 3. 코드 수정 규칙
+## 3. Rules for editing code
 
-### 재생성 관리 주석
+### Regeneration management comment
 ```java
 // Initially generated by ElastiCORE; no longer managed--do not remove this line.
 ```
-- 소스 상단 2번째 라인에 이 주석이 있으면 **한 번만 생성** (이후 재생성 안됨)
-- 재생성 필요 시: 백업 후 파일 삭제 -> `./gradlew elcore` 실행
+- If this comment is on the 2nd line at the top of a source file, the file is **generated only once** (it is never regenerated)
+- To regenerate: back up the file and delete it -> run `./gradlew elcore`
 
-### 수정 가능/불가 파일
-| 파일 | 수정 가능 여부 |
+### Files you can and cannot edit
+| File | Editable |
 |------|---------------|
-| `*CoreService.java` | X - 매 빌드마다 재생성 |
-| `*Service.java` (extend) | O - 한 번 생성 후 사용자 관리 |
-| `*Controller.java` | O - 한 번 생성 후 사용자 관리 |
-| `*Repository.java` | 부분 - `// !----` 블록 내 코드 보존 |
-| `*Mapper.java` | X - 매 빌드마다 재생성 |
-| `Q.java` | X - 매 빌드마다 재생성 |
+| `*CoreService.java` | No - regenerated on every build |
+| `*Service.java` (extend) | Yes - generated once, then managed by the user |
+| `*Controller.java` | Yes - generated once, then managed by the user |
+| `*Repository.java` | Partly - code inside `// !----` blocks is preserved |
+| `*Mapper.java` | No - regenerated on every build |
+| `Q.java` | No - regenerated on every build |
 
-### 사용자 코드 보존 블록
+### Preserved blocks for user code
 ```java
 // !-----------------------------------------------------------
 
@@ -125,14 +125,14 @@ List<Entity> findByName(@Param("name") String name);
 
 // ------------------------------------------------------------!
 ```
-- `// !----` ~ `// ----!` 블록 사이의 코드는 재생성 시에도 보존됨. 블록은 해시에서 빠지므로 블록만 고친 파일은
-  "사용자가 수정한 파일" 이 되지 않고 계속 재생성됨
-- 블록은 여러 개 쓸 수 있음. 재생성하면 블록들은 모두 모여 파일 마지막 `}` 바로 앞으로 옮겨짐
-- `import` 로 시작하는 줄이 든 블록은 `package` 선언 아래로 옮겨짐 (헤더 블록). 블록 안 코드가 쓰는 import 는
-  여기에 적음 - v3 코드는 생성 코드가 쓰는 것만 import 하므로, 2.x 코드의 `*` import 에 기대던 블록 코드는
-  이 블록이 있어야 컴파일됨
-- 헤더 블록은 하나만, 다른 블록보다 위에 둠 - 그보다 위에 있던 블록은 함께 헤더로 옮겨지고, 헤더 블록이 둘이면
-  재생성할 때 **첫 번째가 사라짐** (2.x·3.0 생성기 모두). import 는 한 블록에 모아 적음
+- Code between `// !----` and `// ----!` is preserved when the file is regenerated. Blocks are left out of the hash, so a file where you changed only a block
+  does not count as "modified by the user" and is still regenerated
+- You can use several blocks. On regeneration, all blocks are gathered and moved to just before the last `}` of the file
+- A block that contains a line starting with `import` is moved below the `package` declaration (a header block). Put the imports that the code in your blocks uses
+  here - v3 code imports only what the generated code uses, so block code that relied on the `*` imports of 2.x code
+  compiles only with this block
+- Use only one header block, above the other blocks - a block above it is moved into the header with it, and if there are two header blocks,
+  **the first one disappears** on regeneration (in both the 2.x and 3.0 generators). Write the imports together in one block
 
 ```java
 package com.acme.order.repository;
@@ -148,34 +148,34 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 }
 ```
 
-### 저장 직전 훅 - `beforeSave` (v3)
-CoreService 는 요청이 엔티티를 쓴 뒤, 저장 직전에 훅을 부릅니다 - 생성·수정·일괄 수정·조건 수정
-**네 경로 모두**. 확장 서비스(`*Service.java`)에서 override 합니다.
+### Hook before save - `beforeSave` (v3)
+CoreService calls a hook right before it saves, after the request has written to the entity - on create, update, bulk update and conditional update:
+**all four paths**. You override it in the extended service (`*Service.java`).
 
-| 훅 | 언제 쓰나 |
+| Hook | When to use it |
 |---|---|
-| `beforeSave(entity)` | 엔티티만 보고 끝낼 일: 합계 재계산, 상태 찍기 |
-| `beforeSave(entity, request)` | 요청이 **무엇을 실어왔는지** 알아야 할 일: 비밀번호 해시 |
+| `beforeSave(entity)` | Work that needs only the entity: recompute a total, stamp a status |
+| `beforeSave(entity, request)` | Work that needs to know **what the request carried**: hash a password |
 
 ```java
-// 비밀번호는 요청에 있을 때만 해시 - 네 경로 각각을 override 할 필요 없음
+// hash the password only when the request has one - no need to override each of the four paths
 @Override
 protected void beforeSave(Customer customer, CustomerDTO request) {
     if (request.getPassword() != null) customer.setPassword(passwords.encode(request.getPassword()));
 }
 ```
-- 기본 `beforeSave(entity, request)` 는 `beforeSave(entity)` 를 부르므로 둘 중 하나만 override 해도 됩니다.
-- 새 주문의 가격·합계처럼 "처음 저장될 때만" 할 일은 상태로 구분합니다: `if (order.getStatus() == null) order.place(...)`.
+- The default `beforeSave(entity, request)` calls `beforeSave(entity)`, so you can override either one.
+- For work that must happen "only when first saved", such as the price and total of a new order, tell the cases apart by state: `if (order.getStatus() == null) order.place(...)`.
 
 ---
 
-## 4. Q 클래스 구조
+## 4. Q class structure
 
-엔티티별 static 메타데이터 홀더. 빌드 시 자동 생성되며, 타입 안전한 Specification 쿼리를 지원합니다.
+A static metadata holder for each entity. It is generated at build time and supports type-safe Specification queries.
 
 ```java
 public class Q {
-    // Entity별 static instance
+    // static instance per Entity
     public static $RentCompany<RentCompany> RentCompany = new $RentCompany<>();
     public static $RentDriver<RentDriver> RentDriver = new $RentDriver<>();
 
@@ -203,9 +203,9 @@ public class Q {
 
 ---
 
-## 5. FieldInfo 클래스
+## 5. FieldInfo class
 
-필드 메타정보와 Specification 생성을 담당합니다.
+It holds field metadata and creates Specifications.
 
 ```java
 // Field metadata access
@@ -219,84 +219,84 @@ Sort.Order asc = field.getAscOrder();
 Sort.Order desc = field.getDescOrder();
 ```
 
-- 부모 FieldInfo 참조를 통한 다단계 경로 해석 (nested entity path)
-- `resolvePath()` -> 재귀적 parent 탐색으로 `rentDriver.driverName` 같은 중첩 경로 생성
+- Multi-level path resolution through the parent FieldInfo reference (nested entity path)
+- `resolvePath()` -> walks the parents recursively to build a nested path such as `rentDriver.driverName`
 
 ---
 
-## 6. Op 열거형
+## 6. Op enum
 
-런타임 Query API에서 사용하는 연산자입니다.
+The operators used by the runtime Query API.
 
-| Op | JPA Criteria | 설명 |
+| Op | JPA Criteria | Description |
 |----|-------------|------|
-| `EQ` | `equal` | 같음 |
-| `NEQ` | `notEqual` | 다름 |
-| `LIKE` | `like` | LIKE 검색 (`%value%`, 대소문자 구분). DSL 의 v3 `@search(like)` 는 대소문자를 무시하므로 손으로 같은 검색을 쓸 때는 `ILIKE` |
+| `EQ` | `equal` | Equal |
+| `NEQ` | `notEqual` | Not equal |
+| `LIKE` | `like` | LIKE search (`%value%`, case-sensitive). The v3 `@search(like)` of the DSL ignores case, so when you hand-write the same search, use `ILIKE` |
 | `NOT_LIKE` | `notLike` | NOT LIKE |
-| `STARTS_WITH` | `like` | 접두 일치 (`value%`) |
-| `ENDS_WITH` | `like` | 접미 일치 (`%value`) |
-| `ILIKE` | `like(lower)` | **대소문자 무시** LIKE (`LOWER(col) LIKE LOWER(%value%)`) |
-| `NOT_ILIKE` | `notLike(lower)` | **대소문자 무시** NOT LIKE |
-| `ISTARTS_WITH` | `like(lower)` | **대소문자 무시** 접두 일치 (`LOWER(col) LIKE LOWER(value%)`) |
-| `IENDS_WITH` | `like(lower)` | **대소문자 무시** 접미 일치 (`LOWER(col) LIKE LOWER(%value)`) |
-| `IEQ` | `equal(lower)` | **대소문자 무시** 같음 (`LOWER(col) = LOWER(value)`) |
-| `GT` | `greaterThan` | 초과 |
-| `GTE` | `greaterThanOrEqualTo` | 이상 |
-| `LT` | `lessThan` | 미만 |
-| `LTE` | `lessThanOrEqualTo` | 이하 |
-| `IN` | `in` | 포함 |
-| `NOT_IN` | `not in` | 미포함 |
+| `STARTS_WITH` | `like` | Prefix match (`value%`) |
+| `ENDS_WITH` | `like` | Suffix match (`%value`) |
+| `ILIKE` | `like(lower)` | **Case-insensitive** LIKE (`LOWER(col) LIKE LOWER(%value%)`) |
+| `NOT_ILIKE` | `notLike(lower)` | **Case-insensitive** NOT LIKE |
+| `ISTARTS_WITH` | `like(lower)` | **Case-insensitive** prefix match (`LOWER(col) LIKE LOWER(value%)`) |
+| `IENDS_WITH` | `like(lower)` | **Case-insensitive** suffix match (`LOWER(col) LIKE LOWER(%value)`) |
+| `IEQ` | `equal(lower)` | **Case-insensitive** equal (`LOWER(col) = LOWER(value)`) |
+| `GT` | `greaterThan` | Greater than |
+| `GTE` | `greaterThanOrEqualTo` | Greater than or equal |
+| `LT` | `lessThan` | Less than |
+| `LTE` | `lessThanOrEqualTo` | Less than or equal |
+| `IN` | `in` | In |
+| `NOT_IN` | `not in` | Not in |
 | `IS_NULL` | `isNull` | NULL |
 | `IS_NOT_NULL` | `isNotNull` | NOT NULL |
-| `BETWEEN` | `between` | 범위 |
+| `BETWEEN` | `between` | Range |
 
-**대소문자 무시 검색 (`I*` 연산자):**
-- `ILIKE`/`NOT_ILIKE`/`ISTARTS_WITH`/`IENDS_WITH`/`IEQ`는 컬럼과 값 양쪽에 `LOWER()`를 적용하여
-  **특정 DB에 종속되지 않고**(PostgreSQL 전용 `ILIKE`가 아님) 모든 DB에서 동일하게 동작합니다.
-- DSL의 대소문자 무시 패턴(`%__%` 이중 언더스코어)과 **동일한 SQL 의미**를 가지며, DSL 선언 클래스가
-  아니라 런타임에 직접 파라미터로 조건을 구성할 때 사용합니다.
-- 사용 예: `Q.VendorInfo.vendorName().where(Op.ILIKE, keyword)` — 영문 데이터의 대소문자 무관 부분검색
+**Case-insensitive search (`I*` operators):**
+- `ILIKE`/`NOT_ILIKE`/`ISTARTS_WITH`/`IENDS_WITH`/`IEQ` apply `LOWER()` to both the column and the value, so they
+  **do not depend on a specific DB** (they are not the PostgreSQL-only `ILIKE`) and behave the same on every DB.
+- They have the **same SQL meaning** as the case-insensitive pattern of the DSL (`%__%`, a double underscore). Use them when you build
+  conditions from parameters at runtime, not in a class declared in the DSL.
+- Example: `Q.VendorInfo.vendorName().where(Op.ILIKE, keyword)` - a partial search on English data that ignores case
 
 ```java
-// 대소문자 무시 부분검색
+// case-insensitive partial search
 Specification<VendorInfo> spec = Q.VendorInfo.vendorName(Op.ILIKE, "acme");
-// -> WHERE LOWER(vendor_name) LIKE LOWER('%acme%')  (acme, ACME, Acme Supply 모두 매칭)
+// -> WHERE LOWER(vendor_name) LIKE LOWER('%acme%')  (matches acme, ACME and Acme Supply)
 ```
 
-**DSL `@search` vs 런타임 `Op` 차이:**
-- `@search` -> MapperSrcPublisher가 빌드타임에 Specification 코드 생성 (기호: `>`, `>=`, `like` 등)
-- `Op` -> 런타임에 프로그래밍 방식으로 Specification 생성 (NEQ, IS_NULL, 대소문자 무시 `I*` 등 추가 연산 지원)
-- `IS_NULL` / `IS_NOT_NULL` 은 DSL 로도 됩니다: `@search(isnull)` 이 검색 DTO 에 `<필드>Empty: Boolean` 을 만들고
-  `true` 면 `isNull`, `false` 면 `isNotNull` 을 생성합니다 (v3 번들, annotation-guide 3.4.1). 그 필드 하나만
-  비어 있는지 보면 되는 검색이면 `Q`/`Op` 를 손으로 쓰지 않아도 됩니다.
+**Difference between DSL `@search` and runtime `Op`:**
+- `@search` -> MapperSrcPublisher generates the Specification code at build time (symbols: `>`, `>=`, `like`, and so on)
+- `Op` -> builds a Specification programmatically at runtime (supports more operations: NEQ, IS_NULL, the case-insensitive `I*` operators, and so on)
+- `IS_NULL` / `IS_NOT_NULL` are also available in the DSL: `@search(isnull)` creates `<field>Empty: Boolean` in the search DTO and
+  generates `isNull` for `true` and `isNotNull` for `false` (v3 bundles, annotation-guide 3.4.1). If the search only needs to check whether that one field
+  is empty, you do not have to hand-write `Q`/`Op`.
 
 ---
 
-## 7. JoinSpec 빌더
+## 7. JoinSpec builder
 
-JPA Criteria API를 래핑한 타입 안전 쿼리 빌더입니다.
+A type-safe query builder that wraps the JPA Criteria API.
 
-### 생성
+### Create
 ```java
 JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec();
 ```
 
-### Join 메서드
+### Join methods
 ```java
 .join(Q.RentCompany.getRentDriver())         // INNER JOIN
 .leftJoin(Q.RentCompany.getRentDriver())     // LEFT JOIN
 .fetchJoin(Q.RentCompany.getRentDriver())    // JOIN FETCH (N+1 prevention)
 ```
 
-### Where 조건
+### Where conditions
 ```java
 .where(Q.RentCompany.comId(Op.EQ, "COM123"))
 .and(Q.RentCompany.status(Op.IN, List.of("ACTIVE", "PENDING")))
 .or(Q.RentCompany.comName(Op.LIKE, "%test%"))
 ```
 
-### 정렬
+### Sorting
 ```java
 .orderBy(Q.RentCompany.getComId(), true)      // ASC
 .orderBy(Q.RentCompany.getCreatedAt(), false)  // DESC
@@ -306,13 +306,13 @@ JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec();
 .orderByDesc(Q.RentCompany.getCreatedAt())
 ```
 
-### 프로젝션 (특정 필드만 조회)
+### Projection (select only some fields)
 ```java
 .select(Q.RentCompany.getComId(), "companyId")
 .select(Q.RentCompany.getComName(), "name")
 ```
 
-### 서브쿼리
+### Subquery
 ```java
 .subquery(Q.RentCompany.getComId(), Op.IN,
     SubQuery.select(Q.Order.getCompanyId())
@@ -333,7 +333,7 @@ JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec();
 .distinct()
 ```
 
-### 실행 메서드
+### Execution methods
 ```java
 // Via Repository (Specification compatible)
 List<RentCompany> results = repository.findAll(query);
@@ -347,48 +347,48 @@ long count = query.count(em);
 
 ---
 
-## 8. UpdateSpec 빌더
+## 8. UpdateSpec builder
 
-JPA CriteriaUpdate를 래핑한 타입 안전 업데이트 빌더입니다. Q 클래스 기반 Specification 조건을 재사용합니다.
+A type-safe update builder that wraps the JPA CriteriaUpdate. It reuses the Specification conditions based on the Q class.
 
-### 생성
+### Create
 ```java
 UpdateSpec<Product> update = Q.Product.updateSpec();
 ```
 
-### SET 오퍼레이션
+### SET operations
 
-#### 리터럴 값 설정
+#### Set a literal value
 ```java
 .set(Q.Product.getName(), "updated-name")
 .set(Q.Product.getStatus(), "ACTIVE")
 ```
 
-#### NULL 설정
+#### Set NULL
 ```java
 .setNull(Q.Product.getDeletedAt())
 ```
 
-#### 필드 간 복사
+#### Copy between fields
 ```java
 // targetField = sourceField
 .set(Q.Product.getBackupName(), Q.Product.getName())
 ```
 
-#### Expression 기반 설정
+#### Set from an expression
 ```java
 // price = price * 1.1
 .set(Q.Product.getPrice(), (root, cb) ->
     cb.prod(root.get("price"), cb.literal(1.1)))
 ```
 
-#### 숫자 필드 증감
+#### Increase or decrease a numeric field
 ```java
 .increment(Q.Product.getStockQuantity(), 10)   // stockQuantity += 10
 .decrement(Q.Product.getStockQuantity(), 5)    // stockQuantity -= 5
 ```
 
-#### DTO 기반 일괄 설정
+#### Set everything from a DTO
 ```java
 // Non-null fields only
 .setFromDTO(productDTO)
@@ -397,19 +397,19 @@ UpdateSpec<Product> update = Q.Product.updateSpec();
 .setFromDTO(productDTO, true)
 ```
 
-### WHERE 조건
+### WHERE conditions
 ```java
 .where(Q.Product.active(Op.EQ, true))
 .where(Q.Product.status(Op.IN, List.of("PENDING", "DRAFT")))
 ```
 
-### 전체 테이블 업데이트
+### Update the whole table
 ```java
 // Explicit call required to prevent accidental full-table updates
 .whereAll()
 ```
 
-### 실행
+### Execute
 ```java
 int updatedCount = Q.Product.updateSpec()
     .set(Q.Product.getName(), "updated-test-name")
@@ -417,35 +417,35 @@ int updatedCount = Q.Product.updateSpec()
     .execute(entityManager);
 ```
 
-### 안전 장치
-- SET 절 없이 `execute()` 호출 시 `IllegalStateException` 발생
-- WHERE 조건 없이 `execute()` 호출 시 `IllegalArgumentException` 발생
-- 전체 업데이트 시 반드시 `whereAll()`을 명시적으로 호출해야 함
+### Safeguards
+- Calling `execute()` without a SET clause throws `IllegalStateException`
+- Calling `execute()` without a WHERE condition throws `IllegalArgumentException`
+- To update the whole table, you must call `whereAll()` explicitly
 
 ---
 
-## 9. DeleteSpec 빌더
+## 9. DeleteSpec builder
 
-JPA CriteriaDelete를 래핑한 타입 안전 삭제 빌더입니다. UpdateSpec과 동일한 WHERE 조건 패턴을 사용합니다.
+A type-safe delete builder that wraps the JPA CriteriaDelete. It uses the same WHERE condition pattern as UpdateSpec.
 
-### 생성
+### Create
 ```java
 DeleteSpec<Product> delete = Q.Product.deleteSpec();
 ```
 
-### WHERE 조건
+### WHERE conditions
 ```java
 .where(Q.Product.active(Op.EQ, false))
 .where(Q.Product.name(Op.EQ, "TO_DELETE"))
 ```
 
-### 전체 테이블 삭제
+### Delete the whole table
 ```java
 // Explicit call required to prevent accidental full-table deletes
 .whereAll()
 ```
 
-### 삭제 전 카운트 미리보기
+### Preview the count before deleting
 ```java
 // Read-only count query - safe to call before executing delete
 long count = Q.Product.deleteSpec()
@@ -453,21 +453,21 @@ long count = Q.Product.deleteSpec()
     .count(entityManager);
 ```
 
-### 실행
+### Execute
 ```java
 int deletedCount = Q.Product.deleteSpec()
     .where(Q.Product.active(Op.EQ, false))
     .execute(entityManager);
 ```
 
-### 안전 장치
-- WHERE 조건 없이 `execute()` 호출 시 `IllegalArgumentException` 발생
-- 전체 삭제 시 반드시 `whereAll()`을 명시적으로 호출해야 함
-- `count()`로 삭제 대상 건수를 사전 확인 가능
+### Safeguards
+- Calling `execute()` without a WHERE condition throws `IllegalArgumentException`
+- To delete the whole table, you must call `whereAll()` explicitly
+- You can check the number of rows to delete beforehand with `count()`
 
-> **Tip: Q 인스턴스 변수 활용**
+> **Tip: use a Q instance variable**
 >
-> `Q.Entity` 반복을 줄이려면 로컬 변수에 할당하여 사용할 수 있습니다 (QueryDSL 스타일).
+> To avoid repeating `Q.Entity`, assign it to a local variable (QueryDSL style).
 >
 > ```java
 > // Assign Q instance to a local variable
@@ -498,9 +498,9 @@ int deletedCount = Q.Product.deleteSpec()
 
 ---
 
-## 10. 실용 예제
+## 10. Practical examples
 
-### 기본 조건 조합
+### Basic condition combination
 ```java
 Specification<RentCompany> spec = Q.RentCompany.comId(Op.EQ, "COM123")
     .and(Q.RentCompany.status(Op.IN, List.of("ACTIVE", "PENDING")));
@@ -516,14 +516,14 @@ JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec()
 List<RentCompany> results = repository.findAll(query);
 ```
 
-### 중첩 엔티티 검색
+### Nested entity search
 ```java
 Specification<LoanerCarInfo> spec = Q.LoanerCarInfo
     .rentDriver().rentDriverId(Op.EQ, "DRV001");
 List<LoanerCarInfo> results = repository.findAll(spec);
 ```
 
-### 프로젝션 조회
+### Projection query
 ```java
 List<Map<String, Object>> data = Q.$LoanerCarInfo.joinSpec()
     .select(Q.LoanerCarInfo.getLcId(), "carId")
@@ -532,7 +532,7 @@ List<Map<String, Object>> data = Q.$LoanerCarInfo.joinSpec()
     .findAllAsMap(em);
 ```
 
-### 서브쿼리 활용
+### Using a subquery
 ```java
 JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec()
     .where(Q.RentCompany.status(Op.EQ, "ACTIVE"))
@@ -542,7 +542,7 @@ JoinSpec<RentCompany> query = Q.$RentCompany.joinSpec()
 List<RentCompany> results = repository.findAll(query);
 ```
 
-### Bulk Update 예제
+### Bulk Update example
 ```java
 // Update all pending orders to approved
 int count = Q.Order.updateSpec()
@@ -552,7 +552,7 @@ int count = Q.Order.updateSpec()
     .execute(entityManager);
 ```
 
-### Increment 예제
+### Increment example
 ```java
 // Increase stock quantity for active products
 int count = Q.Product.updateSpec()
@@ -561,7 +561,7 @@ int count = Q.Product.updateSpec()
     .execute(entityManager);
 ```
 
-### 조건부 삭제 예제
+### Conditional delete example
 ```java
 // Preview and delete archived audit logs
 DeleteSpec<AuditLog> deleteSpec = Q.AuditLog.deleteSpec()
@@ -576,9 +576,9 @@ int deleted = deleteSpec.execute(entityManager);
 
 ---
 
-## 11. SearchDTO와 Specification 통합
+## 11. SearchDTO and Specification integration
 
-### 자동 변환 흐름
+### Automatic conversion flow
 ```java
 // SearchDTO -> Specification (Mapper auto-generated)
 Specification<RentCompany> spec = BugMapper.toSpec(searchDTO);
@@ -590,30 +590,30 @@ Specification<RentCompany> withJoins = spec.and(withJoinFetches());
 Page<RentCompany> page = repository.findAll(withJoins, pageable);
 ```
 
-### 구성 요소
-- `BugMapper.toSpec()` -> SearchDTO의 `@search` 조건을 Specification으로 변환 (빌드타임 생성)
-- `withJoinFetches()` -> autoJoin 설정 또는 `@fetchjoin` 기반 JOIN FETCH 자동 적용. 2.x 코드는 모든 CoreService 에,
-  v3 번들(3.0.261029-rc4 부터)은 그런 연관이 있는 엔티티의 CoreService 에만 생성됨. 그 밖의 쿼리에서는 `JoinSpec.fetchJoin()`
-  (7장)으로 직접 가져옴
-- 페이징: `@expose(n)` 또는 `@searchable(pageSize=n)` 설정값 사용
+### Components
+- `BugMapper.toSpec()` -> converts the `@search` conditions of the SearchDTO into a Specification (generated at build time)
+- `withJoinFetches()` -> applies JOIN FETCH automatically, based on the autoJoin setting or `@fetchjoin`. 2.x code generates it in every CoreService;
+  v3 bundles (from 3.0.261029-rc4) generate it only in the CoreService of an entity that has such a relation. For other queries, fetch with `JoinSpec.fetchJoin()`
+  (chapter 7) yourself
+- Paging: uses the value set by `@expose(n)` or `@searchable(pageSize=n)`
 
 ---
 
-## 12. 성능 최적화
+## 12. Performance optimization
 
-### N+1 쿼리 방지
+### Preventing N+1 queries
 
-3가지 방법으로 JOIN FETCH를 적용할 수 있습니다:
+You can apply JOIN FETCH in 3 ways:
 
-| 방법 | 적용 범위 | 설정 위치 |
+| Method | Scope | Where to set it |
 |------|----------|----------|
-| `@fetchjoin` | 특정 필드 | DSL entity fields |
-| `autoJoin: true` | 전체 엔티티 참조 | env.yml config.table |
-| `JoinSpec.fetchJoin()` | 런타임 선택적 | Java code |
+| `@fetchjoin` | A specific field | DSL entity fields |
+| `autoJoin: true` | All entity references | env.yml config.table |
+| `JoinSpec.fetchJoin()` | Chosen at runtime | Java code |
 
-> `@fetchjoin`·`autoJoin` 은 CoreService 의 페이지 검색(`findBySearch`)이 씁니다 - 2.x 코드(`output = 'v2'`)와 v3
-> 번들(플러그인의 기본값, 헥사고날·DDD, 모든 Kotlin 빌드, 3.0.261029-rc4 부터) 모두. `findAll`·`listBySearch` 나 직접 쓴 쿼리에서
-> 필요한 연관은 `JoinSpec.fetchJoin()` 으로 가져옵니다.
+> `@fetchjoin` and `autoJoin` are used by the page search of CoreService (`findBySearch`) - in both 2.x code (`output = 'v2'`) and the v3
+> bundles (the plugin default, hexagonal and DDD, all Kotlin builds, from 3.0.261029-rc4). For `findAll`, `listBySearch` or a query you wrote yourself, fetch the
+> relations you need with `JoinSpec.fetchJoin()`.
 
 ```yaml
 # env.yml - global autoJoin
@@ -631,32 +631,32 @@ entity:
       author: User  # normal LAZY loading
 ```
 
-### distinct() 사용 시점
-- JOIN FETCH 사용시 1:N 관계에서 중복 행 방지를 위해 필수
-- `JoinSpec.distinct()` 또는 생성 코드의 `query.distinct(true)` 활용
+### When to use distinct()
+- Required with JOIN FETCH on a 1:N relation, to prevent duplicate rows
+- Use `JoinSpec.distinct()` or `query.distinct(true)` in the generated code
 
-### 프로젝션 활용
-- 필요한 필드만 `select()` -> 네트워크/메모리 절약
-- `findAllAsMap(em)` -> DTO 클래스 없이 Map<String, Object>로 반환
-- `findAll(em, DtoClass.class)` -> 생성자 기반 DTO 프로젝션
+### Using projections
+- `select()` only the fields you need -> saves network and memory
+- `findAllAsMap(em)` -> returns Map<String, Object> without a DTO class
+- `findAll(em, DtoClass.class)` -> constructor-based DTO projection
 
-### 카운트 쿼리 최적화
-- 생성된 `withJoinFetches()` 와 `JoinSpec.fetchJoin()` 은 카운트 쿼리에서 자동으로 JOIN FETCH 제외
-- `Long.class.equals(query.getResultType())` 조건으로 카운트 쿼리 감지
+### Optimizing count queries
+- The generated `withJoinFetches()` and `JoinSpec.fetchJoin()` automatically leave JOIN FETCH out of count queries
+- A count query is detected by the condition `Long.class.equals(query.getResultType())`
 
 ---
 
-## 13. 디버깅 팁
+## 13. Debugging tips
 
-- SQL 확인: `spring.jpa.show-sql=true` (application.yml)
-- Q 클래스 재생성: `./gradlew clean build`
-- Specification 디버깅: 개별 조건을 분리하여 단위 테스트
-- 생성 코드 확인: `build/generated/sources/` 또는 namespace 경로 직접 확인
-- YAML 파싱 오류: 출력의 `* LOAD ERROR: <파일>` 과 바로 아래 파서 메시지(`mapping values are not allowed here ...
-  line 41, column 40`)가 고칠 곳입니다. 흔한 원인은 `-- 설명` 안의 `: ` (예: `-- 주문한 사람: 로그인한 회원`) 이고,
-  `,` 나 ` - ` 로 바꾸면 됩니다. 규칙 엔진(`elcore3`)은 3.0.261022-rc1 부터 이때 빌드를 멈춥니다
-  (`[elcore3] the model check failed`). 전에는 그 파일을 빼고 생성이 성공해, 엉뚱한 곳의 컴파일 오류로만 드러났습니다.
-  멈춘 실행은 DSL 이 더 만들지 않는 생성 파일을 지우지 않습니다 - 읽지 못한 파일이 선언한 엔티티의 DTO·매퍼 등이 그대로
-  남고(`generated files the DSL no longer produces are kept until the model check passes`), YAML 을 고친 다음 실행이
-  정리합니다. 주석(`#`)이나 빈 줄만 있는 파일(모델 파일을 주석으로 꺼 둔 경우)은 빈 파일처럼 `* EMPTY:` 로 건너뜁니다.
-  2.x 생성기(`elcore`)는 그대로 경고만 합니다.
+- Check the SQL: `spring.jpa.show-sql=true` (application.yml)
+- Regenerate the Q class: `./gradlew clean build`
+- Debug a Specification: split the individual conditions and unit-test them
+- Check the generated code: look in `build/generated/sources/` or directly in the namespace path
+- YAML parse error: the `* LOAD ERROR: <file>` in the output and the parser message right below it (`mapping values are not allowed here ...
+  line 41, column 40`) show where to fix. A common cause is a `: ` inside a `-- description` (for example `-- the person who ordered: the logged-in member`),
+  and you can change it to `,` or ` - `. From 3.0.261022-rc1, the rule engine (`elcore3`) stops the build in this case
+  (`[elcore3] the model check failed`). Before, generation succeeded without that file and the problem showed up only as a compile error somewhere else.
+  A stopped run does not delete generated files that the DSL no longer produces - the DTOs, mappers and so on of an entity declared by the file that could not be read
+  stay in place (`generated files the DSL no longer produces are kept until the model check passes`), and the next run after you fix the YAML
+  cleans them up. A file that holds only comments (`#`) or blank lines (a model file you turned off by commenting it out) is skipped as `* EMPTY:`, like an empty file.
+  The 2.x generator (`elcore`) only warns, as before.

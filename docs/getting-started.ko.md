@@ -52,7 +52,7 @@ Spring Web, Spring Data JPA, Validation, Lombok, H2 를 고릅니다(기본값�
   모델에 맡길 수도 있습니다: `@login`·`@password` 필드가 있는 엔티티 줄에 `@signin` 을 쓰면 로그인, 로그아웃,
   "나는 누구" API 가 생성됩니다 - pet store 예제가 그렇게 합니다. `@signin` 엔티티의 조건(노출된 엔티티, 애플리케이션에
   하나, 비밀번호와 로그인은 본인이나 관리자만 변경)은
-  [어노테이션 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-annotation-guide.md)에 있습니다.
+  [어노테이션 가이드](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-annotation-guide.md)에 있습니다.
 
 ## 실행
 

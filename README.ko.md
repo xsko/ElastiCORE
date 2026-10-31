@@ -158,7 +158,7 @@ TypeScript 클라이언트는 `./gradlew elcore3ts`, 일부 규칙만 쓰려면 
 Gradle 플러그인을 쓰는 프로젝트는 2.x 의 코드를 유지한다고 하지 않는 한 3.0 코드를 받습니다. `elasticore { output = 'v2' }` 는 이력에 적은
 버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum 을 빼면 2.x 가 만들던 코드를 생성합니다. 2.x 가 생성한 코드를
 가진 프로젝트가 아무것도 고르지 않으면, 무엇이든 다시 쓰기 전에 멈추고 고르라고 알립니다
-([마이그레이션 가이드](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-migration-guide.md)).
+([마이그레이션 가이드](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-migration-guide.md)).
 풀 리퀘스트마다 2.x 생성기가 만든 기준 프로젝트는 커밋된 그대로여야 하고, 규칙 엔진의 2.x 호환 번들은 그 출력과
 파일마다 비교됩니다 ([자세히](docs/tour.ko.md#현재-상태)). 매 빌드에서 자동 테스트 1,400개 이상이 돌고, 예제 프로젝트들은 생성·컴파일·실행까지 합니다. v3 번들의
 출력은 정식 출시 전까지 바뀔 수 있고, 바뀔 때마다 그 이유를
@@ -172,15 +172,16 @@ Gradle 플러그인을 쓰는 프로젝트는 2.x 의 코드를 유지한다고 
 | [시작하기](docs/getting-started.ko.md) | Spring Initializr, Spring Boot 3, 소스에서 빌드 |
 | [둘러보기](docs/tour.ko.md) | DSL 의 여섯 원칙, 업무 규칙, 규칙(ruleset), 바운디드 컨텍스트, 무엇을 검사하는지 |
 | [다른 도구와 비교](docs/comparison.ko.md) | JHipster, Context Mapper, Sculptor, Spring Modulith, Amplication, Jmix, Wasp, Bootify, AI 가 Spring 을 직접 쓰는 것과 비교 |
-| [DSL](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-dsl-guide.md) | 엔티티, DTO, enum, 생명주기, 업무 지표, 값 타입 |
-| [어노테이션](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-annotation-guide.md) | 모든 어노테이션과 생성 결과 |
-| [설정](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-env-guide.md) | `env.yml`, 바운디드 컨텍스트, 멀티 모듈, Spring Boot 3/4 |
-| [규칙 엔진](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-rule-guide.md) | 구조 고르기, 규칙 묶음, 오류 코드와 다국어, Ossie 내보내기 |
-| [규칙 개발](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-rule-dev-guide.md) | 우리 팀 규칙 만들기, 테스트 |
-| [포트](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-dsl-port-guide.md) | HTTP, DB, gRPC 포트 |
+| [DSL](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-dsl-guide.md) | 엔티티, DTO, enum, 생명주기, 업무 지표, 값 타입 |
+| [어노테이션](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-annotation-guide.md) | 모든 어노테이션과 생성 결과 |
+| [설정](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-env-guide.md) | `env.yml`, 바운디드 컨텍스트, 멀티 모듈, Spring Boot 3/4 |
+| [규칙 엔진](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-rule-guide.md) | 구조 고르기, 규칙 묶음, 오류 코드와 다국어, Ossie 내보내기 |
+| [규칙 개발](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-rule-dev-guide.md) | 우리 팀 규칙 만들기, 테스트 |
+| [포트](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-dsl-port-guide.md) | HTTP, DB, gRPC 포트 |
 
 가이드는 빌드할 때마다 프로젝트의 `blueprint/` 로 복사되므로, AI 도구는 지금 쓰는 버전의 문법을 그대로 읽습니다
-(한국어, 영문판 준비 중).
+(3.0.261031-rc7 까지는 한국어). 다음 릴리스부터는 영어가 기본이고, 한국어 가이드는
+`elasticore { guides = 'ko' }` 로 받습니다 - 파일 이름은 같습니다.
 
 ## 참여하기 · 라이선스
 

@@ -1,20 +1,20 @@
-# ElastiCORE 환경 설정 가이드 (env.yml)
+# ElastiCORE Environment Setup Guide (env.yml)
 
-`env.yml`은 ElastiCORE 도메인별 환경 설정 파일로, 코드 생성 모드, 프레임워크, 네임스페이스, 어노테이션 등을 정의한다.
-각 도메인 디렉토리(`src/main/resources/blueprint/{domain}/`)에 위치하며, DSL 기반 모델링 전에 환경 정보를 기술한다.
+`env.yml` is the per-domain environment file of ElastiCORE. It defines the code generation mode, the framework, namespaces, annotations and more.
+It lives in each domain directory (`src/main/resources/blueprint/{domain}/`). You describe the environment in it before you model with the DSL.
 
 ---
 
-## 1. 기본 구조
+## 1. Basic structure
 
 ```yaml
 elasticore:
   enable: true
   config:
-    domainName: myDomain        # 도메인명 (생성될 패키지와 파일명에 사용)
-    framework: springboot3      # 프레임워크 (springboot3)
-    mode: jpa                   # 생성 모드: jpa, mybatis, mongo, uml, dsl (쉼표로 복수 지정 가능)
-    j2ee: 17                    # Jakarta EE 버전 (17 이상)
+    domainName: myDomain        # domain name (used for the generated package and file names)
+    framework: springboot3      # framework (springboot3)
+    mode: jpa                   # generation mode: jpa, mybatis, mongo, uml, dsl (several allowed, comma separated)
+    j2ee: 17                    # Jakarta EE version (17 or higher)
   namespace:
     entity: com.example.domain.entity
     dto: com.example.domain.dto
@@ -23,327 +23,327 @@ elasticore:
     control: com.example.domain.controller
 ```
 
-**필수 설정 항목:**
-- `domainName`: 도메인 식별자. 생성 코드의 패키지명과 API 경로에 사용
-- `framework`: 대상 프레임워크 (`springboot3`)
-- `mode`: 코드 생성 모드
-- `j2ee`: Jakarta EE 버전 (`17` 이상, javax는 deprecated)
+**Required settings:**
+- `domainName`: the domain identifier. It is used for the package name of the generated code and for the API path
+- `framework`: the target framework (`springboot3`)
+- `mode`: the code generation mode
+- `j2ee`: the Jakarta EE version (`17` or higher; javax is deprecated)
 
 ---
 
-## 2. 생성 모드 상세
+## 2. Generation modes in detail
 
-### 2.1 JPA 모드 (기본)
+### 2.1 JPA mode (default)
 
 ```yaml
 config:
   mode: jpa
 ```
 
-**생성 항목:** Entity, DTO, SearchDTO, Repository, Service, Controller, Mapper
+**Generated:** Entity, DTO, SearchDTO, Repository, Service, Controller, Mapper
 
-**table 설정:**
+**table setting:**
 ```yaml
 config:
   table:
-    prefix: "tbl_"        # 테이블명 접두사 (@Table(name="tbl_xxx"))
-    autoJoin: true         # 자동 JOIN FETCH (기본값: false)
-  tableSchema: "schema_a"   # DB 스키마 지정 (@Table(schema="schema_a")) - Since: 2.1.260409
+    prefix: "tbl_"        # table name prefix (@Table(name="tbl_xxx"))
+    autoJoin: true         # automatic JOIN FETCH (default: false)
+  tableSchema: "schema_a"   # DB schema (@Table(schema="schema_a")) - Since: 2.1.260409
 ```
 
-- `prefix`: 엔티티의 `@Table` 어노테이션에 적용되는 테이블명 접두사
-- `tableSchema`: 도메인 내 모든 엔티티에 `@Table(schema="...")` 적용. 엔티티별 `@schema` 어노테이션이 우선
+- `prefix`: the table name prefix applied to the `@Table` annotation of the entity
+- `tableSchema`: applies `@Table(schema="...")` to every entity in the domain. The `@schema` annotation on an entity takes precedence
 - `autoJoin`:
-  - `true`: 모든 엔티티 참조 필드에 대해 페이지 검색(`findBySearch`) 시 JOIN FETCH 자동 적용 (N+1 방지)
-  - `false` (기본값): `@fetchjoin` 어노테이션이 명시된 필드에만 JOIN FETCH 적용
+  - `true`: applies JOIN FETCH to every entity reference field in a paged search (`findBySearch`) (prevents N+1)
+  - `false` (default): applies JOIN FETCH only to fields with an explicit `@fetchjoin` annotation
 
-**`@fetchjoin` vs `autoJoin` 관계:**
-- `@fetchjoin`은 필드 단위로 개별 지정하는 방식
-- `autoJoin: true`는 도메인 전체에 일괄 적용하는 방식
-- 두 방식은 동시에 사용 가능하며, `autoJoin: true`일 때 `@fetchjoin` 없는 필드도 모두 JOIN FETCH 대상이 됨
+**`@fetchjoin` vs `autoJoin`:**
+- `@fetchjoin` is set on individual fields
+- `autoJoin: true` applies to the whole domain at once
+- You can use both together. With `autoJoin: true`, fields without `@fetchjoin` are JOIN FETCH targets too
 
-**JPA 추가 설정:**
+**Additional JPA settings:**
 ```yaml
 config:
   jpa:
-    useQueryMethod: true   # Repository에 커스텀 쿼리 메서드 생성
+    useQueryMethod: true   # generate custom query methods in the Repository
 ```
 
 ### 2.2 Multi-Mode
 
 ```yaml
 config:
-  mode: jpa,uml    # JPA 코드 + Mermaid UML 다이어그램 동시 생성
+  mode: jpa,uml    # generate JPA code and a Mermaid UML diagram together
 ```
 
-쉼표로 구분하여 여러 모드를 동시 실행한다. 각 모드의 산출물이 모두 생성된다.
+Separate modes with commas to run several at once. The output of every mode is generated.
 
-> **3.0 규칙 엔진(`elcore3` - 플러그인의 기본값)은 `jpa` 와 `mybatis` 코드를 씁니다.** 둘 다 없는 도메인
-> (`mode: mongo` 등)은 `elcore3` 가 아무 소스도 쓰지 않고 거절하므로, 그런 프로젝트는
-> `elasticore { output = 'v2' }` 로 2.x 생성기를 씁니다(빌드가 `elcore` 를 부름). 함께 적은 `uml`·`dsl` 은
-> `elcore3` 가 쓰지 않고 경고만 냅니다 - 그 산출물은 `./gradlew elcore` 로 만듭니다. `jpa` 와 `mybatis` 를 함께 적으면
-> JPA 코드를 씁니다(한 도메인은 한 저장 방식).
+> **The 3.0 rule engine (`elcore3` - the plugin default) writes `jpa` and `mybatis` code.** For a domain with neither
+> (`mode: mongo` and so on), `elcore3` refuses and writes no source, so such a project uses the 2.x generator with
+> `elasticore { output = 'v2' }` (the build calls `elcore`). `uml` and `dsl` listed with them are not written by
+> `elcore3`; it only prints a warning - build that output with `./gradlew elcore`. If you list `jpa` and `mybatis` together,
+> it writes JPA code (one domain has one storage).
 
-### 2.3 MyBatis 모드 (3.0)
+### 2.3 MyBatis mode (3.0)
 
-JPA 대신 MyBatis 로 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261030-rc5
+A domain that stores with MyBatis instead of JPA. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0.261030-rc5
 
 ```yaml
 config:
   mode: mybatis
 ```
 
-**만들어지는 것** - DTO·검색 DTO·컨트롤러·접근 검사·매퍼(`<도메인>Mapper`)는 JPA 와 같고, 저장 쪽만 다릅니다.
+**What is generated** - DTOs, search DTOs, controllers, access checks and the mapper (`<Domain>Mapper`) are the same as in JPA. Only the storage side differs.
 
-| 파일 | 내용 |
+| File | Content |
 |---|---|
-| `<Entity>.java` | 엔티티 - JPA 어노테이션이 없는 평범한 클래스. to-one 관계는 대상 클래스 그대로 (`Customer customer`) |
-| `<Entity>Repository.java` | MyBatis 매퍼 인터페이스 (`@Mapper`). 서비스가 `helper.getOrder()` 로 부르는 것 |
-| `<Entity>Repository.xml` | 그 SQL - 같은 패키지 경로의 `src/main/resources` 아래 (MyBatis 가 저절로 찾는 곳) |
-| `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 컨트롤러와 확장 서비스는 JPA 판 그대로 |
-| `db/<domain>-schema.sql` | 테이블·외래키·`@Index` - H2 용. 프로젝트 DDL(9-1 절)이 켜져 있으면 그쪽 `db/schema-{db}.sql` 이 대신합니다 |
+| `<Entity>.java` | The entity - a plain class without JPA annotations. A to-one relation is the target class itself (`Customer customer`) |
+| `<Entity>Repository.java` | The MyBatis mapper interface (`@Mapper`). The service calls it as `helper.getOrder()` |
+| `<Entity>Repository.xml` | Its SQL - under `src/main/resources` at the same package path (where MyBatis finds it by itself) |
+| `<Entity>CoreService.java` | A service with the **same method names and signatures** as the JPA version. The controller and the extension service are the same as the JPA version |
+| `db/<domain>-schema.sql` | Tables, foreign keys and `@Index` - for H2. If the project DDL (section 9-1) is on, `db/schema-{db}.sql` from it replaces this file |
 
-**DB 별 스키마** - PostgreSQL·Oracle·SQL Server 의 스키마와 마이그레이션은 프로젝트 DDL 이 씁니다(9-1 절, `elasticore { ddl {} }`).
-타입은 그 DB 에서 Hibernate 가 고르는 것과 같습니다. 그래서 JPA 로 만든 테이블과 서로 읽을 수 있습니다.
-생성되는 SQL 은 이름에 따옴표를 치지 않으므로, 어느 DB 의 예약어(`level`, `date`, `user`, `order` ...)인 테이블·컬럼 이름은
-생성 때 경고합니다 - `@table`·`@column` 으로 다른 이름을 주세요.
+**Schema per DB** - the schema and migrations for PostgreSQL, Oracle and SQL Server are written by the project DDL (section 9-1, `elasticore { ddl {} }`).
+The types are the same as the ones Hibernate picks for that DB. So the tables can be read together with tables made by JPA.
+The generated SQL does not quote names, so a table or column name that is a reserved word in any DB (`level`, `date`, `user`, `order` ...)
+produces a warning at generation - give another name with `@table` or `@column`.
 
-| 모델 | H2 | PostgreSQL | Oracle (12c+) | SQL Server (2016+) |
+| Model | H2 | PostgreSQL | Oracle (12c+) | SQL Server (2016+) |
 |---|---|---|---|---|
-| 생성 키 (`@sequence`) | `GENERATED BY DEFAULT AS IDENTITY` | 같음 | `GENERATED BY DEFAULT ON NULL AS IDENTITY` | `IDENTITY(1,1)` |
-| `string(n)` | `VARCHAR(n)` | `VARCHAR(n)` | `VARCHAR2(n CHAR)` (4000 넘으면 `CLOB`) | `NVARCHAR(n)` (4000 넘으면 `NVARCHAR(MAX)`) |
-| `text`·`clob` / `blob` | `CLOB` / `BLOB` | `TEXT` / `BYTEA` | `CLOB` / `BLOB` | `NVARCHAR(MAX)` / `VARBINARY(MAX)` |
-| `long` / `int` | `BIGINT` / `INTEGER` | 같음 | `NUMBER(19)` / `NUMBER(10)` | `BIGINT` / `INT` |
+| generated key (`@sequence`) | `GENERATED BY DEFAULT AS IDENTITY` | same | `GENERATED BY DEFAULT ON NULL AS IDENTITY` | `IDENTITY(1,1)` |
+| `string(n)` | `VARCHAR(n)` | `VARCHAR(n)` | `VARCHAR2(n CHAR)` (`CLOB` above 4000) | `NVARCHAR(n)` (`NVARCHAR(MAX)` above 4000) |
+| `text`, `clob` / `blob` | `CLOB` / `BLOB` | `TEXT` / `BYTEA` | `CLOB` / `BLOB` | `NVARCHAR(MAX)` / `VARBINARY(MAX)` |
+| `long` / `int` | `BIGINT` / `INTEGER` | same | `NUMBER(19)` / `NUMBER(10)` | `BIGINT` / `INT` |
 | `boolean` | `BOOLEAN` | `BOOLEAN` | `NUMBER(1)` | `BIT` |
-| `decimal(p.s)`·`money(p.s)` | `DECIMAL(p,s)` | `NUMERIC(p,s)` | `NUMBER(p,s)` | `DECIMAL(p,s)` |
-| `double` / `float` | `DOUBLE PRECISION` / `REAL` | 같음 | `BINARY_DOUBLE` / `BINARY_FLOAT` | `FLOAT(53)` / `REAL` |
-| `datetime`·`timestamp` / `time` | `TIMESTAMP` / `TIME` | `TIMESTAMP(6)` / `TIME` | `TIMESTAMP(6)` / `DATE` | `DATETIME2(6)` / `TIME` |
-| enum (`@db(code)`) | `VARCHAR(코드 길이)` | 같음 | `VARCHAR2(코드 길이 CHAR)` | `VARCHAR(코드 길이)` |
+| `decimal(p.s)`, `money(p.s)` | `DECIMAL(p,s)` | `NUMERIC(p,s)` | `NUMBER(p,s)` | `DECIMAL(p,s)` |
+| `double` / `float` | `DOUBLE PRECISION` / `REAL` | same | `BINARY_DOUBLE` / `BINARY_FLOAT` | `FLOAT(53)` / `REAL` |
+| `datetime`, `timestamp` / `time` | `TIMESTAMP` / `TIME` | `TIMESTAMP(6)` / `TIME` | `TIMESTAMP(6)` / `DATE` | `DATETIME2(6)` / `TIME` |
+| enum (`@db(code)`) | `VARCHAR(code length)` | same | `VARCHAR2(code length CHAR)` | `VARCHAR(code length)` |
 
-SQL Server 의 `UNIQUE` 는 NULL 을 하나만 받으므로, 값이 없어도 되는 `@unique` 컬럼은 `WHERE ... IS NOT NULL` 을 단
-유일 인덱스로 씁니다(다른 DB 는 그대로 `UNIQUE`).
+A SQL Server `UNIQUE` accepts only one NULL, so a `@unique` column that may be empty uses a unique index with `WHERE ... IS NOT NULL`
+(other DBs keep plain `UNIQUE`).
 
-**XML 이 하는 일**
+**What the XML does**
 
-- **한 행 + to-one 관계**: 키를 가진 관계(`@ManyToOne` 등)는 모두 LEFT JOIN 으로 한 문장에 읽습니다(한 단계). 지연 로딩이
-  없으므로 N+1 이 생기지 않습니다 - 페이지 검색은 count 와 본문, **두 문장**입니다. 조인한 행의 관계는 키만 옵니다.
-- **검색**: 검색 DTO 의 조건(`@search`)마다 `<if>` 한 줄. 값이 있을 때만 적용되고, 빈 문자열은 조건이 아닙니다(JPA 와 같음).
-  `eq`·`like`(대소문자 무시, 부분 일치)·`between`(From/To)·`>`·`>=`·`<`·`<=`·`!=`·`isnull`·`_%`(앞부분 일치)·`%_`(뒷부분 일치)
-  를 씁니다. 값 하나인 필드의 `in` 은 JPA 처럼 같음 비교입니다.
-- **정렬**: 엔티티의 속성(`amount`, `customer.name`)만 됩니다. 그 밖의 값은 400 - 요청의 글자가 SQL 에 들어가지 않습니다.
-  정렬이 없으면 키 순서입니다.
-- **페이지**: H2·MySQL·MariaDB·PostgreSQL 은 `LIMIT/OFFSET`, Oracle(12c+)·Tibero·SQL Server·DB2 는 `OFFSET ... FETCH`.
-  런타임 라이브러리가 MyBatis 에 DB 종류를 알려 줍니다(`DatabaseIdProvider`) - 따로 설정할 것은 없습니다.
-  (`OFFSET ... FETCH` 쪽은 H2 의 Oracle 모드에서 확인했습니다 - `elasticore-template-mybatis` 의 테스트.)
-  이 DB 종류는 앱이 직접 쓴 매퍼에도 적용됩니다: `databaseId` 를 단 문장이 그 DB 에서 쓰이게 됩니다. 원치 않으면
-  `elasticore.mybatis.database-id=false` - 그러면 생성된 매퍼는 `LIMIT/OFFSET` 으로 페이지를 나눕니다.
-- **쓰기**: insert(DB 가 만든 키는 되돌려 받음), 모든 컬럼 update(`@updatable(false)` 컬럼은 빼고 - 처음 값 유지), 키로
-  delete. `@jpa:Version` 이 있으면 같은 UPDATE 에서 비교하고 1 올립니다 - 낡은 버전은 409.
-- **enum**: JPA 와 같은 값으로 저장합니다(`@db(code)` 면 코드 `N`, 아니면 이름). 두 방식이 같은 테이블을 읽을 수 있습니다.
-- **Money·Quantity**: `money(10.2)` 는 금액(DECIMAL), `quantity` 는 개수(INTEGER) 한 컬럼 - JPA 변환기와 같은 값.
-  런타임 라이브러리의 `MoneyTypeHandler`·`QuantityTypeHandler` 를 XML 이 이름으로 씁니다.
-- **값 객체(`@embeddable` + `@Embedded`)**: 그 필드들이 행의 컬럼입니다(JPA 처럼 각자의 컬럼 이름, `@embedded(work)` 면
-  `work_street` 처럼 앞에 붙임). 행과 조인한 행 모두에서 읽고, 모든 컬럼이 비면 값은 null 입니다. 정렬·검색은
-  `homeAddress.city` 처럼 씁니다. 값이 선택(`!` 없음)이면 그 컬럼은 모두 NULL 을 허용합니다.
-  **DTO 가 값 객체를 그대로 싣습니다** (`CustomerDTO.homeAddress`) - 주소를 보내고 받을 수 있게. (JPA 레이어드 DTO 는 싣지
-  않습니다.)
-- **컬렉션 관계** (`lines: List<OrderLine> @OneToMany(mappedBy="order")`): 대상의 관계 필드(`order`)로 읽습니다.
-  - **읽기**: 한 행이든 한 페이지든, 컬렉션마다 **한 문장**으로 그 행들 키의 `IN (...)` 을 읽어 나눠 줍니다(키 500 개씩 -
-    Oracle 의 IN 한도). 주문 한 페이지와 주문줄은 세 문장입니다. 순서는 대상의 키 순서입니다.
-  - **애그리거트의 멤버**(서비스·API 가 없는 `OrderLine` 처럼 `@root` 아닌 엔티티)는 루트와 함께 씁니다: 루트 DTO 가
-    `@dtype(List<OrderLineDTO>)` 로 줄을 싣고(`@Valid` - 줄의 `@min(1)` 도 검사), 저장할 때 함께 insert, 수정 요청에 줄이
-    있으면 이전 줄을 지우고 새로 씀, 루트를 지우면 줄을 먼저 지웁니다(JPA 의 cascade·orphanRemoval). 멤버는 서비스 없이
-    매퍼(`OrderLineRepository`)만 생성됩니다. 줄을 바꾸는 수정은 줄을 새로 쓰므로, DB 가 만드는 줄 키는 매번 새 값입니다
-    (다른 테이블이 줄 키를 가리키면 그 수정은 409). `lines: []` 는 줄을 모두 지웁니다(검증이 허락할 때).
-    멤버 안의 컬렉션(줄의 하위 목록)은 거절합니다 - 루트는 한 단계까지 씁니다.
-  - 다른 루트의 컬렉션(`Category.products`)은 읽기만 합니다 - 그 행은 자기 서비스로 씁니다. 애그리거트 안이라도
-    자기 서비스(`@expose`·`@service`)가 있는 엔티티는 그쪽으로만 씁니다.
-  - 큰 값(`text`·`clob`·`blob`, 4000 자 넘는 문자열)은 정렬 목록에 없고, 검색은 `like`·앞부분·뒷부분 일치만 됩니다
-    (Oracle 은 CLOB 을 비교·정렬하지 못합니다).
-  - `mappedBy` 가 없는 컬렉션(JPA 의 조인 테이블)·`@ManyToMany`·값 컬렉션은 거절합니다.
-- **id 로 가리키는 관계** (`@joinBy`): `customerId: long` 과 `customer: Customer @ManyToOne @joinBy(customerId)` 처럼
-  행이 id 를 값으로 갖고 관계는 그 컬럼으로 조인만 합니다. 쓰는 것은 id 입니다. `@owner(customerId)` 를 레이어드에서
-  쓸 때의 모양입니다(헥사고날은 이 둘을 저절로 만듭니다).
+- **One row + to-one relations**: every relation that has a key (`@ManyToOne` and so on) is read in one statement with a LEFT JOIN (one level). There is no
+  lazy loading, so N+1 does not occur - a paged search is two statements, a count and the body. A joined row's relations come as keys only.
+- **Search**: one `<if>` line per condition (`@search`) of the search DTO. It applies only when there is a value, and an empty string is not a condition (same as JPA).
+  It uses `eq`, `like` (case-insensitive, partial match), `between` (From/To), `>`, `>=`, `<`, `<=`, `!=`, `isnull`, `_%` (prefix match) and `%_` (suffix match).
+  `in` on a single-valued field is an equality comparison, as in JPA.
+- **Sort**: only entity properties work (`amount`, `customer.name`). Any other value gives 400 - the characters of the request never enter the SQL.
+  Without a sort, the order is the key order.
+- **Paging**: H2, MySQL, MariaDB and PostgreSQL use `LIMIT/OFFSET`; Oracle (12c+), Tibero, SQL Server and DB2 use `OFFSET ... FETCH`.
+  The runtime library tells MyBatis the DB type (`DatabaseIdProvider`) - there is nothing to set.
+  (The `OFFSET ... FETCH` side was checked in H2's Oracle mode - the tests of `elasticore-template-mybatis`.)
+  This DB type also applies to mappers the app writes itself: a statement with a `databaseId` is used on that DB. If you do not want that, set
+  `elasticore.mybatis.database-id=false` - the generated mappers then page with `LIMIT/OFFSET`.
+- **Write**: insert (the DB-generated key is returned), update of all columns (except `@updatable(false)` columns - they keep the first value), and
+  delete by key. With `@jpa:Version`, the same UPDATE compares the version and adds 1 - a stale version gives 409.
+- **enum**: stored with the same value as JPA (the code `N` with `@db(code)`, otherwise the name). Both ways can read the same table.
+- **Money, Quantity**: `money(10.2)` is an amount (DECIMAL) and `quantity` is a count (INTEGER), one column each - the same values as the JPA converter.
+  The XML uses `MoneyTypeHandler` and `QuantityTypeHandler` of the runtime library by name.
+- **Value object (`@embeddable` + `@Embedded`)**: its fields are columns of the row (each with its own column name as in JPA; with `@embedded(work)` the name is prefixed,
+  as in `work_street`). It is read from the row and from joined rows, and when all columns are empty the value is null. Sort and search
+  are written like `homeAddress.city`. If the value is optional (no `!`), all its columns allow NULL.
+  **The DTO carries the value object as it is** (`CustomerDTO.homeAddress`) - so that an address can be sent and received. (The JPA layered DTO does not
+  carry it.)
+- **Collection relation** (`lines: List<OrderLine> @OneToMany(mappedBy="order")`): it is read through the relation field of the target (`order`).
+  - **Read**: for one row or one page, each collection is read with **one statement**, `IN (...)` over the keys of those rows, and distributed (500 keys at a time -
+    the IN limit of Oracle). One page of orders plus their lines is three statements. The order is the key order of the target.
+  - **Members of an aggregate** (an entity that is not `@root`, such as `OrderLine` with no service or API) are written together with the root: the root DTO
+    carries the lines as `@dtype(List<OrderLineDTO>)` (`@Valid` - the `@min(1)` of a line is checked too), they are inserted together on save, an update request that
+    holds lines deletes the old lines and writes the new ones, and deleting the root deletes the lines first (the cascade and orphanRemoval of JPA). A member gets
+    only a mapper (`OrderLineRepository`), no service. An update that changes lines writes them anew, so a DB-generated line key is a new value each time
+    (if another table points to the line key, that update gives 409). `lines: []` deletes all the lines (when validation allows).
+    A collection inside a member (a sub-list of a line) is refused - a root works down to one level.
+  - A collection of another root (`Category.products`) is read only - those rows are written by their own service. Even inside an aggregate,
+    an entity that has its own service (`@expose`, `@service`) is written only through that service.
+  - A large value (`text`, `clob`, `blob`, a string over 4000 characters) is not in the sort list, and a search on it allows only `like`, prefix and suffix match
+    (Oracle cannot compare or sort a CLOB).
+  - A collection without `mappedBy` (the join table of JPA), `@ManyToMany` and a value collection are refused.
+- **Relation by id** (`@joinBy`): as in `customerId: long` and `customer: Customer @ManyToOne @joinBy(customerId)`,
+  the row holds the id as a value and the relation only joins through that column. What you write is the id. This is the shape when you use `@owner(customerId)` in layered
+  (hexagonal creates the two by itself).
 
-- **1:1 관계의 반대편** (`customer: Customer @OneToOne(mappedBy="vipProfile")`): 키는 상대 행(`Customer.vipProfile`)에
-  하나만 있고, 이쪽은 그 컬럼으로 조인해 읽기만 합니다(JPA 처럼 컬럼 하나).
-- **`@abstract` 부모 (`@extend(AuditEntity)`)**: 부모의 필드가 행의 컬럼입니다(JPA 의 `@MappedSuperclass`). 감사 필드를
-  모아 둔 부모가 이 모양입니다. `@abstract` 가 아닌 부모(테이블 상속)는 거절합니다. Since: 3.0.261030-rc6
+- **The other side of a 1:1 relation** (`customer: Customer @OneToOne(mappedBy="vipProfile")`): the key is only on the other row (`Customer.vipProfile`),
+  and this side joins through that column and only reads (one column, as in JPA).
+- **`@abstract` parent (`@extend(AuditEntity)`)**: the parent's fields are columns of the row (the `@MappedSuperclass` of JPA). A parent that
+  collects audit fields has this shape. A parent that is not `@abstract` (table inheritance) is refused. Since: 3.0.261030-rc6
 
-**JPA 가 대신 해 주던 것을 서비스가 합니다**: `@genid` 키 만들기, `@jpa:CreatedDate`·`@jpa:LastModifiedDate` 시각 찍기,
-`@jpa:CreatedBy`·`@jpa:LastModifiedBy` 에 쓴 사람 넣기 - 앱의 `AuditorAware` 빈이 말하는 사람(JPA 감사가 묻는 그 빈.
-없으면 null). Since: 3.0.261030-rc6
+**The service does what JPA did for you**: making the `@genid` key, stamping the time for `@jpa:CreatedDate` and `@jpa:LastModifiedDate`,
+and putting the writer into `@jpa:CreatedBy` and `@jpa:LastModifiedBy` - the person the app's `AuditorAware` bean returns (the bean JPA auditing asks.
+Null if there is none). Since: 3.0.261030-rc6
 
-**repository.yml 의 쿼리** - 매퍼 인터페이스에 DSL 이 적은 이름·시그니처 그대로 생기고, XML 에 그 문장이 생깁니다.
+**Queries in repository.yml** - the mapper interface gets the names and signatures exactly as the DSL writes them, and the XML gets their statements.
 Since: 3.0.261030-rc6
-- **이름으로 읽는 쿼리**(`query` 없음): Spring Data 처럼 이름을 읽습니다 - `find·count·exists·delete` + `By`, `First/TopN`,
-  `Distinct`, `And`·`Or`, `Is·Not·LessThan(Equal)·GreaterThan(Equal)·Before·After·Between·IsNull·IsNotNull·Like·NotLike·
-  StartingWith·EndingWith·Containing·NotContaining·In·NotIn·True·False·IgnoreCase·AllIgnoreCase`, `OrderBy...Asc/Desc`.
-  속성은 행·값 객체·조인한 행의 것(`findByCustomerName` 은 `customer.name`). `pageable: true` 면 `Page` 를 count 와 한 페이지로.
-  `findAllByOrderBySkuDesc` 처럼 조건 없이 순서만 적어도 됩니다. `Containing`·`StartingWith`·`EndingWith` 는 값의 `%`·`_` 를
-  글자 그대로 찾고(JPA 처럼), 빈 목록의 `In` 은 행이 없고 `NotIn` 은 모든 행입니다. `Stream` 은 거절(`List` 로).
-  도메인 규칙(DDD·헥사고날)의 루트에서 `deleteBy...` 는 행을 읽어 하나씩 지웁니다(아래 표).
-- **`nativeQuery: true` 인 SQL**: 적은 그대로 실행하고 `:name`(또는 `?1`)을 그 파라미터로 묶습니다. 엔티티를 답하면 키로
-  다시 읽어 조인한 행까지 채우고(쿼리가 준 순서대로), DTO 를 답하면 컬럼 별칭으로 채웁니다(`AS customerId`).
-  `UPDATE`·`DELETE`·`INSERT` 는 바뀐 행 수를 답합니다.
-- **JPQL**(`nativeQuery` 없이 `query` 를 적은 것)은 거절합니다 - MyBatis 는 SQL 을 실행합니다. `nativeQuery: true` 와 DB 의 SQL 로.
+- **Queries read by name** (no `query`): the name is read like Spring Data - `find`, `count`, `exists`, `delete` + `By`, `First/TopN`,
+  `Distinct`, `And`, `Or`, `Is`, `Not`, `LessThan(Equal)`, `GreaterThan(Equal)`, `Before`, `After`, `Between`, `IsNull`, `IsNotNull`, `Like`, `NotLike`,
+  `StartingWith`, `EndingWith`, `Containing`, `NotContaining`, `In`, `NotIn`, `True`, `False`, `IgnoreCase`, `AllIgnoreCase`, `OrderBy...Asc/Desc`.
+  A property is one of the row, the value object or a joined row (`findByCustomerName` is `customer.name`). With `pageable: true`, a `Page` is a count and one page.
+  You may write only an order with no condition, as in `findAllByOrderBySkuDesc`. `Containing`, `StartingWith` and `EndingWith` search for `%` and `_` in the value
+  as literal characters (as in JPA); `In` with an empty list returns no rows and `NotIn` returns all rows. `Stream` is refused (use `List`).
+  In the root of a domain rule (DDD, hexagonal), `deleteBy...` reads the rows and deletes them one by one (table below).
+- **SQL with `nativeQuery: true`**: it runs as written, and binds `:name` (or `?1`) to that parameter. If it returns an entity, the entity is
+  read again by key and filled up to the joined rows (in the order the query gave), and if it returns a DTO, it is filled by column alias (`AS customerId`).
+  `UPDATE`, `DELETE` and `INSERT` return the number of changed rows.
+- **JPQL** (a `query` without `nativeQuery`) is refused - MyBatis runs SQL. Use `nativeQuery: true` and the SQL of the DB.
 
-**dbms 포트** (`port: ... meta: dbms`) - MyBatis 도메인에서는 포트도 MyBatis 로 생성합니다: 포트의 SQL 을 담은 매퍼
-(`<Port>Mapper` + XML)와 포트를 구현하는 어댑터(`<Port>Adapter`, 빈)가 `infrastructure.persistence`(없으면 repository 패키지)에
-생깁니다 - 런타임 프록시 대신. SQL 은 포트 DSL 에 적은 그대로이고, `:name` 은 `#{}`, 줄 끝의 `/* if:name */` 는 `<if>`(값이 있을
-때 - 빈 문자열은 없음), 블록 `/* if:name */ ... /* if-end */` 도 같습니다. 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
-camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬럼이 NULL 인 행은 필드가 모두 null 인 DTO). `/* if:` 에
-식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`) 메서드는 문장만 실행합니다.
-페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
-`ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 순서가 없는 SQL 의 페이지는 SQL Server
-에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음) - 그러니 페이지의 `ORDER BY` 를
-`/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). 블록 안에 블록을 두는 것(중첩)은 런타임처럼
-지원하지 않습니다 - 안쪽 `/* if-end */` 가 바깥 블록을 닫습니다. 정렬은 런타임처럼 입력의 `sortCode`·
-`sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261030-rc6
+**dbms port** (`port: ... meta: dbms`) - in a MyBatis domain, ports are generated with MyBatis too: a mapper that holds the port's SQL
+(`<Port>Mapper` + XML) and an adapter that implements the port (`<Port>Adapter`, a bean) are created in `infrastructure.persistence` (the repository package if there is none),
+instead of a runtime proxy. The SQL is exactly what the port DSL says, `:name` becomes `#{}`, a trailing `/* if:name */` becomes `<if>` (when there is a value;
+an empty string counts as none), and the block `/* if:name */ ... /* if-end */` works the same way. The result is converted by the same rules as the runtime (column aliases to
+a DTO in camelCase, the first column for a single value - null if NULL, a row whose columns are all NULL becomes a DTO whose fields are all null). A port that uses
+an expression (JEXL - `input.x > 3`) in `/* if: */` is refused - use a single name. A method with no answer (`void`) only runs the statement.
+A page is a count and one page. The count removes the last `ORDER BY` of the SQL (SQL Server does not accept an `ORDER BY` inside a derived table) - if
+`LIMIT`, `OFFSET` or `FETCH` follows, it is left as it is. A page of SQL without an order is cut with `ORDER BY (SELECT NULL)` on SQL Server
+(it does not cut a page without an order) - so do not put the `ORDER BY` of a page inside an `/* if: */` line or block
+(if the condition is false it fails on SQL Server). Putting a block inside a block (nesting) is
+not supported, as in the runtime - the inner `/* if-end */` closes the outer block. Sorting uses `sortCode` and
+`sortColumn` of the input, as in the runtime - the `Sort` of a `Pageable` is not read. Since: 3.0.261030-rc6
 
-JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
-라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.
+In an app without JPA (an app that uses only MyBatis), a dbms port that remains a runtime proxy runs with JDBC (`JdbcDbmsGateway` - the runtime
+library registers it by itself). The JPQL of such a port is refused.
 
-**테이블·컬럼 이름은 JPA 와 같습니다** - `@table`·`table.prefix`·`@column`, 없으면 이름을 snake case 로,
-관계 컬럼은 `필드_대상키`(`customer_customer_id`). JPA 로 쓰던 테이블을 그대로 읽습니다.
+**Table and column names are the same as in JPA** - `@table`, `table.prefix`, `@column`; otherwise the name in snake case, and
+a relation column is `field_targetKey` (`customer_customer_id`). It reads the tables you used with JPA as they are.
 
-**빌드** - JPA 대신 MyBatis 와 Spring Data 의 페이지 타입을 둡니다.
+**Build** - put MyBatis and the Spring Data page types instead of JPA.
 
 ```gradle
 dependencies {
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.5'   // Spring Boot 4: 4.0.0
     implementation 'org.springframework.data:spring-data-commons'                // Page, Pageable, Sort
-    // spring-boot-starter-data-jpa 는 필요 없습니다
+    // spring-boot-starter-data-jpa is not needed
 }
 ```
 
 ```properties
-# 생성된 스키마로 테이블 만들기 (H2 등 임베디드 DB 는 기본으로 실행, 그 밖에는 spring.sql.init.mode=always)
-spring.sql.init.schema-locations=classpath:db/shop-schema.sql      # 프로젝트 DDL 이면 classpath:db/schema-h2.sql
-# PostgreSQL / Oracle / SQL Server 면 프로젝트 DDL(9-1 절)이 쓴 그 DB 의 파일, 또는 Flyway 마이그레이션
+# create the tables from the generated schema (embedded DBs such as H2 run it by default; otherwise spring.sql.init.mode=always)
+spring.sql.init.schema-locations=classpath:db/shop-schema.sql      # with the project DDL: classpath:db/schema-h2.sql
+# for PostgreSQL / Oracle / SQL Server, the file of that DB written by the project DDL (section 9-1), or a Flyway migration
 # spring.sql.init.schema-locations=classpath:db/schema-oracle.sql
 ```
 
-DB 는 `elasticore-sample-petstore-mybatis`(펫스토어 전체)와 `elasticore-template-mybatis`(모든 검색 조건·모든 컬럼 타입)의
-테스트가 H2 와 실제 Oracle 23 Free·PostgreSQL 16·SQL Server 2022 에서 확인합니다(CI 의 "Oracle, PostgreSQL and
-SQL Server").
+The DB is verified by the tests of `elasticore-sample-petstore-mybatis` (the whole pet store) and `elasticore-template-mybatis` (every search condition and every column type)
+on H2 and on real Oracle 23 Free, PostgreSQL 16 and SQL Server 2022 (the "Oracle, PostgreSQL and
+SQL Server" job of CI).
 
-**직접 쓰는 쿼리**: 생성된 XML 의 문장을 고쳐도 됩니다(힌트, 조건, 정렬 ...) - 모델이 바뀌어도 고친 내용은 남습니다(9-2
-생성 파일 병합). **새 문장**은 매퍼 인터페이스와 XML 을 하나 더 만들어(`OrderQueryMapper` + `OrderQueryMapper.xml`) 확장
-서비스(`OrderService`)에서 씁니다 - 생성된 XML 과 매퍼 인터페이스에 문장과 메서드를 더해도 병합으로 남지만, 그러면
-모델이 바뀔 때마다 생성 코드와 같은 자리에서 합쳐야 해 충돌할 곳이 늘어납니다.
+**Queries you write yourself**: you may edit the statements of the generated XML (hints, conditions, sort ...) - your edits stay when the model changes (9-2
+generated file merge). Write a **new statement** by creating one more mapper interface and XML (`OrderQueryMapper` + `OrderQueryMapper.xml`) and using it in the extension
+service (`OrderService`) - adding statements and methods to the generated XML and mapper interface also survives the merge, but then
+every model change has to merge in the same place as the generated code, so there are more places to conflict.
 
-**아직 거절하는 것** (조용히 빠뜨리지 않고 빌드가 멈춥니다):
-- `mappedBy` 없는 컬렉션, `@ManyToMany`, 값 컬렉션(`List<String>`, `string[]`), 다른 도메인 엔티티의 컬렉션
-- 값 객체 안의 값 객체·관계, 키 두 개 이상(`@IdClass`), `@abstract` 가 아닌 부모(테이블 상속),
-  JDBC 타입이 없는 타입(`UUID` 등), 행의 값 필드를 가리키지 않는 `@joinBy`, 상대가 키를 갖지 않는 `@OneToOne(mappedBy)`
-- 시퀀스·UUID 로 만드는 키(`@sequence(SEQUENCE)` 등 - IDENTITY 만), 키가 아닌 `@sequence`
-- 시각 타입이 아닌 `@jpa:CreatedDate`, `@audited`(행의 이력은 Hibernate Envers 의 것 - MyBatis 의 쓰기는 이력을 남기지 않음)
-- 조인한 행보다 먼 검색 경로(`@ref(shop.region.name)`) - 빼면 조건부 수정·삭제가 모든 행에 미치므로
-- repository.yml 의 JPQL, 이름이 쿼리로 읽히지 않는 메서드, `Stream` 을 답하는 메서드, 레이어드에서 멤버가 있는 루트의
-  `deleteBy...`(멤버를 남김 - 도메인 규칙에서는 하나씩 지움), 조건이 없는 `deleteBy`·`existsBy`
-- 레이어드에서 루트가 to-one 관계(`@OneToOne`·`@ManyToOne` + `@cascade`)로 갖는 서비스 없는 멤버 - 레이어드 서비스는 그것을
-  쓰지 않습니다. 그 엔티티에 서비스를 주거나 도메인 규칙(`architecture = 'ddd'`·`'hexagonal'`)으로
-- 도메인 규칙의 룰셋을 직접 고르면서 `mybatis-ddd` 를 빠뜨린 `publisher.rules`
-- JPA 도메인의 엔티티가 MyBatis 도메인의 엔티티를 가리키는 것(반대는 됨), 2.x 코드를 지키는 도메인과 같은 프로젝트,
-  Kotlin(MyBatis 코드는 Java)
+**What is still refused** (the build stops; nothing is dropped silently):
+- a collection without `mappedBy`, `@ManyToMany`, a value collection (`List<String>`, `string[]`), a collection of an entity of another domain
+- a value object inside a value object, or a relation inside one, two or more keys (`@IdClass`), a parent that is not `@abstract` (table inheritance),
+  a type with no JDBC type (`UUID` and so on), a `@joinBy` that does not point to a value field of the row, a `@OneToOne(mappedBy)` whose other side does not hold the key
+- a key made by a sequence or UUID (`@sequence(SEQUENCE)` and so on - IDENTITY only), a `@sequence` that is not on the key
+- a `@jpa:CreatedDate` that is not a time type, `@audited` (the history of a row belongs to Hibernate Envers - MyBatis writes leave no history)
+- a search path farther than the joined row (`@ref(shop.region.name)`) - because without it a conditional update or delete would reach all rows
+- JPQL in repository.yml, a method whose name does not read as a query, a method that returns `Stream`, `deleteBy...` on a root that has members in
+  layered (it would leave the members - domain rules delete them one by one), a `deleteBy` or `existsBy` with no condition
+- in layered, a member without a service that the root holds by a to-one relation (`@OneToOne` or `@ManyToOne` + `@cascade`) - the layered service does not
+  write it. Give that entity a service, or use domain rules (`architecture = 'ddd'` or `'hexagonal'`)
+- a `publisher.rules` that picks the rule sets of the domain rules by hand and leaves out `mybatis-ddd`
+- an entity of a JPA domain that points to an entity of a MyBatis domain (the reverse works), a project that also has a domain that keeps 2.x code,
+  Kotlin (MyBatis code is Java)
 
-#### DDD·헥사고날 (`architecture = 'ddd'`·`'hexagonal'` + `mode: mybatis`)
+#### DDD and hexagonal (`architecture = 'ddd'`, `'hexagonal'` + `mode: mybatis`)
 
-도메인 모델과 헥사고날도 MyBatis 로 생성합니다(묶음 `ddd-mybatis-springboot`·`hexagonal-mybatis-springboot` - 빌드의
-`architecture` 와 `mode` 로 저절로 고름. 도메인 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot` 를
-적어도 MyBatis 판으로 읽습니다). Since: 3.0.261030-rc6
+The domain model and hexagonal are generated with MyBatis too (bundles `ddd-mybatis-springboot` and `hexagonal-mybatis-springboot` - chosen by itself from the build's
+`architecture` and `mode`. If the domain env.yml has `ddd-springboot` or `hexagonal-springboot` in `publisher.rules`,
+it is read as the MyBatis version). Since: 3.0.261030-rc6
 
-모델은 JPA 판과 같고, 만들어지는 것도 같습니다 - 루트와 `<Root>Base`, 멤버, 값 객체, 도메인 이벤트, 불변식, 팩토리,
-명세, 명령(`commands:`), 생명주기(`states:`), `@snapshot`·`@compute`, 도메인 서비스·프로세스 매니저, 포트
-(`<Root>RepositoryPort`·`<Root>QueryPort`·`<Root>UseCase`), 아웃박스, 아키텍처 테스트. 도메인(`domain.model`)에는 JPA·Spring
-Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 것을 여기서는 그대로).
+The model is the same as the JPA version, and so is what is generated - the root and `<Root>Base`, members, value objects, domain events, invariants, factories,
+specifications, commands (`commands:`), lifecycle (`states:`), `@snapshot` and `@compute`, domain services and process managers, ports
+(`<Root>RepositoryPort`, `<Root>QueryPort`, `<Root>UseCase`), the outbox, architecture tests. The domain (`domain.model`) has no JPA or Spring
+Data name at all (the JPA version gets this with `mapping: xml`; here you get it as it is).
 
-다른 것은 **저장소 어댑터**(`<Root>RepositoryAdapter`)입니다. JPA 가 스스로 하던 일을 어댑터가 한 줄씩 합니다:
+The difference is the **repository adapter** (`<Root>RepositoryAdapter`). The adapter does, line by line, what JPA did by itself:
 
-| JPA 가 하던 것 | MyBatis 어댑터 |
+| What JPA did | The MyBatis adapter |
 |---|---|
-| `save()` 가 새 행인지 판단 | 버전이 없으면(또는 키가 없으면) INSERT, 아니면 UPDATE |
-| 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 - 루트도 멤버도 |
-| 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
-| to-one 멤버 cascade (`@OneToOne @cascade` 등) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE(저장된 행을 세션 캐시를 비우고 읽어 비교) |
-| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(행을 잠금), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
-| 파생 `deleteBy...` | 조건의 행을 읽어 하나씩 `delete()` 처럼 지움(삭제 가드·멤버) - Spring Data JPA 의 파생 삭제처럼 |
-| `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
-| `@DomainEvents` 발행 | 저장·삭제 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |
-| `@CreatedDate`·`@CreatedBy` 등 감사 | 저장 때 시각과 `AuditorAware` 의 사람을 넣음 - 멤버의 것도(멤버만 감사 필드를 가져도) |
-| 영속성 컨텍스트(같은 트랜잭션에선 같은 객체) | MyBatis 세션은 쓰기가 없는 동안 같은 조회에 같은 객체를 돌려줌(쓰기 뒤에는 새 객체) - 어댑터는 트랜잭션에서 처음 본 행만 컬렉션을 채우고 `afterLoad`(메모리의 변경을 덮지 않음) |
-| `EntityManager.find` (참조 검사·`@snapshot`) | 어댑터가 `Lookup.Source` - 런타임이 등록하는 `Lookup` 빈이 타입별로 찾아 줌(JPA 도메인의 루트는 앱의 `EntityManager` 로) |
-| 지연 로딩 | 없음 - 행은 조인한 행과 함께, 컬렉션은 페이지 단위로 한 문장씩 읽음 |
+| `save()` decides whether the row is new | INSERT if there is no version (or no key), otherwise UPDATE |
+| Dirty checking, `@Version` | UPDATE of all columns, with the version compared and increased in the same statement (409 if stale), and the in-memory version raised too - for the root and for members |
+| Member cascade, orphanRemoval | Compares with the stored member rows - DELETE the missing, UPDATE the remaining, INSERT the new (member keys are kept) |
+| To-one member cascade (`@OneToOne @cascade` and so on) | INSERT/UPDATE before the root (the root holds the key), DELETE the old member that changed or is gone (reads the stored row after clearing the session cache, to compare) |
+| `delete()` | 409 before anything is deleted if the version is stale (locks the row), then DELETE in the order member collections -> row -> to-one members (the stored one and the in-memory one), and publishes the events raised in between |
+| Derived `deleteBy...` | Reads the rows of the condition and deletes them one by one like `delete()` (delete guard, members) - like the derived delete of Spring Data JPA |
+| `@PrePersist`, `@PreUpdate` (invariants), `@PreRemove`, `@PostLoad`, `@PostPersist` | The adapter calls the same moments of `io.elasticore.springboot3.domain.Lifecycle`, which the root implements |
+| `@DomainEvents` publishing | Publishes with `ApplicationEventPublisher` after save or delete and clears them (once) |
+| Auditing such as `@CreatedDate`, `@CreatedBy` | Puts the time and the person of `AuditorAware` on save - for members too (even if only the member has audit fields) |
+| Persistence context (the same object within one transaction) | The MyBatis session returns the same object for the same query while there are no writes (a new object after a write) - the adapter fills the collections only of a row it sees first in the transaction, and calls `afterLoad` (it does not overwrite in-memory changes) |
+| `EntityManager.find` (reference check, `@snapshot`) | The adapter is a `Lookup.Source` - the `Lookup` bean that the runtime registers finds it by type (the root of a JPA domain goes through the app's `EntityManager`) |
+| Lazy loading | None - a row is read together with its joined rows, and collections are read one statement at a time per page |
 
-애플리케이션 서비스는 포트만 받습니다(`<Root>RepositoryPort`, `<Root>QueryPort`, `Lookup`) - 확장 서비스의 생성자도
-그 셋입니다. 검색 포트는 `Specification` 대신 검색 DTO 를 받습니다(`findAll(OrderSrchDTO, owner, Pageable)`).
-애그리거트의 멤버는 `@service` 를 적어도 자기 서비스가 없고 루트가 씁니다 - `@aggregate(Order)` 로 적은 것도, 모델이
-멤버로 만든 것(`@cascade` 로 들고 있거나 `@root` 의 `@OneToMany(mappedBy=...)` 가 가진 것)도. 매퍼(`<Member>Repository`)만
-생기며, 그것을 부르는 것은 루트의 어댑터뿐입니다.
+The application service takes only ports (`<Root>RepositoryPort`, `<Root>QueryPort`, `Lookup`) - the constructor of the extension service
+is those three too. The search port takes a search DTO instead of a `Specification` (`findAll(OrderSrchDTO, owner, Pageable)`).
+A member of an aggregate has no service of its own even if you write `@service`, and the root uses it - both when you write it with `@aggregate(Order)` and when the model
+makes it a member (held with `@cascade`, or held by an `@OneToMany(mappedBy=...)` of a `@root`). Only the mapper (`<Member>Repository`) is
+generated, and only the root's adapter calls it.
 
-`publisher.rules` 로 룰셋을 직접 고르면 `ddd-*`·`hex-*` 와 함께 `mybatis-ddd` 를 적어야 합니다(JPA 콜백을 `Lifecycle` 로
-옮기는 룰셋) - 빠지면 이유를 밝혀 멈춥니다. 묶음(`ddd-springboot`·`hexagonal-springboot`)을 적으면 저절로 들어갑니다.
+If you pick rule sets by hand with `publisher.rules`, you must write `mybatis-ddd` together with `ddd-*` and `hex-*` (the rule set that
+moves the JPA callbacks to `Lifecycle`) - without it the build stops and says why. If you write a bundle (`ddd-springboot`, `hexagonal-springboot`), it is added by itself.
 
-아웃박스(`outbox: true`)는 MyBatis 매퍼로 쓰고, 릴레이는 DB 마다의 잠금으로 다음 행을 가져갑니다 - PostgreSQL·Oracle
-`FOR UPDATE SKIP LOCKED`, SQL Server `UPDLOCK, READPAST`, H2 `FOR UPDATE`. 테이블은 프로젝트 DDL 에 들어갑니다.
+The outbox (`outbox: true`) is written with a MyBatis mapper, and the relay takes the next row with a lock that depends on the DB - PostgreSQL and Oracle
+`FOR UPDATE SKIP LOCKED`, SQL Server `UPDLOCK, READPAST`, H2 `FOR UPDATE`. The table goes into the project DDL.
 
-`elasticore-template-ddd-mybatis` 가 `elasticore-template-ddd` 의 모델과 테스트를 MyBatis 위에서 돌립니다(H2, 그리고 CI 의
-Oracle·PostgreSQL·SQL Server).
+`elasticore-template-ddd-mybatis` runs the model and tests of `elasticore-template-ddd` on MyBatis (H2, and in CI
+Oracle, PostgreSQL and SQL Server).
 
-`@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
+A `@formula` field stays in the entity, but MyBatis does not read it, so its value is null, and it is left out of the search conditions (warning).
 
-### 2.4 MongoDB 모드
+### 2.4 MongoDB mode
 
 ```yaml
 config:
   mode: mongo
 ```
 
-**생성 항목:** MongoDB Document 엔티티, Spring Data MongoDB Repository, 서비스 클래스
+**Generated:** MongoDB Document entities, Spring Data MongoDB Repository, service classes
 
-### 2.5 UML 모드
+### 2.5 UML mode
 
 ```yaml
 config:
   mode: uml
 ```
 
-**생성 항목:** Mermaid 다이어그램, 엔티티 관계도 HTML 문서
+**Generated:** Mermaid diagrams, an entity relationship diagram as an HTML document
 
-### 2.6 DSL 모드
+### 2.6 DSL mode
 
 ```yaml
 config:
   mode: dsl
 ```
 
-**생성 항목:** DSL 전용 코드 산출물 (JPA 없이 모델 정의만 사용하는 경우)
+**Generated:** DSL-only code output (when you use only the model definition, without JPA)
 
 ---
 
-## 3. supportAI 설정
+## 3. supportAI setting
 
 ```yaml
 config:
-  supportAI: "true"    # AI 지원 서비스 템플릿 사용 (기본값: "false")
+  supportAI: "true"    # use the AI-support service template (default: "false")
 ```
 
-- `"true"` 설정 시 `service_extend_ai.tmpl` 기반의 확장 서비스 클래스를 생성
-- `"false"` (기본값) 설정 시 `service_extend.tmpl` 사용
-- AI 기능 통합을 위한 확장 포인트를 제공하며, 서비스 레이어에 AI 관련 메서드 템플릿이 추가됨
-- 생성되는 `XxxService`의 메서드에 Spring AI `@Tool`/`@ToolParam`이 붙습니다. Spring AI 1.x와 2.0 모두 같은 어노테이션입니다.
-- `@readonly` 엔티티(또는 `@restExclude`로 뺀 메서드)는 조회 도구만 생깁니다 (3.0 규칙엔진). 쓰기 메서드가 없는 서비스에 쓰기 도구를 만들지 않습니다.
-- Spring Boot 4 + Spring AI 2.0은 아래 3-1 참고.
+- With `"true"`, the extension service class is generated from `service_extend_ai.tmpl`
+- With `"false"` (default), `service_extend.tmpl` is used
+- It provides extension points for AI integration, and AI-related method templates are added to the service layer
+- Spring AI `@Tool`/`@ToolParam` are put on the methods of the generated `XxxService`. Spring AI 1.x and 2.0 use the same annotations.
+- A `@readonly` entity (or a method left out with `@restExclude`) gets read tools only (3.0 rule engine). A service with no write methods gets no write tools.
+- For Spring Boot 4 + Spring AI 2.0, see 3-1 below.
 
 ---
 
 ## 3-1. Spring Boot 4 / Spring AI 2.0 (ElastiCORE 3.0)
 
-ElastiCORE **3.0**은 Spring Boot 3과 4 둘 다 지원합니다. 2.2는 Spring Boot 3만 지원합니다.
-확인한 버전: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
+ElastiCORE **3.0** supports both Spring Boot 3 and 4. 2.2 supports only Spring Boot 3.
+Verified versions: Spring Boot 4.0.8, Spring AI 2.0.1, Hibernate 7.2, Spring Data JPA 4.0, Jackson 3.1.
 
-### 프로젝트에서 바꿀 것
+### What to change in the project
 
 ```gradle
 plugins {
@@ -353,67 +353,67 @@ plugins {
 }
 
 dependencies {
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.x'   // springboot3 대신
-    implementation 'org.springframework.boot:spring-boot-starter-webmvc'      // Boot 4: starter-web 의 새 이름
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'  // Boot 4 용 3.x
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.x'   // instead of springboot3
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'      // Boot 4: the new name of starter-web
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'  // 3.x for Boot 4
 
-    // supportAI 를 쓸 때
+    // when you use supportAI
     implementation platform('org.springframework.ai:spring-ai-bom:2.0.1')
     implementation 'org.springframework.ai:spring-ai-model'
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'  // MockMvc 테스트
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'  // MockMvc tests
 }
 ```
 
-- Gradle **8.14 이상** (Spring Boot 4 Gradle 플러그인의 요구)
-- Kotlin은 **2.2 이상**, Jackson Kotlin 모듈은 `tools.jackson.module:jackson-module-kotlin`
-- `elasticore-springboot4`의 Java 패키지는 `io.elasticore.springboot3` 그대로입니다. 생성된 코드의 import가 바뀌지 않으므로, Boot 3 → 4 전환은 의존성 한 줄입니다.
+- Gradle **8.14 or higher** (required by the Spring Boot 4 Gradle plugin)
+- Kotlin **2.2 or higher**; the Jackson Kotlin module is `tools.jackson.module:jackson-module-kotlin`
+- The Java package of `elasticore-springboot4` is still `io.elasticore.springboot3`. The imports of generated code do not change, so moving from Boot 3 to 4 is one dependency line.
 
-### ElastiCORE가 알아서 하는 것
+### What ElastiCORE does for you
 
-플러그인이 빌드에 적용된 Spring Boot Gradle 플러그인의 버전을 읽습니다(루트에 `apply false`로만 선언해도 됨). Boot 4이면 생성 코드가 바뀝니다.
+The plugin reads the version of the Spring Boot Gradle plugin applied to the build (declaring it with `apply false` only at the root is enough). With Boot 4, the generated code changes.
 
-| 생성물 | Spring Boot 3 | Spring Boot 4 |
+| Generated | Spring Boot 3 | Spring Boot 4 |
 |---|---|---|
-| enum (`@json`) | Jackson 2 `CustomSerializer`/`CustomDeserializer` | `@JsonValue` + `@JsonCreator` (Jackson 2·3 공통 `jackson-annotations`) |
-| outbox recorder (DDD) | Jackson 2 `ObjectMapper` | Jackson 3 `JsonMapper` (앱이 등록한 것) |
-| Kotlin (`language = 'kotlin'`) | 그대로 | `Specification` 타입 파라미터에 `T : Any`, `Page.map`에 `!!` (Spring Data 4의 JSpecify 선언) |
-| HTTP 포트 클라이언트 (런타임) | Jackson 2 코덱 | Jackson 3 코덱 (`elasticore-springboot4`) |
-| 요청 본문에서 거절된 필드 (`RequestShapeAdvice`, API 오류의 `typeMismatch`) | Jackson 2 의 경로 | Jackson 3 의 경로 (`elasticore-springboot4`; 웹 계층을 Jackson 2 로 되돌린 앱은 Jackson 2 의 경로) - 응답은 같음 |
-| HTTP 포트 (선택: `httpPort: spring`) | ElastiCORE 런타임 | Spring이 구현하는 `@HttpExchange` 인터페이스 + `@ImportHttpServices` (`elasticore-dsl-port-guide.md` 2.7) |
-| 엔티티, 리포지터리, 서비스, 컨트롤러 | 그대로 | 그대로 (Hibernate 7·Spring Data 4에서 컴파일·실행 확인) |
+| enum (`@json`) | Jackson 2 `CustomSerializer`/`CustomDeserializer` | `@JsonValue` + `@JsonCreator` (`jackson-annotations`, common to Jackson 2 and 3) |
+| outbox recorder (DDD) | Jackson 2 `ObjectMapper` | Jackson 3 `JsonMapper` (the one the app registered) |
+| Kotlin (`language = 'kotlin'`) | unchanged | `T : Any` on the `Specification` type parameter, `!!` on `Page.map` (JSpecify declarations of Spring Data 4) |
+| HTTP port client (runtime) | Jackson 2 codec | Jackson 3 codec (`elasticore-springboot4`) |
+| Field rejected in a request body (`RequestShapeAdvice`, `typeMismatch` of the API error) | the path from Jackson 2 | the path from Jackson 3 (`elasticore-springboot4`; an app that put the web layer back to Jackson 2 gets the path from Jackson 2) - the response is the same |
+| HTTP port (optional: `httpPort: spring`) | ElastiCORE runtime | an `@HttpExchange` interface that Spring implements + `@ImportHttpServices` (`elasticore-dsl-port-guide.md` 2.7) |
+| entity, repository, service, controller | unchanged | unchanged (compiled and run on Hibernate 7 and Spring Data 4) |
 
-**왜 enum이 바뀌어야 하나**: Spring Boot 4의 웹 계층은 Jackson 3으로 JSON을 씁니다. Jackson 3은 Jackson 2의 `@JsonSerialize`/`@JsonDeserialize`를 보지 않으므로, 예전 enum은 **오류 없이** 코드(`"DRF"`) 대신 이름(`"DRAFT"`)으로 나갑니다. 컴파일도 되고 기동도 되어서 API 응답이 바뀐 것을 테스트로만 알 수 있습니다.
+**Why the enum has to change**: the web layer of Spring Boot 4 writes JSON with Jackson 3. Jackson 3 does not see the `@JsonSerialize`/`@JsonDeserialize` of Jackson 2, so an old enum goes out as the name (`"DRAFT"`) instead of the code (`"DRF"`), **with no error**. It compiles and starts, so you can tell that the API response changed only by a test.
 
-생성할 때 로그 첫머리에 결정된 버전이 나옵니다. **Boot 4 프로젝트인데 `Spring Boot: 3`이 보이면** enum이 이름으로 나가게 되니, 아래 중 하나로 직접 적습니다:
+The log prints the decided version at the top when you generate. **If it is a Boot 4 project and you see `Spring Boot: 3`**, enums go out as names, so set it by hand in one of the ways below:
 
 ```
 [ElastiCORE] Spring Boot: 4.0.8 (build) - enums and the outbox are written for Jackson 3
 ```
 
-| 어디에 | 쓰는 법 | 언제 |
+| Where | How to write it | When |
 |---|---|---|
-| `build.gradle` | `elasticore { springBoot = '4' }` | 플러그인을 쓰는데 감지가 안 될 때 (Boot 플러그인 없이 BOM만 쓰는 경우 등) |
-| `env.yml` | `elasticore: config: springBoot: 4` | 플러그인 없이 생성할 때 - 애노테이션 프로세서(`./gradlew build`), 직접 만든 JavaExec 태스크 |
-| JavaExec | `systemProperty 'elasticore.springBoot', '4'` | 직접 만든 생성 태스크 |
+| `build.gradle` | `elasticore { springBoot = '4' }` | You use the plugin but it is not detected (for example, only the BOM is used, without the Boot plugin) |
+| `env.yml` | `elasticore: config: springBoot: 4` | When you generate without the plugin - the annotation processor (`./gradlew build`), a JavaExec task you made |
+| JavaExec | `systemProperty 'elasticore.springBoot', '4'` | A generation task you made |
 
-빌드 쪽 값(첫 줄, 셋째 줄)이 `env.yml`보다 우선합니다. 숫자로 읽을 수 없는 값(`boot4`)은 경고를 내고 3으로 생성합니다.
+The build-side values (the first and third lines) take precedence over `env.yml`. A value that cannot be read as a number (`boot4`) prints a warning and generates for 3.
 
-### 직접 고칠 것 (프로젝트 코드)
+### What to fix yourself (project code)
 
-ElastiCORE가 만들지 않은 코드는 Spring Boot 4 마이그레이션 가이드를 따릅니다. 예제 프로젝트에서 실제로 고친 것:
+For code that ElastiCORE did not generate, follow the Spring Boot 4 migration guide. What was actually fixed in the example project:
 
-| 증상 | 수정 |
+| Symptom | Fix |
 |---|---|
 | `package org.springframework.boot.test.autoconfigure.web.servlet does not exist` | `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc` + `spring-boot-starter-webmvc-test` |
-| `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4는 Jackson 3 매퍼를 등록) |
-| `JsonNode.asText()` 경고 | Jackson 3: `asString()` |
+| `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4 registers a Jackson 3 mapper) |
+| `JsonNode.asText()` warning | Jackson 3: `asString()` |
 
-`supportAI`를 나중에 켜도 이미 생성된 개발자 소유 `XxxService`에 `@Tool`이 들어옵니다: 손대지 않은 파일은 다시 생성되고, 고친 파일은 고친 줄과 겹치지 않으면 병합됩니다(`MERGED(your edits kept)`, 9-2). 겹쳐서 `KEPT(yours ...)`로 남았거나 병합 전 버전이 만든 파일을 고쳐 `SKIP(user-owned)`로 남았다면 직접 붙입니다.
+Even if you turn on `supportAI` later, `@Tool` is added to the developer-owned `XxxService` that was already generated: a file you did not touch is generated again, and a file you edited is merged if your edits do not overlap the changed lines (`MERGED(your edits kept)`, 9-2). If it stayed as `KEPT(yours ...)` because of an overlap, or you edited a file made by a version before the merge and it stayed as `SKIP(user-owned)`, add it by hand.
 
-### Spring AI 2.0에서 도구 쓰기
+### Writing tools with Spring AI 2.0
 
-생성된 서비스의 `@Tool` 메서드를 등록합니다:
+Register the `@Tool` methods of the generated service:
 
 ```java
 @Bean
@@ -422,79 +422,79 @@ ToolCallbackProvider erpTools(PartnerService partners, ItemService items) {
 }
 ```
 
-도구의 인자는 Jackson 3로 읽으므로, 위의 enum 변경이 있어야 도구 호출과 REST API가 같은 값(`"DRF"`)을 씁니다.
+The arguments of a tool are read with Jackson 3, so with the enum change above, a tool call and the REST API use the same value (`"DRF"`).
 
 ---
 
-## 4. 어노테이션 설정
+## 4. Annotation settings
 
 ```yaml
 config:
   annotations:
-    # ID 생성기
+    # ID generator
     genid: "genid(io.elasticore.springboot3.util.IdUtils.newId)"
 
-    # Entity 코드 생성 시 적용 (@entity: 접두사)
+    # applied when generating the Entity code (@entity: prefix)
     stringarray: "@entity:Convert(converter = io.elasticore.springboot3.util.StringArrayConverter.class)"
     integerarray: "@entity:Convert(converter = io.elasticore.springboot3.util.IntegerArrayConverter.class)"
 
-    # DTO 코드 생성 시 적용 (@dto: 접두사)
+    # applied when generating the DTO code (@dto: prefix)
     email: "@dto:Email(message = 'Invalid email format')"
     phone: "@dto:Pattern(regexp = '^[0-9-]+$', message = 'Invalid phone format')"
 ```
 
-**어노테이션 적용 범위 접두사:**
-- `@entity:` - Entity 클래스 생성 시에만 적용
-- `@dto:` - DTO 클래스 생성 시에만 적용
-- 접두사 없음 - 모든 생성 코드에 적용
+**Scope prefixes of an annotation:**
+- `@entity:` - applied only when generating the Entity class
+- `@dto:` - applied only when generating the DTO class
+- no prefix - applied to all generated code
 
-**모델 파일에서의 사용:**
+**Use in a model file:**
 ```yaml
 entity:
   User:
     fields:
-      id: string @genid                  # ID 자동 생성
-      tags: string[] @env:stringarray     # StringArrayConverter 적용
-      email: string @env:email            # Email 검증 어노테이션
+      id: string @genid                  # generate the ID automatically
+      tags: string[] @env:stringarray     # apply StringArrayConverter
+      email: string @env:email            # Email validation annotation
 ```
 
-`@env:` 접두사로 env.yml에 정의된 어노테이션을 참조한다. 빌드 시 실제 어노테이션 코드로 치환된다.
+The `@env:` prefix refers to an annotation defined in env.yml. It is replaced with the actual annotation code at build time.
 
-**genid 설정:**
-- `genid` 키는 특별 처리되며, 엔티티 필드에 `@genid` 사용 시 지정된 ID 생성기 메서드가 `@PrePersist`에 등록됨
-- 형식: `genid(패키지.클래스.메서드)`
+**genid setting:**
+- The `genid` key is handled specially: when an entity field uses `@genid`, the given ID generator method is registered in `@PrePersist`
+- Form: `genid(package.Class.method)`
 
 ---
 
-## 5. jsonview 설정
+## 5. jsonview setting
 
 ```yaml
 config:
-  jsonview: auto  # false(기본) | true | auto
+  jsonview: auto  # false (default) | true | auto
 ```
 
-- **용도**: Jackson @JsonView 기반 DTO 필드 가시성 제어
-- **기본값**: `false`
-- **사용 가능 값**: `false`, `true`, `auto`
-- **설명**:
-  - `false`: 비활성화 (기본). 개별 entity/dto에 `@jsonview` 지정 시에만 활성화
-  - `true`: 수동 모드. DTO 필드에 `@view` 어노테이션 필요
-  - `auto`: 자동 모드. 기존 어노테이션(@id, @genid, @jpa:CreatedDate 등)에서 가시성 자동 추론
+- **Purpose**: control the visibility of DTO fields with Jackson @JsonView
+- **Default**: `false`
+- **Allowed values**: `false`, `true`, `auto`
+- **Description**:
+  - `false`: disabled (default). It is enabled only when you set `@jsonview` on an individual entity/dto
+  - `true`: manual mode. DTO fields need the `@view` annotation
+  - `auto`: automatic mode. Visibility is inferred from the existing annotations (@id, @genid, @jpa:CreatedDate and so on)
 
-**사용 예시**:
+**Example**:
 ```yaml
 elasticore:
   config:
     jsonview: auto
 ```
 
-상세 설명은 `elasticore-annotation-guide.md` 4.6 섹션 참조.
+For details, see section 4.6 of `elasticore-annotation-guide.md`.
 
 ---
 
-## 6. 템플릿/테스트 코드 설정
+## 6. Template and test code settings
 
-### 6.1 커스텀 템플릿
+### 6.1 Custom templates
 
 ```yaml
 config:
@@ -511,178 +511,178 @@ config:
     templateHelper: "custom/repository_helper.tmpl"
 ```
 
-각 생성 대상별로 커스텀 `.tmpl` 파일 경로를 지정할 수 있다. 미지정 시 기본 내장 템플릿을 사용한다.
+You can set the path of a custom `.tmpl` file for each generation target. If you do not set it, the built-in template is used.
 
-### 6.1.1 트랜잭션 Outbox
-
-```yaml
-config:
-  outbox: true          # 도메인 이벤트를 Outbox 로 내보냄 (기본값: false)
-```
-
-- DDD/헥사고날 번들에서, `@event` 를 선언한 루트가 있을 때 도메인마다
-  `<Domain>OutboxMessage` / `OutboxRepository` / `OutboxRecorder` / `OutboxRelay` 생성
-- 이벤트가 변경과 **같은 트랜잭션**에 기록되고, 커밋 후 애플리케이션의 `OutboxPublisher` 빈으로 전송
-- 전송 주기: `elasticore.outbox.relay-delay-ms` (기본 5000, 앱에서 `@EnableScheduling` 필요)
-- 사용 사례: 마이크로서비스 간 이벤트 연동(Kafka/RabbitMQ), 외부 시스템 웹훅, 감사 로그 적재
-
-### 6.1.2 도메인에서 JPA 걷어내기 (`mapping: xml`)
+### 6.1.1 Transactional outbox
 
 ```yaml
 config:
-  mapping: xml          # JPA 매핑을 META-INF/orm.xml 로 (기본값: 어노테이션)
+  outbox: true          # send domain events through an Outbox (default: false)
 ```
 
-- 헥사고날의 "안쪽은 기술을 모른다" 를 지킵니다: 도메인 클래스(엔티티·Base·행위 클래스·임베더블·
-  불변식 리스너)에서 `jakarta.persistence` 와 Hibernate 어노테이션을 **모두 걷어내고**, 같은 매핑을
-  `src/main/resources/META-INF/orm.xml` 에 씁니다 (JPA 가 자동으로 읽는 파일 - 설정 불필요).
-- 변경 감지, `@Version`, 지연 로딩, 생명주기 콜백은 그대로입니다 (JPA 표준 XML).
-- 함께 옮겨지는 것: enum 의 DB 변환기 -> `persistence` 네임스페이스의 `XxxConverter`, 조회 메타 클래스
-  `Q` -> `persistence` 네임스페이스. 멤버 삭제 검사의 프록시 풀기는 런타임 `Proxies.real()` 로.
-- 개발자 소유 행위 클래스(`SalesOrder`)의 `@Entity`/`@Table`/`@DynamicUpdate` 도 걷어냅니다 (나머지 코드는 그대로).
-- Hibernate 전용 기능: `@DynamicUpdate` 는 XML 형태가 없어 빠집니다(모든 컬럼 UPDATE). `@Formula`, Envers
-  (`@Audited`) 등은 클래스에 남기고 경고합니다.
-- **남는 의존**(메타데이터 수준): Spring Data 의 감사 어노테이션(`@CreatedDate` 등)과 도메인 이벤트 발행
-  (`@DomainEvents`), enum 의 JSON 코드 변환(Jackson). 도메인 패키지에 `jakarta.persistence`, `org.hibernate` 는 없습니다.
-- **Kotlin**: 클래스를 열어 주는 all-open/no-arg 플러그인은 `@Entity` 를 보고 동작하므로, 이 모드에서는 도메인
-  클래스에 대신 붙는 `@io.elasticore.springboot3.entity.PersistentModel` 을 등록해야 합니다 (안 하면 클래스가
-  final 이 되어 지연 로딩 프록시가 동작하지 않습니다).
+- In the DDD/hexagonal bundles, when there is a root that declares `@event`, each domain gets
+  `<Domain>OutboxMessage` / `OutboxRepository` / `OutboxRecorder` / `OutboxRelay`
+- The event is recorded in the **same transaction** as the change, and after the commit it is sent through the application's `OutboxPublisher` bean
+- Send interval: `elasticore.outbox.relay-delay-ms` (default 5000; the app needs `@EnableScheduling`)
+- Use cases: event integration between microservices (Kafka/RabbitMQ), webhooks to external systems, collecting audit logs
+
+### 6.1.2 Removing JPA from the domain (`mapping: xml`)
+
+```yaml
+config:
+  mapping: xml          # JPA mapping in META-INF/orm.xml (default: annotations)
+```
+
+- It keeps the hexagonal rule "the inside knows no technology": it **removes all** `jakarta.persistence` and Hibernate annotations from the domain classes (entity, Base, behavior class, embeddable,
+  invariant listener), and writes the same mapping to
+  `src/main/resources/META-INF/orm.xml` (a file JPA reads automatically - no setting needed).
+- Dirty checking, `@Version`, lazy loading and lifecycle callbacks stay as they are (standard JPA XML).
+- Also moved: the DB converter of an enum -> `XxxConverter` in the `persistence` namespace, the query meta class
+  `Q` -> the `persistence` namespace. The proxy unwrapping in the member delete check uses the runtime `Proxies.real()`.
+- It also removes `@Entity`/`@Table`/`@DynamicUpdate` from the developer-owned behavior class (`SalesOrder`) (the rest of the code stays).
+- Hibernate-only features: `@DynamicUpdate` has no XML form, so it is dropped (UPDATE of all columns). `@Formula`, Envers
+  (`@Audited`) and the like stay on the class, with a warning.
+- **Remaining dependencies** (metadata level): the auditing annotations of Spring Data (`@CreatedDate` and so on), publishing of domain events
+  (`@DomainEvents`), and the JSON code conversion of an enum (Jackson). The domain package has no `jakarta.persistence` or `org.hibernate`.
+- **Kotlin**: the all-open/no-arg plugins that open classes work by looking at `@Entity`, so in this mode you must register the
+  `@io.elasticore.springboot3.entity.PersistentModel` that is put on domain classes instead (otherwise the classes become
+  final and lazy loading proxies do not work).
   ```groovy
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
-- Envers(`@Audited`)를 쓰는 도메인은 그 어노테이션이 남으므로, 생성되는 아키텍처 테스트가 `org.hibernate.envers` 는 허용합니다.
-- 사용자가 만든 `META-INF/orm.xml` 이 있으면 덮어쓰지 않고 `META-INF/elasticore-orm.xml` 에 쓰고
-  `spring.jpa.mapping-resources` 설정을 안내합니다.
-- 사용 사례: 도메인 모델 단위 테스트를 JPA 없이, 헥사고날 규칙을 아키텍처 테스트로 강제(`archTest`), 규제 산업의 계층 분리 감사
+- A domain that uses Envers (`@Audited`) keeps that annotation, so the generated architecture test allows `org.hibernate.envers`.
+- If a `META-INF/orm.xml` made by the user exists, it is not overwritten; the mapping is written to `META-INF/elasticore-orm.xml` and
+  the `spring.jpa.mapping-resources` setting is shown.
+- Use cases: unit tests of the domain model without JPA, enforcing hexagonal rules with an architecture test (`archTest`), layer separation audits in regulated industries
 
-### 6.1.3 아키텍처 테스트 (`archTest: true`)
+### 6.1.3 Architecture test (`archTest: true`)
 
 ```yaml
 config:
-  archTest: true        # 헥사고날 경계를 ArchUnit 테스트로 (기본값: false)
+  archTest: true        # test the hexagonal boundaries with ArchUnit (default: false)
 ```
 
-- `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
-  네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
-  애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
-- 규칙: 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
-  도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
-- 테스트 의존성이 필요합니다: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
-- 사용 사례: 코드 리뷰 없이도 계층 위반을 빌드에서 차단, 팀 합류자에게 경계를 코드로 전달
+- It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
+  It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
+  application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
+- Rules: the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
+  the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
+- It needs a test dependency: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
+- Use cases: block layer violations in the build without code review, convey the boundaries to a new team member as code
 
-### 6.1.4 바운디드 컨텍스트 (`context:`, 3.0)
+### 6.1.4 Bounded context (`context:`, 3.0)
 
-blueprint 도메인 하나가 바운디드 컨텍스트 하나입니다. `context:` 를 적은 도메인은 **다른 컨텍스트에서 무엇을 가져다
-쓰는지(`uses`)**, **다른 컨텍스트가 무엇을 써도 되는지(`publishes`)** 를 선언하고, 빌드가 그 경계를 지킵니다.
+One blueprint domain is one bounded context. A domain with `context:` declares **what it takes from other contexts
+(`uses`)** and **what other contexts may use (`publishes`)**, and the build guards that boundary.
 
 ```yaml
 # blueprint/catalog/env.yml
 config:
   context:
-    publishes: [ProductDTO, Unit]   # 다른 컨텍스트가 필드 타입으로 써도 되는 것 (DTO, enum, @embeddable)
+    publishes: [ProductDTO, Unit]   # what other contexts may use as a field type (DTO, enum, @embeddable)
 
 # blueprint/shop/env.yml
 config:
   context:
-    uses: catalog                   # 이 컨텍스트가 기대는 상위(upstream) 컨텍스트들
-    publishes: [OrderPlaced]        # 이벤트도 내보낼 수 있음 (루트 이름 + 이벤트 이름)
+    uses: catalog                   # the upstream contexts this context relies on
+    publishes: [OrderPlaced]        # events can be published too (root name + event name)
 ```
 
-| 상황 | 결과 |
+| Case | Result |
 |---|---|
-| `shop` 의 필드가 `catalog` 의 `ProductDTO` 를 씀 (uses·publishes 둘 다 있음) | 통과 |
-| `shop` 의 필드가 `catalog` 의 엔티티 `Product` 를 씀 (`product: Product @ManyToOne`) | **빌드 실패**: 다른 컨텍스트의 엔티티는 필드 타입이 될 수 없음 — `productId: long` 으로 식별자만 들거나 `catalog` 가 내보내는 DTO 를 씀 |
-| `uses` 에 없는 컨텍스트의 타입을 씀 | **빌드 실패** (`... does not declare it (config.context.uses: catalog)`) |
-| 상대가 `publishes` 를 선언했는데 거기 없는 타입을 씀 (`publishes: []` 는 아무것도 내보내지 않음) | **빌드 실패** (`... which catalog does not publish`) |
-| 상대가 `context:` 는 있지만 `publishes` 를 선언하지 않음 | `uses` 에만 있으면 통과 |
-| 다른 컨텍스트의 프로세스 매니저가 `on: [shop:OrderPlaced]` 로 이벤트를 받음 | 타입과 같은 검사: 받는 쪽 `uses` 에 `shop`, `shop` 이 `publishes` 를 선언했다면 거기 `OrderPlaced` |
-| `publishes` 에 엔티티나 없는 이름을 적음 | DSL 경고 (그 컨텍스트의 이벤트 이름은 정상) |
-| 어느 쪽도 `context:` 가 없음 | 예전과 같음 (이름은 모든 도메인에서 찾고, DDD 번들은 경고만) |
+| A field of `shop` uses `ProductDTO` of `catalog` (both uses and publishes are present) | Passes |
+| A field of `shop` uses the entity `Product` of `catalog` (`product: Product @ManyToOne`) | **Build fails**: an entity of another context cannot be a field type - hold only the identifier with `productId: long`, or use a DTO that `catalog` publishes |
+| It uses a type of a context that is not in `uses` | **Build fails** (`... does not declare it (config.context.uses: catalog)`) |
+| The other side declared `publishes` and the type is not in it (`publishes: []` publishes nothing) | **Build fails** (`... which catalog does not publish`) |
+| The other side has `context:` but does not declare `publishes` | Passes if it is in `uses` |
+| A process manager of another context receives an event with `on: [shop:OrderPlaced]` | The same check as for types: `shop` in the receiver's `uses`, and if `shop` declared `publishes`, `OrderPlaced` in it |
+| `publishes` lists an entity or a name that does not exist | DSL warning (event names of that context are fine) |
+| Neither side has `context:` | Same as before (names are looked up in all domains, and the DDD bundle only warns) |
 
-- 검사 대상: 엔티티·DTO 필드의 타입(`List<X>` 의 X 포함, `catalog:Product` 처럼 도메인 이름을 붙인 것 포함), DTO 의
-  `@template(...)`, 엔티티의 `@extend(...)`, 프로세스 매니저의 `on: [shop:OrderPlaced]` (`elasticore-dsl-guide.md` 의
-  "프로세스 매니저"). 두 도메인에 같은 이름이 있으면 어느 쪽인지 정할 수 없어 검사하지 않습니다
-  (로더가 따로 경고). 3.0 규칙 엔진(`elcore3`)이 생성 전에 검사하고, 실패하면 모든 문제를 한 번에 말한 뒤 빌드를 멈춥니다.
-  2.x 생성기(`elcore`)는 `context:` 를 읽지 않습니다.
-- **컨텍스트 지도**: 어느 도메인이든 `context:` 를 적으면 `blueprint/context-map.md` 가 생깁니다 (Mermaid 그림 —
-  GitHub 에서 그대로 보임). 화살표는 쓰이는 쪽(upstream)에서 쓰는 쪽으로, 건너가는 타입·이벤트 이름이 붙습니다.
-  `elasticore-template-ddd` 의 `catalog`·`shop`·`billing` 이 예시입니다 (`billing` 이 `shop:OrderPlaced` 를 받음).
-- 사용 사례:
-  - 모놀리식 안에서 도메인끼리 엔티티를 직접 엮어 경계가 무너지는 것을 빌드에서 막기 (나중에 서비스로 떼어낼 때 비용 감소)
-  - AI 가 DSL 을 고칠 때 다른 컨텍스트의 엔티티를 끌어다 쓰는 실수를 즉시 거절
-  - 컨텍스트끼리는 이벤트로만 이어지게 하기 (주문이 들어오면 청구 컨텍스트가 영수증 발행) — 무엇을 내보내는지가
-    `publishes` 한 줄에 남음
-  - 팀/조직 경계와 컨텍스트를 맞추고, `context-map.md` 로 의존 관계를 문서화
+- What is checked: the types of entity and DTO fields (including the X in `List<X>`, and those with a domain name such as `catalog:Product`), the DTO's
+  `@template(...)`, the entity's `@extend(...)`, and the process manager's `on: [shop:OrderPlaced]` ("process manager" in
+  `elasticore-dsl-guide.md`). If two domains have the same name, it cannot tell which one is meant, so it does not check
+  (the loader warns separately). The 3.0 rule engine (`elcore3`) checks before generation, and on failure it reports all problems at once and then stops the build.
+  The 2.x generator (`elcore`) does not read `context:`.
+- **Context map**: if any domain has `context:`, `blueprint/context-map.md` is created (a Mermaid diagram -
+  GitHub shows it as it is). Arrows go from the side that is used (upstream) to the side that uses it, labeled with the type and event names that cross.
+  `catalog`, `shop` and `billing` of `elasticore-template-ddd` are the example (`billing` receives `shop:OrderPlaced`).
+- Use cases:
+  - Stop domains inside a monolith from tying entities together directly and breaking the boundary, in the build (less cost when you split out a service later)
+  - Refuse at once the mistake of an AI pulling in an entity of another context when it edits the DSL
+  - Connect contexts only by events (when an order comes in, the billing context issues a receipt) - what is published is
+    left in the one `publishes` line
+  - Match contexts to team or organization boundaries, and document the dependencies with `context-map.md`
 
-### 6.2 테스트 코드 생성
+### 6.2 Test code generation
 
 ```yaml
 config:
-  testCode: "true"      # 테스트 코드 자동 생성 (기본값: "false")
+  testCode: "true"      # generate test code automatically (default: "false")
 ```
 
-- `"true"` 설정 시 JUnit 5 + Mockito 기반 서비스 단위 테스트 자동 생성
-- 복합 키(Composite Key) 엔티티도 자동으로 올바르게 처리
-- 모든 필드 타입에 대한 샘플 데이터 자동 생성
-- CRUD 및 검색(List/Page) 메서드에 대한 완전한 테스트 커버리지 제공
+- With `"true"`, JUnit 5 + Mockito service unit tests are generated
+- Composite Key entities are handled correctly too
+- Sample data is generated for every field type
+- Complete test coverage for CRUD and search (List/Page) methods
 
-생성된 테스트 파일은 `src/test/java/` 하위에 서비스 패키지 경로로 배치된다.
+The generated test files are placed under `src/test/java/` at the path of the service package.
 
 ---
 
-## 6-2. 참조 컬럼 이름·관리자 역할 (3.0)
+## 6-2. Reference column name and admin role (3.0)
 
 ```yaml
 config:
-  referenceColumn: short   # 다른 애그리거트 참조 컬럼: customer_id (기본: 2.x 식 customer_customer_id)
-  adminRole: ADMIN         # @access 의 admin 수준이 확인하는 역할 이름 (기본 ADMIN)
+  referenceColumn: short   # column for a reference to another aggregate: customer_id (default: the 2.x style customer_customer_id)
+  adminRole: ADMIN         # role name that the admin level of @access checks (default ADMIN)
 ```
 
-- `referenceColumn: short` - DDD 번들의 식별자 참조(`customerId`)가 쓰는 컬럼 이름을 필드 이름 그대로
-  (`customer_id`) 만듭니다. **새 프로젝트용** 입니다: 이미 있는 DB 의 컬럼 이름이 바뀌므로 2.x 에서
-  옮겨오는 프로젝트는 그대로 두거나 마이그레이션과 함께 켭니다.
-- `adminRole` - `SessionCurrentUser.signIn(request, id, "ADMIN")` 처럼 로그인 때 넣은 역할 중 이 이름이
-  있으면 관리자입니다. 엔티티 줄의 `@signin` 으로 생성되는 `signin` 은 그 엔티티의 `role` 필드(또는 `@role` 필드)가
-  `@access(admin)` 인 enum·문자열일 때 그 값을 넣습니다.
+- `referenceColumn: short` - makes the column name used by an identifier reference (`customerId`) of the DDD bundle the field name itself
+  (`customer_id`). It is **for new projects**: the column names of an existing DB change, so a project
+  moving from 2.x leaves it as it is or turns it on together with a migration.
+- `adminRole` - if the roles put in at sign-in, as in `SessionCurrentUser.signIn(request, id, "ADMIN")`, include this name,
+  the user is an admin. The `signin` generated by `@signin` on an entity line puts that value in when the `role` field (or the `@role` field) of that entity
+  is an enum or string with `@access(admin)`.
 
-## 7. apiPath 설정
+## 7. apiPath setting
 
 ```yaml
 config:
-  apiPath: "/api/v1"    # Controller의 기본 API 경로 (기본값: "/api")
+  apiPath: "/api/v1"    # Base API path of the controller (default: "/api")
 ```
 
-생성되는 Controller의 `@RequestMapping` 경로에 적용된다:
+It applies to the `@RequestMapping` path of the generated controller:
 ```java
 @RequestMapping("/api/v1/{domainName}/{entityName}")
 ```
 
-**활용 사례:**
+**Use cases:**
 ```yaml
-# API 버전 관리
+# API versioning
 apiPath: "/api/v1"
-# 결과: /api/v1/user/profile
+# Result: /api/v1/user/profile
 
-# 도메인 분리
+# Separate domains
 apiPath: "/api/admin"
-# 결과: /api/admin/user/role
+# Result: /api/admin/user/role
 
-# 마이크로서비스 경로
+# Microservice path
 apiPath: "/services/order-api"
-# 결과: /services/order-api/order/create
+# Result: /services/order-api/order/create
 ```
 
-**주의사항:**
-- 미설정 시 기본값 `/api` 적용
-- 슬래시(`/`)로 시작해야 함
-- 이미 생성된 Controller에는 영향 없음 (재생성 시 적용)
+**Notes:**
+- If not set, the default `/api` applies
+- It must start with a slash (`/`)
+- It does not affect controllers that already exist (it applies on regeneration)
 
 ---
 
-## 7-1. publisher.rules 설정 (3.0)
+## 7-1. publisher.rules setting (3.0)
 
-같은 모델을 어떻게 읽을지 정합니다. **적지 않으면 2.x 와 동일하게 동작합니다.**
+It decides how the same model is read. **If you do not write it, the behavior is the same as 2.x.**
 
 ```yaml
 elasticore:
@@ -691,40 +691,40 @@ elasticore:
       rules: [ddd-springboot]
 ```
 
-### 선택 가능한 번들
+### Available bundles
 
-| 번들 | 내용 |
+| Bundle | Content |
 |---|---|
-| `jpa-springboot` | 기존 레이어드 구조 (적지 않은 것과 동일) |
-| `ddd-springboot` | 집합체 경계, 불변식, 도메인 이벤트, 값 객체 |
-| `hexagonal-springboot` | 위 + 인바운드 포트, 헥사고날 패키지 배치 |
-| `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | 위 셋의 Kotlin 판 |
-| `ts-model` | 브라우저용 DTO, enum, 타입 있는 REST 클라이언트 |
-| `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
-| `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | 도메인 모델·헥사고날을 MyBatis 로 (`architecture` 가 ddd·hexagonal 이고 `mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
+| `jpa-springboot` | The existing layered structure (same as not writing it) |
+| `ddd-springboot` | Aggregate boundaries, invariants, domain events, value objects |
+| `hexagonal-springboot` | The above + inbound ports, hexagonal package layout |
+| `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | The Kotlin versions of the three above |
+| `ts-model` | Browser DTOs, enums, a typed REST client |
+| `mybatis-springboot` | Layered Java on MyBatis (a domain with `mode: mybatis` gets it automatically - section 2.3) |
+| `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | The domain model / hexagonal on MyBatis (a domain whose `architecture` is ddd or hexagonal and which has `mode: mybatis` gets it automatically - section 2.3) |
 
-번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
+A bundle is a list of names of individual rule sets, so you can also combine them yourself:
 
 ```yaml
       rules: [jpa-springboot-kt, ddd-aggregate, ddd-reference, ddd-value-object-kt]
 ```
 
-### 우선순위 (4단)
+### Priority (4 levels)
 
 ```
-1. 도메인    이 env.yml 의 publisher.rules        <- 이 도메인만 예외일 때
-2. 프로젝트  -Delasticore.publisher.rules=...      <- 보통 여기서 한 번
-3. 내장 기본 jpa-springboot                        <- 아무것도 안 적으면 여기
+1. Domain    publisher.rules of this env.yml       <- when only this domain is an exception
+2. Project   -Delasticore.publisher.rules=...      <- usually set once here
+3. Built-in default jpa-springboot                 <- if you write nothing, this applies
 ```
 
-도메인은 프로젝트 기본값에서 벗어날 때만 선언합니다. 도메인이 20개여도
-`env.yml` 20개를 고칠 필요가 없습니다.
+A domain declares it only when it departs from the project default. Even with 20 domains,
+you do not need to edit 20 `env.yml` files.
 
-`publisher.suppress` 는 다르게 동작합니다 - 누적됩니다. 프로젝트 수준의
-억제 목록에 도메인 수준의 것이 더해집니다.
+`publisher.suppress` behaves differently - it accumulates. The domain-level entries are added to the
+project-level suppression list.
 
-**팀의 규칙을 더할 때**는 위 목록을 대체하지 않고 **더하는** 빌드 설정을 씁니다.
-위에서 어떤 번들이 골라졌든 그 뒤에 붙습니다 (TypeScript 생성에는 붙지 않음):
+**To add your team's rules**, use the build setting that **adds** to the list above instead of replacing it.
+Whichever bundle was chosen above, they are appended after it (not for TypeScript generation):
 
 ```gradle
 elasticore {
@@ -734,85 +734,85 @@ elasticore {
 dependencies { elasticore project(':acme-rules') }
 ```
 
-지금 도는 규칙과 순서는 `./gradlew elcore3 -PlistRules` 로 봅니다. 자세한 것은 `elasticore-ddd-customize-guide.md`.
+See the rules that are running now, and their order, with `./gradlew elcore3 -PlistRules`. For details, see `elasticore-ddd-customize-guide.md`.
 
-### 주의: 이 설정은 규칙엔진이 읽습니다
+### Warning: the rule engine reads this setting
 
-**`publisher.rules` 는 `@ElastiCore` 애노테이션 프로세서가 읽지 않습니다.**
-별도 진입점인 규칙엔진이 읽으므로, 번들을 적어두기만 하면 파일은 설정된 것처럼
-보이고 빌드는 그것을 무시하며 아무 경고도 나오지 않습니다.
+**`publisher.rules` is not read by the `@ElastiCore` annotation processor.**
+It is read by the rule engine, a separate entry point. If you only write the bundle, the file looks
+configured, the build ignores it, and no warning appears.
 
-실행 방법은 `elasticore-rule-guide.md` 의 "내 프로젝트에서 규칙엔진
-실행하기" 를 보십시오.
+For how to run it, see "Running the rule engine in your project" in
+`elasticore-rule-guide.md`.
 
-### 언어는 별도 스위치입니다
+### The language is a separate switch
 
-번들 이름은 *어떤 규칙을 쓸지*만 정합니다. *어느 트리에 어떤 확장자로 쓸지*는
-러너의 시스템 프로퍼티가 정합니다:
+A bundle name only decides *which rules to use*. *Which tree to write to and with which extension*
+is decided by the runner's system property:
 
-| 언어 | 스위치 |
+| Language | Switch |
 |---|---|
-| Java (정리 모드 - 3.0.261028-rc3 부터 기본) | 없음, 또는 `elasticore.rules.v3` (선택했다고 밝힐 때) |
-| Java (호환 - 2.x 의 코드) | `elasticore.rules.v2` (플러그인에서는 `output = 'v2'`) |
+| Java (clean-up mode - the default from 3.0.261028-rc3) | none, or `elasticore.rules.v3` (to state that you chose it) |
+| Java (compatibility - 2.x code) | `elasticore.rules.v2` (in the plugin, `output = 'v2'`) |
 | Kotlin | `elasticore.rules.kt` |
 | TypeScript | `elasticore.rules.ts` |
 
-`rules: [jpa-springboot-kt]` 만 적고 스위치를 켜지 않으면 `.kt` 파일이 나오지
-않습니다. 도메인 초기화 마법사는 이 둘을 함께 정해주므로 어긋나지 않습니다.
+If you write only `rules: [jpa-springboot-kt]` and do not turn the switch on, no `.kt` files are
+produced. The domain init wizard sets both together, so they do not drift apart.
 
-TypeScript 클라이언트(`src/main/ts`)는 서버 코드와 함께 쓰는 두 번째 출력이라 Gradle 플러그인의 `elcore3ts` 태스크가
-씁니다. `build` 는 그 태스크를 부르지 않으므로, 빌드마다 함께 쓰려면 `elasticore { typescriptClient = true }` 를 적습니다
-(`elasticore-rule-guide.md` "TypeScript 클라이언트"). 적지 않았는데 생성된 클라이언트가 있으면 `elcore3` 가 경고합니다.
+The TypeScript client (`src/main/ts`) is a second output used together with the server code, so the Gradle plugin's `elcore3ts` task
+writes it. `build` does not call that task, so to produce it with every build, write `elasticore { typescriptClient = true }`
+(`elasticore-rule-guide.md` "TypeScript client"). If you did not write it but a generated client exists, `elcore3` warns.
 
 ---
 
-## 8. Namespace 설정
+## 8. Namespace setting
 
 ```yaml
 namespace:
-  entity: io.example.domain.entity           # JPA Entity 패키지
-  dto: io.example.domain.dto                 # DTO 클래스 패키지
-  enumeration: io.example.domain.enums       # Enum 클래스 패키지
-  repository: io.example.domain.repository   # Repository 패키지
-  service: io.example.domain.service         # Service 패키지
-  control: io.example.domain.controller      # Controller 패키지
-  port: io.example.domain.port              # Transaction Port 패키지
-  proto: io.example.proto                    # Protocol Buffer 패키지
-  event: io.example.domain.event             # 도메인 이벤트 패키지 (ddd-event 규칙)
-  domainService: io.example.domain.service   # 도메인 서비스 패키지 (ddd-domain-service 규칙)
-  inboundPort: io.example.application.port.in          # 인바운드 포트 (UseCase)
-  domainRepository: io.example.domain.repository       # 리포지터리 포트 (도메인 소유)
-  queryPort: io.example.application.port.out           # 조회 포트 (응용 계층 검색, 기본값 service)
-  persistence: io.example.infrastructure.persistence   # 어댑터 + Spring Data
+  entity: io.example.domain.entity           # JPA entity package
+  dto: io.example.domain.dto                 # DTO class package
+  enumeration: io.example.domain.enums       # Enum class package
+  repository: io.example.domain.repository   # Repository package
+  service: io.example.domain.service         # Service package
+  control: io.example.domain.controller      # Controller package
+  port: io.example.domain.port              # Transaction port package
+  proto: io.example.proto                    # Protocol Buffer package
+  event: io.example.domain.event             # Domain event package (ddd-event rule)
+  domainService: io.example.domain.service   # Domain service package (ddd-domain-service rule)
+  inboundPort: io.example.application.port.in          # Inbound port (UseCase)
+  domainRepository: io.example.domain.repository       # Repository port (owned by the domain)
+  queryPort: io.example.application.port.out           # Query port (application-layer search, default service)
+  persistence: io.example.infrastructure.persistence   # Adapter + Spring Data
 ```
 
-`event`는 `@event(...)`를 선언한 애그리거트 루트가 있을 때만 쓰입니다. 선언하지
-않으면 이벤트 클래스는 `entity` 패키지에 놓입니다.
+`event` is used only when there is an aggregate root that declares `@event(...)`. If you do not
+declare one, the event classes are placed in the `entity` package.
 
-`domainService`는 `domainService:` 섹션을 선언한 도메인에서만 쓰입니다. 선언하지
-않으면 `entity` 패키지에 놓입니다. **`service`(응용 서비스)와 같은 패키지로 두지
-마세요** — 도메인 서비스는 도메인의 것이고 응용 서비스는 그 위 계층이라, 같은 자리에
-두면 의존 방향이 무너집니다.
+`domainService` is used only in a domain that declares a `domainService:` section. If you do not
+declare one, it is placed in the `entity` package. **Do not put it in the same package as `service` (the
+application service)** - a domain service belongs to the domain and an application service is a layer above it, so putting
+them in the same place breaks the dependency direction.
 
-각 생성 클래스의 `package` 선언과 `import` 문에 사용된다.
+It is used in the `package` declaration and the `import` statements of each generated class.
 
-**네이밍 권장 패턴:** `{기본패키지}.{도메인}.{타입}`
+**Recommended naming pattern:** `{base package}.{domain}.{type}`
 ```
 io.company.rental.entity
 io.company.rental.dto
 io.company.rental.repository
 ```
 
-### 8.0 한 줄로: `namespace: base`
+### 8.0 In one line: `namespace: base`
 
 ```yaml
 namespace:
   base: com.acme.erp
 ```
 
-아래 헥사고날 배치를 `com.acme.erp` 아래에 채웁니다. 함께 적은 키는 그 값이 우선합니다.
+It fills in the hexagonal layout below under `com.acme.erp`. A key written together with it takes priority.
 
-| 키 | 패키지 |
+| Key | Package |
 |---|---|
 | `entity`, `enumeration` | `base.domain.model` |
 | `event` / `domainService` / `domainRepository` | `base.domain.event` / `.domain.service` / `.domain.repository` |
@@ -821,31 +821,31 @@ namespace:
 | `control` | `base.adapter.in.web` |
 | `repository`, `persistence` | `base.infrastructure.persistence` |
 
-### 8.1 아키텍처 스타일별 Namespace 프리셋
+### 8.1 Namespace presets by architecture style
 
-Namespace는 패키지 배치만 결정하므로, 아키텍처 스타일(레이어드/DDD/헥사고날)은
-**룰 변경 없이 설정만으로** 표현할 수 있다.
+A namespace only decides the package layout, so an architecture style (layered / DDD / hexagonal)
+can be expressed **by setting alone, with no rule change**.
 
-#### DDD 레이어드 (elasticore-template-ddd 샘플과 동일)
+#### DDD layered (same as the elasticore-template-ddd sample)
 
 ```yaml
 namespace:
-  entity:      com.acme.shop.domain.model          # 도메인 모델 (Entity, Enum)
+  entity:      com.acme.shop.domain.model          # Domain model (entity, enum)
   enumeration: com.acme.shop.domain.model
-  repository:  com.acme.shop.domain.repository     # 도메인이 요구하는 저장소
-  service:     com.acme.shop.application           # 응용 서비스 (트랜잭션 경계)
-  dto:         com.acme.shop.application.dto       # 응용 계층의 입출력 형태
-  control:     com.acme.shop.interfaces.rest       # 인바운드 어댑터
-  port:        com.acme.shop.application.port.out  # 아웃바운드 포트 (아래 참고)
-  event:       com.acme.shop.domain.event          # 도메인 이벤트 (도메인의 것)
-  domainService: com.acme.shop.domain.service      # 도메인 서비스 (역시 도메인의 것)
-  domainRepository: com.acme.shop.domain.repository        # 도메인이 소유한 포트
-  queryPort:   com.acme.shop.application.port.out          # 응용 서비스의 검색 포트
-  repository:  com.acme.shop.infrastructure.persistence    # Spring Data 는 인프라에
-  persistence: com.acme.shop.infrastructure.persistence    # 어댑터도 함께
+  repository:  com.acme.shop.domain.repository     # Repository the domain requires
+  service:     com.acme.shop.application           # Application service (transaction boundary)
+  dto:         com.acme.shop.application.dto       # Input/output shapes of the application layer
+  control:     com.acme.shop.interfaces.rest       # Inbound adapter
+  port:        com.acme.shop.application.port.out  # Outbound port (see below)
+  event:       com.acme.shop.domain.event          # Domain event (belongs to the domain)
+  domainService: com.acme.shop.domain.service      # Domain service (also belongs to the domain)
+  domainRepository: com.acme.shop.domain.repository        # Port owned by the domain
+  queryPort:   com.acme.shop.application.port.out          # Search port of the application service
+  repository:  com.acme.shop.infrastructure.persistence    # Spring Data goes in infrastructure
+  persistence: com.acme.shop.infrastructure.persistence    # The adapter too
 ```
 
-#### 헥사고날 (ports & adapters)
+#### Hexagonal (ports & adapters)
 
 ```yaml
 namespace:
@@ -853,82 +853,82 @@ namespace:
   enumeration:      com.acme.shop.domain.model
   event:            com.acme.shop.domain.event
   domainService:    com.acme.shop.domain.service
-  domainRepository: com.acme.shop.domain.repository            # <Root>RepositoryPort (도메인 소유)
-  repository:       com.acme.shop.infrastructure.persistence   # Spring Data 는 인프라에
-  persistence:      com.acme.shop.infrastructure.persistence   # 두 포트를 구현하는 어댑터
+  domainRepository: com.acme.shop.domain.repository            # <Root>RepositoryPort (owned by the domain)
+  repository:       com.acme.shop.infrastructure.persistence   # Spring Data goes in infrastructure
+  persistence:      com.acme.shop.infrastructure.persistence   # Adapter that implements the two ports
   service:          com.acme.shop.application
   dto:              com.acme.shop.application.dto
   inboundPort:      com.acme.shop.application.port.in          # <Root>UseCase
-  queryPort:        com.acme.shop.application.port.out         # <Root>QueryPort (검색/페이징)
+  queryPort:        com.acme.shop.application.port.out         # <Root>QueryPort (search/paging)
   port:             com.acme.shop.application.port.out         # driven port (port DSL)
   control:          com.acme.shop.adapter.in.web               # driving adapter
 ```
 
-> 이 프리셋은 build.gradle 의 `elasticore { architecture = 'hexagonal' }` 만으로
-> 동작한다 - env.yml 에 `publisher.rules` 를 적지 않아도 `hexagonal-springboot`
-> 번들이 적용된다. `domainRepository` 를 빼면 도메인 포트가 Spring Data 와 같은
-> 패키지에 놓여 도메인이 인프라에 의존하게 되므로 반드시 분리한다.
+> This preset works with only `elasticore { architecture = 'hexagonal' }` in build.gradle -
+> the `hexagonal-springboot` bundle applies even if you do not write `publisher.rules` in env.yml.
+> If you leave out `domainRepository`, the domain port is placed in the same package as Spring Data
+> and the domain comes to depend on infrastructure, so always separate it.
 
 
-#### port가 application 쪽에 놓이는 이유
+#### Why the port is placed on the application side
 
-ElastiCORE의 `port:`로 생성되는 것은 **인터페이스뿐**이다. 구현(어댑터)은
-런타임 프록시(`HttpServiceProxyFactory`, `DbmsServiceProxyFactory`)가 만들며
-생성 코드가 없다. 헥사고날에서 포트 인터페이스는 application이 소유하고
-어댑터가 infrastructure에 속하므로, 생성되는 유일한 파일인 인터페이스는
-`infrastructure.port`가 아니라 `application.port.out`에 두는 것이 맞다.
+What ElastiCORE's `port:` generates is **the interface only**. The implementation (adapter) is made by a
+runtime proxy (`HttpServiceProxyFactory`, `DbmsServiceProxyFactory`) and
+there is no generated code. In hexagonal, the application owns the port interface and the adapter
+belongs to infrastructure, so the interface, the only generated file,
+belongs in `application.port.out`, not `infrastructure.port`.
 
-#### 인바운드 포트는 생성된다
+#### Inbound ports are generated
 
-아웃바운드 포트가 `port:` DSL이라면, 인바운드 포트는 `hexagonal-springboot`
-번들이 만든다: 노출된 애그리거트 루트마다 `<Entity>UseCase` 인터페이스가 생기고,
-확장 서비스가 그것을 구현하고, 컨트롤러가 구현 클래스 대신 그것을 주입받는다.
-인터페이스는 `service` namespace에 놓이므로, 위 프리셋에서는
-`application` / `application.service`가 그 자리다.
+If outbound ports are the `port:` DSL, inbound ports are made by the `hexagonal-springboot`
+bundle: for each exposed aggregate root a `<Entity>UseCase` interface is created,
+the extension service implements it, and the controller is injected with it instead of the implementation class.
+The interface is placed in the `service` namespace, so in the preset above
+`application` / `application.service` is that place.
 
-DDD 룰셋(`rules: [ddd-springboot]`)과 조합하면 aggregate 경계까지 함께
-강제되고, `hexagonal-springboot`는 거기에 인바운드 포트를 더한다. Kotlin은
-`ddd-springboot-kt` / `hexagonal-springboot-kt`를 쓴다. 상세는
-`elasticore-template-ddd/README.md`와 `elasticore-rule-guide.md` 참고.
+Combined with the DDD rule set (`rules: [ddd-springboot]`), aggregate boundaries are
+enforced as well, and `hexagonal-springboot` adds inbound ports on top. Kotlin uses
+`ddd-springboot-kt` / `hexagonal-springboot-kt`. For details, see
+`elasticore-template-ddd/README.md` and `elasticore-rule-guide.md`.
 
-### 8.2 Cross-Module Namespace Redirect (멀티 모듈 전용)
+### 8.2 Cross-Module Namespace Redirect (multi-module only)
 
-멀티 모듈 프로젝트에서 하나의 도메인(env.yml) 내에서 namespace별로 **서로 다른 모듈**에
-코드를 생성할 수 있다. `모듈명://패키지명` 형식으로 prefix를 붙여 지정한다.
+In a multi-module project, within one domain (env.yml) you can generate code into **different modules** per namespace.
+Specify it by adding a prefix in the form `moduleName://packageName`.
 
 ```yaml
-# 예: core-domain 모듈의 blueprint/account/env.yml
+# Example: blueprint/account/env.yml of the core-domain module
 namespace:
-  # 현재 모듈(core-domain)에 생성
+  # Generated in the current module (core-domain)
   entity:      com.acme.shop.domain.account.entity
   dto:         com.acme.shop.domain.account.dto
   repository:  com.acme.shop.domain.account.repository
   enumeration: com.acme.shop.domain.account.enums
 
-  # app-admin 모듈에 생성 (cross-module redirect)
+  # Generated in the app-admin module (cross-module redirect)
   service:     app-admin://com.acme.shop.domain.account.service
   control:     app-admin://com.acme.shop.domain.account.control
   port:        app-admin://com.acme.shop.domain.account.port
 ```
 
-**동작 방식:**
-- Prefix 없는 namespace → 현재 모듈(blueprint가 위치한 모듈)의 `src/main/java/...`에 생성
-- `모듈명://` prefix 있는 namespace → 해당 모듈의 `src/main/java/...`에 생성
-- 생성된 Java 파일의 `package` 선언에는 순수 패키지명만 사용 (prefix 제거됨)
+**How it works:**
+- A namespace without a prefix -> generated in `src/main/java/...` of the current module (the module where the blueprint is located)
+- A namespace with a `moduleName://` prefix -> generated in `src/main/java/...` of that module
+- The `package` declaration of the generated Java file uses only the plain package name (the prefix is removed)
 
-**사용 조건:**
-- `./gradlew elcore` 실행 시 `-Delasticore.modules=...` 시스템 프로퍼티가 설정된
-  **멀티 모듈 모드**에서만 동작
-- `모듈명`은 `elasticore.modules`에 전달된 경로의 마지막 디렉토리명과 일치해야 함
-  (예: `C:/.../app-admin` → 모듈명 `app-admin`)
-- 싱글 모듈 프로젝트에서는 prefix가 있어도 현재 모듈에 생성됨 (하위 호환)
+**Conditions:**
+- It works only in **multi-module mode**, where the `-Delasticore.modules=...` system property is set
+  when you run `./gradlew elcore`
+- `moduleName` must match the last directory name of a path passed in `elasticore.modules`
+  (e.g. `C:/.../app-admin` -> module name `app-admin`)
+- In a single-module project, the code is generated in the current module even with a prefix (backward compatible)
 
-**사용 시나리오:**
-- Domain 모델(Entity/DTO/Repository)은 공통 모듈(`core-domain`)에 두고,
-  비즈니스 로직(Service/Controller)은 애플리케이션 모듈(`app-admin`, `app-batch`)에 분산
-- Multi-tenant SaaS에서 공통 스키마는 core에, 애플리케이션별 API는 개별 모듈에 배포
+**Scenarios:**
+- Keep the domain model (entity/DTO/repository) in the shared module (`core-domain`),
+  and spread the business logic (service/controller) across application modules (`app-admin`, `app-batch`)
+- In multi-tenant SaaS, deploy the shared schema in core and each application's API in its own module
 
-**Gradle 설정 예시 (root build.gradle):**
+**Gradle setting example (root build.gradle):**
 ```groovy
 task elcore(type: JavaExec) {
     classpath = project(':core-domain').sourceSets.main.runtimeClasspath
@@ -947,222 +947,222 @@ task elcore(type: JavaExec) {
 
 ---
 
-## 9. Datasource 설정
+## 9. Datasource setting
 
 ```yaml
 config:
   datasource:
-    name: "orderEntityManagerFactory"   # EntityManagerFactory 빈 이름
+    name: "orderEntityManagerFactory"   # EntityManagerFactory bean name
 ```
 
-- 다중 데이터소스 환경에서 도메인이 사용할 특정 EntityManagerFactory를 지정
-- 풀네임(`orderEntityManagerFactory`) 또는 접미사 제거 약칭(`order`) 모두 사용 가능
-- `DbTransactionGateway`가 빈 이름 매핑 시 `EntityManagerFactory` 접미사를 자동으로 제거하여 약칭도 인식
+- In a multi-datasource environment, it specifies the particular EntityManagerFactory the domain uses
+- Both the full name (`orderEntityManagerFactory`) and the short name without the suffix (`order`) work
+- When `DbTransactionGateway` maps the bean name, it removes the `EntityManagerFactory` suffix automatically, so it recognizes the short name too
 
 ```yaml
-# 풀네임 사용
+# Using the full name
 datasource:
   name: "orderEntityManagerFactory"
 
-# 약칭 사용 (동일하게 동작)
+# Using the short name (works the same)
 datasource:
   name: "order"
 ```
 
-단일 데이터소스 환경에서는 설정하지 않으면 기본 `primary` EntityManagerFactory를 사용한다.
+In a single-datasource environment, if you do not set it, the default `primary` EntityManagerFactory is used.
 
 ---
 
-## 9-1. DDL - DB 별 스키마와 마이그레이션 (3.0)
+## 9-1. DDL - per-DB schema and migration (3.0)
 
-운영 DB 는 `ddl-auto` 로 만들지 않습니다. ElastiCORE 가 **프로젝트의 모든 테이블**(JPA·MyBatis 도메인 모두)을 DB 마다
-DDL 로 쓰고, 모델이 바뀌면 **바뀐 만큼을 Flyway 마이그레이션**으로 씁니다. Since: 3.0.261030-rc5
+A production DB is not created with `ddl-auto`. ElastiCORE writes **all tables of the project** (both JPA and MyBatis domains) as DDL
+for each DB, and when the model changes it writes **only what changed as a Flyway migration**. Since: 3.0.261030-rc5
 
-**켜기 - 프로젝트 한 번** (`build.gradle`, 도메인마다가 아님):
+**Turn it on - once per project** (`build.gradle`, not per domain):
 
 ```gradle
 elasticore {
     ddl {
-        databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver (postgres, mssql 도 됨)
-        migration = 'flyway'                   // 생략·none: 전체 스키마만
+        databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver (postgres, mssql also work)
+        migration = 'flyway'                   // omitted or none: full schema only
     }
 }
 ```
 
-**만들어지는 것** (`src/main/resources/`)
+**What is produced** (`src/main/resources/`)
 
-| 파일 | 내용 |
+| File | Content |
 |---|---|
-| `db/schema-{db}.sql` | 모든 테이블·외래키·인덱스·시퀀스. 매 빌드 다시 생성. 빈 DB 에 `spring.sql.init.schema-locations` 로 실행하거나 DBA 에게 넘깁니다 |
-| `db/migration/{db}/V{시각}__init.sql` | 그 DB 이력의 첫 마이그레이션(그때의 전체 스키마) |
-| `db/migration/{db}/V{시각}__{무엇}.sql` | 모델이 바뀐 만큼 - `add_customer_email`, `create_visit` ... |
-| `db/migration/schema-state.json` | 마이그레이션들이 만든 스키마. 다음 변경은 이것과 비교합니다 |
+| `db/schema-{db}.sql` | All tables, foreign keys, indexes, sequences. Regenerated on every build. Run it on an empty DB with `spring.sql.init.schema-locations` or hand it to the DBA |
+| `db/migration/{db}/V{timestamp}__init.sql` | The first migration of that DB's history (the full schema at that time) |
+| `db/migration/{db}/V{timestamp}__{what}.sql` | As much as the model changed - `add_customer_email`, `create_visit` ... |
+| `db/migration/schema-state.json` | The schema the migrations produced. The next change is compared with this |
 
-**마이그레이션 파일과 상태 파일은 커밋합니다** - DB 의 이력입니다. 마이그레이션은 한 번 쓰면 다시 쓰지 않습니다(Flyway 가
-checksum 을 봅니다). 손으로 고쳐도 됩니다 - 그 뒤로는 개발자의 파일입니다. `db/schema-*.sql` 은 생성물이라 커밋하지 않아도 됩니다.
+**Commit the migration files and the state file** - they are the history of the DB. Once a migration is written, it is not written again (Flyway checks
+the checksum). You may edit it by hand - from then on it is the developer's file. `db/schema-*.sql` is generated, so you do not have to commit it.
 
 ```yaml
-# application.yml - Spring Boot 가 DB 종류로 폴더를 고릅니다 ({vendor}: h2, postgresql, oracle, sqlserver)
+# application.yml - Spring Boot picks the folder by DB type ({vendor}: h2, postgresql, oracle, sqlserver)
 spring:
   flyway:
     locations: classpath:db/migration/{vendor}
 ```
-이미 Spring Boot 의 기본 위치(`db/migration` 바로 아래)에 직접 쓴 이력이 있고 DB 가 하나인 프로젝트는 `locations` 를
-바꾸지 않습니다 - Flyway 는 `classpath:db/migration` 아래 폴더까지 읽으므로 `db/migration/{db}/` 의 마이그레이션도 그
-이력 뒤에 실행됩니다. `{vendor}` 로 바꾸면 이미 실행한 그 이력을 Flyway 가 찾지 못합니다(아래 표).
+A project that already has a hand-written history in Spring Boot's default location (directly under `db/migration`) and has one DB does not
+change `locations` - Flyway also reads folders below `classpath:db/migration`, so the migrations in `db/migration/{db}/` run
+after that history. If you change it to `{vendor}`, Flyway cannot find the history it has already run (table below).
 
-의존성: `spring-boot-starter-flyway`(Boot 4; Boot 3 는 `org.flywaydb:flyway-core`)와 DB 별 모듈
-(`flyway-database-postgresql`·`flyway-database-oracle`·`flyway-sqlserver`).
+Dependencies: `spring-boot-starter-flyway` (Boot 4; for Boot 3 it is `org.flywaydb:flyway-core`) and the per-DB modules
+(`flyway-database-postgresql`, `flyway-database-oracle`, `flyway-sqlserver`).
 
-**마이그레이션이 쓰는 것**
+**What the migration writes**
 
-| 모델의 변화 | 마이그레이션 |
+| Change in the model | Migration |
 |---|---|
-| 엔티티 추가 | `CREATE TABLE` + 외래키 + 인덱스 (다른 스키마의 첫 테이블이면 스키마도) |
-| 필드 추가 (선택) | `ADD COLUMN` |
-| 필드 추가 (필수 `!`) | 빈 채로 `ADD COLUMN`, `NOT NULL` 은 **검토**로 (있는 행에 값부터) |
-| 길이·정밀도 늘림 | `ALTER COLUMN` - DB 마다 문법이 다릅니다 (Oracle `MODIFY`, SQL Server 는 인덱스를 잠시 지웠다 다시) |
-| 필수 → 선택 | `DROP NOT NULL` |
-| 관계·`@unique`·`@Index` 추가/삭제 | 외래키·인덱스 추가/삭제 |
-| 필드·엔티티 삭제, 타입 변경·줄임, 선택 → 필수, 키 변경 | **검토**: 파일 끝에 주석으로 - 데이터를 잃거나 기존 행에서 실패할 수 있는 것 |
+| Entity added | `CREATE TABLE` + foreign keys + indexes (and the schema, if it is the first table of another schema) |
+| Field added (optional) | `ADD COLUMN` |
+| Field added (required `!`) | `ADD COLUMN` left empty; `NOT NULL` goes to **review** (give the existing rows a value first) |
+| Length or precision increased | `ALTER COLUMN` - the syntax differs per DB (Oracle `MODIFY`; SQL Server drops the index briefly and recreates it) |
+| Required -> optional | `DROP NOT NULL` |
+| Relation, `@unique`, `@Index` added/removed | Foreign key or index added/removed |
+| Field or entity removed, type changed or narrowed, optional -> required, key changed | **Review**: as a comment at the end of the file - what can lose data or fail on existing rows |
 
-검토가 필요한 변경은 빌드 로그에 `REVIEW` 로도 나옵니다. 주석을 풀고(또는 데이터를 옮기는 SQL 을 더해) 커밋하세요.
+A change that needs review also appears in the build log as `REVIEW`. Uncomment it (or add SQL that moves the data) and commit.
 
-**이력을 깨는 빌드는 실패합니다** - 그 이력의 마이그레이션과 상태 파일은 쓰지 않고 이유를 말합니다(`db/schema-*.sql` 은 그대로 다시 생성).
+**A build that would break the history fails** - it does not write that history's migration and state file, and it states the reason (`db/schema-*.sql` is regenerated as usual).
 
-| 상황 | 할 일 |
+| Situation | What to do |
 |---|---|
-| `schema-state.json` 이 없는데 마이그레이션이 있다 | 버전 관리에서 상태 파일을 되살립니다 |
-| 이미 직접 쓴 Flyway 이력이 있는 프로젝트에서 처음 켠다 | DB 가 지금 모델과 같은지 확인하고 한 번 `./gradlew elcore -PddlBaseline` - 첫 마이그레이션 없이 상태만 지금 모델로 씁니다. 이력이 `db/migration/{db}/` 에 있어도, Spring Boot 기본 위치인 `db/migration` 바로 아래에 있어도 같습니다 - baseline 없이 켜면 빌드가 멈춥니다(그 아래 폴더에 쓴 첫 마이그레이션이 모든 테이블을 다시 만들 것이므로) |
-| 기본 위치의 이력에 DB 가 둘 이상 | 빌드가 멈춥니다 - `classpath:db/migration` 은 아래 폴더를 모두 읽어 한 DB 에 다른 DB 의 마이그레이션까지 실행합니다. 이력을 DB 마다 `db/migration/{db}/` 로 옮기고 `locations` 를 `classpath:db/migration/{vendor}` 로 한 뒤 `-PddlBaseline` |
-| `schema-state.json` 을 읽을 수 없다 (병합 충돌 표시) | 두 브랜치가 각자 마이그레이션을 썼습니다. 마이그레이션은 둘 다 두고, 상태는 나중 것의 것을 택한 뒤 다시 빌드합니다 |
-| `databases` 에서 뺐던 DB 를 다시 넣었다 | 그 DB 폴더의 이력을 손으로 지금 모델까지 맞춘 뒤, 상태 파일의 `databases` 에 그 DB 를 더합니다 |
-| 이번 빌드의 버전(`V{시각}__`)인 파일이 이미 있다 | 다시 빌드합니다 (시각이 바뀝니다) |
+| There are migrations but no `schema-state.json` | Restore the state file from version control |
+| You turn it on for the first time in a project that already has a hand-written Flyway history | Check that the DB equals the current model, then run `./gradlew elcore -PddlBaseline` once - it writes only the state with the current model, without a first migration. It is the same whether the history is in `db/migration/{db}/` or directly under Spring Boot's default location `db/migration` - if you turn it on without a baseline, the build stops (because a first migration written in a folder below it would recreate all tables) |
+| More than one DB in the history in the default location | The build stops - `classpath:db/migration` reads all folders below it and runs the migrations of other DBs on one DB. Move the history to `db/migration/{db}/` for each DB, set `locations` to `classpath:db/migration/{vendor}`, then `-PddlBaseline` |
+| `schema-state.json` cannot be read (merge conflict markers) | Two branches each wrote migrations. Keep both sets of migrations, take the later one's state, and build again |
+| You put back a DB that you had removed from `databases` | Bring that DB folder's history up to the current model by hand, then add that DB to `databases` in the state file |
+| A file with this build's version (`V{timestamp}__`) already exists | Build again (the timestamp changes) |
 
-`databases` 에서 뺀 DB 는 경고만 나오고, 그 DB 의 마이그레이션은 거기서 멈춥니다.
+For a DB removed from `databases`, only a warning appears, and that DB's migrations stop there.
 
-**`-PddlBaseline` 으로 넘겨받은 이름** - 상태의 외래키·인덱스 이름은 모델이 붙이는 이름입니다(`fk_{table}_{field}` 등).
-직접 쓴 이력으로 만든 DB 는 다른 이름일 수 있습니다 - Hibernate 는 외래키를 해시로 이름 붙이고(`FK` 와 해시)
-`@Index(unique)` 를 유일 제약으로 둡니다. 그래서 baseline 이 쓴 상태는 그때의 이름을 `takenOver` 로 적어 두고, 그 이름을 지우거나
-지운 뒤 같은 이름으로 다시 만드는 문장은 **검토**로 씁니다 - DB 의 실제 이름으로 바꿔 주석을 푸세요. SQL Server 에서 컬럼을
-바꾸며 그 이름을 지웠다 다시 만드는 것은 SQL Server 마이그레이션에서만 검토이고, 다른 DB 에서는 컬럼 변경이 그대로 실행됩니다.
-넘겨받은 뒤 마이그레이션이 만든 외래키·인덱스는 이름이 맞으므로 그대로 실행됩니다. baseline 뒤에 `databases` 에 더한
-DB 도 `init` 이 모델의 이름으로 만들므로 그 DB 의 마이그레이션은 그대로 실행됩니다(상태의 `takenOverOn` 이 넘겨받은 DB 를 적습니다). 이 기능 전에(3.0.261030-rc6 까지)
-`-PddlBaseline` 으로 시작한 상태에는 넘겨받은 이름이 없습니다 - DB 가 지금 모델과 같을 때 `schema-state.json` 을 지우고
-`./gradlew elcore -PddlBaseline` 을 한 번 더 돌리면 적힙니다.
+**Names taken over by `-PddlBaseline`** - the names of foreign keys and indexes in the state are the names the model assigns (`fk_{table}_{field}` etc.).
+A DB built from a hand-written history may have other names - Hibernate names foreign keys with a hash (`FK` and a hash)
+and treats `@Index(unique)` as a unique constraint. So the state that baseline wrote records those names as `takenOver`, and a statement that drops such a name, or
+drops it and recreates it with the same name, is written as **review** - change it to the real name in the DB and uncomment it. In SQL Server, dropping and recreating that name while
+changing a column is review only in the SQL Server migration; in other DBs the column change runs as it is.
+Foreign keys and indexes that a migration creates after the takeover have the right names, so they run as they are. A DB added to `databases` after baseline
+is also created by `init` with the model's names, so that DB's migrations run as they are (`takenOverOn` in the state lists the DBs that were taken over). A state started with `-PddlBaseline` before this feature (up to 3.0.261030-rc6)
+has no taken-over names - when the DB equals the current model, delete `schema-state.json` and run
+`./gradlew elcore -PddlBaseline` once more, and they are recorded.
 
-**도메인별로 다르게** - 그 도메인의 `env.yml` 에서 필요한 것만 덮어씁니다.
+**Different per domain** - override only what you need in that domain's `env.yml`.
 
 ```yaml
 config:
-  ddl: false                 # 이 도메인은 DDL 에서 뺌 (다른 시스템이 관리하는 테이블을 읽기만 할 때)
+  ddl: false                 # This domain is left out of the DDL (when it only reads tables managed by another system)
 ```
 ```yaml
 config:
   ddl:
-    separate: true           # 별도 DB: db/{domain}/schema-{db}.sql, db/{domain}/migration/... 따로
-    databases: [oracle]      # 그 DB 의 종류
-    migration: none          # 그 도메인은 스키마만
+    separate: true           # Separate DB: db/{domain}/schema-{db}.sql, db/{domain}/migration/... separately
+    databases: [oracle]      # The kind of that DB
+    migration: none          # That domain gets the schema only
 ```
-`separate` 가 아니면 모든 도메인이 프로젝트의 DB 하나(파일 하나, 이력 하나)에 들어갑니다. 다른 DB 의 테이블을 가리키는
-관계에는 외래키를 걸 수 없어 빼고 경고합니다. 전역 설정 없이 도메인 하나만 `ddl.databases` 로 켤 수도 있습니다.
+If it is not `separate`, all domains go into the project's one DB (one file, one history). A relation pointing to a table in another DB
+cannot get a foreign key, so it is left out and a warning is given. You can also turn on only one domain with `ddl.databases`, without a global setting.
 
-**JPA 도메인의 테이블** 은 생성된 엔티티 소스(와 `mapping: xml` 의 `orm.xml`)에서 읽습니다 - Hibernate 가 읽는 그대로라
-개발자가 고친 엔티티·직접 쓴 엔티티(outbox 등)도 들어갑니다. 이름은 Spring Boot 의 규칙(snake case, 관계 컬럼
-`필드_대상키`, 조인 테이블 `소유테이블_속성`), 타입은 Hibernate 의 선택, 길이·NOT NULL 은 `@Size`·`@NotNull` 까지
-반영합니다. Envers(`@Audited`) 의 감사 테이블·`revinfo`·`revinfo_seq` 도 쓰며, `application.yml` 의
-`audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 씁니다.
+**The tables of a JPA domain** are read from the generated entity source (and the `orm.xml` of `mapping: xml`) - exactly as Hibernate reads them, so
+entities edited by the developer and hand-written entities (outbox etc.) are included. Names follow Spring Boot's rules (snake case, relation column
+`field_targetKey`, join table `ownerTable_property`), types are Hibernate's choice, and length and NOT NULL
+reflect `@Size` and `@NotNull` too. It also writes the audit tables of Envers (`@Audited`), `revinfo` and `revinfo_seq`, and reads settings such as
+`audit_table_suffix` in `application.yml`. In a project that keeps 2.x code (`output = 'v2'`), the `elcoreDdl` task writes after `elcore`.
 
-확인: ElastiCORE 의 JPA 샘플 넷(2.x·헥사고날·Kotlin·펫스토어)이 이 DDL 로 만든 테이블에서 Hibernate
-`ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·Oracle·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로
-세 DB 에서 도는지, 변경 마이그레이션(ALTER)이 세 DB 에서 실행되는지 CI 가 매번 봅니다.
+Verification: CI checks every time that the four JPA samples of ElastiCORE (2.x, hexagonal, Kotlin, pet store) start with Hibernate
+`ddl-auto=validate` on the tables created by this DDL (H2; the pet store also on PostgreSQL, Oracle and SQL Server), that the MyBatis pet store runs with Flyway on
+the three DBs, and that the change migrations (ALTER) run on the three DBs.
 
-**한계**: Oracle 에는 `TEXT` 가 없어, JPA 의 `columnDefinition = "TEXT"`(DSL `text`)는 Oracle 에서 CLOB 이 되고 Hibernate
-validate 가 거절합니다(경고) - Oracle 이면 `clob` 이나 길이를 쓰세요. 이름에 따옴표를 치지 않으므로 DB 의 예약어인
-이름은 쓸 수 없습니다(MyBatis 도메인은 경고).
+**Limits**: Oracle has no `TEXT`, so for JPA `columnDefinition = "TEXT"` (DSL `text`) becomes CLOB on Oracle and Hibernate
+validate refuses it (warning) - on Oracle, use `clob` or a length. Names are not quoted, so
+a name that is a reserved word of the DB cannot be used (a MyBatis domain gets a warning).
 
 ---
 
-## 9-2. 생성 파일 병합 - 고친 내용을 지키면서 DSL 을 따라가기 (3.0)
+## 9-2. Generated-file merge - follow the DSL while keeping your edits (3.0)
 
-생성된 파일을 고쳐도 됩니다. 다음 빌드는 **고친 내용을 남기고 DSL 의 변경도 넣습니다** - git 이 두 브랜치를 병합하듯이.
-주석을 달든, 문장을 더하든, 줄을 고치든 종류는 상관없습니다. Since: 3.0.261030-rc5
+You may edit a generated file. The next build **keeps your edits and also applies the DSL change** - the way git merges two branches.
+It does not matter whether you added a comment, added a statement, or changed a line. Since: 3.0.261030-rc5
 
-**대상**: 생성 파일 전부 - Java·Kotlin 소스, MyBatis 매퍼 XML, `orm.xml`(`mapping: xml`), `db/schema-{db}.sql`,
-`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, gRPC `.proto`, TypeScript 클라이언트(`.ts`).
-첫 줄 표시(`//ecd:`)가 붙지 않습니다 - `<!DOCTYPE mapper ...>` 나 `package` 가 그대로 첫 줄입니다. Flyway 마이그레이션은 한
-번 쓰면 다시 쓰지 않는 이력이고(9-1), `blueprint/schema.yml` 은 매번 새로 씁니다. 멀티 모듈에서 모듈이 프로젝트 폴더 밖에
-있으면 그 모듈의 파일은 첫 줄 표시로 다룹니다(`elasticore-rule-guide.md` 7.5).
+**Scope**: all generated files - Java and Kotlin sources, MyBatis mapper XML, `orm.xml` (`mapping: xml`), `db/schema-{db}.sql`,
+`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, gRPC `.proto`, the TypeScript client (`.ts`).
+The first-line marker (`//ecd:`) is not added - `<!DOCTYPE mapper ...>` or `package` stays as the first line. A Flyway migration is a history that is not written again
+once written (9-1), and `blueprint/schema.yml` is rewritten every time. In a multi-module project, if a module is
+outside the project folder, that module's files are handled by the first-line marker (`elasticore-rule-guide.md` 7.5).
 
-**Java·Kotlin 은 소스로 병합합니다**: import 는 줄이 아니라 묶음으로 - DSL 이 넣은 import 와 개발자가 넣은 import 가 둘 다
-남고, 개발자가 지운 import 는 지워진 채로. 클래스 안에서 양쪽이 같은 자리에 줄을 **더하기만** 했으면(DSL 의 필드, 개발자의
-메서드) 생성된 줄, 개발자의 줄 순으로 둘 다 남기고, 한쪽이 바꾼 줄 바로 옆에 다른 쪽이 더하기만 했으면 바뀐 줄 옆에
-더한 줄을 둡니다. 같은 줄을 양쪽이 각자 바꾼 것만 충돌입니다.
+**Java and Kotlin are merged as source**: imports are merged as a group, not by line - the imports the DSL added and the imports the developer added both
+remain, and an import the developer removed stays removed. In a class, when both sides **only added** lines in the same place (a DSL field, a developer
+method), both remain, the generated lines first and then the developer's lines; when one side changed a line and the other side only added next to it, the added line is placed
+next to the changed line. Only when both sides each changed the same line is it a conflict.
 
-**한 번만 생성하는 파일**(`// Initially generated by ElastiCORE;` 표식 - 확장 서비스, 컨트롤러, `@behavior` 엔티티 ...)은
-개발자의 코드입니다. 고치기 전에는 DSL 을 따라가고, 고친 뒤에는 DSL 의 변경이 **깔끔하게 합쳐질 때만** 들어옵니다
-(`MERGED`) - 예: `@readonly` 를 붙이면 손대지 않은 쓰기 엔드포인트가 개발자 컨트롤러에서도 빠지고, 개발자가 더한 엔드포인트는
-남습니다. 개발자가 고친 줄을 DSL 도 바꾸면 **충돌 표시를 남기지 않고** 파일을 그대로 둔 채(`KEPT(yours ...)`) 무엇을 손으로
-옮길지 경고합니다 - 개발자 코드가 빌드 중에 깨지는 일은 없습니다. 표식 줄은 그대로 둡니다.
+**Generate-once files** (marked `// Initially generated by ElastiCORE;` - extension services, controllers, `@behavior` entities ...) are
+the developer's code. Until you edit them, they follow the DSL; after you edit them, a DSL change comes in **only when it merges cleanly**
+(`MERGED`) - e.g. if you add `@readonly`, the untouched write endpoints also disappear from the developer's controller, and endpoints the developer added
+remain. If the DSL also changes a line the developer edited, it **leaves no conflict markers** and keeps the file as it is (`KEPT(yours ...)`), and
+warns what to move by hand - developer code never breaks during a build. Leave the marker line as it is.
 
-**켜기**: 3.0 코드는 기본으로 켜져 있습니다. 끄려면 `elasticore { merge = false }` - 그 뒤로 표시 없는 파일은 개발자의
-것으로 보고 건너뜁니다(지우면 표시와 함께 새로 생성). `output = 'v2'`(2.x 코드)는 기본이 꺼짐 - 2.x 가 쓰던 그대로입니다.
+**Turn it on**: it is on by default for 3.0 code. To turn it off, `elasticore { merge = false }` - from then on a file without a marker 
+is treated as the developer's own and skipped (if you delete it, it is generated anew with the marker). `output = 'v2'` (2.x code) is off by default - exactly as 2.x used it.
 
-**`.elasticore/cache` - 생성 파일과 함께 커밋합니다.** 생성기가 마지막에 쓴 그대로(병합 전)를 파일마다 담은 파일 하나입니다
-(압축하지 않은 zip). 병합의 기준이라, 클론한 사람(`--depth 1` 도)이 고친 파일도 병합되려면 저장소에 있어야 합니다. 내용이
-같으면 바이트도 같아서 생성 결과가 바뀐 만큼만 저장소가 늘어납니다. 옆의 `.elasticore/.gitattributes` 가 binary 로 둡니다.
-**캐시와 생성 파일은 같이 다닙니다** - 둘 다 커밋하거나, 생성 파일을 git 에서 빼는 프로젝트라면 `.elasticore/` 도 뺍니다.
-캐시만 커밋하면 pull 한 뒤 로컬의 옛 생성 파일이 "고친 파일"로 보여 새로 써지지 않습니다.
+**`.elasticore/cache` - commit it together with the generated files.** It is one file (an uncompressed zip) holding, per file, exactly what the generator wrote last (before merging).
+It is the base of the merge, so for a file edited by someone who cloned (even with `--depth 1`) to be merged, it must be in the repository. If the content is
+the same, the bytes are the same, so the repository grows only as much as the generated output changed. The `.elasticore/.gitattributes` next to it marks it binary.
+**The cache and the generated files travel together** - commit both, or, in a project that keeps generated files out of git, leave out `.elasticore/` too.
+If you commit only the cache, after a pull the old local generated file looks like an "edited file" and is not rewritten.
 
-| 경우 | 빌드가 하는 일 |
+| Case | What the build does |
 |---|---|
-| 처음 생성 | 쓰고 캐시에 담음 |
-| 고치지 않은 파일, DSL 변경 | 새로 씀 |
-| 고친 파일, DSL 그대로 | 그대로 둠 - `UNCHANGED(your edits kept)` |
-| 고친 파일, DSL 변경 | 병합 - `MERGED(your edits kept)` |
-| 고친 줄을 DSL 도 바꿈 | **충돌** - 파일에 `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` 를 남기고 빌드 실패. 표시를 정리할 때까지 계속 실패하고, 정리한 내용이 그 뒤의 기준 |
-| 파일을 지움 | 다시 생성 - 생성된 그대로 다시 받는 방법 |
-| DSL 이 더 만들지 않음 | 고치지 않았으면 지우고, 고쳤으면 남기고 경고(그 뒤로 개발자 파일). 고치지 않았어도 남는 소스가 아직 쓰는 클래스(와 같은 이름의 매퍼 XML)는 남기고 쓰는 파일을 알림(`still uses it - kept`) - 쓰는 곳이 없어진 다음 빌드에서 지움 |
-| 캐시에 없는 자리에 다른 파일 | 덮어쓰지 않고 알림 (캐시 파일이 없으면 요약이 git 에서 가져오라고 함) |
-| 첫 줄 표시로 생성된 파일(이전 버전, 2.x) | 아래 "표시가 있던 프로젝트" |
+| First generation | Writes it and puts it in the cache |
+| Unedited file, DSL changed | Writes it anew |
+| Edited file, DSL unchanged | Leaves it as it is - `UNCHANGED(your edits kept)` |
+| Edited file, DSL changed | Merges - `MERGED(your edits kept)` |
+| The DSL also changed a line you edited | **Conflict** - leaves `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` in the file and the build fails. It keeps failing until you clean up the markers, and what you cleaned up becomes the base from then on |
+| You deleted the file | Generated again - the way to get it back as generated |
+| The DSL no longer produces it | If unedited, it is deleted; if edited, it is kept with a warning (from then on it is the developer's file). Even if unedited, a class that remaining sources still use (and the mapper XML with the same name) is kept and the file that uses it is reported (`still uses it - kept`) - it is deleted in the build after nothing uses it any more |
+| A different file where the cache has none | Not overwritten, reported (if the cache file is missing, the summary tells you to fetch it from git) |
+| A file generated with a first-line marker (older version, 2.x) | "Projects that had markers" below |
 
-**표시가 있던 프로젝트** (이전 버전이 첫 줄 `//ecd:` 와 함께 쓴 파일 - 2.x 에서 올라온 프로젝트 포함): 따로 옮기는 명령은
-없습니다. 병합하는 빌드가 그 파일을 처음 다룰 때 **파일마다** 표시를 떼고 캐시에 넣습니다 - 단 그 파일의 원래 생성본(기준)을
-**표시의 해시로 확인할 수 있을 때만**. 추측한 기준으로 병합하면 엉뚱한 변경이 조용히 섞이기 때문입니다.
+**Projects that had markers** (files that an earlier version wrote with the first line `//ecd:` - including projects upgraded from 2.x): there is no separate command to migrate.
+When the merging build handles such a file for the first time, it removes the marker and puts the file in the cache **file by file** - but only when that file's original generated version (the base)
+**can be confirmed by the marker's hash**. If it merged with a guessed base, unrelated changes would be mixed in silently.
 
-| 표시가 있는 파일 | 첫 병합 빌드 |
+| File with a marker | First merging build |
 |---|---|
-| 고치지 않음(해시가 내용과 같음) | 그 내용이 기준. 표시를 떼고 DSL 대로 씀. 사용자 블록 `// !----` 은 해시처럼 병합에서도 빠지고 2.x 가 다시 쓸 때의 자리(import 블록은 `package` 줄 아래, 나머지는 닫는 줄 앞)에 들어감 - 다음 빌드부터는 고친 내용과 같음. DSL 이 이 파일을 바꾸지 않았으면 표시만 떼고 블록은 그 자리에 둠 |
-| 고침 - 이번 빌드가 만드는 것이 해시와 같음(모델·생성기가 그대로) | 그것이 기준. 표시를 떼고 고친 내용을 남김 |
-| 고침 - 2.x 프로젝트를 `output = 'v3'` 로 올리는 첫 빌드 | 빌드가 2.x 코드를 메모리에서만 한 번 더 만들어(`[elcore3] upgrade : ...`) 해시가 같은 것을 기준으로, 고친 내용을 3.0 코드에 병합. 이 빌드는 모든 도메인을 한 번에(`-Pdomain` 이면 멈춤) |
-| 고침 - 기준을 확인할 수 없음 | 표시를 두고 전처럼 건너뜀(`SKIP(user-modified)`, 한 번만 생성하는 파일은 `SKIP(user-owned)` 과 경고). 지우면 새로 생성 |
+| Not edited (the hash equals the content) | That content is the base. Removes the marker and writes per the DSL. The user block `// !----` is left out of the merge like the hash and goes back to where 2.x puts it when it rewrites (the import block below the `package` line, the others before the closing line) - from the next build on it is the same as an edit. If the DSL did not change this file, only the marker is removed and the block stays where it is |
+| Edited - what this build produces equals the hash (model and generator unchanged) | That is the base. Removes the marker and keeps your edits |
+| Edited - the first build that upgrades a 2.x project to `output = 'v3'` | The build produces the 2.x code once more in memory only (`[elcore3] upgrade : ...`), takes the one whose hash matches as the base, and merges your edits into the 3.0 code. This build handles all domains at once (it stops with `-Pdomain`) |
+| Edited - the base cannot be confirmed | Leaves the marker and skips it as before (`SKIP(user-modified)`; a generate-once file gets `SKIP(user-owned)` and a warning). If you delete it, it is generated anew |
 
-고친 파일을 DSL 이 바꾸면(위 세 번째 줄) 그 사용자 블록도 병합에서 빠지고 2.x 의 자리로 들어갑니다 - 고친 줄만 병합됩니다.
-DSL 이 바꾸지 않은 파일(두 번째 줄)은 블록까지 그대로 남습니다. 다만 블록을
-그 자리로 온전히 돌려놓을 수 없는 파일 - import 블록이 둘 이상이거나, 코드 블록이 import 블록보다 위에 있음 - 은 블록을
-고친 내용으로 그 자리에 둔 채 병합합니다(충돌이 날 수 있고, 잃는 것은 없음). 병합이 충돌하면 그 파일도 블록을 그 자리에 둔
-채 충돌 표시를 씁니다 - 블록이 충돌 표시의 한쪽에 들어가 해결하며 지워지지 않게.
+If the DSL changes an edited file (the third row above), that user block is also left out of the merge and goes to 2.x's place - only the edited lines are merged.
+A file the DSL did not change (the second row) stays as it is, blocks included. However, for a file where the block
+cannot be put back in that place intact - more than one import block, or a code block above the import block - the block is merged where it is, with
+your edits (a conflict may occur, and nothing is lost). If the merge conflicts, that file too gets the conflict markers with the block left
+where it is - so that the block falls inside one side of the conflict markers and is not deleted when you resolve it.
 
-그래서 한동안 캐시로 다루는 파일과 표시가 남은 파일이 섞여 있을 수 있고, 파일마다 자기 규칙을 따릅니다. 파일마다의
-`UNCHANGED(your edits kept)`·`MERGED`·`KEPT`·`SKIP` 과 요약 한 줄이 어디에 있는지 말합니다:
+So for a while, files handled by the cache and files that still have markers can be mixed, and each file follows its own rule. The per-file
+`UNCHANGED(your edits kept)`, `MERGED`, `KEPT` and `SKIP` and the one-line summary say where things are:
 `=== merge: 3 merged with your edits / 1 kept as yours / 0 conflict(s) / 2 still stamped (edited, base not confirmed) ===`
-과 그 아래 표시가 남은 파일 목록.
+and below it the list of files that still have markers.
 
-- `-Pforce` 는 병합하는 파일에 적용되지 않습니다. 빌드에 늘 켜 둔 설정이 고친 내용을 지우면 안 되기 때문입니다.
-- **git 병합에서 충돌이 나면** (두 브랜치가 각자 모델을 바꿔 생성한 경우):
-  1. `.elasticore/cache` 는 한쪽을 고릅니다 - `git checkout --ours .elasticore/cache`.
-  2. 충돌한 생성 파일은 **캐시와 같은 쪽**을 고릅니다 - `git checkout --ours <파일>`. 빌드하면 다른 쪽의 DSL 변경이 다시
-     들어옵니다. 캐시와 다른 쪽을 고르면 캐시 쪽 브랜치의 DSL 변경이 "개발자가 지운 것"으로 보여 조용히 빠질 수 있습니다.
-  3. **양쪽 브랜치가 같은 생성 파일을 각자 손으로 고쳤다면** 그 파일은 직접 합칩니다 - 양쪽의 생성된 줄과 고친 줄을 모두
-     남깁니다. 한쪽만 고르면 다른 쪽이 고친 것이 빠집니다.
-- 캐시를 읽을 수 없으면(깨짐) 아무것도 쓰지 않고 실패합니다. git 에서 다시 받으세요. `cache` 파일만 지우면 다음 빌드는 캐시에
-  없는 파일 중 지금 생성되는 것과 다른 것을 모두 건드리지 않고 알립니다 - 생성된 그대로 받을 파일은 지웁니다. `.elasticore/`
-  폴더째 지우면 처음 병합하는 프로젝트로 보아, 늘 덮어쓰던 `orm.xml` 과 메시지 파일은 전처럼 새로 씁니다.
-- 줄 단위 병합이라, 양쪽이 **바로 이웃한 줄**을 고쳐도 충돌로 봅니다(git 과 같음).
+- `-Pforce` does not apply to merged files. A setting that is always on in the build must not erase your edits.
+- **If a git merge conflicts** (when two branches each changed the model and generated):
+  1. For `.elasticore/cache`, pick one side - `git checkout --ours .elasticore/cache`.
+  2. For a conflicted generated file, pick **the same side as the cache** - `git checkout --ours <file>`. When you build, the other side's DSL changes come in again. If you pick
+     the side different from the cache, the DSL changes of the cache's branch look like "things the developer deleted" and may silently drop out.
+  3. **If both branches edited the same generated file by hand**, merge that file yourself - keep the generated lines and the edited lines of both sides. If you
+     pick only one side, what the other side edited is lost.
+- If the cache cannot be read (corrupt), nothing is written and the build fails. Fetch it again from git. If you delete only the `cache` file, the next build reports, without touching them, all files that are not
+  in the cache and differ from what is generated now - delete the files you want to get as generated. If you delete the whole `.elasticore/`
+  folder, it is treated as a project merging for the first time, and `orm.xml` and the message files, which were always overwritten, are written anew as before.
+- The merge is line by line, so it counts as a conflict even when both sides edit **directly adjacent lines** (same as git).
 
 ---
 
-## 10. Resource 설정
+## 10. Resource setting
 
 ```yaml
 config:
@@ -1171,15 +1171,15 @@ config:
     - "https://example.com/common-entities.yml"
 ```
 
-- 외부 URL에서 YAML 모델 파일을 다운로드하여 도메인 모델에 포함
-- 다운로드된 파일은 `_resource/model-{N}.yml` 형식으로 로컬 캐시
-- 바이트 비교를 통해 내용이 동일하면 파일 쓰기를 생략 (불필요한 I/O 방지)
-- HTTP 리다이렉트(301, 302, 307, 308) 자동 처리
-- 여러 도메인에서 공통 모델을 공유할 때 유용
+- Downloads YAML model files from an external URL and includes them in the domain model
+- The downloaded file is cached locally in the form `_resource/model-{N}.yml`
+- By a byte comparison, if the content is identical the file write is skipped (avoids unnecessary I/O)
+- HTTP redirects (301, 302, 307, 308) are handled automatically
+- Useful when several domains share a common model
 
 ---
 
-## 11. 완전한 env.yml 예시
+## 11. A complete env.yml example
 
 ```yaml
 elasticore:
@@ -1223,20 +1223,20 @@ elasticore:
 
 ---
 
-## 12. 도메인 범위 지정 코드 생성 (`-Pdomain`)
+## 12. Domain-scoped code generation (`-Pdomain`)
 
-특정 도메인만 선택적으로 DSL을 갱신하고 Java 소스를 재생성할 수 있는 기능이다.
-이를 통해 대규모 프로젝트에서 하나의 도메인만 수정했을 때 빠르게 재생성하거나,
-원격 DSL URL 갱신을 특정 도메인만 대상으로 수행할 수 있다.
+This feature lets you update the DSL and regenerate Java sources for selected domains only.
+In a large project, it lets you regenerate quickly when you changed only one domain,
+or refresh remote DSL URLs for only specific domains.
 
-### 12.1 Gradle 설정 필수 단계
+### 12.1 Required Gradle setup
 
-사용자의 프로젝트 `build.gradle` 파일의 `elcore` 태스크에서 `-Pdomain` 옵션을 전달해야 한다.
-기존 `-Pmode` 포워딩과 동일한 패턴으로 다음 3줄을 추가한다:
+You must pass the `-Pdomain` option in the `elcore` task of your project's `build.gradle`.
+Add the following 3 lines, the same pattern as the existing `-Pmode` forwarding:
 
 ```groovy
 task elcore(type: JavaExec) {
-    // ... 기존 설정 ...
+    // ... existing settings ...
     
     if (project.hasProperty('domain')) {
         systemProperty 'elasticore.domain', project.property('domain')
@@ -1244,89 +1244,105 @@ task elcore(type: JavaExec) {
 }
 ```
 
-이 설정이 없으면 `-Pdomain` 옵션이 무시되고 전체 도메인 처리가 실행된다.
+Without this setting, the `-Pdomain` option is ignored and all domains are processed.
 
-### 12.2 사용 예시
+### 12.2 Examples
 
-**단일 도메인 처리:**
+**Process a single domain:**
 ```bash
 ./gradlew elcore -Pdomain=hr
 ```
-`hr` 도메인만 `env.yml`을 로드하고 DSL을 갱신하며, Java 소스를 재생성한다.
+Only the `hr` domain loads its `env.yml`, updates its DSL, and regenerates its Java sources.
 
-**다중 도메인 처리 (콤마 구분):**
+**Process several domains (comma separated):**
 ```bash
 ./gradlew elcore -Pdomain=hr,bbs
 ```
-`hr`과 `bbs` 도메인만 처리한다.
+Only the `hr` and `bbs` domains are processed.
 
-**Validation 모드와 조합:**
+**Combined with validation mode:**
 ```bash
 ./gradlew elcore -Pmode=valid -Pdomain=hr
 ```
-`hr` 도메인만 DSL 검증을 실행하고, 검증 오류 시 빌드 실패한다.
+Only the `hr` domain runs DSL validation, and the build fails on a validation error.
 
-### 12.3 동작 세부
+### 12.3 Details
 
-`-Pdomain` 은 **2단계 필터**로 동작한다. Cross-domain 참조(`@extend`, `@audited`, 공용 템플릿 등) 가 깨지지 않도록, DSL 자체는 모든 도메인을 로드한다.
+`-Pdomain` works as a **two-stage filter**. The DSL itself loads all domains so that cross-domain references (`@extend`, `@audited`, shared templates, etc.) do not break.
 
-#### 1단계: DSL 로딩 (모든 도메인)
-- 모든 도메인의 `env.yml` 과 DSL 을 로드한다
-- 전역 타입 참조 검증 (`validateGlobalTypeReferences`) 이 전체 모델을 대상으로 수행된다
-- `schema.yml` 도 전체 엔티티·enum 기준으로 정상 재생성된다
+#### Stage 1: load the DSL (all domains)
+- The `env.yml` and DSL of all domains are loaded
+- The global type reference validation (`validateGlobalTypeReferences`) runs on the whole model
+- `schema.yml` is also regenerated normally from all entities and enums
 
-#### 2단계: 필터 적용
-- **퍼블리시(소스 생성)**: 지정 도메인만 Java 소스를 재생성한다. 나머지 도메인은 이전 생성물이 그대로 보존된다.
-- **원격 URL 새로고침**: 지정 도메인의 `config.resource` HTTP(S) URI 만 새로 다운로드한다. 나머지 도메인은 기존 `_resource/model-N.yml` 캐시를 재사용한다 (네트워크 접근 0회).
+#### Stage 2: apply the filter
+- **Publishing (source generation)**: only the specified domains have their Java sources regenerated. The earlier output of the other domains is preserved as it is.
+- **Remote URL refresh**: only the `config.resource` HTTP(S) URIs of the specified domains are downloaded anew. The other domains reuse the existing `_resource/model-N.yml` cache (zero network access).
 
-#### 캐시가 없는 도메인
-필터에서 제외된 도메인이 과거에 한 번도 실행된 적이 없어 `_resource/` 캐시가 비어 있다면, 해당 원격 리소스는 로드되지 않고 다음 경고가 출력된다:
+#### Domains without a cache
+If a domain excluded by the filter has never been run before and its `_resource/` cache is empty, that remote resource is not loaded and the following warning is printed:
 ```
 [DomainFilter] Skipping remote resource (no cache): <url>
 ```
-필요하면 `-Pdomain` 없이 full elcore 를 한 번 실행해 캐시를 초기화한 뒤 다시 필터 모드로 전환한다.
+If needed, run a full elcore once without `-Pdomain` to initialize the cache, then switch back to filter mode.
 
-### 12.4 schema.yml 동작
+### 12.4 schema.yml behavior
 
-필터 사용 여부와 무관하게 `schema.yml` 은 **전체 도메인 기준으로 재생성**된다. 모든 도메인 DSL 이 로드되어 `SchemaCodePublisher` 가 완전한 엔티티 집합을 집계하기 때문이다.
+Whether or not a filter is used, `schema.yml` is **regenerated from all domains**. This is because all domain DSLs are loaded and `SchemaCodePublisher` aggregates the complete set of entities.
 
-### 12.5 유즈케이스
+### 12.5 Use cases
 
-**대형 프로젝트 빠른 개발 사이클:**
-- 여러 도메인 중 `hr` 도메인만 수정하고 엔티티 추가
-- `./gradlew elcore -Pdomain=hr`로 빠르게 생성
-- 다른 도메인의 코드는 건드리지 않음
+**A fast development cycle in a large project:**
+- Among several domains, modify only the `hr` domain and add an entity
+- Generate quickly with `./gradlew elcore -Pdomain=hr`
+- The code of the other domains is not touched
 
-**원격 DSL 선택적 갱신:**
-- 프로젝트가 여러 원격 `config.resource` URL을 참조
-- 특정 도메인의 URL만 갱신하고 싶을 때 `-Pdomain` 사용
-- 불필요한 네트워크 I/O와 시간 절약
+**Selective refresh of remote DSL:**
+- The project references several remote `config.resource` URLs
+- Use `-Pdomain` when you want to refresh only the URLs of a specific domain
+- Saves unnecessary network I/O and time
 
-**멀티 모듈 프로젝트:**
-- `./gradlew elcore -Pdomain=account,order`로 특정 도메인만 처리
-- 결과적으로 여러 모듈에 코드가 생성될 수 있음
-- 나머지 모듈의 도메인은 완전히 스킵됨
+**Multi-module project:**
+- Process only specific domains with `./gradlew elcore -Pdomain=account,order`
+- As a result, code may be generated in several modules
+- The domains of the other modules are skipped completely
+
+---
+
+## 12-1. The guides' language (`guides`)
+
+Every generation copies these guides into `src/main/resources/blueprint/`, in English. A team that reads Korean
+better asks for the Korean ones; the files keep their names, and the index beside them follows:
+
+```gradle
+elasticore {
+    guides = 'ko'                 // en (default) | ko - -Delasticore.guides=ko without the plugin
+}
+```
+
+Up to 3.0.261031-rc7 the guides were in Korean only. A language they are not written in gives a warning and the
+English guides.
 
 ---
 
 ## 13. Best Practices
 
-**Namespace 네이밍 규칙:**
-- 도메인별로 독립적인 패키지 구조를 유지한다
-- `{기본패키지}.{도메인}.{타입}` 패턴을 일관되게 사용한다
-- 도메인 간 패키지 충돌을 방지하기 위해 도메인명을 반드시 포함한다
+**Namespace naming rules:**
+- Keep an independent package structure for each domain
+- Use the `{base package}.{domain}.{type}` pattern consistently
+- Always include the domain name to prevent package collisions between domains
 
-**Multi-Mode 사용 시 주의사항:**
-- `jpa,uml` 등 복수 모드 사용 시 모든 산출물이 동시에 생성됨
-- 운영 환경에서는 필요한 모드만 지정하여 불필요한 파일 생성을 방지한다
-- `uml` 모드는 개발 시 엔티티 관계 확인용으로 활용하고, 운영 빌드에서는 제외를 권장
+**Cautions when using Multi-Mode:**
+- When you use several modes such as `jpa,uml`, all outputs are generated at the same time
+- In production, specify only the modes you need to avoid generating unnecessary files
+- Use the `uml` mode to check entity relations during development, and excluding it from production builds is recommended
 
-**autoJoin 성능 영향:**
-- `autoJoin: true`는 모든 연관 엔티티에 JOIN FETCH를 적용하므로, 연관 관계가 많은 엔티티에서는 쿼리가 복잡해질 수 있음
-- 대부분의 경우 `autoJoin: false` (기본값)로 두고, 필요한 필드에만 `@fetchjoin`을 개별 적용하는 것이 성능상 유리
-- 단순 조회가 많은 도메인에서는 `autoJoin: true`가 N+1 문제를 효과적으로 방지
+**autoJoin performance impact:**
+- `autoJoin: true` applies JOIN FETCH to all associated entities, so queries can become complex for entities with many associations
+- In most cases, leave `autoJoin: false` (the default) and apply `@fetchjoin` individually only to the fields that need it, which is better for performance
+- In a domain with many simple reads, `autoJoin: true` effectively prevents the N+1 problem
 
-**테스트 코드 생성:**
-- `testCode: "true"` 설정 후 첫 빌드에서 테스트 파일이 생성됨
-- 생성된 테스트는 기본 CRUD 검증에 유용하며, 비즈니스 로직 테스트는 별도 작성 권장
-- 복합 키 엔티티도 자동으로 올바른 테스트 코드가 생성됨
+**Test code generation:**
+- After you set `testCode: "true"`, test files are generated in the first build
+- The generated tests are useful for basic CRUD checks; writing business logic tests separately is recommended
+- Correct test code is also generated automatically for composite-key entities
