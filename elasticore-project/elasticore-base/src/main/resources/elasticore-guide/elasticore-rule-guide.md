@@ -856,7 +856,7 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 > EntityManager entityManager)` and fix it to call `super(repository, query, entityManager)`.
 > **The generator detects this and tells you** - if the constructor call in an owned file differs from what would be generated now,
 > it prints the warning `constructor out of date ... the generator now writes
-> super(...)`. A `supportAI: true` domain (deprecated, env guide 3) receives the same ports.
+> super(...)`.
 
 ##### Namespaces
 

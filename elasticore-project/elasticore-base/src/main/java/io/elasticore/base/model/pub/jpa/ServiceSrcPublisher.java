@@ -69,29 +69,30 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
 
         this.baseCodeTmpl = createCodeTemplate(publisher, "template.service", "service.tmpl");
 
-        String extendServiceTmplName = "service_extend.tmpl";
-        boolean isSupportAI = false;
-        String aiConfig = publisher.getECoreModelContext().getDomain().getModel().getConfig("supportAI", "false");
-        if("true".equals(aiConfig)) {
-            isSupportAI = true;
-            extendServiceTmplName = "service_extend_ai.tmpl";
-            io.elasticore.base.util.ConsoleLog.printWarn(supportAIDeprecated(model.getInternalDomainName()));
-        }
+        warnIfSupportAI(model.getInternalDomainName(), model.getConfig("supportAI", "false"));
 
-        this.extendSvcCodeTmpl = createCodeTemplate(publisher, "template.serviceExt", extendServiceTmplName);
+        this.extendSvcCodeTmpl = createCodeTemplate(publisher, "template.serviceExt", "service_extend.tmpl");
 
         //System.err.println(this.baseCodeTmpl);
 
     }
 
     /**
-     * supportAI is deprecated: CRUD as Spring AI tools repeats the REST API an
-     * agent can already call, and puts deletes by condition in a model's hands.
-     * The tools are still generated; both generators say so with these words.
+     * supportAI is gone: CRUD as Spring AI tools repeated the REST API an agent
+     * can already call, and put deletes by condition in a model's hands. A
+     * domain that still sets it gets the plain service; both generators say so
+     * with these words, through here. Whether it was said.
      */
-    public static String supportAIDeprecated(String domainName) {
-        return "[ElastiCORE] domain '" + domainName + "': supportAI is deprecated and will be removed in a later"
-                + " release. The Spring AI tools are still generated; give an agent the REST API (OpenAPI) instead.";
+    public static boolean warnIfSupportAI(String domainName, String supportAI) {
+        if (!"true".equals(supportAI)) return false;
+        io.elasticore.base.util.ConsoleLog.printWarn(supportAIRemoved(domainName));
+        return true;
+    }
+
+    static String supportAIRemoved(String domainName) {
+        return "[ElastiCORE] domain '" + domainName + "': supportAI was removed and is ignored - the service is"
+                + " generated without Spring AI tools. An XxxService that keeps @Tool methods (one written once by"
+                + " 2.x, or edited) keeps them until you delete them; give an agent the REST API (OpenAPI) instead.";
     }
 
     private boolean isPageable(DataTransfer searchDTO) {
@@ -183,15 +184,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
         return sb.toString();
     }
 
-    protected String getEntityDescName(Entity entity) {
-        String entityName =  targetEntityName(entity);
-        String desc = entity.getMetaInfo().getLabel();
-        if(desc==null || desc.isEmpty()) {
-            return entityName;
-        }
-        return entityName+" ("+desc+")";
-    }
-
 
     public void publish(ModelDomain domain, Entity entity, DataTransfer dto, DataTransfer searchDto) {
 
@@ -213,7 +205,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
 
         String orgEntityClassName = entity.getIdentity().getName();
         String entityClassName = targetEntityName(entity); //for rollup
-        String entityDescName = getEntityDescName(entity); //for rollup
         String mappingCode ="";
         String orgEntityConvert= "";
         if(!orgEntityClassName.equals(entityClassName)) {
@@ -338,7 +329,6 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
                 .set("className", className)
                 .set("domainName", StringUtils.capitalize(domainName))
                 .set("entityClassName", entityClassName)
-                .set("entityDescName", entityDescName)
 
                 .set("orgEntityClassName", orgEntityClassName)
                 .set("orgEntityConvert", orgEntityConvert)

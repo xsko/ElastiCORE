@@ -173,9 +173,6 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
      * the searches go through the query port. The EntityManager is kept for
      * the one thing the mapper needs it for, turning an identifier into a
      * reference; it is the JPA API, not the adapter package.
-     *
-     * The AI-tools extension (supportAI) is written from a skeleton with the
-     * same constructor slots, so it is handed the ports too.
      */
     @Rule(value = "ddd-service-ports", target = "service", order = 15)
     void serviceTakesPorts(EntitySpec e) {

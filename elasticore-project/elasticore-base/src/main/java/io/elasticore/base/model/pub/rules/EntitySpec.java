@@ -627,22 +627,6 @@ public final class EntitySpec {
         return this;
     }
 
-    private boolean supportAI;
-
-    /**
-     * env.yml's supportAI. A domain that turns it on gets its extension
-     * service written as Spring AI tools over the core one, so a model can
-     * call what the DSL declared.
-     */
-    public EntitySpec supportAI(boolean enabled) {
-        this.supportAI = enabled;
-        return this;
-    }
-
-    public boolean supportAI() {
-        return supportAI;
-    }
-
     private String containedIn;
 
     /**

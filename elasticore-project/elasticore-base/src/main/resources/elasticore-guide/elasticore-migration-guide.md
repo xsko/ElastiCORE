@@ -99,6 +99,12 @@ The `DSL_WARN` that 3.0 adds
 applies only to DDD-specific syntax such as `domainService` and `uses:`. A 2.x model does not have that syntax, so a `-Pmode=valid` CI does not
 suddenly fail.
 
+### 5. `supportAI` is removed
+
+A domain with `supportAI: true` gets its service without Spring AI tools, and the generation prints a warning.
+**What to do**: take the line out of `env.yml`, and delete the `@Tool` methods that an `XxxService` written by 2.x still has
+(`elasticore-env-guide.md` chapter 3).
+
 ---
 
 ## 3.0 features, if you want them (optional)
@@ -174,9 +180,9 @@ edits you made in them back from git.
 
 ---
 
-## Moving up to Spring Boot 4 / Spring AI 2.0 (3.0 only)
+## Moving up to Spring Boot 4 (3.0 only)
 
-ElastiCORE 3.0 supports Spring Boot 4.0 and Spring AI 2.0 (2.2 supports up to Spring Boot 3).
+ElastiCORE 3.0 supports Spring Boot 4.0 (2.2 supports up to Spring Boot 3).
 If you change the runtime dependency from `elasticore-springboot3` -> `elasticore-springboot4` and raise the Boot plugin to 4.x,
 ElastiCORE reads the Boot version and generates enums and the outbox to fit Jackson 3.
 For the detailed steps and what you fix yourself, see chapter 3-1 of `elasticore-env-guide.md`.
