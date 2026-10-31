@@ -856,7 +856,7 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 > EntityManager entityManager)` 로 바꾸고 `super(repository, query, entityManager)` 를
 > 호출하도록 고쳐 주세요. **생성기가 이를 감지해 알려 줍니다** — 소유 파일의 생성자
 > 호출이 지금 생성될 것과 다르면 `constructor out of date ... the generator now writes
-> super(...)` 경고를 출력합니다. `supportAI: true` 도메인도 같은 포트를 받습니다.
+> super(...)` 경고를 출력합니다. `supportAI: true` 도메인(deprecated, env 가이드 3절)도 같은 포트를 받습니다.
 
 ##### 네임스페이스
 

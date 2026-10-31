@@ -47,29 +47,37 @@ public class AiToolDescriptionTest {
 
     private static File compat;
     private static File clean;
-    private static String compatLog;
-    private static String cleanLog;
-    private static String offLog;
 
     @BeforeAll
     static void generate() throws Exception {
-        compat = run("elcore-ai-tool-compat", false, true);
-        compatLog = lastLog;
-        clean = run("elcore-ai-tool-v3", true, true);
-        cleanLog = lastLog;
-        run("elcore-ai-tool-off", true, false);
-        offLog = lastLog;
+        compat = project("elcore-ai-tool-compat", true);
+        generate(compat, "elasticore.rules.v2");
+        clean = project("elcore-ai-tool-v3", true);
+        generate(clean, "elasticore.rules.v3");
     }
 
-    private static String lastLog;
-
+    // The runs whose words are read happen in the tests themselves, so that a
+    // mutation test sees which test runs the lines that say them.
     @Test
-    public void supportAIIsSaidToBeDeprecated() {
-        for (String log : new String[] {compatLog, cleanLog}) {
+    public void supportAIIsSaidToBeDeprecatedOncePerDomain() throws Exception {
+        for (String run : new String[] {"elasticore.rules.v2", "elasticore.rules.v3"}) {
+            String log = logOf(project("elcore-ai-tool-said", true), run);
             assertTrue(log.contains(DEPRECATED), log);
             assertEquals(log.indexOf(DEPRECATED), log.lastIndexOf(DEPRECATED), "once per domain:\n" + log);
         }
-        assertFalse(offLog.contains("supportAI"), offLog);
+    }
+
+    @Test
+    public void aDomainWithoutSupportAIIsNotWarned() throws Exception {
+        String log = logOf(project("elcore-ai-tool-off", false), "elasticore.rules.v3");
+        assertFalse(log.contains("supportAI"), log);
+    }
+
+    /** The TypeScript client's run writes no service, so it has nothing to say about the tools. */
+    @Test
+    public void theTypeScriptRunSaysNothing() throws Exception {
+        String log = logOf(project("elcore-ai-tool-ts", true), "elasticore.rules.ts");
+        assertFalse(log.contains("supportAI"), log);
     }
 
     /** The 2.x generator (./gradlew elcore) says it too, and still writes the tools. */
@@ -94,11 +102,13 @@ public class AiToolDescriptionTest {
         try {
             assertTrue(p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS), "generation did not finish");
         } finally {
-            p.destroyForcibly();
+            // Waited for, so the log is no longer held open when the folder is removed.
+            p.destroyForcibly().waitFor();
         }
         String genLog = new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8);
         assertEquals(0, p.exitValue(), genLog);
         assertTrue(genLog.contains(DEPRECATED), genLog);
+        assertEquals(genLog.indexOf(DEPRECATED), genLog.lastIndexOf(DEPRECATED), "once per domain:\n" + genLog);
         assertTrue(found(project, "AccidentService.java").contains("@Tool(name = \"findAllAccident\""), genLog);
     }
 
@@ -155,21 +165,20 @@ public class AiToolDescriptionTest {
         return project;
     }
 
-    private static File run(String name, boolean v3, boolean supportAI) throws Exception {
-        File project = project(name, supportAI);
+    private static String logOf(File project, String run) throws Exception {
         java.io.PrintStream out = System.out;
         java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
         System.setOut(new java.io.PrintStream(captured, true, "UTF-8"));
         try {
-            generate(project, v3);
+            generate(project, run);
         } finally {
             System.setOut(out);
-            lastLog = new String(captured.toByteArray(), StandardCharsets.UTF_8);
         }
-        return project;
+        return new String(captured.toByteArray(), StandardCharsets.UTF_8);
     }
 
-    private static void generate(File project, boolean v3) throws Exception {
+    /** {@code run}: elasticore.rules.v2 (the 2.x bundle), .v3, or .ts (the TypeScript client). */
+    private static void generate(File project, String run) throws Exception {
         String[] keys = {"elasticore.base.path", "elasticore.architecture", "elasticore.language",
                 "elasticore.rules.force", "elasticore.rules.v3", "elasticore.rules.v2", "elasticore.rules.ts"};
         String[] saved = new String[keys.length];
@@ -180,7 +189,7 @@ public class AiToolDescriptionTest {
             System.setProperty("elasticore.architecture", "layered");
             System.setProperty("elasticore.language", "java");
             System.setProperty("elasticore.rules.force", "true");
-            System.setProperty(v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", "true");
+            System.setProperty(run, "true");
             assertEquals(0, RulesGenRunner.run(new String[0]), "the run failed: " + project);
         } finally {
             for (int i = 0; i < keys.length; i++) {

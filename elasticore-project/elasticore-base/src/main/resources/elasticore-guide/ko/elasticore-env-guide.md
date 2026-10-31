@@ -411,7 +411,7 @@ ElastiCORE가 만들지 않은 코드는 Spring Boot 4 마이그레이션 가이
 | `No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'` | `tools.jackson.databind.ObjectMapper` (Boot 4는 Jackson 3 매퍼를 등록) |
 | `JsonNode.asText()` 경고 | Jackson 3: `asString()` |
 
-`supportAI`를 나중에 켜도 이미 생성된 개발자 소유 `XxxService`에 `@Tool`이 들어옵니다: 손대지 않은 파일은 다시 생성되고, 고친 파일은 고친 줄과 겹치지 않으면 병합됩니다(`MERGED(your edits kept)`, 9-2). 겹쳐서 `KEPT(yours ...)`로 남았거나 병합 전 버전이 만든 파일을 고쳐 `SKIP(user-owned)`로 남았다면 직접 붙입니다.
+`supportAI`(deprecated, 3절)를 나중에 켜도 이미 생성된 개발자 소유 `XxxService`에 `@Tool`이 들어옵니다: 손대지 않은 파일은 다시 생성되고, 고친 파일은 고친 줄과 겹치지 않으면 병합됩니다(`MERGED(your edits kept)`, 9-2). 겹쳐서 `KEPT(yours ...)`로 남았거나 병합 전 버전이 만든 파일을 고쳐 `SKIP(user-owned)`로 남았다면 직접 붙입니다.
 
 ### Spring AI 2.0에서 도구 쓰기
 
