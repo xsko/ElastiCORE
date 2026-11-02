@@ -1053,7 +1053,7 @@ Verification: CI checks every time that the four JPA samples of ElastiCORE (2.x,
 the three DBs, and that the change migrations (ALTER) run on the three DBs.
 
 **Limits**: Oracle has no `TEXT`, so for JPA `columnDefinition = "TEXT"` (DSL `text`) becomes CLOB on Oracle and Hibernate
-validate refuses it (warning) - on Oracle, use `clob` or a length. Names are not quoted, so
+validate refuses it (a warning when `ddl.databases` names oracle) - on Oracle, use `clob` or a length. Names are not quoted, so
 a name that is a reserved word of the DB cannot be used (a MyBatis domain gets a warning).
 
 ---

@@ -321,6 +321,33 @@ public class DdlMigrationTest {
     }
 
     @Test
+    public void whatOnlyOracleRefusesIsSaidOnlyForASchemaForOracle() throws Exception {
+        // The DSL's text is columnDefinition "TEXT" on a JPA entity: Oracle has no such type.
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Note:",
+                        "    meta: entity @expose(20) @access(*=public)",
+                        "    fields:",
+                        "      noteId: long @id @sequence",
+                        "      body: text",
+                        ""),
+                "jpa");
+        System.setProperty(DdlConfig.DATABASES, "h2,postgresql");
+        String log = run(project);
+        assertTrue(
+                read(new File(project, "src/main/resources/db/schema-postgresql.sql"))
+                        .contains("CREATE TABLE note ("),
+                log);
+        assertFalse(log.contains("Oracle has no TEXT"), log);
+
+        System.setProperty(DdlConfig.DATABASES, "h2,oracle");
+        log = run(project);
+        assertTrue(log.contains("columnDefinition \"TEXT\" (Note.body): Oracle has no TEXT"), log);
+    }
+
+    @Test
     public void aDomainCanLeaveTheProjectsDdlOrHaveADatabaseOfItsOwn() throws Exception {
         File project = project(V1);
         System.setProperty(DdlConfig.DATABASES, "h2");
@@ -412,21 +439,29 @@ public class DdlMigrationTest {
     }
 
     private File project(String model) throws IOException {
+        return project(model, "mybatis");
+    }
+
+    private File project(String model, String mode) throws IOException {
         File dir = Files.createTempDirectory("elcore-ddl").toFile();
         projects.add(dir);
         File blueprint = new File(dir, "src/main/resources/blueprint/dgshop");
         assertTrue(new File(blueprint, "model").mkdirs());
-        Files.write(new File(blueprint, "env.yml").toPath(), String.join("\n",
-                "elasticore:",
-                "  enable: true",
-                "  config:",
-                "    domainName: dgshop",
-                "    framework: springboot",
-                "    mode: mybatis",
-                "    j2ee: jakarta",
-                "  namespace:",
-                "    base: io.acme.dgshop",
-                "").getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(blueprint, "env.yml").toPath(),
+                String.join(
+                                "\n",
+                                "elasticore:",
+                                "  enable: true",
+                                "  config:",
+                                "    domainName: dgshop",
+                                "    framework: springboot",
+                                "    mode: " + mode,
+                                "    j2ee: jakarta",
+                                "  namespace:",
+                                "    base: io.acme.dgshop",
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
         Files.write(new File(blueprint, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
         return dir;
     }

@@ -1053,7 +1053,7 @@ config:
 세 DB 에서 도는지, 변경 마이그레이션(ALTER)이 세 DB 에서 실행되는지 CI 가 매번 봅니다.
 
 **한계**: Oracle 에는 `TEXT` 가 없어, JPA 의 `columnDefinition = "TEXT"`(DSL `text`)는 Oracle 에서 CLOB 이 되고 Hibernate
-validate 가 거절합니다(경고) - Oracle 이면 `clob` 이나 길이를 쓰세요. 이름에 따옴표를 치지 않으므로 DB 의 예약어인
+validate 가 거절합니다(`ddl.databases` 에 oracle 이 있으면 경고) - Oracle 이면 `clob` 이나 길이를 쓰세요. 이름에 따옴표를 치지 않으므로 DB 의 예약어인
 이름은 쓸 수 없습니다(MyBatis 도메인은 경고).
 
 ---

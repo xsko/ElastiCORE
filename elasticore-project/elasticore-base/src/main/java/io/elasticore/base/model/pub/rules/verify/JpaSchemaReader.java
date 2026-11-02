@@ -62,6 +62,15 @@ public final class JpaSchemaReader {
         if (!warnings.contains(w)) warnings.add(w);
     }
 
+    /** Whether a schema is written for Oracle: what only Oracle refuses is said only then. */
+    private boolean forOracle = true;
+
+    /** The schema is written for Oracle too, or not: a warning about Oracle alone is left out when not. */
+    JpaSchemaReader forOracle(boolean forOracle) {
+        this.forOracle = forOracle;
+        return this;
+    }
+
     /** Envers' names, which an application may change (org.hibernate.envers.audit_table_suffix ...). */
     private String auditPrefix = "";
     private String auditSuffix = "_aud";
@@ -794,8 +803,11 @@ public final class JpaSchemaReader {
             String d = definition.trim().toUpperCase(Locale.ROOT);
             if (d.startsWith("TEXT") || d.startsWith("LONGTEXT") || d.startsWith("MEDIUMTEXT")) {
                 // A VARCHAR to JDBC; Oracle has no such type, and Hibernate validates "text" there against nothing.
-                warnOnce("columnDefinition \"" + definition + "\" (" + owner.simple + "." + f.name + "): Oracle has no TEXT -"
-                        + " its schema makes the column a CLOB, which ddl-auto=validate refuses there; use clob or a length");
+                if (forOracle)
+                    warnOnce(
+                            "columnDefinition \"" + definition + "\" (" + owner.simple + "." + f.name
+                                    + "): Oracle has no TEXT -"
+                                    + " its schema makes the column a CLOB, which ddl-auto=validate refuses there; use clob or a length");
                 return Column.of(name, ColumnType.UNBOUNDED_TEXT);
             }
             if (d.startsWith("CLOB")) return Column.of(name, ColumnType.LONG_TEXT);

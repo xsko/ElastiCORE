@@ -142,7 +142,12 @@ final class DdlRun {
         if (anyJpa) {
             List<File> resources = new ArrayList<File>();
             for (String d : new LinkedHashSet<String>(sourceRoots)) resources.add(new File(d, "src/main/resources"));
-            reader = new JpaSchemaReader().readSettings(resources).read(roots());
+            boolean oracle = false;
+            for (Group g : groups.values()) oracle |= g.databases.contains(Database.ORACLE);
+            reader = new JpaSchemaReader()
+                    .forOracle(oracle)
+                    .readSettings(resources)
+                    .read(roots());
             // A domain mapped in XML (mapping: xml) says it in orm.xml, which Hibernate reads too.
             for (String d : new LinkedHashSet<String>(sourceRoots)) {
                 reader.readOrmXml(new File(d, "src/main/resources/META-INF/orm.xml"));
