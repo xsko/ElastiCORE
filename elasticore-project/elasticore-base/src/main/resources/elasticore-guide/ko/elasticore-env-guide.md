@@ -1046,7 +1046,7 @@ config:
 개발자가 고친 엔티티·직접 쓴 엔티티(outbox 등)도 들어갑니다. 이름은 Spring Boot 의 규칙(snake case, 관계 컬럼
 `필드_대상키`, 조인 테이블 `소유테이블_속성`), 타입은 Hibernate 의 선택, 길이·NOT NULL 은 `@Size`·`@NotNull` 까지
 반영합니다. Envers(`@Audited`) 의 감사 테이블·`revinfo`·`revinfo_seq` 도 쓰며, `application.yml` 의
-`audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 씁니다.
+`audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 쓰고, 빌드가 컴파일 전에 생성할 때(`generateBeforeCompile`, 기본 켬)만 `processResources` 전에도 씁니다.
 
 확인: ElastiCORE 의 JPA 샘플 넷(2.x·헥사고날·Kotlin·펫스토어)이 이 DDL 로 만든 테이블에서 Hibernate
 `ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·Oracle·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로

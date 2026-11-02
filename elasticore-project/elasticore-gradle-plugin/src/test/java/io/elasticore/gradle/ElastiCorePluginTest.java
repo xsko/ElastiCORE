@@ -353,6 +353,29 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName(
+            "the DDL of a build keeping 2.x's code comes with elcore, and before the resources only when it generates before compiling")
+    public void theDdlFollowsTheBuildsGeneration() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { output = 'v2'; ddl { databases = ['h2'] } }");
+        String resources = run("processResources", "--dry-run").getOutput();
+        assertTrue(resources.contains(":elcoreDdl SKIPPED"), resources);
+        String elcore = run("elcore", "--dry-run").getOutput();
+        assertTrue(elcore.contains(":elcoreDdl SKIPPED"), elcore);
+
+        // Generation only by hand: a build copies its resources without loading the model.
+        writeBuild(
+                "plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { output = 'v2'; generateBeforeCompile = false; ddl { databases = ['h2'] } }");
+        resources = run("processResources", "--dry-run").getOutput();
+        assertTrue(!resources.contains(":elcoreDdl"), resources);
+        elcore = run("elcore", "--dry-run").getOutput();
+        assertTrue(elcore.contains(":elcoreDdl SKIPPED"), "elcore still writes the DDL: " + elcore);
+    }
+
+    @Test
     @DisplayName("output = 'v3' is passed as the choice it is")
     public void outputV3IsPassed() throws IOException {
         writeSettings("single");
