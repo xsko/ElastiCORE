@@ -150,9 +150,9 @@ repositories {
 
 dependencies {
     // ElastiCORE 버전은 루트 build.gradle 의 id 'io.elasticore' version 과 같게
-    compileOnly 'io.elasticore:elasticore-base:3.0.261031-rc7'
+    compileOnly 'io.elasticore:elasticore-base:3.0.261102-rc8'
 
-    testImplementation 'io.elasticore:elasticore-base:3.0.261031-rc7'
+    testImplementation 'io.elasticore:elasticore-base:3.0.261102-rc8'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }

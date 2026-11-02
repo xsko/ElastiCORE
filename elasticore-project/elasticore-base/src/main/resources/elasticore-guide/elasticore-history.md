@@ -1,3 +1,116 @@
+## 3.0.261102-rc8
+
+The guides a project receives are in English from this release; `guides = 'ko'` gives the Korean ones. `supportAI`
+is removed: the setting is ignored with a warning and the service is generated without Spring AI tools. Fixes:
+`checkEmpty` keeps `IS_NULL` / `IS_NOT_NULL`, a build with `generateBeforeCompile = false` no longer runs `elcoreDdl`
+before its resources, and the warning that Oracle has no `TEXT` is given only for a schema written for Oracle. From
+this release the history is written in English.
+
+### Bug Fixes (runtime - `checkEmpty` with `IS_NULL` / `IS_NOT_NULL`)
+
+#### checkEmpty no longer drops a condition that takes no value
+- Why: `FieldInfo.where(op, value, checkEmpty)` returns a condition that is always true when
+  `checkEmpty` is on and the value is null, blank or an empty collection - a search field left
+  empty adds nothing. `IS_NULL` and `IS_NOT_NULL` take no value, so theirs is null every time, and
+  `Q.Order.deletedAt(Op.IS_NULL, null, true)` - "deletedAt is null" - added no condition at all and
+  the query returned every row, without a word. Generated mappers are not affected: `@search(isnull)`
+  writes `isNull`/`isNotNull` itself.
+- What: the empty check applies to operators that take a value. `IS_NULL` and `IS_NOT_NULL` always
+  write their condition; every other operator is as before.
+- Checked: `FieldInfoCheckEmptyTest` - `IS_NULL`/`IS_NOT_NULL` with a null value give `isNull`/
+  `isNotNull` (fails without the change: the condition was `conjunction()`), and `EQ`, `LIKE` and `IN`
+  with an empty value are still dropped.
+- Files: `FieldInfo.java` (`where`), `FieldInfoCheckEmptyTest.java`
+
+### Bug Fixes (project DDL - a warning about Oracle only for Oracle)
+
+#### `columnDefinition "TEXT"` is said to have no Oracle type only when a schema is written for Oracle
+- Why: reading a JPA entity for the project DDL, a column with `columnDefinition = "TEXT"` (what the
+  DSL's `text` writes) warned `Oracle has no TEXT - its schema makes the column a CLOB, which
+  ddl-auto=validate refuses there`, once per column, whatever `ddl.databases` named. A project writing
+  its schema for PostgreSQL only got one line for every `text` field (37 on a 9-domain project) about a
+  database it does not use.
+- What: `DdlRun` tells `JpaSchemaReader` whether any group's databases include Oracle; the warning is said
+  only then. A reader nobody told keeps warning, as before. The env guide's limits (9-1) say when, in
+  English and Korean.
+- Checked: `DdlMigrationTest.whatOnlyOracleRefusesIsSaidOnlyForASchemaForOracle` - a JPA entity with a
+  `text` field: no warning with `h2,postgresql`, the warning with `h2,oracle` (fails without the change).
+- Files: `JpaSchemaReader.java` (`forOracle`), `DdlRun.java`, `DdlMigrationTest.java`,
+  `elasticore-env-guide.md` (en, ko)
+
+### Bug Fixes (Gradle plugin - project DDL and `generateBeforeCompile`)
+
+#### A build that does not generate before compiling no longer runs `elcoreDdl` before its resources
+- Why: with `output = 'v2'` and `elasticore { ddl { databases = [...] } }`, the plugin runs `elcoreDdl`
+  after `elcore` and also makes `processResources` depend on it - whatever `generateBeforeCompile` says.
+  A project turns `generateBeforeCompile` off to generate only when `elcore` is run, yet every `build`,
+  `test` or `bootRun` then ran `elcoreDdl`, which loads the model: a domain whose `env.yml` names a remote
+  diagram (`resource:`) fetched it again and rewrote `_resource/model-*.yml`, on CI too.
+- What: `processResources` waits for `elcoreDdl` only when the build generates before it compiles (the
+  default). `elcore` is still finalized by `elcoreDdl`, so the DDL comes whenever the code is generated.
+  The env guide (9-1, English and Korean) says so.
+- Checked: `ElastiCorePluginTest.theDdlFollowsTheBuildsGeneration` - by default `processResources` and
+  `elcore` both bring `:elcoreDdl`; with `generateBeforeCompile = false` only `elcore` does (fails without
+  the change).
+- Files: `ElastiCorePlugin.java`, `ElastiCorePluginTest.java`, `elasticore-env-guide.md` (en, ko)
+
+### Changes (guides - English by default)
+
+#### The guides a project receives are in English; `guides = 'ko'` gives the Korean ones
+- Why: ElastiCORE is an open-source project for developers who mostly do not read Korean, and the guides
+  copied into every project's `blueprint/` were in Korean only. Coding agents reading them also wrote the
+  code they added by hand in Korean.
+- Before: every generation copied the Korean guides.
+- After: the nine guides are written in English (`elasticore-guide/`) and in Korean (`elasticore-guide/ko/`),
+  line for line. A generation copies the English ones under the same file names, with the index beside them;
+  `elasticore { guides = 'ko' }` (`-Delasticore.guides=ko` without the plugin) copies the Korean ones. A
+  language the guides are not written in gives a warning and the English guides. The env guide says so in
+  12-1; README, CONTRIBUTING and the Korean documents link to the guides of their language. Change fragments
+  are written in English from now on (`changes/README.md`); the history before stays in Korean.
+- Generated code: unchanged - only the guides copied beside the model differ.
+- Checked: `GuideTranslationTest` - each guide has the same lines, headings with their numbers, and code
+  blocks of the same length in both languages, and the English prose holds no Korean;
+  `GuideCoverageTest` runs on the English guides and, as `GuideCoverageKoTest`, on the Korean ones;
+  `GuideIndexTest.theLanguageIsChosen` deploys the default, `ko` and an unknown language;
+  `ElastiCorePluginTest.theGuidesLanguageIsPassed`.
+- Files: `GuideDeployer`, `GuideIndex`, `ElastiCoreExtension`, `ElastiCorePlugin`,
+  `elasticore-guide/*.md`, `elasticore-guide/ko/*.md`, `README.md`, `README.ko.md`, `CONTRIBUTING.md`,
+  `changes/README.md`, `docs/*.ko.md`.
+
+### Changes (supportAI removed)
+
+#### `supportAI` is removed; the service is generated without Spring AI tools
+- Why: the Spring AI tools it wrote on `XxxService` repeated the REST API that an agent can already call
+  (OpenAPI), added about a dozen tools per entity, and opened deletes by condition and bulk changes to a model
+  by default. 3.0 is not released yet, so it goes before the release rather than after it.
+- Before: `supportAI: true` wrote the extension service from `service_extend_ai.tmpl` (2.x, v3 and Kotlin),
+  each core method again with `@Tool` / `@ToolParam`.
+- After: the setting is ignored. Every generator writes the plain extension service, and the run that writes
+  the services prints, once per domain that still sets it,
+  `[ElastiCORE] domain '<name>': supportAI was removed and is ignored - ...` - `elcore3` (also with `-Pv2`)
+  and the 2.x template generator (`./gradlew elcore`, which `output = 'v2'` runs). The TypeScript client's
+  run and the DDL-only run say nothing. The three templates, `EntitySpec.supportAI` and the tool variables
+  of `ServiceExtendBaseRules` are gone; the setup wizard no longer writes `supportAI: false`, and the
+  samples no longer set it (the Kotlin sample's `hr` domain set `true`, with a Spring AI milestone
+  dependency, both removed).
+- Upgrading a project that used it, on 3.0 code (`elcore3`): a `XxxService` the earlier version wrote and
+  nobody touched is written again without the tools (and, like every extension service, without
+  `@Primary`); an edited one loses the tool methods and keeps the edits where they do not overlap
+  (`MERGED(your edits kept)`). On the 2.x code (`output = 'v2'`, `-Pv2`, `merge = false`) the service is
+  written once and never again, so it keeps its tools, as does one left `KEPT` or `SKIP(user-owned)`:
+  delete the `@Tool` methods (or the file, to have it written again) before dropping the Spring AI
+  dependency. A `ToolCallbackProvider` bean the project registered finds no tools in a regenerated service.
+  Take `supportAI` out of `env.yml`. The env guide (chapter 3) and the migration guide (item 5) say so.
+- Generated code: unchanged for every domain without `supportAI: true`.
+- Checked: `SupportAIRemovedTest` - the rule engine (2.x bundle and v3) and the 2.x generator in its own
+  JVM write the plain service and warn once; no warning without the setting or in the TypeScript run.
+  `GeneratedMergeTest.toolsAnEarlierVersionWroteLeaveAnEditedService` - a service the cache holds with a
+  tool, edited by the developer, is merged without the tool and with the edit.
+- Files: `ServiceSrcPublisher`, `RulesGenRunner`, `ServiceExtendBaseRules`, `EntitySpec`, `SpecFactory`,
+  `DddRepositoryPortRules`, `InitializationHelper`, `service_extend_ai.tmpl` (three, deleted), the sample
+  `env.yml` files, `elasticore-template-kt/build.gradle`, `elasticore-guide/elasticore-env-guide.md`,
+  `elasticore-rule-guide.md`, `elasticore-migration-guide.md` and their `ko/` versions.
+
 ## 3.0.261031-rc7
 
 고친 것의 릴리스다. MyBatis 에서 이미 쓰인 고유값은 JPA 처럼 409 `unique` 로 답한다. 직접 쓴 Flyway 이력 위의

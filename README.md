@@ -56,7 +56,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x works too - the version is read and followed
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'io.elasticore' version '3.0.261031-rc7'
+    id 'io.elasticore' version '3.0.261102-rc8'
 }
 
 repositories {
@@ -69,8 +69,8 @@ elasticore {
 }
 
 dependencies {
-    implementation 'io.elasticore:elasticore-base:3.0.261031-rc7'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261031-rc7'
+    implementation 'io.elasticore:elasticore-base:3.0.261102-rc8'
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261102-rc8'
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -186,7 +186,7 @@ reason in the [history](elasticore-project/elasticore-base/src/main/resources/el
 | [Ports](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-dsl-port-guide.md) | HTTP, DB and gRPC ports |
 
 The guides are copied into the project's `blueprint/` on every build, so an AI assistant reads the grammar of exactly
-the version in use. Up to 3.0.261031-rc7 they are in Korean. From the next release they are in English, and a team
+the version in use. Up to 3.0.261031-rc7 they are in Korean. From 3.0.261102-rc8 they are in English, and a team
 that prefers Korean sets `elasticore { guides = 'ko' }` and gets the
 [Korean guides](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/) under the same names.
 
