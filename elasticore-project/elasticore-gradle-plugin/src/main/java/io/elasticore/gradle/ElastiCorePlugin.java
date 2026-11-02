@@ -119,13 +119,24 @@ public class ElastiCorePlugin implements Plugin<Project> {
             elcore3ts.configure(task -> arguments(task, evaluated, extension));
             elcoreDdl.configure(task -> arguments(task, evaluated, extension));
 
-            boolean ddl = !extension.getDdl().getDatabases().getOrElse(new ArrayList<>()).isEmpty();
+            boolean ddl = !extension
+                    .getDdl()
+                    .getDatabases()
+                    .getOrElse(new ArrayList<>())
+                    .isEmpty();
             if (ddl && keepsTwoX(extension)) {
                 elcore.configure(task -> task.finalizedBy(elcoreDdl));
                 elcoreDdl.configure(task -> task.mustRunAfter(elcore));
-                // The schema is a resource: it is there before the resources are copied.
-                evaluated.getTasks().matching(t -> t.getName().equals("processResources"))
-                        .configureEach(t -> t.dependsOn(elcoreDdl));
+                // The schema is a resource: it is there before the resources are copied - in a
+                // build that generates before it compiles. One that turned that off generates
+                // only when elcore is run, and the DDL with it: elcoreDdl loads the model, and a
+                // remote diagram (resource:) would be fetched again by every build.
+                if (Boolean.TRUE.equals(extension.getGenerateBeforeCompile().get())) {
+                    evaluated
+                            .getTasks()
+                            .matching(t -> t.getName().equals("processResources"))
+                            .configureEach(t -> t.dependsOn(elcoreDdl));
+                }
             }
 
             // The client written with the server, where the build asks for it:
