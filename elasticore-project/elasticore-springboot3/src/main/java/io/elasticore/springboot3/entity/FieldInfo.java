@@ -116,7 +116,8 @@ public final class FieldInfo<T> {
     /**
      * Builds a Specification for the given operation and value, optionally checking for empty input.
      * If checkEmpty is true and value is null, an empty string, or an empty collection,
-     * it returns a Specification that always evaluates to true (cb.conjunction()).
+     * it returns a Specification that always evaluates to true (cb.conjunction()) - except for
+     * IS_NULL and IS_NOT_NULL, which take no value: theirs is always null, and the condition stands.
      *
      * @param op         the filtering operation
      * @param value      the value to compare
@@ -125,9 +126,12 @@ public final class FieldInfo<T> {
      */
     public Specification<T> where(Op op, Object value, boolean checkEmpty) {
 
-        if (checkEmpty && (value == null ||
-                (value instanceof String && ((String) value).trim().isEmpty()) ||
-                (value instanceof Collection<?> && ((Collection<?>) value).isEmpty()))) {
+        boolean takesValue = op != Op.IS_NULL && op != Op.IS_NOT_NULL;
+        if (checkEmpty
+                && takesValue
+                && (value == null
+                        || (value instanceof String s && s.trim().isEmpty())
+                        || (value instanceof Collection<?> c && c.isEmpty()))) {
             return (root, query, cb) -> cb.conjunction();
         }
 
