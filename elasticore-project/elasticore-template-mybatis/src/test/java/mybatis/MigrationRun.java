@@ -149,6 +149,17 @@ final class MigrationRun {
         assertEquals(null, comment(c, db, "mig_note", "memo"));
         assertEquals("the body", comment(c, db, "mig_note", "body"));
         assertEquals("one more", comment(c, db, "mig_note", "extra"));
+
+        // Comments off, a change, and on again: the state holds none, the database still does. Each is
+        // said as new, and runs whatever the database holds.
+        Schema forgotten = commented(null, null, null, true);
+        execute(c, SchemaDiff.render(SchemaDiff.between(forgotten, commented("again", null, "the body", true)), db, "on"));
+        assertEquals("again", comment(c, db, "mig_note", "title"));
+        assertEquals("the body", comment(c, db, "mig_note", "body"));
+        // A state that says memo has a comment the database does not: removing it runs all the same.
+        Schema stale = commented("again", "a memo", "the body", true);
+        execute(c, SchemaDiff.render(SchemaDiff.between(stale, commented("again", null, "the body", true)), db, "drop"));
+        assertEquals(null, comment(c, db, "mig_note", "memo"));
     }
 
     /** A column's comment as the database keeps it, or null for none (Oracle keeps '' as none). */

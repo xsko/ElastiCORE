@@ -35,28 +35,36 @@ public class ColumnCommentTest {
         return Column.of("name", ColumnType.TEXT).length(40).comment(comment);
     }
 
+    private static final String ITEM_NAME =
+            "EXISTS (SELECT 1 FROM sys.extended_properties WHERE name = N'MS_Description'"
+                    + " AND major_id = OBJECT_ID(@s + N'.item') AND minor_id = COLUMNPROPERTY(OBJECT_ID(@s + N'.item'), N'name',"
+                    + " 'ColumnId'))";
+
+    private static final String ITEM_NAME_LEVELS = "@level0type = N'SCHEMA', @level0name = @s, @level1type = N'TABLE',"
+            + " @level1name = N'item', @level2type = N'COLUMN', @level2name = N'name'";
+
     @Test
     public void eachDatabaseSaysItInItsOwnWordsWithTheQuoteDoubled() {
         assertEquals(
                 "COMMENT ON COLUMN item.name IS 'the item''s name'",
-                Database.H2.comment("item", "name", "the item's name", false));
+                Database.H2.comment("item", "name", "the item's name"));
         assertEquals(
                 "COMMENT ON COLUMN item.name IS 'the item''s name'",
-                Database.POSTGRESQL.comment("item", "name", "the item's name", true));
+                Database.POSTGRESQL.comment("item", "name", "the item's name"));
         assertEquals(
                 "COMMENT ON COLUMN item.name IS 'the item''s name'",
-                Database.ORACLE.comment("item", "name", "the item's name", false));
+                Database.ORACLE.comment("item", "name", "the item's name"));
+        // SQL Server: updated where the database has one, added where it has none - whatever the state says -
+        // in the login's default schema where the table names none.
+        String args = "@name = N'MS_Description', @value = N'the item''s name', " + ITEM_NAME_LEVELS;
         assertEquals(
-                "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'the item''s name',"
-                        + " @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'item',"
-                        + " @level2type = N'COLUMN', @level2name = N'name'",
-                Database.SQLSERVER.comment("item", "name", "the item's name", false));
-        // A table in a schema of its own is in that schema on SQL Server, and one that had a comment is updated.
-        assertEquals(
-                "EXEC sp_updateextendedproperty @name = N'MS_Description', @value = N'x', @level0type = N'SCHEMA',"
-                        + " @level0name = N'acct', @level1type = N'TABLE', @level1name = N'ledger', @level2type = N'COLUMN',"
-                        + " @level2name = N'memo'",
-                Database.SQLSERVER.comment("acct.ledger", "memo", "x", true));
+                "DECLARE @s sysname = SCHEMA_NAME() IF " + ITEM_NAME + " EXEC sp_updateextendedproperty " + args
+                        + " ELSE EXEC sp_addextendedproperty " + args,
+                Database.SQLSERVER.comment("item", "name", "the item's name"));
+        // A table in a schema of its own is in that schema.
+        String ledger = Database.SQLSERVER.comment("acct.ledger", "memo", "x");
+        assertTrue(ledger.startsWith("DECLARE @s sysname = N'acct' IF EXISTS"), ledger);
+        assertTrue(ledger.contains("OBJECT_ID(@s + N'.ledger')") && ledger.contains("@level1name = N'ledger'"), ledger);
     }
 
     @Test
@@ -65,10 +73,10 @@ public class ColumnCommentTest {
         assertEquals("COMMENT ON COLUMN item.name IS NULL", Database.POSTGRESQL.dropComment("item", "name"));
         // Oracle has no NULL there; its empty comment is none.
         assertEquals("COMMENT ON COLUMN item.name IS ''", Database.ORACLE.dropComment("item", "name"));
+        // Dropped only where there is one.
         assertEquals(
-                "EXEC sp_dropextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA',"
-                        + " @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'item', @level2type = N'COLUMN',"
-                        + " @level2name = N'name'",
+                "DECLARE @s sysname = SCHEMA_NAME() IF " + ITEM_NAME
+                        + " EXEC sp_dropextendedproperty @name = N'MS_Description', " + ITEM_NAME_LEVELS,
                 Database.SQLSERVER.dropComment("item", "name"));
     }
 
@@ -106,21 +114,24 @@ public class ColumnCommentTest {
         SchemaDiff.Change added = only(of(false, name(null)), of(true, name("name")));
         assertTrue(added.safe);
         assertEquals("comment of item.name", added.description);
-        assertTrue(added.sql(Database.SQLSERVER).get(0).startsWith("EXEC sp_addextendedproperty"));
+        assertTrue(added.sql(Database.SQLSERVER).get(0).contains("ELSE EXEC sp_addextendedproperty"));
 
         SchemaDiff.Change changed = only(of(true, name("name")), of(true, name("display name")));
         assertTrue(changed.safe);
         assertEquals(
                 "COMMENT ON COLUMN item.name IS 'display name'",
                 changed.sql(Database.H2).get(0));
-        assertTrue(changed.sql(Database.SQLSERVER).get(0).startsWith("EXEC sp_updateextendedproperty"));
+        // Added or changed, the same statement on SQL Server: the database says which it is.
+        assertEquals(
+                Database.SQLSERVER.comment("item", "name", "display name"),
+                changed.sql(Database.SQLSERVER).get(0));
 
         SchemaDiff.Change removed = only(of(true, name("name")), of(true, name(null)));
         assertTrue(removed.safe);
         assertEquals(
                 "COMMENT ON COLUMN item.name IS ''",
                 removed.sql(Database.ORACLE).get(0));
-        assertTrue(removed.sql(Database.SQLSERVER).get(0).startsWith("EXEC sp_dropextendedproperty"));
+        assertTrue(removed.sql(Database.SQLSERVER).get(0).contains(" EXEC sp_dropextendedproperty"));
 
         // Not a storage change: the same comment, and a type change beside it, are their own.
         assertTrue(SchemaDiff.between(of(true, name("name")), of(true, name("name")))

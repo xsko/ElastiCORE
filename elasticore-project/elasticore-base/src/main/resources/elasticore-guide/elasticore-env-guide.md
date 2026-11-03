@@ -965,7 +965,7 @@ elasticore {
 }
 ```
 
-**Column comments** (`comments = true`): each column's label - the field's `-- label`, which the entity carries as Hibernate's `@Comment` - is said to the database: `COMMENT ON COLUMN` on H2, PostgreSQL and Oracle, the `MS_Description` property on SQL Server. A domain turns it on or off with `ddl.comments` in its env.yml. A label that changes is a migration that runs as written. Off by default, because a state written without comments gets every label in one migration the first time it is on. A label longer than Oracle keeps (4000 bytes in UTF-8) or SQL Server (7500 bytes) stops the run. Columns only: an entity's label is not written.
+**Column comments** (`comments = true`): each column's label - the field's `-- label`, which the entity carries as Hibernate's `@Comment` - is said to the database: `COMMENT ON COLUMN` on H2, PostgreSQL and Oracle, the `MS_Description` property on SQL Server. A domain turns it on or off with `ddl.comments` in its env.yml. A label that changes is a migration that runs as written. Off by default, because a state written without comments gets every label in one migration the first time it is on. A label longer than Oracle keeps (4000 bytes in UTF-8) or SQL Server (7500 bytes) stops the run. Turning it off leaves the comments already in the database; no migration removes them. Columns only: an entity's label is not written.
 
 **What is produced** (`src/main/resources/`)
 

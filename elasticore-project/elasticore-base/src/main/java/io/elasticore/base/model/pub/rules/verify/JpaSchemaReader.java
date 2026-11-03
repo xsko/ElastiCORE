@@ -752,11 +752,14 @@ public final class JpaSchemaReader {
         return out;
     }
 
-    /** The field's Hibernate @Comment - what the DSL's label becomes - or null; a quote escaped in the literal is a quote. */
+    /**
+     * The field's Hibernate @Comment - what the DSL's label becomes - or null. What the literal
+     * escapes is itself: a quote and a backslash in Java and Kotlin, and Kotlin's dollar sign too.
+     */
     private static String comment(JField f) {
         OrmMapping.Anno c = f.anno("Comment");
         String text = c == null ? null : text(c.arg("value"), null);
-        return text == null || text.trim().isEmpty() ? null : text.replaceAll("\\\\([\"\\\\])", "$1");
+        return text == null || text.trim().isEmpty() ? null : text.replaceAll("\\\\([\"\\\\$])", "$1");
     }
 
     private static List<OrmMapping.Anno> overrideAnnos(JField f) {

@@ -140,13 +140,13 @@ public final class MyBatisTables {
         return t;
     }
 
-    /** A value's column in the shared words: the JDBC type MyBatis binds it as, its size, an enum's code length. */
     /** A field's label: its column's comment with ddl comments on (DdlRun leaves it out otherwise). */
     private static String label(FieldSpec f) {
         String label = f.label();
         return label == null || label.trim().isEmpty() ? null : label.trim();
     }
 
+    /** A value's column in the shared words: the JDBC type MyBatis binds it as, its size, an enum's code length. */
     static Column column(EntitySpec e, FieldSpec f, String name) {
         String jdbc = MyBatisSql.jdbcType(e, f);
         switch (jdbc) {

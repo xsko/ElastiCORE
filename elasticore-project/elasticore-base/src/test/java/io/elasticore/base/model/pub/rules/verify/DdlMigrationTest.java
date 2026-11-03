@@ -506,6 +506,18 @@ public class DdlMigrationTest {
         }
     }
 
+    /** A Kotlin entity escapes a dollar in its @Comment ("\$"): the comment is the label as written. */
+    @Test
+    public void aKotlinEntitysCommentIsTheLabelAsWritten() throws Exception {
+        File project = project(labelled("costs $5 \"a\" month"), "jpa");
+        System.setProperty("elasticore.language", "kotlin");
+        System.setProperty(DdlConfig.DATABASES, "h2");
+        System.setProperty(DdlConfig.COMMENTS, "true");
+        String log = run(project);
+        String h2 = read(new File(project, "src/main/resources/db/schema-h2.sql"));
+        assertTrue(h2.contains("COMMENT ON COLUMN note.title IS 'costs $5 \"a\" month';"), h2 + log);
+    }
+
     @Test
     public void withCommentsOffNoLabelIsSaidUnlessTheDomainAsks() throws Exception {
         for (String mode : new String[] {"jpa", "mybatis"}) {

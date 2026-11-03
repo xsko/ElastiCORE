@@ -965,7 +965,7 @@ elasticore {
 }
 ```
 
-**컬럼 주석** (`comments = true`): 각 컬럼의 라벨 - 필드의 `-- 라벨`, 엔티티에는 Hibernate 의 `@Comment` 로 실림 - 을 DB 에 알립니다: H2·PostgreSQL·Oracle 은 `COMMENT ON COLUMN`, SQL Server 는 `MS_Description` 속성. 도메인은 env.yml 의 `ddl.comments` 로 켜고 끕니다. 라벨이 바뀌면 그대로 실행되는 마이그레이션이 됩니다. 기본이 꺼짐인 것은, 주석 없이 쓰인 상태가 처음 켤 때 모든 라벨을 한 마이그레이션으로 받기 때문입니다. Oracle 이 담는 것(UTF-8 로 4000 바이트)이나 SQL Server(7500 바이트)보다 긴 라벨은 실행을 멈춥니다. 컬럼만입니다: 엔티티의 라벨은 쓰지 않습니다.
+**컬럼 주석** (`comments = true`): 각 컬럼의 라벨 - 필드의 `-- 라벨`, 엔티티에는 Hibernate 의 `@Comment` 로 실림 - 을 DB 에 알립니다: H2·PostgreSQL·Oracle 은 `COMMENT ON COLUMN`, SQL Server 는 `MS_Description` 속성. 도메인은 env.yml 의 `ddl.comments` 로 켜고 끕니다. 라벨이 바뀌면 그대로 실행되는 마이그레이션이 됩니다. 기본이 꺼짐인 것은, 주석 없이 쓰인 상태가 처음 켤 때 모든 라벨을 한 마이그레이션으로 받기 때문입니다. Oracle 이 담는 것(UTF-8 로 4000 바이트)이나 SQL Server(7500 바이트)보다 긴 라벨은 실행을 멈춥니다. 끄면 DB 에 이미 있는 주석은 그대로 남습니다 - 지우는 마이그레이션은 없습니다. 컬럼만입니다: 엔티티의 라벨은 쓰지 않습니다.
 
 **만들어지는 것** (`src/main/resources/`)
 

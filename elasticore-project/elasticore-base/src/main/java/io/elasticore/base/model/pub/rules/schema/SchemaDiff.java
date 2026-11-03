@@ -245,11 +245,7 @@ public final class SchemaDiff {
         String was = old == null ? null : old.comment;
         if (!t.comments() || java.util.Objects.equals(was, c.comment)) return;
         for (Database db : Database.values()) {
-            ch.sql(
-                    db,
-                    c.comment == null
-                            ? db.dropComment(t.name, c.name)
-                            : db.comment(t.name, c.name, c.comment, was != null));
+            ch.sql(db, c.comment == null ? db.dropComment(t.name, c.name) : db.comment(t.name, c.name, c.comment));
         }
     }
 

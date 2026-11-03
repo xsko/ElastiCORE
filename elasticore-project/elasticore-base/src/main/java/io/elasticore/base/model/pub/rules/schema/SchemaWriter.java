@@ -54,7 +54,7 @@ public final class SchemaWriter {
         List<String> out = new ArrayList<String>();
         if (!t.comments()) return out;
         for (Column c : t.columns()) {
-            if (c.comment != null) out.add(db.comment(t.name, c.name, c.comment, false));
+            if (c.comment != null) out.add(db.comment(t.name, c.name, c.comment));
         }
         return out;
     }
