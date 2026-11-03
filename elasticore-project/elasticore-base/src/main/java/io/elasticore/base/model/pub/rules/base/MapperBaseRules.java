@@ -221,7 +221,10 @@ public class MapperBaseRules implements CodeRules {
         for (FieldSpec f : e.dtoFields()) {
             String ref = f.dslValue("ref");
             if (ref == null || !ref.contains(".")) continue;
-            if (SearchDtoBaseRules.flattensAReferenceById(e, f)) continue;
+            if (SearchDtoBaseRules.flattensAReferenceById(e, f)) {
+                doesNothing(e, f, "the relation is another aggregate's, held by its id field - send that id instead");
+                continue;
+            }
             if (code.isRefHidden(f.name())) continue;
 
             String[] path = ref.split("\\.");
@@ -230,7 +233,8 @@ public class MapperBaseRules implements CodeRules {
             Syntax syntax = code.syntax();
             String relRead = syntax.getter("to", relField);
 
-            // A cascading relation is written whole, so its parts are left alone.
+            // A cascading relation is written whole, so its parts are left alone. (Said once, when the model
+            // was read: ForcedRefCheck.)
             if (hasCascade(e, relField)) continue;
 
             // The relation's ENTITY type: the entity's field list names it,
@@ -252,6 +256,11 @@ public class MapperBaseRules implements CodeRules {
             // written here, to that field.
             String owningField = compatibleOrNull(code, readOnlyJoinOwner(e, relField));
             if (pk != null && pk.equals(childField) && owningField != null) {
+                doesNothing(
+                        e,
+                        f,
+                        relField + " is joined read-only on " + owningField + ", which is written instead"
+                                + " and never with a null");
                 if (!owningField.equals(f.name())) {
                     String write = code.syntax().setterRef(code.mapperTarget(owningField), owningField);
                     for (String block : new String[]{REV_TAIL, REV_TAIL_EM}) {
@@ -313,6 +322,21 @@ public class MapperBaseRules implements CodeRules {
                 .line(block, "            %s", attach);
         }
         code.line(block, "        }");
+        // @forceupdate: no id takes the relation away - on a full update only, since a PATCH skips what it
+        // does not send. As MapperSrcPublisher writes it.
+        if (f.hasDsl("forceupdate")) {
+            code.line(block, "        else if(!isSkipNull){")
+                    .line(block, "            %s", syntax.statement(syntax.setter(target, relField, "null")))
+                    .line(block, "        }");
+        }
+    }
+
+    /** A @ref with @forceupdate whose relation this mapper does not write: said, as it clears nothing. */
+    private static void doesNothing(EntitySpec e, FieldSpec f, String why) {
+        if (!f.hasDsl("forceupdate")) return;
+        io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
+                "[%s] %s.%s @ref(%s) @forceupdate does nothing: %s",
+                e.domainClassName(), e.dtoClassName(), f.name(), f.dslValue("ref"), why));
     }
 
     /**
