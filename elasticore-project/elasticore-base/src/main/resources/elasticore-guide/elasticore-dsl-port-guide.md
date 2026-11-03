@@ -746,6 +746,9 @@ The sort information is extracted from the input object automatically to build t
 
 sortCode is appended to the end of the query after the conditional SQL processing is finished. It is appended only to SQL that has condition blocks (`/* if:... */`);
 for SQL without condition blocks, the sort information is not used.
+If the query has its own `ORDER BY` (at its top level - not in parentheses, quotes or comments), the requested terms go first and its own stay after them as tie breakers;
+if it has none but ends with `LIMIT`, `OFFSET` or `FETCH`, the clause goes before them (Since: 3.0.261103):
+`ORDER BY reg_date DESC LIMIT 10` + `amount-` -> `ORDER BY amount DESC, reg_date DESC LIMIT 10`.
 
 **Allowed values for a field** (Since: 3.0, 2.2.261014): only column names and directions are allowed.
 - Column name: letters, digits, `_` and `$`; the first character is a letter or `_` (after that, combining characters such as Thai or Hindi vowel signs are also allowed).
@@ -1096,8 +1099,8 @@ query: |
 
 ### Using sortCode
 - Add a `sortCode` field to the input DTO: in the format `"name+,createdDate-"`
-- The SQL needs no ORDER BY clause (the framework adds it automatically). If you write an ORDER BY in SQL that receives a sort value, another
-  ORDER BY is appended after it and causes an error, so do not write one
+- The SQL needs no ORDER BY clause (the framework adds it automatically). Write one for the default order: when a sort value comes,
+  its terms go first and the SQL's own terms break the ties; when none comes, the SQL's own order applies (see 3.6)
 - The client can change the sort criteria dynamically. A value that is not a column name is refused (see 3.6)
 
 ### JEXL condition guidelines
