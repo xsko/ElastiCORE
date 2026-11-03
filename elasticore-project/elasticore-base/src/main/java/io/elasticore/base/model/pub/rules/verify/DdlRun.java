@@ -190,7 +190,7 @@ final class DdlRun {
                             p.domain + " outbox"));
                 }
                 for (Schema.Sequence s : part.sequences()) schema.sequence(s);
-                for (Table t : part.tables()) schema.table(t);
+                for (Table t : part.tables()) schema.table(comments(t, p.config.comments));
             }
             if (en.getKey().isEmpty() && reader != null) {
                 List<String> rest = new ArrayList<String>();
@@ -198,16 +198,49 @@ final class DdlRun {
                 if (!rest.isEmpty()) {
                     Schema part = reader.schema(rest);
                     for (Schema.Sequence s : part.sequences()) schema.sequence(s);
-                    for (Table t : part.tables()) schema.table(t);
+                    for (Table t : part.tables()) schema.table(comments(t, project.comments));
                 }
             }
             dropForeignKeysLeaving(schema, g);
-            if (schema.isEmpty()) continue;
+            if (schema.isEmpty() || !commentsFit(schema, g)) continue;
             write(g, schema);
         }
         if (reader != null) {
             for (String w : reader.warnings()) messages.add("[elcore3] ddl: " + w);
         }
+    }
+
+    /**
+     * A table says what its columns hold only with ddl comments on for its domain: off, what the
+     * readers found is left out, so the DDL, the migrations and the state are what they were.
+     */
+    private static Table comments(Table t, boolean on) {
+        t.comments(on);
+        if (on) return t;
+        for (io.elasticore.base.model.pub.rules.schema.Column c : t.columns()) {
+            if (c.comment != null) t.replace(c.comment(null));
+        }
+        return t;
+    }
+
+    /** A comment longer than a database keeps stops the run, each one said; nothing is written for the group. */
+    private boolean commentsFit(Schema schema, Group g) {
+        boolean fit = true;
+        for (Table t : schema.tables()) {
+            for (io.elasticore.base.model.pub.rules.schema.Column c : t.columns()) {
+                if (c.comment == null) continue;
+                for (Database db : g.databases) {
+                    int bytes = db.commentBytes(c.comment);
+                    if (db.commentLimit() == 0 || bytes <= db.commentLimit()) continue;
+                    problems.add(String.format(
+                            "[elcore3] ddl: the label of %s.%s is %d bytes, more than %s keeps in a"
+                                    + " comment (%d) - shorten it; nothing was written for %s",
+                            t.name, c.name, bytes, db.title, db.commentLimit(), g.name));
+                    fit = false;
+                }
+            }
+        }
+        return fit;
     }
 
     private List<File> roots() {
@@ -234,7 +267,7 @@ final class DdlRun {
                 }
             }
             if (dropped) {
-                Table copy = new Table(t.name, t.source);
+                Table copy = new Table(t.name, t.source).comments(t.comments());
                 for (io.elasticore.base.model.pub.rules.schema.Column c : t.columns()) copy.column(c);
                 copy.primaryKey(t.primaryKey());
                 for (Table.ForeignKey fk : keep) copy.foreignKey(fk);

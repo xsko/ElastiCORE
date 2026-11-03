@@ -192,6 +192,68 @@ public enum Database {
         }
     }
 
+    /**
+     * What a column holds, said to the database: COMMENT ON COLUMN, and on SQL
+     * Server the MS_Description property - added where the column has none yet
+     * ({@code had} false), updated where it has one.
+     */
+    public String comment(String table, String column, String text, boolean had) {
+        if (this == SQLSERVER) {
+            return "EXEC " + (had ? "sp_updateextendedproperty" : "sp_addextendedproperty")
+                    + " @name = N'MS_Description', @value = N'" + quoted(text) + "', " + columnOf(table, column);
+        }
+        return "COMMENT ON COLUMN " + table + "." + column + " IS '" + quoted(text) + "'";
+    }
+
+    /** A column that no longer says what it holds. Oracle reads '' as no comment; it has no NULL there. */
+    public String dropComment(String table, String column) {
+        switch (this) {
+            case SQLSERVER:
+                return "EXEC sp_dropextendedproperty @name = N'MS_Description', " + columnOf(table, column);
+            case ORACLE:
+                return "COMMENT ON COLUMN " + table + "." + column + " IS ''";
+            default:
+                return "COMMENT ON COLUMN " + table + "." + column + " IS NULL";
+        }
+    }
+
+    /**
+     * The most bytes a comment may have here, or 0 for no limit worth saying: Oracle keeps 4000
+     * (counted in UTF-8), SQL Server's property 7500 (an NVARCHAR, two bytes a character).
+     */
+    public int commentLimit() {
+        switch (this) {
+            case ORACLE:
+                return 4000;
+            case SQLSERVER:
+                return 7500;
+            default:
+                return 0;
+        }
+    }
+
+    /** The bytes the database counts of a comment. */
+    public int commentBytes(String text) {
+        return text.getBytes(
+                        this == SQLSERVER
+                                ? java.nio.charset.StandardCharsets.UTF_16LE
+                                : java.nio.charset.StandardCharsets.UTF_8)
+                .length;
+    }
+
+    private static String quoted(String text) {
+        return text.replace("'", "''");
+    }
+
+    /** SQL Server's three levels of a column: its schema (dbo where the table names none), table, column. */
+    private static String columnOf(String table, String column) {
+        int dot = table.lastIndexOf('.');
+        String schema = dot > 0 ? table.substring(0, dot) : "dbo";
+        String name = dot > 0 ? table.substring(dot + 1) : table;
+        return "@level0type = N'SCHEMA', @level0name = N'" + schema + "', @level1type = N'TABLE', @level1name = N'"
+                + name + "', @level2type = N'COLUMN', @level2name = N'" + column + "'";
+    }
+
     public String createSequence(Schema.Sequence s) {
         return "CREATE SEQUENCE " + s.name + " START WITH " + s.start + " INCREMENT BY " + s.increment;
     }

@@ -116,6 +116,72 @@ final class MigrationRun {
         assertTrue(refused, "the unique index on name was made again after the alter");
     }
 
+    /** A table whose columns say what they hold (ddl comments on): one with a quote, one without a comment. */
+    static Schema commented(String title, String memo, String body, boolean extra) {
+        Table n = new Table("mig_note", "test").comments(true);
+        n.column(Column.of("note_id", ColumnType.BIGINT).nullable(false).identity(true));
+        n.column(Column.of("title", ColumnType.TEXT).length(100).comment(title));
+        n.column(Column.of("memo", ColumnType.TEXT).length(200).comment(memo));
+        n.column(Column.of("body", ColumnType.TEXT).length(200).comment(body));
+        if (extra) n.column(Column.of("extra", ColumnType.TEXT).length(50).comment("one more"));
+        n.primaryKey("note_id");
+        Schema s = new Schema();
+        s.table(n);
+        return s;
+    }
+
+    /**
+     * The comments of a new table, then a change of them - one changed, one removed, one added
+     * where there was none, and a new column's - as the database's own catalog reads them.
+     */
+    static void comments(Connection c, Database db) throws Exception {
+        Schema first = commented("the note's title", "a memo", null, false);
+        execute(c, SchemaWriter.body(first, db));
+        assertEquals("the note's title", comment(c, db, "mig_note", "title"));
+        assertEquals("a memo", comment(c, db, "mig_note", "memo"));
+        assertEquals(null, comment(c, db, "mig_note", "body"));
+
+        Schema second = commented("the title", null, "the body", true);
+        List<SchemaDiff.Change> changes = SchemaDiff.between(first, second);
+        for (SchemaDiff.Change ch : changes) assertTrue(ch.safe, ch.description + " should run as written");
+        execute(c, SchemaDiff.render(changes, db, "test"));
+        assertEquals("the title", comment(c, db, "mig_note", "title"));
+        assertEquals(null, comment(c, db, "mig_note", "memo"));
+        assertEquals("the body", comment(c, db, "mig_note", "body"));
+        assertEquals("one more", comment(c, db, "mig_note", "extra"));
+    }
+
+    /** A column's comment as the database keeps it, or null for none (Oracle keeps '' as none). */
+    private static String comment(Connection c, Database db, String table, String column) throws Exception {
+        String sql;
+        switch (db) {
+            case POSTGRESQL:
+                sql = "SELECT d.description FROM pg_description d JOIN pg_class t ON t.oid = d.objoid"
+                        + " JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.objsubid"
+                        + " WHERE t.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())"
+                        + " AND t.relname = ? AND a.attname = ?";
+                break;
+            case ORACLE:
+                sql = "SELECT comments FROM user_col_comments WHERE table_name = UPPER(?) AND column_name = UPPER(?)";
+                break;
+            case SQLSERVER:
+                sql = "SELECT CAST(p.value AS NVARCHAR(4000)) FROM sys.extended_properties p"
+                        + " JOIN sys.columns col ON col.object_id = p.major_id AND col.column_id = p.minor_id"
+                        + " WHERE p.name = 'MS_Description' AND OBJECT_NAME(p.major_id) = ? AND col.name = ?";
+                break;
+            default:
+                sql = "SELECT remarks FROM information_schema.columns WHERE table_name = UPPER(?) AND column_name = UPPER(?)";
+        }
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                String text = rs.next() ? rs.getString(1) : null;
+                return text == null || text.isEmpty() ? null : text;
+            }
+        }
+    }
+
     private static int size(DatabaseMetaData md, Database db, String table, String column) throws Exception {
         for (String t : Arrays.asList(table, table.toUpperCase(Locale.ROOT))) {
             for (String col : Arrays.asList(column, column.toUpperCase(Locale.ROOT))) {

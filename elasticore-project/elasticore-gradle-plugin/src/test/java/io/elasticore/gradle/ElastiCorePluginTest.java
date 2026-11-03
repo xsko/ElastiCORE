@@ -150,6 +150,28 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("ddl comments are passed when they are on, and not otherwise")
+    public void theDdlCommentsArePassedWhenOn() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { ddl { databases = ['h2']; comments = true } }",
+                REPORTER);
+        assertTrue(reportOf(run("reportElcore")).contains("elasticore.ddl.comments=true"));
+
+        // Off, as by default: a state written without comments stays without them.
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { ddl { databases = ['h2']; comments = false } }",
+                REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.ddl.comments"), reported);
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { ddl { databases = ['h2'] } }", REPORTER);
+        reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.ddl.comments"), reported);
+    }
+
+    @Test
     @DisplayName("the guides' language is passed, and only when one is given")
     public void theGuidesLanguageIsPassed() throws IOException {
         writeSettings("single");

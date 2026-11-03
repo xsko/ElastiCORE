@@ -21,9 +21,28 @@ public final class Column {
     public final boolean identity;
     /** Text known to be ASCII - an enum's code - which SQL Server keeps in VARCHAR, not NVARCHAR. */
     public final boolean ascii;
+    /**
+     * What the column holds, in the model's words (its label, Hibernate's @Comment), or null. Set only
+     * with ddl comments on; not part of how the database stores the column.
+     */
+    public final String comment;
 
     public Column(String name, ColumnType type, int length, int precision, int scale, boolean nullable,
                   boolean identity, boolean ascii) {
+        this(name, type, length, precision, scale, nullable, identity, ascii, null);
+    }
+
+    public Column(
+            String name,
+            ColumnType type,
+            int length,
+            int precision,
+            int scale,
+            boolean nullable,
+            boolean identity,
+            boolean ascii,
+            String comment) {
+        this.comment = comment;
         this.name = name;
         this.type = type;
         this.length = length;
@@ -39,26 +58,31 @@ public final class Column {
     }
 
     public Column length(int length) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii);
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
     }
 
     public Column decimal(int precision, int scale) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii);
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
     }
 
     public Column nullable(boolean nullable) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii);
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
     }
 
     public Column identity(boolean identity) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii);
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
     }
 
     public Column ascii(boolean ascii) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii);
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
     }
 
-    /** A column of another name holding the same - a foreign key holding a key. */
+    /** The same column, said to hold this; null for nothing said. */
+    public Column comment(String comment) {
+        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+    }
+
+    /** A column of another name holding the same - a foreign key holding a key. What the key says is the key's. */
     public Column named(String other) {
         return new Column(other, type, length, precision, scale, nullable, false, ascii);
     }

@@ -288,6 +288,9 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (extension.getDdl().getMigration().isPresent()) {
             task.systemProperty("elasticore.ddl.migration", extension.getDdl().getMigration().get());
         }
+        if (Boolean.TRUE.equals(extension.getDdl().getComments().getOrElse(false))) {
+            task.systemProperty("elasticore.ddl.comments", "true");
+        }
 
         // Once, to start the history over a Flyway history of the project's own: -PddlBaseline.
         passThrough(project, task, "ddlBaseline", "elasticore.ddl.baseline");

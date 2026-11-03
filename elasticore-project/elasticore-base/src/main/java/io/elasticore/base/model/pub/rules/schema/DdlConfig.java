@@ -15,33 +15,38 @@ import java.util.Locale;
  *     ddl {
  *         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver
  *         migration = 'flyway'                   // or none: the schema only
+ *         comments = true                        // each column's label as its comment
  *     }
  * }
  * </pre>
  * and a domain changes what it needs in its env.yml - {@code ddl: false} to
  * leave its tables out (a domain that reads tables another system owns), or
- * any of {@code ddl.databases}, {@code ddl.migration}, and {@code ddl.separate:
- * true} for a domain whose tables are in a database of their own (its files
- * under db/{domain}/).
+ * any of {@code ddl.databases}, {@code ddl.migration}, {@code ddl.comments},
+ * and {@code ddl.separate: true} for a domain whose tables are in a database
+ * of their own (its files under db/{domain}/).
  */
 public final class DdlConfig {
 
     public static final String DATABASES = "elasticore.ddl.databases";
     public static final String MIGRATION = "elasticore.ddl.migration";
+    public static final String COMMENTS = "elasticore.ddl.comments";
 
     /** Off: the DDL is not written for these tables. */
-    public static final DdlConfig OFF = new DdlConfig(Collections.<Database>emptyList(), false, false);
+    public static final DdlConfig OFF = new DdlConfig(Collections.<Database>emptyList(), false, false, false);
 
     public final List<Database> databases;
     /** Whether the changes are written as Flyway migrations, with the state they build. */
     public final boolean migration;
     /** Whether the domain's tables are in a database of their own. */
     public final boolean separate;
+    /** Whether the DDL says what each column holds - its label - as a comment (ddl { comments = true }). */
+    public final boolean comments;
 
-    private DdlConfig(List<Database> databases, boolean migration, boolean separate) {
+    private DdlConfig(List<Database> databases, boolean migration, boolean separate, boolean comments) {
         this.databases = Collections.unmodifiableList(databases);
         this.migration = migration;
         this.separate = separate;
+        this.comments = comments;
     }
 
     public boolean enabled() {
@@ -52,7 +57,12 @@ public final class DdlConfig {
     public static DdlConfig global() {
         List<Database> dbs = databases(System.getProperty(DATABASES));
         if (dbs.isEmpty()) return OFF;
-        return new DdlConfig(dbs, flyway(System.getProperty(MIGRATION)), false);
+        return new DdlConfig(
+                dbs,
+                flyway(System.getProperty(MIGRATION)),
+                false,
+                Boolean.parseBoolean(
+                        String.valueOf(System.getProperty(COMMENTS)).trim()));
     }
 
     /** A source of a domain's env.yml settings by dotted key. */
@@ -73,7 +83,9 @@ public final class DdlConfig {
         String m = env.get("ddl.migration");
         boolean migration = m != null ? flyway(m) : project.migration;
         boolean separate = "true".equalsIgnoreCase(String.valueOf(env.get("ddl.separate")).trim());
-        return new DdlConfig(new ArrayList<Database>(dbs), migration, separate);
+        String c = env.get("ddl.comments");
+        boolean comments = c != null ? "true".equalsIgnoreCase(c.trim()) : project.comments;
+        return new DdlConfig(new ArrayList<Database>(dbs), migration, separate, comments);
     }
 
     /** "h2, oracle", "[postgresql, sqlserver]" - an unknown name stops the run. */

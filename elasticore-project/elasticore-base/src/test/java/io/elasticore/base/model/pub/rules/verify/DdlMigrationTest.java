@@ -35,8 +35,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class DdlMigrationTest {
 
-    private static final String[] KEYS = {"elasticore.base.path", "elasticore.rules.force", DdlConfig.DATABASES,
-            DdlConfig.MIGRATION, "elasticore.ddl.now", "elasticore.architecture", "elasticore.language"};
+    private static final String[] KEYS = {
+        "elasticore.base.path",
+        "elasticore.rules.force",
+        DdlConfig.DATABASES,
+        DdlConfig.MIGRATION,
+        DdlConfig.COMMENTS,
+        "elasticore.ddl.now",
+        "elasticore.architecture",
+        "elasticore.language"
+    };
 
     private final String[] saved = new String[KEYS.length];
     private final List<File> projects = new ArrayList<File>();
@@ -436,6 +444,119 @@ public class DdlMigrationTest {
         out.print(log);
         assertEquals(expected, code, log);
         return log;
+    }
+
+    private static String labelled(String titleLabel) {
+        return String.join(
+                "\n",
+                "entity:",
+                "  Category:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      categoryId: long @id @sequence",
+                "      name: string(50)",
+                "  Note:",
+                "    meta: entity @expose(20) @access(*=public)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      title: string(100) -- " + titleLabel,
+                "      body: string(200)",
+                "      category: Category @ManyToOne -- the note's category",
+                "");
+    }
+
+    @Test
+    public void withCommentsOnALabelIsItsColumnsCommentAndItsChangeAMigration() throws Exception {
+        for (String mode : new String[] {"jpa", "mybatis"}) {
+            File project = project(labelled("the note's title"), mode);
+            System.setProperty(DdlConfig.DATABASES, "h2,sqlserver");
+            System.setProperty(DdlConfig.MIGRATION, "flyway");
+            System.setProperty(DdlConfig.COMMENTS, "true");
+            System.setProperty("elasticore.ddl.now", "20260101000001");
+            String log = run(project);
+            String h2 = read(new File(project, "src/main/resources/db/schema-h2.sql"));
+            assertTrue(h2.contains("COMMENT ON COLUMN note.title IS 'the note''s title';"), mode + "\n" + h2 + log);
+            assertFalse(h2.contains("note.body"), mode + ": a column without a label says nothing\n" + h2);
+            // A relation's label is its join column's: the column holds this row's reference, not the key's label.
+            assertTrue(
+                    java.util.regex.Pattern.compile("COMMENT ON COLUMN note\\.category\\w* IS 'the note''s category';")
+                            .matcher(h2)
+                            .find(),
+                    mode + "\n" + h2);
+            assertTrue(read(new File(project, "src/main/resources/db/schema-sqlserver.sql"))
+                    .contains("EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'the note''s title'"));
+            File migration = new File(project, "src/main/resources/db/migration");
+            assertTrue(
+                    read(new File(migration, "h2/V20260101000001__init.sql"))
+                            .contains("COMMENT ON COLUMN note.title IS 'the note''s title';"),
+                    mode);
+            assertTrue(read(new File(migration, "schema-state.json")).contains("\"comment\" : \"the note's title\""));
+
+            Files.write(
+                    new File(project, "src/main/resources/blueprint/dgshop/model/model.yml").toPath(),
+                    labelled("the title").getBytes(StandardCharsets.UTF_8));
+            System.setProperty("elasticore.ddl.now", "20260101000002");
+            run(project);
+            String change = read(new File(migration, "h2/V20260101000002__change_note.sql"));
+            assertTrue(
+                    change.contains("-- comment of note.title\nCOMMENT ON COLUMN note.title IS 'the title';"), change);
+            assertFalse(change.contains("REVIEW"), change);
+            assertTrue(read(new File(migration, "sqlserver/V20260101000002__change_note.sql"))
+                    .contains("EXEC sp_updateextendedproperty"));
+        }
+    }
+
+    @Test
+    public void withCommentsOffNoLabelIsSaidUnlessTheDomainAsks() throws Exception {
+        for (String mode : new String[] {"jpa", "mybatis"}) {
+            File project = project(labelled("the note's title"), mode);
+            System.setProperty(DdlConfig.DATABASES, "h2");
+            System.clearProperty(DdlConfig.COMMENTS);
+            run(project);
+            String h2 = read(new File(project, "src/main/resources/db/schema-h2.sql"));
+            assertFalse(h2.contains("COMMENT ON"), mode + "\n" + h2);
+
+            // The domain turns them on where the project has them off.
+            File env = new File(project, "src/main/resources/blueprint/dgshop/env.yml");
+            String text =
+                    read(env).replace("    mode: " + mode, "    mode: " + mode + "\n    ddl:\n      comments: true");
+            Files.write(env.toPath(), text.getBytes(StandardCharsets.UTF_8));
+            run(project);
+            assertTrue(
+                    read(new File(project, "src/main/resources/db/schema-h2.sql"))
+                            .contains("COMMENT ON COLUMN note.title IS"),
+                    mode);
+        }
+    }
+
+    @Test
+    public void aCommentLongerThanADatabaseKeepsStopsTheRun() throws Exception {
+        StringBuilder label = new StringBuilder();
+        for (int i = 0; i < 1400; i++) label.append('가'); // 4200 bytes in UTF-8, 2800 in UTF-16
+        File project = project(labelled(label.toString()), "mybatis");
+        System.setProperty(DdlConfig.COMMENTS, "true");
+        System.setProperty(DdlConfig.DATABASES, "h2,sqlserver");
+        run(project);
+        assertTrue(new File(project, "src/main/resources/db/schema-h2.sql").isFile(), "SQL Server keeps 7500 bytes");
+
+        System.setProperty(DdlConfig.DATABASES, "h2,oracle");
+        assertTrue(new File(project, "src/main/resources/db/schema-h2.sql").delete());
+        String log = run(project, 1);
+        assertTrue(
+                log.contains("the label of note.title is 4200 bytes, more than Oracle 12c or later keeps in a"
+                        + " comment (4000) - shorten it; nothing was written for the project"),
+                log);
+        assertFalse(new File(project, "src/main/resources/db/schema-h2.sql").exists());
+
+        // Exactly what Oracle keeps is kept.
+        StringBuilder exact = new StringBuilder();
+        for (int i = 0; i < 1333; i++) exact.append('가');
+        exact.append('a'); // 1333 * 3 + 1 = 4000 bytes
+        Files.write(
+                new File(project, "src/main/resources/blueprint/dgshop/model/model.yml").toPath(),
+                labelled(exact.toString()).getBytes(StandardCharsets.UTF_8));
+        run(project);
+        assertTrue(new File(project, "src/main/resources/db/schema-oracle.sql").isFile());
     }
 
     private File project(String model) throws IOException {

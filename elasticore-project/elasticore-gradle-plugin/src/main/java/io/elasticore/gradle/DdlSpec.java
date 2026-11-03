@@ -12,6 +12,7 @@ import org.gradle.api.provider.Property;
  *     ddl {
  *         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver
  *         migration = 'flyway'                   // none (the default): the schema only
+ *         comments = true                        // each column's label as its comment (off by default)
  *     }
  * }
  * </pre>
@@ -21,11 +22,18 @@ import org.gradle.api.provider.Property;
  * change is db/migration/{db}/V{time}__{what}.sql, beside the state it
  * builds (schema-state.json). A domain changes what it needs in its
  * env.yml: {@code ddl: false}, {@code ddl.databases}, {@code ddl.migration},
- * {@code ddl.separate: true}.
+ * {@code ddl.comments}, {@code ddl.separate: true}.
  */
 public abstract class DdlSpec {
 
     public abstract ListProperty<String> getDatabases();
 
     public abstract Property<String> getMigration();
+
+    /**
+     * Whether each column's label is said to the database as its comment.
+     * Off by default: a state written without comments would otherwise get
+     * every one of them in its next migration.
+     */
+    public abstract Property<Boolean> getComments();
 }

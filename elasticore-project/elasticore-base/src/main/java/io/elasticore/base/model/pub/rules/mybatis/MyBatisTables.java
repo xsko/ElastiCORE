@@ -46,7 +46,7 @@ public final class MyBatisTables {
         FieldSpec pk = e.pkField();
         for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f)) {
-                Column c = column(e, f, MyBatisSql.column(f));
+                Column c = column(e, f, MyBatisSql.column(f)).comment(label(f));
                 if (f == pk) c = c.nullable(false).identity(MyBatisSql.generatedKey(pk));
                 else if (f.required()) c = c.nullable(false);
                 t.column(c);
@@ -54,12 +54,17 @@ public final class MyBatisTables {
                 // A part is required only where the value is: an optional
                 // address leaves every one of its columns empty.
                 for (MyBatisSql.Part p : MyBatisSql.parts(e, f)) {
-                    t.column(column(e, p.field, p.column).nullable(!(f.required() && p.field.required())));
+                    t.column(column(e, p.field, p.column)
+                            .nullable(!(f.required() && p.field.required()))
+                            .comment(label(p.field)));
                 }
             } else if (MyBatisSql.isToOne(e, f)) {
                 EntitySpec target = e.related(f.coreItemType());
                 if (target == null || target.pkField() == null) continue;
-                t.column(column(target, target.pkField(), MyBatisSql.foreignKey(f, target)).nullable(!f.required()));
+                // The relation's label, not the key's: the column holds this row's reference.
+                t.column(column(target, target.pkField(), MyBatisSql.foreignKey(f, target))
+                        .nullable(!f.required())
+                        .comment(label(f)));
             }
         }
         t.primaryKey(MyBatisSql.column(pk));
@@ -136,6 +141,12 @@ public final class MyBatisTables {
     }
 
     /** A value's column in the shared words: the JDBC type MyBatis binds it as, its size, an enum's code length. */
+    /** A field's label: its column's comment with ddl comments on (DdlRun leaves it out otherwise). */
+    private static String label(FieldSpec f) {
+        String label = f.label();
+        return label == null || label.trim().isEmpty() ? null : label.trim();
+    }
+
     static Column column(EntitySpec e, FieldSpec f, String name) {
         String jdbc = MyBatisSql.jdbcType(e, f);
         switch (jdbc) {

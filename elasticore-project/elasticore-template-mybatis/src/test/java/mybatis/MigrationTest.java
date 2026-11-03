@@ -19,6 +19,13 @@ public class MigrationTest {
         }
     }
 
+    @Test
+    public void commentsOnH2() throws Exception {
+        try (Connection c = DriverManager.getConnection("jdbc:h2:mem:comments" + System.nanoTime() + ";DB_CLOSE_DELAY=-1")) {
+            MigrationRun.comments(c, Database.H2);
+        }
+    }
+
     /** The same on Oracle, PostgreSQL and SQL Server, each in a place of its own (TestDatabase). */
     @Tag("database")
     public static class OnDatabasesTest {
@@ -28,6 +35,15 @@ public class MigrationTest {
             try (Connection c = DriverManager.getConnection(p.get("spring.datasource.url"),
                     p.get("spring.datasource.username"), p.get("spring.datasource.password"))) {
                 MigrationRun.on(c, db);
+            }
+        }
+
+        /** The comments of a table and their change, read back from the database's catalog. */
+        private static void comments(String vendor, Database db) throws Exception {
+            Map<String, String> p = TestDatabase.fresh(vendor, "comments");
+            try (Connection c = DriverManager.getConnection(p.get("spring.datasource.url"),
+                    p.get("spring.datasource.username"), p.get("spring.datasource.password"))) {
+                MigrationRun.comments(c, db);
             }
         }
 
@@ -47,6 +63,24 @@ public class MigrationTest {
         @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_SQLSERVER_URL", matches = ".+")
         public void onSqlServer() throws Exception {
             run("sqlserver", Database.SQLSERVER);
+        }
+
+        @Test
+        @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_POSTGRESQL_URL", matches = ".+")
+        public void commentsOnPostgreSql() throws Exception {
+            comments("postgresql", Database.POSTGRESQL);
+        }
+
+        @Test
+        @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_ORACLE_URL", matches = ".+")
+        public void commentsOnOracle() throws Exception {
+            comments("oracle", Database.ORACLE);
+        }
+
+        @Test
+        @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_SQLSERVER_URL", matches = ".+")
+        public void commentsOnSqlServer() throws Exception {
+            comments("sqlserver", Database.SQLSERVER);
         }
     }
 }

@@ -24,6 +24,7 @@ public final class SchemaWriter {
         for (Table t : schema.tables()) {
             if (sb.length() > 0) sb.append("\n");
             sb.append(createTable(t, db));
+            for (String comment : comments(t, db)) sb.append(comment).append(";\n");
         }
         StringBuilder keys = new StringBuilder();
         for (Table t : schema.tables()) {
@@ -44,6 +45,16 @@ public final class SchemaWriter {
         for (Table t : schema.tables()) {
             int dot = t.name.lastIndexOf('.');
             if (dot > 0) out.add(t.name.substring(0, dot));
+        }
+        return out;
+    }
+
+    /** What the columns of a new table hold, one statement each: none without ddl comments. */
+    public static List<String> comments(Table t, Database db) {
+        List<String> out = new ArrayList<String>();
+        if (!t.comments()) return out;
+        for (Column c : t.columns()) {
+            if (c.comment != null) out.add(db.comment(t.name, c.name, c.comment, false));
         }
         return out;
     }

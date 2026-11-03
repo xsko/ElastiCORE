@@ -21,9 +21,21 @@ public final class Table {
     private final List<ForeignKey> foreignKeys = new ArrayList<ForeignKey>();
     private final List<Index> indexes = new ArrayList<Index>();
 
+    /** Whether the DDL says what its columns hold (ddl comments on for its domain): only then are they compared. */
+    private boolean comments;
+
     public Table(String name, String source) {
         this.name = name;
         this.source = source;
+    }
+
+    public Table comments(boolean comments) {
+        this.comments = comments;
+        return this;
+    }
+
+    public boolean comments() {
+        return comments;
     }
 
     /** Adds a column; one already there by the name is kept (a relation read through a column the row holds). */

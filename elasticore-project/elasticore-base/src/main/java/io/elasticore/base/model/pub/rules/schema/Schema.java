@@ -49,6 +49,7 @@ public final class Schema {
             return t;
         }
         for (Column c : t.columns()) had.column(c);
+        if (t.comments()) had.comments(true);
         for (Table.ForeignKey fk : t.foreignKeys()) had.foreignKey(fk);
         for (Table.Index i : t.indexes()) had.index(i);
         if (had.primaryKey().isEmpty()) had.primaryKey(t.primaryKey());
@@ -176,6 +177,8 @@ public final class Schema {
                 if (!c.nullable) cn.put("nullable", false);
                 if (c.identity) cn.put("identity", true);
                 if (c.ascii) cn.put("ascii", true);
+                // Only with ddl comments on: a state of a history without them reads as it did.
+                if (c.comment != null) cn.put("comment", c.comment);
             }
             ArrayNode pk = tn.putArray("primaryKey");
             for (String p : t.primaryKey()) pk.add(p);
@@ -226,10 +229,16 @@ public final class Schema {
         for (JsonNode tn : root.path("tables")) {
             Table t = new Table(tn.path("name").asText(), tn.path("source").asText(""));
             for (JsonNode cn : tn.path("columns")) {
-                t.column(new Column(cn.path("name").asText(), ColumnType.valueOf(cn.path("type").asText()),
-                        cn.path("length").asInt(0), cn.path("precision").asInt(0), cn.path("scale").asInt(0),
-                        cn.path("nullable").asBoolean(true), cn.path("identity").asBoolean(false),
-                        cn.path("ascii").asBoolean(false)));
+                t.column(new Column(
+                        cn.path("name").asText(),
+                        ColumnType.valueOf(cn.path("type").asText()),
+                        cn.path("length").asInt(0),
+                        cn.path("precision").asInt(0),
+                        cn.path("scale").asInt(0),
+                        cn.path("nullable").asBoolean(true),
+                        cn.path("identity").asBoolean(false),
+                        cn.path("ascii").asBoolean(false),
+                        cn.hasNonNull("comment") ? cn.get("comment").asText() : null));
             }
             List<String> pk = new ArrayList<String>();
             for (JsonNode p : tn.path("primaryKey")) pk.add(p.asText());

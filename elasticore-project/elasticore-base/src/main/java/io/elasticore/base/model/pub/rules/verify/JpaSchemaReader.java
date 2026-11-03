@@ -701,6 +701,8 @@ public final class JpaSchemaReader {
                 boolean required = (jc != null && "false".equals(String.valueOf(jc.arg("nullable"))))
                         || "false".equals(String.valueOf(anyArg(f, "optional"))) || f.has("NotNull");
                 Column col = k.column.named(name).nullable(!required);
+                // Hibernate puts a relation's @Comment on its join column when there is one.
+                if (keys.size() == 1) col = col.comment(comment(f));
                 out.add(new Mapped(col, f.has("Id"), tableName(target), k.column.name, physical(f.name), audited));
             }
             return out;
@@ -743,11 +745,18 @@ public final class JpaSchemaReader {
         boolean key = f.has("Id");
         boolean required = key || f.primitive || f.has("NotNull") || f.has("NotBlank") || f.has("NotEmpty")
                 || (column != null && "false".equals(String.valueOf(column.arg("nullable"))));
-        c = c.nullable(!required);
+        c = c.nullable(!required).comment(comment(f));
         OrmMapping.Anno gv = f.anno("GeneratedValue");
         if (key && gv != null && String.valueOf(gv.arg("strategy")).endsWith("IDENTITY")) c = c.identity(true);
         out.add(new Mapped(c, key, null, null, name, audited));
         return out;
+    }
+
+    /** The field's Hibernate @Comment - what the DSL's label becomes - or null; a quote escaped in the literal is a quote. */
+    private static String comment(JField f) {
+        OrmMapping.Anno c = f.anno("Comment");
+        String text = c == null ? null : text(c.arg("value"), null);
+        return text == null || text.trim().isEmpty() ? null : text.replaceAll("\\\\([\"\\\\])", "$1");
     }
 
     private static List<OrmMapping.Anno> overrideAnnos(JField f) {
