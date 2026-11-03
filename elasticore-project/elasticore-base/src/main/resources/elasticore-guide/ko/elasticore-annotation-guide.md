@@ -438,6 +438,15 @@ boardTypeName: string @ref(board.boardType.name)
 DSL 경고가 납니다 (`... is left out: @ref(assignee.password) reads a @password ...`). DDD·헥사고날 번들은 다른 애그리거트로
 가는 `@ref` 를 원래 모두 읽기 전용으로 둡니다. 2.x 호환 번들(`jpa-springboot`)은 그대로입니다.
 
+#### @forceupdate - 값 없이 온 필드도 씀
+수정(DTO -> 엔티티) 때 매퍼는 값 없이 온 필드를 건너뜁니다. `@forceupdate` 면 그래도 쓰므로 `null` 이 컬럼을 비웁니다. 관계의 키를 가리키는 `@ref` 에서는 관계를 뗍니다:
+```yaml
+assigneeId: string(20) @ref(assignee.memberId) @forceupdate   # id 가 없으면: 그 티켓은 이제 담당자가 없음
+```
+- 전체 수정(`isSkipNull = false`)일 때만입니다: PATCH 는 보내지 않은 것을 건너뛰므로 관계가 남습니다. `null` 과 `""` 는 붙일 때처럼 둘 다 id 없음입니다.
+- 두 생성기 모두 생성 때 거절: 필수 관계(`!` 또는 `@notnull`), 관계의 단일 키가 아닌 `@ref`, `relation.key` 보다 깊은 경로.
+- 비운 것이 행에 닿지 않는 곳에서는 아무 일도 하지 않는다고 알림: cascade 인 관계(통째로 씀), 다른 필드의 컬럼에 읽기 전용으로 조인한 관계(`@joinBy`: 행은 그대로 - 그 필드를 대신 보낼 것), `@updatable(false)` 인 관계(만들 때의 것을 유지), id 필드로 잡은 다른 애그리거트의 DDD 참조(그 id 를 보낼 것), 앞부분이 템플릿의 관계가 아닌 `@ref`.
+
 #### @fk(Target) / @fk(Target.field) / @fk(Target.field, groupName)
 
 **Foreign Key 메타데이터** — Primitive 타입 필드에 FK 관계를 선언. JPA `@ManyToOne`을

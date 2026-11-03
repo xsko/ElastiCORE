@@ -1,21 +1,29 @@
 package io.elasticore.base.model.pub.ossie;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.elasticore.base.model.pub.rules.RuleCatalog;
+import io.elasticore.base.model.pub.rules.verify.RulesGenRunner;
+import io.elasticore.base.model.pub.rules.verify.SpecFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -196,5 +204,242 @@ public class OssieExportTest {
         assertEquals(false, OssieSemanticModelExporter.requested(null));
         assertEquals(false, OssieSemanticModelExporter.requested(
                 new ArrayList<io.elasticore.base.model.ECoreModel>()));
+    }
+
+    // ---- a row filter: the rows of a table the application reads ------------------
+
+    /**
+     * A model with every way the DSL hands a row filter to an entity class, or,
+     * with filters false, the same model with none of them.
+     */
+    private static String desk(boolean filters) {
+        String where = filters ? " @jpa:Where(clause = \"delete_yn = 'N'\")" : "";
+        return String.join(
+                "\n",
+                "entity:",
+                "  Note:",
+                "    meta: entity @root @expose(20)" + where + " -- Note",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      deleteYn: string(1)!",
+                "      body: string(200)",
+                "",
+                "  Ticket:",
+                "    meta: entity @root @expose(20)"
+                        + (filters
+                                ? " @jpa:org.hibernate.annotations.SQLRestriction(\"\\\"state\\\" not in ('X', 'Y')\")"
+                                : ""),
+                "    fields:",
+                "      ticketId: long @id @sequence",
+                "      state: string(1)!",
+                "",
+                "  Both:",
+                "    meta: entity @root @expose(20)"
+                        + (filters ? " @jpa:Where(clause = \"old = 1\") @jpa:SQLRestriction(value = \"new = 1\")" : ""),
+                "    fields:",
+                "      bothId: long @id @sequence",
+                "",
+                "  Mapped:",
+                "    meta: entity @root @expose(20)" + (filters ? " @entity:Where(clause = \"kept = 1\")" : ""),
+                "    fields:",
+                "      mappedId: long @id @sequence",
+                "",
+                "  Odd:",
+                "    meta: entity @root @expose(20)" + (filters ? " @jpa:Where(clause = Filters.LIVE)" : ""),
+                "    fields:",
+                "      oddId: long @id @sequence",
+                "",
+                "  Kept:",
+                "    meta: entity @abstract" + where,
+                "    fields:",
+                "      deleteYn: string(1)",
+                "",
+                "  Child:",
+                "    meta: entity @root @expose(20) @extend(Kept)",
+                "    fields:",
+                "      childId: long @id @sequence",
+                "",
+                "  Tag:",
+                "    meta: entity @root @expose(20) -- Tag",
+                "    fields:",
+                "      tagId: long @id @sequence",
+                "      name: string(50)",
+                "",
+                "metrics:",
+                "  noteCount: count(Note) -- Notes",
+                "  tagCount: count(Tag) -- Tags",
+                "  notesPerTag: noteCount / tagCount",
+                "");
+    }
+
+    @Test
+    @DisplayName(
+            "a class @jpa:Where is the dataset's row filter, in its extension and its description; source stays the table")
+    public void aWhereIsTheDatasetsRowFilter() throws Exception {
+        String[] filtered = export(desk(true));
+        Map<String, Object> note = dataset(filtered[0], "Note");
+        assertEquals("note", note.get("source"));
+        assertEquals("Note (rows only where: delete_yn = 'N')", note.get("description"));
+        assertEquals("delete_yn = 'N'", extension(note).get("row_filter"));
+    }
+
+    @Test
+    @DisplayName("@SQLRestriction too, fully qualified, read with its quotes, and over @Where, as Hibernate reads them")
+    public void anSqlRestrictionIsReadAsWrittenAndWins() throws Exception {
+        String[] filtered = export(desk(true));
+        Map<String, Object> ticket = dataset(filtered[0], "Ticket");
+        assertEquals("(rows only where: \"state\" not in ('X', 'Y'))", ticket.get("description"));
+        assertEquals("\"state\" not in ('X', 'Y')", extension(ticket).get("row_filter"));
+        assertEquals("new = 1", extension(dataset(filtered[0], "Both")).get("row_filter"));
+        // @entity: is the other prefix the generators write onto the class as given.
+        assertEquals("kept = 1", extension(dataset(filtered[0], "Mapped")).get("row_filter"));
+    }
+
+    @Test
+    @DisplayName(
+            "a filter on an @abstract parent is said, not exported: whether Hibernate applies it is the generated code's")
+    public void aParentsFilterIsSaidNotExported() throws Exception {
+        String[] filtered = export(desk(true));
+        String[] unfiltered = export(desk(false));
+        assertFalse(extension(dataset(filtered[0], "Child")).containsKey("row_filter"), filtered[0]);
+        assertTrue(filtered[1].contains("[ossie] Child: its parent Kept has a row filter on its class"), filtered[1]);
+        assertFalse(unfiltered[1].contains("has a row filter on its class"), unfiltered[1]);
+    }
+
+    @Test
+    @DisplayName("a clause that is not one string literal is said and left out")
+    public void anUnreadableClauseIsSaidAndLeftOut() throws Exception {
+        String[] filtered = export(desk(true));
+        assertFalse(extension(dataset(filtered[0], "Odd")).containsKey("row_filter"), filtered[0]);
+        assertTrue(
+                filtered[1].contains("[ossie] Odd: @Where(clause = Filters.LIVE) is not one string literal"),
+                filtered[1]);
+    }
+
+    @Test
+    @DisplayName("a metric over a filtered dataset says so, also through another metric")
+    public void aMetricOverAFilteredDatasetSaysSo() throws Exception {
+        String[] filtered = export(desk(true));
+        assertEquals(true, metricExtension(filtered[0], "noteCount").get("dataset_row_filter"));
+        assertEquals(true, metricExtension(filtered[0], "notesPerTag").get("dataset_row_filter"));
+        assertFalse(metricExtension(filtered[0], "tagCount").containsKey("dataset_row_filter"));
+    }
+
+    @Test
+    @DisplayName("what no filter touches is exported byte for byte as without any")
+    public void whatNoFilterTouchesIsExportedAsBefore() throws Exception {
+        String with = export(desk(true))[0];
+        String without = export(desk(false))[0];
+        assertFalse(without.contains("row_filter") || without.contains("rows only where"), without);
+        for (String name : new String[] {"Tag", "Child", "tagCount"}) {
+            assertEquals(block(without, name), block(with, name), name);
+        }
+    }
+
+    /** The entry of datasets: or metrics: with that name, from its line to the next entry or section. */
+    private static String block(String yaml, String name) {
+        int start = yaml.indexOf("\n  - name: " + name + "\n");
+        assertTrue(start >= 0, name + " is not in\n" + yaml);
+        Matcher end = Pattern.compile("\n(?:  - name: |\\S)").matcher(yaml);
+        return end.find(start + 1) ? yaml.substring(start, end.start()) : yaml.substring(start);
+    }
+
+    private static Map<String, Object> dataset(String yaml, String name) throws IOException {
+        return named(yaml, "datasets", name);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> named(String yaml, String section, String name) throws IOException {
+        Map<String, Object> doc = new ObjectMapper(new YAMLFactory()).readValue(yaml, Map.class);
+        for (Map<String, Object> each : (List<Map<String, Object>>) doc.get(section)) {
+            if (name.equals(each.get("name"))) return each;
+        }
+        throw new AssertionError(name + " is not in " + section + ":\n" + yaml);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extension(Map<String, Object> entry) throws IOException {
+        List<Map<String, Object>> extensions = (List<Map<String, Object>>) entry.get("custom_extensions");
+        assertEquals(OssieSemanticModelExporter.VENDOR, extensions.get(0).get("vendor_name"));
+        return new ObjectMapper().readValue((String) extensions.get(0).get("data"), Map.class);
+    }
+
+    private static Map<String, Object> metricExtension(String yaml, String name) throws IOException {
+        return extension(named(yaml, "metrics", name));
+    }
+
+    /**
+     * One generation of a one-domain project with that model: the export, and
+     * what the generation said. Each test generates its own and none is kept:
+     * diffMutation runs the tests again on each mutation in one JVM, and a kept
+     * export would be the one generated before it.
+     */
+    private static String[] export(String model) throws Exception {
+        File project = Files.createTempDirectory("elcore-ossie-filter").toFile();
+        File dir = new File(project, "src/main/resources/blueprint/desk");
+        assertTrue(new File(dir, "model").mkdirs());
+        String env = String.join(
+                "\n",
+                "elasticore:",
+                "  enable: true",
+                "  config:",
+                "    domainName: desk",
+                "    framework: springboot",
+                "    mode: jpa",
+                "    j2ee: jakarta",
+                "    publisher:",
+                "      rules: [hexagonal-springboot, ossie-export]",
+                "  namespace:",
+                "    base: com.acme.desk",
+                "");
+        Files.write(new File(dir, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(dir, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
+
+        String[] keys = {
+            "elasticore.base.path",
+            "elasticore.architecture",
+            "elasticore.language",
+            "elasticore.rules.force",
+            "elasticore.publisher.rules"
+        };
+        String[] saved = new String[keys.length];
+        for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream out = System.out;
+        System.setOut(new PrintStream(bytes, true, "UTF-8"));
+        try {
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            System.setProperty("elasticore.architecture", "hexagonal");
+            System.setProperty("elasticore.language", "java");
+            System.setProperty("elasticore.rules.force", "true");
+            System.setProperty("elasticore.publisher.rules", "ossie-export");
+            RulesGenRunner.main(new String[0]);
+        } finally {
+            System.setOut(out);
+            for (int i = 0; i < keys.length; i++) {
+                if (saved[i] == null) System.clearProperty(keys[i]);
+                else System.setProperty(keys[i], saved[i]);
+            }
+            java.lang.reflect.Field tmp =
+                    io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
+            tmp.setAccessible(true);
+            tmp.set(null, null);
+            SpecFactory.valueObjectsInDto(false);
+            SpecFactory.rootsSplitByDefault(false);
+            SpecFactory.commandOnlyRoots(false);
+        }
+        String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        out.print(log);
+        File exported = new File(project, "src/main/resources/blueprint/" + OssieSemanticModelExporter.FILE_NAME);
+        assertTrue(exported.isFile(), "no semantic model exported:\n" + log);
+        String yaml = new String(Files.readAllBytes(exported.toPath()), StandardCharsets.UTF_8);
+        delete(project);
+        return new String[] {yaml, log};
+    }
+
+    private static void delete(File f) {
+        File[] children = f.listFiles();
+        if (children != null) for (File c : children) delete(c);
+        assertTrue(f.delete() || !f.exists(), "could not delete " + f);
     }
 }

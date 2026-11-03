@@ -1781,6 +1781,7 @@ relationships:
 | Reference to another entity | `relationships[]` + join column field | The actual join column (`customer_id` if `referenceColumn: short`) |
 | `@password`, `@writeonly` | **Not exported** | Values the application does not read back either. Recorded in `omitted_columns` |
 | `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |
+| A row filter on the entity: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | `row_filter` in the dataset's `custom_extensions` (the clause as written) + `(rows only where: ...)` at the end of `description` | Ossie has no row filter on a dataset, so `source` stays the table. Only the entity's own, `SQLRestriction` over `Where`. One on an `@abstract` parent is a warning and is not exported: Hibernate applies it to the child only when the parent is written as an entity, not as a `@MappedSuperclass`. A metric over that dataset gets `dataset_row_filter: true` in its `custom_extensions` |
 | `@compute`, `@snapshot`, `money`/`quantity` | `custom_extensions` of the field | Derived rules and value types |
 | A metric in `metrics:` | `metrics[]` (`expression.sql`, `datatype`, `description`) | Only what you declare. The syntax is "Business metrics" in the DSL guide |
 | `@terms(…)` (entity, field, metric) | `ai_context.synonyms` | Business terms |

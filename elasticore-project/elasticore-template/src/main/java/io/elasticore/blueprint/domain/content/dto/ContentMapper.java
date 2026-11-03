@@ -1,4 +1,4 @@
-//ecd:-597358083H20261012161931_V3.0
+//ecd:-122017607H20261103120735_V3.0
 package io.elasticore.blueprint.domain.content.dto;
 
 import org.springframework.dao.PermissionDeniedDataAccessException;
@@ -939,6 +939,9 @@ public class ContentMapper {
             t.setArticleId(from.getArticleId());
             to.setArticle(t);
         }
+        else if(!isSkipNull){
+            to.setArticle(null);
+        }
     }
     
     
@@ -984,6 +987,9 @@ public class ContentMapper {
                 t.setArticleId(from.getArticleId());
                 to.setArticle(t);
             }
+        }
+        else if(!isSkipNull){
+            to.setArticle(null);
         }
     }
     

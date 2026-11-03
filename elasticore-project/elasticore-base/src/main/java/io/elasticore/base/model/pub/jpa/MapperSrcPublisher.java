@@ -622,6 +622,14 @@ public class MapperSrcPublisher extends SrcFilePublisher {
                                 cb.line("to.set%s(t);", StringUtils.capitalize(targetRefFieldNm));
                                 cb.end("}");
                             }
+                            // @forceupdate: no id takes the relation away - on a full update only, since a
+                            // PATCH skips what it does not send.
+                            if (fieldWithRefInfo.hasAnnotation("forceupdate")) {
+                                cb.line("else if(!isSkipNull)");
+                                cb.block("{");
+                                cb.line("to.set%s(null);", StringUtils.capitalize(targetRefFieldNm));
+                                cb.end("}");
+                            }
 
                         } else {
                             cb.line("if(hasValue(from.get%s()) && hasValue(to.get%s()))", getFieldNm ,setFieldNm);

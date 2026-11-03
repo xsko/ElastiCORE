@@ -158,10 +158,27 @@ public class ModelExtractor {
                         DataTransfer d = items.get(i);
                         if (d == null) continue;
                         validateFieldTypes(d.getIdentity().getName(), d.getItems(), domainName, typeRegistry);
+                        reportForcedRefs(d, domainName, allContexts);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * A @ref onto a relation's key with @forceupdate that cannot clear it
+     * stops the run - 2.x on the DSL warning, the rule engine on the failure,
+     * said once; one that would do nothing is only said.
+     */
+    private static void reportForcedRefs(DataTransfer dto, String domainName, List<ECoreModelContext> allContexts) {
+        io.elasticore.base.model.dto.ForcedRefCheck.Findings found =
+                io.elasticore.base.model.dto.ForcedRefCheck.of(dto, allContexts);
+        for (String problem : found.refused) {
+            String message = "[" + domainName + "] " + problem;
+            ConsoleLog.storeLog("DSL_WARN", message);
+            io.elasticore.base.model.pub.rules.ModelCheck.failSaid(message);
+        }
+        for (String warning : found.warned) ConsoleLog.printWarn("[" + domainName + "] " + warning);
     }
 
     private static void registerType(Map<String, List<String>> registry, String typeName, String domainName) {

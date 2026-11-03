@@ -64,14 +64,24 @@ final class OssieMetrics {
         final String label;
         final List<String> terms;
         final String declared;
+        /** The datasets it aggregates over, also through the metrics it is made of. */
+        final List<String> datasets;
 
-        Metric(String name, String sql, String datatype, String label, List<String> terms, String declared) {
+        Metric(
+                String name,
+                String sql,
+                String datatype,
+                String label,
+                List<String> terms,
+                String declared,
+                List<String> datasets) {
             this.name = name;
             this.sql = sql;
             this.datatype = datatype;
             this.label = label;
             this.terms = terms;
             this.declared = declared;
+            this.datasets = datasets;
         }
     }
 
@@ -180,7 +190,7 @@ final class OssieMetrics {
         if ("COUNT".equals(fn)) datatype = "Integer";
         else if ("AVG".equals(fn)) datatype = "Float".equals(model.datatype(entity, field)) ? "Float" : "Decimal";
         else datatype = model.datatype(entity, field);
-        return new Metric(name, sql, datatype, label, terms, line);
+        return new Metric(name, sql, datatype, label, terms, line, java.util.Collections.singletonList(ds));
     }
 
     private String condition(String metric, String entity, String ds, String text) {
@@ -244,6 +254,7 @@ final class OssieMetrics {
         String[] sides = {m.group(1), m.group(3)};
         String[] sql = new String[2];
         String[] types = new String[2];
+        List<String> datasets = new ArrayList<String>();
         for (int i = 0; i < 2; i++) {
             if (sides[i].matches("\\d+(\\.\\d+)?")) {
                 sql[i] = sides[i];
@@ -254,6 +265,7 @@ final class OssieMetrics {
             if (other == null) return fail(name, sides[i] + " is not a metric declared before it");
             sql[i] = "(" + other.sql + ")";
             types[i] = other.datatype;
+            for (String ds : other.datasets) if (!datasets.contains(ds)) datasets.add(ds);
         }
         String op = m.group(2);
         // Two whole numbers divide as whole numbers in most databases (3 / 4 = 0): the ratio is made a decimal first.
@@ -263,7 +275,7 @@ final class OssieMetrics {
                 : sql[0] + " " + op + " " + sql[1];
         String datatype = "/".equals(op) ? ("Float".equals(types[0]) || "Float".equals(types[1]) ? "Float" : "Decimal")
                 : ("Integer".equals(types[0]) && "Integer".equals(types[1]) ? "Integer" : "Decimal");
-        return new Metric(name, expression, datatype, label, terms, line);
+        return new Metric(name, expression, datatype, label, terms, line, datasets);
     }
 
     private static final java.util.Set<String> NUMBERS =

@@ -28,4 +28,4 @@ dto:
   AttachmentDTO:
     meta: dto @template(Attachment)
     fields:
-      articleId: string @ref(article.articleId)
+      articleId: string @ref(article.articleId) @forceupdate

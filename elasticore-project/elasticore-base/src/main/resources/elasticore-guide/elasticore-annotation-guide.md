@@ -438,6 +438,15 @@ that points to the key of the relation still changes the row the relation points
 the DSL gives a warning (`... is left out: @ref(assignee.password) reads a @password ...`). The DDD and hexagonal bundles already keep every `@ref` to
 another aggregate read-only. The 2.x-compatible bundle (`jpa-springboot`) is unchanged.
 
+#### @forceupdate - write a field that comes without a value
+On update (DTO -> entity), the mapper skips a field that comes without a value. With `@forceupdate` it writes it anyway, so `null` empties the column. On a `@ref` onto the relation's key, it takes the relation away:
+```yaml
+assigneeId: string(20) @ref(assignee.memberId) @forceupdate   # no id: the ticket has no assignee any more
+```
+- Only on a full update (`isSkipNull = false`): a PATCH skips what it does not send, so the relation stays. `null` and `""` are both no id, as when attaching.
+- Refused at generation, in both generators: a required relation (`!` or `@notnull`), a `@ref` that is not the relation's single key, and a path past `relation.key`.
+- Said to do nothing where the clear does not reach the row: a relation that cascades (written whole), one joined read-only on another field's column (`@joinBy`: the row keeps it - send that field instead), one with `@updatable(false)` (it keeps the one it was created with), a DDD reference to another aggregate, held by its id field (send that id), and a `@ref` whose head is no relation of the template.
+
 #### @fk(Target) / @fk(Target.field) / @fk(Target.field, groupName)
 
 **Foreign Key metadata** - declares an FK relation on a primitive field. It does not generate JPA `@ManyToOne` and
