@@ -21,12 +21,16 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The model, written down as an Apache Ossie semantic model.
@@ -86,6 +90,9 @@ public final class OssieSemanticModelExporter {
     private final StringBuilder out = new StringBuilder();
     private final List<String> relationships = new ArrayList<String>();
     private final Map<Entity, String> datasetNames = new IdentityHashMap<Entity, String>();
+    /** The datasets whose rows a filter limits: a metric over one says so. */
+    private final Set<String> filtered = new HashSet<String>();
+
     private final List<String> domains = new ArrayList<String>();
     /** Every loaded domain, also one with no table of its own: its metrics: are still read. */
     private final List<Unit> domainUnits = new ArrayList<Unit>();
@@ -256,7 +263,15 @@ public final class OssieSemanticModelExporter {
         }
 
         String label = entity.getMetaInfo().getMetaAnnotationValue("label");
-        if (label != null && !label.trim().isEmpty()) out.append("    description: ").append(yaml(label)).append('\n');
+        String description = label != null && !label.trim().isEmpty() ? label.trim() : null;
+        String filter = rowFilter(entity);
+        warnOfParentFilter(entity);
+        if (filter != null) {
+            filtered.add(name);
+            description = (description == null ? "" : description + " ") + "(rows only where: " + filter + ")";
+        }
+        if (description != null)
+            out.append("    description: ").append(yaml(description)).append('\n');
         List<String> terms = termsOf(entity.getMetaInfo().getMetaAnnotationValue("terms"));
         if (!terms.isEmpty()) out.append("    ai_context:\n      synonyms: ").append(list(terms)).append('\n');
 
@@ -285,6 +300,7 @@ public final class OssieSemanticModelExporter {
         Map<String, Object> ext = new LinkedHashMap<String, Object>();
         ext.put("entity", entity.getIdentity().getName());
         ext.put("domain", u.domain);
+        if (filter != null) ext.put("row_filter", filter);
         String owner = entity.getMetaInfo().getMetaAnnotationValue("owner");
         if (owner != null) ext.put("owner", owner);
         Map<String, String> access = keyValues(entity.getMetaInfo().getMetaAnnotation("access"));
@@ -297,6 +313,76 @@ public final class OssieSemanticModelExporter {
         if (events != null) ext.put("events", events);
         if (!omitted.isEmpty()) ext.put("omitted_columns", omitted);
         customExtension("    ", ext);
+    }
+
+    /** Hibernate's Where or SQLRestriction as the class says it, fully qualified or not, and its arguments. */
+    private static final Pattern ROW_FILTER = Pattern.compile(
+            "@(?:org\\.hibernate\\.annotations\\.)?(Where|SQLRestriction)\\s*\\((.*)\\)", Pattern.DOTALL);
+
+    /** One string literal, named clause or value or not named: the SQL is in it. */
+    private static final Pattern LITERAL =
+            Pattern.compile("\\s*(?:(?:clause|value)\\s*=\\s*)?\"((?:[^\"\\\\]|\\\\.)*)\"\\s*", Pattern.DOTALL);
+
+    /**
+     * The rows of the table the application reads, as the entity's class says:
+     * the Hibernate SQLRestriction or Where the DSL hands to it, as in
+     * {@code @jpa:Where(clause = "delete_yn = 'N'")}. Read as Hibernate reads
+     * it: on the entity's own class (a parent's is warnOfParentFilter's), and
+     * SQLRestriction over Where. Null when there is none, or when the clause
+     * is not one string literal; that is said.
+     */
+    private static String rowFilter(Entity entity) {
+        Map<String, String> clauses = new TreeMap<String, String>();
+        for (Matcher a : rowFilterAnnotations(entity)) {
+            Matcher literal = LITERAL.matcher(a.group(2));
+            if (!literal.matches()) {
+                ConsoleLog.printWarn("[ossie] " + entity.getIdentity().getName() + ": @" + a.group(1) + "(" + a.group(2)
+                        + ") is not one string literal - its row filter is left out of the dataset.");
+                continue;
+            }
+            // The SQL the literal holds: a quote or a backslash in it is escaped in Java.
+            clauses.put(a.group(1), literal.group(1).replaceAll("\\\\([\"\\\\])", "$1"));
+        }
+        return clauses.containsKey("SQLRestriction") ? clauses.get("SQLRestriction") : clauses.get("Where");
+    }
+
+    /** The Where and SQLRestriction annotations of the entity's class, readable or not. */
+    private static List<Matcher> rowFilterAnnotations(Entity entity) {
+        List<Matcher> found = new ArrayList<Matcher>();
+        Map<String, Annotation> meta = entity.getMetaInfo().getMetaAnnotationMap();
+        if (meta == null) return found;
+        for (Map.Entry<String, Annotation> e : meta.entrySet()) {
+            // The two prefixes the generators write onto the class as given.
+            if (!e.getKey().contains("jpa:") && !e.getKey().contains("entity:")) continue;
+            Matcher a = ROW_FILTER.matcher(String.valueOf(e.getValue()).trim());
+            if (a.matches()) found.add(a);
+        }
+        return found;
+    }
+
+    /**
+     * Hibernate reads a parent's filter for its children only when the parent
+     * is an entity, and the code generated from this model decides that: 2.x
+     * writes an @abstract with a key or a @discriminator as one, and anything
+     * else as a MappedSuperclass, whose filter filters nothing. The export does
+     * not guess; it says so.
+     */
+    private void warnOfParentFilter(Entity entity) {
+        for (Entity parent = parentOf(entity); parent != null; parent = parentOf(parent)) {
+            if (rowFilterAnnotations(parent).isEmpty()) continue;
+            String self = entity.getIdentity().getName();
+            String of = parent.getIdentity().getName();
+            ConsoleLog.printWarn("[ossie] " + self + ": its parent " + of + " has a row filter on its class,"
+                    + " which Hibernate applies to " + self + " only if " + of + " is written as an entity,"
+                    + " not as a MappedSuperclass - it is not exported for " + self + ".");
+            return;
+        }
+    }
+
+    /** The entity it extends (@extend), or null. */
+    private Entity parentOf(Entity entity) {
+        String parent = entity.getMetaInfo().getMetaAnnotationValue("extend");
+        return parent == null ? null : ctx.findModelComponent(parent, Entity.class);
     }
 
     private String table(Entity entity, ECoreModel model) {
@@ -559,6 +645,8 @@ public final class OssieSemanticModelExporter {
                 Map<String, Object> ext = new LinkedHashMap<String, Object>();
                 ext.put("domain", u.domain);
                 ext.put("declared", m.declared);
+                // What the application counts and a reader of the table would not: the filter is on the dataset.
+                for (String ds : m.datasets) if (filtered.contains(ds)) ext.put("dataset_row_filter", true);
                 b.append(extension("    ", ext));
                 written.add(b.toString());
             }
