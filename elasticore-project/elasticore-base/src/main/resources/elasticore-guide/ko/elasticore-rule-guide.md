@@ -1781,6 +1781,7 @@ relationships:
 | 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
 | `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
+| 엔티티의 행 필터: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | dataset `custom_extensions` 의 `row_filter`(적은 절 그대로) + `description` 끝의 `(rows only where: ...)` | Ossie 에는 dataset 의 행 필터가 없어 `source` 는 테이블 그대로. 엔티티 자신의 것만, `Where` 보다 `SQLRestriction`. `@abstract` 부모의 것은 경고하고 내보내지 않음: Hibernate 는 부모가 `@MappedSuperclass` 가 아니라 엔티티로 쓰였을 때만 자식에 적용한다. 그 dataset 의 지표는 `custom_extensions` 에 `dataset_row_filter: true` |
 | `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `custom_extensions` | 파생 규칙과 값 타입 |
 | `metrics:` 의 지표 | `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표" |
 | `@terms(…)` (엔티티·필드·지표) | `ai_context.synonyms` | 업무 용어 |
