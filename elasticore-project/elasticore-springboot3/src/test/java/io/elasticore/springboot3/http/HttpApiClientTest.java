@@ -147,7 +147,7 @@ class HttpApiClientTest {
     }
 
     @Test
-    @DisplayName("Throw WebClientException on 4xx Errors")
+    @DisplayName("Throw HttpPortException on 4xx Errors")
     void clientErrorHandled() {
         Mono<Map<String, Object>> response = HttpApiClient.exchange(
                 HttpMethod.GET,
@@ -157,9 +157,7 @@ class HttpApiClientTest {
                 new ParameterizedTypeReference<>() {}
         );
 
-        StepVerifier.create(response)
-                .expectError(HttpApiClient.WebClientException.class)
-                .verify();
+        StepVerifier.create(response).expectError(HttpPortException.class).verify();
     }
 
     @Test

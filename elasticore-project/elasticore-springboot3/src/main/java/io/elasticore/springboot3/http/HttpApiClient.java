@@ -13,6 +13,8 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.*;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.util.LinkedMultiValueMap;
@@ -20,6 +22,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.http.HttpEntity;
 import org.springframework.web.reactive.function.BodyInserter;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -29,6 +32,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.transport.ProxyProvider;
 
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
@@ -44,6 +48,7 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -293,7 +298,7 @@ public class HttpApiClient {
      * Core HTTP exchange method using an existing WebClient with full configuration options.
      * This method handles both GET and non-GET requests, with automatic query parameter conversion
      * for GET requests and proper body handling for other methods.
-     * 
+     *
      * @param <V> the type of the request body
      * @param <T> the type of the response body
      * @param httpMethod the HTTP method to use (GET, POST, PUT, DELETE, etc.)
@@ -304,10 +309,16 @@ public class HttpApiClient {
      * @param headerMapList list of header maps to include in the request
      * @param mediaType the content type for the request body
      * @return a Mono containing the response body
-     * @throws WebClientException if the HTTP request fails with 4xx or 5xx status codes
+     * @throws HttpPortException if the other side answers a 4xx or 5xx status (with its body and headers)
      */
-    public static <V, T> Mono<T> exchange(HttpMethod httpMethod, WebClient webClient, String path, V sendObj, ParameterizedTypeReference<T> responseType,
-                                          List<Map<String, String>> headerMapList, MediaType mediaType) {
+    public static <V, T> Mono<T> exchange(
+            HttpMethod httpMethod,
+            WebClient webClient,
+            String path,
+            V sendObj,
+            ParameterizedTypeReference<T> responseType,
+            List<Map<String, String>> headerMapList,
+            MediaType mediaType) {
         WebClient.RequestBodyUriSpec requestSpec = webClient.method(httpMethod);
 
         if (httpMethod == HttpMethod.GET) {
@@ -324,21 +335,20 @@ public class HttpApiClient {
                 }
             });
 
-            return configureRequest(requestSpec.uri(uriBuilder -> {
-                URI uri = uriBuilder
-                        .path(pathOnly)
-                        .queryParams(mergedParams)
-                        .build();
-                log.debug("HTTP[GET] URI: {}", uri);
-                return uri;
-            }), sendObj, headerMapList, mediaType)
+            return configureRequest(
+                            requestSpec.uri(uriBuilder -> {
+                                URI uri = uriBuilder
+                                        .path(pathOnly)
+                                        .queryParams(mergedParams)
+                                        .build();
+                                log.debug("HTTP[GET] URI: {}", uri);
+                                return uri;
+                            }),
+                            sendObj,
+                            headerMapList,
+                            mediaType)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            Mono.error(new WebClientException(clientResponse.statusCode().value(), "4xx Client Error"))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            Mono.error(new WebClientException(clientResponse.statusCode().value(), "5xx Server Error"))
-                    )
+                    .onStatus(HttpStatusCode::isError, HttpApiClient::toPortException)
                     .bodyToMono(responseType);
         } else {
             String[] pathParts = path.split("\\?", 2);
@@ -347,30 +357,26 @@ public class HttpApiClient {
             String queryStr = pathParts.length > 1 ? pathParts[1] : null;
 
             return configureRequest(
-                    requestSpec.uri(uriBuilder -> {
-                        uriBuilder.path(basePath);
-                        if (queryStr != null) {
-                            String[] queryParams = queryStr.split("&");
-                            for (String param : queryParams) {
-                                String[] keyValue = param.split("=", 2);
-                                String key = keyValue[0];
-                                String value = keyValue.length > 1 ? keyValue[1] : "";
-                                uriBuilder.queryParam(key, value);
-                            }
-                        }
-                        return uriBuilder.build();
-                    }),
-                    sendObj,
-                    headerMapList,
-                    mediaType
-            )
+                            requestSpec.uri(uriBuilder -> {
+                                uriBuilder.path(basePath);
+                                if (queryStr != null) {
+                                    // As it always parsed: a trailing "&" adds no empty parameter.
+                                    @SuppressWarnings("StringSplitter")
+                                    String[] queryParams = queryStr.split("&");
+                                    for (String param : queryParams) {
+                                        String[] keyValue = param.split("=", 2);
+                                        String key = keyValue[0];
+                                        String value = keyValue.length > 1 ? keyValue[1] : "";
+                                        uriBuilder.queryParam(key, value);
+                                    }
+                                }
+                                return uriBuilder.build();
+                            }),
+                            sendObj,
+                            headerMapList,
+                            mediaType)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            Mono.error(new WebClientException(clientResponse.statusCode().value(), "4xx Client Error"))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            Mono.error(new WebClientException(clientResponse.statusCode().value(), "5xx Server Error"))
-                    )
+                    .onStatus(HttpStatusCode::isError, HttpApiClient::toPortException)
                     .bodyToMono(responseType);
         }
     }
@@ -529,47 +535,61 @@ public class HttpApiClient {
                 }
             });
 
-            return configureRequest(requestSpec.uri(uriBuilder -> {
-                URI uri = uriBuilder
-                        .path(pathOnly)
-                        .queryParams(mergedParams)
-                        .build();
-                log.debug("HTTP[GET] ResponseEntity URI: {}", uri);
-                return uri;
-            }), sendObj, headerMapList, mediaType)
+            return configureRequest(
+                            requestSpec.uri(uriBuilder -> {
+                                URI uri = uriBuilder
+                                        .path(pathOnly)
+                                        .queryParams(mergedParams)
+                                        .build();
+                                log.debug("HTTP[GET] ResponseEntity URI: {}", uri);
+                                return uri;
+                            }),
+                            sendObj,
+                            headerMapList,
+                            mediaType)
                     .exchangeToMono(response -> {
-                        response.headers().asHttpHeaders().forEach((key, value) ->
-                                log.debug("Response Header: {} -> {}", key, value));
+                        response.headers()
+                                .asHttpHeaders()
+                                .forEach((key, value) -> log.debug("Response Header: {} -> {}", key, value));
 
-                        return response.toEntity(responseType);
+                        return toEntity(response, responseType);
                     });
         } else {
             String[] pathParts = path.split("\\?", 2);
             String basePath = pathParts[0];
             String queryStr = pathParts.length > 1 ? pathParts[1] : null;
 
-            return configureRequest(requestSpec.uri(uriBuilder -> {
-                uriBuilder.path(basePath);
-                if (queryStr != null) {
-                    String[] queryParams = queryStr.split("&");
-                    for (String param : queryParams) {
-                        String[] keyValue = param.split("=", 2);
-                        String key = keyValue[0];
-                        String value = keyValue.length > 1 ? keyValue[1] : "";
-                        uriBuilder.queryParam(key, value);
-                    }
-                }
-                return uriBuilder.build();
-            }), sendObj, headerMapList, mediaType)
+            return configureRequest(
+                            requestSpec.uri(uriBuilder -> {
+                                uriBuilder.path(basePath);
+                                if (queryStr != null) {
+                                    // As it always parsed: a trailing "&" adds no empty parameter.
+                                    @SuppressWarnings("StringSplitter")
+                                    String[] queryParams = queryStr.split("&");
+                                    for (String param : queryParams) {
+                                        String[] keyValue = param.split("=", 2);
+                                        String key = keyValue[0];
+                                        String value = keyValue.length > 1 ? keyValue[1] : "";
+                                        uriBuilder.queryParam(key, value);
+                                    }
+                                }
+                                return uriBuilder.build();
+                            }),
+                            sendObj,
+                            headerMapList,
+                            mediaType)
                     .exchangeToMono(response -> {
-                        response.headers().asHttpHeaders().forEach((key, value) ->
-                                log.debug("Response Header: {} -> {}", key, value));
+                        response.headers()
+                                .asHttpHeaders()
+                                .forEach((key, value) -> log.debug("Response Header: {} -> {}", key, value));
 
-                        return response.toEntity(responseType);
+                        return toEntity(response, responseType);
                     })
                     .doOnSubscribe(subscription -> {
-                        log.debug("[WebClient-Request] POST {} with body type: {}",
-                            basePath, sendObj != null ? sendObj.getClass().getSimpleName() : "null");
+                        log.debug(
+                                "[WebClient-Request] POST {} with body type: {}",
+                                basePath,
+                                sendObj != null ? sendObj.getClass().getSimpleName() : "null");
                     });
         }
     }
@@ -1062,9 +1082,52 @@ public class HttpApiClient {
 
         log.debug("Sending multipart request via RestTemplate to: {} [{}]", withQueryMasked(url), httpMethod);
 
-        ResponseEntity<T> response = restTemplate.exchange(url, httpMethod, requestEntity, responseType);
+        ResponseEntity<T> response;
+        try {
+            response = restTemplate.exchange(url, httpMethod, requestEntity, responseType);
+        } catch (RestClientResponseException e) {
+            // An error status: the same exception the WebClient calls throw, with what the other side said.
+            throw new HttpPortException(
+                    null,
+                    null,
+                    e.getStatusCode().value(),
+                    e.getResponseHeaders(),
+                    e.getResponseBodyAsString(StandardCharsets.UTF_8),
+                    e);
+        }
         log.debug("RestTemplate response status: {}", response.getStatusCode());
         return response.getBody();
+    }
+
+    /**
+     * The answer as an entity. An error status is read as the return type too (a port returns
+     * it as a value); one whose body does not read as that type is an HttpPortException with
+     * the body as text.
+     */
+    private static <T> Mono<ResponseEntity<T>> toEntity(
+            ClientResponse response, ParameterizedTypeReference<T> responseType) {
+        if (!response.statusCode().isError()) {
+            return response.toEntity(responseType);
+        }
+        int status = response.statusCode().value();
+        HttpHeaders headers = response.headers().asHttpHeaders();
+        MediaType type = headers.getContentType();
+        Charset charset = type != null && type.getCharset() != null ? type.getCharset() : StandardCharsets.UTF_8;
+        return response.bodyToMono(byte[].class).defaultIfEmpty(new byte[0]).flatMap(bytes -> response.mutate()
+                .body(Flux.<DataBuffer>just(DefaultDataBufferFactory.sharedInstance.wrap(bytes)))
+                .build()
+                .toEntity(responseType)
+                .onErrorMap(unreadable ->
+                        new HttpPortException(null, null, status, headers, new String(bytes, charset), unreadable)));
+    }
+
+    /** An error status answered to a WebClient call, as an HttpPortException with its body and headers. */
+    static Mono<? extends Throwable> toPortException(ClientResponse response) {
+        int status = response.statusCode().value();
+        HttpHeaders headers = response.headers().asHttpHeaders();
+        return response.bodyToMono(String.class)
+                .defaultIfEmpty("")
+                .map(body -> new HttpPortException(null, null, status, headers, body, null));
     }
 
     /**
@@ -1089,47 +1152,6 @@ public class HttpApiClient {
         return Mono.fromCallable(() ->
             sendMultipartWithRestTemplate(httpMethod, url, multipartRequest, headerMapList, responseType, ignoreSSL, proxyHost, proxyPort)
         );
-    }
-
-
-    /**
-     * Exception thrown when HTTP client operations fail.
-     * Contains the HTTP status code associated with the failure.
-     */
-    public static class WebClientException extends RuntimeException {
-
-        /** The HTTP status code associated with this exception */
-        private final int status;
-
-        /**
-         * Constructs a WebClientException with the specified status code.
-         * 
-         * @param status the HTTP status code
-         */
-        public WebClientException(int status) {
-            super();
-            this.status = status;
-        }
-
-        /**
-         * Constructs a WebClientException with the specified status code and message.
-         * 
-         * @param status the HTTP status code
-         * @param message the error message
-         */
-        public WebClientException(int status, String message) {
-            super(message);
-            this.status = status;
-        }
-
-        /**
-         * Returns the HTTP status code associated with this exception.
-         * 
-         * @return the HTTP status code
-         */
-        public int getStatus() {
-            return this.status;
-        }
     }
 
 
