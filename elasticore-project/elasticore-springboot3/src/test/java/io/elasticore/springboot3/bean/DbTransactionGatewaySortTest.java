@@ -410,8 +410,10 @@ class DbTransactionGatewaySortTest {
     void sortBeforePages() {
         assertThat(ids(SQL + "LIMIT 2\n", new Search(null, "name-"))).containsExactly(2, 1);
         assertThat(ids(SQL + "ORDER BY id LIMIT 2\n", new Search(null, "grp"))).containsExactly(1, 3);
-        assertThat(ids(SQL + "OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY\n", new Search(null, "name-"))).containsExactly(1);
-        assertThat(ids(SQL + "FETCH FIRST 2 ROWS ONLY\n", new Search(null, "name"))).containsExactly(3, 1);
+        assertThat(ids(SQL + "OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY\n", new Search(null, "name-")))
+                .containsExactly(1);
+        assertThat(ids(SQL + "FETCH FIRST 2 ROWS ONLY\n", new Search(null, "name")))
+                .containsExactly(3, 1);
         assertThat(ids(SQL + "offset 2 rows\n", new Search(null, "id-"))).containsExactly(1);
     }
 
@@ -421,8 +423,13 @@ class DbTransactionGatewaySortTest {
     void pagedOwnOrderBy() {
         Page<Map> page = tx.execute(status -> {
             try {
-                return gateway.executePageQuery(entry(SQL + "ORDER BY id\n"), new Search(null, "grp-"), Map.class, null,
-                        PageRequest.of(0, 2), true);
+                return gateway.executePageQuery(
+                        entry(SQL + "ORDER BY id\n"),
+                        new Search(null, "grp-"),
+                        Map.class,
+                        null,
+                        PageRequest.of(0, 2),
+                        true);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException(e);
             }
