@@ -12,7 +12,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -194,15 +193,26 @@ class HttpServiceProxyFactoryTest {
             when(environment.getProperty("testService.url", "http://api.test.com"))
                     .thenReturn("invalid-url");
 
-            mockedHttpClient.when(() -> HttpApiClient.exchangeResponseEntity(
-                    any(), any(), any(), any(), any(), any(), any(), any(),
-                    anyBoolean(), any(), anyInt(), any()))
-                    .thenThrow(new HttpApiClient.WebClientException(400, "Invalid URL"));
+            mockedHttpClient
+                    .when(() -> HttpApiClient.exchangeResponseEntity(
+                            any(),
+                            any(),
+                            any(),
+                            any(),
+                            any(),
+                            any(),
+                            any(),
+                            any(),
+                            anyBoolean(),
+                            any(),
+                            anyInt(),
+                            any()))
+                    .thenThrow(new HttpPortException(null, null, 400, null, "Invalid URL", null));
 
-            // when & then
+            // when & then: the port and method are said of an answer that came without them
             assertThatThrownBy(() -> testService.getUser("user123"))
-                    .isInstanceOf(ResponseStatusException.class)
-                    .hasMessageContaining("API CALL FAIL");
+                    .isInstanceOf(HttpPortException.class)
+                    .hasMessage("testService.getUser: HTTP 400 Bad Request - Invalid URL");
         }
     }
 }

@@ -12,10 +12,8 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.io.FileNotFoundException;
 import java.lang.reflect.*;
@@ -536,11 +534,9 @@ public class HttpServiceProxyFactory {
                 }
 
                 return body;
-            }catch (HttpApiClient.WebClientException we) {
-                //we.printStackTrace();
-
-                //throw new FileNotFoundException("xx");
-                throw new ResponseStatusException(HttpStatusCode.valueOf(we.getStatus()), "API CALL FAIL: " + we.getMessage(), we);
+            } catch (HttpPortException e) {
+                // HttpApiClient does not know the port: say it here.
+                throw e.getPort() == null ? e.called(this.externalService.id(), method.getName()) : e;
             }
         }
 
@@ -644,11 +640,6 @@ public class HttpServiceProxyFactory {
 
             Object shortenUrl = HttpApiClient.exchange(httpMethod, svrUrl, callUrl,
                             mainReqObject, responseType, header, authProvider ,contentType)
-
-                    .onErrorMap(WebClientResponseException.class, ex ->
-                            new IllegalStateException("HTTP Error: " + ex.getStatusCode(), ex)
-                    )
-
                     .block();
 
             return shortenUrl;

@@ -485,9 +485,29 @@ judging that something failed is the job of the code that calls the port.
 |---|---|---|
 | 200, readable body | return value | return value |
 | 4xx/5xx, JSON body | **return value** (the body is read as the return type - missing fields are `null`) | **return value** (same) |
-| 4xx/5xx, body that cannot be read as the return type (HTML error page, etc.) | exception (read failure) | exception (read failure) |
+| 4xx/5xx, body that cannot be read as the return type (HTML error page, etc.) | **`HttpPortException`** (status, headers, body) | exception (read failure) |
 | No answer - connection refused, timeout | exception (`WebClientRequestException`, etc.) | `RestClientException` (`ResourceAccessException`) |
-| `multipart/form-data` request gets 4xx/5xx | exception (`HttpStatusCodeException` - sent with RestTemplate) | (return value, as above) |
+| `multipart/form-data` request gets 4xx/5xx | **`HttpPortException`** (sent with RestTemplate, same exception) | (return value, as above) |
+
+**`HttpPortException`** (`io.elasticore.springboot3.http`, unchecked) is the one exception the runtime throws for an error status:
+`getStatusCode()` (404, 409, 500 ...), `getResponseBody()` (the body as text), `getResponseHeaders()` / `getResponseHeader(name)`,
+and `getPort()` / `getMethod()` (`erp.CreditCheckPort`, `check`). Its message says all of it -
+`erp.CreditCheckPort.check: HTTP 409 Conflict - {"code":"limit"}` (the body cut at 500 characters) - so a log line is enough.
+`HttpApiClient.exchange(...)`, called directly, throws it too (without port and method).
+A call that got no answer is not an `HttpPortException`. (Verified: `HttpPortExceptionTest` in `elasticore-springboot3`)
+
+```java
+try {
+    label = courier.printLabel(file, meta);              // a multipart port: 4xx/5xx is an exception
+} catch (HttpPortException e) {
+    if (e.getStatusCode() == 409) {
+        throw new IllegalStateException("The label is printed already");
+    }
+    log.warn("courier refused: {}", e.getMessage());     // port.method, status and body
+    throw new PortCallException(e.getPort(), e.getStatusCode(), e.getResponseBody(),
+            "The courier did not print the label", e);
+}
+```
 
 If you leave the exception alone, the API answers 500. So if you use it naively, **it succeeds while being wrong**: even if the courier answers 500, a response with a tracking
 number of `null` comes back, the order is saved as "shipped", and 200 goes out. (Verified: `PortFailureContractTest` in
@@ -509,6 +529,9 @@ public PurchaseOrderDTO ship(String orderId) {
         reply = courier.ship(new ShipmentRequest(orderId));
     } catch (RestClientException unreachable) {          // with the runtime proxy, WebClientException too
         throw new PortCallException("The courier could not be reached", unreachable);
+    } catch (HttpPortException refused) {                // runtime proxy: an error answer that did not read
+        throw new PortCallException(refused.getPort(), refused.getStatusCode(), refused.getResponseBody(),
+                "The courier did not accept the shipment", refused);
     }
     if (reply == null || reply.getTrackingNo() == null) {  // an error status also comes as a value, so judge by the content
         throw new PortCallException("The courier did not accept the shipment");

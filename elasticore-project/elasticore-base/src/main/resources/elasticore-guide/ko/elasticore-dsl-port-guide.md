@@ -485,9 +485,29 @@ public interface CreditCheckPort {
 |---|---|---|
 | 200, 읽을 수 있는 본문 | 반환값 | 반환값 |
 | 4xx/5xx, JSON 본문 | **반환값** (본문을 반환 타입으로 읽음 - 없는 필드는 `null`) | **반환값** (같음) |
-| 4xx/5xx, 반환 타입으로 읽을 수 없는 본문 (HTML 오류 페이지 등) | 예외 (읽기 실패) | 예외 (읽기 실패) |
+| 4xx/5xx, 반환 타입으로 읽을 수 없는 본문 (HTML 오류 페이지 등) | **`HttpPortException`** (상태, 헤더, 본문) | 예외 (읽기 실패) |
 | 답이 없음 - 연결 거부, 시간 초과 | 예외 (`WebClientRequestException` 등) | `RestClientException` (`ResourceAccessException`) |
-| `multipart/form-data` 요청이 4xx/5xx | 예외 (`HttpStatusCodeException` - RestTemplate 로 보냄) | (반환값, 위와 같음) |
+| `multipart/form-data` 요청이 4xx/5xx | **`HttpPortException`** (RestTemplate 로 보냄, 같은 예외) | (반환값, 위와 같음) |
+
+**`HttpPortException`** (`io.elasticore.springboot3.http`, unchecked) 은 런타임이 오류 상태에 던지는 단 하나의 예외입니다:
+`getStatusCode()` (404, 409, 500 ...), `getResponseBody()` (본문 텍스트), `getResponseHeaders()` / `getResponseHeader(name)`,
+`getPort()` / `getMethod()` (`erp.CreditCheckPort`, `check`). 메시지에 모두 들어 있으므로 -
+`erp.CreditCheckPort.check: HTTP 409 Conflict - {"code":"limit"}` (본문은 500 자에서 자름) - 로그 한 줄이면 충분합니다.
+`HttpApiClient.exchange(...)` 를 직접 불러도 이 예외입니다 (포트와 메서드 없이).
+답을 받지 못한 호출은 `HttpPortException` 이 아닙니다. (확인: `elasticore-springboot3` 의 `HttpPortExceptionTest`)
+
+```java
+try {
+    label = courier.printLabel(file, meta);              // multipart 포트: 4xx/5xx 는 예외
+} catch (HttpPortException e) {
+    if (e.getStatusCode() == 409) {
+        throw new IllegalStateException("The label is printed already");
+    }
+    log.warn("courier refused: {}", e.getMessage());     // port.method, 상태, 본문
+    throw new PortCallException(e.getPort(), e.getStatusCode(), e.getResponseBody(),
+            "The courier did not print the label", e);
+}
+```
 
 예외를 그대로 두면 API 는 500 입니다. 그래서 순진하게 쓰면 **틀린 채로 성공합니다**: 택배사가 500 을 답해도 운송장 번호가
 `null` 인 응답이 돌아와 주문이 "배송됨" 으로 저장되고 200 이 나갑니다. (확인: `elasticore-springboot3` 의
@@ -509,6 +529,9 @@ public PurchaseOrderDTO ship(String orderId) {
         reply = courier.ship(new ShipmentRequest(orderId));
     } catch (RestClientException unreachable) {          // 런타임 프록시면 WebClientException 도
         throw new PortCallException("The courier could not be reached", unreachable);
+    } catch (HttpPortException refused) {                // 런타임 프록시: 읽히지 않은 오류 답
+        throw new PortCallException(refused.getPort(), refused.getStatusCode(), refused.getResponseBody(),
+                "The courier did not accept the shipment", refused);
     }
     if (reply == null || reply.getTrackingNo() == null) {  // 오류 상태도 값으로 오므로 내용으로 판단
         throw new PortCallException("The courier did not accept the shipment");

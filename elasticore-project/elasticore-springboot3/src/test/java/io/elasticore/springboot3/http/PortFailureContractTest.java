@@ -78,12 +78,16 @@ public class PortFailureContractTest {
         assertEquals("TRK-7", runtimePort(courier.url("/").toString()).ship(new ShipmentReply()).getTrackingNo());
     }
 
-    /** Runtime mode: an answer that does not read as the reply, or no answer at all, is an exception. */
+    /**
+     * Runtime mode: an error answer that does not read as the reply is an HttpPortException;
+     * no answer at all is the HTTP client's exception.
+     */
     @Test
     public void theRuntimeThrowsWhenThereIsNoReplyToRead() {
         courier.enqueue(new MockResponse().setResponseCode(503).setHeader("Content-Type", "text/html")
                 .setBody("<html>Service Unavailable</html>"));
-        assertThrows(RuntimeException.class, () -> runtimePort(courier.url("/").toString()).ship(new ShipmentReply()));
+        assertThrows(HttpPortException.class, () -> runtimePort(courier.url("/").toString())
+                .ship(new ShipmentReply()));
         assertThrows(org.springframework.web.reactive.function.client.WebClientRequestException.class,
                 () -> runtimePort("http://localhost:1").ship(new ShipmentReply()));
     }
@@ -99,16 +103,21 @@ public class PortFailureContractTest {
                 .uri("/shipments").body(new ShipmentReply()).retrieve().body(ShipmentReply.class));
     }
 
-    /** Runtime mode, multipart/form-data: sent with RestTemplate, whose error handler throws on a 4xx/5xx. */
+    /** Runtime mode, multipart/form-data: sent with RestTemplate, which throws on a 4xx/5xx - as HttpPortException. */
     @Test
     public void aMultipartCallThrowsOnAnErrorAnswer() {
         courier.enqueue(json(500, "{\"error\":\"courier down\"}"));
         java.util.Map<String, Object> parts = new java.util.LinkedHashMap<String, Object>();
         parts.put("label", "parcel");
-        assertThrows(org.springframework.web.client.HttpStatusCodeException.class, () ->
-                HttpApiClient.sendMultipartWithRestTemplate(org.springframework.http.HttpMethod.POST,
-                        courier.url("/labels").toString(), new MultipartRequest(parts, null),
-                        java.util.Collections.<java.util.Map<String, String>>emptyList(), String.class, false));
+        assertThrows(
+                HttpPortException.class,
+                () -> HttpApiClient.sendMultipartWithRestTemplate(
+                        org.springframework.http.HttpMethod.POST,
+                        courier.url("/labels").toString(),
+                        new MultipartRequest(parts, null),
+                        java.util.Collections.<java.util.Map<String, String>>emptyList(),
+                        String.class,
+                        false));
     }
 
     /**
