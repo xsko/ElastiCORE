@@ -1276,6 +1276,9 @@ public ResponseEntity<ProductDTO> findById(@PathVariable Long id) { ... }
 
 ### @db(field) / @json(field)
 DB 저장 필드와 JSON 직렬화 필드 지정.
+그 타입 필드의 컬럼 길이는 `@db` 필드의 길이입니다(`code: string(2)` -> `@Column(length = 2)`, `VARCHAR(2)`).
+2.x 생성기와 2.x 호환 출력(`output = 'v2'`)은 컬럼에 다른 속성이 하나도 없을 때만 이 길이를 씁니다:
+필수(`!`), `@unique`, `@updatable(false)` 필드는 거기서 JPA 기본값 255 가 됩니다. v3 출력은 언제나 길이를 줍니다.
 ```yaml
 enumeration:
   BoardType:

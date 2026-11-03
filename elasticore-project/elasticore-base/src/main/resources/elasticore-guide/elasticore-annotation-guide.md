@@ -1276,6 +1276,9 @@ public ResponseEntity<ProductDTO> findById(@PathVariable Long id) { ... }
 
 ### @db(field) / @json(field)
 Sets the field stored in the DB and the field used for JSON serialization.
+The column of a field of that type is as long as the `@db` field (`code: string(2)` -> `@Column(length = 2)`, `VARCHAR(2)`).
+The 2.x generator and the 2.x-compatible output (`output = 'v2'`) write that length only when nothing else is said about the column:
+a required (`!`), `@unique` or `@updatable(false)` field gets the JPA default 255 there. The v3 output gives it the length in every case.
 ```yaml
 enumeration:
   BoardType:
