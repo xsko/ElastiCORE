@@ -683,6 +683,7 @@ dto:
 | Annotation | Description |
 |-----------|------|
 | `@template(Entity)` | Inherits the entity's fields. Several are allowed: `@template(A,B)` |
+| `@only(a, b)` | Takes only these of the fields `@template`, `@searchable` or `@searchResult` copies; the DTO's own fields stay |
 | `@searchable(entity=E, pageSize=n)` | Generates a search DTO (converted to a Specification automatically) |
 | `@jsonview` / `@jsonview(auto)` | Turns on JsonView-based field visibility control |
 

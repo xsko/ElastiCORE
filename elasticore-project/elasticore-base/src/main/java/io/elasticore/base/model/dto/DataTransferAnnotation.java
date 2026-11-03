@@ -28,6 +28,8 @@ public interface DataTransferAnnotation extends EntityAnnotation {
 
     String META_TEMPLATE = "template";
 
+    /** The fields a DTO takes of what it copies: @only(note, deliveryDate). */
+    String META_ONLY = "only";
 
     String[] META_SEARCHABLE_NAME = new String[]{"searchable.entity", "searchable"};
 

@@ -4,6 +4,7 @@ import io.elasticore.base.ECoreModelContext;
 import io.elasticore.base.ModelDomain;
 import io.elasticore.base.SourceFileAccessFactory;
 import io.elasticore.base.model.ConstantParam;
+import io.elasticore.base.model.DataModelComponent;
 import io.elasticore.base.model.ECoreModel;
 import io.elasticore.base.model.ModelComponentItems;
 import io.elasticore.base.model.core.BaseECoreModelContext;
@@ -158,10 +159,47 @@ public class ModelExtractor {
                         DataTransfer d = items.get(i);
                         if (d == null) continue;
                         validateFieldTypes(d.getIdentity().getName(), d.getItems(), domainName, typeRegistry);
+                        refuseOnly(d, domainName, allContexts);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * An @only that names a field no copied model has, or that cannot keep
+     * anything, stops the run: the DTO would take fields nobody listed or lose
+     * one somebody did. 2.x stops on the warning, the rule engine on the
+     * failure; both are said once.
+     */
+    private static void refuseOnly(DataTransfer dto, String domainName, List<ECoreModelContext> allContexts) {
+        java.util.function.Function<String, DataModelComponent> find = name -> modelNamed(allContexts, name);
+        // DataTransfer extends the raw AbstractDataModel, so the list comes back raw.
+        for (Object problem : dto.onlyProblems(find)) {
+            String message = "[" + domainName + "] " + problem;
+            ConsoleLog.storeLog("DSL_WARN", message);
+            io.elasticore.base.model.pub.rules.ModelCheck.failSaid(message);
+        }
+    }
+
+    /**
+     * A model by its name (crm:Order is read as Order) from the domains this
+     * run loaded - not from every domain the process has seen, which a model
+     * looking up its template by itself also searches.
+     */
+    private static DataModelComponent modelNamed(List<ECoreModelContext> allContexts, String name) {
+        String model = name.substring(name.indexOf(':') + 1);
+        for (ECoreModelContext ctx : allContexts) {
+            String[] domainNames = ctx.getInternalDomainNames();
+            if (domainNames == null) continue;
+            for (String domainName : domainNames) {
+                ModelDomain d = ctx.getDomain(domainName);
+                DataModelComponent found =
+                        d == null || d.getModel() == null ? null : d.getModel().findModelByName(model);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void registerType(Map<String, List<String>> registry, String typeName, String domainName) {

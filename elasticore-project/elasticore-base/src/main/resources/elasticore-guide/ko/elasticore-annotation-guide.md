@@ -1049,6 +1049,18 @@ dto:
 
 `@template` 사용시 Entity의 `string(n)` 길이가 DTO에 자동 `@Size(max=n)` 반영.
 
+**`@only(...)` - 받을 필드.** 나머지를 `--` 로 하나씩 지우는 대신, 복사되는 필드 중 DTO 가 받을 것을 적습니다:
+```yaml
+dto:
+  OrderNoteDTO:
+    meta: dto @template(Order) @only(note, deliveryDate)
+    fields:
+      reason: string(100)       # DTO 에 선언한 필드: 항상 남음
+```
+- 거르는 것은 복사되는 필드뿐입니다. DTO 에 선언한 필드는 항상 남고, 적은 이름이면 복사되는 것을 덮어씁니다. 나중에 엔티티에 추가된 필드는 적기 전까지 DTO 에 없습니다.
+- `@searchable`, `@searchResult` 에도 같습니다. 관계 이름은 그 id 를 담는 필드를 남깁니다(DDD 참조의 `customer` 는 `customerId`).
+- 복사되는 모델에 없는 이름(다른 도메인의 템플릿도 찾음), `@template`·`@searchable`·`@searchResult` 없는 `@only`, `@extend` 와 함께 쓴 `@only`, 적은 필드에 `--` 이면 생성이 멈춥니다.
+
 ### 4.2 @searchable
 검색 전용 DTO 생성. 매개변수: `entity`(필수), `pageSize`, `pageable`.
 ```yaml

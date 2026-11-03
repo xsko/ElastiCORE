@@ -1049,6 +1049,18 @@ dto:
 
 With `@template`, the `string(n)` length of the entity is applied to the DTO as `@Size(max=n)` automatically.
 
+**`@only(...)` - the fields it takes.** Instead of removing the others one by one with `--`, name the fields the DTO takes of what it copies:
+```yaml
+dto:
+  OrderNoteDTO:
+    meta: dto @template(Order) @only(note, deliveryDate)
+    fields:
+      reason: string(100)       # declared in the DTO: always kept
+```
+- Only the copied fields are filtered. A field declared in the DTO is always kept, and with a listed name it overrides the copied one. A field added to the entity later is not in the DTO until it is listed.
+- The same with `@searchable` and `@searchResult`. A relation's name keeps the field that holds its id (`customer` keeps the `customerId` of a DDD reference).
+- Generation stops on a name no copied model has (a template of another domain is found too), on `@only` without `@template`, `@searchable` or `@searchResult`, on `@only` with `@extend`, and on `--` on a listed field.
+
 ### 4.2 @searchable
 Generates a DTO only for search. Parameters: `entity` (required), `pageSize`, `pageable`.
 ```yaml

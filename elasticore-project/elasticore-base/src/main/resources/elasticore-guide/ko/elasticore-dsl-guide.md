@@ -683,6 +683,7 @@ dto:
 | 어노테이션 | 설명 |
 |-----------|------|
 | `@template(Entity)` | 엔티티 필드 상속. 다중 가능: `@template(A,B)` |
+| `@only(a, b)` | `@template`·`@searchable`·`@searchResult` 가 복사하는 필드 중 이것만 받음. DTO 에 선언한 필드는 그대로 |
 | `@searchable(entity=E, pageSize=n)` | 검색 DTO 생성 (Specification 자동 변환) |
 | `@jsonview` / `@jsonview(auto)` | JsonView 기반 필드 가시성 제어 활성화 |
 

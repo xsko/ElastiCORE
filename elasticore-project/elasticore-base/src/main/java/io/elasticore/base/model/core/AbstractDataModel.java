@@ -256,13 +256,82 @@ public abstract class AbstractDataModel<T extends AbstractReplaceableModel<T>> e
             }
         }else {
             ListMap<String, Field> fieldListMap = model.getAllFieldListMap();
+            Set<String> only = onlyNames();
 
             for(Field f : fieldListMap.getList()) {
+                if (only != null && !only.contains(f.getName()) && !only.contains(f.getAnnotationValue("idof")))
+                    continue;
                 if(!list.containsKey(f.getName()))
                     list.put(f.getName(), f);
             }
         }
 
+    }
+
+    /**
+     * The names @only(note, deliveryDate) keeps of the fields copied from other
+     * models, or null without the mark. A relation's name keeps the field that
+     * holds its id too (customerId, written @idof(customer) for a DDD reference).
+     */
+    private Set<String> onlyNames() {
+        if (!getMetaInfo().hasMetaAnnotation(DataTransferAnnotation.META_ONLY)) return null;
+        return new LinkedHashSet<>(names(getMetaInfo().getMetaAnnotationValue(DataTransferAnnotation.META_ONLY)));
+    }
+
+    /** The names of a comma list, trimmed, an empty one left out; none for null. */
+    private static List<String> names(String list) {
+        List<String> names = new ArrayList<>();
+        if (list == null) return names;
+        for (String name : list.split(",", -1)) {
+            if (!name.trim().isEmpty()) names.add(name.trim());
+        }
+        return names;
+    }
+
+    /**
+     * What is wrong with this model's @only, one sentence each; empty without
+     * the mark. Asked once every domain is loaded, with find answering a model
+     * name from all of them, so a template of another domain is found.
+     */
+    public List<String> onlyProblems(java.util.function.Function<String, DataModelComponent> find) {
+        List<String> problems = new ArrayList<>();
+        Set<String> only = onlyNames();
+        if (only == null) return problems;
+        String name = getIdentity().getName();
+        MetaInfo meta = getMetaInfo();
+        if (only.isEmpty()) problems.add(name + ": @only names no field");
+        if (meta.hasMetaAnnotation(DataTransferAnnotation.META_EXTEND)) {
+            problems.add(name + ": @only cannot go with @extend, whose fields the DTO always has");
+        }
+        List<String> copied = new ArrayList<>(names(meta.getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE)));
+        copied.addAll(names(meta.getMetaAnnotationValue(DataTransferAnnotation.META_SEARCHABLE_NAME)));
+        copied.addAll(names(meta.getMetaAnnotationValue(DataTransferAnnotation.META_SEARCH_RESULT_NAME)));
+        if (copied.isEmpty()) {
+            problems.add(name + ": @only keeps fields of a @template, @searchable or @searchResult, and " + name
+                    + " has none");
+            return problems;
+        }
+        Set<String> known = new HashSet<>();
+        for (String model : copied) {
+            DataModelComponent found = find.apply(model);
+            if (found == null) continue;
+            // A DDD reference keeps its relation beside the id field, so the relation's name is here too.
+            for (Field f : found.getAllFieldListMap().getList()) known.add(f.getName());
+        }
+        for (String listed : only) {
+            if (!known.contains(listed)) {
+                problems.add(
+                        name + ": @only(" + listed + ") - " + String.join(", ", copied) + " has no field " + listed);
+            }
+        }
+        ModelComponentItems<Field> own = getItems();
+        for (int i = 0; i < own.size(); i++) {
+            Field f = own.get(i);
+            if (f.hasAnnotation("disable") && only.contains(f.getName())) {
+                problems.add(name + "." + f.getName() + " is removed with -- and kept by @only - say one of them");
+            }
+        }
+        return problems;
     }
 
     private String getReferenceModelNames() {
