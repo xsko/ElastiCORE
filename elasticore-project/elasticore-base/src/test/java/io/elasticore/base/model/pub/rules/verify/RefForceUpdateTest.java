@@ -166,21 +166,74 @@ public class RefForceUpdateTest {
                 log);
     }
 
-    /** A relation joined read-only on its id field's column: the clean output writes that field instead. */
+    private static final String JOINED_READ_ONLY = "RfTicketDTO.assigneeId @ref(assignee.employeeId) @forceupdate does"
+            + " nothing: assignee is joined read-only on the column of assigneeKey, so the row keeps its value - send"
+            + " assigneeKey instead";
+
+    /**
+     * A relation joined read-only on its id field's column is mapped insertable = false, updatable =
+     * false: the 2.x and compatible mappers clear it in memory and the row keeps its value, and the
+     * 3.0 code writes that field instead - in every output it does nothing, said once.
+     */
     @Test
-    public void aReadOnlyJoinIsSaidToDoNothingWhereItIsReadOnly() throws Exception {
+    public void aReadOnlyJoinIsSaidToDoNothingInEveryOutput() throws Exception {
         String joined = DESK.replace(
                 "      assignee: RfEmployee @ManyToOne",
                 "      assigneeKey: string(20)\n      assignee: RfEmployee @ManyToOne @joinBy(assigneeKey)");
-        File clean = project(joined, "jpa");
-        String log = run(clean, "layered", "java", "elasticore.rules.v3", 0);
-        assertTrue(log.contains("assignee is joined read-only on assigneeKey, which is written instead"), log);
+        for (String output : new String[] {"elasticore.rules.v2", "elasticore.rules.v3"}) {
+            String log = run(project(joined, "jpa"), "layered", "java", output, 0);
+            assertEquals(1, count(log, JOINED_READ_ONLY), output + "\n" + log);
+        }
+        String[] run = extract(project(joined, "jpa"));
+        assertEquals("0", run[0], run[1]);
+        assertTrue(run[1].contains(JOINED_READ_ONLY), run[1]);
+    }
 
-        // The compatible output writes the relation, as 2.x does, so it clears it.
-        File compat = project(joined, "jpa");
-        log = run(compat, "layered", "java", "elasticore.rules.v2", 0);
-        assertFalse(log.contains("joined read-only"), log);
-        assertEquals(2, count(found(compat, "RfdeskMapper.java"), CLEAR_JAVA));
+    /** A relation that keeps the one it was created with is not cleared either; a head that is no relation is said. */
+    @Test
+    public void aRelationNotUpdatedOrNoRelationAtAllIsSaid() throws Exception {
+        String model = DESK.replace(
+                        "      assignee: RfEmployee @ManyToOne",
+                        "      assignee: RfEmployee @ManyToOne @updatable(false)")
+                + String.join(
+                        "\n",
+                        "  RfTitleDTO:",
+                        "    meta: dto @template(RfTicket)",
+                        "    fields:",
+                        "      titleKey: string(20) @ref(title.employeeId) @forceupdate",
+                        "");
+        String log = run(project(model, "jpa"), "layered", "java", "elasticore.rules.v3", 0);
+        assertTrue(
+                log.contains("RfTicketDTO.assigneeId @ref(assignee.employeeId) @forceupdate does nothing on an update:"
+                        + " assignee is @updatable(false), so the row keeps the relation it was created with"),
+                log);
+        assertTrue(
+                log.contains("RfTitleDTO.titleKey @ref(title.employeeId) @forceupdate does nothing: title is no"
+                        + " relation of RfTicket to an entity"),
+                log);
+    }
+
+    /**
+     * The same entity name in another domain, with another key: the template's own domain is read
+     * first, as a model looks up its own - not the first domain that has the name.
+     */
+    @Test
+    public void aNameInAnotherDomainIsNotTheTemplatesEntity() throws Exception {
+        File project = project(DESK, "jpa");
+        domain(
+                project,
+                "rfaa",
+                "io.acme.rfaa",
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  RfEmployee:",
+                        "    meta: entity",
+                        "    fields:",
+                        "      staffNo: string(20) @id",
+                        ""));
+        String log = run(project, "layered", "java", "elasticore.rules.v3", 0);
+        assertFalse(log.contains("is not assignee.staffNo"), log);
     }
 
     /** The 2.x generator, as ./gradlew elcore runs it: the same else, and the same refusal. */

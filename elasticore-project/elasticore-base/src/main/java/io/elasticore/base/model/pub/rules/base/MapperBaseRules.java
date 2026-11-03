@@ -253,14 +253,10 @@ public class MapperBaseRules implements CodeRules {
             // A relation joined read-only on another field's column is not
             // written through: its key belongs to that field. The plain pass
             // writes it when the DTO names it the same; otherwise it is
-            // written here, to that field.
+            // written here, to that field. (A @forceupdate here clears nothing in
+            // any output, which ForcedRefCheck says once, for both generators.)
             String owningField = compatibleOrNull(code, readOnlyJoinOwner(e, relField));
             if (pk != null && pk.equals(childField) && owningField != null) {
-                doesNothing(
-                        e,
-                        f,
-                        relField + " is joined read-only on " + owningField + ", which is written instead"
-                                + " and never with a null");
                 if (!owningField.equals(f.name())) {
                     String write = code.syntax().setterRef(code.mapperTarget(owningField), owningField);
                     for (String block : new String[]{REV_TAIL, REV_TAIL_EM}) {

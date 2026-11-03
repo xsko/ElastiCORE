@@ -12,13 +12,17 @@
   overloads (plain and with an `EntityManager`), Java, Kotlin and MyBatis.
 - Refused once every domain is loaded (`ForcedRefCheck`), so that both generators stop: a required
   relation (`!` or `@notnull`), a `@ref` that is not the relation's single key, and a path past
-  `relation.key`. Said to do nothing where the mapper does not write the relation: a relation that
-  cascades, one joined read-only on another field's column (`@joinBy`, the 3.0 code), and a DDD
-  reference to another aggregate, held by its id field.
+  `relation.key`. Said to do nothing, once and for both generators, where the clear does not reach the
+  row: a relation that cascades, one joined read-only on another field's column (`@joinBy`, mapped
+  insertable = false, updatable = false: 2.x clears it in memory only, the 3.0 code writes that field),
+  one with `@updatable(false)`, and a `@ref` whose head is no relation of the template; by the rule
+  engine, a DDD reference to another aggregate, held by its id field. A template's relation is
+  resolved in the domain a name says (`crm:Employee`), else in the DTO's own first.
 - A `@ref` without `@forceupdate` is generated as before.
 - Checked: `RefForceUpdateTest` - the else in both overloads in the compatible output and the 3.0 code,
   in Kotlin and in MyBatis (one overload, no `EntityManager`), none for a `@ref` without
-  `@forceupdate`, the three refusals, the three warnings, and the 2.x generator in a JVM of its own
+  `@forceupdate`, the three refusals, each warning (the read-only join once in every output and in 2.x), a name
+  another domain has too, and the 2.x generator in a JVM of its own
   writing the same and refusing the same. The template's `AttachmentDTO.articleId` is now
   `@ref(article.articleId) @forceupdate`; `AttachmentArticleForceUpdateTest` runs the mapper 2.x
   generated against H2: a full update without an id (null, or empty) takes the attachment off its

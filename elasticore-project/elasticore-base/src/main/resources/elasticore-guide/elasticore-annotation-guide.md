@@ -445,7 +445,7 @@ assigneeId: string(20) @ref(assignee.memberId) @forceupdate   # no id: the ticke
 ```
 - Only on a full update (`isSkipNull = false`): a PATCH skips what it does not send, so the relation stays. `null` and `""` are both no id, as when attaching.
 - Refused at generation, in both generators: a required relation (`!` or `@notnull`), a `@ref` that is not the relation's single key, and a path past `relation.key`.
-- Said to do nothing where the mapper does not write the relation: one that cascades (written whole), one joined read-only on another field's column (`@joinBy`, whose field is written instead), and a DDD reference to another aggregate, held by its id field (send that id).
+- Said to do nothing where the clear does not reach the row: a relation that cascades (written whole), one joined read-only on another field's column (`@joinBy`: the row keeps it - send that field instead), one with `@updatable(false)` (it keeps the one it was created with), a DDD reference to another aggregate, held by its id field (send that id), and a `@ref` whose head is no relation of the template.
 
 #### @fk(Target) / @fk(Target.field) / @fk(Target.field, groupName)
 
