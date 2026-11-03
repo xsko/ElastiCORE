@@ -240,7 +240,34 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
         String orderByClause = toOrderByClause(extractSortCode(input));
         if (orderByClause.isEmpty()) return sql;
 
-        return sql + " ORDER BY " + orderByClause;
+        return withSort(sql, orderByClause);
+    }
+
+    /** LIMIT, OFFSET or FETCH as a keyword - not a :named parameter or a qualified column. */
+    private static final Pattern PAGE_START = Pattern.compile("(?<![:.])\\b(limit|offset|fetch)\\b");
+
+    /**
+     * The SQL ordered by the requested terms. Where the SQL has an ORDER BY of its own - the
+     * last at its top level, outside parentheses, quotes and comments - the requested terms go
+     * first and its own stay after them as tie breakers. Where it has none, the clause goes
+     * before a top-level LIMIT, OFFSET or FETCH, or at the end when there is none.
+     *
+     * @param sql the SQL after its conditional lines are applied
+     * @param terms the checked body of an ORDER BY clause ("name DESC, id ASC")
+     */
+    static String withSort(String sql, String terms) {
+        String top = topLevel(sql);
+        Matcher own = ORDER_BY.matcher(top);
+        int end = -1;
+        while (own.find()) end = own.end();
+        if (end >= 0) return sql.substring(0, end) + " " + terms + "," + sql.substring(end);
+
+        Matcher pages = PAGE_START.matcher(top);
+        if (pages.find()) {
+            int at = pages.start();
+            return sql.substring(0, at) + "ORDER BY " + terms + " " + sql.substring(at);
+        }
+        return sql + " ORDER BY " + terms;
     }
 
 
@@ -392,7 +419,10 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
 
     /** The SQL in lower case with the text in parentheses, quotes and comments blanked out, each at its place. */
     static String topLevel(String sql) {
-        char[] out = sql.toLowerCase(java.util.Locale.ROOT).toCharArray();
+        // Char by char, so each stays at its place: String.toLowerCase may lengthen the text
+        // (a dotted capital I becomes two chars) and shift every index after it.
+        char[] out = sql.toCharArray();
+        for (int i = 0; i < out.length; i++) out[i] = Character.toLowerCase(out[i]);
         int depth = 0;
         for (int i = 0; i < out.length; i++) {
             char ch = out[i];

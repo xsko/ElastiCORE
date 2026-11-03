@@ -190,8 +190,8 @@ class DbTransactionGatewaySortTest {
         DriverManagerDataSource dataSource =
                 new DriverManagerDataSource("jdbc:h2:mem:sortclause;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("CREATE TABLE sort_item (id INT PRIMARY KEY, name VARCHAR(20))");
-        jdbc.execute("INSERT INTO sort_item VALUES (1, 'b'), (2, 'c'), (3, 'a')");
+        jdbc.execute("CREATE TABLE sort_item (id INT PRIMARY KEY, name VARCHAR(20), grp VARCHAR(20))");
+        jdbc.execute("INSERT INTO sort_item VALUES (1, 'b', 'x'), (2, 'c', 'y'), (3, 'a', 'x')");
 
         factory = new LocalContainerEntityManagerFactoryBean();
         factory.setDataSource(dataSource);
@@ -348,12 +348,100 @@ class DbTransactionGatewaySortTest {
         assertThat(rowCount()).isEqualTo(3);
     }
 
+    @Nested
+    @DisplayName("withSort")
+    class WithSort {
+
+        @Test
+        @DisplayName("appends the clause to a query without an ORDER BY or a LIMIT of its own, as before")
+        void appends() {
+            assertThat(DbTransactionGateway.withSort("SELECT id FROM t\n", "name DESC"))
+                    .isEqualTo("SELECT id FROM t\n ORDER BY name DESC");
+        }
+
+        @Test
+        @DisplayName("puts the requested terms before the query's own")
+        void beforeOwnTerms() {
+            assertThat(DbTransactionGateway.withSort("SELECT id FROM t\nORDER BY id\n", "name DESC"))
+                    .isEqualTo("SELECT id FROM t\nORDER BY name DESC, id\n");
+            assertThat(DbTransactionGateway.withSort("SELECT id FROM t order  by id LIMIT 2", "name DESC"))
+                    .isEqualTo("SELECT id FROM t order  by name DESC, id LIMIT 2");
+        }
+
+        @Test
+        @DisplayName("goes before a LIMIT, OFFSET or FETCH, not a parameter or a column of that name")
+        void beforePages() {
+            assertThat(DbTransactionGateway.withSort("SELECT id FROM t WHERE a = :limit\nLIMIT :limit", "name ASC"))
+                    .isEqualTo("SELECT id FROM t WHERE a = :limit\nORDER BY name ASC LIMIT :limit");
+            assertThat(DbTransactionGateway.withSort("SELECT t.offset FROM t\nOFFSET 1 ROWS", "name ASC"))
+                    .isEqualTo("SELECT t.offset FROM t\nORDER BY name ASC OFFSET 1 ROWS");
+            assertThat(DbTransactionGateway.withSort("SELECT id FROM t FETCH FIRST 1 ROWS ONLY", "name ASC"))
+                    .isEqualTo("SELECT id FROM t ORDER BY name ASC FETCH FIRST 1 ROWS ONLY");
+        }
+
+        @Test
+        @DisplayName("leaves an ORDER BY or a LIMIT in parentheses, quotes and comments alone")
+        void notTopLevel() {
+            String nested = "SELECT id FROM (SELECT id FROM t ORDER BY id LIMIT 3) s\n";
+            assertThat(DbTransactionGateway.withSort(nested, "id DESC")).isEqualTo(nested + " ORDER BY id DESC");
+            String hidden = "SELECT id FROM t WHERE a <> 'order by x limit 1' /* order by y */\n-- fetch first\n";
+            assertThat(DbTransactionGateway.withSort(hidden, "id DESC")).isEqualTo(hidden + " ORDER BY id DESC");
+            // a dotted capital I lengthens the text in lower case; the positions still hold
+            String dotted = "SELECT id FROM t WHERE a <> 'İİ' ORDER BY id";
+            assertThat(DbTransactionGateway.withSort(dotted, "b ASC"))
+                    .isEqualTo("SELECT id FROM t WHERE a <> 'İİ' ORDER BY b ASC, id");
+        }
+    }
+
     @Test
-    @DisplayName("H2: a sorted query must not have its own ORDER BY - a second one is appended (as the port guide says)")
-    void ownOrderByBreaksSortedQuery() {
+    @DisplayName("H2: a requested sort goes before the query's own ORDER BY, which breaks its ties")
+    void ownOrderByBreaksTies() {
         String ordered = SQL + "ORDER BY id\n";
         assertThat(ids(ordered, new Search(null, null))).containsExactly(1, 2, 3);
-        assertThatThrownBy(() -> ids(ordered, new Search(null, "name-")))
-                .isNotInstanceOf(BadRequestException.class);
+        assertThat(ids(ordered, new Search(null, "name-"))).containsExactly(2, 1, 3);
+        assertThat(ids(ordered, new Search(null, "grp-"))).containsExactly(2, 1, 3);
+        assertThat(ids(ordered, new Search(null, "grp"))).containsExactly(1, 3, 2);
+        assertThat(ids(SQL + "ORDER BY id DESC\n", new Search(null, "grp"))).containsExactly(3, 1, 2);
+        assertThat(ids(ordered, new ColumnSearch("grp", false))).containsExactly(2, 1, 3);
+    }
+
+    @Test
+    @DisplayName("H2: a requested sort goes before a LIMIT, OFFSET or FETCH")
+    void sortBeforePages() {
+        assertThat(ids(SQL + "LIMIT 2\n", new Search(null, "name-"))).containsExactly(2, 1);
+        assertThat(ids(SQL + "ORDER BY id LIMIT 2\n", new Search(null, "grp"))).containsExactly(1, 3);
+        assertThat(ids(SQL + "OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY\n", new Search(null, "name-"))).containsExactly(1);
+        assertThat(ids(SQL + "FETCH FIRST 2 ROWS ONLY\n", new Search(null, "name"))).containsExactly(3, 1);
+        assertThat(ids(SQL + "offset 2 rows\n", new Search(null, "id-"))).containsExactly(1);
+    }
+
+    @Test
+    @DisplayName("H2: a paged query with its own ORDER BY counts all rows and pages by the requested sort")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void pagedOwnOrderBy() {
+        Page<Map> page = tx.execute(status -> {
+            try {
+                return gateway.executePageQuery(entry(SQL + "ORDER BY id\n"), new Search(null, "grp-"), Map.class, null,
+                        PageRequest.of(0, 2), true);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        assertThat(page.getTotalElements()).isEqualTo(3);
+        assertThat(idsOf(page.getContent())).containsExactly(2, 1);
+    }
+
+    @Test
+    @DisplayName("H2: an ORDER BY or LIMIT in a subquery, a string or a comment is not the query's own")
+    void nestedOrderByUntouched() {
+        String nested = "SELECT id, name FROM (SELECT id, name FROM sort_item ORDER BY id LIMIT 3) s WHERE 1=1\n"
+                + "AND name LIKE :keyword /* if:keyword */\n";
+        assertThat(ids(nested, new Search(null, "name-"))).containsExactly(2, 1, 3);
+
+        String hidden = "SELECT id, name FROM sort_item WHERE name <> 'order by id limit 1'\n"
+                + "AND name LIKE :keyword /* if:keyword */\n"
+                + "/* order by id offset 1 rows */\n"
+                + "-- order by id limit 1\n";
+        assertThat(ids(hidden, new Search(null, "name-"))).containsExactly(2, 1, 3);
     }
 }
