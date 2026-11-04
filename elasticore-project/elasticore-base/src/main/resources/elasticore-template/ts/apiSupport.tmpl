@@ -90,18 +90,25 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
     });
 }
 
+/**
+ * The body as JSON, or undefined when there is none: a 204, and a 200 with an
+ * empty body - what a void endpoint answers with ResponseEntity.ok().build(),
+ * as the batch update does.
+ */
+async function bodyOf(res: Response): Promise<unknown> {
+    const text = await res.text();
+    return text === '' ? undefined : JSON.parse(text);
+}
+
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await send(method, path, body);
     if (!res.ok) {
         throw new ApiError(res.status, path, await res.text());
     }
-    if (res.status === 204) {
-        return undefined as T;
-    }
-    return (await res.json()) as T;
+    return (await bodyOf(res)) as T;
 }
 
-/** The same, where the server answers 404 by having nothing to return. */
+/** The same, where the server has nothing to return: a 404, or no body. */
 export async function requestOrNull<T>(method: string, path: string): Promise<T | null> {
     const res = await send(method, path);
     if (res.status === 404) {
@@ -110,7 +117,8 @@ export async function requestOrNull<T>(method: string, path: string): Promise<T 
     if (!res.ok) {
         throw new ApiError(res.status, path, await res.text());
     }
-    return (await res.json()) as T;
+    const found = await bodyOf(res);
+    return found === undefined ? null : (found as T);
 }
 
 /** A path segment a caller supplied, which may contain anything. */

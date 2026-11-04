@@ -354,7 +354,9 @@ public class JpaEntityBaseRules implements CodeRules {
            .valIf("false".equals(f.dslValue("updatable")), "updatable", false);
 
         // 2.x keeps the enum's db length in a second bucket, consulted only
-        // when nothing else was said about the column.
+        // when nothing else was said about the column: a required enum, or one
+        // with a column name, got the default length 255. The 3.0 code gives
+        // the column its length whatever else is said about it.
         String enumLen = null;
         boolean lengthDefined = false;
         if (f.maxLength() > 0 && !f.isBigDecimal() && !f.isMoney()) {
@@ -362,7 +364,10 @@ public class JpaEntityBaseRules implements CodeRules {
             lengthDefined = true;
         } else if (isEnum) {
             String len = e.enumDbLength(f.coreItemType());
-            if (!len.isEmpty()) enumLen = len;
+            if (!len.isEmpty()) {
+                if (ctx(e).compatible()) enumLen = len;
+                else col.valRaw("length", "%s", len);
+            }
         }
         if ((f.isBigDecimal() || f.isMoney()) && f.hasPrecisionScale()) {
             col.val("precision", f.precision());
