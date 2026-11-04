@@ -634,6 +634,8 @@ private Partner partner;                // read-only join on the same column - n
 - The mapper writes `@ref(partner.partnerId)` as `partnerId` (it does not write the relation object).
 - Applies to: a to-one that points to another root of the same domain with a single key (`cascade`, `@embedded`, the reverse
   `@OneToOne(mappedBy)` and fields that already use `@joinBy` are excluded). A member's back reference to its own root stays as it is.
+- A root's reference to its own kind (`parent: Comment` on the root `Comment`) points to another instance, another aggregate, so it is
+  referenced by its id too: `parentCommentId` on the same column `parent_comment_id`, which a DTO declared with `@template` keeps.
 - To keep an object reference, use `@objectref`.
 - In code: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
 
