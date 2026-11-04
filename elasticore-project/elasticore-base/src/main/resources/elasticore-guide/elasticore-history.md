@@ -1,3 +1,224 @@
+## 3.0.261104-rc9
+
+New: `ddl { comments = true }` writes each column's label to the database, `@ref(...) @forceupdate` clears a
+relation on a full update, and the Ossie export carries a class `@jpa:Where` / `@jpa:SQLRestriction` as the dataset's
+row filter. Changed: an HTTP port call that gets an error status it cannot return as a value throws
+`HttpPortException` (`HttpApiClient.WebClientException` is removed), and a DBMS port query keeps its own ORDER BY when
+a sort value comes. Fixes: the v3 column of a required, `@unique` or not updatable enum is as long as its `@db` code,
+the mapper searches a relation by its flattened id when the model declares the entity's DTO, and the TypeScript
+client reads a 200 without a body as no value.
+
+### New Features (project DDL - column comments)
+
+#### `ddl { comments = true }` says each column's label to the database
+- Why: a field's label (`-- label`) becomes Hibernate's `@Comment` on the entity, and Hibernate's own
+  schema export writes it, but the project DDL wrote no comment: a database made from it, or from its
+  migrations, had none.
+- What: an opt-in `ddl { comments = true }` (the plugin's `DdlSpec.getComments`, passed as
+  `elasticore.ddl.comments`; `DdlConfig.comments`), which a domain overrides with `ddl.comments` in its
+  env.yml. With it on, a JPA domain's column takes its field's `@Comment` (a relation's goes on its
+  join column) and a MyBatis domain's (`MyBatisTables`) its field's label. The schema and a new table
+  say it after `CREATE TABLE`: `COMMENT ON COLUMN` on H2, PostgreSQL and Oracle, and on SQL Server the
+  `MS_Description` property with `N'...'`. A quote in it is doubled.
+- On SQL Server, whether the property is there is the database's to say, not the state's - comments
+  turned off and on again, a database Hibernate made, a baseline can each hold one the state does not:
+  `IF EXISTS (... sys.extended_properties ...)` updates it, or else adds it, and a drop runs only where
+  it is there. The schema is the table's, or the login's default (`SCHEMA_NAME()` through a variable)
+  where the table names none.
+- A comment added, changed or removed is a change that runs as written, outside `sameStorage`; none
+  is `IS NULL`, Oracle's `IS ''` and `sp_dropextendedproperty`. A new column's comment comes in the
+  same change. A Kotlin entity's escaped `\$` is a dollar.
+- The state keeps a comment only when they are on (`"comment"` of a column), so a state written
+  without them reads as it did; off, nothing is compared, written or kept, and the schema is the bytes
+  it was; turning them off leaves the comments already in the database. A label longer than Oracle
+  keeps (4000 bytes in UTF-8) or SQL Server (7500 bytes, two a character) stops the run, and nothing is
+  written for its database group. Columns only: an entity's label is written nowhere yet.
+- Checked: `ColumnCommentTest` (each database's words and a quote, a table in a schema, a new table
+  and column, added, changed and removed, off is byte-identical and compares nothing, the state with
+  and without, bytes counted per database, the project's setting and a domain's), `DdlMigrationTest`
+  (JPA and MyBatis: the schema, the first migration and the state; a label changed is
+  `comment of note.title` and no review; off says nothing unless the domain asks; a label over
+  Oracle's limit stops the run; a Kotlin entity's dollar), `ElastiCorePluginTest.theDdlCommentsArePassedWhenOn`,
+  and the template-mybatis `MigrationRun.comments` - a table's comments, their change, then comments
+  off and on again and a drop of one the database does not hold, read back from `information_schema`
+  (H2, every build), `pg_description`, `user_col_comments` and `sys.extended_properties` (`dbTest`).
+- Files: `Column.java`, `Table.java`, `Schema.java`, `Database.java`, `SchemaWriter.java`,
+  `SchemaDiff.java`, `DdlConfig.java`, `DdlRun.java`, `JpaSchemaReader.java`, `MyBatisTables.java`,
+  `DdlSpec.java`, `ElastiCorePlugin.java`, the tests above, `elasticore-env-guide.md` 9-1 (en, ko)
+
+### Bug Fixes (runtime - HTTP port error status)
+
+#### An HTTP port call that gets an error status throws one exception, HttpPortException, with the status, headers and body
+- Why: a service has to tell a 404 from a 409 from a 500 and log what the other side said (issue #75). The runtime threw
+  three unrelated types for an error status, and two of them dropped the body: `HttpApiClient.exchange` raised
+  `HttpApiClient.WebClientException` with a fixed message ("4xx Client Error"), a `multipart/form-data` port method
+  raised Spring's `HttpStatusCodeException` (RestTemplate), and a port method whose error body did not read as its
+  return type raised a raw decoding exception. The `WebClientResponseException -> IllegalStateException` mapping in
+  `HttpServiceProxyFactory.invoke_old` never ran.
+- After: `io.elasticore.springboot3.http.HttpPortException` (unchecked) carries `getStatusCode()`, `getResponseBody()`
+  (text), `getResponseHeaders()` / `getResponseHeader(name)`, `getPort()` and `getMethod()`; its message is
+  `erp.CreditCheckPort.check: HTTP 409 Conflict - <body, cut at 500 characters>`. `HttpApiClient.exchange`, the
+  multipart call and an error answer the proxy cannot read as the return type all throw it; the proxy adds the port and
+  method. `HttpApiClient.WebClientException` is removed (no guide, template or generated code named it). Unchanged: an
+  error answer with a body that reads as the return type is still the method's return value (port guide 2.8), a call
+  that got no answer is still `WebClientRequestException`, and `httpPort: spring` is untouched. No generated file
+  changes. Code that caught `HttpApiClient.WebClientException` or `HttpStatusCodeException` from a port catches
+  `HttpPortException` now.
+- Checked: `HttpPortExceptionTest` (MockWebServer answering 404, 409 and 500 with a JSON or HTML body and a header:
+  type, status, body, header, port and method on `HttpApiClient.exchange`, on a port method over WebClient and on a
+  multipart port method; a long body cut in the message; no answer stays `WebClientRequestException`),
+  `PortFailureContractTest` and `HttpServiceProxyFactoryTest` updated; `elasticore-springboot3` (244) and
+  `elasticore-springboot4` (245) tests pass; formatCheck, diffErrorprone, diffCoverage (84.7%) and diffMutation
+  (81.4%) pass.
+- Files: `elasticore-springboot3/.../http/HttpPortException.java` (new), `HttpApiClient.java`,
+  `HttpServiceProxyFactory.java`, their tests; `elasticore-dsl-port-guide.md` (English and Korean) 2.8.
+
+### New Features (Ossie export - a row filter on an entity)
+
+#### A class `@jpa:Where` or `@jpa:SQLRestriction`, such as a soft delete, is in the dataset
+- Why: an entity whose class says `@jpa:Where(clause = "delete_yn = 'N'")` is read by the application
+  without its deleted rows, but its dataset said only the table. A BI tool or an agent reading the
+  semantic model counted the deleted rows too, and so did every metric over that dataset, with nothing
+  in the model to say why the numbers differ from the application's.
+- What: Ossie has no row filter on a dataset, and a query as `source` would break a consumer that reads
+  `source` as a table, so `source` stays the table. The dataset's `ELASTICORE` extension gets
+  `row_filter`, the clause as written, and its `description` ends with `(rows only where: <clause>)`.
+  A metric over a filtered dataset, also through the metrics it is made of, gets
+  `dataset_row_filter: true` in its extension.
+- Read as Hibernate reads them: `Where` and `SQLRestriction`, fully qualified or not, with the `@jpa:`
+  or `@entity:` prefix that writes them onto the class; `SQLRestriction` over `Where`; only the
+  entity's own class. A filter on an `@abstract` parent is a warning and is not exported, because
+  Hibernate applies it to the child only when the parent is written as an entity, not as a
+  `@MappedSuperclass`, and the export does not know which. A clause that is not one string literal is
+  a warning and is not exported. `@Filter` is not read: it is off until a session turns it on.
+- An entity without a filter, and a metric over none, are exported byte for byte as before.
+- Checked: `OssieExportTest` - `@Where`, a fully qualified `@SQLRestriction` with double and single
+  quotes in the clause, both on one class, `@entity:`, a parent's filter, a clause that is no literal,
+  metrics over a filtered and an unfiltered dataset, and the same model with no filter giving the same
+  bytes for what no filter touches. All but the last fail without the change.
+- Files: `OssieSemanticModelExporter.java`, `OssieMetrics.java` (a metric's datasets),
+  `OssieExportTest.java`, `elasticore-rule-guide.md` (en, ko - DSL -> Ossie table)
+
+### Improvements (DBMS port runtime - sort)
+
+#### A DBMS port query keeps its own ORDER BY when a sort value comes with the request
+- Why: `SqlPortGateway` appended ` ORDER BY <requested>` to the end of the SQL, so a query with an
+  ORDER BY of its own, or one ending with LIMIT, OFFSET or FETCH, failed as soon as a sort value
+  came (#73). A query had to drop its default order, or the service had to clear the sort values
+  of the search DTO, and the user could not sort that list.
+- After: where the SQL has an ORDER BY at its top level (outside parentheses, quotes and comments -
+  the scan the page count already uses), the requested terms go first and the query's own stay
+  after them as tie breakers: `ORDER BY reg_date DESC LIMIT 10` + `amount-` ->
+  `ORDER BY amount DESC, reg_date DESC LIMIT 10`. Where it has none, the clause goes before a
+  top-level LIMIT, OFFSET or FETCH (not a `:limit` parameter or a `t.offset` column). A query
+  without either gets exactly what it got before. The checks of the sort terms are unchanged.
+  The top-level scan lower-cases char by char, so a character that lengthens in lower case (a
+  dotted capital I in a literal) no longer shifts the positions.
+- Generated code: unchanged. `mode: mybatis` is not changed: its port mapper is generated, not run
+  through `SqlPortGateway`, and still leaves out the requested sort where the SQL names its own
+  ORDER BY (`MyBatisPortRules`).
+- Checked: `DbTransactionGatewaySortTest` on H2 - own ORDER BY with a sort (ties broken by the own
+  terms, also on a counted page), LIMIT / OFFSET ... FETCH / FETCH FIRST with and without an own
+  ORDER BY, an ORDER BY or LIMIT in a subquery, a string literal and comments left alone; the
+  test that pinned the failure (`ownOrderByBreaksSortedQuery`) is replaced.
+  `:elasticore-springboot3:test` and `:elasticore-springboot4:test` pass.
+- Files: `elasticore-springboot3/.../bean/SqlPortGateway.java` (shared by elasticore-springboot4),
+  `DbTransactionGatewaySortTest.java`, `elasticore-guide/elasticore-dsl-port-guide.md` and
+  `ko/elasticore-dsl-port-guide.md` (3.6 sortCode, Using sortCode).
+
+### New Features (mapper - `@ref` with `@forceupdate`)
+
+#### A `@ref` onto a relation's key with `@forceupdate` takes the relation away when no id comes
+- Why: a DTO names a relation by its key, `assigneeId: string(20) @ref(assignee.employeeId)`, and the
+  mapper attaches the reference only when the id has a value. A null or empty id left the old relation
+  in place, and `@forceupdate`, which writes a plain field even when it is null, was not read for a
+  `@ref`. A service that lets a user clear a relation set it to null by hand after the mapper.
+- What: with `@forceupdate`, the attaching `if(hasValue(...))` gets
+  `else if(!isSkipNull){ to.setAssignee(null); }` - on a full update only, since the mapper serves a
+  PATCH too and a PATCH skips what it does not send. `null` and `""` are both no id, as `hasValue`
+  reads them. Both generators (2.x `MapperSrcPublisher` and the rule engine's `MapperBaseRules`), both
+  overloads (plain and with an `EntityManager`), Java, Kotlin and MyBatis.
+- Refused once every domain is loaded (`ForcedRefCheck`), so that both generators stop: a required
+  relation (`!` or `@notnull`), a `@ref` that is not the relation's single key, and a path past
+  `relation.key`. Said to do nothing, once and for both generators, where the clear does not reach the
+  row: a relation that cascades, one joined read-only on another field's column (`@joinBy`, mapped
+  insertable = false, updatable = false: 2.x clears it in memory only, the 3.0 code writes that field),
+  one with `@updatable(false)`, and a `@ref` whose head is no relation of the template; by the rule
+  engine, a DDD reference to another aggregate, held by its id field. A template's relation is
+  resolved in the domain a name says (`crm:Employee`), else in the DTO's own first.
+- A `@ref` without `@forceupdate` is generated as before.
+- Checked: `RefForceUpdateTest` - the else in both overloads in the compatible output and the 3.0 code,
+  in Kotlin and in MyBatis (one overload, no `EntityManager`), none for a `@ref` without
+  `@forceupdate`, the three refusals, each warning (the read-only join once in every output and in 2.x), a name
+  another domain has too, and the 2.x generator in a JVM of its own
+  writing the same and refusing the same. The template's `AttachmentDTO.articleId` is now
+  `@ref(article.articleId) @forceupdate`; `AttachmentArticleForceUpdateTest` runs the mapper 2.x
+  generated against H2: a full update without an id (null, or empty) takes the attachment off its
+  article, a PATCH keeps it, an id attaches that article.
+- Files: `MapperBaseRules.java`, `MapperSrcPublisher.java`, `ForcedRefCheck.java`, `ModelExtractor.java`,
+  `RefForceUpdateTest.java`, the template's `content/model/dto.yml`, its regenerated `ContentMapper.java`
+  and `AttachmentArticleForceUpdateTest.java`, `elasticore-annotation-guide.md` 2.4 (en, ko)
+
+### Bug Fixes (rule engine - a searched relation with a declared DTO)
+
+#### The mapper searches a relation by its flattened id alone when the model declares the entity's DTO
+- Why: a relation with `@search` (`board: Board! @search(eq)`) is searched through the id flattened onto the
+  search DTO, `boardBoardId`; the search DTO derived from the entity leaves the relation itself out. When the model
+  also declares the entity's DTO (`PostDTO: meta: dto @template(Post)`), the relation reached the mapper's search
+  conditions as it was: `toSpec` read `Board board = searchDTO.getBoard();`, a property the search DTO does not
+  have, so the generated project did not compile. Under `mode: mybatis` the run stopped with "board is further than
+  that". The rule engine only - in the 2.x-compatible output, the v3 output (Java, Kotlin; layered, DDD,
+  hexagonal) and MyBatis. 2.x writes the condition on the flattened id alone: the 2.2 generator, run on the same
+  model, reads `searchDTO.getBoardBoardId()` and nothing else.
+- What: the search DTO, the mapper and MyBatis's search ask one question, `SearchDtoBaseRules.searchedByItsFlattenedId`,
+  and leave out the same relation. A project whose model does not declare such a DTO generates what it did.
+- The template's `hr` model now declares it: `Project.lead: Employee @ManyToOne @search(eq)`, with
+  `ProjectDTO @template(Project)`. `elcoreTreeCheck` compared `HrMapper.java` as `DIFFER` without the change. The
+  regenerated `Project.java`, `ProjectSrchDTO.java`, `HrMapper.java`, `Q.java`, the schemas and `schema.yml` are
+  committed: an optional `lead_emp_id` column, and a search by `leadEmpId`.
+- Checked: `TemplateDtoSearchRelationTest` - the compatible and v3 output (layered and hexagonal), Kotlin and MyBatis;
+  three of its four tests fail without the change. `elcoreTreeCheck` 0 differ.
+- Files: `SearchDtoBaseRules.java`, `MapperSpecRules.java`, `MyBatisSearchRules.java`, `TemplateDtoSearchRelationTest.java`,
+  the template's `hr/model/entity.yml` and its regenerated files, `elasticore-annotation-guide.md` 2, "Required relationship" (en, ko)
+
+### Bug Fixes (TypeScript client - a 2xx without a body)
+
+#### The TypeScript client reads a 200 without a body as no value
+- Why: the generated server answers a void endpoint either way - `POST /signout` with 204, the batch update
+  `PUT /batch` with `ResponseEntity.ok().build()`, a 200 with no body. The client's `request` read only a 204 as
+  empty and parsed every other 2xx as JSON, so `batchUpdate(inputs)` rejected with
+  `SyntaxError: Unexpected end of JSON input` - not an `ApiError` - after the server had saved every row.
+  `requestOrNull`, the find by id, did the same on an empty 200.
+- What: `apiSupport.ts` reads the body as text first. No text is `undefined` for `request` and `null` for
+  `requestOrNull`, whatever the status; a body is parsed as JSON as before. The server's answers do not change.
+- Checked: `check/apiSupport.test.ts` in `elasticore-template-kt` runs the generated `apiSupport.ts` in node
+  (`elcore3tsTest`) against stubbed responses - a 200 without a body, a 204, a JSON body, a 404 and an empty 200
+  for a find, a 400 still an `ApiError`. Without the change, the empty-200 tests fail with that `SyntaxError`.
+- Files: `ts/apiSupport.tmpl`, `elasticore-template-kt/src/main/ts/check/apiSupport.test.ts`,
+  `elasticore-rule-guide.md` 2, "Error codes and languages" (en, ko)
+
+### Bug Fixes (v3 entity - an enum's column length)
+
+#### The column of a required, `@unique` or not updatable enum field is as long as its `@db` code
+- Why: an enum's column takes the length of the enum's `@db` field (`code: string(3)` -> `@Column(length = 3)`).
+  2.x keeps that length apart from the column's other attributes and writes it only when there are none,
+  and the rule engine took it over as it was. A field marked required (`boardType: BoardType!`), `@unique` or
+  `@updatable(false)` got `@Column(nullable = false)` and so on without a length: Hibernate and the project DDL
+  made the column `VARCHAR(255)`. In a real 3.0 project, twelve required enum columns of the PostgreSQL schema were
+  `VARCHAR(255)`.
+- What: the v3 output adds the length to the column's other attributes -
+  `@Column(nullable = false, length = 3)`, `@Column(length = 3, unique = true)`,
+  `@Column(updatable = false, length = 3)`; the schema has `VARCHAR(3)`. A column with nothing else said is
+  `@Column(length = 3)` as before. Java and Kotlin. MyBatis's schema already took the code's length.
+- The 2.x generator and the 2.x-compatible output (`output = 'v2'`) are unchanged: the 2.2 generator, run on the
+  same model, writes `@Column(nullable = false)`, `@Column(unique = true)` and `@Column(updatable = false)`, as the
+  compatible output does.
+- For a database made from the v3 output before, the column is narrower now: a schema migration
+  (`ddl { migration }`) writes the change for review.
+- Checked: `EnumColumnLengthTest` - the v3 entity in Java and Kotlin, the PostgreSQL schema without
+  `VARCHAR(255)`, the compatible output as 2.x writes it.
+- Files: `JpaEntityBaseRules.java`, `EnumColumnLengthTest.java`, `elasticore-annotation-guide.md` 5 (en, ko)
+
 ## 3.0.261102-rc8
 
 The guides a project receives are in English from this release; `guides = 'ko'` gives the Korean ones. `supportAI`
