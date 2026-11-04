@@ -1136,6 +1136,7 @@ HTTP/1.1 409                       (no header)
 `[{ "field": "lines", "code": "Size", "message": "장바구니가 비어 있습니다" }]`. The field message is looked up in the same bundle by Spring's
 message codes (`Size.lines`, `NotNull.customerDTO.login`, `NotNull` ...).
 The `ApiError` of the generated TypeScript client reads `code` and `fieldErrors` (field -> message).
+A 2xx without a body - a 204, or the 200 of `PUT /batch` (`ResponseEntity.ok().build()`) - is `undefined` to the client (`null` for a find), not a JSON parse error.
 
 - Runtime: `io.elasticore.springboot3.validation.ErrorMessages` (`text`, and `violation` for service-side validation),
   `RequestShapeErrors`, `InvariantViolationException(code, message, args...)`.
