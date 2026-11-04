@@ -19,9 +19,9 @@ CREATE TABLE cms_article (
     view_count BIGINT,
     featured BOOLEAN,
     article_status VARCHAR(3),
+    category_category_id BIGINT,
     ratings VARCHAR(255),
     labels VARCHAR(255),
-    category_category_id BIGINT,
     PRIMARY KEY (article_id)
 );
 
@@ -80,8 +80,8 @@ CREATE TABLE cms_comment (
     author_name VARCHAR(100) NOT NULL,
     author_email VARCHAR(100),
     approved BOOLEAN,
-    test_id BIGINT,
     article_article_id VARCHAR(36),
+    test_id BIGINT,
     PRIMARY KEY (comment_id)
 );
 
@@ -156,8 +156,8 @@ CREATE TABLE hr_employee (
     salary NUMERIC(12,2) NOT NULL,
     bonus_rate DOUBLE PRECISION,
     active BOOLEAN,
-    manager_emp_id VARCHAR(36),
     department_dept_id BIGINT,
+    manager_emp_id VARCHAR(36),
     PRIMARY KEY (emp_id)
 );
 
@@ -327,6 +327,7 @@ CREATE TABLE shop_order (
     total_amount NUMERIC(14,2),
     status VARCHAR(3),
     payment_method VARCHAR(2),
+    customer_customer_id BIGINT,
     street VARCHAR(200),
     city VARCHAR(100),
     state VARCHAR(50),
@@ -335,7 +336,6 @@ CREATE TABLE shop_order (
     notes TEXT,
     tracking_number VARCHAR(50),
     version BIGINT,
-    customer_customer_id BIGINT,
     PRIMARY KEY (order_id)
 );
 
@@ -367,10 +367,10 @@ CREATE TABLE shop_order_item (
     order_item_id VARCHAR(36) NOT NULL,
     order_order_id VARCHAR(36),
     item_seq INTEGER,
+    product_product_id VARCHAR(36),
     quantity INTEGER NOT NULL,
     unit_price NUMERIC(12,2) NOT NULL,
     discount NUMERIC(8,2),
-    product_product_id VARCHAR(36),
     PRIMARY KEY (order_item_id)
 );
 
@@ -438,21 +438,21 @@ CREATE TABLE shop_products_aud (
 
 CREATE TABLE shop_ticket (
     ticket_id VARCHAR(36) NOT NULL,
+    agent_agent_id BIGINT,
     subject VARCHAR(100) NOT NULL,
     status VARCHAR(3),
     billing VARCHAR(3),
     total NUMERIC(14,2),
-    agent_agent_id BIGINT,
     PRIMARY KEY (ticket_id)
 );
 
 CREATE TABLE shop_ticket_entry (
     entry_id VARCHAR(36) NOT NULL,
     ticket_ticket_id VARCHAR(36),
+    product_product_id VARCHAR(36),
     hours INTEGER NOT NULL,
     rate NUMERIC(12,2),
     amount NUMERIC(14,2),
-    product_product_id VARCHAR(36),
     PRIMARY KEY (entry_id)
 );
 
@@ -479,22 +479,31 @@ CREATE TABLE shop_outbox (
     PRIMARY KEY (id)
 );
 
+ALTER TABLE cms_article ADD CONSTRAINT fk_cms_article_category FOREIGN KEY (category_category_id) REFERENCES cms_content_category (category_id);
 ALTER TABLE cms_article_tags ADD CONSTRAINT fk_cms_article_tags_article FOREIGN KEY (article_article_id) REFERENCES cms_article (article_id);
 ALTER TABLE cms_article_tags ADD CONSTRAINT fk_cms_article_tags_tags FOREIGN KEY (tags_tag_id) REFERENCES cms_tag (tag_id);
 ALTER TABLE cms_article_aud ADD CONSTRAINT fk_cms_article_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
 ALTER TABLE cms_attachment ADD CONSTRAINT fk_cms_attachment_article FOREIGN KEY (article_article_id) REFERENCES cms_article (article_id);
+ALTER TABLE cms_bookmark ADD CONSTRAINT fk_cms_bookmark_article FOREIGN KEY (article_article_id) REFERENCES cms_article (article_id);
+ALTER TABLE cms_comment ADD CONSTRAINT fk_cms_comment_article FOREIGN KEY (article_article_id) REFERENCES cms_article (article_id);
 ALTER TABLE cms_comment ADD CONSTRAINT fk_cms_comment_parent_comment FOREIGN KEY (test_id) REFERENCES cms_comment (comment_id);
 ALTER TABLE cms_content_category ADD CONSTRAINT fk_cms_content_category_parent FOREIGN KEY (parent_category_id) REFERENCES cms_content_category (category_id);
+ALTER TABLE hr_employee ADD CONSTRAINT fk_hr_employee_department FOREIGN KEY (department_dept_id) REFERENCES hr_department (dept_id);
 ALTER TABLE hr_employee ADD CONSTRAINT fk_hr_employee_manager FOREIGN KEY (manager_emp_id) REFERENCES hr_employee (emp_id);
 ALTER TABLE hr_employee_skills ADD CONSTRAINT fk_hr_employee_skills_employee FOREIGN KEY (employee_emp_id) REFERENCES hr_employee (emp_id);
 ALTER TABLE hr_employee_skills ADD CONSTRAINT fk_hr_employee_skills_skills FOREIGN KEY (skills_skill_id) REFERENCES hr_skill (skill_id);
 ALTER TABLE hr_employee_aud ADD CONSTRAINT fk_hr_employee_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
 ALTER TABLE shop_category ADD CONSTRAINT fk_shop_category_pare_6fb00ae1 FOREIGN KEY (parent_category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_customer ADD CONSTRAINT fk_shop_customer_vip_profile FOREIGN KEY (vip_profile_profile_id) REFERENCES shop_vip_profile (profile_id);
+ALTER TABLE shop_order ADD CONSTRAINT fk_shop_order_customer FOREIGN KEY (customer_customer_id) REFERENCES shop_customer (customer_id);
 ALTER TABLE shop_order_aud ADD CONSTRAINT fk_shop_order_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
 ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_order FOREIGN KEY (order_order_id) REFERENCES shop_order (order_id);
+ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_product FOREIGN KEY (product_product_id) REFERENCES shop_products (product_id);
+ALTER TABLE shop_products ADD CONSTRAINT fk_shop_products_category FOREIGN KEY (category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_products_aud ADD CONSTRAINT fk_shop_products_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
+ALTER TABLE shop_ticket ADD CONSTRAINT fk_shop_ticket_agent FOREIGN KEY (agent_agent_id) REFERENCES shop_agent (agent_id);
 ALTER TABLE shop_ticket_entry ADD CONSTRAINT fk_shop_ticket_entry_ticket FOREIGN KEY (ticket_ticket_id) REFERENCES shop_ticket (ticket_id);
+ALTER TABLE shop_ticket_entry ADD CONSTRAINT fk_shop_ticket_entry_product FOREIGN KEY (product_product_id) REFERENCES shop_products (product_id);
 ALTER TABLE shop_vip_profile ADD CONSTRAINT fk_shop_vip_profile_customer FOREIGN KEY (customer_customer_id) REFERENCES shop_customer (customer_id);
 
 CREATE UNIQUE INDEX idx_cms_art_slug ON cms_article (slug);

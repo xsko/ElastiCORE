@@ -331,4 +331,45 @@ public class JpaSchemaReaderTest {
         assertEquals(1, t.column("status").length);
         assertTrue(r.warnings().isEmpty(), r.warnings().toString());
     }
+
+    @Test
+    public void aKotlinRelationReadThroughItsIdKeepsItsForeignKey() throws Exception {
+        // A reference by id, as the Kotlin rules write it: the id is the
+        // column, and the relation, final so it cannot be reassigned, reads it.
+        dir = Files.createTempDirectory("jpa-reader-kt-ref");
+        File f = new File(dir.toFile(), "src/main/kotlin/acme/Employee.kt");
+        assertTrue(f.getParentFile().mkdirs());
+        Files.write(
+                f.toPath(),
+                String.join(
+                                "\n",
+                                "package acme",
+                                "import jakarta.persistence.*",
+                                "@Entity",
+                                "@Table(name = \"hr_employee\")",
+                                "class Employee {",
+                                "    @Id",
+                                "    @Column(name = \"emp_id\", length = 36)",
+                                "    var empId: String? = null",
+                                "    /** Another aggregate, to read. The reference is managerEmpId; change that to point elsewhere. */",
+                                "    @ManyToOne(fetch = FetchType.LAZY)",
+                                "    @JoinColumn(name = \"manager_emp_id\" , insertable = false, updatable = false)",
+                                "    final var manager: Employee? = null",
+                                "    @Column(name = \"manager_emp_id\", length = 36)",
+                                "    var managerEmpId: String? = null",
+                                "}")
+                        .getBytes(StandardCharsets.UTF_8));
+        JpaSchemaReader r =
+                new JpaSchemaReader().read(Collections.singletonList(new File(dir.toFile(), "src/main/kotlin")));
+        Table t = r.schema(Collections.singletonList("acme.Employee")).table("hr_employee");
+        assertNotNull(t, r.warnings().toString());
+        assertEquals(36, t.column("manager_emp_id").length);
+        assertTrue(
+                t.foreignKeys().stream()
+                        .anyMatch(fk -> fk.columns.equals(Collections.singletonList("manager_emp_id"))
+                                && fk.table.equals("hr_employee")
+                                && fk.referenced.equals(Collections.singletonList("emp_id"))),
+                t.foreignKeys().toString());
+        assertTrue(r.warnings().isEmpty(), r.warnings().toString());
+    }
 }
