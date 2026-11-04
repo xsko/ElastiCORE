@@ -1,4 +1,4 @@
-//ecd:709758888H20260207233343_V1.0
+//ecd:1082111755H20261104091202_V3.0
 package io.elasticore.blueprint.domain.hr.entity;
 
 import lombok.Getter;
@@ -13,6 +13,7 @@ import jakarta.persistence.CascadeType;
 import java.util.*;
 import java.time.*;
 import io.elasticore.blueprint.domain.hr.enums.ProjectStatus;
+import io.elasticore.blueprint.domain.hr.entity.Employee;
 import jakarta.persistence.Entity;
 
 
@@ -63,6 +64,10 @@ public  class Project  implements java.io.Serializable  {
 	@Column(length = 3)
 	@Convert(converter = ProjectStatus.EntityConverter.class)
 	private ProjectStatus status;
+	
+	
+	@ManyToOne
+	private Employee lead;
 	
 	
 }

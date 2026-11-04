@@ -51,11 +51,7 @@ public class SearchDtoBaseRules implements CodeRules {
 
     @Rule(value = "srchdto-field", target = "srchdto", order = 10)
     void field(EntitySpec e, FieldSpec f) {
-        // A relation is searched by the identity flattened onto this DTO -
-        // parentCategoryCatId rather than parentCategory - so the relation
-        // itself is not a search property. Its flattened field carries the
-        // condition, and was added alongside it.
-        if (f.hasDsl("deferred") && f.isEntityRef()) {
+        if (searchedByItsFlattenedId(f)) {
             ctx(e).removeField(f);
             return;
         }
@@ -206,6 +202,20 @@ public class SearchDtoBaseRules implements CodeRules {
 
         String declared = f.dslDescription();
         return declared == null ? meaning : String.format("%s %s", declared, meaning);
+    }
+
+    /**
+     * Whether a field is a relation searched by the identity flattened onto
+     * the search DTO - parentCategoryCatId rather than parentCategory - so the
+     * relation itself is not a search property. Its flattened field carries
+     * the condition, and was added alongside it.
+     *
+     * Shared by the search DTO, the mapper and MyBatis's search, which must
+     * agree: a condition on a property the search DTO does not have reads a
+     * getter that is not there.
+     */
+    public static boolean searchedByItsFlattenedId(FieldSpec f) {
+        return f.hasDsl("deferred") && f.isEntityRef();
     }
 
     /**

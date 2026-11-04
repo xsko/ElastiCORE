@@ -705,7 +705,8 @@ postPostId: number;
 - **What changed in v3 output before 3.0.261022-rc1**: Before, v3 also required the nested `post`, as 2.x does. Now a request that sends only `postPostId`
   passes, and a request that sends only the nested `post` is refused by `@Valid` validation (that request could not link the relationship before either -
   the mapper reads only `postPostId`).
-- `postPostId` in the search DTO (`CommentSrchDTO`) is a search condition, so it is not required. The nested `post` is not in the search DTO.
+- `postPostId` in the search DTO (`CommentSrchDTO`) is a search condition, so it is not required. The nested `post` is not in the search DTO,
+  and the mapper's search (`toSpec`, MyBatis's `<if>`) reads `postPostId` alone - also when the model declares `CommentDTO @template(Comment)`.
 - In DDD and hexagonal bundles that refer to another aggregate by ID, the FK id field is the entity's ID field (`memberId`),
   and by the same rule that field is required - see `elasticore-rule-guide.md` "Refer to another aggregate by ID".
 - This does not apply to a DTO you declare yourself in `dto.yml`. In a DTO you declare yourself, write `!` on the

@@ -1,4 +1,4 @@
-//ecd:587121667H20260207233344_V1.0
+//ecd:-1333030947H20261104091202_V3.0
 package io.elasticore.blueprint.domain.hr.dto;
 
 import io.elasticore.blueprint.domain.hr.enums.*;
@@ -33,6 +33,9 @@ public  class ProjectSrchDTO  implements java.io.Serializable, SortableObject, P
 
 	@Schema(description = "Field matches any value in the given list. field:status"  , example="PLN: Planned | ACT: Active | HLD: On Hold | CMP: Completed | CXL: Cancelled")
 	private ProjectStatus status;
+	
+	@Schema(description = "Field equals value. field:leadEmpId"  )
+	private String leadEmpId;
 	
 	@Schema(description = "Use 'like' if value has %, else 'equal' field:projectCode"  )
 	private String projectCode;

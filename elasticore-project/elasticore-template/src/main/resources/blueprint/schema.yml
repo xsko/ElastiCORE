@@ -351,6 +351,7 @@ entities:
       endDate: Date @Column(name = "end_date")
       budget: java.math.BigDecimal @relation(mappedBy="budget_id") @foreignKey(budget_id) -- java.math.BigDecimal entity relationship
       status: string(3) @Column(name = "status", length = 3) -- 후보값( PLN=Planned, ACT=Active, HLD=On Hold, CMP=Completed, CXL=Cancelled)
+      lead: Employee @relation(mappedBy="project_id") @foreignKey(lead_emp_id) -- Employee entity relationship
 
   ProjectAssignment:
     meta: entity @java(io.elasticore.blueprint.domain.hr.entity.ProjectAssignment)

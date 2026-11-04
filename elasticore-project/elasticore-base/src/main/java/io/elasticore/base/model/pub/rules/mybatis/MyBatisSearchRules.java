@@ -31,6 +31,8 @@ public class MyBatisSearchRules implements CodeRules {
     @Rule(value = "mybatis-search-field", target = TARGET, order = 10)
     void field(EntitySpec e, FieldSpec f) {
         if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter")) return;
+        // As in the mapper: the search DTO dropped it for its flattened id.
+        if (SearchDtoBaseRules.searchedByItsFlattenedId(f)) return;
         if (SearchDtoBaseRules.flattensAReferenceById(e, f)) return;
         SourceCode c = ctx(e);
         // A @formula is JPA's SELECT expression, not a column of the table:

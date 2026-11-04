@@ -705,7 +705,8 @@ postPostId: number;
 - **3.0.261022-rc1 이전 v3 출력에서 바뀐 점**: 이전에는 v3도 2.x처럼 중첩 `post`를 요구했습니다. 이제 `postPostId`만
   보낸 요청이 통과하고, 중첩 `post`만 보내던 요청은 `@Valid` 검증에서 거절됩니다 (그 요청은 이전에도 관계를
   연결하지 못했습니다 - 매퍼는 `postPostId`만 읽습니다).
-- 검색 DTO(`CommentSrchDTO`)의 `postPostId`는 검색 조건이라 필수가 아닙니다. 중첩 `post`는 검색 DTO에 없습니다.
+- 검색 DTO(`CommentSrchDTO`)의 `postPostId`는 검색 조건이라 필수가 아닙니다. 중첩 `post`는 검색 DTO에 없고,
+  매퍼의 검색(`toSpec`, MyBatis 의 `<if>`)도 `postPostId` 만 읽습니다 - 모델이 `CommentDTO @template(Comment)` 를 선언해도 같습니다.
 - 다른 애그리거트를 ID로 참조하는 DDD·헥사고날 번들에서는 FK id 필드가 엔티티의 ID 필드(`memberId`)이고,
   같은 규칙으로 그 필드가 필수입니다 - `elasticore-rule-guide.md` "다른 애그리거트는 ID 로 참조".
 - `dto.yml`에 직접 선언한 DTO에는 적용되지 않습니다. 직접 선언한 DTO에서는 `postId: long! @ref(post.postId)`처럼

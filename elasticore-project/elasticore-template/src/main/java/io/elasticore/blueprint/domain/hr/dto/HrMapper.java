@@ -1,4 +1,4 @@
-//ecd:1943904645H20260416172730_V2.2
+//ecd:1643211809H20261104091202_V3.0
 package io.elasticore.blueprint.domain.hr.dto;
 
 import org.springframework.dao.PermissionDeniedDataAccessException;
@@ -1376,6 +1376,10 @@ public class HrMapper {
         ProjectStatus status = searchDTO.getStatus();
         if(hasValue(status)){
             sp = sp.and((r, q, c) -> r.get("status").in(status));
+        }
+        String leadEmpId = searchDTO.getLeadEmpId();
+        if(hasValue(leadEmpId)){
+            sp = sp.and((r,q,c) -> c.equal(r.get("lead").get("empId"),leadEmpId));
         }
         sp=setSpec(sp, "projectCode", searchDTO.getProjectCode());
         String name = searchDTO.getName();

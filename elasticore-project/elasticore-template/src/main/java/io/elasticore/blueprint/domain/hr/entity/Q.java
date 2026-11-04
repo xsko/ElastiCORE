@@ -1,4 +1,4 @@
-//ecd:-68839142H20260416172730_V2.2
+//ecd:141770877H20261104091202_V3.0
 package io.elasticore.blueprint.domain.hr.entity;
 
 
@@ -385,6 +385,10 @@ public class Q {
 	    public final String status="status";
 	    public Specification<T> status(Op op,Object value) {return getStatus().where(op,value);}
 	    public Specification<T> status(Op op,Object value,boolean chkEmpty) {return getStatus().where(op,value,chkEmpty);}
+	
+	    public final FieldInfo<T> getLead() {return new FieldInfo(Project.class,"lead",Employee.class, null,p);}
+	    public final String lead="lead";
+	    public final $Employee<T> lead() {return new $Employee(getLead());}
 	}
 	
 }

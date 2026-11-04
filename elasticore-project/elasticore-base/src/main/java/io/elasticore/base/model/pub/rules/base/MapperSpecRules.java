@@ -54,6 +54,7 @@ public class MapperSpecRules implements CodeRules {
 
         SourceCode c = ctx(e);
         // The search DTO dropped it; the identity field carries the condition.
+        if (SearchDtoBaseRules.searchedByItsFlattenedId(f)) return;
         if (SearchDtoBaseRules.flattensAReferenceById(e, f)) return;
 
         String type = f.typeName();
