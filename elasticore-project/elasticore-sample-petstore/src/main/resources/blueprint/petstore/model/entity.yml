@@ -16,6 +16,7 @@ entity:
       name:        string(30)! @search(like)
       description: string(3000)!
       category:    Category @ManyToOne         # -> categoryId
+      discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
     meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) -- 판매 단위 (Large, Male Puppy ...)

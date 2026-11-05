@@ -607,6 +607,10 @@ datasets:
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"stamp\": \"fee.REFUNDED\"}"
+      - name: deleted_at
+        expression:
+          sql: "deleted_at"
+        datatype: DateTimeTz
     custom_extensions:
       - vendor_name: ELASTICORE
         data: "{\"entity\": \"Shipment\", \"domain\": \"shop\", \"states\": {\"status\": {\"initial\": \"READY\", \"send\": \"READY -> SENT\", \"cancel\": \"READY -> CANCELLED\"}, \"fee\": {\"initial\": \"DUE\", \"pay\": \"DUE -> PAID\", \"cancel\": \"PAID -> REFUNDED\"}}, \"events\": \"Sent, Cancelled, Refunded\"}"

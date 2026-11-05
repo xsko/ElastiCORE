@@ -44,6 +44,10 @@ datasets:
         expression:
           sql: "description"
         datatype: String
+      - name: discontinued_at
+        expression:
+          sql: "discontinued_at"
+        datatype: DateTimeTz
       - name: category_id
         expression:
           sql: "category_id"

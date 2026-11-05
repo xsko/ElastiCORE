@@ -7,6 +7,7 @@ import io.elasticore.base.model.pub.rules.Rule;
 import io.elasticore.base.model.pub.rules.SourceCode;
 import io.elasticore.base.model.pub.rules.base.RuleText;
 import io.elasticore.base.model.pub.rules.base.ServiceAccessRules;
+import io.elasticore.base.model.pub.rules.base.SoftDelete;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -127,6 +128,14 @@ public class MyBatisMapperRules implements CodeRules {
              .varLine("inboundFinders", "/** Deletes the rows of one %s: its collection, replaced or deleted with it. */",
                      root.getName())
              .varLine("inboundFinders", "int deleteAllBy%s(@Param(\"key\") %s key);", by, rootKey);
+            if (SoftDelete.applies(e)) {
+                c.varLine("inboundFinders", "")
+                        .varLine(
+                                "inboundFinders",
+                                "/** Removes the live rows of one %s outright: its collection, replaced by an update. */",
+                                root.getName())
+                        .varLine("inboundFinders", "int purgeAllBy%s(@Param(\"key\") %s key);", by, rootKey);
+            }
         }
         if (deletesVersioned(e)) {
             FieldSpec version = MyBatisSql.version(e);
@@ -139,6 +148,13 @@ public class MyBatisMapperRules implements CodeRules {
             c.varLine("inboundFinders", "")
              .varLine("inboundFinders", "/** The row as stored, not as this transaction holds it: the members it held before a save. */")
              .varLine("inboundFinders", "Optional<%s> findStoredById(@Param(\"id\") %s id);", entity, keyType);
+        }
+        if (SoftDelete.applies(e)) {
+            c.varLine("inboundFinders", "")
+                    .varLine(
+                            "inboundFinders",
+                            "/** The row deleted or not (@deleted): what a row that names it checks it by - it still exists. */")
+                    .varLine("inboundFinders", "Optional<%s> findAnyById(@Param(\"id\") %s id);", entity, keyType);
         }
 
         MyBatisQueries.interfaceLines(c, e, MyBatisQueries.of(e));
@@ -342,18 +358,48 @@ public class MyBatisMapperRules implements CodeRules {
 
         String select = "SELECT <include refid=\"columns\"/> FROM <include refid=\"from\"/>";
         String pkParam = "#{id," + "jdbcType=" + MyBatisSql.paramJdbcType(e, pk) + "}";
+        // @deleted: a row deleted is kept, and no read of the row's own statements sees it.
+        SoftDelete.check(e);
+        boolean kept = SoftDelete.applies(e);
+        String live = kept ? " AND " + SoftDelete.live(e, MyBatisSql.ROOT) : "";
 
-        statement(x, "select", "findById", "resultMap=\"row\"",
-                select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam);
+        statement(
+                x,
+                "select",
+                "findById",
+                "resultMap=\"row\"",
+                select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam + live);
         if (holdsMembers(e)) {
             // The session's cache would answer the object being saved, already changed.
-            statement(x, "select", "findStoredById", "resultMap=\"row\" flushCache=\"true\"",
+            statement(
+                    x,
+                    "select",
+                    "findStoredById",
+                    "resultMap=\"row\" flushCache=\"true\"",
+                    select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam + live);
+        }
+        if (kept) {
+            statement(
+                    x,
+                    "select",
+                    "findAnyById",
+                    "resultMap=\"row\"",
                     select + " WHERE " + MyBatisSql.ROOT + "." + pkColumn + " = " + pkParam);
         }
-        statement(x, "select", "countById", "resultType=\"long\"",
-                "SELECT COUNT(*) FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
-        statement(x, "select", "findAll", "resultMap=\"row\"",
-                select + " <include refid=\"orderBy\"/>");
+        statement(
+                x,
+                "select",
+                "countById",
+                "resultType=\"long\"",
+                "SELECT COUNT(*) FROM " + table + " WHERE " + pkColumn + " = " + pkParam
+                        + (kept ? " AND " + SoftDelete.live(e, null) : ""));
+        statement(
+                x,
+                "select",
+                "findAll",
+                "resultMap=\"row\"",
+                select + (kept ? " WHERE " + SoftDelete.live(e, MyBatisSql.ROOT) : "")
+                        + " <include refid=\"orderBy\"/>");
         if (serviced) {
             statement(x, "select", "findBySearch", "resultMap=\"row\"",
                     select + " <include refid=\"where\"/> <include refid=\"orderBy\"/> <include refid=\"page\"/>");
@@ -362,8 +408,13 @@ public class MyBatisMapperRules implements CodeRules {
             String login = ServiceAccessRules.loginField(e);
             if (login != null) {
                 FieldSpec lf = field(e, login);
-                if (lf != null) statement(x, "select", "findAllByLogin", "resultMap=\"row\"",
-                        select + " WHERE " + MyBatisSql.ROOT + "." + MyBatisSql.column(lf) + " = #{value}");
+                if (lf != null)
+                    statement(
+                            x,
+                            "select",
+                            "findAllByLogin",
+                            "resultMap=\"row\"",
+                            select + " WHERE " + MyBatisSql.ROOT + "." + MyBatisSql.column(lf) + " = #{value}" + live);
             }
         }
         for (FieldSpec back : inbound(e)) {
@@ -371,12 +422,26 @@ public class MyBatisMapperRules implements CodeRules {
             String fk = MyBatisSql.keyColumn(e, back, root);
             String keyJdbc = MyBatisSql.paramJdbcType(root, root.pkField());
             String by = RuleText.capital(back.name());
-            statement(x, "select", "findAllBy" + by + "In", "resultMap=\"row\"",
+            statement(
+                    x,
+                    "select",
+                    "findAllBy" + by + "In",
+                    "resultMap=\"row\"",
                     select + " WHERE " + MyBatisSql.ROOT + "." + fk
                             + " IN <foreach collection=\"keys\" item=\"k\" open=\"(\" separator=\",\" close=\")\">#{k,jdbcType="
-                            + keyJdbc + "}</foreach> ORDER BY " + MyBatisSql.ROOT + "." + pkColumn);
-            statement(x, "delete", "deleteAllBy" + by, "",
-                    "DELETE FROM " + table + " WHERE " + fk + " = #{key,jdbcType=" + keyJdbc + "}");
+                            + keyJdbc + "}</foreach>" + live + " ORDER BY " + MyBatisSql.ROOT + "." + pkColumn);
+            String byKey = fk + " = #{key,jdbcType=" + keyJdbc + "}";
+            if (kept) {
+                statement(x, "update", "deleteAllBy" + by, "", SoftDelete.update(e, byKey));
+                statement(
+                        x,
+                        "delete",
+                        "purgeAllBy" + by,
+                        "",
+                        "DELETE FROM " + table + " WHERE " + byKey + " AND " + SoftDelete.live(e, null));
+            } else {
+                statement(x, "delete", "deleteAllBy" + by, "", "DELETE FROM " + table + " WHERE " + byKey);
+            }
         }
 
         // insert
@@ -385,6 +450,8 @@ public class MyBatisMapperRules implements CodeRules {
         List<String> insertVals = new ArrayList<String>();
         for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f == pk && generated) continue;
+            // When a row was deleted is the delete's to write.
+            if (f.hasDsl(SoftDelete.DELETED)) continue;
             if (MyBatisSql.isValue(e, f)) {
                 insertCols.add(MyBatisSql.column(f));
                 String value = param(e, f, f.name());
@@ -438,7 +505,8 @@ public class MyBatisMapperRules implements CodeRules {
             statement(x, "update", "update", "",
                     "UPDATE " + table + " SET\n" + I + I + I + joinLines(sets) + "\n" + I + I + where.trim());
         }
-        statement(x, "delete", "deleteById", "", "DELETE FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
+        if (kept) statement(x, "update", "deleteById", "", SoftDelete.update(e, pkColumn + " = " + pkParam));
+        else statement(x, "delete", "deleteById", "", "DELETE FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
         if (deletesVersioned(e)) {
             String vc = MyBatisSql.column(version);
             statement(x, "update", "lockVersion", "", "UPDATE " + table + " SET " + vc + " = " + vc + " WHERE " + pkColumn
@@ -465,6 +533,14 @@ public class MyBatisMapperRules implements CodeRules {
                 x.append(condition(cond, p, "b" + (++b)));
             }
             x.append(I).append(I).append(I).append("</if>\n");
+        }
+        if (SoftDelete.applies(e)) {
+            x.append(I)
+                    .append(I)
+                    .append(I)
+                    .append("AND ")
+                    .append(SoftDelete.live(e, MyBatisSql.ROOT))
+                    .append("\n");
         }
         FieldSpec ownerField = ServiceAccessRules.ownerField(e);
         if (ownerField != null && !MyBatisSql.isValue(e, ownerField)) {

@@ -383,6 +383,29 @@ abstract class DomainOnDatabase {
                 Long.class, due)).isEqualTo(1L);
     }
 
+    @Test
+    @DisplayName("@deleted: a delete keeps the row with its time, and no read of the API sees it again")
+    void aSoftDeleteKeepsTheRow() throws Exception {
+        String kept = shipment("{\"carrier\":\"SoftCo\",\"deletedAt\":\"2000-01-01T00:00:00Z\"}");
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and deleted_at is null",
+                Long.class, kept)).as("a request does not write it").isEqualTo(1L);
+        assertThat(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                "/api/v1/shop/shipment/" + kept)).andReturn().getResponse().getStatus()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and deleted_at is not null"
+                + " and carrier = 'SoftCo'", Long.class, kept)).isEqualTo(1L);
+        assertThat(mvc.perform(get("/api/v1/shop/shipment/" + kept)).andReturn().getResponse().getStatus()).isEqualTo(404);
+        String found = mvc.perform(post("/api/v1/shop/shipment/search").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"carrier\":\"SoftCo\"}")).andReturn().getResponse().getContentAsString();
+        assertThat(json.readTree(found).path("content").size()).as(found).isZero();
+
+        // A delete by the list endpoint, and a second delete that finds nothing to delete.
+        String other = shipment("{\"carrier\":\"SoftCo\"}");
+        mvc.perform(post("/api/v1/shop/shipment/delete").contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"shipmentId\":\"" + other + "\"},{\"shipmentId\":\"" + kept + "\"}]"));
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where carrier = 'SoftCo' and deleted_at is not null",
+                Long.class)).isEqualTo(2L);
+    }
+
     private String shipment(String body) throws Exception {
         String created = mvc.perform(post("/api/v1/shop/shipment").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andReturn().getResponse().getContentAsString();

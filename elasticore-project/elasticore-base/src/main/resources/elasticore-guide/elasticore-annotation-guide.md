@@ -2111,6 +2111,76 @@ PurchaseOrder:
 - `@compute` is recalculated on every save. If one of the operands is null, the result is null too.
 - **It is different from `@formula`**: `@formula("...")` is a Hibernate SQL expression that the database calculates.
 
+## @deleted - a delete keeps the row (v3)
+
+A delete writes **when the row was deleted** instead of removing it, and no read of the API finds the row again. Since: 3.0 (after 3.0.261105-rc10)
+
+```yaml
+Product:
+  meta: entity @root @editable @expose(20)
+  fields:
+    productId:      long @id @sequence
+    name:           string(30)!
+    discontinuedAt: timestamp @deleted     # taken off the catalog: kept, since items and orders still name it
+```
+
+Generated (pet store, JPA):
+
+```java
+@SQLDelete(sql = "UPDATE ps_product SET discontinued_at = CURRENT_TIMESTAMP WHERE product_id = ? AND discontinued_at IS NULL")
+public class Product implements java.io.Serializable {
+    @Column(name = "discontinued_at", insertable = false, updatable = false)
+    private Instant discontinuedAt;
+```
+
+```java
+public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
+    @Override
+    @Query("SELECT e FROM Product e WHERE e.productId = :id AND e.discontinuedAt IS NULL")
+    java.util.Optional<Product> findById(@Param("id") Long id);
+    // existsById, findAll(), findAll(Sort), findAll(Pageable), count() the same way
+```
+
+The search's `toSpec` ends with `sp = sp.and((r,q,c) -> c.isNull(r.get("discontinuedAt")))`. Under `mode: mybatis` the mapper says
+the same in its statements: `deleteById` is `UPDATE ... SET discontinued_at = CURRENT_TIMESTAMP WHERE ... AND discontinued_at IS NULL`,
+and `findById`, `countById`, `findAll` and the search have `AND t.discontinued_at IS NULL`.
+
+| What | With `@deleted` |
+|---|---|
+| `DELETE /{id}`, `POST /delete`, a delete by search | The row stays, with the time (`CURRENT_TIMESTAMP` of the database). Deleting it again changes nothing |
+| `GET /{id}`, search, count | Do not find it (404, not in the page) |
+| A row that names it (`Item.product`) | Still reads it - the item still shows its product's name. The reference check (`reference.Item.product`) still finds it, so a row that names it can be saved again |
+| A collection of such rows (`Ticket.entries`) | Holds the live ones: an entry taken out of its ticket is kept and does not come back |
+| The delete guard (`states: delete:`), `@PreRemove`, the invariants | Run as before: the delete is still JPA's remove (Hibernate `@SQLDelete`), or the MyBatis adapter's `beforeDelete` |
+| Sign-in (`@login`, `authenticate`) | A deleted row signs in no more |
+| The field | Read-only: a request (`"discontinuedAt": "..."` in a create or update) never writes it, the TypeScript field metadata says `readOnly: true`, the search DTO does not have it |
+
+- **The type**: `timestamp` or `datetime`. One field per entity; it may be inherited from an `@abstract` parent (`@extend`).
+- **Members are kept too**: when a delete would remove other rows outright with it - the members of its aggregate, a relation with
+  `@cascade` or `orphanRemoval` - those entities must be `@deleted` as well. Otherwise the build stops:
+  `Order @deleted keeps its rows, but a delete would remove lines (OrderLine) outright with it - mark that entity @deleted too.`
+  A delete of a ticket then keeps the ticket and its entries (Kotlin sample `ticket.yml`).
+- JPA (Java, Kotlin, Spring Boot 3.2 and later, and 4) and MyBatis (layered, DDD, hexagonal). Checked over HTTP and in the table on the pet store
+  (Hibernate 7), `elasticore-template-mybatis`, `elasticore-template-ddd-mybatis` (H2, Oracle, PostgreSQL, SQL Server) and
+  `elasticore-template-kt`.
+
+**Not supported yet** (stated rather than half done):
+- `mapping: xml` with JPA - the build stops. Hibernate 6.5 does not read `<sql-delete>` from orm.xml, so the row would be removed after all.
+  Keep the domain's mapping in annotations, or use `mode: mybatis`.
+- Taking a deleted row back (restore) is not generated. `UPDATE <table> SET <column> = NULL WHERE <key> = ?` in a declared query
+  (`repository.yml`) does it.
+- A query you declare yourself (`repository.yml` `@query` or a derived finder, a dbms port, native SQL) is not changed: add `<column> IS NULL` there.
+- A unique column keeps the deleted row's value, so a new row cannot take it.
+- A composite key, a `@rollup` entity, a single-table hierarchy (`@discriminator`) and a `@deleted` inherited from a parent with a table
+  of its own stop the build. Under JPA, an entity whose key the request gives needs a version (`@jpa:Version`) - otherwise the build stops.
+- The layered MyBatis service replaces a collection on update: the old live rows of `@deleted` members are removed outright then.
+
+| Use case | YAML |
+|---|---|
+| A product taken off the catalog that orders still name | `discontinuedAt: timestamp @deleted` |
+| A member who left, kept for the records | `withdrawnAt: datetime @deleted` |
+| A category retired while products still point at it | `retiredAt: datetime @deleted` |
+
 ## @event - domain events (DDD rule set)
 
 It declares **what can happen** to an aggregate root. It works in a project that has the `ddd-event` rule

@@ -183,6 +183,7 @@ entities:
       sentAt: java.time.Instant @relation(mappedBy="sent_at_id") @foreignKey(sent_at_id) -- java.time.Instant entity relationship
       cancelledAt: Date @Column(name = "cancelled_at")
       refundedOn: Date @Column(name = "refunded_on")
+      deletedAt: java.time.Instant @relation(mappedBy="deleted_at_id") @foreignKey(deleted_at_id) -- java.time.Instant entity relationship
 
   VipProfile:
     meta: entity @java(io.elasticore.sample.dddmybatis.shop.domain.model.VipProfile)

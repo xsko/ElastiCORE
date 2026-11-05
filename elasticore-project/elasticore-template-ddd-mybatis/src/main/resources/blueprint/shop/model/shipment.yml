@@ -2,6 +2,7 @@
 # for cancels it and refunds the fee - both or neither. Each lifecycle is
 # checked before either moves, so a refusal leaves the shipment as it was.
 # @stamp(STATE): the command that moves the shipment into STATE records when.
+# @deleted: a deleted shipment is kept, with when, and no read sees it again.
 
 enumeration:
   ShipmentStatus:
@@ -35,6 +36,7 @@ entity:
       sentAt:      timestamp @stamp(SENT)                # send records it
       cancelledAt: datetime @stamp(CANCELLED)
       refundedOn:  date @stamp(fee.REFUNDED)             # the lifecycle named, then the state
+      deletedAt:   timestamp @deleted                    # a delete keeps the row, with when
     states:
       status:
         initial: READY

@@ -443,6 +443,7 @@ CREATE TABLE shop_ticket (
     status VARCHAR(3),
     billing VARCHAR(3),
     closed_at TIMESTAMP WITH TIME ZONE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     total DECIMAL(14,2),
     PRIMARY KEY (ticket_id)
 );
@@ -454,6 +455,7 @@ CREATE TABLE shop_ticket_entry (
     hours INTEGER NOT NULL,
     rate DECIMAL(12,2),
     amount DECIMAL(14,2),
+    deleted_at TIMESTAMP WITH TIME ZONE,
     PRIMARY KEY (entry_id)
 );
 

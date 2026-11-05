@@ -54,6 +54,69 @@ public class RepositoryBaseRules implements CodeRules {
     }
 
     /**
+     * @deleted: the reads Spring Data writes itself leave a deleted row out,
+     * redeclared with a query (Spring Data runs a redeclared CRUD method's
+     * @Query). The searches leave it out through the mapper's toSpec; the
+     * delete is Hibernate's @SQLDelete on the entity. Nothing filters what
+     * names such a row - an order line still reads the product it names.
+     */
+    @Rule(value = "repo-soft-delete", target = "repository", order = 21)
+    void softDelete(EntitySpec e) {
+        SourceCode c = ctx(e);
+        if (c.compatible() || !SoftDelete.applies(e)) return;
+        boolean kt = c.syntax() == Syntax.KOTLIN;
+        String entity = e.getName();
+        String live = "e." + SoftDelete.field(e).name() + " IS NULL";
+        String byId = String.format(
+                "FROM %s e WHERE e.%s = :id AND %s", entity, e.pkField().name(), live);
+        String all = String.format("FROM %s e WHERE %s", entity, live);
+        String id = c.syntax().typeName(e.pkField().typeName());
+        c.varLine("methodList", "/** @deleted: a deleted row is not found by its key. */");
+        query(
+                c,
+                kt,
+                "SELECT e " + byId,
+                kt
+                        ? "override fun findById(@Param(\"id\") id: " + id + "): java.util.Optional<" + entity + ">"
+                        : "java.util.Optional<" + entity + "> findById(@Param(\"id\") " + id + " id)");
+        query(
+                c,
+                kt,
+                "SELECT COUNT(e) > 0 " + byId,
+                kt
+                        ? "override fun existsById(@Param(\"id\") id: " + id + "): Boolean"
+                        : "boolean existsById(@Param(\"id\") " + id + " id)");
+        c.varLine("methodList", "/** @deleted: every row but the deleted ones. */");
+        query(
+                c,
+                kt,
+                "SELECT e " + all,
+                kt ? "override fun findAll(): List<" + entity + ">" : "java.util.List<" + entity + "> findAll()");
+        query(
+                c,
+                kt,
+                "SELECT e " + all,
+                kt
+                        ? "override fun findAll(sort: org.springframework.data.domain.Sort): List<" + entity + ">"
+                        : "java.util.List<" + entity + "> findAll(org.springframework.data.domain.Sort sort)");
+        query(
+                c,
+                kt,
+                "SELECT e " + all,
+                kt
+                        ? "override fun findAll(pageable: Pageable): Page<" + entity + ">"
+                        : "Page<" + entity + "> findAll(Pageable pageable)");
+        query(c, kt, "SELECT COUNT(e) " + all, kt ? "override fun count(): Long" : "long count()");
+    }
+
+    private static void query(SourceCode c, boolean kt, String jpql, String signature) {
+        if (!kt) c.varLine("methodList", "@Override");
+        c.varLine("methodList", "@Query(%s)", RuleText.quote(jpql))
+                .varLine("methodList", "%s%s", signature, kt ? "" : ";")
+                .varLine("methodList", "");
+    }
+
+    /**
      * One entry per emitted line, mirroring getMethodInfo: a query that writes
      * is marked @Modifying and transactional, a declared query becomes a
      * @Query whose parameters are named, and every method is followed by a

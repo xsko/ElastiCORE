@@ -263,6 +263,8 @@ public class SearchDtoBaseRules implements CodeRules {
         // "like" on a password let anyone read its hash one prefix at a time.
         // An explicit @search above still wins. Clean output only.
         if (!ctx(e).compatible() && f.hasDslAny("writeonly", "nooutput", "password")) return null;
+        // When a row was deleted: a search never finds a deleted row (SoftDelete).
+        if (!ctx(e).compatible() && f.hasDsl(SoftDelete.DELETED)) return null;
 
         String derived;
         if (f.isStringType()) derived = "auto";

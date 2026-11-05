@@ -393,16 +393,21 @@ final class DddMyBatisPorts {
 
         // ---- Lookup.Source
         b.add("")
-         .add("/** Whose rows this finds, for the application's Lookup. */")
-         .add("@Override")
-         .add("public Class<?> type() {")
-         .add("    return %s.class;", root)
-         .add("}")
-         .add("")
-         .add("@Override")
-         .add("public Object find(Object id) {")
-         .add("    return id == null ? null : %s.findById((%s) id).map(this::loaded).orElse(null);", mapper, key)
-         .add("}");
+                .add("/** Whose rows this finds, for the application's Lookup. */")
+                .add("@Override")
+                .add("public Class<?> type() {")
+                .add("    return %s.class;", root)
+                .add("}")
+                .add("")
+                .add("@Override")
+                .add("public Object find(Object id) {")
+                // A deleted row (@deleted) still exists for the rows that name it.
+                .add(
+                        "    return id == null ? null : %s.%s((%s) id).map(this::loaded).orElse(null);",
+                        mapper,
+                        io.elasticore.base.model.pub.rules.base.SoftDelete.applies(e) ? "findAnyById" : "findById",
+                        key)
+                .add("}");
 
         // ---- what save, delete and read do underneath
         b.add("")

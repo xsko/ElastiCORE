@@ -209,15 +209,32 @@ public class MyBatisServiceFileRules implements CodeRules {
                 String item = target.getName();
                 String mapper = syntax.getter("helper", RuleText.uncapital(item));
                 String list = syntax.getter("entity", f.name());
-                methods.append(nl).append(String.format("if (before == null || %s != before[%d]) {", list, i))
-                       .append(n2).append(String.format("if (before != null) %s.deleteAllBy%s(%s);", mapper,
-                               RuleText.capital(back.name()), syntax.getter("entity", pk.name())))
-                       .append(n2).append(String.format("if (%s != null) {", list))
-                       .append(n2).append(String.format("    for (%s m : %s) {", item, list))
-                       .append(n3).append(String.format("    %s", MyBatisSql.joinedBy(target, back) != null
-                               ? syntax.statement(syntax.setter("m", MyBatisSql.joinedBy(target, back).name(),
-                                       syntax.getter("entity", pk.name())))
-                               : syntax.statement(syntax.setter("m", back.name(), "entity"))));
+                // Replaced in place: the rows go and are written again. A member kept when
+                // deleted (@deleted) would keep its key and refuse the insert, so its live
+                // rows are removed outright here (purgeAllBy); a delete of the root keeps them.
+                String replace = io.elasticore.base.model.pub.rules.base.SoftDelete.applies(target)
+                        ? "purgeAllBy"
+                        : "deleteAllBy";
+                methods.append(nl)
+                        .append(String.format("if (before == null || %s != before[%d]) {", list, i))
+                        .append(n2)
+                        .append(String.format(
+                                "if (before != null) %s.%s%s(%s);",
+                                mapper, replace, RuleText.capital(back.name()), syntax.getter("entity", pk.name())))
+                        .append(n2)
+                        .append(String.format("if (%s != null) {", list))
+                        .append(n2)
+                        .append(String.format("    for (%s m : %s) {", item, list))
+                        .append(n3)
+                        .append(String.format(
+                                "    %s",
+                                MyBatisSql.joinedBy(target, back) != null
+                                        ? syntax.statement(syntax.setter(
+                                                "m",
+                                                MyBatisSql.joinedBy(target, back)
+                                                        .name(),
+                                                syntax.getter("entity", pk.name())))
+                                        : syntax.statement(syntax.setter("m", back.name(), "entity"))));
                 FieldSpec mpk = target.pkField();
                 if (MyBatisSql.generatedKey(mpk) && !mpk.hasDslAny("primitive", "prim")) {
                     methods.append(n3).append(String.format("    %s", syntax.statement(syntax.setter("m", mpk.name(), "null"))));

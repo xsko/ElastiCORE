@@ -46,6 +46,8 @@ public class MapperSpecShellRules implements CodeRules {
 
     @Rule(value = "mapper-spec-close", target = "mapper", order = 120, phase = Rule.Phase.TAIL)
     void close(EntitySpec e) {
+        String kept = MapperSpecRules.softDeleteCondition(ctx(e), e);
+        if (kept != null) ctx(e).line(BLOCK, "        %s", kept);
         ctx(e).line(BLOCK, "        %s", ctx(e).syntax().statement("return sp"))
               .line(BLOCK, "    }");
     }

@@ -319,6 +319,17 @@ public class MapperSpecRules implements CodeRules {
      * off Specification.and; Kotlin converts a lambda to a Java interface only
      * where it can name it, so the interface is named.
      */
+    /**
+     * @deleted: every search leaves the deleted rows out, whatever it is
+     * given - the last condition of toSpec. Null when the rows are deleted
+     * outright, and in the 2.x-compatible output.
+     */
+    public static String softDeleteCondition(SourceCode c, EntitySpec e) {
+        String field = e.softDeleteField();
+        if (field == null || c.compatible()) return null;
+        return and(c.syntax(), e.getName(), "c.isNull(%s)", path(c.syntax(), field, "", "Any"));
+    }
+
     private static String and(Syntax syntax, String entityName, String predicate, Object... args) {
         return syntax.statement(String.format("sp = sp.and(%s)",
                 syntax.sam(String.format("Specification<%s>", entityName),

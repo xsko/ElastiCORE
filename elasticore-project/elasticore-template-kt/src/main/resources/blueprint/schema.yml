@@ -385,6 +385,7 @@ entities:
       status: string(3) @Column(name = "status", length = 3) -- 후보값( OPN=Open, CLS=Closed)
       billing: string(3) @Column(name = "billing", length = 3) -- 후보값( UNB=Unbilled, BIL=Billed, VOD=Void)
       closedAt: java.time.Instant @relation(mappedBy="closed_at_id") @foreignKey(closed_at_id) -- java.time.Instant entity relationship
+      deletedAt: java.time.Instant @relation(mappedBy="deleted_at_id") @foreignKey(deleted_at_id) -- java.time.Instant entity relationship
       total: java.math.BigDecimal @relation(mappedBy="total_id") @foreignKey(total_id) -- java.math.BigDecimal entity relationship
       entries: List<TicketEntry> @relation(mappedBy="entries_id") @foreignKey(entries_id) -- List<TicketEntry> entity relationship
 
@@ -399,6 +400,7 @@ entities:
       hours: io.elasticore.springboot3.domain.Quantity @relation(mappedBy="hours_id") @foreignKey(hours_id) -- io.elasticore.springboot3.domain.Quantity entity relationship
       rate: java.math.BigDecimal @relation(mappedBy="rate_id") @foreignKey(rate_id) -- java.math.BigDecimal entity relationship
       amount: java.math.BigDecimal @relation(mappedBy="amount_id") @foreignKey(amount_id) -- java.math.BigDecimal entity relationship
+      deletedAt: java.time.Instant @relation(mappedBy="deleted_at_id") @foreignKey(deleted_at_id) -- java.time.Instant entity relationship
 
   VipProfile:
     meta: entity @java(io.elasticore.blueprint.domain.shop.entity.VipProfile)

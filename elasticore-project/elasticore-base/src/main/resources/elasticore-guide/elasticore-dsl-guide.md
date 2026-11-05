@@ -631,6 +631,7 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Field | `@snapshot(item.unitCost)` | Copies the value of the referenced row once |
 | Field | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | Calculated on every save |
 | Field | `@stamp(SHIPPED)` | The time the lifecycle last entered that state ("When a state was entered" under `states:`) |
+| Field | `@deleted` | A delete keeps the row and writes the time here; no read finds it again ("@deleted" in `elasticore-annotation-guide.md`) |
 
 Details: "@access / @owner", "@password / @login" and "@snapshot / @compute" in `elasticore-annotation-guide.md`.
 

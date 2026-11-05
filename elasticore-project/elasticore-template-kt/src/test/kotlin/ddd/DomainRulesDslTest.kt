@@ -114,6 +114,63 @@ class DomainRulesDslTest {
         assertThat(read.closedAt).isAfter(before)
     }
 
+    @Autowired lateinit var jdbc: org.springframework.jdbc.core.JdbcTemplate
+    @Autowired lateinit var tx: org.springframework.transaction.support.TransactionTemplate
+    @Autowired lateinit var em: jakarta.persistence.EntityManager
+
+    /** An administrator's request. */
+    private fun asAdmin() {
+        val request = MockHttpServletRequest()
+        SessionCurrentUser.signIn(request, 0L, "ADMIN")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(request))
+    }
+
+    private fun ticketWithAnEntry(subject: String): String {
+        val owner = agent("sd-" + System.nanoTime()).agentId!!
+        asAgent(owner)
+        // An entry with no product: this application keeps no product table.
+        return tickets.save(TicketDTO().apply {
+            this.subject = subject
+            entries = listOf(io.elasticore.blueprint.domain.shop.dto.TicketEntryDTO().apply { hours = Quantity.of(2) })
+        })!!.ticketId!!
+    }
+
+    private fun count(sql: String, id: String): Long = jdbc.queryForObject(sql, Long::class.java, id)!!
+
+    @Test
+    fun aDeleteKeepsTheTicketAndItsEntriesAndTheLifecycleStillGuardsIt() {
+        val id = ticketWithAnEntry("soft")
+        asAdmin()
+        // Open: the lifecycle refuses the delete, as it did before (states: delete), and nothing is kept as deleted.
+        // Spring hands the refusal on wrapped, as it did before the delete was kept (states: delete).
+        val refused = assertThrows<RuntimeException> { tickets.deleteById(id) }
+        assertThat(generateSequence<Throwable>(refused) { it.cause }.any { it is InvariantViolationException }).isTrue()
+        assertThat(count("SELECT COUNT(*) FROM shop_ticket WHERE ticket_id = ? AND deleted_at IS NULL", id)).isEqualTo(1L)
+
+        tickets.close(id)
+        assertThat(tickets.deleteById(id)).isTrue()
+        assertThat(count("SELECT COUNT(*) FROM shop_ticket WHERE ticket_id = ? AND deleted_at IS NOT NULL", id)).isEqualTo(1L)
+        // Its members are kept with it, as @deleted rows of their own.
+        assertThat(count("SELECT COUNT(*) FROM shop_ticket_entry WHERE ticket_ticket_id = ? AND deleted_at IS NOT NULL", id))
+            .isEqualTo(1L)
+        assertThat(tickets.findById(id)).isEmpty
+    }
+
+    @Test
+    fun anEntryTakenOutIsKeptAndDoesNotComeBack() {
+        val id = ticketWithAnEntry("orphan")
+        val read = tickets.findById(id).get()
+        assertThat(read.entries).hasSize(1)
+        // Taken out of its aggregate: orphan removal is the delete, and the delete keeps the row.
+        tx.executeWithoutResult {
+            val ticket = em.find(Ticket::class.java, id)
+            ticket.removeTicketEntry(ticket.entries!!.first())
+        }
+        assertThat(count("SELECT COUNT(*) FROM shop_ticket_entry WHERE ticket_ticket_id = ? AND deleted_at IS NOT NULL", id))
+            .isEqualTo(1L)
+        assertThat(tickets.findById(id).get().entries ?: emptyList()).isEmpty()
+    }
+
     @Test
     fun aTicketIsDeletedOnlyWhenEveryLifecycleSaysSo() {
         val open = Ticket()
