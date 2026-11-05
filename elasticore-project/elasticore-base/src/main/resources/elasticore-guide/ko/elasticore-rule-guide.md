@@ -634,6 +634,10 @@ private Partner partner;                // 같은 컬럼의 읽기 전용 조인
 - 매퍼는 `@ref(partner.partnerId)` 를 `partnerId` 로 씁니다 (관계 객체는 쓰지 않음).
 - 적용 대상: 같은 도메인의, 키가 하나인 다른 루트를 가리키는 to-one (`cascade`, `@embedded`, 역방향
   `@OneToOne(mappedBy)`, 이미 `@joinBy` 를 쓴 필드는 제외). 자기 루트를 가리키는 멤버의 역참조는 그대로.
+- 루트가 자기와 같은 종류를 가리키는 참조(루트 `Comment` 의 `parent: Comment`)는 다른 인스턴스, 즉 다른 애그리거트이므로 역시
+  id 로 참조합니다: 관계가 쓰던 컬럼의 `parentCommentId` 이고, `@template` 으로 직접 선언한 DTO 에도 남습니다.
+- DTO 에 다른 이름으로 선언한 필드(`parentKey: long @ref(parent.commentId)`)는 다른 루트와 마찬가지로 id 필드의 이름으로 나옵니다. `parentKey` 를 보낸 요청은
+  무시됩니다. id 필드의 이름을 쓰거나, 선언한 이름을 유지하려면 관계에 `@objectref` 를 적으세요.
 - 객체 참조로 두려면 `@objectref`.
 - 코드에서: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
 
