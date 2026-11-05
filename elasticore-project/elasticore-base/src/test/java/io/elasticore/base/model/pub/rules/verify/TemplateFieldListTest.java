@@ -597,6 +597,45 @@ public class TemplateFieldListTest {
         assertFalse(dto.contains(" status;") || dto.contains(" orderId;"), dto);
     }
 
+    /** Only a list without the key: no DTO to write a service with, as for an entity with no @template. */
+    @Test
+    public void anEntityWhoseOnlyDtoIsAListWithoutTheKeyHasNoService() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  OyMemo:",
+                "    meta: entity",
+                "    fields:",
+                "      memoId: long @id @sequence",
+                "      body: string(200)",
+                "",
+                "dto:",
+                "  OyMemoBodyDTO:",
+                "    meta: dto @template(OyMemo[body])",
+                "",
+                "  OyMemoSrchDTO:",
+                "    meta: dto @searchable(entity=OyMemo, pageSize=20)",
+                "    fields:",
+                "      body: string(200) @search(like)",
+                "");
+        File compatible = project(model);
+        assertEquals(0, run(compatible, "layered", "elasticore.rules.v2", null));
+        List<File> hits = new ArrayList<File>();
+        collect(compatible, "OyMemoCoreService.java", hits);
+        assertTrue(hits.isEmpty(), "compatible: " + hits);
+
+        File generated = project(model);
+        String[] run = extract(generated);
+        assertEquals("0", run[0], run[1]);
+        collect(generated, "OyMemoCoreService.java", hits);
+        assertTrue(hits.isEmpty(), "2.x: " + hits);
+
+        // With the key in the list it is the DTO of the service, as the first @template always was.
+        File keyed = project(model.replace("OyMemo[body]", "OyMemo[memoId, body]"));
+        assertEquals(0, run(keyed, "layered", "elasticore.rules.v2", null));
+        assertTrue(found(keyed, "OyMemoCoreService.java").contains("OyMemoBodyDTO"));
+    }
+
     /** The first @template of an entity is its CRUD DTO in the compatible output, whatever it is called. */
     @Test
     public void aListDeclaredFirstIsNotTheEntitysCrudDtoWithoutItsKey() throws Exception {
