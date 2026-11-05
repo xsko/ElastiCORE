@@ -263,8 +263,8 @@ public class ControllerBaseRules implements CodeRules {
      * methods, and @restExclude, which methods replaces.
      */
     public static java.util.List<String> exposeProblems(EntitySpec e) {
+        if (!e.hasMeta("expose")) return java.util.Collections.emptyList();
         java.util.List<String> out = new java.util.ArrayList<String>();
-        if (!e.hasMeta("expose")) return out;
         String names = String.join(", ", EXPOSE_METHODS.keySet());
         for (String key : e.metaProperties("expose").keySet()) {
             if (!"methods".equalsIgnoreCase(key)) {
