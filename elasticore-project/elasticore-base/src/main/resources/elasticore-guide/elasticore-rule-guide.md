@@ -717,7 +717,7 @@ The generated `Number(...)` is right in both cases.
 For the same reason the TS model takes its shape **from the rules the server chose**. Not the `ts-model` bundle but
 the Java/Kotlin choice in the same build decides: if it uses an identifier reference (`customerId`) or a value object inline (`deliveryAddress`),
 the TS DTO does too, and each value object gets an interface (`Address.ts`). `XxxApi.ts` does not create
-endpoints that the controller does not have (`@readonly`, `@restExclude`, `update` of a root that accepts only commands), and
+endpoints that the controller does not have (`@readonly`, `@expose(methods)`, `@restExclude`, `update` of a root that accepts only commands), and
 a `@writeonly` field is optional because it is not in the response. All conditions of a search DTO are optional, and
 it has `pageNumber`, `pageSize`, `sortColumn` and `sortAscending`.
 
@@ -890,6 +890,10 @@ versions) check the following before writing. The 2.x-compatible bundle (`jpa-sp
 | Delete by condition `delete(srchDTO)` | Reads and deletes one at a time - members and listeners work together | - |
 | Update by condition `updateBySpecification` | Reads one at a time and applies through the mapper - version, audit and invariants apply | - |
 | Batch update `batchUpdate` (`PUT /batch`) | Calls `update(dto)` for each row in one transaction (from 3.0.261022-rc1) - a rule that overrides `update()` in the extension service also applies to the batch update, and each row gets the same checks, `readBack` and 409 conversion | Same as a single update |
+
+**`@expose(methods="read,search")`** lists what the controller serves (`create`, `read`, `search`, `update` with `batchUpdate`,
+`delete` with `deleteBatch`); the TypeScript client follows it and the use case drops the writes not listed, while the service keeps
+every method. It replaces `@restExclude`, which is deprecated and still applies as below (the build names the `methods` list to use).
 
 **`@restExclude(...)`** removes methods from the service, controller, use case and TypeScript client. The names are the service methods
 (`save`, `update`, `batchUpdate`, `delete` (list delete), `deleteById`, `updateBySpecification`) and the controller endpoints

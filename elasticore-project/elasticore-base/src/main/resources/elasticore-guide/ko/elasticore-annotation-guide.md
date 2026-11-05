@@ -13,6 +13,25 @@ Product:
   meta: entity @expose(30)  # pageSize=30, Controller 포함 전체 CRUD 생성
 ```
 
+#### @expose(methods="...") - Controller 가 제공할 엔드포인트
+> **Since: 3.0** (3.0.261104-rc9 다음 릴리스. 3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+
+Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
+`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. `GET /schema/info` 는 남습니다.
+TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD 유스케이스(`XxxUseCase`)도 적은 쓰기만 약속합니다.
+Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 입니다.
+```yaml
+Country:
+  meta: entity @root @expose(300, methods="read,search")   # 애플리케이션이 채우는 조회용: 조회·검색만
+Notice:
+  meta: entity @root @expose(20, methods="read,search,create")
+```
+- 값은 `@Index(columnList="a,b")` 처럼 따옴표 안의 목록 하나입니다. 쉼표 뒤 공백은 괜찮고, 따옴표가 없으면 첫 이름만 읽힙니다.
+- 모르는 이름은 DSL 경고이고 아무것도 제공하지 않습니다(`methods="raed,search"` 는 search 만) - 오타는 엔드포인트를
+  줄일 뿐 늘리지 않습니다. `methods=""` 는 다섯 가지 중 아무것도 제공하지 않습니다.
+- 나중에 줄이면, 고치지 않았거나 다른 곳만 고친(merge 되는) 생성 Controller 에서 엔드포인트가 빠집니다. 빠질 엔드포인트를
+  직접 고친 Controller 는 그대로 남고, 빌드가 아직 제공하는 엔드포인트를 짚어 줍니다.
+
 ### @service
 `@expose`와 동일하나 Controller 생성 제외. 내부 서비스 용도.
 ```yaml
@@ -31,8 +50,9 @@ CommonCode:
   meta: entity @expose @readonly
 ```
 
-### @restExclude(메서드, ...)
-> **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+### @restExclude(메서드, ...) - deprecated
+> **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음). `@expose(methods="...")` 로 대체되어 **deprecated**:
+> 계속 적용되고, 빌드가 같은 엔드포인트가 되는 `methods` 목록을 - 그런 목록이 없으면(`batchUpdate` 없는 `update`) 가장 가까운 것과 달라지는 점을 - 알려 줍니다.
 
 지정한 메서드만 제외. 이름은 Service 메서드(`save`·`update`·`batchUpdate`·`delete`·`deleteById`·`updateBySpecification`)와
 Controller 엔드포인트(`create`·`read`·`search`·`update`·`batchUpdate`·`deleteBatch`·`deleteById`·`schemaInfo`). v3 출력에서는
@@ -43,7 +63,7 @@ Notice:
   meta: entity @expose @restExclude(batchUpdate, deleteById)
 ```
 
-> 엔티티의 `@readonly`·`@restExclude` 는 3.0 규칙엔진(`elcore3`)이 읽습니다. 2.x 생성기(`output = 'v2'` 의 `elcore`)는
+> 엔티티의 `@readonly`·`@expose(methods)`·`@restExclude` 는 3.0 규칙엔진(`elcore3`)이 읽습니다. 2.x 생성기(`output = 'v2'` 의 `elcore`)는
 > 읽지 않고 모든 메서드를 생성합니다.
 
 ### @audited

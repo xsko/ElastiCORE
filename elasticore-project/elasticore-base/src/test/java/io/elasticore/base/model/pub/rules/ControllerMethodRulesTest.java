@@ -46,6 +46,15 @@ public class ControllerMethodRulesTest {
         return code.render();
     }
 
+    /** The 3.0 skeleton: @expose(methods) is read by the 3.0 output only. */
+    private String renderV3(EntitySpec e) {
+        return new RuleEngine()
+                .templateSet(SourceCode.TemplateSet.V3)
+                .register(new ControllerBaseRules())
+                .run(e, "control")
+                .render();
+    }
+
     // ------------------------------------------------------------------
 
     @Test
@@ -78,6 +87,126 @@ public class ControllerMethodRulesTest {
         assertTrue(out.contains("@GetMapping(\"/schema/info\")"), out);
         // class skeleton intact
         assertTrue(out.trim().endsWith("}"), out);
+    }
+
+    @Test
+    public void exposeMethods_keepsOnlyTheListedEndpoints() {
+        EntitySpec e = order().meta("expose", "20").metaProperty("expose", "methods", "read,search");
+
+        // The 2.x-compatible output does not read it.
+        String compatible = render(e);
+        assertTrue(compatible.contains("@DeleteMapping") && compatible.contains("@PutMapping"), compatible);
+
+        String out = renderV3(e);
+
+        assertTrue(out.contains("@GetMapping(\"/{orderId}\")"), out);
+        assertTrue(out.contains("@PostMapping(\"/search\")"), out);
+        assertTrue(out.contains("@GetMapping(\"/schema/info\")"), out);
+        assertFalse(out.contains("@PostMapping\n"), "create must be dropped:\n" + out);
+        assertFalse(out.contains("@PutMapping"), "update and batchUpdate must be dropped:\n" + out);
+        assertFalse(out.contains("@DeleteMapping") || out.contains("@PostMapping(\"/delete\")"), out);
+    }
+
+    @Test
+    public void exposeMethods_eachNameStandsForItsEndpoints() {
+        EntitySpec e = order().meta("expose", null).metaProperty("expose", "methods", "update, delete");
+
+        java.util.Set<String> omitted = ControllerBaseRules.exposeOmitted(e);
+
+        assertTrue(omitted.containsAll(java.util.Arrays.asList("create", "read", "search")), omitted.toString());
+        assertFalse(
+                omitted.contains("update")
+                        || omitted.contains("batchUpdate")
+                        || omitted.contains("deleteBatch")
+                        || omitted.contains("deleteById"),
+                omitted.toString());
+    }
+
+    @Test
+    public void exposeWithoutMethods_omitsNothingAndSaysNothing() {
+        EntitySpec e = order().meta("expose", "20");
+
+        assertTrue(ControllerBaseRules.exposeOmitted(e).isEmpty());
+        assertTrue(ControllerBaseRules.exposeProblems(e).isEmpty());
+        assertTrue(renderV3(e).contains("@DeleteMapping"));
+    }
+
+    @Test
+    public void exposeProblems_nameEachMistake() {
+        EntitySpec e = order().meta("expose", "20")
+                .meta("readonly", null)
+                .metaProperty("expose", "methods", "read,serch,create")
+                .metaProperty("expose", "pagesize", "20");
+
+        java.util.List<String> said = ControllerBaseRules.exposeProblems(e);
+
+        assertTrue(
+                said.contains(
+                        "[Order] @expose(pagesize=...): @expose takes methods=\"...\" only; pagesize is ignored."),
+                said.toString());
+        assertTrue(
+                said.contains(
+                        "[Order] @expose(methods=\"read,serch,create\"): serch is not one of create, read, search,"
+                                + " update, delete; it serves nothing."),
+                said.toString());
+        assertTrue(
+                said.contains("[Order] @expose(methods=\"read,serch,create\") lists create, which @readonly takes away;"
+                        + " drop one of the two."),
+                said.toString());
+    }
+
+    @Test
+    public void restExcludeDeprecation_namesTheSameListOrTheNearestAndWhatItChanges() {
+        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteById"))
+                .equals("[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,update\"). It still applies."));
+        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteBatch"))
+                .equals("[Order] @restExclude is deprecated, and no @expose(methods) list serves the same endpoints:"
+                        + " the nearest is @expose(methods=\"create,read,search,update\"), but it also drops"
+                        + " DELETE /{id}. It still applies."));
+        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "schemaInfo"))
+                .equals("[Order] @restExclude is deprecated, and no @expose(methods) list serves the same endpoints:"
+                        + " the nearest is @expose(methods=\"create,read,search,update,delete\"), but GET /schema/info"
+                        + " stays. It still applies."));
+        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "update, read"))
+                .equals("[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,search,delete\"). It still applies."));
+        // With @readonly: only the reads are left either way.
+        assertTrue(ControllerBaseRules.restExcludeDeprecation(
+                        order().meta("readonly", null).meta("restexclude", "search"))
+                .equals("[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"read\"). It still applies."));
+    }
+
+    @Test
+    public void exposeMethods_keyAndNamesAreReadWithoutRegardToCase() {
+        EntitySpec e = order().meta("expose", null).metaProperty("Expose", "Methods", "Read, SEARCH");
+
+        java.util.Set<String> omitted = ControllerBaseRules.exposeOmitted(e);
+
+        assertFalse(omitted.contains("read") || omitted.contains("search"), omitted.toString());
+        assertTrue(
+                omitted.containsAll(
+                        java.util.Arrays.asList("create", "update", "batchUpdate", "deleteBatch", "deleteById")),
+                omitted.toString());
+        assertTrue(
+                ControllerBaseRules.exposeProblems(e).isEmpty(),
+                ControllerBaseRules.exposeProblems(e).toString());
+        assertTrue("Read, SEARCH".equals(e.metaProperty("expose", "Methods")));
+        assertTrue(e.metaProperty("expose", "nothing") == null && e.metaProperty("other", "Methods") == null);
+        assertTrue(e.metaProperties("other").isEmpty());
+        // A parameter without a value is not recorded.
+        assertTrue(order().metaProperty("expose", "methods", null)
+                .metaProperties("expose")
+                .isEmpty());
+    }
+
+    @Test
+    public void exposeMethods_withoutExposeSaysNothingAndOmitsNothing() {
+        EntitySpec e = order().metaProperty("expose", "methods", "read");
+
+        assertTrue(ControllerBaseRules.exposeOmitted(e).isEmpty());
+        assertTrue(ControllerBaseRules.exposeProblems(e).isEmpty());
     }
 
     /** A corporate rule set adding a custom endpoint under its own condition. */

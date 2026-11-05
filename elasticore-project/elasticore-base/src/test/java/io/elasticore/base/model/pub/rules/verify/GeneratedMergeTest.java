@@ -298,6 +298,71 @@ public class GeneratedMergeTest {
         assertTrue(log.contains("CustomerController.java: the DSL changes this file of yours"), log);
     }
 
+    /**
+     * @expose(methods) narrowed after the controller was written: a controller
+     * nobody edited loses the endpoints, and so does one edited elsewhere; one
+     * edited in an endpoint that goes is kept, and the build names what it
+     * still serves - not the endpoint the developer added of their own.
+     */
+    @Test
+    public void narrowingTheMethodsTakesTheEndpointsOutOrNamesWhatIsLeft() throws Exception {
+        String narrow = CUSTOMER.replace("@expose(20)", "@expose(20, methods=\"read,search\")");
+        File project = project(CUSTOMER + ORDER, "jpa", "");
+        run(project, 0);
+        Path control = java(project, "CustomerController.java");
+        assertTrue(read(control).contains("@DeleteMapping") && read(control).contains("@PutMapping"), read(control));
+
+        // Never edited: the endpoints go.
+        model(project, narrow + ORDER);
+        run(project, 0);
+        String narrowed = read(control);
+        assertFalse(narrowed.contains("@DeleteMapping") || narrowed.contains("@PutMapping"), narrowed);
+        assertTrue(narrowed.contains("@PostMapping(\"/search\")"), narrowed);
+
+        // Edited away from them: they go, the edit stays.
+        model(project, CUSTOMER + ORDER);
+        run(project, 0);
+        String writable = read(control);
+        int open = writable.indexOf('\n', writable.indexOf("class CustomerController"));
+        Files.write(
+                control,
+                (writable.substring(0, open + 1) + "    // the team's own endpoints\n" + writable.substring(open + 1))
+                        .getBytes(StandardCharsets.UTF_8));
+        model(project, narrow + ORDER);
+        String log = run(project, 0);
+        assertTrue(log.contains("CustomerController.java  MERGED(your edits kept)"), log);
+        assertFalse(read(control).contains("@DeleteMapping") || read(control).contains("@PutMapping"), read(control));
+        assertTrue(read(control).contains("// the team's own endpoints"), read(control));
+
+        // Edited in one that goes, beside an endpoint of the developer's own: kept, and the
+        // build names the generated endpoints it still serves - not /export.
+        model(project, CUSTOMER + ORDER);
+        run(project, 0);
+        String again = read(control);
+        String mine = again.replaceFirst("(@DeleteMapping[^\\r\\n]*)", "$1 // deletes softly in our build");
+        int end = mine.lastIndexOf('}');
+        mine = mine.substring(0, end)
+                + "    @GetMapping(\"/export\")\n    public String export() { return \"\"; }\n}\n";
+        Files.write(control, mine.getBytes(StandardCharsets.UTF_8));
+        model(project, narrow + ORDER);
+        log = runCapturingErr(project, 0);
+        assertTrue(log.contains("CustomerController.java  KEPT(yours"), log);
+        assertEquals(mine, read(control));
+        String warning = null;
+        for (String line : log.split("\r?\n")) {
+            if (line.contains("is yours and still serves")) warning = line;
+        }
+        assertNotNull(warning, log);
+        assertTrue(
+                warning.contains("CustomerController.java is yours and still serves ")
+                        && warning.contains("DELETE /{customerId}")
+                        && warning.contains("PUT /batch")
+                        && warning.contains("POST /delete")
+                        && warning.contains("POST (base path)"),
+                warning);
+        assertFalse(warning.contains("/export") || warning.contains("/search"), warning);
+    }
+
     @Test
     public void aRuleAddedLaterReachesAnEditedSkeleton() throws Exception {
         File project = project(CUSTOMER + ORDER, "jpa", "");

@@ -59,9 +59,8 @@ public class TypeScriptApiRules implements CodeRules {
                 : String.format("%s[]", result);
 
         c.var("entityClassName", e.getName())
-         .var("className", String.format("%sController", e.getName()))
-         .var("apiBase", String.format("%s/%s/%s", e.apiPath(), e.domainName(), e.varName()))
-         .var("importList", imports(syntax, dto, keyDto, srchDto, result, paged, e));
+                .var("className", String.format("%sController", e.getName()))
+                .var("apiBase", String.format("%s/%s/%s", e.apiPath(), e.domainName(), e.varName()));
 
         String idParams = idParameters(syntax, pks);
         String idPath = idPath(pks);
@@ -197,6 +196,50 @@ public class TypeScriptApiRules implements CodeRules {
              .varLine("methodList", "}")
              .varLine("methodList", "");
         }
+
+        // What the functions above use, and only that: a client compiled with
+        // noUnusedLocals (the pet store's) fails on an import nothing reads -
+        // the key DTO of an entity that deletes nothing, request of one that
+        // only reads. Everything, in the same order, when nothing is left out.
+        boolean commands = pks.size() == 1 && !e.commands().isEmpty();
+        boolean signsIn = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e);
+        boolean checks = !asked.isEmpty() || !guards.isEmpty();
+        boolean search = !gone.contains("search");
+        Uses uses = new Uses();
+        uses.dto = !gone.contains("create")
+                || !gone.contains("read")
+                || !gone.contains("update")
+                || !gone.contains("batchUpdate")
+                || (search && result.equals(dto))
+                || commands
+                || signsIn
+                || checks;
+        uses.keyDto = !gone.contains("deleteBatch");
+        uses.search = search;
+        uses.commands = commands;
+        uses.request = !gone.contains("create")
+                || search
+                || !gone.contains("update")
+                || !gone.contains("batchUpdate")
+                || !gone.contains("deleteBatch")
+                || !gone.contains("deleteById")
+                || commands
+                || signsIn;
+        uses.requestOrNull = !gone.contains("read");
+        uses.seg = !gone.contains("read") || !gone.contains("deleteById") || commands;
+        if (!uses.request && !uses.requestOrNull) {
+            // Nothing to call: @expose(methods) named nothing the controller serves.
+            // A file of a BASE nobody reads does not compile under noUnusedLocals -
+            // a canDelete() alone included, so the file goes with its calls.
+            c.dontMake();
+            return;
+        }
+        c.var("importList", imports(syntax, dto, keyDto, srchDto, result, paged, e, uses));
+    }
+
+    /** Which of the client's imports its functions read. */
+    private static final class Uses {
+        boolean dto, keyDto, search, commands, request, requestOrNull, seg;
     }
 
     /**
@@ -216,6 +259,10 @@ public class TypeScriptApiRules implements CodeRules {
         // a clean one; a 2.x server drops only what is named, and keeps the rest.
         gone.addAll(io.elasticore.base.model.pub.rules.base.ControllerBaseRules.restExcluded(e,
                 !io.elasticore.base.model.pub.rules.verify.SpecFactory.compatibleServer()));
+        // @expose(methods="...") - read by a 3.0 server only; a 2.x one serves everything.
+        if (!io.elasticore.base.model.pub.rules.verify.SpecFactory.compatibleServer()) {
+            gone.addAll(io.elasticore.base.model.pub.rules.base.ControllerBaseRules.exposeOmitted(e));
+        }
         if (io.elasticore.base.model.pub.rules.verify.SpecFactory.commandOnlyRoots()
                 && io.elasticore.base.model.pub.rules.ddd.DddCommandRules.nothingEditable(e)) {
             gone.add("update");
@@ -262,14 +309,21 @@ public class TypeScriptApiRules implements CodeRules {
         return sb.substring(3);
     }
 
-    private String imports(Syntax syntax, String dto, String keyDto,
-                           String srchDto, String result, boolean paged, EntitySpec e) {
+    private String imports(
+            Syntax syntax,
+            String dto,
+            String keyDto,
+            String srchDto,
+            String result,
+            boolean paged,
+            EntitySpec e,
+            Uses uses) {
         Set<String> models = new LinkedHashSet<String>();
-        models.add(dto);
-        models.add(keyDto);
-        models.add(srchDto);
-        models.add(result);
-        if (e.pkFields().size() == 1) {
+        if (uses.dto) models.add(dto);
+        if (uses.keyDto) models.add(keyDto);
+        if (uses.search) models.add(srchDto);
+        if (uses.search) models.add(result);
+        if (uses.commands) {
             for (EntitySpec.CommandSpec cmd : e.commands()) {
                 if (cmd.dtoName() != null) models.add(cmd.dtoName());
             }
@@ -277,10 +331,10 @@ public class TypeScriptApiRules implements CodeRules {
 
         StringBuilder sb = new StringBuilder();
         List<String> runtime = new ArrayList<String>();
-        runtime.add("request");
-        runtime.add("requestOrNull");
-        runtime.add("seg");
-        if (paged) runtime.add("Page");
+        if (uses.request) runtime.add("request");
+        if (uses.requestOrNull) runtime.add("requestOrNull");
+        if (uses.seg) runtime.add("seg");
+        if (paged && uses.search) runtime.add("Page");
         if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) runtime.add("ApiError");
         sb.append(String.format("import { %s } from './apiSupport';%n",
                 String.join(", ", runtime)));
