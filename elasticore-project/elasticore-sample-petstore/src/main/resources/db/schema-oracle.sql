@@ -75,7 +75,7 @@ CREATE TABLE ps_purchase_order (
     zipcode VARCHAR2(10 CHAR),
     country_code VARCHAR2(2 CHAR),
     credit_card_number VARCHAR2(30 CHAR) NOT NULL,
-    credit_card_type VARCHAR2(255 CHAR) NOT NULL,
+    credit_card_type VARCHAR2(4 CHAR) NOT NULL,
     credit_card_exp_date VARCHAR2(5 CHAR) NOT NULL,
     total_without_vat NUMBER(12,2),
     vat_rate NUMBER(5,2),
