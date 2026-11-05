@@ -310,9 +310,16 @@ class BoundaryInvariantTest {
         return null;
     }
 
+    /**
+     * The domain's DTO mapper - a class, not a MyBatis mapper interface (a
+     * port's SQL), which is named ...Mapper too. The tree is walked in the
+     * file system's order, so taking the first ...Mapper.java took the port's
+     * interface wherever it came first (Linux, now and then) and the check
+     * read a file with no setter in it.
+     */
     private String mapperSource() {
         for (Map.Entry<String, String> en : SOURCES.entrySet()) {
-            if (en.getKey().endsWith("Mapper.java")) return en.getValue();
+            if (en.getKey().endsWith("Mapper.java") && en.getValue().contains("public class ")) return en.getValue();
         }
         return "";
     }
