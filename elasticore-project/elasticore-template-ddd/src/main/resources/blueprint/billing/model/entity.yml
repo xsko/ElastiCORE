@@ -1,8 +1,9 @@
 entity:
   # Billing keeps its own record of an order: the id and the amount, copied
   # from the event - never a relation to shop's Order, which is shop's model.
+  # The process manager writes it; the API only reads it.
   Receipt:
-    meta: entity @root @expose(20) -- 영수증
+    meta: entity @root @expose(20, methods="read,search") -- 영수증
     fields:
       receiptId: long @id @sequence -- 영수증 번호
       orderId: string(36)! @search(eq) -- 주문 ID (shop 의 주문)
