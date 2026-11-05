@@ -5,10 +5,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -122,7 +120,6 @@ public class SelfReferenceByIdTest {
     private static File kotlin;
     private static File layered;
     private static File shortColumns;
-    private static String hexagonalLog;
 
     @BeforeAll
     static void generate() throws Exception {
@@ -131,7 +128,6 @@ public class SelfReferenceByIdTest {
         kotlin = run("elcore-selfref-kt", "hexagonal", "kotlin");
         layered = run("elcore-selfref-layered", "layered", "java");
         shortColumns = run("elcore-selfref-short", "hexagonal", "java", SHORT_COLUMNS, "    referenceColumn: short");
-        hexagonalLog = read(new File(hexagonal, "elcore.log"));
     }
 
     @AfterAll
@@ -211,20 +207,14 @@ public class SelfReferenceByIdTest {
     }
 
     /**
-     * A DTO that declares the reference under a name of its own loses it to the
-     * id field, as it does for any other root: that renames a property of the
-     * API, and a client still sending it is ignored, so it is said.
+     * A DTO that declares the reference under a name of its own has it under the id field's name, as
+     * it does for a reference to any other root.
      */
     @Test
-    public void aRefDeclaredUnderAnotherNameIsSaidAndDropped() throws Exception {
+    public void aRefDeclaredUnderAnotherNameComesOutUnderTheIdsName() throws Exception {
         String dto = found(hexagonal, "SfCommentKeyedDTO.java");
         assertFalse(dto.contains("parentKey"), dto);
         assertTrue(dto.contains("private Long parentCommentId;"), dto);
-        assertTrue(
-                hexagonalLog.contains(
-                        "SfCommentKeyedDTO.parentKey @ref(parent.commentId) is dropped: the DTO carries this"
-                                + " reference as parentCommentId, its id field, and a request that sends parentKey is ignored."),
-                hexagonalLog);
     }
 
     /** The way around the #93 report: it has the id's own name, so the API stays and the id is what is written. */
@@ -232,7 +222,6 @@ public class SelfReferenceByIdTest {
     public void aRefDeclaredUnderTheIdsNameStays() throws Exception {
         String dto = found(hexagonal, "SfCommentSameNameDTO.java");
         assertEquals(1, count(dto, "private Long parentCommentId;"), dto);
-        assertFalse(hexagonalLog.contains("SfCommentSameNameDTO.parentCommentId @ref"), hexagonalLog);
         String mapper = found(hexagonal, "ForumMapper.java");
         int start = mapper.indexOf(
                 "mapping(SfCommentSameNameDTO from, SfComment to, boolean isSkipNull, MappingContext c)");
@@ -250,7 +239,6 @@ public class SelfReferenceByIdTest {
         String entity = entityOf(hexagonal, "SfTopic", ".java");
         assertTrue(entity.contains("private SfTopic parent;"), entity);
         assertFalse(entity.contains("parentTopicId"), entity);
-        assertFalse(hexagonalLog.contains("SfTopicDTO.parentKey @ref"), hexagonalLog);
     }
 
     /** Before it, the relation's column was JPA's own, field and key column, which the setting does not touch. */
@@ -370,8 +358,6 @@ public class SelfReferenceByIdTest {
             "elasticore.rules.ts",
             DdlConfig.DATABASES
         };
-        ByteArrayOutputStream log = new ByteArrayOutputStream();
-        PrintStream out = System.out;
         String[] saved = new String[keys.length];
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
         try {
@@ -382,12 +368,8 @@ public class SelfReferenceByIdTest {
             System.setProperty("elasticore.rules.force", "true");
             System.setProperty("elasticore.rules.v3", "true");
             System.setProperty(DdlConfig.DATABASES, "postgresql");
-            System.setOut(new PrintStream(log, true, "UTF-8"));
             assertEquals(0, RulesGenRunner.run(new String[0]), "the run failed: " + project);
         } finally {
-            System.setOut(out);
-            Files.write(new File(project, "elcore.log").toPath(), log.toByteArray());
-            out.print(new String(log.toByteArray(), StandardCharsets.UTF_8));
             for (int i = 0; i < keys.length; i++) {
                 if (saved[i] == null) System.clearProperty(keys[i]);
                 else System.setProperty(keys[i], saved[i]);

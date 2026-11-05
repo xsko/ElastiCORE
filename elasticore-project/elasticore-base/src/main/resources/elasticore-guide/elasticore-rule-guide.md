@@ -636,8 +636,8 @@ private Partner partner;                // read-only join on the same column - n
   `@OneToOne(mappedBy)` and fields that already use `@joinBy` are excluded). A member's back reference to its own root stays as it is.
 - A root's reference to its own kind (`parent: Comment` on the root `Comment`) points to another instance, another aggregate, so it is
   referenced by its id too: `parentCommentId` on the column the relation had, which a DTO declared with `@template` keeps.
-- A DTO field declared under another name (`parentKey: long @ref(parent.commentId)`) is dropped for the id field, with a warning: a request that
-  sends `parentKey` is ignored. Use the id field's name, or mark the relation `@objectref` to keep yours.
+- A DTO field declared under another name (`parentKey: long @ref(parent.commentId)`) comes out under the id field's name, as for any other root: a
+  request that sends `parentKey` is ignored. Use the id field's name, or mark the relation `@objectref` to keep yours.
 - To keep an object reference, use `@objectref`.
 - In code: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
 
