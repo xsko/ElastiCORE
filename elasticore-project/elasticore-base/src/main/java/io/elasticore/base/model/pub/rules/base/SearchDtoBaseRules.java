@@ -228,18 +228,23 @@ public class SearchDtoBaseRules implements CodeRules {
      * Shared by the DTO, the search DTO and the mapper, which must agree.
      */
     public static boolean flattensAReferenceById(EntitySpec e, FieldSpec f) {
+        return identityFlattenedBy(e, f) != null;
+    }
+
+    /** The field a DDD reference wrote for the relation a field flattens the key of, or null. */
+    static FieldSpec identityFlattenedBy(EntitySpec e, FieldSpec f) {
         String ref = f.dslValue("ref");
-        if (ref == null || ref.indexOf('.') < 0) return false;
+        if (ref == null || ref.indexOf('.') < 0) return null;
         String relation = ref.substring(0, ref.indexOf('.'));
         String child = ref.substring(ref.indexOf('.') + 1);
-        if (child.isEmpty() || child.indexOf('.') >= 0) return false;
+        if (child.isEmpty() || child.indexOf('.') >= 0) return null;
         String flattened = relation + Character.toUpperCase(child.charAt(0)) + child.substring(1);
         for (FieldSpec other : e.fields()) {
             if (other == f || !relation.equals(other.dslValue("idof"))) continue;
             // The identity field is named for the key it holds.
-            if (other.name().equals(child) || other.name().equals(flattened)) return true;
+            if (other.name().equals(child) || other.name().equals(flattened)) return other;
         }
-        return false;
+        return null;
     }
 
     /**

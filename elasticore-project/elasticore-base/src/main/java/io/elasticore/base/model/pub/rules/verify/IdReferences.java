@@ -109,7 +109,9 @@ final class IdReferences {
 
                 String column = f.getAnnotationValue("column", "col", "db");
                 if (column == null || column.isEmpty()) {
-                    if (shortColumns) {
+                    // A root's reference to its own kind keeps the column the relation
+                    // had, whatever else the setting renames, so the table does not change.
+                    if (shortColumns && !targetName.equals(name)) {
                         // The column is named after the field it is: customer_id.
                         column = StringUtils.camelToSnake(idName);
                     } else {

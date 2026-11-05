@@ -53,10 +53,29 @@ public class DtoBaseRules implements CodeRules {
      * the relation and once as the identity a DDD reference wrote. The DTO
      * keeps the identity; with both, a request could set one and clear the
      * other, and which won depended on the order the mapper wrote them in.
+     *
+     * A field the DTO declares under a name of its own goes too, and that
+     * renames a property of the API: a client still sending it is ignored, with
+     * no error. So it is said.
      */
     @Rule(value = "dto-reference-once", target = "dto", order = 0)
     void referenceOnce(EntitySpec e, FieldSpec f) {
-        if (SearchDtoBaseRules.flattensAReferenceById(e, f)) ctx(e).removeField(f);
+        FieldSpec identity = SearchDtoBaseRules.identityFlattenedBy(e, f);
+        if (identity == null) return;
+        if (f.declaredInDto() && !f.name().equals(identity.name())) {
+            io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
+                    "[%s] %s.%s @ref(%s) is dropped: the DTO carries this reference as %s, its id field, and a"
+                            + " request that sends %s is ignored. Use %s, or mark the relation @objectref to keep the"
+                            + " name.",
+                    e.domainClassName(),
+                    e.dtoClassName(),
+                    f.name(),
+                    f.dslValue("ref"),
+                    identity.name(),
+                    f.name(),
+                    identity.name()));
+        }
+        ctx(e).removeField(f);
     }
 
     /**
