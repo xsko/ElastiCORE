@@ -305,9 +305,14 @@ class BoundaryInvariantTest {
         return null;
     }
 
+    /**
+     * The domain's DTO mapper: the class, as the MyBatis sample has to say -
+     * there a port's mapper interface is named ...Mapper too, and the tree is
+     * walked in the file system's order.
+     */
     private String mapperSource() {
         for (Map.Entry<String, String> en : SOURCES.entrySet()) {
-            if (en.getKey().endsWith("Mapper.java")) return en.getValue();
+            if (en.getKey().endsWith("Mapper.java") && en.getValue().contains("public class ")) return en.getValue();
         }
         return "";
     }

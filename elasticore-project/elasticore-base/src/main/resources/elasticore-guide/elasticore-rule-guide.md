@@ -634,6 +634,10 @@ private Partner partner;                // read-only join on the same column - n
 - The mapper writes `@ref(partner.partnerId)` as `partnerId` (it does not write the relation object).
 - Applies to: a to-one that points to another root of the same domain with a single key (`cascade`, `@embedded`, the reverse
   `@OneToOne(mappedBy)` and fields that already use `@joinBy` are excluded). A member's back reference to its own root stays as it is.
+- A root's reference to its own kind (`parent: Comment` on the root `Comment`) points to another instance, another aggregate, so it is
+  referenced by its id too: `parentCommentId` on the column the relation had, which a DTO declared with `@template` keeps.
+- A DTO field declared under another name (`parentKey: long @ref(parent.commentId)`) comes out under the id field's name, as for any other root: a
+  request that sends `parentKey` is ignored. Use the id field's name, or mark the relation `@objectref` to keep yours.
 - To keep an object reference, use `@objectref`.
 - In code: `order.creation().setPartnerId(partner.getPartnerId())` (Kotlin: `order.creation().partnerId = partner.partnerId`).
 
@@ -717,7 +721,7 @@ The generated `Number(...)` is right in both cases.
 For the same reason the TS model takes its shape **from the rules the server chose**. Not the `ts-model` bundle but
 the Java/Kotlin choice in the same build decides: if it uses an identifier reference (`customerId`) or a value object inline (`deliveryAddress`),
 the TS DTO does too, and each value object gets an interface (`Address.ts`). `XxxApi.ts` does not create
-endpoints that the controller does not have (`@readonly`, `@restExclude`, `update` of a root that accepts only commands), and
+endpoints that the controller does not have (`@readonly`, `@expose(methods)`, `@restExclude`, `update` of a root that accepts only commands), and
 a `@writeonly` field is optional because it is not in the response. All conditions of a search DTO are optional, and
 it has `pageNumber`, `pageSize`, `sortColumn` and `sortAscending`.
 
@@ -890,6 +894,10 @@ versions) check the following before writing. The 2.x-compatible bundle (`jpa-sp
 | Delete by condition `delete(srchDTO)` | Reads and deletes one at a time - members and listeners work together | - |
 | Update by condition `updateBySpecification` | Reads one at a time and applies through the mapper - version, audit and invariants apply | - |
 | Batch update `batchUpdate` (`PUT /batch`) | Calls `update(dto)` for each row in one transaction (from 3.0.261022-rc1) - a rule that overrides `update()` in the extension service also applies to the batch update, and each row gets the same checks, `readBack` and 409 conversion | Same as a single update |
+
+**`@expose(methods="read,search")`** lists what the controller serves (`create`, `read`, `search`, `update` with `batchUpdate`,
+`delete` with `deleteBatch`); the TypeScript client follows it and the use case drops the writes not listed, while the service keeps
+every method. It replaces `@restExclude`, which is deprecated and still applies as below (the build names the `methods` list to use).
 
 **`@restExclude(...)`** removes methods from the service, controller, use case and TypeScript client. The names are the service methods
 (`save`, `update`, `batchUpdate`, `delete` (list delete), `deleteById`, `updateBySpecification`) and the controller endpoints

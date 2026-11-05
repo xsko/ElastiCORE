@@ -34,7 +34,9 @@ import java.util.List;
  * artifact - entity, DTO, mapper, query class - sees the same two fields.
  *
  * With the DDD rule sets only (the ones that decide references), for a
- * to-one reference to another root of the same domain with a single key.
+ * to-one reference to another root of the same domain with a single key -
+ * a root's reference to its own kind among them; a member's reference back
+ * to its own root stays an object.
  * {@code @objectref} keeps a reference as an object; {@code @joinBy} written
  * by hand is left as it is.
  */
@@ -83,9 +85,11 @@ final class IdReferences {
 
                 String targetName = target.getIdentity().getName();
                 // A root of its own; not this entity's own root, which a
-                // member points back at.
+                // member points back at. A root that refers to its own kind
+                // (a comment's parent) refers to another instance, another
+                // aggregate, so it is referenced by its id like any other root.
                 if (SpecFactory.aggregateOfModel(targetName, model) != null) continue;
-                if (targetName.equals(ownRoot)) continue;
+                if (targetName.equals(ownRoot) && !targetName.equals(name)) continue;
 
                 Field pk = singleKey(target);
                 if (pk == null) continue;
@@ -105,7 +109,9 @@ final class IdReferences {
 
                 String column = f.getAnnotationValue("column", "col", "db");
                 if (column == null || column.isEmpty()) {
-                    if (shortColumns) {
+                    // A root's reference to its own kind keeps the column the relation
+                    // had, whatever else the setting renames, so the table does not change.
+                    if (shortColumns && !targetName.equals(name)) {
                         // The column is named after the field it is: customer_id.
                         column = StringUtils.camelToSnake(idName);
                     } else {

@@ -13,6 +13,25 @@ Product:
   meta: entity @expose(30)  # pageSize=30, generates full CRUD including the Controller
 ```
 
+#### @expose(methods="...") - the endpoints the Controller serves
+> **Since: 3.0** (the release after 3.0.261104-rc9. 3.0 rule engine. The 2.x generator does not read it)
+
+Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update` and
+`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`. `GET /schema/info` stays.
+The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use case (`XxxUseCase`) promises only the writes listed.
+The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before.
+```yaml
+Country:
+  meta: entity @root @expose(300, methods="read,search")   # a lookup the application seeds: read and search only
+Notice:
+  meta: entity @root @expose(20, methods="read,search,create")
+```
+- The value is one quoted list, as in `@Index(columnList="a,b")`. Spaces after the commas are fine; unquoted, only the first name is read.
+- A name it does not know is a DSL warning and serves nothing (`methods="raed,search"` serves search only) - a typo gives fewer
+  endpoints, never more. `methods=""` serves none of the five.
+- Narrowing it later takes the endpoints out of a generated Controller you have not edited, or edited elsewhere (merged). A Controller
+  edited in an endpoint that goes is kept as it is, and the build names the endpoints it still serves.
+
 ### @service
 Same as `@expose`, but no Controller is generated. For internal services.
 ```yaml
@@ -31,8 +50,9 @@ CommonCode:
   meta: entity @expose @readonly
 ```
 
-### @restExclude(method, ...)
-> **Since: 3.0** (3.0 rule engine. The 2.x generator does not read it)
+### @restExclude(method, ...) - deprecated
+> **Since: 3.0** (3.0 rule engine. The 2.x generator does not read it). **Deprecated** in favour of `@expose(methods="...")`:
+> it still applies, and the build names the `methods` list with the same endpoints - or, where none has them (`update` without `batchUpdate`), the nearest and what it changes.
 
 Excludes only the methods you name. The names are Service methods (`save`, `update`, `batchUpdate`, `delete`, `deleteById`, `updateBySpecification`) and
 Controller endpoints (`create`, `read`, `search`, `update`, `batchUpdate`, `deleteBatch`, `deleteById`, `schemaInfo`). In v3 output, the
@@ -43,7 +63,7 @@ Notice:
   meta: entity @expose @restExclude(batchUpdate, deleteById)
 ```
 
-> The entity `@readonly` and `@restExclude` are read by the 3.0 rule engine (`elcore3`). The 2.x generator (`elcore` with `output = 'v2'`) does not
+> The entity `@readonly`, `@expose(methods)` and `@restExclude` are read by the 3.0 rule engine (`elcore3`). The 2.x generator (`elcore` with `output = 'v2'`) does not
 > read them and generates every method.
 
 ### @audited

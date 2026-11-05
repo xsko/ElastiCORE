@@ -201,7 +201,12 @@
             <basic name="active">
                 <column name="active"/>
             </basic>
-            <many-to-one name="parentCategory" fetch="LAZY"/>
+            <basic name="parentCategoryCatId">
+                <column name="parent_category_cat_id"/>
+            </basic>
+            <many-to-one name="parentCategory" fetch="LAZY">
+                <join-column name="parent_category_cat_id" insertable="false" updatable="false"/>
+            </many-to-one>
             <one-to-many name="subCategories" fetch="LAZY" mapped-by="parentCategory"/>
             <transient name="beingRemoved"/>
         </attributes>
