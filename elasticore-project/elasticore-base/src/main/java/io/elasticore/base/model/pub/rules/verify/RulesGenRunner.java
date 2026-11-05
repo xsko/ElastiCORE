@@ -710,6 +710,10 @@ public final class RulesGenRunner {
         runner.contextMap = contextMap;
         // After the context map, which reads the model as the DSL wrote it.
         runner.shapeReferences(allModels);
+        io.elasticore.base.extract.ModelExtractor.validateListedNames(
+                new ArrayList<io.elasticore.base.ECoreModelContext>(
+                        loader.contexts().values()),
+                runner::dtoCarriesValueObjects);
 
         // The DDL alone (elcoreDdl): for a project whose code another task
         // wrote - the 2.x generator - the tables are read off that code.
@@ -1160,6 +1164,23 @@ public final class RulesGenRunner {
         }
     }
 
+    /**
+     * A value object travels in the DTO only where a rule set makes it immutable
+     * - and over MyBatis, whose layered DTO would otherwise leave an embedded
+     * value out, so an address could not be sent or read at all.
+     */
+    private boolean dtoCarriesValueObjects(ECoreModel model) {
+        ECoreModel saved = currentModel;
+        try {
+            currentModel = model;
+            return (v3 || kotlin || typescript)
+                    && (shapes(io.elasticore.base.model.pub.rules.ImmutableValueObjects.class)
+                            || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS));
+        } finally {
+            currentModel = saved;
+        }
+    }
+
     /** The value types some entity of the run embeds without requiring them; worked out once, on first use. */
     private java.util.Set<String> optionalEmbeddables;
 
@@ -1192,13 +1213,8 @@ public final class RulesGenRunner {
             // Every model's references by identity were rewritten before the
             // first domain was generated (shapeReferences).
             boolean shaped = v3 || kotlin || typescript;
-            // Per domain, because the selection is: a value object travels in
-            // the DTO only where a rule set makes it immutable - and over
-            // MyBatis, whose layered DTO would otherwise leave an embedded
-            // value out, so an address could not be sent or read at all.
-            SpecFactory.valueObjectsInDto(shaped && (shapes(
-                    io.elasticore.base.model.pub.rules.ImmutableValueObjects.class)
-                    || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS)));
+            // Per domain, because the selection is.
+            SpecFactory.valueObjectsInDto(dtoCarriesValueObjects(currentModel));
             // And a root starts with a class for its behaviour where the
             // rule set that makes one - the one that names entity classes -
             // is selected.
@@ -2821,8 +2837,10 @@ public final class RulesGenRunner {
                                    ECoreModel model) {
         for (io.elasticore.base.model.relation.ModelRelationship r : relations) {
             String dtoName = r.getFromName();
-            if (model.getDataTransferModels() != null
-                    && model.getDataTransferModels().findByName(dtoName) != null) return dtoName;
+            io.elasticore.base.model.dto.DataTransfer dto = model.getDataTransferModels() == null
+                    ? null
+                    : model.getDataTransferModels().findByName(dtoName);
+            if (dto != null && !io.elasticore.base.model.dto.TemplateList.leavesOutTheKey(dto)) return dtoName;
         }
         return null;
     }

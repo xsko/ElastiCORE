@@ -246,26 +246,26 @@ public abstract class AbstractDataModel<T extends AbstractReplaceableModel<T>> e
 
 
     private void loadFieldInfo(DataModelComponent model,ListMap<String, Field> list) {
-
-         if(model == this) {
-            ModelComponentItems<Field> fields = model.getItems();
-            while (fields.hasNext()) {
-                Field f = fields.next();
-                if(!list.containsKey(f.getName()))
-                    list.put(f.getName(), f);
-            }
-        }else {
-            loadFieldInfo(model, list, null);
-        }
-
+        loadFieldInfo(model, list, null);
     }
 
     /**
      * The fields copied from another model: those it lists, when the DTO's
      * {@code @template} lists any, or all. A relation's name takes the field that
      * holds its id too (customerId, written @idof(customer) for a DDD reference).
+     * A name that finds this model itself gives its own items: asking it for all
+     * its fields again would never end.
      */
+    @SuppressWarnings("ReferenceEquality") // the same instance is what would ask itself again
     private void loadFieldInfo(DataModelComponent model, ListMap<String, Field> list, List<String> listed) {
+        if (model == this) {
+            ModelComponentItems<Field> fields = model.getItems();
+            while (fields.hasNext()) {
+                Field f = fields.next();
+                if (!list.containsKey(f.getName())) list.put(f.getName(), f);
+            }
+            return;
+        }
         ListMap<String, Field> fieldListMap = model.getAllFieldListMap();
 
         for (Field f : fieldListMap.getList()) {

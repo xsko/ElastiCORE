@@ -1088,9 +1088,12 @@ dto:
       reason: string(100)       # declared in the DTO: always kept
 ```
 - Only the copied fields are filtered. A field declared in the DTO is always kept, and with a listed name it overrides the copied one. A field added to the entity later is not in the DTO until it is listed. A model of another domain: `shop:Order[note]`.
-- A field the model inherits through its own `@extend` can be listed. A relation's name keeps the field that holds its id: `customer` keeps the `customerId` of a DDD reference, and `customerId` itself is refused, as the list is checked before the reference is rewritten. Without such a field a declared DTO leaves the relation out, listed or not, so declare the id with `@ref`.
-- Generation stops on a name the model does not have, a model no domain has, the same model twice (`Order[note], Order[total]` or `Order, Order[note]`), empty brackets (`Order[]`), `--` on a listed field, a list together with `@extend`, and a list on an entity.
-- `@searchable` and `@searchResult` take no list: a search DTO already takes only the fields with a search condition.
+- A field the model inherits through its own `@extend` can be listed. A relation's name keeps the field that holds its id: `customer` keeps the `customerId` of a DDD reference, and `customerId` itself is refused, as the list is checked before the reference is rewritten.
+- A name that would give the DTO nothing is refused: a relation with no field that holds its id (declare the id instead, `orderId: long @ref(order.orderId)`), a collection, and a value object where the DTO does not carry one.
+- Generation stops on a name the model does not have, a model no domain has, the same model twice (`Order[note], Order[total]` or `Order, Order[note]`), the same field twice (`Order[note, note]`), empty brackets (`Order[]`), `--` on a listed field, a list together with `@extend`, and a list on an entity.
+- Beside a list, a name more than one domain has must say which: `shop:Order[note]`. A DTO without brackets stays as free as it was.
+- `@searchable` and `@searchResult` take no list, and generation stops on one: a search DTO already takes only the fields with a search condition.
+- A list without the key is not used as the DTO of the entity's service and controller, even if it is declared first. A list with the key can be, so declare the DTO they should use first.
 
 ### 4.2 @searchable
 Generates a DTO only for search. Parameters: `entity` (required), `pageSize`, `pageable`.

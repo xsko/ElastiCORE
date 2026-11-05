@@ -105,7 +105,7 @@ public final class ForcedRefCheck {
     }
 
     /** The name of an entity's only key field, or null when it has none or several. */
-    private static String singleKeyOf(Entity entity) {
+    static String singleKeyOf(Entity entity) {
         String key = null;
         for (Object each : entity.getAllFieldListMap().values()) {
             Field f = (Field) each;

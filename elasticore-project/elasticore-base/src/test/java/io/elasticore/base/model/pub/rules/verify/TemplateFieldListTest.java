@@ -277,23 +277,61 @@ public class TemplateFieldListTest {
         assertFalse(dto.contains(" status;"), dto);
     }
 
-    /** Without an id field to keep, a declared DTO leaves the relation out, listed or not. The id is a @ref. */
+    private static final String LINE = String.join(
+            "\n",
+            "  OyLine:",
+            "    meta: entity",
+            "    fields:",
+            "      lineId: long @id @sequence",
+            "      quantity: int",
+            "      order: OyOrder @ManyToOne",
+            "");
+
+    /** A relation with no field that holds its id gives the DTO nothing, so listing it is refused like a typo. */
     @Test
-    public void aRelationWithoutAnIdFieldIsLeftOutAsInAnyDeclaredDto() throws Exception {
-        String model = withEntity(String.join(
-                        "\n",
-                        "  OyLine:",
-                        "    meta: entity",
-                        "    fields:",
-                        "      lineId: long @id @sequence",
-                        "      quantity: int",
-                        "      order: OyOrder @ManyToOne",
-                        ""))
+    public void aListedRelationWithoutAnIdFieldIsRefused() throws Exception {
+        String model = withEntity(LINE
+                        + String.join(
+                                "\n",
+                                "  OyBasket:",
+                                "    meta: entity",
+                                "    fields:",
+                                "      basketId: long @id @sequence",
+                                "      lines: List<OyLine> @OneToMany",
+                                ""))
                 + String.join(
                         "\n",
                         "  OyLineDTO:",
                         "    meta: dto @template(OyLine[quantity, order])",
                         "",
+                        "  OyBasketDTO:",
+                        "    meta: dto @template(OyBasket[basketId, lines])",
+                        "");
+        for (boolean v3 : new boolean[] {false, true}) {
+            ByteArrayOutputStream captured = new ByteArrayOutputStream();
+            int code = run(project(model), "layered", v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", captured);
+            String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+            assertEquals(1, code, log);
+            assertTrue(
+                    log.contains("OyLineDTO: @template(OyLine[quantity, order]): order is a relation, which a DTO"
+                            + " does not copy: declare its id with @ref(order.orderId)"),
+                    log);
+            assertTrue(
+                    log.contains("OyBasketDTO: @template(OyBasket[basketId, lines]): lines is a relation, which a DTO"
+                            + " does not copy: take it out of the list"),
+                    log);
+        }
+        String[] run = extract(project(model));
+        assertFalse("0".equals(run[0]), run[1]);
+        assertTrue(run[1].contains("order is a relation, which a DTO does not copy"), run[1]);
+    }
+
+    /** What the refusal says to do works: the id is a field the DTO declares. */
+    @Test
+    public void aRelationsIdIsDeclaredWithARef() throws Exception {
+        String model = withEntity(LINE)
+                + String.join(
+                        "\n",
                         "  OyLineRefDTO:",
                         "    meta: dto @template(OyLine[quantity])",
                         "    fields:",
@@ -302,12 +340,296 @@ public class TemplateFieldListTest {
         for (boolean v3 : new boolean[] {false, true}) {
             File project = project(model);
             assertEquals(0, run(project, "layered", v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", null));
-            String listed = found(project, "OyLineDTO.java");
-            assertTrue(listed.contains(" quantity;"), listed);
-            assertFalse(listed.contains(" order;") || listed.contains(" lineId;"), listed);
             String ref = found(project, "OyLineRefDTO.java");
             assertTrue(ref.contains(" quantity;") && ref.contains(" orderId;"), ref);
+            assertFalse(ref.contains(" lineId;"), ref);
         }
+    }
+
+    /** Where a rule set keeps a reference an object, or the target is elsewhere, there is no id field either. */
+    @Test
+    public void anObjectReferenceInADddDomainIsRefusedToo() throws Exception {
+        File project = Files.createTempDirectory("elcore-list-objectref").toFile();
+        projects.add(project);
+        domain(
+                project,
+                "shop",
+                null,
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  ShCustomer:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      customerId: long @id @sequence",
+                        "  ShOrder:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      orderId: long @id @sequence",
+                        "      customer: ShCustomer @ManyToOne @objectref",
+                        "",
+                        "dto:",
+                        "  ShOrderNoteDTO:",
+                        "    meta: dto @template(ShOrder[orderId, customer])",
+                        ""));
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        assertEquals(1, run(project, "hexagonal", null, captured));
+        String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        assertTrue(log.contains("customer is a relation, which a DTO does not copy"), log);
+    }
+
+    private static final String ADDRESSED = String.join(
+            "\n",
+            "entity:",
+            "  ShAddress:",
+            "    meta: entity @embeddable",
+            "    fields:",
+            "      city: string(50)",
+            "  ShCustomer:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      customerId: long @id @sequence",
+            "      name: string(50)",
+            "      address: ShAddress @embedded",
+            "",
+            "dto:",
+            "  ShCustomerAddressDTO:",
+            "    meta: dto @template(ShCustomer[name, address])",
+            "");
+
+    /** A value object travels whole where a rule set makes it immutable; elsewhere the DTO would not have it. */
+    @Test
+    public void aListedValueObjectIsRefusedWhereTheDtoDoesNotCarryOne() throws Exception {
+        File carried = Files.createTempDirectory("elcore-list-value").toFile();
+        projects.add(carried);
+        domain(carried, "shop", null, ADDRESSED);
+        assertEquals(0, run(carried, "hexagonal", null, null));
+        String dto = found(carried, "ShCustomerAddressDTO.java");
+        assertTrue(dto.contains(" address;") && dto.contains(" name;"), dto);
+
+        File layered = Files.createTempDirectory("elcore-list-value-layered").toFile();
+        projects.add(layered);
+        domain(layered, "shop", null, ADDRESSED);
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        assertEquals(1, run(layered, "layered", "elasticore.rules.v3", captured));
+        String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        assertTrue(log.contains("address is a value object, which this DTO does not carry"), log);
+    }
+
+    /** A name that finds the model itself: its own fields, where it used to ask itself until the stack ran out. */
+    @Test
+    public void aDtoThatNamesItselfHasItsOwnFields() throws Exception {
+        String model = DESK
+                + String.join(
+                        "\n",
+                        "  OySelfDTO:",
+                        "    meta: dto @template(OySelfDTO)",
+                        "    fields:",
+                        "      own: string(10)",
+                        "",
+                        "  OySelfListDTO:",
+                        "    meta: dto @template(OySelfListDTO[own])",
+                        "    fields:",
+                        "      own: string(10)",
+                        "");
+        for (boolean v3 : new boolean[] {false, true}) {
+            File project = project(model);
+            assertEquals(0, run(project, "layered", v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", null));
+            assertTrue(found(project, "OySelfDTO.java").contains(" own;"));
+            assertTrue(found(project, "OySelfListDTO.java").contains(" own;"));
+        }
+    }
+
+    private static String shared(String own) {
+        return String.join(
+                "\n",
+                "entity:",
+                "  OyShared:",
+                "    meta: entity",
+                "    fields:",
+                "      sharedId: long @id @sequence",
+                "      " + own + ": string(20)",
+                "");
+    }
+
+    /**
+     * The check looked in the DTO's own domain first and the copy took the first
+     * domain with the name, so a field could pass the one and be lost by the other.
+     */
+    @Test
+    public void aNameTwoDomainsHaveMustSayWhich() throws Exception {
+        File project = Files.createTempDirectory("elcore-list-two").toFile();
+        projects.add(project);
+        domain(project, "oycrm", "io.acme.oycrm", shared("inCrm"));
+        domain(
+                project,
+                "oydesk",
+                "io.acme.oydesk",
+                shared("nickname")
+                        + String.join(
+                                "\n",
+                                "",
+                                "dto:",
+                                "  OyUnsaidDTO:",
+                                "    meta: dto @template(OyShared[nickname])",
+                                "",
+                                "  OyUnsaidBesideDTO:",
+                                "    meta: dto @template(OyShared, oycrm:OyShared[inCrm])",
+                                ""));
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        assertEquals(1, run(project, "layered", "elasticore.rules.v3", captured));
+        String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        assertTrue(
+                log.contains("OyUnsaidDTO: @template(OyShared[nickname]): oycrm and oydesk both have OyShared,"
+                        + " so say which: oycrm:OyShared"),
+                log);
+        assertTrue(
+                log.contains("OyUnsaidBesideDTO: @template(OyShared, oycrm:OyShared[inCrm]): oycrm and oydesk"), log);
+    }
+
+    @Test
+    public void aDomainInTheNameFindsThatModel() throws Exception {
+        for (boolean v3 : new boolean[] {false, true}) {
+            File project = Files.createTempDirectory("elcore-list-said").toFile();
+            projects.add(project);
+            domain(project, "oycrm", "io.acme.oycrm", shared("inCrm"));
+            domain(
+                    project,
+                    "oydesk",
+                    "io.acme.oydesk",
+                    shared("nickname")
+                            + String.join(
+                                    "\n",
+                                    "",
+                                    "dto:",
+                                    "  OySaidHereDTO:",
+                                    "    meta: dto @template(oydesk:OyShared[nickname])",
+                                    "",
+                                    "  OySaidThereDTO:",
+                                    "    meta: dto @template(oycrm:OyShared[inCrm])",
+                                    "",
+                                    "  OyUnlistedDTO:",
+                                    "    meta: dto @template(OyShared)",
+                                    ""));
+            assertEquals(0, run(project, "layered", v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", null));
+            assertTrue(found(project, "OySaidHereDTO.java").contains(" nickname;"));
+            assertTrue(found(project, "OySaidThereDTO.java").contains(" inCrm;"));
+        }
+    }
+
+    @Test
+    public void theTypescriptClientTakesTheSameFields() throws Exception {
+        File project = project(DESK);
+        assertEquals(0, run(project, "layered", "elasticore.rules.ts", null));
+        String client = found(project, "OyOrderNoteDTO.ts");
+        assertTrue(client.contains("note") && client.contains("reason"), client);
+        assertFalse(client.contains("status") || client.contains("addedLater") || client.contains("total"), client);
+    }
+
+    /** The ddd bundle, as hexagonal above: the DTO, and the mapper that reads it. */
+    @Test
+    public void theDddArchitectureTakesTheSameFields() throws Exception {
+        File project = Files.createTempDirectory("elcore-list-dddarch").toFile();
+        projects.add(project);
+        domain(
+                project,
+                "shop",
+                null,
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  ShCustomer:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      customerId: long @id @sequence",
+                        "  ShOrder:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      orderId: long @id @sequence",
+                        "      note: string(200)",
+                        "      status: string(10)",
+                        "      customer: ShCustomer @ManyToOne",
+                        "",
+                        "dto:",
+                        "  ShOrderNoteDTO:",
+                        "    meta: dto @template(ShOrder[note, customer])",
+                        ""));
+        assertEquals(0, run(project, "ddd", null, null));
+        String dto = found(project, "ShOrderNoteDTO.java");
+        assertTrue(dto.contains(" note;") && dto.contains(" customerId;"), dto);
+        assertFalse(dto.contains(" status;") || dto.contains(" orderId;"), dto);
+    }
+
+    /** MyBatis has its own mapper, and reads the same fields: its statement must not select the others. */
+    @Test
+    public void myBatisTakesTheSameFields() throws Exception {
+        File project = Files.createTempDirectory("elcore-list-mybatis").toFile();
+        projects.add(project);
+        domain(project, "oydesk", "io.acme.oydesk", DESK);
+        File env = new File(project, "src/main/resources/blueprint/oydesk/env.yml");
+        String yml = new String(Files.readAllBytes(env.toPath()), StandardCharsets.UTF_8);
+        Files.write(env.toPath(), yml.replace("mode: jpa", "mode: mybatis").getBytes(StandardCharsets.UTF_8));
+        // OyCustomerCardDTO and OyCustomerMailDTO name a domain this project does not have, and OyAudited
+        // extends an abstract one, which MyBatis does not write: only the DTO of a plain table is asked here.
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  OyOrder:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      orderId: long @id @sequence",
+                "      note: string(200)",
+                "      status: string(10)",
+                "",
+                "dto:",
+                "  OyOrderDTO:",
+                "    meta: dto @template(OyOrder)",
+                "",
+                "  OyOrderNoteDTO:",
+                "    meta: dto @template(OyOrder[note])",
+                "");
+        Files.write(
+                new File(project, "src/main/resources/blueprint/oydesk/model/model.yml").toPath(),
+                model.getBytes(StandardCharsets.UTF_8));
+        assertEquals(0, run(project, "layered", "elasticore.rules.v3", null));
+        String dto = found(project, "OyOrderNoteDTO.java");
+        assertTrue(dto.contains(" note;"), dto);
+        assertFalse(dto.contains(" status;") || dto.contains(" orderId;"), dto);
+    }
+
+    /** The first @template of an entity is its CRUD DTO in the compatible output, whatever it is called. */
+    @Test
+    public void aListDeclaredFirstIsNotTheEntitysCrudDtoWithoutItsKey() throws Exception {
+        String first = withEntity("")
+                .replace("  OyOrder:\n    meta: entity\n", "  OyOrder:\n    meta: entity @expose(20)\n")
+                .replace(
+                        "dto:\n  OyOrderDTO:",
+                        String.join(
+                                "\n",
+                                "dto:",
+                                "  OyOrderFirstDTO:",
+                                "    meta: dto @template(OyOrder[note])",
+                                "",
+                                "  OyOrderSrchDTO:",
+                                "    meta: dto @searchable(entity=OyOrder, pageSize=20)",
+                                "    fields:",
+                                "      status: string(10) @search(eq)",
+                                "",
+                                "  OyOrderDTO:"));
+        for (boolean v3 : new boolean[] {false, true}) {
+            File project = project(first);
+            assertEquals(0, run(project, "layered", v3 ? "elasticore.rules.v3" : "elasticore.rules.v2", null));
+            String service = found(project, "OyOrderCoreService.java");
+            assertTrue(service.contains("OyOrderDTO"), service);
+            assertFalse(service.contains("OyOrderFirstDTO"), service);
+        }
+        // The 2.x generator's own lookup, in a JVM of its own.
+        File project = project(first);
+        String[] run = extract(project);
+        assertEquals("0", run[0], run[1]);
+        String service = found(project, "OyOrderCoreService.java");
+        assertTrue(service.contains("OyOrderDTO"), service);
+        assertFalse(service.contains("OyOrderFirstDTO"), service);
     }
 
     /** The lists are checked before a DDD reference is rewritten, so its id field goes by its relation's name. */
@@ -387,6 +709,15 @@ public class TemplateFieldListTest {
                         "",
                         "  OyClosedDTO:",
                         "    meta: dto @template(OyOrder note])",
+                        "",
+                        "  OyFieldTwiceDTO:",
+                        "    meta: dto @template(OyOrder[note, note])",
+                        "",
+                        "  OySearchListDTO:",
+                        "    meta: dto @searchable(entity=OyOrder[note])",
+                        "",
+                        "  OyResultListDTO:",
+                        "    meta: dto @searchResult(OyOrder[note])",
                         ""));
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         assertEquals(1, run(project, "layered", "elasticore.rules.v3", captured));
@@ -404,7 +735,10 @@ public class TemplateFieldListTest {
             "OyNoModelDTO: @template(OyMissing[note]): no domain has a model OyMissing",
             "OyOpenDTO: @template(OyOrder[note) cannot be read",
             "OyAfterDTO: @template(OyOrder[note]x) cannot be read",
-            "OyClosedDTO: @template(OyOrder note]) cannot be read"
+            "OyClosedDTO: @template(OyOrder note]) cannot be read",
+            "OyFieldTwiceDTO: @template(OyOrder[note, note]) lists note twice",
+            "OySearchListDTO: @searchable(OyOrder[note]) takes no list",
+            "OyResultListDTO: @searchResult(OyOrder[note]) takes no list"
         }) {
             assertTrue(log.contains(said), said + "\n" + log);
         }
@@ -518,7 +852,8 @@ public class TemplateFieldListTest {
             "elasticore.language",
             "elasticore.rules.force",
             "elasticore.rules.v3",
-            "elasticore.rules.v2"
+            "elasticore.rules.v2",
+            "elasticore.rules.ts"
         };
         String[] saved = new String[keys.length];
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);

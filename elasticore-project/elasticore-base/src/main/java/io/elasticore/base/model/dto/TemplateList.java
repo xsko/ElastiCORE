@@ -1,9 +1,12 @@
 package io.elasticore.base.model.dto;
 
 import io.elasticore.base.ECoreModelContext;
+import io.elasticore.base.ModelDomain;
 import io.elasticore.base.model.DataModelComponent;
 import io.elasticore.base.model.MetaInfo;
 import io.elasticore.base.model.ModelComponentItems;
+import io.elasticore.base.model.entity.Entity;
+import io.elasticore.base.model.entity.EntityAnnotation;
 import io.elasticore.base.model.entity.Field;
 
 import java.util.ArrayList;
@@ -151,9 +154,19 @@ public final class TemplateList {
      */
     public static List<String> problemsOf(DataTransfer dto, List<ECoreModelContext> contexts) {
         List<String> problems = new ArrayList<String>();
+        String name = dto.getIdentity().getName();
+        // Brackets here would make a name that finds no model, without a word.
+        for (String[] search : new String[][] {
+            DataTransferAnnotation.META_SEARCHABLE_NAME, DataTransferAnnotation.META_SEARCH_RESULT_NAME
+        }) {
+            String value = dto.getMetaInfo().getMetaAnnotationValue(search);
+            if (value != null && value.indexOf('[') >= 0) {
+                problems.add(name + ": @" + search[1] + "(" + value.trim()
+                        + ") takes no list: a search DTO takes the fields with a search condition");
+            }
+        }
         TemplateList list = of(dto.getMetaInfo());
         if (!list.hasLists) return problems;
-        String name = dto.getIdentity().getName();
         String at = name + ": @template(" + list.value.trim() + ")";
         if (!list.readable) {
             problems.add(at + " cannot be read: a model is Name or Name[field, field]");
@@ -166,6 +179,14 @@ public final class TemplateList {
         Map<Object, Entry> seen = new HashMap<Object, Entry>();
         Set<String> listed = new LinkedHashSet<String>();
         for (Entry e : list.entries) {
+            // The copy takes the first domain with the name, and a check that looks elsewhere would pass a
+            // field the copy does not have. Refused here, so that a name finds one model for both.
+            List<String> domains = domainsHaving(contexts, e.model);
+            if (domains.size() > 1) {
+                problems.add(at + ": " + String.join(" and ", domains) + " both have " + e.model + ", so say which: "
+                        + domains.get(0) + ":" + e.model);
+                continue;
+            }
             DataModelComponent model = ForcedRefCheck.modelNamed(contexts, e.model, home);
             Entry before = seen.put(model != null ? model : e.model, e);
             if (before != null) {
@@ -198,9 +219,97 @@ public final class TemplateList {
         Set<String> known = new HashSet<String>();
         // A DDD reference keeps its relation beside its id field, so the relation's name is here too.
         for (Object each : model.getAllFieldListMap().getList()) known.add(((Field) each).getName());
+        Set<String> once = new HashSet<String>();
         for (String field : e.fields) {
             if (field.isEmpty()) problems.add(at + " has an empty name in the list of " + e.model);
             else if (!known.contains(field)) problems.add(at + ": " + e.model + " has no field " + field);
+            else if (!once.add(field)) problems.add(at + " lists " + field + " twice");
         }
+    }
+
+    /**
+     * Whether a DTO lists its fields and leaves the key out. An entity's service and
+     * controller are written with the first DTO made from it, and this one could not
+     * name a row, so it is passed over.
+     */
+    public static boolean leavesOutTheKey(DataTransfer dto) {
+        if (!of(dto.getMetaInfo()).hasLists) return false;
+        for (Object each : dto.getAllFieldListMap().getList()) {
+            if (((Field) each).isPrimaryKey()) return false;
+        }
+        return true;
+    }
+
+    /** The domains with a model of this name, when the name does not say its domain. */
+    private static List<String> domainsHaving(List<ECoreModelContext> contexts, String name) {
+        List<String> domains = new ArrayList<String>();
+        if (name.indexOf(':') >= 0) return domains;
+        for (ECoreModelContext ctx : contexts) {
+            String[] domainNames = ctx.getInternalDomainNames();
+            if (domainNames == null) continue;
+            for (String domainName : domainNames) {
+                ModelDomain d = ctx.getDomain(domainName);
+                if (d != null && d.getModel() != null && d.getModel().findModelByName(name) != null) {
+                    domains.add(domainName);
+                }
+            }
+        }
+        return domains;
+    }
+
+    /**
+     * The listed names that would give the DTO no field, one sentence each: a
+     * DTO copies neither a relation nor, in most outputs, a value object, only a
+     * field that holds a relation's id. That field exists once the references
+     * are rewritten, so this is asked after that, where {@link #problemsOf} is
+     * asked before. A search DTO keeps its relations, and is left alone.
+     *
+     * @param valueObjects whether a DTO of this domain carries a value object whole
+     */
+    public static List<String> emptyNamesOf(DataTransfer dto, List<ECoreModelContext> contexts, boolean valueObjects) {
+        List<String> problems = new ArrayList<String>();
+        TemplateList list = of(dto.getMetaInfo());
+        if (!list.hasLists || !list.readable) return problems;
+        if (dto.getMetaInfo().hasMetaAnnotation(DataTransferAnnotation.META_SEARCHABLE)) return problems;
+        String at = dto.getIdentity().getName() + ": @template(" + list.value.trim() + "): ";
+        for (Entry e : list.entries) {
+            if (e.fields == null) continue;
+            DataModelComponent model = ForcedRefCheck.modelNamed(
+                    contexts, e.model, dto.getIdentity().getDomainId());
+            if (model == null) continue;
+            for (String name : e.fields) {
+                String reason = whyEmpty(name, model, contexts, valueObjects);
+                if (reason != null) problems.add(at + reason);
+            }
+        }
+        return problems;
+    }
+
+    /** Why a listed name gives no field, or null when it gives one. */
+    private static String whyEmpty(
+            String name, DataModelComponent model, List<ECoreModelContext> contexts, boolean valueObjects) {
+        Field field = null;
+        for (Object each : model.getAllFieldListMap().getList()) {
+            Field f = (Field) each;
+            if (name.equals(f.getAnnotationValue("idof"))) return null;
+            if (name.equals(f.getName())) field = f;
+        }
+        if (field == null || field.getTypeInfo().isBaseType() || field.hasAnnotation(EntityAnnotation.DTO_TYPE)) {
+            return null;
+        }
+        boolean many = field.getTypeInfo().isList();
+        String type = many
+                ? field.getTypeInfo().getCoreItemType()
+                : field.getTypeInfo().getDefaultTypeName();
+        DataModelComponent target =
+                ForcedRefCheck.modelNamed(contexts, type, model.getIdentity().getDomainId());
+        if (!(target instanceof Entity)) return null;
+        if (target.getMetaInfo().hasMetaAnnotation(EntityAnnotation.META_EMBEDDABLE)) {
+            if (valueObjects && !many) return null;
+            return name + " is a value object, which this DTO does not carry: declare what it needs of it";
+        }
+        String key = many ? null : ForcedRefCheck.singleKeyOf((Entity) target);
+        return name + " is a relation, which a DTO does not copy: "
+                + (key == null ? "take it out of the list" : "declare its id with @ref(" + name + "." + key + ")");
     }
 }

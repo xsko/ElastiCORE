@@ -1231,8 +1231,7 @@ public class SrcFilePublisher {
 
 
             DataTransfer byName = model.getDataTransferModels().findByName(dtoName);
-            if (byName != null)
-                return byName;
+            if (byName != null && !io.elasticore.base.model.dto.TemplateList.leavesOutTheKey(byName)) return byName;
         }
 
         return null;
