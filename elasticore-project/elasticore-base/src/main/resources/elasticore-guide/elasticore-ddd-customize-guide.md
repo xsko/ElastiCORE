@@ -152,9 +152,9 @@ repositories {
 
 dependencies {
     // The generator runs these rules; it is not part of the application.
-    compileOnly 'io.elasticore:elasticore-base:3.0.261104-rc9'
+    compileOnly 'io.elasticore:elasticore-base:3.0.261105-rc10'
 
-    testImplementation 'io.elasticore:elasticore-base:3.0.261104-rc9'
+    testImplementation 'io.elasticore:elasticore-base:3.0.261105-rc10'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }

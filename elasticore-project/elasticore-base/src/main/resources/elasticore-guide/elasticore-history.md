@@ -1,3 +1,139 @@
+## 3.0.261105-rc10
+
+### New Features (v3 controller - `@expose(methods)`)
+
+#### `@expose(20, methods="read,search")` lists the endpoints an entity's controller serves
+- Why: every `@expose` entity got the whole CRUD controller, and most roots need part of it - a
+  receipt the application writes is only read over HTTP. Taking methods away with `@restExclude`
+  named internal section ids (`batchUpdate`, `deleteBatch`, `deleteById`), listed what to drop
+  rather than what to keep, and also took the methods off the service.
+- After: `methods` names what the controller serves - `create`, `read`, `search`, `update`
+  (`PUT /` and `PUT /batch`), `delete` (`DELETE /{id}` and `POST /delete`); the rest is not
+  generated. `GET /schema/info`, commands and sign-in stay. The TypeScript client (`XxxApi.ts`)
+  calls only those and imports only what its functions read (a client compiled with
+  `noUnusedLocals` failed on the key DTO of an entity that deletes nothing); a client with nothing
+  to call is not written. The use case (hexagonal, DDD, Java and Kotlin) drops the writes not
+  served and keeps the reads. The service keeps every method. Without `methods` the server output
+  is unchanged. The list is quoted: unquoted, the loader reads only its first name (an annotation
+  with key=value parameters keeps no bare value), which serves fewer endpoints, not more.
+- Changed by default (3.0 TypeScript clients, of a 3.0 or a 2.x server): a client whose server
+  leaves endpoints out - `@readonly`, `@restExclude` - no longer imports what none of its functions
+  read. The `@readonly` client imported the key DTO of a delete
+  it does not have, which a client compiled with `noUnusedLocals` refused. A client with every
+  endpoint is byte for byte what it was (the pet store's `webBuild` and the template-kt
+  `elcore3tsVerify -Pstrict` pass).
+- A name it does not know is a DSL warning and serves nothing (`methods="raed,search"` serves
+  search) - a typo gives fewer endpoints, never more; `methods=""` serves none. A parameter of
+  `@expose` other than `methods`, and a write listed beside `@readonly`, are DSL warnings too.
+- `@restExclude` is deprecated: it still applies, and each entity using it gets a DSL warning naming
+  the `methods` list with the same endpoints - or, where no list has them (`@restExclude(batchUpdate)`
+  keeps `PUT /`; `schemaInfo` stays under every list), the nearest one, which serves fewer, and what
+  it changes. It reached the guides in 3.0.261015-alpha1, so it is not removed. Names in `methods`
+  and the key itself are read without regard to case.
+- A generated controller kept as the developer's because the DSL's change does not merge (an
+  endpoint that goes was edited) now gets a DSL warning naming each endpoint the generator wrote
+  last, no longer writes, and the file still maps - `@expose(methods)`, `@readonly` and
+  `@restExclude` alike. An endpoint the developer added is never named.
+- 2.x output: unchanged (rulesCheck -Pstrict 157 MATCH / 0 DIFF / 2 ACCEPTED, treeCheck 0 differ /
+  0 missing / 0 extra). The 2.x-compatible bundle does not read `methods`, and a TypeScript client of
+  a 2.x server calls every endpoint that server has.
+- Samples: `Receipt` of `elasticore-template-ddd` and `elasticore-template-ddd-mybatis` is
+  `@expose(20, methods="read,search")` - billing's process manager writes receipts through the
+  repository port, and the API reads them.
+- Checked: `ExposeMethodsTest` generates Java and Kotlin hexagonal, Java layered, their TypeScript
+  clients and a client of a 2.x server (also a `@readonly` client's imports, an inexact
+  `@restExclude` suggestion, an unquoted list, capitals); `ControllerMethodRulesTest` (2.x skeleton ignores it, each
+  name, the warnings); `GeneratedMergeTest.narrowingTheMethodsTakesTheEndpointsOutOrNamesWhatIsLeft`
+  (never edited, edited elsewhere, edited in an endpoint that goes beside an endpoint of the
+  developer's own); `ExposeMethodsApiTest` in `elasticore-template-ddd` over HTTP (read 200,
+  search finds it, `DELETE /{id}` and `POST /delete` 405, the service still saves).
+- Files: `ControllerBaseRules`, `EntitySpec` (`metaProperty`), `SpecFactory`, `TypeScriptApiRules`,
+  `RulesGenRunner` (warnings), the annotation, rule, rule-dev and env guides (en and ko), the two
+  billing blueprints.
+
+### Bug Fixes (project DDL - a Kotlin relation read through its id)
+
+#### The project DDL of a Kotlin entity has the foreign key of a relation referenced by its id
+- Why: the project DDL (`ddl { databases }`) reads the generated entity sources, Java with JavaParser and Kotlin
+  line by line (`JpaSchemaReader`). Under the DDD reference rules a relation to another root is read through its
+  id, and the Kotlin rules write that relation as `final var department: Department? = null`. The Kotlin line
+  pattern took `private`, `open`, `override` and the like before `var`, but not `final`, so the relation was not
+  read at all. Its column was still there, from the id field (`departmentDeptId`), but the foreign key was not:
+  in `elasticore-template-kt` none of the nine relations read through an id had one, while the Java output
+  writes them (`fk_shop_products_category` in `elasticore-template-ddd`). Hibernate, mapping the same entity,
+  makes the constraint.
+- What: `final` is one of the modifiers the pattern takes. A Kotlin relation read through its id gets its
+  foreign key, and its column stands where the relation is declared, as in the Java output; the columns
+  themselves are unchanged.
+- In `elasticore-template-kt` the four `db/schema-*.sql` gain nine foreign keys (`fk_hr_employee_department`,
+  `fk_shop_order_customer`, `fk_shop_products_category` and six more) and those columns move. A project that
+  writes migrations (`ddl { migration }`) gets one that adds the foreign keys, which runs as written, as a new
+  foreign key does; the order of a table's columns is not compared. Java output, and Kotlin output without such
+  a relation, are unchanged.
+- Checked: `JpaSchemaReaderTest.aKotlinRelationReadThroughItsIdKeepsItsForeignKey` - an entity written as the
+  Kotlin rules write it; it fails without the change. `elasticore-template-kt` builds with its tests
+  (`SchemaValidateTest` among them) on the regenerated schemas.
+- Files: `JpaSchemaReader.java`, `JpaSchemaReaderTest.java`, `elasticore-template-kt` `db/schema-*.sql`
+
+### Bug Fixes (sample - pet store schema files)
+
+#### The pet store's schema files say the length of `credit_card_type` the generator writes
+- Why: since the v3 column of a required enum is as long as its `@db` code (3.0.261104-rc9), the generator writes `credit_card_type VARCHAR(4)`, but the committed `db/schema-*.sql` of the pet store still said `VARCHAR(255)`; every build that generated rewrote them, so a fresh checkout showed four changed files.
+- Before / after: `VARCHAR(255)` / `VARCHAR2(255 CHAR)` / `NVARCHAR(255)` -> `VARCHAR(4)` / `VARCHAR2(4 CHAR)` / `NVARCHAR(4)` for H2 and PostgreSQL, Oracle and SQL Server. Sample output only; the generator is unchanged.
+- Checked: regenerated with `:elasticore-sample-petstore:elcore3` from `main`; the four files differ in that line only.
+- Files: `elasticore-sample-petstore/src/main/resources/db/schema-{h2,postgresql,oracle,sqlserver}.sql`
+
+### Bug Fixes (DDD rules - a root's reference to its own kind)
+
+#### A root that refers to its own kind references it by its id, like any other root
+- Why: under the `ddd-reference` rule set (`architecture: ddd` or `hexagonal`, or named in a domain's `env.yml`)
+  another root is referenced by its id - `post: Post!` becomes `postId`, the written column, with `post` a read-only
+  join on it. A root that refers to its own kind (`parent: Comment` on the root `Comment`) points to another
+  instance, another aggregate, but stayed an object: the check that keeps a member's reference back to its root
+  (`IdReferences.java`) also caught it, since a root's own root is itself. A DTO declared with `@template`, which
+  leaves relations out, then had no parent at all, while the post stayed as `postId` (#93).
+- What: the check is narrowed to a member's back reference - the target is the entity's own root and not the
+  entity itself. A self-referencing root gets `parentCommentId` as the written column, `parent` becomes read-only
+  (`insertable = false, updatable = false`, no setter), and the mapper writes and searches `parentCommentId`, as it
+  does `postId`. The declared `CommentDTO` keeps `parentCommentId`. Java and Kotlin.
+- The table does not change: the id field takes the relation's column, unchanged, `@db(...)` and all, and its foreign
+  key stays, so no migration is needed. `referenceColumn: short` does not rename it either (`manager_emp_no` stays,
+  for a key `empId @db(emp_no)`); the setting still names the column of a reference to another root.
+- What changes for a project with such a root, under `ddd-reference`:
+  - **A field a DTO declares under another name comes out under the id field's name**, as it already does for a
+    reference to another root. With `parentKey: long @ref(parent.commentId)` the DTO has `parentCommentId`, so a
+    property of the API is renamed, and a client still sending `parentKey` is ignored: the row is saved with no parent
+    and no error. The ddd templates' `parentCatId` is `parentCategoryCatId` now. Use the id field's name, or mark the
+    relation `@objectref`, which keeps the object and the declared name. A field declared under the id field's own
+    name (`parentCommentId: long @ref(parent.commentId)`) stays, and the mapper writes the id.
+  - **The row a parent id names is checked before the save.** The entity has `requireReferences`, which the service
+    calls first: a parent id that names no row answers 404 `reference.<Entity>.<relation>`, not the foreign key's 409.
+  - **The save is flushed and read back**, as for a root that references another root. Until that read-back the
+    relation is `null`: domain code that sets `parentCommentId` and then reads `getParent()` before saving gets null.
+  - Code written by hand that set the parent object on create (`creation().setParent(...)`) sets its id instead.
+- Unchanged: a member's reference to its own kind, a member's back reference to its root, the output without
+  `ddd-reference`, 2.x and the 2.x-compatible output.
+- In the templates:
+  - `Category.parentCategory` of the ddd templates is now referenced by its id. `CategoryDTO` no longer declares
+    `parentCatId @ref(parentCategory.catId)`, as that would be dropped: the property of the API is
+    `parentCategoryCatId`. The regenerated `orm.xml` of `elasticore-template-ddd` maps `parentCategoryCatId` on
+    `parent_category_cat_id`, with the relation read-only on it. In both, the column's entry in `semantic_model.yml`
+    loses its `parentCategory -> Category` description, as the columns of other id references have none; the
+    relationship `Category_parentCategory` stays.
+  - `elasticore-template-kt` names `ddd-reference`, so `Employee.manager`, `Comment.parentComment`,
+    `ContentCategory.parent` and `Category.parentCategory` are referenced by their ids too. Its four
+    `db/schema-*.sql` do not change.
+- Checked: `SelfReferenceByIdTest` - hexagonal and ddd (Java), hexagonal Kotlin with its read-only relation and what
+  its mapper writes, the declared DTO, the mapper, the PostgreSQL schema with one `parent_comment_id` and its foreign
+  key in all three, a `@ref` declared under another name (under the id's name), under the id's own name (kept),
+  `@objectref` keeping a declared name, `referenceColumn: short` with a key that has `@db`, a member's back reference
+  and its reference to its own kind, a required reference, two references on one entity, `requireReferences` and the
+  read-back of a root with no other reference by id, and the layered output. Nine of its fourteen tests fail without
+  the change. The ddd, ddd-mybatis and Kotlin templates build with their tests.
+- Files: `IdReferences.java`, `SelfReferenceByIdTest.java`, both ddd
+  templates' `shop/model/dto.yml` and `semantic_model.yml`, `elasticore-template-ddd` `orm.xml`,
+  `elasticore-rule-guide.md` "Refer to another aggregate by ID" (en, ko)
+
 ## 3.0.261104-rc9
 
 New: `ddl { comments = true }` writes each column's label to the database, `@ref(...) @forceupdate` clears a

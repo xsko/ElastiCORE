@@ -14,7 +14,7 @@ Product:
 ```
 
 #### @expose(methods="...") - the endpoints the Controller serves
-> **Since: 3.0** (the release after 3.0.261104-rc9. 3.0 rule engine. The 2.x generator does not read it)
+> **Since: 3.0** (3.0.261105-rc10. 3.0 rule engine. The 2.x generator does not read it)
 
 Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update` and
 `delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`. `GET /schema/info` stays.
