@@ -40,7 +40,7 @@ public final class ForcedRefCheck {
 
     public static Findings of(DataTransfer dto, List<ECoreModelContext> contexts) {
         Findings out = new Findings();
-        String templates = dto.getMetaInfo().getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE);
+        String templates = TemplateList.namesOf(dto.getMetaInfo());
         if (templates == null) return out;
         String home = dto.getIdentity().getDomainId();
         ModelComponentItems<Field> items = dto.getItems();
@@ -121,7 +121,7 @@ public final class ForcedRefCheck {
      * name says (crm:Order), or else in this one first, as a model looks up
      * its own; then in any other.
      */
-    private static DataModelComponent modelNamed(List<ECoreModelContext> contexts, String name, String home) {
+    static DataModelComponent modelNamed(List<ECoreModelContext> contexts, String name, String home) {
         String domain = name.indexOf(':') > 0 ? name.substring(0, name.indexOf(':')) : null;
         String model = name.substring(name.indexOf(':') + 1);
         DataModelComponent elsewhere = null;

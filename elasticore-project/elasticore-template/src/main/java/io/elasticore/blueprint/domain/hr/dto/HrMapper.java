@@ -1,4 +1,4 @@
-//ecd:1643211809H20261104091202_V3.0
+//ecd:-900935671H20261105101435_V3.0
 package io.elasticore.blueprint.domain.hr.dto;
 
 import org.springframework.dao.PermissionDeniedDataAccessException;
@@ -313,6 +313,71 @@ public class HrMapper {
     }
     
     
+    public static void mapping(Employee from, EmployeeContactDTO to, boolean isSkipNull){
+        mapping(from,to,isSkipNull,(MappingContext) null);
+    }
+    public static void mapping(Employee from, EmployeeContactDTO to, boolean isSkipNull, MappingContext c){
+        if(c!=null && !c.checkEnable()) return;
+        checkPermission(from, to);
+        if(from ==null || to ==null) return;
+        if(hasValue(from.getDepartment()))
+            to.setDeptName(from.getDepartment().getName());
+        if(c==null || c.fd("firstName").checkEnable())
+        setVal(from.getFirstName(), to::setFirstName, isSkipNull);
+        if(c==null || c.fd("lastName").checkEnable())
+        setVal(from.getLastName(), to::setLastName, isSkipNull);
+        if(c==null || c.fd("email").checkEnable())
+        setVal(from.getEmail(), to::setEmail, isSkipNull);
+        if(c==null || c.fd("phone").checkEnable())
+        setVal(from.getPhone(), to::setPhone, isSkipNull);
+    }
+    
+    
+    public static void mapping(Employee from, EmployeeContactDTO to){
+        mapping(from,to,false);
+    }
+    public static void mapping(Employee from, EmployeeContactDTO to, MappingContext c){
+        mapping(from,to,false,c);
+    }
+    
+    
+    public static EmployeeContactDTO toEmployeeContactDTO(Employee from){
+        return toEmployeeContactDTO(from,MappingContext.withGuard(2,null));
+    }
+    public static EmployeeContactDTO toEmployeeContactDTO(Employee from,MappingContext c1){
+        MappingContext c=c1!=null?c1.getChild():null;
+        if(c!=null && !c.checkEnable()) return null;
+        if(from==null) return null;
+        EmployeeContactDTO to = new EmployeeContactDTO();
+        mapping(from,to,c);
+        return to;
+    }
+    
+    
+    public static List<EmployeeContactDTO> toEmployeeContactDTOList(List<Employee> fromList){
+        return toEmployeeContactDTOList(fromList,(MappingContext) null);
+    }
+    public static List<EmployeeContactDTO> toEmployeeContactDTOList(List<Employee> fromList, MappingContext c){
+        if(c!=null && !c.checkEnable(1)) return null;
+        if(fromList==null) return null;
+        return fromList.stream().map(e->HrMapper.toEmployeeContactDTO(e,c)).collect(Collectors.toList());
+    }
+    
+    
+    public static List<EmployeeContactDTO> toEmployeeContactDTOList(List<Employee> fromList, BiFunction<Employee, EmployeeContactDTO, EmployeeContactDTO> modifier){
+        if(fromList==null) return null;
+        return fromList.stream()
+            .map(from -> {
+                EmployeeContactDTO to = toEmployeeContactDTO(from);
+                return modifier.apply(from, to);
+            }
+            )
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+        
+    }
+    
+    
     public static void mapping(ProjectAssignment from, ProjectAssignmentDTO to, boolean isSkipNull){
         mapping(from,to,isSkipNull,(MappingContext) null);
     }
@@ -594,6 +659,120 @@ public class HrMapper {
     
     
     public static List<Employee> toEmployeeList(List<EmployeeDTO> fromList, BiFunction<EmployeeDTO, Employee, Employee> modifier){
+        if(fromList==null) return null;
+        return fromList.stream()
+            .map(from -> {
+                Employee to = toEntity(from);
+                return modifier.apply(from, to);
+            }
+            )
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+        
+    }
+    
+    
+    public static void mapping(EmployeeContactDTO from, Employee to, boolean isSkipNull){
+        mapping(from,to,isSkipNull,(MappingContext) null);
+    }
+    public static void mapping(EmployeeContactDTO from, Employee to, boolean isSkipNull, MappingContext c){
+        if(c!=null && !c.checkEnable()) return;
+        checkPermission(from, to);
+        if(from ==null || to ==null) return;
+        if(c==null || c.fd("firstName").checkEnable())
+        setVal(from.getFirstName(), to::setFirstName, isSkipNull);
+        if(c==null || c.fd("lastName").checkEnable())
+        setVal(from.getLastName(), to::setLastName, isSkipNull);
+        if(c==null || c.fd("email").checkEnable())
+        setVal(from.getEmail(), to::setEmail, isSkipNull);
+        if(c==null || c.fd("phone").checkEnable())
+        setVal(from.getPhone(), to::setPhone, isSkipNull);
+        if(hasValue(from.getDeptName()) && hasValue(to.getDepartment()))
+            to.getDepartment().setName(from.getDeptName());
+    }
+    
+    
+    public static void mapping(EmployeeContactDTO from, Employee to){
+        mapping(from,to,false);
+    }
+    public static void mapping(EmployeeContactDTO from, Employee to, MappingContext c){
+        mapping(from,to,false,c);
+    }
+    
+    
+    public static void mapping(EmployeeContactDTO from, Employee to, EntityManager em){
+        mapping(from,to,false,null,em);
+    }
+    public static void mapping(EmployeeContactDTO from, Employee to, boolean isSkipNull, EntityManager em){
+        mapping(from,to,isSkipNull,null,em);
+    }
+    public static void mapping(EmployeeContactDTO from, Employee to, MappingContext c, EntityManager em){
+        mapping(from,to,false,c,em);
+    }
+    public static void mapping(EmployeeContactDTO from, Employee to, boolean isSkipNull, MappingContext c, EntityManager em){
+        if(c!=null && !c.checkEnable()) return;
+        checkPermission(from, to);
+        if(from ==null || to ==null) return;
+        if(c==null || c.fd("firstName").checkEnable())
+        setVal(from.getFirstName(), to::setFirstName, isSkipNull);
+        if(c==null || c.fd("lastName").checkEnable())
+        setVal(from.getLastName(), to::setLastName, isSkipNull);
+        if(c==null || c.fd("email").checkEnable())
+        setVal(from.getEmail(), to::setEmail, isSkipNull);
+        if(c==null || c.fd("phone").checkEnable())
+        setVal(from.getPhone(), to::setPhone, isSkipNull);
+        if(hasValue(from.getDeptName()) && hasValue(to.getDepartment()))
+            to.getDepartment().setName(from.getDeptName());
+    }
+    
+    
+    public static Employee toEntity(EmployeeContactDTO from){
+        return toEntity(from,MappingContext.withGuard(2,null));
+    }
+    public static Employee toEntity(EmployeeContactDTO from,MappingContext c1){
+        MappingContext c=c1!=null?c1.getChild():null;
+        if(c!=null && !c.checkEnable()) return null;
+        if(from==null) return null;
+        Employee to = new Employee();
+        mapping(from,to,c);
+        return to;
+    }
+    
+    
+    public static Employee toEntity(EmployeeContactDTO from, EntityManager em){
+        return toEntity(from,MappingContext.withGuard(2,null),em);
+    }
+    public static Employee toEntity(EmployeeContactDTO from, MappingContext c1, EntityManager em){
+        MappingContext c=c1!=null?c1.getChild():null;
+        if(c!=null && !c.checkEnable()) return null;
+        if(from==null) return null;
+        Employee to = new Employee();
+        mapping(from,to,c,em);
+        return to;
+    }
+    
+    
+    public static List<Employee> toEmployee2List(List<EmployeeContactDTO> fromList){
+        return toEmployee2List(fromList,(MappingContext) null);
+    }
+    public static List<Employee> toEmployee2List(List<EmployeeContactDTO> fromList, MappingContext c){
+        if(c!=null && !c.checkEnable(1)) return null;
+        if(fromList==null) return null;
+        return fromList.stream().map(e->HrMapper.toEntity(e,c)).collect(Collectors.toList());
+    }
+    
+    
+    public static List<Employee> toEmployee2List(List<EmployeeContactDTO> fromList, EntityManager em){
+        return toEmployee2List(fromList,(MappingContext) null,em);
+    }
+    public static List<Employee> toEmployee2List(List<EmployeeContactDTO> fromList, MappingContext c, EntityManager em){
+        if(c!=null && !c.checkEnable(1)) return null;
+        if(fromList==null) return null;
+        return fromList.stream().map(e->HrMapper.toEntity(e,c,em)).collect(Collectors.toList());
+    }
+    
+    
+    public static List<Employee> toEmployee2List(List<EmployeeContactDTO> fromList, BiFunction<EmployeeContactDTO, Employee, Employee> modifier){
         if(fromList==null) return null;
         return fromList.stream()
             .map(from -> {

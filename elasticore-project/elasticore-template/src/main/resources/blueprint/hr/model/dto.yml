@@ -8,6 +8,11 @@ dto:
       directReports: --
       skills: --
 
+  EmployeeContactDTO:
+    meta: dto @template(Employee[firstName, lastName, email, phone])
+    fields:
+      deptName: string @ref(department.name)
+
   EmployeeSrchDTO:
     meta: dto @searchable(entity=Employee, pageSize=25)
     fields:

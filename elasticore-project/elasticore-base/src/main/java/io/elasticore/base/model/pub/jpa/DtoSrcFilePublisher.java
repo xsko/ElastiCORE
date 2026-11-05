@@ -192,7 +192,7 @@ public class DtoSrcFilePublisher extends SrcFilePublisher {
 
         this.writeSrcCode(this.publisher, dto, qualifiedClassName, code);
 
-        String templateName = dto.getMeta().getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE);
+        String templateName = io.elasticore.base.model.dto.TemplateList.namesOf(dto.getMeta());
         if(templateName!=null && !templateName.isEmpty() && templateName.indexOf(",")<0) {
 
             // generate DTO which has key fields
@@ -615,7 +615,7 @@ public class DtoSrcFilePublisher extends SrcFilePublisher {
         }
 
         // Get Entity name from @template annotation
-        String entityName = dto.getMetaInfo().getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE);
+        String entityName = io.elasticore.base.model.dto.TemplateList.namesOf(dto.getMetaInfo());
         if (entityName == null || entityName.isEmpty()) {
             return;
         }

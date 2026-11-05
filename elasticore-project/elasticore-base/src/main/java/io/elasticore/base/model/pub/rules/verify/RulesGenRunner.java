@@ -1357,7 +1357,7 @@ public final class RulesGenRunner {
      */
     private void generateKeyDto(io.elasticore.base.model.dto.DataTransfer dto,
                                 ECoreModel model, String domainDirName) {
-        String template = dto.getMetaInfo().getMetaAnnotationValue("template");
+        String template = io.elasticore.base.model.dto.TemplateList.namesOf(dto.getMetaInfo());
         if (template == null || template.isEmpty() || template.indexOf(',') >= 0) return;
 
         String keyName = String.format("%sKeyDTO", template);

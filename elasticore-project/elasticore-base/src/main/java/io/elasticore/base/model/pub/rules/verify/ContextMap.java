@@ -208,7 +208,7 @@ public final class ContextMap {
                     String name = d.getIdentity().getName();
                     map.fields(from, name, d.getItems(), own, owner, kind);
                     // @template(Product): the DTO is built from another context's model.
-                    String template = d.getMetaInfo().getMetaAnnotationValue("template");
+                    String template = io.elasticore.base.model.dto.TemplateList.namesOf(d.getMetaInfo());
                     for (String t : list(template)) {
                         map.reference(from, name + " @template", t, own, owner, kind, false);
                     }

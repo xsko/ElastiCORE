@@ -1059,6 +1059,19 @@ dto:
 
 With `@template`, the `string(n)` length of the entity is applied to the DTO as `@Size(max=n)` automatically.
 
+**`@template(Order[...])` - the fields it takes.** Instead of removing the others one by one with `--`, list the fields the DTO takes right after the model they come from:
+```yaml
+dto:
+  OrderNoteDTO:
+    meta: dto @template(Order[note, deliveryDate], Customer)   # two fields of Order, all of Customer
+    fields:
+      reason: string(100)       # declared in the DTO: always kept
+```
+- Only the copied fields are filtered. A field declared in the DTO is always kept, and with a listed name it overrides the copied one. A field added to the entity later is not in the DTO until it is listed. A model of another domain: `shop:Order[note]`.
+- A field the model inherits through its own `@extend` can be listed. A relation's name keeps the field that holds its id: `customer` keeps the `customerId` of a DDD reference, and `customerId` itself is refused, as the list is checked before the reference is rewritten. Without such a field a declared DTO leaves the relation out, listed or not, so declare the id with `@ref`.
+- Generation stops on a name the model does not have, a model no domain has, the same model twice (`Order[note], Order[total]` or `Order, Order[note]`), empty brackets (`Order[]`), `--` on a listed field, a list together with `@extend`, and a list on an entity.
+- `@searchable` and `@searchResult` take no list: a search DTO already takes only the fields with a search condition.
+
 ### 4.2 @searchable
 Generates a DTO only for search. Parameters: `entity` (required), `pageSize`, `pageable`.
 ```yaml

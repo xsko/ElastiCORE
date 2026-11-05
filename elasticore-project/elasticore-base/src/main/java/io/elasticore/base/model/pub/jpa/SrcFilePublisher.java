@@ -1006,7 +1006,7 @@ public class SrcFilePublisher {
             if ("entity".equals(type) && isSearchResult) {
                 return false;
             }
-            String targetNm = metaInfo.getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE);
+            String targetNm = io.elasticore.base.model.dto.TemplateList.namesOf(metaInfo);
             if (targetNm != null) {
 
                 // Cross-referencing can lead to an infinite loop, so it has been excluded.

@@ -1059,6 +1059,19 @@ dto:
 
 `@template` 사용시 Entity의 `string(n)` 길이가 DTO에 자동 `@Size(max=n)` 반영.
 
+**`@template(Order[...])` - 받을 필드.** 나머지를 `--` 로 하나씩 지우는 대신, 모델 이름 바로 뒤에 DTO 가 받을 필드를 적습니다:
+```yaml
+dto:
+  OrderNoteDTO:
+    meta: dto @template(Order[note, deliveryDate], Customer)   # Order 의 두 필드와 Customer 전체
+    fields:
+      reason: string(100)       # DTO 에 선언한 필드: 항상 남음
+```
+- 거르는 것은 복사되는 필드뿐입니다. DTO 에 선언한 필드는 항상 남고, 적은 이름이면 복사되는 것을 덮어씁니다. 나중에 엔티티에 추가된 필드는 적기 전까지 DTO 에 없습니다. 다른 도메인의 모델은 `shop:Order[note]` 로 적습니다.
+- 모델이 자기 `@extend` 로 물려받은 필드도 적을 수 있습니다. 관계 이름은 그 id 를 담는 필드를 남깁니다. DDD 참조의 `customer` 는 `customerId` 를 남기고, `customerId` 를 직접 적으면 거부됩니다. 목록을 참조 변환 전에 검사하기 때문입니다. 그런 필드가 없으면 직접 선언한 DTO 는 적었든 안 적었든 관계를 빼므로, id 는 `@ref` 로 선언합니다.
+- 모델에 없는 이름, 어느 도메인에도 없는 모델, 같은 모델을 두 번 적은 경우(`Order[note], Order[total]` 또는 `Order, Order[note]`), 빈 괄호(`Order[]`), 적은 필드에 `--`, `@extend` 와 함께 쓴 목록, 엔티티에 쓴 목록은 생성을 멈춥니다.
+- `@searchable`, `@searchResult` 에는 목록을 쓰지 않습니다. 검색 DTO 는 이미 검색 조건이 있는 필드만 받습니다.
+
 ### 4.2 @searchable
 검색 전용 DTO 생성. 매개변수: `entity`(필수), `pageSize`, `pageable`.
 ```yaml

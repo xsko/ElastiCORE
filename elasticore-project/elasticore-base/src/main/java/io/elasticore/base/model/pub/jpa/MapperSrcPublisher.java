@@ -852,8 +852,8 @@ public class MapperSrcPublisher extends SrcFilePublisher {
 
                     if(chkDto!=null) {
 
-
-                        Entity entityByName = this.findEntityByName(chkDto.getMetaInfo().getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE));
+                        Entity entityByName = this.findEntityByName(
+                                io.elasticore.base.model.dto.TemplateList.namesOf(chkDto.getMetaInfo()));
 
                         String mapperClassName = getMapperName(checkTypeName);
 
@@ -1061,7 +1061,8 @@ public class MapperSrcPublisher extends SrcFilePublisher {
 
                         if(chkDto!=null) {
 
-                            Entity entityByName = this.findEntityByName(chkDto.getMetaInfo().getMetaAnnotationValue(DataTransferAnnotation.META_TEMPLATE));
+                            Entity entityByName = this.findEntityByName(
+                                    io.elasticore.base.model.dto.TemplateList.namesOf(chkDto.getMetaInfo()));
 
                             String mapperClassName = getMapperName(checkTypeName);
 
