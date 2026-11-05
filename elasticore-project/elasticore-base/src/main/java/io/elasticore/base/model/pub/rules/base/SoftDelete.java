@@ -82,11 +82,15 @@ public final class SoftDelete {
                     + " - it holds when the row was deleted: datetime or timestamp";
         }
         if (f.hasDslAny("id", "pk")) return "." + f.name() + " @deleted is the key";
-        // Hibernate 6.5 does not read <sql-delete> (nor <where>) from orm.xml:
-        // the row would be deleted after all. Said, and the build stopped.
-        if ("xml".equalsIgnoreCase(e.config("mapping")) && !MyBatisSql.applies(e)) {
-            return " @deleted with mapping: xml is not supported yet - Hibernate takes the delete that keeps the row"
-                    + " (@SQLDelete) from an annotation only; leave the domain's mapping in annotations, or use mode: mybatis";
+        // Hibernate 6.x reads <sql-delete> from orm.xml and applies nothing (only 7.0's
+        // Hibernate Models applies it): under Spring Boot 3 the row would be deleted after
+        // all. Said, and the build stopped. Spring Boot 4 brings Hibernate 7.
+        if ("xml".equalsIgnoreCase(e.config("mapping"))
+                && !MyBatisSql.applies(e)
+                && io.elasticore.base.model.pub.rules.RulesConfig.springBootMajor() < 4) {
+            return " @deleted with mapping: xml needs Spring Boot 4 (Hibernate 7) - Hibernate 6 does not apply the delete"
+                    + " that keeps the row (<sql-delete>) from orm.xml; leave the domain's mapping in annotations, or use"
+                    + " mode: mybatis";
         }
         if (e.pkField() == null) return " @deleted needs a key of one field to delete a row by";
         if (e.pkCount() > 1)

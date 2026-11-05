@@ -134,6 +134,8 @@ public class SoftDeleteGenerationTest {
     private static File refused;
     private static File xml;
     private static File mybatis;
+    private static File xml4;
+    private static String springBoot;
     private static String architecture = "hexagonal";
     private static String refusedLog = "";
     private static String xmlLog = "";
@@ -152,6 +154,14 @@ public class SoftDeleteGenerationTest {
             assertEquals(0, run(mybatis, "java", false), "the MyBatis run");
         } finally {
             architecture = "hexagonal";
+        }
+        // Spring Boot 4 brings Hibernate 7, which applies the delete and the restriction from orm.xml.
+        xml4 = write("elcore-sd-xml4", env("    mapping: xml"), MODEL);
+        springBoot = "4";
+        try {
+            assertEquals(0, run(xml4, "java", false), "the Spring Boot 4 mapping: xml run");
+        } finally {
+            springBoot = null;
         }
         assertEquals(0, run(java, "java", false), "the Java run");
         assertEquals(0, run(java, "java", true), "the TypeScript run");
@@ -197,7 +207,8 @@ public class SoftDeleteGenerationTest {
             "elasticore.architecture",
             "elasticore.language",
             "elasticore.rules.force",
-            "elasticore.rules.ts"
+            "elasticore.rules.ts",
+            "elasticore.springBoot"
         };
         String[] saved = new String[keys.length];
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
@@ -207,6 +218,7 @@ public class SoftDeleteGenerationTest {
             System.setProperty("elasticore.language", language);
             System.setProperty("elasticore.rules.force", "true");
             if (typescript) System.setProperty("elasticore.rules.ts", "true");
+            if (springBoot != null) System.setProperty("elasticore.springBoot", springBoot);
             return RulesGenRunner.run(new String[0]);
         } finally {
             for (int i = 0; i < keys.length; i++) {
@@ -226,7 +238,7 @@ public class SoftDeleteGenerationTest {
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
         ModelCheck.reset();
-        for (File dir : new File[] {java, kotlin, refused, xml, mybatis}) {
+        for (File dir : new File[] {java, kotlin, refused, xml, mybatis, xml4}) {
             if (dir == null || !dir.exists()) continue;
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override
@@ -366,9 +378,31 @@ public class SoftDeleteGenerationTest {
         assertTrue(service.contains(".deleteAllByOrder("), service);
     }
 
+    /** Spring Boot 4: orm.xml in Hibernate's schema says the delete and the collection's restriction; the classes say nothing. */
+    @Test
+    public void mappingXmlOnSpringBoot4SaysItInOrmXml() throws Exception {
+        String orm = text(find(xml4, "orm.xml"));
+        assertTrue(
+                orm.contains("<entity-mappings xmlns=\"http://www.hibernate.org/xsd/orm/mapping\"\nversion=\"7.0\">"),
+                orm);
+        assertTrue(
+                orm.matches(
+                        "(?s).*<table name=\"sd_product\"/>\n<sql-delete>UPDATE sd_product SET deleted_at = CURRENT_TIMESTAMP"
+                                + " WHERE product_id = \\? AND deleted_at IS NULL</sql-delete>.*"),
+                orm);
+        assertTrue(
+                orm.matches(
+                        "(?s).*<one-to-many name=\"lines\"[^>]*>\n<sql-restriction>removed_at IS NULL</sql-restriction>.*"),
+                orm);
+        for (String name : new String[] {"SdProduct.java", "SdOrder.java", "SdOrderBase.java"}) {
+            String source = text(find(xml4, name));
+            assertFalse(source.contains("org.hibernate") || source.contains("@SQL"), name + "\n" + source);
+        }
+    }
+
     @Test
     public void mappingXmlStopsTheBuild() {
         assertEquals(1, xmlStatus, xmlLog);
-        assertTrue(xmlLog.contains("@deleted with mapping: xml is not supported yet"), xmlLog);
+        assertTrue(xmlLog.contains("@deleted with mapping: xml needs Spring Boot 4 (Hibernate 7)"), xmlLog);
     }
 }

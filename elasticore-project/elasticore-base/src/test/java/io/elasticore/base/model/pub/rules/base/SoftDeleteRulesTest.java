@@ -110,7 +110,7 @@ public class SoftDeleteRulesTest {
         assertTrue(SoftDelete.problem(product("kind", "string(3) @discriminator(P)", "deletedAt", "timestamp @deleted"))
                 .contains("single-table hierarchy"));
         assertTrue(SoftDelete.problem(product("deletedAt", "timestamp @deleted").config("mapping", "xml"))
-                .contains("mapping: xml is not supported yet"));
+                .contains("mapping: xml needs Spring Boot 4 (Hibernate 7)"));
         // MyBatis writes its own statements, mapping: xml or not.
         assertNull(SoftDelete.problem(product("deletedAt", "timestamp @deleted")
                 .config("mapping", "xml")

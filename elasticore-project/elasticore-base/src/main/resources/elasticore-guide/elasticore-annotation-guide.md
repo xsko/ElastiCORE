@@ -2165,8 +2165,8 @@ and `findById`, `countById`, `findAll` and the search have `AND t.discontinued_a
   `elasticore-template-kt`.
 
 **Not supported yet** (stated rather than half done):
-- `mapping: xml` with JPA - the build stops. Hibernate 6.5 does not read `<sql-delete>` from orm.xml, so the row would be removed after all.
-  Keep the domain's mapping in annotations, or use `mode: mybatis`.
+- `mapping: xml` with JPA on Spring Boot 3 - the build stops: Hibernate 6 reads `<sql-delete>` in orm.xml and does not apply it. On Spring Boot 4
+  (Hibernate 7) it works: orm.xml is then written in Hibernate's schema (`mapping-7.0`), with `<sql-delete>` and `<sql-restriction>`.
 - Taking a deleted row back (restore) is not generated. `UPDATE <table> SET <column> = NULL WHERE <key> = ?` in a declared query
   (`repository.yml`) does it.
 - A query you declare yourself (`repository.yml` `@query` or a derived finder, a dbms port, native SQL) is not changed: add `<column> IS NULL` there.

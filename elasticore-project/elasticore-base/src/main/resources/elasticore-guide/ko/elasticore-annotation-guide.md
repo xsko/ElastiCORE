@@ -2165,8 +2165,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
   `elasticore-template-kt` 에서 HTTP 와 테이블로 확인했습니다.
 
 **아직 지원하지 않는 것** (반쯤 되는 대신 알립니다):
-- JPA 에서 `mapping: xml` - 빌드가 멈춥니다. Hibernate 6.5 가 orm.xml 의 `<sql-delete>` 를 읽지 않아 결국 행이 지워지기 때문입니다.
-  도메인의 매핑을 애너테이션으로 두거나 `mode: mybatis` 를 쓰세요.
+- Spring Boot 3 의 JPA 에서 `mapping: xml` - 빌드가 멈춥니다: Hibernate 6 은 orm.xml 의 `<sql-delete>` 를 읽기만 하고 적용하지 않습니다. Spring Boot 4
+  (Hibernate 7) 에서는 됩니다: orm.xml 을 Hibernate 스키마(`mapping-7.0`)로 쓰고 `<sql-delete>`, `<sql-restriction>` 을 넣습니다.
 - 지운 행 되살리기(복구)는 생성되지 않습니다. `UPDATE <테이블> SET <컬럼> = NULL WHERE <키> = ?` 를 선언 쿼리
   (`repository.yml`)로 두면 됩니다.
 - 직접 선언한 쿼리(`repository.yml` 의 `@query` 나 파생 finder, dbms 포트, 네이티브 SQL)는 바뀌지 않습니다: 거기에 `<컬럼> IS NULL` 을 넣으세요.
