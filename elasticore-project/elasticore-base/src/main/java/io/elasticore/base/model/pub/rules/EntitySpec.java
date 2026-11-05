@@ -556,6 +556,41 @@ public final class EntitySpec {
         return value != null ? value : metaKeyValues.get(name.toLowerCase());
     }
 
+    private final java.util.Map<String, java.util.Map<String, String>> metaProperties =
+            new java.util.LinkedHashMap<String, java.util.Map<String, String>>();
+
+    /**
+     * Records one key=value parameter of a meta annotation as the loader
+     * parsed it: @expose(20, methods="read,search") has the parameter
+     * methods = read,search. Kept apart from metaKeyValues, which joins the
+     * pairs into one text and so cannot hold a value with a comma.
+     */
+    public EntitySpec metaProperty(String name, String key, String value) {
+        if (name == null || key == null || value == null) return this;
+        String annotation = name.toLowerCase(java.util.Locale.ROOT);
+        java.util.Map<String, String> props = metaProperties.get(annotation);
+        if (props == null) {
+            props = new java.util.LinkedHashMap<String, String>();
+            metaProperties.put(annotation, props);
+        }
+        props.put(key, value);
+        return this;
+    }
+
+    /** One key=value parameter of a meta annotation, or null when it was not written. */
+    public String metaProperty(String name, String key) {
+        java.util.Map<String, String> props = metaProperties.get(name.toLowerCase(java.util.Locale.ROOT));
+        return props == null ? null : props.get(key);
+    }
+
+    /** The key=value parameters of a meta annotation, in the order written; empty when none. */
+    public java.util.Map<String, String> metaProperties(String name) {
+        java.util.Map<String, String> props = metaProperties.get(name.toLowerCase(java.util.Locale.ROOT));
+        return props == null
+                ? java.util.Collections.<String, String>emptyMap()
+                : java.util.Collections.unmodifiableMap(props);
+    }
+
     private final java.util.Map<String, java.util.List<String>> repeatedMeta =
             new java.util.LinkedHashMap<String, java.util.List<String>>();
 

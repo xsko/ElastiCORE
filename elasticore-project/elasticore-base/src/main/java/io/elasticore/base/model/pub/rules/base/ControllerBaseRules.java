@@ -161,8 +161,10 @@ public class ControllerBaseRules implements CodeRules {
      *
      *   meta: entity @expose @readonly
      *     - keeps only read/search/schemaInfo
+     *   meta: entity @expose(20, methods="read,search")
+     *     - serves only the methods listed (3.0 output; see exposeOmitted)
      *   meta: entity @expose @restExclude(deleteById,batchUpdate)
-     *     - drops the listed endpoint methods
+     *     - drops the listed endpoint methods (deprecated for methods)
      *
      * User rule sets may call excludeMethod/addMethod under any condition
      * of their own.
@@ -173,6 +175,197 @@ public class ControllerBaseRules implements CodeRules {
             ctx(e).excludeMethod("create", "update", "batchUpdate", "deleteBatch", "deleteById");
         }
         for (String id : restExcluded(e, !ctx(e).compatible())) ctx(e).excludeMethod(id);
+        if (!ctx(e).compatible()) {
+            for (String id : exposeOmitted(e)) ctx(e).excludeMethod(id);
+        }
+    }
+
+    /**
+     * The inbound port promises only what the controller calls: a write the
+     * entity does not serve is not on its use case either. The service keeps
+     * every method - the domain may still call them - and implementing a port
+     * that asks for less still compiles. Reads stay on the port: findById and
+     * findBySearch are what the rest of the application reaches it for.
+     * Before the port's surface (HexUseCaseRules, order 10).
+     */
+    @Rule(value = "expose-methods-port", target = "usecase", order = 5)
+    void exposedPort(EntitySpec e) {
+        if (ctx(e).compatible()) return;
+        for (String id : exposeOmitted(e)) {
+            if ("create".equals(id)) ctx(e).excludeMethod("save");
+            else if ("update".equals(id)) ctx(e).excludeMethod("update");
+            else if ("batchUpdate".equals(id)) ctx(e).excludeMethod("batchUpdate");
+            else if ("deleteBatch".equals(id)) ctx(e).excludeMethod("delete");
+            else if ("deleteById".equals(id)) ctx(e).excludeMethod("deleteById");
+        }
+    }
+
+    /** The names @expose(methods="...") takes, and the controller methods each stands for. */
+    private static final java.util.Map<String, String[]> EXPOSE_METHODS = exposeMethods();
+
+    private static java.util.Map<String, String[]> exposeMethods() {
+        java.util.Map<String, String[]> m = new java.util.LinkedHashMap<String, String[]>();
+        m.put("create", new String[] {"create"});
+        m.put("read", new String[] {"read"});
+        m.put("search", new String[] {"search"});
+        m.put("update", new String[] {"update", "batchUpdate"});
+        m.put("delete", new String[] {"deleteBatch", "deleteById"});
+        return java.util.Collections.unmodifiableMap(m);
+    }
+
+    /** The method names @expose(methods="...") accepts, in the order the guides list them. */
+    public static java.util.Set<String> exposeMethodNames() {
+        return EXPOSE_METHODS.keySet();
+    }
+
+    /** The methods @expose(methods="...") lists, as written, or null when it says none. Methods= is read too. */
+    static String exposeMethodsText(EntitySpec e) {
+        if (!e.hasMeta("expose")) return null;
+        for (java.util.Map.Entry<String, String> en : e.metaProperties("expose").entrySet()) {
+            if ("methods".equalsIgnoreCase(en.getKey())) return en.getValue();
+        }
+        return null;
+    }
+
+    private static final java.util.regex.Pattern NAME_SEPARATOR = java.util.regex.Pattern.compile("[,\\s]+");
+
+    /** The names of a methods list, lower-cased: Read is read. */
+    private static java.util.List<String> namesOf(String text) {
+        java.util.List<String> names = new java.util.ArrayList<String>();
+        for (String name : NAME_SEPARATOR.split(text, -1)) {
+            if (!name.isEmpty()) names.add(name.toLowerCase(java.util.Locale.ROOT));
+        }
+        return names;
+    }
+
+    /**
+     * The controller section ids @expose(methods="...") leaves out: every
+     * method of a name it does not list. Empty when it lists nothing - the
+     * entity is served in full, as @expose alone has always done. A name it
+     * does not know serves nothing (exposeProblems says so): a typo answers
+     * with fewer endpoints, never with more.
+     */
+    public static java.util.Set<String> exposeOmitted(EntitySpec e) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<String>();
+        String text = exposeMethodsText(e);
+        if (text == null) return out;
+        java.util.Set<String> kept = new java.util.HashSet<String>(namesOf(text));
+        for (java.util.Map.Entry<String, String[]> en : EXPOSE_METHODS.entrySet()) {
+            if (!kept.contains(en.getKey())) out.addAll(java.util.Arrays.asList(en.getValue()));
+        }
+        return out;
+    }
+
+    /**
+     * What is wrong with an entity's endpoint selection, one sentence each,
+     * for the run to print as DSL warnings: a name @expose(methods) does not
+     * know, a list that names nothing, a parameter of @expose other than
+     * methods, and @restExclude, which methods replaces.
+     */
+    public static java.util.List<String> exposeProblems(EntitySpec e) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        if (!e.hasMeta("expose")) return out;
+        String names = String.join(", ", EXPOSE_METHODS.keySet());
+        for (String key : e.metaProperties("expose").keySet()) {
+            if (!"methods".equalsIgnoreCase(key)) {
+                out.add(String.format(
+                        "[%s] @expose(%s=...): @expose takes methods=\"...\" only; %s is ignored.",
+                        e.getName(), key, key));
+            }
+        }
+        String text = exposeMethodsText(e);
+        if (text != null) {
+            boolean any = false;
+            java.util.List<String> listed = namesOf(text);
+            for (String name : listed) {
+                if (EXPOSE_METHODS.containsKey(name)) {
+                    any = true;
+                } else {
+                    out.add(String.format(
+                            "[%s] @expose(methods=\"%s\"): %s is not one of %s; it serves nothing.",
+                            e.getName(), text, name, names));
+                }
+            }
+            if (!any) {
+                out.add(String.format(
+                        "[%s] @expose(methods=\"%s\") names none of %s: the controller serves" + " none of them.",
+                        e.getName(), text, names));
+            }
+            if (e.hasMeta("readonly")) {
+                for (String write : new String[] {"create", "update", "delete"}) {
+                    if (listed.contains(write)) {
+                        out.add(String.format(
+                                "[%s] @expose(methods=\"%s\") lists %s, which @readonly takes away;"
+                                        + " drop one of the two.",
+                                e.getName(), text, write));
+                    }
+                }
+            }
+        }
+        if (e.hasMeta("restexclude")) out.add(restExcludeDeprecation(e));
+        return out;
+    }
+
+    /** What each controller section id answers, as the guides name it. */
+    private static String endpointOf(String id) {
+        switch (id) {
+            case "create":
+                return "POST /";
+            case "read":
+                return "GET /{id}";
+            case "search":
+                return "POST /search";
+            case "update":
+                return "PUT /";
+            case "batchUpdate":
+                return "PUT /batch";
+            case "deleteBatch":
+                return "POST /delete";
+            case "deleteById":
+                return "DELETE /{id}";
+            default:
+                return "GET /schema/info";
+        }
+    }
+
+    /**
+     * The deprecation of an entity's @restExclude, with the methods list that
+     * serves the same endpoints - or, where none does (it takes PUT /batch and
+     * keeps PUT /, or takes GET /schema/info, which every list keeps), the
+     * nearest one and what it changes. The nearest serves fewer, never more.
+     */
+    public static String restExcludeDeprecation(EntitySpec e) {
+        java.util.Set<String> gone = restExcluded(e, true);
+        if (e.hasMeta("readonly")) {
+            gone.addAll(java.util.Arrays.asList("create", "update", "batchUpdate", "deleteBatch", "deleteById"));
+        }
+        java.util.List<String> kept = new java.util.ArrayList<String>();
+        java.util.List<String> alsoDropped = new java.util.ArrayList<String>();
+        for (java.util.Map.Entry<String, String[]> en : EXPOSE_METHODS.entrySet()) {
+            boolean all = true;
+            for (String id : en.getValue()) all &= !gone.contains(id);
+            if (all) {
+                kept.add(en.getKey());
+            } else {
+                for (String id : en.getValue()) {
+                    if (!gone.contains(id)) alsoDropped.add(endpointOf(id));
+                }
+            }
+        }
+        String list = String.join(",", kept);
+        if (alsoDropped.isEmpty() && !gone.contains("schemaInfo")) {
+            return String.format(
+                    "[%s] @restExclude is deprecated: list what the controller serves instead,"
+                            + " @expose(methods=\"%s\"). It still applies.",
+                    e.getName(), list);
+        }
+        java.util.List<String> differs = new java.util.ArrayList<String>();
+        if (!alsoDropped.isEmpty()) differs.add("it also drops " + String.join(", ", alsoDropped));
+        if (gone.contains("schemaInfo")) differs.add("GET /schema/info stays");
+        return String.format(
+                "[%s] @restExclude is deprecated, and no @expose(methods) list serves the same"
+                        + " endpoints: the nearest is @expose(methods=\"%s\"), but %s. It still applies.",
+                e.getName(), list, String.join(" and ", differs));
     }
 
     /**

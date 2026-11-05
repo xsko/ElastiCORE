@@ -1100,7 +1100,8 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 v3 출력(`hexagonal`, `ddd`, Kotlin)에서는 `deleteById` 를 빼면 `deleteBatch` 도, `update` 를 빼면 `batchUpdate` 도 빠집니다.
 2.x 호환 번들(`jpa-springboot`)은 적힌 이름만 빼므로 `excludeMethod("deleteById", "deleteBatch")` 처럼 둘 다 적으세요. **컨트롤러에만**(`target = "control"`)
 쓰세요: 헥사고날의 유스케이스 포트는 팀 규칙보다 먼저 만들어지므로, 서비스(`service`)에서 빼면 `XxxService implements
-XxxUseCase` 가 컴파일되지 않습니다. 서비스와 포트에서까지 빼려면 DSL 의 `@restExclude(deleteById)` 를 쓰세요. 컨트롤러는
+XxxUseCase` 가 컴파일되지 않습니다. 컨트롤러·포트·클라이언트에서 엔드포인트를 빼려면 DSL 에 남길 것을 적으세요,
+`@expose(methods="create,read,search,update")`. 컨트롤러는
 개발자 파일이라, 이미 고친 컨트롤러에는 적용되지 않습니다.
 
 ### `FieldCode` - 필드 하나

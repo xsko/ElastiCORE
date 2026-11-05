@@ -1100,7 +1100,8 @@ In rc1, add the member with `ctx(e).field(id).after("…")` in a field rule.
 In v3 output (`hexagonal`, `ddd`, Kotlin), removing `deleteById` also removes `deleteBatch`, and removing `update` also removes `batchUpdate`.
 The 2.x-compatible bundle (`jpa-springboot`) removes only the names you list, so list both, as in `excludeMethod("deleteById", "deleteBatch")`. Use it **only on the controller** (`target = "control"`):
 the use case port of hexagonal is built before team rules, so removing a method from the service (`service`) leaves `XxxService implements
-XxxUseCase` uncompilable. To remove it from the service and the port as well, use `@restExclude(deleteById)` in the DSL. The controller is
+XxxUseCase` uncompilable. To take an endpoint off the controller, the port and the client, list what stays in the DSL,
+`@expose(methods="create,read,search,update")`. The controller is
 a developer file, so this does not apply to a controller that has already been edited.
 
 ### `FieldCode` - one field

@@ -1081,7 +1081,8 @@ next to the changed line. Only when both sides each changed the same line is it 
 the developer's code. Until you edit them, they follow the DSL; after you edit them, a DSL change comes in **only when it merges cleanly**
 (`MERGED`) - e.g. if you add `@readonly`, the untouched write endpoints also disappear from the developer's controller, and endpoints the developer added
 remain. If the DSL also changes a line the developer edited, it **leaves no conflict markers** and keeps the file as it is (`KEPT(yours ...)`), and
-warns what to move by hand - developer code never breaks during a build. Leave the marker line as it is.
+warns what to move by hand - developer code never breaks during a build. Leave the marker line as it is. A controller kept this way
+that still serves an endpoint the DSL took away (`@expose(methods)`, `@readonly`) is named in a warning, endpoint by endpoint.
 
 **Turn it on**: it is on by default for 3.0 code. To turn it off, `elasticore { merge = false }` - from then on a file without a marker 
 is treated as the developer's own and skipped (if you delete it, it is generated anew with the marker). `output = 'v2'` (2.x code) is off by default - exactly as 2.x used it.

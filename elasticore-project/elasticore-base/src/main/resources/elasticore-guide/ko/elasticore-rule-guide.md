@@ -717,7 +717,7 @@ Number(order.totalAmount) > 100
 같은 이유로 TS 모델은 **서버가 고른 규칙으로** 모양을 정합니다. `ts-model` 번들이 아니라
 같은 빌드의 Java/Kotlin 선택이 식별자 참조(`customerId`)·값 객체 인라인(`deliveryAddress`)을
 쓰면 TS DTO 도 그렇고, 값 객체마다 인터페이스(`Address.ts`)가 생깁니다. `XxxApi.ts` 는
-컨트롤러에 없는 엔드포인트(`@readonly`, `@restExclude`, 명령만 받는 루트의 `update`)를 만들지
+컨트롤러에 없는 엔드포인트(`@readonly`, `@expose(methods)`, `@restExclude`, 명령만 받는 루트의 `update`)를 만들지
 않고, `@writeonly` 필드는 응답에 없으니 optional 입니다. 검색 DTO 의 조건은 모두 optional 이고
 `pageNumber`·`pageSize`·`sortColumn`·`sortAscending` 을 가집니다.
 
@@ -890,6 +890,10 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 | 조건 삭제 `delete(srchDTO)` | 한 건씩 읽어서 삭제 — 멤버·리스너가 함께 동작 | - |
 | 조건 수정 `updateBySpecification` | 한 건씩 읽어서 매퍼로 반영 — 버전·감사·불변식 적용 | - |
 | 일괄 수정 `batchUpdate` (`PUT /batch`) | 한 트랜잭션 안에서 행마다 `update(dto)` 를 부름 (3.0.261022-rc1 부터) - 확장 서비스에서 `update()` 를 override 한 규칙이 일괄 수정에도 적용되고, 행마다 같은 검사·`readBack`·409 변환 | 단건 수정과 같음 |
+
+**`@expose(methods="read,search")`** 는 컨트롤러가 제공할 것을 나열합니다(`create`, `read`, `search`, `batchUpdate` 를 포함한
+`update`, `deleteBatch` 를 포함한 `delete`). TypeScript 클라이언트가 따르고 유스케이스는 적지 않은 쓰기를 빼며, 서비스는
+모든 메서드를 둡니다. `@restExclude` 를 대체하며, `@restExclude` 는 deprecated 로 아래처럼 계속 적용됩니다(빌드가 쓸 `methods` 목록을 알려 줌).
 
 **`@restExclude(...)`** 는 서비스·컨트롤러·유스케이스·TypeScript 클라이언트에서 메서드를 뺍니다. 이름은 서비스 메서드
 (`save`, `update`, `batchUpdate`, `delete`(목록 삭제), `deleteById`, `updateBySpecification`)와 컨트롤러 엔드포인트
