@@ -114,7 +114,7 @@ public final class SoftDelete {
     /**
      * What a delete of this entity would remove outright with it: a member
      * of its aggregate, a relation that cascades the delete, that is not
-     * @deleted itself. Kept rows that hold removed ones would be a deletion
+     * {@code @deleted} itself. Kept rows that hold removed ones would be a deletion
      * nobody can undo, so this is refused rather than done.
      */
     public static List<String> removedWithIt(EntitySpec e) {

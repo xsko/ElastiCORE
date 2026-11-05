@@ -54,9 +54,9 @@ public class RepositoryBaseRules implements CodeRules {
     }
 
     /**
-     * @deleted: the reads Spring Data writes itself leave a deleted row out,
+     * With {@code @deleted}, the reads Spring Data writes itself leave a deleted row out,
      * redeclared with a query (Spring Data runs a redeclared CRUD method's
-     * @Query). The searches leave it out through the mapper's toSpec; the
+     * {@code @Query}). The searches leave it out through the mapper's toSpec; the
      * delete is Hibernate's @SQLDelete on the entity. Nothing filters what
      * names such a row - an order line still reads the product it names.
      */

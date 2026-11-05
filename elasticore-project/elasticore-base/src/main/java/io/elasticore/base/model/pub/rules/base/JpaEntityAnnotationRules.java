@@ -111,10 +111,10 @@ public class JpaEntityAnnotationRules implements CodeRules {
     }
 
     /**
-     * @deleted: JPA's remove writes the time instead of deleting the row -
+     * With {@code @deleted}, JPA's remove writes the time instead of deleting the row -
      * every listener that guards a delete still runs. The reads that leave
      * the row out are the repository's and the mapper's (not Hibernate's
-     * @SQLRestriction, which would also hide it from every row that names
+     * {@code @SQLRestriction}, which would also hide it from every row that names
      * it). Not for MyBatis, whose mapper says it in its own statements.
      */
     private static void softDelete(SourceCode c, EntitySpec e) {
