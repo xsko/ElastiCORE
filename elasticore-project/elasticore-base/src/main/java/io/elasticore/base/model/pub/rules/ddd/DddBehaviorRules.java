@@ -114,7 +114,9 @@ public class DddBehaviorRules implements CodeRules, ArtifactContributor,
         // A lifecycle's state, the time it entered one (@stamp), a value taken
         // from what it refers to and a computed one are the entity's to set,
         // exactly as @behavior says.
-        return f.hasDslAny("behavior", "statefield", DddStateRules.STAMP, "snapshot", "compute") && !f.isList() && !f.hasDslAny("id", "pk");
+        return f.hasDslAny("behavior", "statefield", DddStateRules.STAMP, "snapshot", "compute")
+                && !f.isList()
+                && !f.hasDslAny("id", "pk");
     }
 
     /**

@@ -207,8 +207,13 @@ public class DddStateRules implements CodeRules {
      * A command that moves several lifecycles: every one is checked before
      * any moves, so a refusal - in whichever lifecycle - changes nothing.
      */
-    private void together(SourceCode c, EntitySpec e, String command, List<EntitySpec.StateMachine> machines, boolean kt,
-                          List<Stamp> stamps) {
+    private void together(
+            SourceCode c,
+            EntitySpec e,
+            String command,
+            List<EntitySpec.StateMachine> machines,
+            boolean kt,
+            List<Stamp> stamps) {
         EntitySpec.CommandSpec cmd = command(e, command);
         String params = cmd == null ? "" : DddCommandRules.paramsOf(c, cmd, e);
         String end = kt ? "" : ";";
@@ -301,7 +306,8 @@ public class DddStateRules implements CodeRules {
                 continue;
             }
             if (nowOf(f) == null) {
-                if (warn) warnStamp(e, f, "is " + f.typeName() + ", not a time - a stamp is a date, datetime or timestamp");
+                if (warn)
+                    warnStamp(e, f, "is " + f.typeName() + ", not a time - a stamp is a date, datetime or timestamp");
                 continue;
             }
             for (String named : states) {
@@ -313,20 +319,29 @@ public class DddStateRules implements CodeRules {
                 for (EntitySpec.StateMachine m : e.stateMachines()) {
                     if (e.lifecycleProblem(m) != null) continue;
                     if (lifecycle != null && !lifecycle.equals(m.field())) continue;
-                    List<String> constants = e.enumConstantNamesOf(simple(field(e, m.field()).typeName()));
+                    List<String> constants =
+                            e.enumConstantNamesOf(simple(field(e, m.field()).typeName()));
                     if (constants != null && constants.contains(state)) {
                         found.add(m);
                         fields.add(m.field());
                     }
                 }
                 if (found.isEmpty()) {
-                    if (warn) warnStamp(e, f, "names " + named + ", which no lifecycle of " + e.getName()
-                            + " has (states:, with the state a constant of its field's enum)");
+                    if (warn)
+                        warnStamp(
+                                e,
+                                f,
+                                "names " + named + ", which no lifecycle of " + e.getName()
+                                        + " has (states:, with the state a constant of its field's enum)");
                     continue;
                 }
                 if (found.size() > 1) {
-                    if (warn) warnStamp(e, f, "names " + state + ", which " + join(fields, " and ")
-                            + " both have - write @stamp(" + fields.get(0) + "." + state + ")");
+                    if (warn)
+                        warnStamp(
+                                e,
+                                f,
+                                "names " + state + ", which " + join(fields, " and ") + " both have - write @stamp("
+                                        + fields.get(0) + "." + state + ")");
                     continue;
                 }
                 EntitySpec.StateMachine m = found.get(0);
@@ -335,8 +350,14 @@ public class DddStateRules implements CodeRules {
                     if (move.to().equals(state) && e.lifecycleAccepts(move.command())) entered = true;
                 }
                 if (!entered) {
-                    if (warn) warnStamp(e, f, "names " + state + ", which no move of states." + m.field() + " enters"
-                            + (state.equals(m.initial()) ? " (it is where a row starts: for when a row is made, write @default(now))" : ""));
+                    if (warn)
+                        warnStamp(
+                                e,
+                                f,
+                                "names " + state + ", which no move of states." + m.field() + " enters"
+                                        + (state.equals(m.initial())
+                                                ? " (it is where a row starts: for when a row is made, write @default(now))"
+                                                : ""));
                     continue;
                 }
                 // @stamp(SENT, status.SENT) names one state twice: one line.
@@ -362,12 +383,15 @@ public class DddStateRules implements CodeRules {
         for (FieldSpec f : e.fields()) {
             if (!f.hasDsl(STAMP)) continue;
             String why = e.stateMachines().isEmpty()
-                    ? String.format("%s has no states:; it is stamped only by a root with a behaviour class that extends %s"
-                            + " and moves into the state", e.getName(), e.getName())
+                    ? String.format(
+                            "%s has no states:; it is stamped only by a root with a behaviour class that extends %s"
+                                    + " and moves into the state",
+                            e.getName(), e.getName())
                     : "written only for a root with a behaviour class (@root in a DDD bundle); the field is not stamped and"
                             + " stays writable";
-            io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                    "[%s] %s.%s @stamp: %s.", e.domainClassName(), e.getName(), f.name(), why));
+            io.elasticore.base.util.ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format("[%s] %s.%s @stamp: %s.", e.domainClassName(), e.getName(), f.name(), why));
         }
     }
 
@@ -396,9 +420,10 @@ public class DddStateRules implements CodeRules {
         List<String> out = new ArrayList<String>();
         String t = text.trim();
         if (t.startsWith("[") && t.endsWith("]")) t = t.substring(1, t.length() - 1);
-        for (String s : t.split(",")) {
+        for (String s : t.split(",", -1)) {
             String v = s.trim();
-            if (v.length() >= 2 && (v.startsWith("\"") && v.endsWith("\"") || v.startsWith("'") && v.endsWith("'"))) {
+            if (v.length() >= 2
+                    && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
                 v = v.substring(1, v.length() - 1).trim();
             }
             if (!v.isEmpty()) out.add(v);

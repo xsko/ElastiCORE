@@ -229,7 +229,8 @@ public final class RulesGenRunner {
             }
             String missing = null;
             if (wantsAccess && !access) missing = "@access, @owner and @password (jpa-service-access)";
-            else if (!entity.getStates().isEmpty() && !states) missing = wantsStamp ? "states: and @stamp (ddd-state)" : "states: (ddd-state)";
+            else if (!entity.getStates().isEmpty() && !states)
+                missing = wantsStamp ? "states: and @stamp (ddd-state)" : "states: (ddd-state)";
             else if (wantsStamp && !states) missing = "@stamp (ddd-state)";
             else if (wantsDerive && !derive) missing = "@snapshot and @compute (ddd-derive)";
             if (missing != null) {

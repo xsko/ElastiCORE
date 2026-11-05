@@ -336,6 +336,47 @@ public class OssieExportTest {
         }
     }
 
+    @Test
+    @DisplayName("a field stamped by the lifecycle carries the state it is stamped on")
+    public void aStampIsExported() throws Exception {
+        String model = String.join(
+                "\n",
+                "enumeration:",
+                "  Phase:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code: string(3) @code",
+                "    enum:",
+                "      OPEN: OPN",
+                "      DONE: DON",
+                "",
+                "entity:",
+                "  Job:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      jobId: long @id @sequence",
+                "      phase: Phase",
+                "      doneAt: timestamp @stamp(DONE)",
+                "      openedAt: timestamp",
+                "    states:",
+                "      phase:",
+                "        initial: OPEN",
+                "        finish: OPEN -> DONE",
+                "");
+        String out = export(model)[0];
+        assertTrue(out.contains("data: \"{\\\"stamp\\\": \\\"DONE\\\"}\""), out);
+        int opened = out.indexOf("name: opened_at");
+        assertTrue(
+                opened > 0
+                        && !out.substring(
+                                        opened,
+                                        out.indexOf("- name:", opened + 1) < 0
+                                                ? out.length()
+                                                : out.indexOf("- name:", opened + 1))
+                                .contains("stamp"),
+                out);
+    }
+
     /** The entry of datasets: or metrics: with that name, from its line to the next entry or section. */
     private static String block(String yaml, String name) {
         int start = yaml.indexOf("\n  - name: " + name + "\n");
