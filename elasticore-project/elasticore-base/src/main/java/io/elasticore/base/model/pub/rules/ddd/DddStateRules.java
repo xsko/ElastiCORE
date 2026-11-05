@@ -92,9 +92,17 @@ public class DddStateRules implements CodeRules {
      */
     @Rule(value = "ddd-state-moves", target = "entity", order = 98, phase = Rule.Phase.TAIL)
     void moves(EntitySpec e) {
-        if (e.stateMachines().isEmpty() || !DddBehaviorRules.splits(e)) return;
+        if (!DddBehaviorRules.splits(e)) {
+            warnUnstamped(e);
+            return;
+        }
+        if (e.stateMachines().isEmpty()) {
+            stamps(e, true);
+            return;
+        }
         SourceCode c = ctx(e);
         boolean kt = c.syntax() == Syntax.KOTLIN;
+        List<Stamp> stamps = stamps(e, true);
 
         java.util.Set<String> written = new java.util.HashSet<String>();
         for (EntitySpec.StateMachine m : e.stateMachines()) {
@@ -116,7 +124,7 @@ public class DddStateRules implements CodeRules {
                 }
                 if (!e.lifecycleAccepts(move.command()) || !written.add(move.command())) continue;
                 if (machines.size() > 1) {
-                    together(c, e, move.command(), machines, kt);
+                    together(c, e, move.command(), machines, kt, stamps);
                     continue;
                 }
                 usesMover = true;
@@ -136,11 +144,13 @@ public class DddStateRules implements CodeRules {
                 if (kt) {
                     c.varLine("fieldList", "open fun %s(%s) {", move.command(), params)
                      .varLine("fieldList", "    %s(\"%s\", %s.%s, %s)", mover, move.command(), type, move.to(), join(from, ", "));
+                    for (String line : stampLines(stamps, m, move.to(), kt)) c.varLine("fieldList", "%s", line);
                     if (event != null) c.varLine("fieldList", "    raise%s()", event);
                     c.varLine("fieldList", "}");
                 } else {
                     c.varLine("fieldList", "public void %s(%s) {", move.command(), params)
                      .varLine("fieldList", "    %s(\"%s\", %s.%s, %s);", mover, move.command(), type, move.to(), join(from, ", "));
+                    for (String line : stampLines(stamps, m, move.to(), kt)) c.varLine("fieldList", "%s", line);
                     if (event != null) c.varLine("fieldList", "    raise%s();", event);
                     c.varLine("fieldList", "}");
                 }
@@ -197,7 +207,8 @@ public class DddStateRules implements CodeRules {
      * A command that moves several lifecycles: every one is checked before
      * any moves, so a refusal - in whichever lifecycle - changes nothing.
      */
-    private void together(SourceCode c, EntitySpec e, String command, List<EntitySpec.StateMachine> machines, boolean kt) {
+    private void together(SourceCode c, EntitySpec e, String command, List<EntitySpec.StateMachine> machines, boolean kt,
+                          List<Stamp> stamps) {
         EntitySpec.CommandSpec cmd = command(e, command);
         String params = cmd == null ? "" : DddCommandRules.paramsOf(c, cmd, e);
         String end = kt ? "" : ";";
@@ -219,6 +230,7 @@ public class DddStateRules implements CodeRules {
             c.varLine("fieldList", " *   %s: %s -> %s", m.field(), join(move.from(), ", "), move.to());
             body.add(String.format("    require%s(\"%s\", %s)%s", cap(m.field()), command, join(from, ", "), end));
             moves.add(String.format("    this.%s = %s.%s%s", m.field(), type, move.to(), end));
+            moves.addAll(stampLines(stamps, m, move.to(), kt));
             tests.add("(" + anyOf(m.field(), from) + ")");
             said.add("the " + m.field() + " is " + join(move.from(), " or "));
             String event = eventFor(e, move.to());
@@ -242,6 +254,156 @@ public class DddStateRules implements CodeRules {
              .varLine("fieldList", "    return %s;", join(tests, " && "))
              .varLine("fieldList", "}");
         }
+    }
+
+    /**
+     * A time field a lifecycle writes when it enters a state:
+     *
+     * <pre>
+     * shippedAt:   timestamp @stamp(SHIPPED)
+     * refundedOn:  date @stamp(fee.REFUNDED)     # the lifecycle named, where two have the state
+     * </pre>
+     *
+     * Whichever command moves the row there, the field gets the time it did
+     * - again on each entry, so it holds the last one.
+     */
+    public static final class Stamp {
+        final FieldSpec field;
+        final EntitySpec.StateMachine machine;
+        final String state;
+
+        Stamp(FieldSpec field, EntitySpec.StateMachine machine, String state) {
+            this.field = field;
+            this.machine = machine;
+            this.state = state;
+        }
+    }
+
+    /** The annotation of a stamped field. */
+    public static final String STAMP = "stamp";
+
+    /**
+     * The stamps the generator writes, inherited fields among them. One it
+     * cannot - not a time field, a state no lifecycle has or two have, a state
+     * no move enters - fails the model check when warn is set: the field is the
+     * lifecycle's (read-only to requests, a protected setter), so left out it
+     * would be a column nothing ever writes.
+     */
+    static List<Stamp> stamps(EntitySpec e, boolean warn) {
+        List<Stamp> out = new ArrayList<Stamp>();
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        for (FieldSpec f : e.allFields()) {
+            if (!f.hasDsl(STAMP)) continue;
+            String value = f.dslValue(STAMP);
+            List<String> states = value == null ? new ArrayList<String>() : splitList(value);
+            if (states.isEmpty()) {
+                if (warn) warnStamp(e, f, "names no state - write @stamp(STATE)");
+                continue;
+            }
+            if (nowOf(f) == null) {
+                if (warn) warnStamp(e, f, "is " + f.typeName() + ", not a time - a stamp is a date, datetime or timestamp");
+                continue;
+            }
+            for (String named : states) {
+                int dot = named.indexOf('.');
+                String lifecycle = dot > 0 ? named.substring(0, dot).trim() : null;
+                String state = dot > 0 ? named.substring(dot + 1).trim() : named;
+                List<EntitySpec.StateMachine> found = new ArrayList<EntitySpec.StateMachine>();
+                List<String> fields = new ArrayList<String>();
+                for (EntitySpec.StateMachine m : e.stateMachines()) {
+                    if (e.lifecycleProblem(m) != null) continue;
+                    if (lifecycle != null && !lifecycle.equals(m.field())) continue;
+                    List<String> constants = e.enumConstantNamesOf(simple(field(e, m.field()).typeName()));
+                    if (constants != null && constants.contains(state)) {
+                        found.add(m);
+                        fields.add(m.field());
+                    }
+                }
+                if (found.isEmpty()) {
+                    if (warn) warnStamp(e, f, "names " + named + ", which no lifecycle of " + e.getName()
+                            + " has (states:, with the state a constant of its field's enum)");
+                    continue;
+                }
+                if (found.size() > 1) {
+                    if (warn) warnStamp(e, f, "names " + state + ", which " + join(fields, " and ")
+                            + " both have - write @stamp(" + fields.get(0) + "." + state + ")");
+                    continue;
+                }
+                EntitySpec.StateMachine m = found.get(0);
+                boolean entered = false;
+                for (EntitySpec.Move move : m.moves()) {
+                    if (move.to().equals(state) && e.lifecycleAccepts(move.command())) entered = true;
+                }
+                if (!entered) {
+                    if (warn) warnStamp(e, f, "names " + state + ", which no move of states." + m.field() + " enters"
+                            + (state.equals(m.initial()) ? " (it is where a row starts: for when a row is made, write @default(now))" : ""));
+                    continue;
+                }
+                // @stamp(SENT, status.SENT) names one state twice: one line.
+                if (seen.add(f.name() + "|" + m.field() + "|" + state)) out.add(new Stamp(f, m, state));
+            }
+        }
+        return out;
+    }
+
+    private static void warnStamp(EntitySpec e, FieldSpec f, String why) {
+        io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                "[elcore3] %s.%s @stamp %s - nothing else writes the field (it is the lifecycle's), so fix the @stamp.",
+                e.getName(), f.name(), why));
+    }
+
+    /**
+     * An entity without a behaviour class has no commands written. A root
+     * with states: (an @editable one) is said, and the field stays writable; an
+     * entity without states: - a parent - is stamped by the split root that
+     * extends it, if one does.
+     */
+    private static void warnUnstamped(EntitySpec e) {
+        for (FieldSpec f : e.fields()) {
+            if (!f.hasDsl(STAMP)) continue;
+            String why = e.stateMachines().isEmpty()
+                    ? String.format("%s has no states:; it is stamped only by a root with a behaviour class that extends %s"
+                            + " and moves into the state", e.getName(), e.getName())
+                    : "written only for a root with a behaviour class (@root in a DDD bundle); the field is not stamped and"
+                            + " stays writable";
+            io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
+                    "[%s] %s.%s @stamp: %s.", e.domainClassName(), e.getName(), f.name(), why));
+        }
+    }
+
+    /** The lines that stamp the fields of this lifecycle's state, in the command that moves it there. */
+    static List<String> stampLines(List<Stamp> stamps, EntitySpec.StateMachine m, String state, boolean kt) {
+        List<String> out = new ArrayList<String>();
+        for (Stamp s : stamps) {
+            if (s.machine == m && s.state.equals(state)) {
+                out.add(String.format("    this.%s = %s%s", s.field.name(), nowOf(s.field), kt ? "" : ";"));
+            }
+        }
+        return out;
+    }
+
+    /** The time now, in the field's own type; null for a type that is no time a stamp can hold. */
+    static String nowOf(FieldSpec f) {
+        String base = f.baseTypeName();
+        if ("DATE".equals(base)) return "java.time.LocalDate.now()";
+        if ("DATETIME".equals(base)) return "java.time.LocalDateTime.now()";
+        if ("INSTANT".equals(base)) return "java.time.Instant.now()";
+        return null;
+    }
+
+    /** "SHIPPED, LOST" or "[SHIPPED, LOST]", quotes taken off. */
+    private static List<String> splitList(String text) {
+        List<String> out = new ArrayList<String>();
+        String t = text.trim();
+        if (t.startsWith("[") && t.endsWith("]")) t = t.substring(1, t.length() - 1);
+        for (String s : t.split(",")) {
+            String v = s.trim();
+            if (v.length() >= 2 && (v.startsWith("\"") && v.endsWith("\"") || v.startsWith("'") && v.endsWith("'"))) {
+                v = v.substring(1, v.length() - 1).trim();
+            }
+            if (!v.isEmpty()) out.add(v);
+        }
+        return out;
     }
 
     /**
@@ -416,6 +578,9 @@ public class DddStateRules implements CodeRules {
                 if (!reached.contains(s) && !leaves.contains(s)) never.add(s);
             }
             if (!never.isEmpty()) out.add("  unused: " + join(never, ", ") + " - no command moves a row there");
+        }
+        for (Stamp s : stamps(e, false)) {
+            if (s.machine == m) out.add("  stamp:  " + s.field.name() + " - the time it last entered " + s.state);
         }
         return out;
     }

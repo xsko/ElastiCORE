@@ -442,6 +442,7 @@ CREATE TABLE shop_ticket (
     subject VARCHAR2(100 CHAR) NOT NULL,
     status VARCHAR2(3 CHAR),
     billing VARCHAR2(3 CHAR),
+    closed_at TIMESTAMP(6) WITH TIME ZONE,
     total NUMBER(14,2),
     PRIMARY KEY (ticket_id)
 );

@@ -316,6 +316,9 @@ public class TypeScriptDtoFileRules implements CodeRules {
     private static boolean writable(FieldSpec f) {
         if (f.hasDslAny("readonly", "noinput", "behavior", "statefield", "snapshot", "compute", "formula")) return false;
         if (f.dslValue("ref") != null || f.systemManaged()) return false;
+        // A stamp is the lifecycle's to write - where there is one to write it (a split root).
+        if (f.hasDsl(io.elasticore.base.model.pub.rules.ddd.DddStateRules.STAMP)
+                && io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.splits(f.entity())) return false;
         return true;
     }
 

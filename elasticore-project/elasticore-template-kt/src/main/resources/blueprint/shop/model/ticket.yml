@@ -40,6 +40,7 @@ entity:
       subject:  string(100)!
       status:   TicketStatus
       billing:  BillingStatus
+      closedAt: timestamp @stamp(CLOSED)    # close or cancel: whichever moves it to CLOSED records when
       total:    bigdecimal(14.2) @compute(sum(entries.amount))
       entries:  List<TicketEntry> @OneToMany(mappedBy="ticket") @dtype(List<TicketEntryDTO>)
     states:

@@ -474,7 +474,76 @@ HTTP/1.1 409
 - If the root has invariants (`@invariant`, `@min` and so on), JPA allows only one `@PreRemove` per class, so the check is
   called first inside the invariant side's `markBeingRemoved()`. The behavior is the same.
 
-#### 7. Build warnings (when a lifecycle is dropped)
+#### 7. When a state was entered (`@stamp`)
+
+"When was it sent?", "when was it cancelled?" - write the state on a time field, and the command that moves the row into that
+state records the time. Since: 3.0 (after 3.0.261105-rc10)
+
+```yaml
+    fields:
+      status:      ShipmentStatus
+      fee:         FeeStatus
+      sentAt:      timestamp @stamp(SENT)          # send records it
+      cancelledAt: datetime @stamp(CANCELLED)
+      refundedOn:  date @stamp(fee.REFUNDED)       # the lifecycle's field, then the state
+    states:
+      status:
+        initial: READY
+        send:    READY -> SENT
+        cancel:  READY -> CANCELLED
+      fee:
+        initial: DUE
+        pay:     DUE -> PAID
+        cancel:  PAID -> REFUNDED
+```
+
+Generated (`ShipmentBase`, from `elasticore-template-ddd`):
+
+```java
+public void send() {
+    moveStatus("send", ShipmentStatus.SENT, ShipmentStatus.READY);
+    this.sentAt = java.time.Instant.now();
+    raiseSent();
+}
+
+public void cancel() {
+    requireStatus("cancel", ShipmentStatus.READY);
+    requireFee("cancel", FeeStatus.PAID);
+    this.status = ShipmentStatus.CANCELLED;
+    this.cancelledAt = java.time.LocalDateTime.now();
+    this.fee = FeeStatus.REFUNDED;
+    this.refundedOn = java.time.LocalDate.now();
+    raiseCancelled();
+    raiseRefunded();
+}
+```
+
+- **The state, not the command**: whichever command moves the row there records it (a ticket closed by `close` or by `cancel` -
+  Kotlin sample `ticket.yml`). A row that enters the state again gets the new time: the field holds the last entry.
+- **Which lifecycle**: a state name alone is enough when one lifecycle has it. When two have it (both enums have `CANCELLED`),
+  write the field first: `@stamp(status.CANCELLED)`.
+- **Several states**: `@stamp(CANCELLED, LOST)` records whichever of them the row enters.
+- **The type**: `timestamp` -> `Instant.now()`, `datetime` -> `LocalDateTime.now()`, `date` -> `LocalDate.now()`.
+- **Read only**: like the state field, a request cannot write it - `"sentAt": "2000-01-01T00:00:00Z"` in a create or update is ignored,
+  and the TypeScript field metadata says `readOnly: true`.
+- **A refused command records nothing**: the time is written after every check passed, together with the move.
+- JPA and MyBatis alike (`ddd-mybatis-springboot`, `hexagonal-mybatis-springboot`): the line is in the entity's command, and the
+  adapter's UPDATE stores it. Java and Kotlin.
+- The time a row is made is not a stamp: the initial state is entered by no command. Use `createdAt: timestamp @default(now)`.
+- Generated only on a root with a behavior class (a split root), like the rest of the lifecycle. On an `@editable` root there is a
+  warning, and the field stays an ordinary writable one; the layered bundle names `@stamp (ddd-state)` in its warning
+  `..., which the selected rules do not enforce`.
+- **Inherited fields**: a `@stamp` on an `@abstract` parent is stamped by each split root that `@extend`s it, with that root's lifecycle.
+- **A `@stamp` that cannot be written stops the build** on a split root (the table below), with the reason: the field is the
+  lifecycle's, so left out it would be a column nothing ever writes.
+
+| Use case | YAML |
+|---|---|
+| Shipping and delivery times | `shippedAt: timestamp @stamp(SHIPPED)`, `deliveredAt: timestamp @stamp(DELIVERED)` |
+| Approval date of a document | `approvedOn: date @stamp(APPROVED)` |
+| When a ticket was closed, however it was closed | `closedAt: timestamp @stamp(CLOSED, CANCELLED)` |
+
+#### 8. Build warnings (when a lifecycle is dropped)
 
 | Warning | Cause | Result |
 |---|---|---|
@@ -485,6 +554,11 @@ HTTP/1.1 409
 | `states.status.delete: '...' is not a list of states` | `delete:` has `->` or is empty | Delete check omitted |
 | `has @default and states.status.initial` | The state field also has `@default` | `initial` wins |
 | `still has the stub that throws` | A behavior class made earlier still has the skeleton that throws an exception, and it overrides the move | Delete the skeleton |
+| `@stamp names SENTT, which no lifecycle of Shipment has` | A state no lifecycle of the entity has (a typo, the code value) | **Build fails** |
+| `@stamp names CANCELLED, which status and fee both have` | Two lifecycles have the state | **Build fails** - write `@stamp(status.CANCELLED)` |
+| `@stamp names READY, which no move of states.status enters` | Only the initial state, or a state no command reaches | **Build fails** - for when a row is made, `@default(now)` |
+| `@stamp is String, not a time` | The field is not a `date`, `datetime` or `timestamp` | **Build fails** |
+| `@stamp: written only for a root with a behaviour class` | `@editable` root | Not stamped; the field stays writable |
 
 Warnings are collected under `[elcore3] DSL validation warnings:` at the end of the `elcore3` output. The build does not stop, so
 be sure to check this list after generation. If a lifecycle is dropped, the command goes back to an abstract method, and if the behavior class has no implementation, it leads to a
@@ -556,6 +630,7 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Field | `@role` | The role that the sign-in of `@signin` puts in the session (the `role` field if absent). Only an enum or string with `@access(admin)` - otherwise it signs in without a role and gives a DSL warning |
 | Field | `@snapshot(item.unitCost)` | Copies the value of the referenced row once |
 | Field | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | Calculated on every save |
+| Field | `@stamp(SHIPPED)` | The time the lifecycle last entered that state ("When a state was entered" under `states:`) |
 
 Details: "@access / @owner", "@password / @login" and "@snapshot / @compute" in `elasticore-annotation-guide.md`.
 

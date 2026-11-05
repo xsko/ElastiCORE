@@ -219,15 +219,18 @@ public final class RulesGenRunner {
             java.util.Map<String, io.elasticore.base.model.core.Annotation> meta = entity.getMetaInfo().getMetaAnnotationMap();
             boolean wantsAccess = meta != null && (meta.containsKey("access") || meta.containsKey("owner"));
             boolean wantsDerive = false;
+            boolean wantsStamp = false;
             ModelComponentItems<io.elasticore.base.model.entity.Field> fields = entity.getItems();
             for (int j = 0; fields != null && j < fields.size(); j++) {
                 io.elasticore.base.model.entity.Field f = fields.get(j);
                 if (f.hasAnnotation("password") || f.hasAnnotation("access")) wantsAccess = true;
                 if (f.hasAnnotation("snapshot") || f.hasAnnotation("compute")) wantsDerive = true;
+                if (f.hasAnnotation("stamp")) wantsStamp = true;
             }
             String missing = null;
             if (wantsAccess && !access) missing = "@access, @owner and @password (jpa-service-access)";
-            else if (!entity.getStates().isEmpty() && !states) missing = "states: (ddd-state)";
+            else if (!entity.getStates().isEmpty() && !states) missing = wantsStamp ? "states: and @stamp (ddd-state)" : "states: (ddd-state)";
+            else if (wantsStamp && !states) missing = "@stamp (ddd-state)";
             else if (wantsDerive && !derive) missing = "@snapshot and @compute (ddd-derive)";
             if (missing != null) {
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(

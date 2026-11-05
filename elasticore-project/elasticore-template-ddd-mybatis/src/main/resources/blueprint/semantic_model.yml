@@ -586,6 +586,27 @@ datasets:
         custom_extensions:
           - vendor_name: ELASTICORE
             data: "{\"lifecycle\": true, \"enumeration\": \"FeeStatus\"}"
+      - name: sent_at
+        expression:
+          sql: "sent_at"
+        datatype: DateTimeTz
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"stamp\": \"SENT\"}"
+      - name: cancelled_at
+        expression:
+          sql: "cancelled_at"
+        datatype: DateTime
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"stamp\": \"CANCELLED\"}"
+      - name: refunded_on
+        expression:
+          sql: "refunded_on"
+        datatype: Date
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"stamp\": \"fee.REFUNDED\"}"
     custom_extensions:
       - vendor_name: ELASTICORE
         data: "{\"entity\": \"Shipment\", \"domain\": \"shop\", \"states\": {\"status\": {\"initial\": \"READY\", \"send\": \"READY -> SENT\", \"cancel\": \"READY -> CANCELLED\"}, \"fee\": {\"initial\": \"DUE\", \"pay\": \"DUE -> PAID\", \"cancel\": \"PAID -> REFUNDED\"}}, \"events\": \"Sent, Cancelled, Refunded\"}"

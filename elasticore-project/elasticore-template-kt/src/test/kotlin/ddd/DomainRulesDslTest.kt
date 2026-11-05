@@ -82,6 +82,39 @@ class DomainRulesDslTest {
     }
 
     @Test
+    fun eitherCommandThatClosesTheTicketRecordsWhen() {
+        val closed = Ticket()
+        assertThat(closed.closedAt).isNull()
+        closed.close()
+        assertThat(closed.closedAt).isNotNull()
+
+        // cancel moves two lifecycles; it stamps the one that enters CLOSED.
+        val cancelled = Ticket()
+        cancelled.cancel()
+        assertThat(cancelled.closedAt).isNotNull()
+
+        // Refused: nothing moves, nothing is stamped.
+        val billed = Ticket()
+        billed.bill()
+        assertThrows<InvariantViolationException> { billed.cancel() }
+        assertThat(billed.closedAt).isNull()
+    }
+
+    @Test
+    fun theStampIsStoredAndNoRequestWritesIt() {
+        val lee = agent("choi").agentId!!
+        asAgent(lee)
+        val made = tickets.save(TicketDTO().apply { subject = "stamp"; closedAt = java.time.Instant.EPOCH })!!
+        assertThat(made.closedAt).isNull()
+
+        val before = java.time.Instant.now().minusSeconds(2)
+        tickets.close(made.ticketId!!)
+        val read = tickets.findById(made.ticketId!!).get()
+        assertThat(read.status).isEqualTo(TicketStatus.CLOSED)
+        assertThat(read.closedAt).isAfter(before)
+    }
+
+    @Test
     fun aTicketIsDeletedOnlyWhenEveryLifecycleSaysSo() {
         val open = Ticket()
         assertThat(open.canDelete()).isFalse()
