@@ -203,7 +203,6 @@ datasets:
         expression:
           sql: "parent_category_cat_id"
         datatype: Integer
-        description: "parentCategory -> Category"
       - name: created_by
         expression:
           sql: "created_by"
