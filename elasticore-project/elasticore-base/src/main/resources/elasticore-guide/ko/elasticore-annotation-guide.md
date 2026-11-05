@@ -14,7 +14,7 @@ Product:
 ```
 
 #### @expose(methods="...") - Controller 가 제공할 엔드포인트
-> **Since: 3.0** (3.0.261104-rc9 다음 릴리스. 3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+> **Since: 3.0** (3.0.261105-rc10. 3.0 규칙엔진. 2.x 생성기는 읽지 않음)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
 `delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. `GET /schema/info` 는 남습니다.
