@@ -411,7 +411,10 @@ public final class JpaSchemaReader {
 
     private static final Pattern KT_PACKAGE = Pattern.compile("^\\s*package\\s+([\\w.]+)");
     private static final Pattern KT_CLASS = Pattern.compile("\\b(?:(enum)\\s+)?class\\s+(\\w+)(?:[^:{]*?:\\s*([\\w.]+))?");
-    private static final Pattern KT_PROP = Pattern.compile("^\\s*(?:(?:private|protected|internal|public|open|override|lateinit)\\s+)*(var|val)\\s+(\\w+)\\s*:\\s*([\\w.<>?, ]+?)\\s*(?:=.*)?$");
+    // final among the modifiers: the Kotlin rules write a relation read through
+    // its id as "final var", and a line not matched is a field not read.
+    private static final Pattern KT_PROP = Pattern.compile(
+            "^\\s*(?:(?:private|protected|internal|public|open|final|override|lateinit)\\s+)*(var|val)\\s+(\\w+)\\s*:\\s*([\\w.<>?, ]+?)\\s*(?:=.*)?$");
     private static final java.util.Set<String> KT_PRIMITIVES = new java.util.HashSet<String>(java.util.Arrays.asList(
             "Int", "Long", "Short", "Byte", "Boolean", "Double", "Float", "Char"));
     private static final Pattern KT_CONVERTER =Pattern.compile("AttributeConverter<\\s*[\\w.?]+\\s*,\\s*([\\w.?]+)\\s*>");
