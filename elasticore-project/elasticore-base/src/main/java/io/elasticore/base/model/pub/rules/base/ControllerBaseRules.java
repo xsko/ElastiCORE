@@ -303,7 +303,7 @@ public class ControllerBaseRules implements CodeRules {
             }
         }
         if (e.hasMeta("restexclude")) out.add(restExcludeDeprecation(e));
-        return out;
+        return java.util.Collections.unmodifiableList(out);
     }
 
     /** What each controller section id answers, as the guides name it. */
