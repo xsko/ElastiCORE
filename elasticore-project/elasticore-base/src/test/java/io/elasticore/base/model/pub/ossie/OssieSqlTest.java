@@ -16,23 +16,26 @@ public class OssieSqlTest {
     @Test
     public void whatTheOssieLanguageSaysIsPortable() {
         String[] portable = {
-                "order_id",
-                "total",
-                "unit_price * quantity",
-                "CASE WHEN status = 'CAN' THEN 0 ELSE total END",
-                "COALESCE(discount, 0)",
-                "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)",
-                "(COUNT(*)) / NULLIF((COUNT(CASE WHEN status = 'SHP' THEN 1 END)), 0)",
-                "CAST(total AS DECIMAL(38, 10))",
-                "EXTRACT(YEAR FROM order_date)",
-                "first_name || ' ' || last_name",
-                "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)",
-                // A word of a query inside a string literal, or inside a name, is not a query.
-                "CASE WHEN note = 'select one' THEN 1 END",
-                "select_flag",
-                "created_by",
-                "\"with\"",
-                "update_count + 1",
+            "order_id",
+            "total",
+            "unit_price * quantity",
+            "CASE WHEN status = 'CAN' THEN 0 ELSE total END",
+            "COALESCE(discount, 0)",
+            "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)",
+            "(COUNT(*)) / NULLIF((COUNT(CASE WHEN status = 'SHP' THEN 1 END)), 0)",
+            "CAST(total AS DECIMAL(38, 10))",
+            "EXTRACT(YEAR FROM order_date)",
+            "first_name || ' ' || last_name",
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)",
+            "COUNT(CASE WHEN Offer.status IN ('PND', 'AWD') THEN 1 END)",
+            "COUNT(CASE WHEN Offer.status NOT IN ('CAN') OR NOT (Offer.total > 0) THEN 1 END)",
+            "COUNT(DISTINCT CASE WHEN Login.ok = TRUE THEN Login.user_id END)",
+            // A word of a query inside a string literal, or inside a name, is not a query.
+            "CASE WHEN note = 'select one' THEN 1 END",
+            "select_flag",
+            "created_by",
+            "\"with\"",
+            "update_count + 1",
         };
         for (String sql : portable) {
             assertTrue(OssieSql.portable(sql), sql);

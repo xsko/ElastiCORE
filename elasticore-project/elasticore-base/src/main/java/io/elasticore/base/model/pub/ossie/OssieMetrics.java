@@ -20,11 +20,15 @@ import java.util.regex.Pattern;
  *   averageOrder: revenue / orderCount -- Average order
  * </pre>
  *
- * Aggregates are sum, avg, min, max and count; a filter is conditions on the
- * entity's fields joined by "and", compared with =, !=, &lt;, &lt;=, &gt;, &gt;=
- * against a number, a 'text', true/false or an enum constant (written as the
- * constant, stored as its code). The SQL is ANSI and names the dataset and
- * its columns, as Ossie's own examples do: SUM(orders.amount).
+ * Aggregates are sum, avg, min, max and count, and count may count a field's
+ * distinct values: count(distinct Login.userId). A filter is conditions on the
+ * entity's fields, compared with =, !=, &lt;, &lt;=, &gt;, &gt;= against a value, or
+ * with in (...) and not in (...) against a list of them. A value is a number, a
+ * 'text', true/false or an enum constant (written as the constant, stored as
+ * its code). Conditions join with "and" and "or", "and" binding tighter as in
+ * SQL; parentheses group them, and "not" goes before a parenthesis. The SQL is
+ * ANSI and names the dataset and its columns, as Ossie's own examples do:
+ * SUM(orders.amount).
  *
  * A line that cannot be read is said and left out - the export never guesses.
  */
@@ -86,8 +90,11 @@ final class OssieMetrics {
     }
 
     private static final Pattern AGGREGATE = Pattern.compile(
-            "(?i)^(sum|avg|min|max|count)\\s*\\(\\s*([A-Za-z_]\\w*)(?:\\.([A-Za-z_]\\w*))?\\s*\\)(?:\\s+where\\s+(.+))?$");
+            "(?i)^(sum|avg|min|max|count)\\s*\\(\\s*(distinct\\s+)?([A-Za-z_]\\w*)(?:\\.([A-Za-z_]\\w*))?\\s*\\)"
+                    + "(?:\\s+where\\s+(.+))?$");
     private static final Pattern CONDITION = Pattern.compile("^([A-Za-z_]\\w*)\\s*(==|=|!=|<>|>=|<=|>|<)\\s*(.+)$");
+    private static final Pattern IN_LIST = Pattern.compile("(?i)^([A-Za-z_]\\w*)\\s+(not\\s+)?in\\s*\\((.*)\\)$");
+    private static final Pattern NOT_GROUP = Pattern.compile("(?i)^not\\s*(\\(.*)$");
     private static final Pattern ARITHMETIC = Pattern.compile(
             "^([A-Za-z_]\\w*|\\d+(?:\\.\\d+)?)\\s*([-+*/])\\s*([A-Za-z_]\\w*|\\d+(?:\\.\\d+)?)$");
     private static final Pattern TERMS = Pattern.compile("@terms\\s*\\(([^)]*)\\)");
@@ -142,12 +149,19 @@ final class OssieMetrics {
         Matcher a = AGGREGATE.matcher(text);
         if (!a.matches()) return null;
         String fn = a.group(1).toUpperCase();
-        String entity = a.group(2);
-        String field = a.group(3);
-        String where = a.group(4);
+        boolean distinct = a.group(2) != null;
+        String entity = a.group(3);
+        String field = a.group(4);
+        String where = a.group(5);
 
+        if (distinct && !"COUNT".equals(fn)) {
+            return fail(name, "distinct goes only with count, not with " + fn.toLowerCase());
+        }
         String ds = model.dataset(entity);
         if (ds == null) return fail(name, entity + " is not an entity with a table");
+        if (distinct && field == null) {
+            return fail(name, "count(distinct ...) needs a field: count(distinct " + entity + ".field)");
+        }
         String column = null;
         if (field != null) {
             column = model.column(entity, field);
@@ -162,13 +176,8 @@ final class OssieMetrics {
 
         String condition = null;
         if (where != null) {
-            List<String> parts = new ArrayList<String>();
-            for (String c : splitOutsideQuotes(where, " and ")) {
-                String sql = condition(name, entity, ds, c.trim());
-                if (sql == null) return null;
-                parts.add(sql);
-            }
-            condition = join(parts, " AND ");
+            condition = filter(name, entity, ds, where);
+            if (condition == null) return null;
         }
 
         String target = column != null ? ds + "." + column : null;
@@ -180,8 +189,9 @@ final class OssieMetrics {
             target = ds + "." + model.keyColumn(entity);
         }
         if ("COUNT".equals(fn)) {
-            if (condition == null) sql = target != null ? "COUNT(" + target + ")" : "COUNT(*)";
-            else sql = "COUNT(CASE WHEN " + condition + " THEN " + (target != null ? target : "1") + " END)";
+            String counts = distinct ? "COUNT(DISTINCT " : "COUNT(";
+            if (condition == null) sql = target != null ? counts + target + ")" : "COUNT(*)";
+            else sql = counts + "CASE WHEN " + condition + " THEN " + (target != null ? target : "1") + " END)";
         } else {
             sql = fn + "(" + (condition == null ? target : "CASE WHEN " + condition + " THEN " + target + " END") + ")";
         }
@@ -191,6 +201,95 @@ final class OssieMetrics {
         else if ("AVG".equals(fn)) datatype = "Float".equals(model.datatype(entity, field)) ? "Float" : "Decimal";
         else datatype = model.datatype(entity, field);
         return new Metric(name, sql, datatype, label, terms, line, java.util.Collections.singletonList(ds));
+    }
+
+    /** A filter as SQL, or null with the problem said. */
+    private String filter(String metric, String entity, String ds, String where) {
+        if (!balanced(where)) {
+            fail(metric, "the parentheses of '" + where + "' do not balance");
+            return null;
+        }
+        return anyOf(metric, entity, ds, where);
+    }
+
+    /** Conditions joined by "or", which binds loosest. */
+    private String anyOf(String metric, String entity, String ds, String text) {
+        List<String> out = new ArrayList<String>();
+        for (String part : splitOnWord(text, "or")) {
+            if (part.trim().isEmpty()) return nothingBeside(metric, "or", text);
+            String sql = allOf(metric, entity, ds, part);
+            if (sql == null) return null;
+            out.add(sql);
+        }
+        return join(out, " OR ");
+    }
+
+    /** Conditions joined by "and". */
+    private String allOf(String metric, String entity, String ds, String text) {
+        List<String> out = new ArrayList<String>();
+        for (String part : splitOnWord(text, "and")) {
+            if (part.trim().isEmpty()) return nothingBeside(metric, "and", text);
+            String sql = term(metric, entity, ds, part.trim());
+            if (sql == null) return null;
+            out.add(sql);
+        }
+        return join(out, " AND ");
+    }
+
+    private String nothingBeside(String metric, String word, String text) {
+        fail(metric, "'" + text.trim() + "' has an " + word + " with nothing on one side of it");
+        return null;
+    }
+
+    /** One condition, a list of values, or a group of conditions. */
+    private String term(String metric, String entity, String ds, String text) {
+        Matcher not = NOT_GROUP.matcher(text);
+        if (not.matches()) {
+            String group = group(metric, entity, ds, not.group(1));
+            return group == null ? null : "NOT " + group;
+        }
+        if (text.startsWith("(")) return group(metric, entity, ds, text);
+        Matcher list = IN_LIST.matcher(text);
+        if (list.matches()) return inList(metric, entity, ds, list.group(1), list.group(2) != null, list.group(3));
+        return condition(metric, entity, ds, text);
+    }
+
+    private String group(String metric, String entity, String ds, String text) {
+        if (closingOf(text) != text.length() - 1) {
+            fail(metric, "'" + text + "' is not FIELD OP VALUE");
+            return null;
+        }
+        String inside = text.substring(1, text.length() - 1);
+        if (inside.trim().isEmpty()) {
+            fail(metric, "'" + text + "' has nothing in its parentheses");
+            return null;
+        }
+        String sql = anyOf(metric, entity, ds, inside);
+        return sql == null ? null : "(" + sql + ")";
+    }
+
+    /** Every value is read as a single one is, so a constant the enum does not have is named. */
+    private String inList(String metric, String entity, String ds, String field, boolean not, String list) {
+        String column = model.column(entity, field);
+        if (column == null) {
+            fail(metric, entity + " has no column for " + field);
+            return null;
+        }
+        if (list.trim().isEmpty()) {
+            fail(metric, field + " in () lists no value");
+            return null;
+        }
+        List<String> values = new ArrayList<String>();
+        for (String each : splitOutsideQuotes(list, ",")) {
+            if (each.trim().isEmpty()) {
+                fail(metric, field + " in (" + list.trim() + ") has an empty value");
+                return null;
+            }
+            String value = literal(metric, entity, field, each.trim());
+            if (value == null) return null;
+            values.add(value);
+        }
+        return ds + "." + column + (not ? " NOT IN (" : " IN (") + join(values, ", ") + ")";
     }
 
     private String condition(String metric, String entity, String ds, String text) {
@@ -210,6 +309,12 @@ final class OssieMetrics {
         if ("==".equals(op)) op = "=";
         if ("!=".equals(op)) op = "<>";
 
+        String sqlValue = literal(metric, entity, field, value);
+        return sqlValue == null ? null : ds + "." + column + " " + op + " " + sqlValue;
+    }
+
+    /** A value as SQL, or null with the problem said. */
+    private String literal(String metric, String entity, String field, String value) {
         String sqlValue;
         if (value.matches("-?\\d+(\\.\\d+)?")) sqlValue = value;
         else if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) sqlValue = value.toUpperCase();
@@ -242,7 +347,7 @@ final class OssieMetrics {
             fail(metric, "cannot read the value " + value);
             return null;
         }
-        return ds + "." + column + " " + op + " " + sqlValue;
+        return sqlValue;
     }
 
     private Metric arithmetic(String name, String text, String label, List<String> terms, String line) {
@@ -307,6 +412,91 @@ final class OssieMetrics {
         }
         parts.add(rest);
         return parts;
+    }
+
+    /** Whether every parenthesis outside quotes has its other half. */
+    private static boolean balanced(String text) {
+        char quote = 0;
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth < 0) {
+                return false;
+            }
+        }
+        return depth == 0;
+    }
+
+    /** Where the parenthesis that opens the text closes, in a text that balances. */
+    private static int closingOf(String text) {
+        char quote = 0;
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The parts between a word that joins conditions: outside quotes and parentheses, in any case. */
+    private static List<String> splitOnWord(String text, String word) {
+        List<String> parts = new ArrayList<String>();
+        char quote = 0;
+        int depth = 0;
+        int from = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (depth == 0 && joinsAt(text, i, word)) {
+                parts.add(text.substring(from, i));
+                from = i + word.length();
+                i = from - 1;
+            }
+        }
+        parts.add(text.substring(from));
+        return parts;
+    }
+
+    /**
+     * Whether the word stands here as a word that joins. Right after an operator
+     * it is a value, an enum constant such as region = OR, and right before one
+     * it is a field's name: both read as they always did.
+     */
+    private static boolean joinsAt(String text, int at, String word) {
+        if (!text.regionMatches(true, at, word, 0, word.length())) return false;
+        int end = at + word.length();
+        if (at > 0 && !endsAWord(text.charAt(at - 1))) return false;
+        if (end < text.length() && !endsAWord(text.charAt(end))) return false;
+        String before = text.substring(0, at).trim();
+        String after = text.substring(end).trim();
+        boolean isValue = !before.isEmpty() && "=<>!".indexOf(before.charAt(before.length() - 1)) >= 0;
+        boolean isField = !after.isEmpty() && "=<>!".indexOf(after.charAt(0)) >= 0;
+        return !isValue && !isField;
+    }
+
+    private static boolean endsAWord(char c) {
+        return Character.isWhitespace(c) || c == '(' || c == ')';
     }
 
     private Metric fail(String metric, String why) {

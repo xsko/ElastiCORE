@@ -501,7 +501,7 @@ page.append('''
         도 업무 정보입니다. 화면·SQL·BI 도구마다 "매출" 을 따로 정의하면 숫자가 달라지므로, DSL 에 <b>한 번</b> 적습니다.</p>
       ''' + code('metrics') + '''
       <ul>
-        <li>한 줄이 지표 하나: <code>sum|avg|min|max|count(엔티티.필드)</code>, 조건은 <code>where 필드 != 값 and …</code>, 지표끼리는 <code>revenue / orderCount</code>.</li>
+        <li>한 줄이 지표 하나: <code>sum|avg|min|max|count(엔티티.필드)</code>, 조건은 <code>where 필드 != 값 and …</code> 외에 <code>in (…)</code>, <code>not in (…)</code>, <code>or</code>, 괄호, <code>not (…)</code>, 서로 다른 값의 수는 <code>count(distinct 엔티티.필드)</code>, 지표끼리는 <code>revenue / orderCount</code>.</li>
         <li>enum 은 상수 이름으로 씁니다(<code>CANCELLED</code>) - 내보낼 때 저장 코드(<code>'CAN'</code>)로 바뀝니다.</li>
         <li><code>@terms(…)</code> 는 업무에서 부르는 이름·동의어입니다. 엔티티(<code>주문 = order, purchase, 구매</code>)·필드(<code>가격</code>)·지표에 붙입니다.</li>
         <li>애플리케이션 코드는 만들지 않습니다. Apache Ossie 시맨틱 모델의 <code>metrics</code> 와 <code>ai_context.synonyms</code> 로 나가서,
