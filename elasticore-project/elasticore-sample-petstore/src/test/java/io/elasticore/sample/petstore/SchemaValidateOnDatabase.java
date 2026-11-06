@@ -6,9 +6,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.web.servlet.MockMvc;
+import org.yaml.snakeyaml.Yaml;
 
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +38,35 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 abstract class SchemaValidateOnDatabase {
 
     @Autowired MockMvc mvc;
+    @Autowired JdbcTemplate jdbc;
+
+    /** What the export writes in the portable language runs here: each metric, over its dataset's table. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyMetricRunsOnTheDatabase() throws Exception {
+        Map<String, Object> model;
+        try (InputStream in = getClass().getResourceAsStream("/blueprint/semantic_model.yml")) {
+            model = new Yaml().load(in);
+        }
+        Map<String, String> tables = new HashMap<String, String>();
+        for (Map<String, Object> ds : (List<Map<String, Object>>) model.get("datasets")) {
+            tables.put((String) ds.get("name"), (String) ds.get("source"));
+        }
+        List<Map<String, Object>> metrics = (List<Map<String, Object>>) model.get("metrics");
+        assertThat(metrics).isNotEmpty();
+        for (Map<String, Object> m : metrics) {
+            String sql = (String) ((Map<String, Object>) m.get("expression")).get("sql");
+            String from = null;
+            for (Map.Entry<String, String> t : tables.entrySet()) {
+                String named = sql.replaceAll("\\b" + t.getKey() + "\\.", t.getValue() + ".");
+                if (named.equals(sql)) continue;
+                sql = named;
+                from = t.getValue();
+            }
+            assertThat(from).as("a dataset in " + m.get("name")).isNotNull();
+            assertThat(jdbc.queryForList("SELECT " + sql + " FROM " + from)).as((String) m.get("name")).hasSize(1);
+        }
+    }
 
     @Test
     void hibernateValidatesTheSchemaAndTheShopRunsOnIt() throws Exception {

@@ -155,7 +155,7 @@ final class OssieMetrics {
         String where = a.group(5);
 
         if (distinct && !"COUNT".equals(fn)) {
-            return fail(name, "distinct goes only with count, not with " + fn.toLowerCase());
+            return fail(name, "distinct goes only with count, not with " + fn.toLowerCase(java.util.Locale.ROOT));
         }
         String ds = model.dataset(entity);
         if (ds == null) return fail(name, entity + " is not an entity with a table");
