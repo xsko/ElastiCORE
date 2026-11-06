@@ -5,6 +5,7 @@
 Port는 외부 시스템과의 연결 인터페이스를 YAML DSL로 정의하는 ElastiCORE의 핵심 기능입니다.
 개발자는 YAML만 작성하면 프레임워크가 Java 인터페이스를 생성하고, 런타임에 Spring 프록시
 팩토리가 동적 구현체를 만듭니다.
+**동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
 ### 헥사고날에서 이것이 무엇인가
 
@@ -386,6 +387,7 @@ domain.RentClaimService.proxyPort=3128
 ```
 
 ### 2.7 Spring HTTP 서비스 클라이언트로 생성 (`httpPort: spring`, Spring Boot 4)
+> **동작:** Spring Boot 4 · **안 됨:** Spring Boot 3 (경고); 2.x generator (생성 안 됨)
 
 Spring Boot 4 프로젝트는 HTTP 포트를 ElastiCORE 런타임 대신 **Spring이 구현하는 `@HttpExchange` 인터페이스**로 생성할 수 있습니다(ElastiCORE 3.0 규칙엔진, `elcore3`). 포트 DSL은 그대로이고, 도메인의 `env.yml`에 한 줄을 더합니다.
 
@@ -702,6 +704,7 @@ AND name LIKE :name /* if:name */
 - 블록 내 모든 줄이 조건에 따라 포함/제거
 
 #### JEXL 표현식
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
 ```sql
 AND min_age >= :minAge /* if:input.getMinAge() > 0 */
 

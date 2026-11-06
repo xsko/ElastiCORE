@@ -91,6 +91,7 @@
       <a href="#overview">이 가게는</a>
       <a href="#people">사람과 권한</a>
       <a href="#map">업무 지도</a>
+      <a href="#env">어디서 동작하나</a>
       <strong>업무별</strong>
       <a href="#browse">1. 상품 둘러보기</a>
       <a href="#catalog-admin">2. 상품 관리</a>
@@ -176,6 +177,21 @@
           <tr><td><a href="#orders">8. 주문 조회</a></td><td>고객·관리자</td><td><span class="cov all">DSL 로 전부</span></td><td>-</td></tr>
           <tr><td><a href="#cancel">9. 주문 취소</a></td><td>고객</td><td><span class="cov all">DSL 로 전부</span></td><td>환불은 모델에 없음</td></tr>
           <tr><td><a href="#ship">10. 배송</a></td><td>관리자</td><td><span class="cov all">DSL 로 전부</span></td><td>-</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="env">어디서 동작하나</h2>
+      <p>이 가게는 <b>hexagonal · Java · JPA · Spring Boot 4</b> 로 생성합니다. 아래 DSL 은 이 가게에서 쓰지만 모든 설정에서 동작하지는 않습니다.
+        표에 없는 것(<code>@template</code>, <code>@search</code>, <code>metrics:</code>, <code>@terms</code> …)은 어디서나 같습니다.
+        각 기능의 정확한 범위는 가이드의 <b>동작:</b> 표시를 봅니다.</p>
+      <table class="map matrix">
+        <thead><tr><th>DSL</th><th>layered (v3)</th><th>ddd · hexagonal</th><th>2.x 호환 출력 (<code>output = 'v2'</code>)</th><th>그 밖에</th></tr></thead>
+        <tbody>
+          <tr><td><code>@access</code> <code>@owner</code> <code>@password</code> <code>@login</code> <code>@signin</code></td><td>동작</td><td>동작</td><td>경고 - 검사·해시 안 함</td><td>MyBatis 도 동작</td></tr>
+          <tr><td><code>@deleted</code></td><td>동작</td><td>동작</td><td>경고 - 행이 지워짐</td><td>MyBatis 도 동작 · <code>mapping: xml</code> 은 Spring Boot 4 만 (3 은 빌드 중단)</td></tr>
+          <tr><td><code>states:</code> <code>@compute</code> <code>@snapshot</code></td><td>경고 - 생성 안 됨</td><td>동작</td><td>경고 - 생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
+          <tr><td><code>@root</code> <code>@behavior</code> <code>@editable</code> <code>@event</code></td><td>생성 안 됨</td><td>동작</td><td>생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
+          <tr><td><code>referenceColumn: short</code></td><td>바뀌는 것 없음</td><td>동작</td><td>바뀌는 것 없음</td><td>다른 애그리거트를 id 로 참조할 때의 컬럼 이름</td></tr>
         </tbody>
       </table>
 

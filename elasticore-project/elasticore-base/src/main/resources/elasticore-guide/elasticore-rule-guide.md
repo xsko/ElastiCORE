@@ -1,6 +1,7 @@
 # ElastiCORE Rule Guide
 
 How to **choose**, **switch off** and **write your own** code generation rules.
+A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
 If you want to write a model in the DSL, read `elasticore-dsl-guide.md`.
 If you want to work with the generated code, read `elasticore-dev-guide.md`.
@@ -381,7 +382,7 @@ Item:                             # master data - a root where editing field by 
   erasing the value is done by a method of the root with the `protected` setter.
 - **Collections**: the root's member collections are locked too (`creation().replaceLines(...)` only on a new root).
   If a request must change it, like editing a draft, add `@editable`.
-- **Generated service tests** also build their fixtures with `creation()`.
+- **Generated service tests** (Kotlin - the v3 Java bundles write none) also build their fixtures with `creation()`.
 - **2.x and the plain v3 bundles are not affected.** A root is split by default only in domains where `ddd-behavior` is
   selected (= `ddd-springboot`, `hexagonal-springboot` and the Kotlin bundles).
 
@@ -1642,6 +1643,7 @@ elasticore {
 through as they are. Adopting the plugin does not change your commands.
 
 #### Which generation of code (`output`)
+> **Works in:** `output = 'v2'` in layered Java · **Not in:** `output = 'v2'` with ddd, hexagonal, Kotlin or the project's own rule sets (stops the build)
 
 From 3.0.261028-rc3, the plugin generates **3.0 code** (`jpa-springboot-v3`) for a layered Java project that declares nothing. A project that keeps the code the 2.x generator wrote
 decides it with one line:

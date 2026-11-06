@@ -1,6 +1,7 @@
 # ElastiCORE Rule Guide
 
 코드 생성 규칙(rule)을 **고르고**, **끄고**, **직접 작성하는** 방법.
+**동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
 DSL로 모델을 쓰는 것이 목적이라면 `elasticore-dsl-guide.md`를,
 생성된 코드를 쓰는 것이 목적이라면 `elasticore-dev-guide.md`를 보세요.
@@ -381,7 +382,7 @@ Item:                             # 기준정보 - 필드 단위로 고치는 �
   값을 지우는 일은 루트의 메서드가 `protected` setter 로 합니다.
 - **컬렉션**: 루트의 멤버 컬렉션도 잠깁니다 (`creation().replaceLines(...)` 는 새 루트에만).
   초안 편집처럼 요청으로 바꿔야 하면 `@editable` 을 붙입니다.
-- **생성 서비스 테스트**도 `creation()` 으로 픽스처를 만듭니다.
+- **생성 서비스 테스트**(Kotlin - v3 Java 번들은 쓰지 않음)도 `creation()` 으로 픽스처를 만듭니다.
 - **2.x·일반 v3 번들에는 영향이 없습니다.** 루트가 기본으로 나뉘는 것은 `ddd-behavior` 가
   선택된 도메인(= `ddd-springboot`, `hexagonal-springboot` 및 Kotlin 번들)뿐입니다.
 
@@ -1642,6 +1643,7 @@ elasticore {
 전달됩니다. 플러그인을 도입한다고 명령어가 바뀌지 않습니다.
 
 #### 어느 세대의 코드인가 (`output`)
+> **동작:** layered Java 의 `output = 'v2'` · **안 됨:** ddd, hexagonal, Kotlin 이나 프로젝트 자체 룰셋과 함께 쓴 `output = 'v2'` (빌드 중단)
 
 3.0.261028-rc3 부터 플러그인은 아무것도 선언하지 않은 레이어드 Java 프로젝트에 **3.0 코드**(`jpa-springboot-v3`)를
 생성합니다. 2.x 생성기가 쓰던 코드를 유지하는 프로젝트는 한 줄로 정합니다:

@@ -5,6 +5,7 @@
 The ElastiCORE DSL is a YAML-based domain model definition language.
 You declare Entity, DTO, Enumeration, Repository, Transaction Port and Domain Service,
 and Java or Kotlin code is generated at build time.
+A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
 | Top-level key | Meaning | Chapter in this document |
 |---|---|---|
@@ -216,6 +217,7 @@ entity:
 ```
 
 ### Business commands (`commands:`) - DDD bundle
+> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
 CRUD is "change these fields"; a domain is asked "confirm this sales order". On an entity,
 if you write `commands:`, each command is generated as **one path, from the endpoint to the rule**.
@@ -252,6 +254,7 @@ SalesOrder:
   create, read, delete and commands.
 
 ### Lifecycle (`states:`) - DDD bundle
+> **Works in:** ddd, hexagonal · **Not in:** layered (warning)
 
 A **rule that a state changes only from
 here to there** - "an order starts as PLACED, becomes SHIPPED when shipped and CANCELLED when cancelled" - is written in the DSL instead of in code. The bodies of the command methods (`ship()`, `cancel()`) are generated too, so
@@ -475,6 +478,7 @@ HTTP/1.1 409
   called first inside the invariant side's `markBeingRemoved()`. The behavior is the same.
 
 #### 7. When a state was entered (`@stamp`)
+> **Works in:** ddd, hexagonal · **Not in:** layered (warning)
 
 "When was it sent?", "when was it cancelled?" - write the state on a time field, and the command that moves the row into that
 state records the time. Since: 3.0 (after 3.0.261105-rc10)
@@ -723,6 +727,7 @@ stock.setOnHand(stock.getOnHand().minus(qty));   // 422 if it runs short
 - It is only for the 3.0 rule engine (elcore3). The 2.x generator (elcore) does not attach the converters.
 
 ### Collection/array types
+> **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for a collection of values (`List<String>`, `int[]`, `string[]`), `Map` and `HashMap` - only an entity collection with `mappedBy` (stops the build)
 
 | DSL type | Java type | Note |
 |---------|----------|------|
@@ -733,6 +738,7 @@ stock.setOnHand(stock.getOnHand().minus(qty));   // 422 if it runs short
 | `int[]` / `string[]` | Array | Array type |
 
 ### Reference and other types
+> **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for `Object`, which has no JDBC type (stops the build)
 
 | DSL type | Java type | Note |
 |---------|----------|------|
@@ -856,6 +862,7 @@ enumeration:
 ---
 
 ## 6. Repository definition
+> **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for JPQL, a `Stream` return, a name that does not read as a query, `deleteBy...` on a layered root with members (stops the build)
 
 Adds query methods to an entity's Spring Data repository. **The key is the entity name**, and
 you write the methods as a `methods` **list**.
@@ -952,6 +959,7 @@ For the detailed syntax and examples, see `elasticore-dsl-port-guide.md`.
 ---
 
 ## 8. Domain service definition
+> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
 An operation that belongs to no aggregate. The point of this section is that you **declare it on the domain, not on an entity** -
 every other annotation goes on an entity, but a domain service is defined as "belonging to no one".
@@ -1016,6 +1024,7 @@ not the behavior but the place to write the behavior and its wiring. If you have
 ---
 
 ### Process manager (`processManager:`)
+> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
 You declare it in the same file as the domain service. It is the place that reacts to events and moves on to the next step.
 
@@ -1087,6 +1096,7 @@ processManager:
 ## 9. Advanced features
 
 ### Composite key
+> **Works in:** JPA · **Not in:** MyBatis (mode: mybatis) (stops the build)
 When you define several `@id` fields, a KeyDTO class is generated automatically.
 ```yaml
 entity:
@@ -1099,6 +1109,7 @@ entity:
 ```
 
 ### Embedded entity
+> **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for a value object that holds another value object, a relation or a collection (stops the build)
 ```yaml
 entity:
   Address:
@@ -1115,6 +1126,7 @@ entity:
 ```
 
 ### Inheritance
+> **Works in:** JPA; MyBatis (mode: mybatis) with an `@abstract` parent · **Not in:** MyBatis (mode: mybatis) with a parent that is not `@abstract`, `@rollup` or `@discriminator` (stops the build)
 ```yaml
 entity:
   Vehicle:

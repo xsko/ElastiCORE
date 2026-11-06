@@ -169,7 +169,7 @@ elasticore:
 
 2.x 가 생성한 서비스 테스트(`*ServiceTest`)는 2.x CoreService 가 부르는 리포지토리 메서드를 mock 으로 고정해 두었습니다.
 v3 CoreService 는 다른 메서드를 부르므로(`deleteById` 는 `findById` 후 `delete`, `delete(searchDTO)` 는 `findAll` 후
-`delete`) 그 테스트는 맞지 않습니다 - 지우고 다시 생성하거나(`env.yml` 의 `testCode: "true"`) 새 호출에 맞춰 고칩니다.
+`delete`) 그 테스트는 맞지 않습니다 - 새 호출에 맞춰 고치거나 지웁니다(`testCode: "true"` 는 v3 Java 코드에는 테스트를 생성하지 않습니다).
 
 ### 되돌리는 법
 

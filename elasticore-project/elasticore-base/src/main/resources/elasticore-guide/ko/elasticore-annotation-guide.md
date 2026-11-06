@@ -1,6 +1,7 @@
 # ElastiCORE Annotation Guide
 
 > **버전 표기 규칙**: 각 어노테이션에 `Since: x.x` 표기가 있는 경우, 해당 버전 이상에서만 사용 가능합니다. 표기가 없는 어노테이션은 ElastiCORE 1.0부터 사용 가능합니다.
+**동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
 ## 1. Entity Meta Annotations
 
@@ -15,6 +16,7 @@ Product:
 
 #### @expose(methods="...") - Controller 가 제공할 엔드포인트
 > **Since: 3.0** (3.0.261105-rc10. 3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
 `delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. `GET /schema/info` 는 남습니다.
@@ -41,6 +43,7 @@ InternalData:
 
 ### @readonly (엔티티)
 > **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x generator (생성 안 됨)
 
 조회만 하는 엔티티. Controller 는 조회 엔드포인트(`read`·`search`·`schemaInfo`)만 생성하고 생성·수정·일괄 수정·삭제는
 제외. v3 Java Service, TypeScript 클라이언트, AI 확장 서비스의 도구도 조회만 남김. 필드의 `@readonly`(서버가 정하는
@@ -53,6 +56,7 @@ CommonCode:
 ### @restExclude(메서드, ...) - deprecated
 > **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음). `@expose(methods="...")` 로 대체되어 **deprecated**:
 > 계속 적용되고, 빌드가 같은 엔드포인트가 되는 `methods` 목록을 - 그런 목록이 없으면(`batchUpdate` 없는 `update`) 가장 가까운 것과 달라지는 점을 - 알려 줍니다.
+> **동작:** v3, Kotlin · **안 됨:** 2.x generator (생성 안 됨)
 
 지정한 메서드만 제외. 이름은 Service 메서드(`save`·`update`·`batchUpdate`·`delete`·`deleteById`·`updateBySpecification`)와
 Controller 엔드포인트(`create`·`read`·`search`·`update`·`batchUpdate`·`deleteBatch`·`deleteById`·`schemaInfo`). v3 출력에서는
@@ -67,6 +71,7 @@ Notice:
 > 읽지 않고 모든 메서드를 생성합니다.
 
 ### @audited
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
 JPA Envers `@Audited` 어노테이션 추가. 데이터 변경 이력 추적용 (dependency 설정 필요).
 ```yaml
 Order:
@@ -88,6 +93,7 @@ AuditEntity:
 ```
 
 ### @extend(ParentEntity)
+> **동작:** JPA; MyBatis (mode: mybatis) 는 `@abstract` 부모만 · **안 됨:** MyBatis (mode: mybatis) 에서 `@abstract` 가 아닌 부모 (빌드 중단)
 부모 엔티티 상속. `extends ParentEntity` 생성.
 ```yaml
 User:
@@ -95,13 +101,14 @@ User:
 ```
 
 ### @embeddable
+> **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 다른 값 객체, 관계 또는 컬렉션을 담은 값 객체 (빌드 중단)
 JPA `@Embeddable` 값 객체. 주소, 좌표 등에 사용.
 ```yaml
 Address:
   meta: entity @embeddable
 ```
 
-v3(DDD·hexagonal) 에서는 DTO 가 값 객체를 **클래스 그대로** 담으므로, DTO 필드에 붙는 규칙이
+v3 의 DDD·hexagonal 과 layered MyBatis(`mode: mybatis`) 에서는 DTO 가 값 객체를 **클래스 그대로** 담으므로, DTO 필드에 붙는 규칙이
 값 객체의 필드에 붙습니다 (`jpa-value-object-boundary`):
 
 ```yaml
@@ -179,6 +186,7 @@ Message:
 ```
 
 ### @rollup
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
 부모 테이블로 컬럼 통합. 자신의 테이블 생성 안함. `@id`가 있는 상위 entity를 `@extend`한 상태에서 사용.
 ```yaml
 Item:
@@ -222,6 +230,7 @@ userId: long @id
 ```
 
 #### @sequence
+> **동작:** JPA; MyBatis (mode: mybatis) 는 키의 IDENTITY 만 · **안 됨:** MyBatis (mode: mybatis) 에서 다른 전략(`@sequence(SEQUENCE)` ...) 이나 키가 아닌 필드 (빌드 중단)
 자동 증가. `@GeneratedValue(strategy = GenerationType.IDENTITY)` 생성.
 ```yaml
 id: long @id @sequence
@@ -293,6 +302,7 @@ DDD·헥사고날 번들에서 다른 루트로 가는 참조는 식별자 필�
 요청이 다른 `itemId` 를 보내도 저장된 값과 응답은 처음 상품 그대로입니다.
 
 #### @readonly / @noinput - 서버가 정하는 필드
+> **동작:** v3, Kotlin · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator - JSON 의 `READ_ONLY` 뿐, 매퍼는 그 필드를 그대로 씀 (생성 안 됨)
 응답에는 나가고 **요청으로는 받지 않는** 필드입니다. 가입일·등급·처리 번호처럼 서버 코드가 값을 정하는
 필드에 씁니다. `@noinput` 은 같은 뜻의 별칭입니다.
 
@@ -383,6 +393,7 @@ onHand: int! @min(0, '재고는 음수가 될 수 없다')
 쓰면 됩니다. `@invariant` 는 **두 필드 이상을 비교하는 규칙**에만 씁니다.
 
 #### @minsize(n, '메시지') / @maxsize(n, '메시지') - 컬렉션 개수
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator - `@maxsize` 와 메시지는 빠지고 `@minsize` 는 `@Size(min=n)` 만 (생성 안 됨)
 컬렉션이 담을 멤버 수. DTO 에는 `@Size(min=n, message=...)` (n 이 1 이상이면 `@NotNull` 도 - 목록을 아예 보내지 않아도 400), DDD 루트에는 저장 시점 검사(422)가 됩니다.
 최소 개수는 컬렉션이 아예 없을 때(null)도 위반입니다. n 이 1 이상이면 TypeScript 클라이언트의 `validate...()` 도
 같은 메시지로 먼저 검사합니다 - `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "..."`
@@ -394,6 +405,7 @@ DTO 를 `dto.yml` 에서 직접 선언하고 같은 필드를 다시 적으면 �
 검사를 원하면 DTO 필드에도 적습니다. 저장 시점 검사(422)는 엔티티의 선언만으로 항상 걸립니다.
 
 #### @pattern('정규식', '메시지') / @pattern(regexp="...", message="...")
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2') - 위치 형식은 무시되고, 메시지가 있는 이름 형식은 컴파일되지 않음 (생성 안 됨)
 문자열이 정규식과 **전체가** 맞아야 한다는 규칙. DTO 에 Bean Validation `@Pattern` 이 생기고(요청 검사, 400),
 TypeScript 클라이언트의 `validate...()` 도 같은 정규식과 메시지로 검사합니다.
 `@min` 처럼 값(정규식) 다음에 메시지를 적습니다. 이름을 붙인 형식도 같습니다.
@@ -558,6 +570,7 @@ articles: List<Article> @dtype(List<ArticleDTO>)
 ```
 
 #### @fetchjoin
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) - to-one 관계는 어차피 한 단계 모두 조인됨 (생성 안 됨)
 N+1 방지를 위한 JOIN FETCH. Service의 `withJoinFetches()`에서 적용 - 페이지 검색(`findBySearch`)이 씀. count 쿼리에서 자동 제외.
 2.x 코드와 v3 번들(3.0.261029-rc4 부터) 모두.
 ```yaml
@@ -566,6 +579,7 @@ category: Category @fetchjoin
 ```
 
 #### @formula(expression)
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) - 값은 null 이고 검색 조건에서 빠짐 (경고)
 읽기 전용 SQL 표현식 매핑. DB 컬럼이 아닌 계산값.
 ```yaml
 dtype: string @formula("dtype")
@@ -576,7 +590,7 @@ createdByNm: string(100) @formula("coalesce((select u.name from system_user u wh
   쓰인다(2.2.261012, 3.0부터). 표현식 안에는 큰따옴표(`"`)를 쓸 수 없다.
   예: `activeCount: long @formula("(select count(*) from member m where m.team_id = team_id and m.use_yn = 'Y')")`
 - DB가 조회할 때 계산하는 값이므로 Mapper의 DTO→Entity 방향(`toEntity`, `mapping(dto, entity)`)에서는
-  값을 넣지 않는다. Entity→DTO 방향과 검색 조건에는 일반 필드처럼 포함된다. TypeScript 클라이언트의
+  값을 넣지 않는다. Entity→DTO 방향과 검색 조건에는 일반 필드처럼 포함된다(`mode: mybatis` 에서는 검색 조건에서 빠진다). TypeScript 클라이언트의
   `XxxFields`에서는 `readOnly: true`이고 `validateXxx`가 검사하지 않는다.
 - `@abstract` 부모 엔티티에 선언하면 부모 클래스에 생성되고, 상속한 엔티티는 그 필드를 물려받는다.
 - Entity에는 필드가 생기지만 테이블 컬럼은 생기지 않는다. 필드에는 `@Formula`가 붙고
@@ -592,6 +606,7 @@ createdByNm: string(100) @formula("coalesce((select u.name from system_user u wh
 - `schema.yml`에는 `@Column` 대신 `@Formula`로 표시된다.
 
 ### 2.5 JPA 관계
+> **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 `@ManyToMany`, `mappedBy` 없는 컬렉션, 멤버 안의 컬렉션이나 다른 도메인 엔티티의 컬렉션, 그리고 layered 에서 자기 서비스 없이 to-one `@cascade` 로 잡힌 멤버 (빌드 중단)
 
 Entity 타입 필드는 **기본적으로 `@ManyToOne`이 자동 적용**됩니다. `@OneToOne`, `@ManyToMany`를 사용하는 경우에만 명시적으로 지정하면 됩니다.
 
@@ -805,6 +820,7 @@ private String forceLong;
 - DB 측에서는 PostgreSQL `jsonb` / `json` 컬럼이 가장 흔한 사용처이며, Hibernate 6.2+ 가 별도 라이브러리 없이 매핑 처리.
 
 ### 2.7 커스텀 함수
+> **동작:** 2.x generator · **안 됨:** v3, Kotlin, TypeScript client (생성 안 됨)
 
 ```yaml
 fullName: string @function.get("getFullName")       # 커스텀 Getter
@@ -812,6 +828,7 @@ password: string @function.set("setEncryptedPassword")  # 커스텀 Setter
 ```
 
 ### 2.8 Spring Data JPA 감사
+> **동작:** JPA; MyBatis (mode: mybatis) 는 시간 타입 필드만 · **안 됨:** MyBatis (mode: mybatis) 에서 시간 타입이 아닌 `@jpa:CreatedDate`·`@jpa:LastModifiedDate` (빌드 중단)
 
 ```yaml
 createDate: datetime @jpa:org.springframework.data.annotation.CreatedDate
@@ -848,6 +865,7 @@ customName: string @search(like,comName)   # comName 필드에 like 검색
 ```
 
 ### 3.2 구현된 연산자 전체 목록 (18개)
+> **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 의 큰 값(`text`, `clob`, `blob`, 4000 자 넘는 문자열) - `like`, 앞·뒤 일치만, 다른 조건은 빠짐 (경고)
 
 | DSL 문법 | JPA Criteria | 대소문자 무시 | 설명 |
 |----------|-------------|:---:|------|
@@ -906,6 +924,7 @@ else
 ```
 
 ### 3.4 between 특수 동작
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) - `col >= from AND col <= to`, LocalDate 의 To+1 일 없음 (생성 안 됨)
 
 SearchDTO에 `fieldNameFrom`, `fieldNameTo` 2개 필드 자동 생성.
 
@@ -926,6 +945,7 @@ registDate: localDate @search(between)
 ```
 
 ### 3.4.1 isnull - 비어 있는지 검색
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator - 필드의 같은 값 비교 (생성 안 됨)
 
 "아직 반납하지 않은 대출", "아직 입고된 적 없는 상품"처럼 **값이 비어 있는지**로 찾을 때 씁니다.
 검색 DTO 에는 필드 값 대신 `<필드>Empty` 라는 `Boolean` 속성 하나가 생기고, 그 값이 조건을 정합니다.
@@ -1023,6 +1043,7 @@ return join.in(items);
 ```
 
 ### 3.7 @ref와 검색 조건 조합
+> **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 조인한 행보다 먼 경로(`@ref(shop.region.name)`) (빌드 중단)
 
 `@ref(parentEntity.childField)` 사용시 nested get 생성:
 ```yaml
@@ -1105,6 +1126,7 @@ dto:
 pageSize 지정시 `PageableObject` 인터페이스 구현. 자동 생성 필드: `pageNumber`(기본0), `pageSize`(설정값), `sortCode`.
 
 ### 4.2.1 @sort - 기본 정렬
+> **동작:** v3, Kotlin · **안 됨:** 2.x generator (생성 안 됨)
 요청이 `sortCode` 를 보내지 않을 때의 순서. 엔티티 meta 에 적으면 그 엔티티의 모든 검색 DTO 에, 검색 DTO meta 에 적으면
 그 DTO 에만 적용됩니다 (검색 DTO 쪽이 우선). 형식은 `sortCode` 와 같습니다: 속성 + 방향(`+` 오름차순, `-` 내림차순,
 생략하면 오름차순), 쉼표로 여러 개.
@@ -1131,7 +1153,7 @@ internalId: string @searchBypass
 
 ```yaml
 userName: string @json("user_name")            # @JsonProperty("user_name")
-amount: BigDecimal @jsonSerialize(using=com.example.MoneySerializer)
+amount: BigDecimal @jsonSerialize(using=com.example.MoneySerializer)   # 아직 생성 안 됨: 어떤 출력도 @JsonSerialize 를 쓰지 않음
 optionalField: string @jsoninclude             # @JsonInclude
 ```
 별칭: `@json` = `@jsonproperty`, `@jsoninclude` = `@includejson`
@@ -1566,6 +1588,7 @@ fields:
 4. 누락 발견시 YAML 재생성 또는 Java 코드 수동 수정
 
 ### 8.5 비교 키워드와 같지 않음 (모드에 따라 다름)
+> **동작:** v3, Kotlin · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator - 같은 값 비교 (생성 안 됨)
 
 Section 3.2 의 연산자 외에는 **사용 불가**합니다. 비교 키워드와 `!=` 는 모드에 따라 다르게 동작합니다.
 
@@ -1587,6 +1610,7 @@ fields:
 어느 모드에서도 같은 결과를 원하면 기호를 쓰세요.
 
 ### 8.6 between 검색과 LocalDate +1일 동작
+> **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) - `col >= from AND col <= to`, LocalDate 의 To+1 일 없음 (생성 안 됨)
 
 `@search(between)`에서 **LocalDate 타입만** 특수 처리됩니다. To 값에 자동으로 +1일을 적용하여 하루 끝까지 포함합니다.
 
@@ -1628,6 +1652,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 7. **코드 생성 후 검증**: 항상 컴파일 후 오류 확인
 
 ## @root / @aggregate — 애그리거트 경계 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 `ddd-aggregate` 규칙을 쓰는 프로젝트에서, 엔티티가 **애그리거트 루트인지 멤버인지**를
 명시합니다. 붙이지 않으면 모델에서 추론합니다.
@@ -1678,6 +1703,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 보세요.
 
 ## domainService — 도메인 서비스 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 **애노테이션이 아니라 DSL 섹션입니다.** 어느 엔티티에도 속하지 않는 연산이라,
 엔티티의 meta 줄에 쓸 자리가 없기 때문입니다.
@@ -1723,6 +1749,7 @@ public class PricingDomainService extends PricingDomainServiceBase {
 패키지입니다.
 
 ## @behavior — 엔티티 행위 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 엔티티에 **업무 메서드를 둘 자리**를 만듭니다. `ddd-behavior` 규칙(`ddd-springboot` /
 `hexagonal-springboot` 및 Kotlin 번들에 포함)이 처리합니다. DDD 번들에서 **루트는 적지 않아도
@@ -1738,6 +1765,7 @@ DSL 경고만 남기고 필드는 요청으로 그대로 쓸 수 있습니다. �
 필요하면 `@readonly` 를 씁니다 ([§2.2 @readonly / @noinput](#readonly--noinput---서버가-정하는-필드)).
 
 ## @editable — 요청으로 고치는 필드·루트 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 DDD 번들에서 루트의 필드는 기본으로 **잠깁니다**: 요청은 루트를 만들 때만 값을 주고, 그 뒤로는
 루트의 메서드가 바꿉니다 (PUT 이 잠긴 값을 바꾸려 하면 422). `@editable` 은 이를 엽니다.
@@ -1797,6 +1825,7 @@ public class SalesOrder extends SalesOrderBase {
 - **서비스 슬림화**: 애플리케이션 서비스는 조회·저장·트랜잭션만, 규칙은 엔티티에
 
 ## @invariant — 불변식 (DDD 룰셋)
+> **동작:** ddd, hexagonal, TypeScript client · **안 됨:** layered (생성 안 됨)
 
 > **어디에 쓸까?** 필드 하나에 대한 규칙은 필드에 씁니다 — `unitPrice: money(12.2)! @min(0.01, '단가는 0보다 커야 한다')`,
 > 컬렉션 개수는 `lines: ... @minsize(1, '...')`. DDD 번들에서 루트의 필드 규칙은 저장 시점에도 검사되는 불변식이
@@ -1856,6 +1885,7 @@ public class OrderInvariants {
 만들 수 없어 빌드가 DSL 경고를 냅니다 - 관계를 양방향(`mappedBy`)으로 매핑하세요.
 
 ## @factory — 팩토리 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 애그리거트를 **만드는 자리**를 선언합니다. 불변식이 있는 루트는 필드를 하나씩
 세팅해서 만들 수 없기 때문입니다.
@@ -1883,6 +1913,7 @@ public static Order place(LocalDateTime orderDate) {
 add 메서드로 들어갑니다.
 
 ## @specification — 명세 (DDD 룰셋)
+> **동작:** ddd, hexagonal, TypeScript client · **안 됨:** layered (생성 안 됨)
 
 이름을 가질 만한 도메인 규칙을 선언합니다.
 
@@ -1946,6 +1977,7 @@ false 입니다. TS 타입 선언은 기본 직렬화에 맞춰 `number` 입니�
 확인하세요.
 
 ## @access / @owner — 누가 무엇을 할 수 있는가 (v3)
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2') (경고); 2.x generator (생성 안 됨); MyBatis (mode: mybatis) 에서 행의 컬럼이 아닌 `@owner` 필드 (빌드 중단)
 
 엔티티 meta 에 연산별 허용 수준을, 소유자를 담는 필드를 적습니다.
 
@@ -1995,7 +2027,7 @@ CurrentUser.runAsSystem(() -> customers.save(admin));
 `@access`·`@owner`·`@password` 를 쓰면 아무것도 검사·해시되지 않으므로 빌드 경고가 납니다.
 **2.x 생성기(`elcore`, 어노테이션 프로세서)는 이 어노테이션들을 처리하지 않습니다** - 3.0 규칙 엔진을 쓰세요.
 
-생성되는 서비스 테스트(`testCode: true`)는 접근 규칙이 있는 엔티티에 `RunAsSystemExtension` 을 붙여
+생성되는 서비스 테스트(`testCode: true`, Kotlin - v3 Java 는 쓰지 않음)는 접근 규칙이 있는 엔티티에 `RunAsSystemExtension` 을 붙여
 애플리케이션 자신으로 실행합니다. 권한 자체를 시험하는 테스트는 이 확장 없이 사용자로 로그인해서 씁니다.
 
 필드에 `@access(admin)` 을 붙이면 **관리자만 쓰는 필드** 입니다. 다른 사람이 보낸 값은 생성 시 엔티티
@@ -2089,6 +2121,7 @@ Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈�
 (`authenticate` 는 남음).
 
 ## @password / @login — 자격 증명 (v3)
+> **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2') (경고); 2.x generator (생성 안 됨)
 
 ```yaml
 login:    string(10)! @login @unique
@@ -2107,6 +2140,7 @@ password: string(255)! @password      # 해시 길이를 담을 만큼 (PBKDF2 �
   로그인 컬럼의 unique (unique 는 로그인 API 가 거절되어도 `@signin` 만으로 붙음).
 
 ## @snapshot / @compute — 파생 값 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (경고)
 
 ```yaml
 OrderLine:
@@ -2128,6 +2162,7 @@ PurchaseOrder:
 - **`@formula` 와 다릅니다**: `@formula("...")` 는 DB 가 계산하는 Hibernate SQL 식입니다.
 
 ## @deleted — 삭제해도 행을 남김 (v3)
+> **동작:** v3 (JPA, MyBatis), Kotlin · **안 됨:** 2.x-compatible output (output = 'v2') - 삭제가 행을 지움 (경고); 2.x generator (생성 안 됨); mapping: xml + Spring Boot 3 (빌드 중단)
 
 삭제가 행을 지우는 대신 **지운 시각**을 쓰고, API 의 어떤 조회도 그 행을 다시 찾지 않습니다. Since: 3.0 (3.0.261105-rc10 다음)
 
@@ -2176,7 +2211,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
   그 엔티티도 `@deleted` 여야 합니다. 아니면 빌드가 멈춥니다:
   `Order @deleted keeps its rows, but a delete would remove lines (OrderLine) outright with it - mark that entity @deleted too.`
   그러면 티켓을 지울 때 티켓과 그 항목이 함께 남습니다 (Kotlin 샘플 `ticket.yml`).
-- JPA (Java, Kotlin, Spring Boot 3.2 이상과 4) 와 MyBatis (layered, DDD, hexagonal). 펫스토어
+- JPA (Java, Kotlin, Spring Boot 3 과 4. 생성하는 `@SQLRestriction` 이 Hibernate 6.3 의 것이라 Spring Boot 3.2 이상 - 빌드가 버전을 확인하지는 않음) 와 MyBatis (layered, DDD, hexagonal). 펫스토어
   (Hibernate 7), `elasticore-template-mybatis`, `elasticore-template-ddd-mybatis` (H2, Oracle, PostgreSQL, SQL Server),
   `elasticore-template-kt` 에서 HTTP 와 테이블로 확인했습니다.
 
@@ -2198,6 +2233,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 | 상품이 아직 가리키는 폐지된 분류 | `retiredAt: datetime @deleted` |
 
 ## @event — 도메인 이벤트 (DDD 룰셋)
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 애그리거트 루트에 **무슨 일이 일어날 수 있는지**를 선언합니다. `ddd-event` 규칙이
 있는 프로젝트(`ddd-springboot` / `hexagonal-springboot` 번들에 포함)에서 동작합니다.

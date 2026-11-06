@@ -5,6 +5,7 @@
 A port is a core ElastiCORE feature: it defines the interface to an external system in the YAML DSL.
 You write only YAML. The framework generates a Java interface, and at runtime a Spring proxy
 factory creates the implementation dynamically.
+A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
 ### What this is in hexagonal architecture
 
@@ -386,6 +387,7 @@ domain.RentClaimService.proxyPort=3128
 ```
 
 ### 2.7 Generate a Spring HTTP service client (`httpPort: spring`, Spring Boot 4)
+> **Works in:** Spring Boot 4 · **Not in:** Spring Boot 3 (warning); 2.x generator (not generated)
 
 A Spring Boot 4 project can generate HTTP ports as **`@HttpExchange` interfaces that Spring implements** instead of the ElastiCORE runtime (ElastiCORE 3.0 rule engine, `elcore3`). The port DSL stays the same, and you add one line to the domain's `env.yml`.
 
@@ -702,6 +704,7 @@ AND name LIKE :name /* if:name */
 - All lines in the block are included or removed according to the condition
 
 #### JEXL expressions
+> **Works in:** JPA · **Not in:** MyBatis (mode: mybatis) (stops the build)
 ```sql
 AND min_age >= :minAge /* if:input.getMinAge() > 0 */
 

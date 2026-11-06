@@ -169,7 +169,7 @@ show up at compile or test time. They are what actually came up when moving a pr
 
 The service tests that 2.x generated (`*ServiceTest`) pin with mocks the repository methods that the 2.x CoreService calls.
 The v3 CoreService calls other methods (`deleteById` is `findById` then `delete`, `delete(searchDTO)` is `findAll` then
-`delete`), so those tests do not fit - delete them and generate them again (`testCode: "true"` in `env.yml`), or fix them to match the new calls.
+`delete`), so those tests do not fit - fix them to match the new calls, or delete them (`testCode: "true"` does not generate them for v3 Java code).
 
 ### How to roll back
 

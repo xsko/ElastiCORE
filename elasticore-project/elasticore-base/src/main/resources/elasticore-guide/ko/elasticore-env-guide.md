@@ -2,6 +2,7 @@
 
 `env.yml`은 ElastiCORE 도메인별 환경 설정 파일로, 코드 생성 모드, 프레임워크, 네임스페이스, 어노테이션 등을 정의한다.
 각 도메인 디렉토리(`src/main/resources/blueprint/{domain}/`)에 위치하며, DSL 기반 모델링 전에 환경 정보를 기술한다.
+**동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
 ---
 
@@ -85,6 +86,7 @@ config:
 > JPA 코드를 씁니다(한 도메인은 한 저장 방식).
 
 ### 2.3 MyBatis 모드 (3.0)
+> **동작:** v3, Java (layered, ddd, hexagonal) · **안 됨:** Kotlin, 2.x-compatible output (output = 'v2') (빌드 중단)
 
 JPA 대신 MyBatis 로 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261030-rc5
 
@@ -294,6 +296,7 @@ Oracle·PostgreSQL·SQL Server).
 `@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
 ### 2.4 MongoDB 모드
+> **동작:** 2.x generator · **안 됨:** v3 (빌드 중단)
 
 ```yaml
 config:
@@ -303,6 +306,7 @@ config:
 **생성 항목:** MongoDB Document 엔티티, Spring Data MongoDB Repository, 서비스 클래스
 
 ### 2.5 UML 모드
+> **동작:** 2.x generator · **안 됨:** v3 에서 `jpa`·`mybatis` 와 함께 (경고); v3 에서 단독 (빌드 중단)
 
 ```yaml
 config:
@@ -312,6 +316,7 @@ config:
 **생성 항목:** Mermaid 다이어그램, 엔티티 관계도 HTML 문서
 
 ### 2.6 DSL 모드
+> **동작:** 2.x generator · **안 됨:** v3 에서 `jpa`·`mybatis` 와 함께 (경고); v3 에서 단독 (빌드 중단)
 
 ```yaml
 config:
@@ -489,6 +494,7 @@ config:
 각 생성 대상별로 커스텀 `.tmpl` 파일 경로를 지정할 수 있다. 미지정 시 기본 내장 템플릿을 사용한다.
 
 ### 6.1.1 트랜잭션 Outbox
+> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
 ```yaml
 config:
@@ -502,6 +508,7 @@ config:
 - 사용 사례: 마이크로서비스 간 이벤트 연동(Kafka/RabbitMQ), 외부 시스템 웹훅, 감사 로그 적재
 
 ### 6.1.2 도메인에서 JPA 걷어내기 (`mapping: xml`)
+> **동작:** v3, Kotlin, JPA · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator - 클래스에 어노테이션이 남고 orm.xml 은 쓰지 않음 (생성 안 됨)
 
 ```yaml
 config:
@@ -547,6 +554,7 @@ config:
 - 사용 사례: 코드 리뷰 없이도 계층 위반을 빌드에서 차단, 팀 합류자에게 경계를 코드로 전달
 
 ### 6.1.4 바운디드 컨텍스트 (`context:`, 3.0)
+> **동작:** v3 · **안 됨:** 2.x generator (생성 안 됨)
 
 blueprint 도메인 하나가 바운디드 컨텍스트 하나입니다. `context:` 를 적은 도메인은 **다른 컨텍스트에서 무엇을 가져다
 쓰는지(`uses`)**, **다른 컨텍스트가 무엇을 써도 되는지(`publishes`)** 를 선언하고, 빌드가 그 경계를 지킵니다.
@@ -591,13 +599,14 @@ config:
   - 팀/조직 경계와 컨텍스트를 맞추고, `context-map.md` 로 의존 관계를 문서화
 
 ### 6.2 테스트 코드 생성
+> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨)
 
 ```yaml
 config:
   testCode: "true"      # 테스트 코드 자동 생성 (기본값: "false")
 ```
 
-- `"true"` 설정 시 JUnit 5 + Mockito 기반 서비스 단위 테스트 자동 생성
+- `"true"` 설정 시 JUnit 5 + Mockito 기반 서비스 단위 테스트 자동 생성 - 2.x 코드(`output = 'v2'`)와 Kotlin 에서만, v3 Java 번들과 MyBatis 는 만들지 않음
 - 복합 키(Composite Key) 엔티티도 자동으로 올바르게 처리
 - 모든 필드 타입에 대한 샘플 데이터 자동 생성
 - CRUD 및 검색(List/Page) 메서드에 대한 완전한 테스트 커버리지 제공
@@ -607,6 +616,7 @@ config:
 ---
 
 ## 6-2. 참조 컬럼 이름·관리자 역할 (3.0)
+> **동작:** `referenceColumn` 은 ddd, hexagonal; `adminRole` 은 v3, Kotlin · **안 됨:** `referenceColumn` 은 layered (생성 안 됨); `adminRole` 은 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 ```yaml
 config:
@@ -657,7 +667,7 @@ apiPath: "/services/order-api"
 
 ## 7-1. publisher.rules 설정 (3.0)
 
-같은 모델을 어떻게 읽을지 정합니다. **적지 않으면 2.x 와 동일하게 동작합니다.**
+같은 모델을 어떻게 읽을지 정합니다. **적지 않으면 빌드의 `architecture`·`language` 가 정합니다** (layered Java: 3.0.261028-rc3 부터 `jpa-springboot-v3`).
 
 ```yaml
 elasticore:
@@ -670,7 +680,7 @@ elasticore:
 
 | 번들 | 내용 |
 |---|---|
-| `jpa-springboot` | 기존 레이어드 구조 (적지 않은 것과 동일) |
+| `jpa-springboot` | 2.x 호환 레이어드 구조 (`output = 'v2'`); 설정이 없는 layered Java 는 `jpa-springboot-v3` |
 | `ddd-springboot` | 집합체 경계, 불변식, 도메인 이벤트, 값 객체 |
 | `hexagonal-springboot` | 위 + 인바운드 포트, 헥사고날 패키지 배치 |
 | `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | 위 셋의 Kotlin 판 |
@@ -689,7 +699,7 @@ elasticore:
 ```
 1. 도메인    이 env.yml 의 publisher.rules        <- 이 도메인만 예외일 때
 2. 프로젝트  -Delasticore.publisher.rules=...      <- 보통 여기서 한 번
-3. 내장 기본 jpa-springboot                        <- 아무것도 안 적으면 여기
+3. 내장 기본 architecture·language 에 따라          <- 아무것도 안 적으면 여기 (layered Java: jpa-springboot-v3)
 ```
 
 도메인은 프로젝트 기본값에서 벗어날 때만 선언합니다. 도메인이 20개여도

@@ -2,6 +2,7 @@
 
 `env.yml` is the per-domain environment file of ElastiCORE. It defines the code generation mode, the framework, namespaces, annotations and more.
 It lives in each domain directory (`src/main/resources/blueprint/{domain}/`). You describe the environment in it before you model with the DSL.
+A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
 ---
 
@@ -85,6 +86,7 @@ Separate modes with commas to run several at once. The output of every mode is g
 > it writes JPA code (one domain has one storage).
 
 ### 2.3 MyBatis mode (3.0)
+> **Works in:** v3, Java (layered, ddd, hexagonal) · **Not in:** Kotlin, 2.x-compatible output (output = 'v2') (stops the build)
 
 A domain that stores with MyBatis instead of JPA. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0.261030-rc5
 
@@ -294,6 +296,7 @@ Oracle, PostgreSQL and SQL Server).
 A `@formula` field stays in the entity, but MyBatis does not read it, so its value is null, and it is left out of the search conditions (warning).
 
 ### 2.4 MongoDB mode
+> **Works in:** 2.x generator · **Not in:** v3 (stops the build)
 
 ```yaml
 config:
@@ -303,6 +306,7 @@ config:
 **Generated:** MongoDB Document entities, Spring Data MongoDB Repository, service classes
 
 ### 2.5 UML mode
+> **Works in:** 2.x generator · **Not in:** v3 beside `jpa` or `mybatis` (warning); v3 alone (stops the build)
 
 ```yaml
 config:
@@ -312,6 +316,7 @@ config:
 **Generated:** Mermaid diagrams, an entity relationship diagram as an HTML document
 
 ### 2.6 DSL mode
+> **Works in:** 2.x generator · **Not in:** v3 beside `jpa` or `mybatis` (warning); v3 alone (stops the build)
 
 ```yaml
 config:
@@ -489,6 +494,7 @@ config:
 You can set the path of a custom `.tmpl` file for each generation target. If you do not set it, the built-in template is used.
 
 ### 6.1.1 Transactional outbox
+> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
 ```yaml
 config:
@@ -502,6 +508,7 @@ config:
 - Use cases: event integration between microservices (Kafka/RabbitMQ), webhooks to external systems, collecting audit logs
 
 ### 6.1.2 Removing JPA from the domain (`mapping: xml`)
+> **Works in:** v3, Kotlin, JPA · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator - the classes keep their annotations and no orm.xml is written (not generated)
 
 ```yaml
 config:
@@ -547,6 +554,7 @@ config:
 - Use cases: block layer violations in the build without code review, convey the boundaries to a new team member as code
 
 ### 6.1.4 Bounded context (`context:`, 3.0)
+> **Works in:** v3 · **Not in:** 2.x generator (not generated)
 
 One blueprint domain is one bounded context. A domain with `context:` declares **what it takes from other contexts
 (`uses`)** and **what other contexts may use (`publishes`)**, and the build guards that boundary.
@@ -591,13 +599,14 @@ config:
   - Match contexts to team or organization boundaries, and document the dependencies with `context-map.md`
 
 ### 6.2 Test code generation
+> **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated)
 
 ```yaml
 config:
   testCode: "true"      # generate test code automatically (default: "false")
 ```
 
-- With `"true"`, JUnit 5 + Mockito service unit tests are generated
+- With `"true"`, JUnit 5 + Mockito service unit tests are generated - for 2.x code (`output = 'v2'`) and for Kotlin; the v3 Java bundles and MyBatis write none
 - Composite Key entities are handled correctly too
 - Sample data is generated for every field type
 - Complete test coverage for CRUD and search (List/Page) methods
@@ -607,6 +616,7 @@ The generated test files are placed under `src/test/java/` at the path of the se
 ---
 
 ## 6-2. Reference column name and admin role (3.0)
+> **Works in:** ddd, hexagonal for `referenceColumn`; v3, Kotlin for `adminRole` · **Not in:** layered for `referenceColumn` (not generated); 2.x-compatible output (output = 'v2'), 2.x generator for `adminRole` (not generated)
 
 ```yaml
 config:
@@ -657,7 +667,7 @@ apiPath: "/services/order-api"
 
 ## 7-1. publisher.rules setting (3.0)
 
-It decides how the same model is read. **If you do not write it, the behavior is the same as 2.x.**
+It decides how the same model is read. **If you do not write it, the build's `architecture` and `language` decide** (layered Java: `jpa-springboot-v3` from 3.0.261028-rc3).
 
 ```yaml
 elasticore:
@@ -670,7 +680,7 @@ elasticore:
 
 | Bundle | Content |
 |---|---|
-| `jpa-springboot` | The existing layered structure (same as not writing it) |
+| `jpa-springboot` | The 2.x-compatible layered structure (`output = 'v2'`); layered Java without a setting gets `jpa-springboot-v3` |
 | `ddd-springboot` | Aggregate boundaries, invariants, domain events, value objects |
 | `hexagonal-springboot` | The above + inbound ports, hexagonal package layout |
 | `jpa-springboot-kt` / `ddd-springboot-kt` / `hexagonal-springboot-kt` | The Kotlin versions of the three above |
@@ -689,7 +699,7 @@ A bundle is a list of names of individual rule sets, so you can also combine the
 ```
 1. Domain    publisher.rules of this env.yml       <- when only this domain is an exception
 2. Project   -Delasticore.publisher.rules=...      <- usually set once here
-3. Built-in default jpa-springboot                 <- if you write nothing, this applies
+3. Built-in default by architecture and language   <- if you write nothing (layered Java: jpa-springboot-v3)
 ```
 
 A domain declares it only when it departs from the project default. Even with 20 domains,
