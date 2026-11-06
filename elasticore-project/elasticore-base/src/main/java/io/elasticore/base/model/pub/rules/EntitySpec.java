@@ -1230,6 +1230,40 @@ public final class EntitySpec {
     }
 
     /** The entity a relation of this one points at, or null when it was not registered. */
+    private final java.util.Map<String, String> softDeleteColumns = new java.util.HashMap<String, String>();
+
+    /** Registers an entity of the model whose rows a delete keeps (@deleted), with the column that says when. */
+    public EntitySpec knownSoftDeleted(String entityName, String column) {
+        if (entityName != null && column != null) softDeleteColumns.put(entityName, column);
+        return this;
+    }
+
+    /** The column of that entity's @deleted field, or null when its rows are deleted outright. */
+    public String softDeleteColumnOf(String entityName) {
+        return softDeleteColumns.get(entityName);
+    }
+
+    /** The column a field of the model is stored in, as the generated code names it. */
+    public String columnOf(Field field) {
+        return io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.column(new FieldSpec(field, this));
+    }
+
+    private String softDeleteField;
+
+    /**
+     * The field of the viewed entity that says when a row was deleted
+     * (@deleted) - for a DTO or search spec, whose own fields need not hold
+     * it. Null when its rows are deleted outright.
+     */
+    public EntitySpec softDeleteField(String fieldName) {
+        this.softDeleteField = fieldName;
+        return this;
+    }
+
+    public String softDeleteField() {
+        return softDeleteField;
+    }
+
     public EntitySpec related(String entityName) {
         return relatedSpecs.get(entityName);
     }

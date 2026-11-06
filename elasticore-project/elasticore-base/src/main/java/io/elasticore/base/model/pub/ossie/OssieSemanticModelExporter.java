@@ -505,6 +505,8 @@ public final class OssieSemanticModelExporter {
         String snapshot = f.getAnnotationValue("snapshot");
         if (snapshot != null) ext.put("snapshot", snapshot);
         if (f.hasAnnotation("statefield")) ext.put("lifecycle", true);
+        String stamp = f.getAnnotationValue("stamp");
+        if (stamp != null) ext.put("stamp", stamp);
         if (f.hasAnnotation("login")) ext.put("login", true);
         if (en != null) ext.put("enumeration", en.getIdentity().getName());
         if (f.getTypeInfo().isMoney()) ext.put("value_type", "money");

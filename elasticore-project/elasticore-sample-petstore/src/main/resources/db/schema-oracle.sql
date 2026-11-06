@@ -60,6 +60,7 @@ CREATE TABLE ps_product (
     name VARCHAR2(30 CHAR) NOT NULL,
     description VARCHAR2(3000 CHAR) NOT NULL,
     category_id NUMBER(19),
+    discontinued_at TIMESTAMP(6) WITH TIME ZONE,
     PRIMARY KEY (product_id)
 );
 

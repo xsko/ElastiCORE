@@ -87,6 +87,29 @@ public abstract class ShopApi {
         assertEquals("Food", child.get("parent").get("name").asText(), child.toString());
     }
 
+    // ---- @deleted -------------------------------------------------------------
+
+    @Test
+    public void aDeletedCategoryIsKeptAndWhatNamesItStillReadsIt() throws Exception {
+        String tag = unique();
+        long retired = id(create("category", "{\"name\":\"" + tag + " Old\",\"retiredAt\":\"2000-01-01 00:00:00\"}"), "categoryId");
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM category WHERE category_id = ? AND retired_at IS NULL",
+                Long.class, retired), "a request does not write it");
+        long child = id(create("category", "{\"name\":\"" + tag + " Child\",\"parentCategoryId\":" + retired + "}"), "categoryId");
+        JsonNode product = create("product", "{\"name\":\"" + tag + "\",\"price\":10,\"categoryCategoryId\":" + retired + "}");
+
+        // Deleted outright, the rows that name it would refuse it; kept, it goes.
+        perform(delete(API + "/category/" + retired), 200);
+        assertNotNull(jdbc.queryForObject("SELECT retired_at FROM category WHERE category_id = ?", Object.class, retired));
+        perform(get(API + "/category/" + retired), 404);
+        assertEquals(1, total("category", "{\"name\":\"" + tag + "\"}"), "only the child is found");
+
+        // What names it still reads it.
+        assertEquals(tag + " Old", body(perform(get(API + "/category/" + child), 200)).get("parent").get("name").asText());
+        String code = product.get("productCode").asText();
+        assertEquals(retired, body(perform(get(API + "/product/" + code), 200)).get("categoryCategoryId").asLong());
+    }
+
     // ---- search -----------------------------------------------------------------
 
     @Test

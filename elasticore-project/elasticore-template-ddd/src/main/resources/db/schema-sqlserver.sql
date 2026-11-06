@@ -213,6 +213,9 @@ CREATE TABLE shop_shipment (
     carrier NVARCHAR(30),
     status NVARCHAR(3),
     fee NVARCHAR(3),
+    sent_at DATETIMEOFFSET(6),
+    cancelled_at DATETIME2(6),
+    refunded_on DATE,
     PRIMARY KEY (shipment_id)
 );
 

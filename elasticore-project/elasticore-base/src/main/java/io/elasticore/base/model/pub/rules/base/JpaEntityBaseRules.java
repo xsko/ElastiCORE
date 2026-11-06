@@ -384,6 +384,10 @@ public class JpaEntityBaseRules implements CodeRules {
         if (f.hasDsl("discriminator")) {
             col.valRaw("insertable", "false").valRaw("updatable", "false");
         }
+        // @deleted: the database writes it, by the delete (SoftDelete) - never the entity.
+        if (f.hasDsl(SoftDelete.DELETED) && !ctx(e).compatible()) {
+            col.valRaw("insertable", "false").valRaw("updatable", "false");
+        }
 
         // 2.x emits no @Column at all when it collected no attribute, which is
         // the case for a List<Enum> element collection.
@@ -487,6 +491,24 @@ public class JpaEntityBaseRules implements CodeRules {
         if (f.hasDsl("notaudited")) {
             ctx(e).field(f).ensure(AnnoCode.of("org.hibernate.envers.NotAudited"));
         }
+    }
+
+    // ---- 46. @deleted rows out of a collection ----
+
+    /**
+     * A collection of rows that are kept when deleted (@deleted) holds only
+     * the live ones: a member taken out of its aggregate is kept, and must
+     * not come back with the next read. On the collection alone - a row that
+     * names a deleted one by a to-one relation still reads it.
+     */
+    @Rule(value = "jpa-soft-delete-collection", order = 46)
+    void keptCollection(EntitySpec e, FieldSpec f) {
+        if (ctx(e).compatible() || !f.isList() || io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e))
+            return;
+        String column = e.softDeleteColumnOf(f.coreItemType());
+        if (column == null) return;
+        ctx(e).field(f)
+                .ensure(AnnoCode.of("org.hibernate.annotations.SQLRestriction").value(column + " IS NULL"));
     }
 
     // ---- 50. setJoinColumnAnnotation: @join(definition) ----

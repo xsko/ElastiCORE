@@ -13,6 +13,7 @@ entities:
       name: string(50) @Column(name = "name", length = 50)
       slug: string(30) @Column(name = "slug", length = 30)
       parent: Category @relation(mappedBy="parent_id") @foreignKey(parent_category_id) -- Category entity relationship
+      retiredAt: Date @Column(name = "retired_at")
 
   Customer:
     meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.Customer) -- customer

@@ -40,6 +40,8 @@ entity:
       subject:  string(100)!
       status:   TicketStatus
       billing:  BillingStatus
+      closedAt: timestamp @stamp(CLOSED)    # close or cancel: whichever moves it to CLOSED records when
+      deletedAt: timestamp @deleted         # a delete (CLOSED and not billed) keeps the row
       total:    bigdecimal(14.2) @compute(sum(entries.amount))
       entries:  List<TicketEntry> @OneToMany(mappedBy="ticket") @dtype(List<TicketEntryDTO>)
     states:
@@ -63,6 +65,7 @@ entity:
       hours:   quantity!
       rate:    bigdecimal(12.2) @snapshot(product.price)
       amount:  bigdecimal(14.2) @compute(rate * hours)
+      deletedAt: timestamp @deleted   # kept with its ticket
 
 dto:
   TicketEntryDTO:

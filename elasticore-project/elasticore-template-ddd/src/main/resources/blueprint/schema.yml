@@ -181,6 +181,9 @@ entities:
       carrier: string(30) @Column(name = "carrier", length = 30)
       status: string(3) @Column(name = "status", length = 3) -- 후보값( RDY=Ready, SNT=Sent, CAN=Cancelled)
       fee: string(3) @Column(name = "fee", length = 3) -- 후보값( DUE=Due, PAD=Paid, REF=Refunded)
+      sentAt: java.time.Instant @relation(mappedBy="sent_at_id") @foreignKey(sent_at_id) -- java.time.Instant entity relationship
+      cancelledAt: Date @Column(name = "cancelled_at")
+      refundedOn: Date @Column(name = "refunded_on")
 
   VipProfile:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.VipProfile)

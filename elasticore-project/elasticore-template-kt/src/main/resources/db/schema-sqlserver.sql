@@ -442,6 +442,8 @@ CREATE TABLE shop_ticket (
     subject NVARCHAR(100) NOT NULL,
     status NVARCHAR(3),
     billing NVARCHAR(3),
+    closed_at DATETIMEOFFSET(6),
+    deleted_at DATETIMEOFFSET(6),
     total DECIMAL(14,2),
     PRIMARY KEY (ticket_id)
 );
@@ -453,6 +455,7 @@ CREATE TABLE shop_ticket_entry (
     hours INT NOT NULL,
     rate DECIMAL(12,2),
     amount DECIMAL(14,2),
+    deleted_at DATETIMEOFFSET(6),
     PRIMARY KEY (entry_id)
 );
 

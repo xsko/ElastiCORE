@@ -111,9 +111,12 @@ public class DddBehaviorRules implements CodeRules, ArtifactContributor,
 
     /** Whether a field is changed only through the entity's behaviour. */
     static boolean guarded(FieldSpec f) {
-        // A lifecycle's state, a value taken from what it refers to and a
-        // computed one are the entity's to set, exactly as @behavior says.
-        return f.hasDslAny("behavior", "statefield", "snapshot", "compute") && !f.isList() && !f.hasDslAny("id", "pk");
+        // A lifecycle's state, the time it entered one (@stamp), a value taken
+        // from what it refers to and a computed one are the entity's to set,
+        // exactly as @behavior says.
+        return f.hasDslAny("behavior", "statefield", DddStateRules.STAMP, "snapshot", "compute")
+                && !f.isList()
+                && !f.hasDslAny("id", "pk");
     }
 
     /**
@@ -227,6 +230,8 @@ public class DddBehaviorRules implements CodeRules, ArtifactContributor,
             // whether or not there is a behaviour class (below); only @behavior
             // needs the class to be changed from.
             if (derived(f)) return;
+            // The lifecycle rules say why a stamp is not written here (DddStateRules.warnUnstamped).
+            if (f.hasDsl(DddStateRules.STAMP) && !f.hasDsl("behavior")) return;
             io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
                     "[%s] %s.%s is @behavior but %s is not - mark the entity @behavior so there is"
                             + " a class to change it from. The field stays writable.",

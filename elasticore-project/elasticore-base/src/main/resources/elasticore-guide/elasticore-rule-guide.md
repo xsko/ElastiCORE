@@ -122,7 +122,7 @@ In that language nullability is part of the signature, so if they do not match i
 | `ddd-behavior` | O | O | - | Split into `XxxBase` (regenerated) + `Xxx` (owned by the developer) |
 | `ddd-command` | O | O | - | `commands:` -> endpoint, command DTO, use case, service, abstract method |
 | `ddd-outbox` | O | O | - | When `outbox: true` in `env.yml` |
-| `ddd-state` | O | O | **O** | `states:` -> state transition per command, `canX()`, initial value. In TS it is `canShip(dto)` |
+| `ddd-state` | O | O | **O** | `states:` -> state transition per command, `canX()`, initial value, `@stamp` times. In TS it is `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`, `@compute` -> `derive(lookup)`, which the service calls before saving |
 | `jpa-service-access` | O | O | - | `@access`, `@owner`, `@password`, `@login` -> CoreService checks, hashing, `authenticate`; with `@signin`, `me()`, the controller's signin, signout, me, and the unique login column (all v3 bundles) |
 | `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |

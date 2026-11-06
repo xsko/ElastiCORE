@@ -30,13 +30,13 @@ public class JpaEntityAnnotationRules implements CodeRules {
      * superclass - moved to the concrete class when an entity is split
      * (ddd-behavior). @Audited is not here: envers wants it on both.
      */
-    public static final java.util.List<String> TABLE_LEVEL = java.util.Collections.unmodifiableList(
-            java.util.Arrays.asList(
+    public static final java.util.List<String> TABLE_LEVEL =
+            java.util.Collections.unmodifiableList(java.util.Arrays.asList(
                     "jakarta.persistence.Entity", "jakarta.persistence.Table",
                     "jakarta.persistence.Inheritance", "jakarta.persistence.DiscriminatorColumn",
                     "jakarta.persistence.DiscriminatorValue", "jakarta.persistence.IdClass",
                     "org.hibernate.annotations.Immutable", "org.hibernate.annotations.DynamicUpdate",
-                    "org.hibernate.annotations.DynamicInsert"));
+                    "org.hibernate.annotations.DynamicInsert", "org.hibernate.annotations.SQLDelete"));
 
     /** The class annotations of an entity, into the current artifact - for a rule writing that class elsewhere. */
     public static void persistenceAnnotations(EntitySpec e) {
@@ -50,6 +50,7 @@ public class JpaEntityAnnotationRules implements CodeRules {
 
         if (e.hasMeta("embeddable")) {
             c.ensureClassAnnotation(AnnoCode.of("jakarta.persistence.Embeddable"));
+            SoftDelete.check(e);
             return;
         }
         if (e.hasMeta("abstract")) {
@@ -106,7 +107,24 @@ public class JpaEntityAnnotationRules implements CodeRules {
             c.ensureClassAnnotation(AnnoCode.raw("jakarta.persistence.IdClass",
                     "@IdClass(%s)", c.syntax().classLiteral(e.getName() + "Identity")));
         }
+        softDelete(c, e);
     }
+
+    /**
+     * With {@code @deleted}, JPA's remove writes the time instead of deleting the row -
+     * every listener that guards a delete still runs. The reads that leave
+     * the row out are the repository's and the mapper's (not Hibernate's
+     * {@code @SQLRestriction}, which would also hide it from every row that names
+     * it). Not for MyBatis, whose mapper says it in its own statements.
+     */
+    private static void softDelete(SourceCode c, EntitySpec e) {
+        SoftDelete.check(e);
+        if (!SoftDelete.applies(e) || io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)) return;
+        c.ensureClassAnnotation(AnnoCode.of(SQL_DELETE).val("sql", SoftDelete.jpaDelete(e)));
+    }
+
+    /** Hibernate's annotation for @deleted, on the class that has the table. */
+    public static final String SQL_DELETE = "org.hibernate.annotations.SQLDelete";
 
     /**
      * The packages 2.x's entity template imports on demand. A line the DSL
