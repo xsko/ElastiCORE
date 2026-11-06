@@ -593,9 +593,9 @@ metrics:
 |---|---|---|
 | `sum(엔티티.필드)` / `avg` / `min` / `max` | 한 엔티티의 필드 집계 | `SUM(PurchaseOrder.total)` |
 | `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(PurchaseOrder.order_id)` (키 컬럼 - BI 도구가 어느 dataset 을 세는지 알도록) / `COUNT(PurchaseOrder.total)` |
-| `count(distinct 엔티티.필드)` | 서로 다른 값의 수 (null 제외). `distinct` 는 `count` 에만, 필드와 함께 씁니다. `sum(distinct …)` 은 거부 | `COUNT(DISTINCT Login.user_id)`, `where` 가 있으면 `COUNT(DISTINCT CASE WHEN … THEN Login.user_id END)` |
+| `count(distinct 엔티티.필드)` | 서로 다른 값의 수 (null 제외). `distinct` 는 `count` 에만, 필드와 함께 씁니다. `sum(distinct …)` 은 거부 | `COUNT(DISTINCT PurchaseOrder.customer_id)`, `where` 가 있으면 `COUNT(DISTINCT CASE WHEN … THEN PurchaseOrder.customer_id END)` |
 | `… where 필드 != 값 and 필드 >= 값` | 조건 (`=`, `!=`, `<`, `<=`, `>`, `>=`). `and` 로 이음 | `SUM(CASE WHEN … THEN … END)` |
-| `… where 필드 in (A, B)` / `not in (A, B)` | 값 목록. 값 하나하나를 단일 값과 똑같이 읽음 | `Offer.status IN ('PND', 'AWD')` |
+| `… where 필드 in (A, B)` / `not in (A, B)` | 값 목록. 값 하나하나를 단일 값과 똑같이 읽음 | `PurchaseOrder.status IN ('PLC', 'SHP')` |
 | `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`. SQL 처럼 `and` 가 먼저 묶임. 괄호로 묶고, `not` 은 괄호 앞에 씀 | `(… OR …) AND …`, `NOT (…)` |
 | 값 | 숫자, `'글자'`(안의 `'` 는 `''`), `true`/`false`, **enum 상수 이름** (저장된 값으로 바뀜: `@db` 코드 `'CAN'`, `@jpa:Enumerated(STRING)` 면 이름, 둘 다 없으면 순번 `2`) | |
 | `지표A / 지표B` (`+ - * /`) | 앞에서 선언한 지표끼리 계산. 나누기는 0 으로 나누지 않고, 개수 / 개수는 소수로 | `(…) / NULLIF((…), 0)` |
@@ -604,7 +604,7 @@ metrics:
 
 - 데이터 타입: `count` 는 `Integer`, `sum`·`min`·`max` 는 그 필드의 타입, `avg`·나누기는 `Decimal`(`Float` 필드면 `Float`),
   `+ - *` 는 둘 다 `Integer` 면 `Integer`, 아니면 `Decimal`. `sum`·`avg` 는 숫자 필드에만.
-- SQL 과 같이 `!=` 와 `not in` 은 필드가 null 인 행을 세지 않습니다.
+- SQL 과 같이 `!=`, `not in`, `not (…)` 은 필드가 null 인 행을 세지 않습니다. `status` 가 null 일 수 있으면 위의 `unfinished` 는 `finishedOrders` 의 나머지가 아닙니다.
 - 줄에 ` #` 나 `: ` 가 들어가면 YAML 이 줄을 자르거나 파일을 못 읽으므로 줄 전체를 따옴표로 감쌉니다:
   `ratio: "shippedOrders / orderCount -- 배송 비율: 배송 / 전체"`.
 - 못 읽는 줄(없는 엔티티·필드, enum 에 없는 상수, 뒤에 선언된 지표, enum 이 아닌 필드에 따옴표 없는 값, 짝이 맞지 않는 괄호, 빈 `in ()`, 한쪽이 빈 `or`·`and`, `sum(distinct …)`)은 생성할 때

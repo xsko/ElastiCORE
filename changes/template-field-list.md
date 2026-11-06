@@ -17,7 +17,9 @@
   one. This is asked after the references are rewritten, as that is when the id field exists, so a run that does not
   rewrite them (2.x, the compatible output, a layered project) refuses what a `ddd` or `hexagonal` run takes.
 - A list without the key is passed over as the DTO of the entity's service and controller, where the first `@template`
-  of the entity was taken whatever it held. A list with the key can still be that DTO.
+  of the entity was taken whatever it held. A list with the key can still be that DTO. So an entity whose only
+  `@template` DTO is a list without the key gets no service or controller (in 2.x and the compatible output alike), as
+  an entity no DTO names; list the key, or add a DTO of the whole entity, to keep them.
 - `AbstractDataModel` keeps its guard against a name that finds the model itself, on the way every copied field now goes.
 - One reader: `TemplateList` is now the only place that reads the value. What asks which models a DTO is made from
   gets the plain names: the template's field copy, the DTO-to-entity relationship, the key DTO, the DTO's size

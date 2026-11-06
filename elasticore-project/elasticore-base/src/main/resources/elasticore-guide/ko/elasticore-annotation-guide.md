@@ -1089,7 +1089,7 @@ dto:
 ```
 - 거르는 것은 복사되는 필드뿐입니다. DTO 에 선언한 필드는 항상 남고, 적은 이름이면 복사되는 것을 덮어씁니다. 나중에 엔티티에 추가된 필드는 적기 전까지 DTO 에 없습니다. 다른 도메인의 모델은 `shop:Order[note]` 로 적습니다.
 - 모델이 자기 `@extend` 로 물려받은 필드도 적을 수 있습니다. 관계 이름은 그 id 를 담는 필드를 남깁니다. DDD 참조의 `customer` 는 `customerId` 를 남기고, `customerId` 를 직접 적으면 거부됩니다. 목록을 참조 변환 전에 검사하기 때문입니다.
-- DTO 에 아무 필드도 만들지 못하는 이름은 거부됩니다. id 를 담는 필드가 없는 관계(대신 id 를 선언합니다. `orderId: long @ref(order.orderId)`), 컬렉션, 그리고 DTO 가 값 객체를 담지 않는 경우의 값 객체입니다.
+- DTO 에 아무 필드도 만들지 못하는 이름은 거부됩니다. id 를 담는 필드가 없는 관계(대신 id 를 선언합니다. `orderId: long @ref(order.orderId)`), 컬렉션, 그리고 DTO 가 값 객체를 담지 않는 경우의 값 객체입니다(`ddd`·`hexagonal` 과 layered MyBatis 는 값 객체를 통째로 담고, layered JPA·호환 출력·2.x 는 담지 않습니다).
 - 모델에 없는 이름, 어느 도메인에도 없는 모델, 같은 모델을 두 번 적은 경우(`Order[note], Order[total]` 또는 `Order, Order[note]`), 같은 필드를 두 번 적은 경우(`Order[note, note]`), 빈 괄호(`Order[]`), 적은 필드에 `--`, `@extend` 와 함께 쓴 목록, 엔티티에 쓴 목록은 생성을 멈춥니다.
 - 목록을 쓸 때 여러 도메인에 있는 이름은 어느 쪽인지 적어야 합니다: `shop:Order[note]`. 괄호가 없는 DTO 는 전과 같습니다.
 - `@searchable`, `@searchResult` 에는 목록을 쓸 수 없고, 쓰면 생성을 멈춥니다. 검색 DTO 는 이미 검색 조건이 있는 필드만 받습니다.

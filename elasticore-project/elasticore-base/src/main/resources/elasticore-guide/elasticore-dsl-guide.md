@@ -593,9 +593,9 @@ metrics:
 |---|---|---|
 | `sum(Entity.field)` / `avg` / `min` / `max` | Aggregate a field of one entity | `SUM(PurchaseOrder.total)` |
 | `count(Entity)` / `count(Entity.field)` | Number of rows / number of rows with a value | `COUNT(PurchaseOrder.order_id)` (the key column - so that BI tools know which dataset is counted) / `COUNT(PurchaseOrder.total)` |
-| `count(distinct Entity.field)` | Number of different values, nulls not counted. `distinct` goes only with `count` and needs a field; `sum(distinct …)` is refused | `COUNT(DISTINCT Login.user_id)`, with `where` `COUNT(DISTINCT CASE WHEN … THEN Login.user_id END)` |
+| `count(distinct Entity.field)` | Number of different values, nulls not counted. `distinct` goes only with `count` and needs a field; `sum(distinct …)` is refused | `COUNT(DISTINCT PurchaseOrder.customer_id)`, with `where` `COUNT(DISTINCT CASE WHEN … THEN PurchaseOrder.customer_id END)` |
 | `… where field != value and field >= value` | Conditions (`=`, `!=`, `<`, `<=`, `>`, `>=`), joined with `and` | `SUM(CASE WHEN … THEN … END)` |
-| `… where field in (A, B)` / `not in (A, B)` | A list of values, each read as a single value is | `Offer.status IN ('PND', 'AWD')` |
+| `… where field in (A, B)` / `not in (A, B)` | A list of values, each read as a single value is | `PurchaseOrder.status IN ('PLC', 'SHP')` |
 | `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`, with `and` binding tighter as in SQL. Parentheses group, and `not` goes before a parenthesis | `(… OR …) AND …`, `NOT (…)` |
 | Value | A number, `'text'` (a `'` inside is `''`), `true`/`false`, **an enum constant name** (converted to the stored value: the `@db` code `'CAN'`, the name if `@jpa:Enumerated(STRING)`, the ordinal `2` if neither) | |
 | `metricA / metricB` (`+ - * /`) | Calculate between metrics declared earlier. Division never divides by 0, and count / count gives a decimal | `(…) / NULLIF((…), 0)` |
@@ -604,7 +604,7 @@ metrics:
 
 - Data types: `count` is `Integer`, `sum`, `min` and `max` take the type of that field, `avg` and division are `Decimal` (`Float` for a `Float` field),
   `+ - *` is `Integer` if both are `Integer`, otherwise `Decimal`. `sum` and `avg` work only on numeric fields.
-- As in SQL, `!=` and `not in` do not count a row whose field is null.
+- As in SQL, `!=`, `not in` and `not (…)` do not count a row whose field is null: where `status` may be null, `unfinished` above is not what `finishedOrders` leaves.
 - If a line contains ` #` or `: `, YAML cuts the line or cannot read the file, so wrap the whole line in quotes:
   `ratio: "shippedOrders / orderCount -- Shipped ratio: shipped / total"`.
 - A line that cannot be read (an entity or field that does not exist, a constant the enum does not have, a metric declared later, an unquoted value on a field that is not an enum, parentheses that do not balance, an empty `in ()`, an `or` or `and` with nothing on one side, `sum(distinct …)`) is dropped at generation

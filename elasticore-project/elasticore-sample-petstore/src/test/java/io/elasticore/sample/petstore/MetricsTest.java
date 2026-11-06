@@ -146,6 +146,61 @@ class MetricsTest {
                 .containsEntry("customerCount", "COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)");
     }
 
+    /**
+     * As in SQL, a row whose status is null meets neither a condition nor its not: != , not in and
+     * not (...) leave it out, so unfinished and finishedOrders do not add up to every order then
+     * (the DSL guide says so). The status is taken away in a transaction that is rolled back.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aNullStatusIsInNeitherAConditionNorItsNot() throws Exception {
+        MockHttpSession user = signIn("user", "user");
+        String unknown = order(user, 1000, 1);
+        Map<String, Object> model;
+        try (InputStream in = getClass().getResourceAsStream("/blueprint/semantic_model.yml")) {
+            model = new Yaml().load(in);
+        }
+        Map<String, String> sqls = new HashMap<String, String>();
+        for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
+            sqls.put((String) m.get("name"), (String) ((Map<String, Object>) m.get("expression")).get("sql"));
+        }
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (java.sql.PreparedStatement p =
+                        c.prepareStatement("UPDATE ps_purchase_order SET status = NULL WHERE order_id = ?")) {
+                    p.setString(1, unknown);
+                    assertThat(p.executeUpdate()).isEqualTo(1);
+                }
+                long all = count(c, "SELECT COUNT(*) FROM ps_purchase_order");
+                long cancelled = count(c, "SELECT COUNT(*) FROM ps_purchase_order WHERE status = 'CAN'");
+                long nulls = count(c, "SELECT COUNT(*) FROM ps_purchase_order WHERE status IS NULL");
+                assertThat(nulls).isEqualTo(1);
+                long finished = count(c, metric(sqls.get("finishedOrders")));
+                long unfinished = count(c, metric(sqls.get("unfinished")));
+                assertThat(finished + unfinished).as("the null row is in neither").isEqualTo(all - nulls);
+                assertThat(count(c, metric(sqls.get("otherOrders")))).as("not in leaves it out")
+                        .isEqualTo(all - cancelled - nulls);
+                assertThat(count(c, metric(sqls.get("orderCount")))).as("!= leaves it out")
+                        .isEqualTo(all - cancelled - nulls);
+            } finally {
+                c.rollback();
+            }
+        }
+    }
+
+    /** A PurchaseOrder metric as a query on its table. */
+    private static String metric(String sql) {
+        return "SELECT " + sql.replace("PurchaseOrder.", "ps_purchase_order.") + " FROM ps_purchase_order";
+    }
+
+    private static long count(Connection c, String query) throws Exception {
+        try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
+            rs.next();
+            return rs.getLong(1);
+        }
+    }
+
     /** A metric's SQL names datasets; on the database it reads their tables. */
     private BigDecimal run(String expression, Map<String, String> tables) throws Exception {
         String sql = expression;

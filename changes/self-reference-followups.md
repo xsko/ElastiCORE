@@ -8,4 +8,7 @@
   answers 404 `reference.Category.parentCategory`, one that names a row is written and the relation reads it, and on a
   `Category` in memory the id does not set the relation. No generated output changes: the `dto.yml` comment moves above
   `fields:`, and YAML comments are not read.
+- Checked: `SelfReferenceApiTest` over HTTP on `elasticore-template-ddd` (the 404 and its code, a parent written and
+  read back in a new transaction, the relation `null` when only the id is set); `GuideTranslationTest` for the env
+  guide's 6-2 at the same lines in en and ko; no generated file changed.
 - Files: `SelfReferenceApiTest.java`, `elasticore-env-guide.md` 6-2 (en, ko), `shop/model/dto.yml` of both ddd templates

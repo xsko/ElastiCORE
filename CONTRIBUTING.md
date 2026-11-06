@@ -114,7 +114,7 @@ kinds of artifact, an entity by its field block - and compares each with the
 marker, line endings and trailing blank lines aside):
 
 ```
-=== RulesCheck summary: 157 MATCH / 0 DIFF / 2 ACCEPTED / 0 SKIP ===
+=== RulesCheck summary: 158 MATCH / 0 DIFF / 2 ACCEPTED / 0 SKIP ===
 ```
 
 `DIFF` must be zero. If your change moves an existing project's generated code,
