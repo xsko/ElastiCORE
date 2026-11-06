@@ -20,10 +20,11 @@
 - Checked: `OssieMetricsTest` - each form, what binds tighter, the words inside values and names, each refusal, and each
   value of a list checked. `OssieSqlTest` - the new forms stay the portable `sql`. `MetricsTest` in the pet store runs
   the exported SQL of the new metrics on H2 and compares them with the same numbers worked out from the entities, and
-  holds the SQL of the six metrics that were there. The regenerated `semantic_model.yml` passes Ossie's
-  `validation/validate.py` with `sqlglot`, at `172a3e5`.
+  holds the SQL of the six metrics that were there. `SchemaValidateOnDatabase` runs every metric on PostgreSQL, Oracle
+  and SQL Server in the CI job. The regenerated `semantic_model.yml` passes Ossie's `validation/validate.py` with
+  `sqlglot`, at `172a3e5`.
 - The pet store's `dsl-guide.html` is rebuilt by `guide/build_guide.py` for its metrics. The rebuild also takes the
   `discontinuedAt` of #112, which the page had not caught up with.
 - Files: `OssieMetrics.java`, `OssieMetricsTest.java`, `OssieSqlTest.java`, the pet store's `metrics.yml`,
-  `semantic_model.yml`, `MetricsTest.java`, `build_guide.py` and `dsl-guide.html`, `elasticore-dsl-guide.md` "Business
-  metrics" (en, ko)
+  `semantic_model.yml`, `MetricsTest.java`, `SchemaValidateOnDatabase.java`, `build_guide.py` and `dsl-guide.html`,
+  `elasticore-dsl-guide.md` "Business metrics" (en, ko)
