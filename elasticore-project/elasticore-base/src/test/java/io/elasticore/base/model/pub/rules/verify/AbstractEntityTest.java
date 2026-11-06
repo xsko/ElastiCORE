@@ -267,7 +267,8 @@ public class AbstractEntityTest {
     }
 
     private static final String KEPT = "      deletedAt: timestamp @deleted";
-    private static final String NOT_YET = " @deleted in an @abstract(entity) hierarchy is not supported yet";
+    private static final String ON_A_SUBCLASS =
+            " @deleted on a subclass of the @abstract(entity) AeGone is not supported";
 
     private static String hierarchy(String strategy, String onRoot, String onSubclass) {
         return String.join(
@@ -291,27 +292,39 @@ public class AbstractEntityTest {
     }
 
     /**
-     * Through the root a deleted subclass row would still be found, and under JOINED the
-     * column is in the root's table, while the subclass's delete updates its own.
+     * On the root it keeps every subclass's rows, by statements on the classes that have the tables;
+     * on a subclass only, a read through the root would find kept and removed rows alike.
      */
     @Test
-    public void deletedOnTheRootOrASubclassIsRefused() throws Exception {
-        for (String strategy : new String[] {"TABLE_PER_CLASS", "JOINED"}) {
-            String onRoot = refusal("layered", "java", hierarchy(strategy, KEPT, ""));
-            assertTrue(onRoot.contains("AeGone" + NOT_YET), onRoot);
-            assertTrue(onRoot.contains("AeGoneChild" + NOT_YET), onRoot);
+    public void deletedOnTheRootIsHonouredAndOnASubclassRefused() throws Exception {
+        File perClass =
+                run("elcore-abstract-deleted", "layered", "java", "jpa", hierarchy("TABLE_PER_CLASS", KEPT, ""), 0);
+        assertFalse(found(perClass, "AeGone.java").contains("@SQLDelete"));
+        assertTrue(found(perClass, "AeGoneChild.java")
+                .contains("@SQLDelete(sql = \"UPDATE ae_gone_child SET deleted_at"
+                        + " = CURRENT_TIMESTAMP WHERE gone_id = ? AND deleted_at IS NULL\")"));
+        File joined = run("elcore-abstract-deleted", "layered", "java", "jpa", hierarchy("JOINED", KEPT, ""), 0);
+        assertTrue(found(joined, "AeGone.java")
+                .contains("@SQLDelete(sql = \"UPDATE ae_gone SET deleted_at"
+                        + " = CURRENT_TIMESTAMP WHERE gone_id = ? AND deleted_at IS NULL\")"));
+        assertTrue(found(joined, "AeGoneChild.java")
+                .contains("@SQLDelete(sql = \"UPDATE ae_gone SET deleted_at = deleted_at WHERE gone_id = ?\")"));
 
+        for (String strategy : new String[] {"TABLE_PER_CLASS", "JOINED"}) {
             String onSubclass = refusal("layered", "java", hierarchy(strategy, "", KEPT));
-            assertTrue(onSubclass.contains("AeGoneChild" + NOT_YET), onSubclass);
-            assertFalse(onSubclass.contains("AeGone" + NOT_YET), onSubclass);
+            assertTrue(onSubclass.contains("AeGoneChild" + ON_A_SUBCLASS), onSubclass);
         }
     }
 
     @Test
-    public void deletedInTheHierarchyIsRefusedInEveryOutput() throws Exception {
+    public void deletedInTheHierarchyIsHonouredInEveryOutput() throws Exception {
         for (String[] output : new String[][] {{"hexagonal", "java"}, {"ddd", "java"}, {"layered", "kotlin"}}) {
-            String log = refusal(output[0], output[1], hierarchy("TABLE_PER_CLASS", KEPT, ""));
-            assertTrue(log.contains("AeGone" + NOT_YET), output[0] + " " + output[1] + ": " + log);
+            File project = run(
+                    "elcore-abstract-deleted", output[0], output[1], "jpa", hierarchy("TABLE_PER_CLASS", KEPT, ""), 0);
+            String child = found(project, "AeGoneChild." + ("kotlin".equals(output[1]) ? "kt" : "java"));
+            assertTrue(
+                    child.contains("UPDATE ae_gone_child SET deleted_at = CURRENT_TIMESTAMP WHERE gone_id = ?"),
+                    output[0] + " " + output[1] + ": " + child);
         }
     }
 
@@ -336,14 +349,16 @@ public class AbstractEntityTest {
                         "    fields:",
                         KEPT,
                         ""));
-        assertTrue(log.contains("AeGoneLeaf" + NOT_YET), log);
+        assertTrue(log.contains("AeGoneLeaf" + ON_A_SUBCLASS), log);
     }
 
     @Test
-    public void deletedOnAFrameAboveTheRootIsRefused() throws Exception {
-        String log = refusal(
+    public void deletedOnAFrameAboveTheRootIsTheRoots() throws Exception {
+        File project = run(
+                "elcore-abstract-deleted",
                 "layered",
                 "java",
+                "jpa",
                 String.join(
                         "\n",
                         "entity:",
@@ -356,8 +371,11 @@ public class AbstractEntityTest {
                                 + " @jpa:Inheritance(strategy = InheritanceType.JOINED)",
                         "    fields:",
                         "      goneId: long @id @sequence(SEQUENCE)",
-                        ""));
-        assertTrue(log.contains("AeGone" + NOT_YET), log);
+                        ""),
+                0);
+        assertTrue(found(project, "AeGone.java")
+                .contains("@SQLDelete(sql = \"UPDATE ae_gone SET deleted_at"
+                        + " = CURRENT_TIMESTAMP WHERE gone_id = ? AND deleted_at IS NULL\")"));
     }
 
     @Test
@@ -374,7 +392,38 @@ public class AbstractEntityTest {
                 1,
                 "elasticore.rules.v3");
         String log = read(new File(project, "elcore.log"));
-        assertTrue(log.contains("AeGoneElsewhere" + NOT_YET), log);
+        assertTrue(log.contains("AeGoneElsewhere" + ON_A_SUBCLASS), log);
+    }
+
+    /** A JOINED root of another domain: a subclass's statement names the root's table by the root's domain's prefix. */
+    @Test
+    public void aSubclassInAnotherDomainNamesTheRootsTable() throws Exception {
+        String other = String.join(
+                "\n",
+                "entity:",
+                "  AeGoneElsewhere:",
+                "    meta: entity @extend(AeGone)",
+                "    fields:",
+                "      note: string(20)",
+                "");
+        PREFIXES.put("refdata", "rd_");
+        PREFIXES.put("billing", "bl_");
+        File project;
+        try {
+            project = run(
+                    "elcore-abstract-deleted-domains",
+                    "layered",
+                    "java",
+                    "jpa",
+                    hierarchy("JOINED", KEPT, ""),
+                    other,
+                    0,
+                    "elasticore.rules.v3");
+        } finally {
+            PREFIXES.clear();
+        }
+        assertTrue(found(project, "AeGoneElsewhere.java")
+                .contains("@SQLDelete(sql = \"UPDATE rd_ae_gone SET deleted_at = deleted_at WHERE gone_id = ?\")"));
     }
 
     /** The model of this test asks for AeStatusCode's service, and what it gets must not be silence. */
@@ -515,9 +564,13 @@ public class AbstractEntityTest {
         return run(name, architecture, language, mode, model, null, expected, rules);
     }
 
+    /** Each domain's table.prefix, for a test of a hierarchy across domains; none when empty. */
+    private static final java.util.Map<String, String> PREFIXES = new java.util.HashMap<String, String>();
+
     private static void writeDomain(File project, String domain, String mode, String model) throws IOException {
         File dir = new File(project, "src/main/resources/blueprint/" + domain);
         assertTrue(new File(dir, "model").mkdirs());
+        String prefix = PREFIXES.get(domain);
         Files.write(
                 new File(dir, "env.yml").toPath(),
                 String.join(
@@ -530,6 +583,7 @@ public class AbstractEntityTest {
                                 "    mode: " + mode,
                                 "    j2ee: jakarta",
                                 "    testCode: \"true\"",
+                                prefix == null ? "" : "    table:\n      prefix: " + prefix,
                                 "  namespace:",
                                 "    base: io.acme." + domain,
                                 "")

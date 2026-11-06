@@ -1036,7 +1036,10 @@ public final class JpaSchemaReader {
         return out;
     }
 
-    /** A key taken from a sequence: @SequenceGenerator's, or Hibernate's own {entity}_seq. */
+    /**
+     * A key taken from a sequence: @SequenceGenerator's, or Hibernate's own {table}_seq - the root's
+     * table, prefix and @table name and all (Hibernate 6 and 7 name it after the table, not the entity).
+     */
     private void sequences(JClass c, Schema s) {
         for (JClass x = c; x != null && !(x != c && "entity".equals(x.kind)); x = superOf(x)) {
             for (JField f : x.fields) {
@@ -1045,11 +1048,15 @@ public final class JpaSchemaReader {
                 String strategy = String.valueOf(gv.arg("strategy"));
                 if (strategy.endsWith("IDENTITY") || strategy.endsWith("UUID") || strategy.endsWith("TABLE")) continue;
                 OrmMapping.Anno sg = f.anno("SequenceGenerator");
+                // The table's own name: a schema is not part of it, and stays out of the sequence's as before.
+                String implicit = physical(bareTableName(c) + "_seq");
                 if (sg != null) {
-                    s.sequence(new Schema.Sequence(physical(text(sg.arg("sequenceName"), text(sg.arg("name"), entityName(c) + "_seq"))),
-                            num(sg.arg("initialValue"), 1), num(sg.arg("allocationSize"), 50)));
+                    s.sequence(new Schema.Sequence(
+                            physical(text(sg.arg("sequenceName"), text(sg.arg("name"), implicit))),
+                            num(sg.arg("initialValue"), 1),
+                            num(sg.arg("allocationSize"), 50)));
                 } else {
-                    s.sequence(new Schema.Sequence(physical(entityName(c) + "_seq"), 1, 50));
+                    s.sequence(new Schema.Sequence(implicit, 1, 50));
                 }
             }
         }
@@ -1220,10 +1227,16 @@ public final class JpaSchemaReader {
         JClass root = inheritanceRoot(c);
         if (root != c && !"JOINED".equals(strategy(root)) && !"TABLE_PER_CLASS".equals(strategy(root))) c = root;
         OrmMapping.Anno t = c.anno("Table");
-        String name = t == null ? null : text(t.arg("name"), null);
-        String table = physical(name != null ? name : entityName(c));
+        String table = bareTableName(c);
         String schema = t == null ? null : text(t.arg("schema"), null);
         return schema != null && !schema.isEmpty() ? physical(schema) + "." + table : table;
+    }
+
+    /** The class's own table name, without a schema: what @Table names, or its entity name. */
+    private static String bareTableName(JClass c) {
+        OrmMapping.Anno t = c.anno("Table");
+        String name = t == null ? null : text(t.arg("name"), null);
+        return physical(name != null ? name : entityName(c));
     }
 
     private static String source(JClass c) {

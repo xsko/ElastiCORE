@@ -507,6 +507,15 @@ public class JpaEntityBaseRules implements CodeRules {
             return;
         String column = e.softDeleteColumnOf(f.coreItemType());
         if (column == null) return;
+        // Hibernate tests a collection's restriction on the element's own table; a JOINED subclass's has no column.
+        String root = e.joinedRootOfKept(f.coreItemType());
+        if (root != null) {
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                    "[elcore3] %s.%s: a collection of %s, a subclass of the JOINED @abstract(entity) %s, cannot leave"
+                            + " its deleted rows out - the @deleted column is in %s's table. Hold List<%s> instead.",
+                    e.getName(), f.name(), f.coreItemType(), root, root, root));
+            return;
+        }
         ctx(e).field(f)
                 .ensure(AnnoCode.of("org.hibernate.annotations.SQLRestriction").value(column + " IS NULL"));
     }

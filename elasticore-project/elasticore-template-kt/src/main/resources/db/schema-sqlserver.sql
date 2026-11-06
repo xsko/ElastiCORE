@@ -3,6 +3,7 @@
 -- choose. Run it with spring.sql.init.schema-locations on an empty database.
 
 CREATE SEQUENCE revinfo_seq START WITH 1 INCREMENT BY 50;
+CREATE SEQUENCE ref_marker_seq START WITH 1 INCREMENT BY 50;
 
 CREATE TABLE cms_article (
     created_by NVARCHAR(50),
@@ -280,6 +281,28 @@ CREATE TABLE ref_case_note (
     PRIMARY KEY (note_id)
 );
 
+CREATE TABLE ref_color_marker (
+    marker_id BIGINT NOT NULL,
+    label NVARCHAR(30) NOT NULL,
+    retired_at DATETIMEOFFSET(6),
+    rgb NVARCHAR(6),
+    PRIMARY KEY (marker_id)
+);
+
+CREATE TABLE ref_party (
+    party_id BIGINT IDENTITY(1,1) NOT NULL,
+    name NVARCHAR(50) NOT NULL,
+    version BIGINT,
+    left_at DATETIMEOFFSET(6),
+    PRIMARY KEY (party_id)
+);
+
+CREATE TABLE ref_person (
+    birth_year INT,
+    party_id BIGINT NOT NULL,
+    PRIMARY KEY (party_id)
+);
+
 CREATE TABLE ref_region_code (
     code NVARCHAR(10) NOT NULL,
     name NVARCHAR(50) NOT NULL,
@@ -517,6 +540,7 @@ ALTER TABLE hr_employee ADD CONSTRAINT fk_hr_employee_manager FOREIGN KEY (manag
 ALTER TABLE hr_employee_skills ADD CONSTRAINT fk_hr_employee_skills_employee FOREIGN KEY (employee_emp_id) REFERENCES hr_employee (emp_id);
 ALTER TABLE hr_employee_skills ADD CONSTRAINT fk_hr_employee_skills_skills FOREIGN KEY (skills_skill_id) REFERENCES hr_skill (skill_id);
 ALTER TABLE hr_employee_aud ADD CONSTRAINT fk_hr_employee_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
+ALTER TABLE ref_person ADD CONSTRAINT fk_ref_person_parent FOREIGN KEY (party_id) REFERENCES ref_party (party_id);
 ALTER TABLE shop_category ADD CONSTRAINT fk_shop_category_pare_6fb00ae1 FOREIGN KEY (parent_category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_customer ADD CONSTRAINT fk_shop_customer_vip_profile FOREIGN KEY (vip_profile_profile_id) REFERENCES shop_vip_profile (profile_id);
 ALTER TABLE shop_order ADD CONSTRAINT fk_shop_order_customer FOREIGN KEY (customer_customer_id) REFERENCES shop_customer (customer_id);

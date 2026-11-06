@@ -407,6 +407,96 @@ datasets:
     custom_extensions:
       - vendor_name: ELASTICORE
         data: "{\"entity\": \"CaseNote\", \"domain\": \"refdata\"}"
+  - name: Person
+    source: ref_person
+    primary_key: [party_id]
+    description: "A person a case is about"
+    fields:
+      - name: birth_year
+        expression:
+          sql: "birth_year"
+        datatype: Integer
+      - name: party_id
+        expression:
+          sql: "party_id"
+        datatype: Integer
+    custom_extensions:
+      - vendor_name: ELASTICORE
+        data: "{\"entity\": \"Person\", \"domain\": \"refdata\"}"
+  - name: Company
+    source: ref_company
+    primary_key: [party_id]
+    description: "A company a case is about"
+    fields:
+      - name: registry_no
+        expression:
+          sql: "registry_no"
+        datatype: String
+      - name: party_id
+        expression:
+          sql: "party_id"
+        datatype: Integer
+    custom_extensions:
+      - vendor_name: ELASTICORE
+        data: "{\"entity\": \"Company\", \"domain\": \"refdata\"}"
+  - name: ColorTag
+    source: ref_color_tag
+    primary_key: [tag_id]
+    description: "A tag of a colour"
+    fields:
+      - name: rgb
+        expression:
+          sql: "rgb"
+        datatype: String
+      - name: tag_id
+        expression:
+          sql: "tag_id"
+        datatype: Integer
+      - name: label
+        expression:
+          sql: "label"
+        datatype: String
+      - name: note_note_id
+        expression:
+          sql: "note_note_id"
+        datatype: Integer
+        description: "note -> CaseNote"
+      - name: retired_at
+        expression:
+          sql: "retired_at"
+        datatype: DateTimeTz
+    custom_extensions:
+      - vendor_name: ELASTICORE
+        data: "{\"entity\": \"ColorTag\", \"domain\": \"refdata\"}"
+  - name: SizeTag
+    source: ref_size_tag
+    primary_key: [tag_id]
+    description: "A tag of a size"
+    fields:
+      - name: measure
+        expression:
+          sql: "measure"
+        datatype: String
+      - name: tag_id
+        expression:
+          sql: "tag_id"
+        datatype: Integer
+      - name: label
+        expression:
+          sql: "label"
+        datatype: String
+      - name: note_note_id
+        expression:
+          sql: "note_note_id"
+        datatype: Integer
+        description: "note -> CaseNote"
+      - name: retired_at
+        expression:
+          sql: "retired_at"
+        datatype: DateTimeTz
+    custom_extensions:
+      - vendor_name: ELASTICORE
+        data: "{\"entity\": \"SizeTag\", \"domain\": \"refdata\"}"
 relationships:
   - name: Product_category
     from: Product
@@ -433,6 +523,16 @@ relationships:
     to: Item
     from_columns: [item_id]
     to_columns: [item_id]
+  - name: ColorTag_note
+    from: ColorTag
+    to: CaseNote
+    from_columns: [note_note_id]
+    to_columns: [note_id]
+  - name: SizeTag_note
+    from: SizeTag
+    to: CaseNote
+    from_columns: [note_note_id]
+    to_columns: [note_id]
 metrics:
   - name: revenue
     expression:

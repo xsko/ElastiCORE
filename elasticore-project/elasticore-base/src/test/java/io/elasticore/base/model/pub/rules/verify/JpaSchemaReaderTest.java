@@ -356,6 +356,43 @@ public class JpaSchemaReaderTest {
         assertTrue(s.table("contract").foreignKeys().stream().anyMatch(fk -> fk.table.equals("party")));
     }
 
+    /** Hibernate names a sequence it is not told the name of after the root's table, not the entity. */
+    @Test
+    public void anUnnamedSequenceIsTheTablesName() throws Exception {
+        dir = Files.createTempDirectory("jpa-reader-seq");
+        source(
+                "acme/Tag.java",
+                String.join(
+                        "\n",
+                        "package acme;",
+                        "import jakarta.persistence.*;",
+                        "@Entity @Table(name = \"ref_tag\") @Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)",
+                        "public abstract class Tag { @Id @GeneratedValue(strategy = GenerationType.SEQUENCE) private Long tagId; }"));
+        source(
+                "acme/ColorTag.java",
+                String.join(
+                        "\n",
+                        "package acme;",
+                        "import jakarta.persistence.*;",
+                        "@Entity @Table(name = \"ref_color_tag\") public class ColorTag extends Tag { private String rgb; }"));
+        source(
+                "acme/Ticket.java",
+                String.join(
+                        "\n",
+                        "package acme;",
+                        "import jakarta.persistence.*;",
+                        // A schema stays out of the name, as it did.
+                        "@Entity @Table(schema = \"crm\") public class Ticket {",
+                        "    @Id @GeneratedValue(strategy = GenerationType.SEQUENCE) private Long ticketId;",
+                        "}"));
+
+        Schema s = read("acme.Tag", "acme.ColorTag", "acme.Ticket");
+
+        java.util.List<String> names = new java.util.ArrayList<String>();
+        s.sequences().forEach(q -> names.add(q.name));
+        assertEquals(java.util.Arrays.asList("ref_tag_seq", "ticket_seq"), names);
+    }
+
     @Test
     public void kotlinEntitiesAreReadToo() throws Exception {
         dir = Files.createTempDirectory("jpa-reader-kt");

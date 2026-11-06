@@ -21,3 +21,48 @@ entity:
       noteId: long @id @sequence
       title: string(50)
       status: Code @ManyToOne
+      tags: List<Tag> @OneToMany(mappedBy="note")
+      parties: List<Party> @OneToMany(mappedBy="note")
+
+  # @deleted in a JOINED hierarchy: the column is in the root's table, and a delete of a person keeps both rows.
+  Party:
+    meta: entity @abstract(entity) @expose(20) @jpa:Inheritance(strategy = InheritanceType.JOINED) -- Someone a case is about
+    fields:
+      partyId: long @id @sequence
+      name: string(50)! @search(like)
+      version: long @jpa:Version
+      leftAt: timestamp @deleted
+      note: CaseNote @ManyToOne
+
+  Person:
+    meta: entity @extend(Party) -- A person a case is about
+    fields:
+      birthYear: int
+
+  Company:
+    meta: entity @extend(Party) -- A company a case is about
+    fields:
+      registryNo: string(20)
+
+  # @deleted in a TABLE_PER_CLASS hierarchy, from a frame above the root: each subclass's table has the column.
+  Retirable:
+    meta: entity @abstract -- What a tag taken out of use keeps
+    fields:
+      retiredAt: timestamp @deleted
+
+  Tag:
+    meta: entity @abstract(entity) @extend(Retirable) @expose(20) @jpa:Inheritance(strategy = InheritanceType.TABLE_PER_CLASS) -- A tag on a case note, of any kind
+    fields:
+      tagId: long @id @sequence(SEQUENCE)
+      label: string(30)! @search(like)
+      note: CaseNote @ManyToOne
+
+  ColorTag:
+    meta: entity @extend(Tag) -- A tag of a colour
+    fields:
+      rgb: string(6)
+
+  SizeTag:
+    meta: entity @extend(Tag) -- A tag of a size
+    fields:
+      measure: string(5)

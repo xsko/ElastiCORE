@@ -112,6 +112,7 @@ StatusCode:
 - 키를 상속받는 하위 클래스에는 리포지토리와 서비스가 생기지 않고, 거기에 `@expose` 나 `@service` 를 적으면 경고가 나옵니다. 그 행은 직접 만든 리포지토리로 씁니다.
 - 키가 없는 루트와 `mode: mybatis` 는 생성을 멈춥니다. 2.x 생성기와 `output = 'v2'` 는 일반 `@abstract` 로 읽습니다. Ossie 내보내기에는 일반 `@abstract` 처럼 이 루트의 dataset 이 없습니다.
 - Oracle 23 에서는 하위 클래스를 포함해 어떤 엔티티든 boolean 컬럼이 있으면 `ddl-auto=validate` 가 실패합니다. 프로젝트 DDL 은 `NUMBER(1)` 을 쓰는데, Hibernate 는 이 버전부터 `BOOLEAN` 을 기대합니다.
+- 루트(또는 루트가 확장하는 `@abstract` 틀)에 둔 `@deleted` 는 모든 하위 클래스의 행을 남깁니다: [@abstract(entity) 계층의 @deleted](#abstractentity-계층의-deleted) 를 보세요.
 
 ### @extend(ParentEntity)
 > **동작:** JPA; MyBatis (mode: mybatis) 는 `@abstract` 부모만 · **안 됨:** MyBatis (mode: mybatis) 에서 `@abstract` 가 아닌 부모 (빌드 중단)
@@ -2243,7 +2244,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
   (`repository.yml`)로 두면 됩니다.
 - 직접 선언한 쿼리(`repository.yml` 의 `@query` 나 파생 finder, dbms 포트, 네이티브 SQL)는 바뀌지 않습니다: 거기에 `<컬럼> IS NULL` 을 넣으세요.
 - unique 컬럼은 지운 행의 값을 그대로 가지므로 새 행이 그 값을 쓸 수 없습니다.
-- 복합 키, `@rollup` 엔티티, 단일 테이블 상속(`@discriminator`), `@abstract(entity)` 계층(루트와 그 하위 엔티티 전부), 테이블을 가진 부모에서 물려받은 `@deleted` 는
+- 복합 키, `@rollup` 엔티티, 단일 테이블 상속(`@discriminator`), `@abstract(entity)` 의 하위 클래스에만 둔 `@deleted`, 테이블을 가진 부모(`@abstract(entity)` 루트 말고)에서 물려받은 `@deleted` 는
   빌드가 멈춥니다. JPA 에서 요청이 키를 주는 엔티티는 버전(`@jpa:Version`)이 있어야 합니다 - 없으면 빌드가 멈춥니다.
 - layered MyBatis 서비스는 수정할 때 컬렉션을 갈아 끼웁니다: 이때 `@deleted` 멤버의 예전 살아 있는 행은 아예 지워집니다.
 
@@ -2252,6 +2253,58 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 | 주문이 아직 가리키는 판매 중단 상품 | `discontinuedAt: timestamp @deleted` |
 | 기록을 위해 남기는 탈퇴 회원 | `withdrawnAt: datetime @deleted` |
 | 상품이 아직 가리키는 폐지된 분류 | `retiredAt: datetime @deleted` |
+
+### @abstract(entity) 계층의 @deleted
+> **동작:** v3 (JPA), Kotlin; `@jpa:Inheritance` 가 `JOINED` 또는 `TABLE_PER_CLASS` · **안 됨:** MyBatis (mode: mybatis) (`@abstract(entity)` 가 거기서 빌드를 멈춤); 하위 클래스에만 둔 `@deleted` (빌드 중단)
+
+필드는 루트에, 또는 루트가 확장하는 `@abstract` 틀에 둡니다. 모든 하위 클래스가 물려받고, 계층 전체를 읽는 루트의
+리포지토리가 지운 행을 빼고 읽습니다:
+
+```yaml
+Party:
+  meta: entity @abstract(entity) @expose(20) @jpa:Inheritance(strategy = InheritanceType.JOINED)
+  fields:
+    partyId: long @id @sequence
+    name:    string(50)!
+    version: long @jpa:Version
+    leftAt:  timestamp @deleted
+Person:
+  meta: entity @extend(Party)
+  fields:
+    birthYear: int
+```
+
+Hibernate 는 클래스가 매핑된 테이블마다, 그 클래스의 `@SQLDelete` 로 행을 지웁니다. 그래서 문장은 테이블이 있는
+곳에 생성됩니다 (펫스토어 `refdata`, 생성된 코드):
+
+```java
+// JOINED: 컬럼은 루트 테이블에 있습니다. 루트의 문장이 시각을 쓰고, 하위 클래스의 문장은 자기 행을 그대로 둡니다.
+@SQLDelete(sql = "UPDATE ref_party SET left_at = CURRENT_TIMESTAMP WHERE party_id = ? AND version = ? AND left_at IS NULL")
+public abstract class Party implements java.io.Serializable {
+@SQLDelete(sql = "UPDATE ref_party SET left_at = left_at WHERE party_id = ?")
+public class Person extends PersonBase {
+
+// TABLE_PER_CLASS: 루트에는 테이블이 없고, 하위 클래스마다 자기 테이블에 컬럼이 있어 그 문장이 거기에 씁니다.
+@SQLDelete(sql = "UPDATE ref_color_tag SET retired_at = CURRENT_TIMESTAMP WHERE tag_id = ? AND retired_at IS NULL")
+public class ColorTag extends ColorTagBase {
+```
+
+- `DELETE /api/refdata/party/{id}` 는 사람의 두 행을 모두 남깁니다 (`ref_party` 에는 시각, `ref_person` 은 그대로). `GET`,
+  검색, `PartyRepository` 의 `findAll` 과 `count` 는 더 이상 그 행을 찾지 않습니다.
+- 루트 타입의 컬렉션(`tags: List<Tag> @OneToMany(mappedBy="note")`)에는 `@SQLRestriction("retired_at IS NULL")` 이 붙고,
+  함께 아예 지워지는지 보는 검사도 그 행을 남는 것으로 봅니다. JOINED 에서는 루트 타입(`List<Party>`)으로 담으세요:
+  Hibernate 는 원소 자신의 테이블에서 조건을 보는데, 하위 클래스 테이블에는 그 컬럼이 없습니다.
+  `List<Person>` 은 빌드를 멈추고 그렇게 알립니다.
+- hexagonal 과 DDD 는 하위 클래스를 생성되는 base 와 여러분의 클래스로 나눕니다. 생성기가 `@SQLDelete` 줄을 여러분의 클래스에
+  병합하지 못하면(`.elasticore/cache` 에 기준본이 없거나 ElastiCORE 헤더가 없을 때) 빌드가 멈추고 넣을 줄을 알려 줍니다:
+  그 줄이 없으면 삭제가 행을 지웁니다.
+- 다른 엔티티에서와 같습니다: 요청이 키를 주면 버전(`@jpa:Version`)이 있어야 하고, 복합 키와
+  Spring Boot 3 의 `mapping: xml` 은 빌드를 멈춥니다.
+- 하위 클래스에만 둔 `@deleted` 는 빌드를 멈춥니다: `Status @deleted on a subclass of the @abstract(entity) Code is not supported - a read through Code would find kept and removed rows alike; declare it on Code.`
+- JOINED 하위 클래스의 문장은 데이터베이스가 바꾼 행이 아니라 맞은 행의 수를 알려 준다고 봅니다(Hibernate 가 모든 update 를
+  검사할 때와 같음). `useAffectedRows=true` 인 MySQL, MariaDB 는 바뀐 행만 셉니다.
+- 펫스토어(Hibernate 7: 버전이 있는 JOINED, 루트 위 틀에서 물려받은 TABLE_PER_CLASS, 컬렉션)를 H2, Oracle, PostgreSQL,
+  SQL Server 에서, `elasticore-template-kt` (Kotlin, Hibernate 6) 에서 확인했습니다.
 
 ## @event — 도메인 이벤트 (DDD 룰셋)
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)

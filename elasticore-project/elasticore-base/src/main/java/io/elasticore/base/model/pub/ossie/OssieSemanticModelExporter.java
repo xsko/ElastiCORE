@@ -249,7 +249,8 @@ public final class OssieSemanticModelExporter {
         out.append("  - name: ").append(name).append('\n');
         out.append("    source: ").append(plain(table(entity, u.model))).append('\n');
 
-        List<Field> all = new ArrayList<Field>(entity.getAllFieldListMap().values());
+        List<Field> all = inItsTable(
+                entity, new ArrayList<Field>(entity.getAllFieldListMap().values()));
         List<String> pk = new ArrayList<String>();
         for (Field f : all) {
             if (isKey(f) && f.getTypeInfo().isBaseType()) pk.add(f.getDbColumnName());
@@ -377,6 +378,55 @@ public final class OssieSemanticModelExporter {
                     + " not as a MappedSuperclass - it is not exported for " + self + ".");
             return;
         }
+    }
+
+    /**
+     * The fields whose columns are in the entity's own table. Under JOINED a subclass's table
+     * holds the key and what it declares, with any plain @abstract frame between it and the
+     * entity it extends; the other columns are in the tables above it. Elsewhere, all of them.
+     */
+    private List<Field> inItsTable(Entity entity, List<Field> all) {
+        java.util.Set<String> own = new java.util.HashSet<String>();
+        Entity above = null;
+        boolean first = true;
+        for (Entity at = entity; at != null; at = parentOf(at)) {
+            if (!first && !isFrame(at)) {
+                above = at;
+                break;
+            }
+            first = false;
+            io.elasticore.base.model.ModelComponentItems<Field> items = at.getItems();
+            for (int i = 0; items != null && i < items.size(); i++)
+                own.add(items.get(i).getName());
+        }
+        if (above == null || !joinedAbove(above)) return all;
+        List<Field> out = new ArrayList<Field>();
+        for (Field f : all) {
+            if (own.contains(f.getName()) || isKey(f)) out.add(f);
+        }
+        return out;
+    }
+
+    /** A plain @abstract: a frame with no table, whose columns are in the table of what extends it. */
+    private static boolean isFrame(Entity entity) {
+        String kind = entity.getMetaInfo().getMetaAnnotationValue("abstract");
+        return entity.getMetaInfo().hasMetaAnnotation("abstract")
+                && !(kind != null && "entity".equalsIgnoreCase(kind.trim()));
+    }
+
+    /** Whether the hierarchy the entity is in maps JOINED: its topmost entity says so (@jpa:Inheritance). */
+    private boolean joinedAbove(Entity entity) {
+        Entity root = entity;
+        for (Entity at = parentOf(entity); at != null; at = parentOf(at)) {
+            if (!isFrame(at)) root = at;
+        }
+        Map<String, io.elasticore.base.model.core.Annotation> meta =
+                root.getMetaInfo().getMetaAnnotationMap();
+        if (meta == null) return false;
+        for (Map.Entry<String, io.elasticore.base.model.core.Annotation> en : meta.entrySet()) {
+            if (en.getKey().contains("jpa:") && String.valueOf(en.getValue()).contains("JOINED")) return true;
+        }
+        return false;
     }
 
     /** The entity it extends (@extend), or null. */

@@ -21,3 +21,30 @@ entity:
       noteId: long @id @sequence
       title: string(50)
       status: Code @ManyToOne
+
+  # @deleted in a JOINED hierarchy: the column is in the root's table, and a delete of a person keeps both rows.
+  Party:
+    meta: entity @abstract(entity) @expose(20) @jpa:Inheritance(strategy = InheritanceType.JOINED) -- Someone a case is about
+    fields:
+      partyId: long @id @sequence
+      name: string(50)!
+      version: long @jpa:Version
+      leftAt: timestamp @deleted
+
+  Person:
+    meta: entity @extend(Party) -- A person a case is about
+    fields:
+      birthYear: int
+
+  # @deleted in a TABLE_PER_CLASS hierarchy: each subclass's table has the column.
+  Marker:
+    meta: entity @abstract(entity) @expose(20) @jpa:Inheritance(strategy = InheritanceType.TABLE_PER_CLASS) -- A marker of any kind
+    fields:
+      markerId: long @id @sequence(SEQUENCE)
+      label: string(30)!
+      retiredAt: timestamp @deleted
+
+  ColorMarker:
+    meta: entity @extend(Marker) -- A marker of a colour
+    fields:
+      rgb: string(6)

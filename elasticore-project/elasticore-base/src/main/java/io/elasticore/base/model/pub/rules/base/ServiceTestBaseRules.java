@@ -132,20 +132,20 @@ public class ServiceTestBaseRules implements CodeRules {
         if (!composite) {
             FieldSpec pk = keys.get(0);
             c.var("pkDtoInfo2", pk.name())
-             .var("idConstruction", c.syntax().getter("mockEntity", pk.name()))
-             .var("pkFieldParams", "id")
-             .var("idVariableCreation", c.syntax().localVar(
-                     pk.typeName(), pk.name(), sampleValue(c, pk)))
-             .var("setupMockDtoKeyValues", "")
-             // The fixture leaves a generated key unset, but the test still
-             // has to look a row up by something - so the key it passes is a
-             // value of the right type rather than the fixture's empty one.
-             .var("pkTestValue", keySample(c, pk))
-             .var("anyId", "any()")
-             // The update path looks the row up by the DTO's own key, so the
-             // fixture has to carry one - a generated key leaves it unset.
-             .var("pkDtoAssign", c.syntax().statement(
-                     c.syntax().setter("mockDto", pk.name(), keySample(c, pk))));
+                    .var("idConstruction", c.syntax().getter("mockEntity", pk.name()))
+                    .var("pkFieldParams", "id")
+                    .var("idVariableCreation", c.syntax().localVar(pk.typeName(), pk.name(), sampleValue(c, pk)))
+                    .var("setupMockDtoKeyValues", "")
+                    // The fixture leaves a generated key unset, but the test still
+                    // has to look a row up by something - so the key it passes is a
+                    // value of the right type rather than the fixture's empty one.
+                    .var("pkTestValue", keySample(c, pk))
+                    .var("anyId", anyKey(c, e, pk))
+                    // The update path looks the row up by the DTO's own key, so the
+                    // fixture has to carry one - a generated key leaves it unset.
+                    .var(
+                            "pkDtoAssign",
+                            c.syntax().statement(c.syntax().setter("mockDto", pk.name(), keySample(c, pk))));
             return;
         }
 
@@ -173,6 +173,18 @@ public class ServiceTestBaseRules implements CodeRules {
          .var("pkFieldParams", args.toString())
          .var("idVariableCreation", Lines.indented("        ", variables))
          .var("setupMockDtoKeyValues", Lines.indented("        ", mockSetup));
+    }
+
+    /**
+     * The matcher for the key a repository call takes. With @deleted the Kotlin
+     * repository redeclares findById and existsById with a key that is not null,
+     * where Mockito's any() is null - so the test gives a value of the type when
+     * it is (as the DDD port test does). Any other keeps any().
+     */
+    private String anyKey(SourceCode c, EntitySpec e, FieldSpec pk) {
+        if (c.syntax() != io.elasticore.base.model.pub.rules.Syntax.KOTLIN || !SoftDelete.applies(e)) return "any()";
+        return String.format(
+                "(any(%s::class.javaObjectType) ?: %s)", RuleText.simpleName(pk.typeName()), keySample(c, pk));
     }
 
     /**

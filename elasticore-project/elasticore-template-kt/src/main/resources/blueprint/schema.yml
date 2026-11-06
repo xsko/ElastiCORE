@@ -132,6 +132,16 @@ entities:
       parentCategory: Category @relation(mappedBy="parent_category_id") @foreignKey(parent_category_cat_id) -- Category entity relationship
       subCategories: List<Category> @relation(mappedBy="sub_categories_id") @foreignKey(sub_categories_id) -- List<Category> entity relationship
 
+  ColorMarker:
+    meta: entity @extend(Marker) @java(io.elasticore.blueprint.domain.refdata.entity.ColorMarker) -- A marker of a colour
+    table: ref_color_marker
+    java: io.elasticore.blueprint.domain.refdata.entity.ColorMarker
+    fields:
+      markerId: Long @Column(name = "marker_id") @Id @GeneratedValue
+      label: string(30) @Column(name = "label", length = 30)
+      retiredAt: java.time.Instant @relation(mappedBy="retired_at_id") @foreignKey(retired_at_id) -- java.time.Instant entity relationship
+      rgb: string(6) @Column(name = "rgb", length = 6)
+
   Comment:
     meta: entity @extend(ContentBase) @java(io.elasticore.blueprint.domain.content.entity.Comment)
     table: cms_comment
@@ -292,6 +302,17 @@ entities:
       quantity: Integer @Column(name = "quantity")
       unitPrice: java.math.BigDecimal @relation(mappedBy="unit_price_id") @foreignKey(unit_price_id) -- java.math.BigDecimal entity relationship
       discount: java.math.BigDecimal @relation(mappedBy="discount_id") @foreignKey(discount_id) -- java.math.BigDecimal entity relationship
+
+  Person:
+    meta: entity @extend(Party) @java(io.elasticore.blueprint.domain.refdata.entity.Person) -- A person a case is about
+    table: ref_person
+    java: io.elasticore.blueprint.domain.refdata.entity.Person
+    fields:
+      partyId: Long @Column(name = "party_id") @Id @GeneratedValue
+      name: string(50) @Column(name = "name", length = 50)
+      version: Long @Column(name = "version")
+      leftAt: java.time.Instant @relation(mappedBy="left_at_id") @foreignKey(left_at_id) -- java.time.Instant entity relationship
+      birthYear: Integer @Column(name = "birth_year")
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.blueprint.domain.shop.entity.Product)

@@ -1244,6 +1244,37 @@ public final class EntitySpec {
         return abstractEntityAbove;
     }
 
+    private String hierarchyStrategy;
+    private String hierarchyRootTable;
+    private boolean hierarchyRootDeleted;
+
+    /**
+     * What a subclass needs of the {@code @abstract(entity)} above it: the root's
+     * {@code @jpa:Inheritance} text (JOINED or TABLE_PER_CLASS), its table, and whether
+     * it has the {@code @deleted} field (its own, or an {@code @abstract} frame's above it).
+     */
+    public EntitySpec abstractEntityRoot(String inheritance, String table, boolean deleted) {
+        this.hierarchyStrategy = inheritance;
+        this.hierarchyRootTable = table;
+        this.hierarchyRootDeleted = deleted;
+        return this;
+    }
+
+    /** The root's @jpa:Inheritance text as taught (abstractEntityRoot), or null. */
+    public String abstractEntityRootInheritance() {
+        return hierarchyStrategy;
+    }
+
+    /** The root's table as taught (abstractEntityRoot), or null. */
+    public String abstractEntityRootTable() {
+        return hierarchyRootTable;
+    }
+
+    /** Whether the root above has the @deleted field, as taught (abstractEntityRoot). */
+    public boolean abstractEntityRootDeleted() {
+        return hierarchyRootDeleted;
+    }
+
     private final java.util.Set<String> abstractEntities = new java.util.HashSet<String>();
 
     public EntitySpec knownAbstractEntity(String entityName) {
@@ -1280,6 +1311,22 @@ public final class EntitySpec {
     /** The column of that entity's @deleted field, or null when its rows are deleted outright. */
     public String softDeleteColumnOf(String entityName) {
         return softDeleteColumns.get(entityName);
+    }
+
+    private final java.util.Map<String, String> keptBelowJoined = new java.util.HashMap<String, String>();
+
+    /**
+     * Registers a subclass of a JOINED @abstract(entity) root whose rows are kept: the
+     * column is in the root's table, so a collection of the subclass cannot test it.
+     */
+    public EntitySpec knownKeptBelowJoined(String entityName, String rootName) {
+        if (entityName != null && rootName != null) keptBelowJoined.put(entityName, rootName);
+        return this;
+    }
+
+    /** The JOINED root above that kept entity, or null when it is not such a subclass. */
+    public String joinedRootOfKept(String entityName) {
+        return keptBelowJoined.get(entityName);
     }
 
     /** The column a field of the model is stored in, as the generated code names it. */

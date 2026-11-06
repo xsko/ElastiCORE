@@ -50,26 +50,68 @@ public final class SoftDelete {
         return marked.isEmpty() ? null : marked.get(0);
     }
 
-    /** Whether a delete keeps the rows of this entity: a table of its own, and a @deleted it can honour. */
+    /**
+     * Whether a delete keeps the rows of this entity: an entity (not a plain
+     * {@code @abstract} frame), and a @deleted it can honour. The root of an
+     * {@code @abstract(entity)} hierarchy is one: its repository reads every subclass's rows.
+     */
     public static boolean applies(EntitySpec e) {
-        return e != null && !e.hasMeta("abstract") && field(e) != null;
+        return e != null && !e.isMappedSuperclass() && field(e) != null;
+    }
+
+    /** JOINED and TABLE_PER_CLASS, the hierarchies of an @abstract(entity) whose @deleted is honoured. */
+    static final String JOINED = "JOINED";
+
+    static final String TABLE_PER_CLASS = "TABLE_PER_CLASS";
+
+    /** Whether the entity is the root of an @abstract(entity) hierarchy or below one. */
+    static boolean inHierarchy(EntitySpec e) {
+        return e.isAbstractEntity() || e.abstractEntityAbove() != null;
+    }
+
+    /** The strategy of the @abstract(entity) hierarchy the entity is in (JOINED, TABLE_PER_CLASS), or null. */
+    static String strategy(EntitySpec e) {
+        String text = e.isAbstractEntity()
+                ? String.join(" ", e.nativeEntityAnnotationLines())
+                : e.abstractEntityRootInheritance();
+        if (text == null) return null;
+        if (text.contains(TABLE_PER_CLASS)) return TABLE_PER_CLASS;
+        return text.contains(JOINED) ? JOINED : null;
+    }
+
+    /** The key a row is deleted by: the entity's own, or the one a subclass inherits from its root. */
+    static FieldSpec key(EntitySpec e) {
+        FieldSpec own = e.pkField();
+        if (own != null) return own;
+        for (FieldSpec f : e.allFields()) {
+            if (f.hasDsl("id") || f.hasDsl("pk")) return f;
+        }
+        return null;
+    }
+
+    private static int keyCount(EntitySpec e) {
+        if (e.pkField() != null) return e.pkCount();
+        int n = 0;
+        for (FieldSpec f : e.allFields()) {
+            if (f.hasDsl("id") || f.hasDsl("pk")) n++;
+        }
+        return n;
     }
 
     /**
      * Why the entity's @deleted cannot be honoured, or null when it can (or
      * there is none): one field, a time, not the key, a single key, a table of
-     * its own, no @abstract(entity) above or at it. A plain @abstract parent is
-     * checked in each entity that extends it.
+     * its own or a JOINED / TABLE_PER_CLASS @abstract(entity) hierarchy whose root
+     * has it. A plain @abstract parent is checked in each entity that extends it.
      */
     public static String problem(EntitySpec e) {
         List<FieldSpec> marked = marked(e);
         if (marked.isEmpty()) return null;
-        // The root reads its subclasses' rows and has no delete of its own to keep them, and
-        // under JOINED the column is in the root's table, not the one a subclass's delete updates.
-        if (e.isAbstractEntity() || e.abstractEntityAbove() != null) {
-            return " @deleted in an @abstract(entity) hierarchy is not supported yet";
+        if (e.isMappedSuperclass()) return null;
+        if (inHierarchy(e)) {
+            String why = hierarchyProblem(e);
+            if (why != null) return why;
         }
-        if (e.hasMeta("abstract")) return null;
         if (e.hasMeta("embeddable"))
             return " @deleted: a value (@embeddable) is kept or removed with its row - mark the entity";
         if (e.hasMeta("rollup")) return " @deleted on a @rollup entity is not supported yet";
@@ -99,11 +141,13 @@ public final class SoftDelete {
                     + " that keeps the row (<sql-delete>) from orm.xml; leave the domain's mapping in annotations, or use"
                     + " mode: mybatis";
         }
-        if (e.pkField() == null) return " @deleted needs a key of one field to delete a row by";
-        if (e.pkCount() > 1)
+        FieldSpec key = key(e);
+        if (key == null) return " @deleted needs a key of one field to delete a row by";
+        if (keyCount(e) > 1)
             return " @deleted: a composite key is not supported yet - give the entity a key of one field";
         // Inherited from an entity with a table of its own (JOINED): the column is in the parent's table.
-        if (f.isParentField() && f.declaringName() != null && !f.declaringAbstract()) {
+        // In an @abstract(entity) hierarchy that is the root's, whose delete writes it (jpaDelete).
+        if (!inHierarchy(e) && f.isParentField() && f.declaringName() != null && !f.declaringAbstract()) {
             return " @deleted is inherited from " + f.declaringName()
                     + ", which has a table of its own - not supported yet;"
                     + " declare it on an @abstract parent or on the entity";
@@ -114,10 +158,29 @@ public final class SoftDelete {
         for (FieldSpec v : e.allFields()) {
             if (v.isVersion()) versioned = true;
         }
-        if (!MyBatisSql.applies(e) && !versioned && !ServiceAccessRules.keyGenerated(e.pkField())) {
-            return " @deleted with a key the request gives (" + e.pkField().name()
+        if (!MyBatisSql.applies(e) && !versioned && !ServiceAccessRules.keyGenerated(key)) {
+            return " @deleted with a key the request gives (" + key.name()
                     + ") needs a version (@jpa:Version) - a create"
                     + " of a deleted row's key would otherwise be written into that row, which stays deleted";
+        }
+        return null;
+    }
+
+    /**
+     * Why @deleted in an @abstract(entity) hierarchy cannot be honoured, or null:
+     * the root's strategy has a table per subclass (JOINED, TABLE_PER_CLASS - SINGLE_TABLE
+     * stops at the root anyway), and the field is the root's, so every row a read
+     * through the root finds is kept or removed alike.
+     */
+    private static String hierarchyProblem(EntitySpec e) {
+        if (strategy(e) == null) {
+            return " @deleted in an @abstract(entity) hierarchy needs @jpa:Inheritance(strategy ="
+                    + " InheritanceType.JOINED) or TABLE_PER_CLASS on its root";
+        }
+        String root = e.abstractEntityAbove();
+        if (root != null && !e.abstractEntityRootDeleted()) {
+            return " @deleted on a subclass of the @abstract(entity) " + root + " is not supported - a read through "
+                    + root + " would find kept and removed rows alike; declare it on " + root;
         }
         return null;
     }
@@ -171,9 +234,25 @@ public final class SoftDelete {
         }
     }
 
-    /** Hibernate's @SQLDelete: the time written, by key (and version, which Hibernate binds after it). */
+    /**
+     * Hibernate's @SQLDelete: the time written, by key (and version, which Hibernate binds after it);
+     * null when the class has no table to write it in.
+     *
+     * In an @abstract(entity) hierarchy Hibernate deletes a row from each table the class
+     * maps to, each with that class's own statement. TABLE_PER_CLASS: the subclass's table
+     * has every column, and its statement writes the time there; the root has no table.
+     * JOINED: the column is in the root's table, whose statement (the root's) writes it;
+     * a subclass's table keeps its row, by a statement that changes nothing and finds the
+     * one row Hibernate counts on - in whichever order the two run.
+     */
     public static String jpaDelete(EntitySpec e) {
-        StringBuilder where = new StringBuilder(MyBatisSql.column(e.pkField()) + " = ?");
+        String strategy = inHierarchy(e) ? strategy(e) : null;
+        if (TABLE_PER_CLASS.equals(strategy) && e.isAbstractEntity()) return null;
+        String key = MyBatisSql.column(key(e)) + " = ?";
+        if (JOINED.equals(strategy) && !e.isAbstractEntity()) {
+            return "UPDATE " + e.abstractEntityRootTable() + " SET " + column(e) + " = " + column(e) + " WHERE " + key;
+        }
+        StringBuilder where = new StringBuilder(key);
         for (FieldSpec f : e.allFields()) {
             if (f.isVersion()) {
                 where.append(" AND ").append(MyBatisSql.column(f)).append(" = ?");

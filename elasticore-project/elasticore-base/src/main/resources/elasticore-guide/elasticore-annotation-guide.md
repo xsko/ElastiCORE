@@ -112,6 +112,7 @@ StatusCode:
 - A subclass, whose key is inherited, gets no repository or service of its own, and `@expose` or `@service` on it gets a warning: write its rows through a repository of your own.
 - Generation stops on a root without a key, and on `mode: mybatis`. The 2.x generator and `output = 'v2'` read it as plain `@abstract`. The Ossie export has no dataset for it, as for plain `@abstract`.
 - On Oracle 23 a boolean column, of a subclass as of any entity, fails `ddl-auto=validate`: the project DDL writes `NUMBER(1)`, and Hibernate expects `BOOLEAN` from that version.
+- `@deleted` on the root (or on an `@abstract` frame it extends) keeps the rows of every subclass: see [@deleted in an `@abstract(entity)` hierarchy](#deleted-in-an-abstractentity-hierarchy).
 
 ### @extend(ParentEntity)
 > **Works in:** JPA; MyBatis (mode: mybatis) with an `@abstract` parent · **Not in:** MyBatis (mode: mybatis) with a parent that is not `@abstract` (stops the build)
@@ -2243,8 +2244,8 @@ and `findById`, `countById`, `findAll` and the search have `AND t.discontinued_a
   (`repository.yml`) does it.
 - A query you declare yourself (`repository.yml` `@query` or a derived finder, a dbms port, native SQL) is not changed: add `<column> IS NULL` there.
 - A unique column keeps the deleted row's value, so a new row cannot take it.
-- A composite key, a `@rollup` entity, a single-table hierarchy (`@discriminator`), an `@abstract(entity)` hierarchy (the root, or anything that extends it) and a `@deleted` inherited from a parent with a table
-  of its own stop the build. Under JPA, an entity whose key the request gives needs a version (`@jpa:Version`) - otherwise the build stops.
+- A composite key, a `@rollup` entity, a single-table hierarchy (`@discriminator`), `@deleted` on a subclass of an `@abstract(entity)` only and a `@deleted` inherited from a parent with a table
+  of its own (other than an `@abstract(entity)` root) stop the build. Under JPA, an entity whose key the request gives needs a version (`@jpa:Version`) - otherwise the build stops.
 - The layered MyBatis service replaces a collection on update: the old live rows of `@deleted` members are removed outright then.
 
 | Use case | YAML |
@@ -2252,6 +2253,58 @@ and `findById`, `countById`, `findAll` and the search have `AND t.discontinued_a
 | A product taken off the catalog that orders still name | `discontinuedAt: timestamp @deleted` |
 | A member who left, kept for the records | `withdrawnAt: datetime @deleted` |
 | A category retired while products still point at it | `retiredAt: datetime @deleted` |
+
+### @deleted in an @abstract(entity) hierarchy
+> **Works in:** v3 (JPA), Kotlin; `@jpa:Inheritance` `JOINED` or `TABLE_PER_CLASS` · **Not in:** MyBatis (mode: mybatis) (an `@abstract(entity)` stops the build there); `@deleted` on a subclass only (stops the build)
+
+Write the field on the root, or on an `@abstract` frame the root extends. Every subclass inherits it, and the root's
+repository - the one that reads the whole hierarchy - leaves the deleted rows out:
+
+```yaml
+Party:
+  meta: entity @abstract(entity) @expose(20) @jpa:Inheritance(strategy = InheritanceType.JOINED)
+  fields:
+    partyId: long @id @sequence
+    name:    string(50)!
+    version: long @jpa:Version
+    leftAt:  timestamp @deleted
+Person:
+  meta: entity @extend(Party)
+  fields:
+    birthYear: int
+```
+
+Hibernate deletes a row from each table a class maps to, each with that class's own `@SQLDelete`, so the statements
+are written where the tables are (pet store `refdata`, generated):
+
+```java
+// JOINED: the column is in the root's table. The root's statement writes the time; a subclass's leaves its own row as it is.
+@SQLDelete(sql = "UPDATE ref_party SET left_at = CURRENT_TIMESTAMP WHERE party_id = ? AND version = ? AND left_at IS NULL")
+public abstract class Party implements java.io.Serializable {
+@SQLDelete(sql = "UPDATE ref_party SET left_at = left_at WHERE party_id = ?")
+public class Person extends PersonBase {
+
+// TABLE_PER_CLASS: the root has no table; each subclass's table has the column, and its statement writes it there.
+@SQLDelete(sql = "UPDATE ref_color_tag SET retired_at = CURRENT_TIMESTAMP WHERE tag_id = ? AND retired_at IS NULL")
+public class ColorTag extends ColorTagBase {
+```
+
+- `DELETE /api/refdata/party/{id}` keeps both rows of a person (`ref_party` with the time, `ref_person` as it was); `GET`,
+  the search, `findAll` and `count` of `PartyRepository` no longer find it.
+- A collection of the root's type (`tags: List<Tag> @OneToMany(mappedBy="note")`) gets `@SQLRestriction("retired_at IS NULL")`,
+  and a delete that would remove such rows outright with it sees them as kept. Under JOINED hold the root's type
+  (`List<Party>`): Hibernate tests the restriction on the element's own table, and a subclass's has no column - a
+  `List<Person>` stops the build and says so.
+- Hexagonal and DDD split a subclass into a generated base and a class that is yours. When the generator cannot merge
+  the `@SQLDelete` line into your class (no base in `.elasticore/cache`, or no ElastiCORE header), the build stops and
+  names the line to add: without it a delete would remove the row.
+- What holds for any entity holds here: a key the request gives needs a version (`@jpa:Version`), a composite key and
+  `mapping: xml` on Spring Boot 3 stop the build.
+- `@deleted` on a subclass only stops the build: `Status @deleted on a subclass of the @abstract(entity) Code is not supported - a read through Code would find kept and removed rows alike; declare it on Code.`
+- A JOINED subclass's statement counts on the database reporting the rows it matched, as Hibernate's check of every
+  update does; MySQL and MariaDB with `useAffectedRows=true` report changed rows only.
+- Checked on the pet store (Hibernate 7: JOINED with a version, TABLE_PER_CLASS from a frame above the root, a collection)
+  on H2, Oracle, PostgreSQL and SQL Server, and on `elasticore-template-kt` (Kotlin, Hibernate 6).
 
 ## @event - domain events (DDD rule set)
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)

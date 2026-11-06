@@ -3273,6 +3273,28 @@ public final class RulesGenRunner {
                 out.relativePath(), String.join(System.lineSeparator() + "    ", expected));
         System.out.println(message);
         notes.add(message);
+        failIfSoftDeleteMissing(out, existing, wouldWrite);
+    }
+
+    /**
+     * Without the @deleted statement on the class Hibernate maps, a delete removes the row after all - for
+     * a JOINED subclass, its own table's row, leaving the root's kept and unreadable. A file of the
+     * developer's that lacks it is not a note to be missed: the build stops.
+     */
+    private void failIfSoftDeleteMissing(ArtifactTarget out, String existing, String wouldWrite) {
+        if (existing == null || !wouldWrite.contains("SQLDelete(")) return;
+        String cls = out.fileName();
+        for (String h : classAnnotationsOf(existing, cls)) {
+            if (h.contains("SQLDelete(")) return;
+        }
+        for (String w : classAnnotationsOf(wouldWrite, cls)) {
+            if (!w.contains("SQLDelete(")) continue;
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                    "[elcore3] %s: the class has no %s, which @deleted needs - a delete would remove the row."
+                            + " The file is yours: add the line.",
+                    out.relativePath(), w));
+            return;
+        }
     }
 
     /**
@@ -5025,6 +5047,7 @@ public final class RulesGenRunner {
                 // skips it too - and writing over it would lose their code.
                 skipped++;
                 System.out.println(label + "  SKIP(no ElastiCORE header - yours)");
+                if ((v3 || kotlin) && !typescript) failIfSoftDeleteMissing(out, readLf(file), content);
                 return;
             } else if (st != null && st.getStatus() == HashUtils.UNTRACKED) {
                 skipped++;

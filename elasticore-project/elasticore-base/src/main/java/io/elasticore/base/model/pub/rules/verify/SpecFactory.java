@@ -375,6 +375,7 @@ public final class SpecFactory {
         if (parent != null && !parent.isEmpty()) {
             spec.parent(parent);
             spec.abstractEntityAbove(abstractEntityAbove(entity, model));
+            teachAbstractEntityRoot(spec, model);
         }
 
         // Annotations the DSL hands to the class as written: "@jpa:..." first,
@@ -544,6 +545,8 @@ public final class SpecFactory {
             at = parent == null || parent.isEmpty()
                     ? null
                     : model.getEntityModels().findByName(parent);
+            // A parent of another domain, as an @abstract(entity) root may be.
+            if (at == null && parent != null && !parent.isEmpty()) at = globalEntity(parent);
         }
         return null;
     }
@@ -557,11 +560,32 @@ public final class SpecFactory {
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         for (int i = 0; i < all.size(); i++) {
             Entity entity = all.get(i);
-            if (entity.getMetaInfo().hasMetaAnnotation("abstract")
-                    || entity.getMetaInfo().hasMetaAnnotation("embeddable")) continue;
+            // A plain @abstract frame has no rows; an @abstract(entity) root reads its subclasses'.
+            String kind = entity.getMetaInfo().getMetaAnnotationValue("abstract");
+            boolean frame = entity.getMetaInfo().hasMetaAnnotation("abstract")
+                    && !(kind != null && "entity".equalsIgnoreCase(kind.trim()));
+            if (frame || entity.getMetaInfo().hasMetaAnnotation("embeddable")) continue;
             Field deleted = deletedFieldOf(entity, model);
-            if (deleted != null) spec.knownSoftDeleted(entity.getIdentity().getName(), spec.columnOf(deleted));
+            if (deleted == null) continue;
+            spec.knownSoftDeleted(entity.getIdentity().getName(), spec.columnOf(deleted));
+            String root = abstractEntityAbove(entity, model);
+            if (root != null && joined(root, model))
+                spec.knownKeptBelowJoined(entity.getIdentity().getName(), root);
         }
+    }
+
+    /** Whether the @abstract(entity) of that name maps JOINED (its @jpa:Inheritance or @entity: line). */
+    private static boolean joined(String rootName, ECoreModel model) {
+        Entity root = model.getEntityModels().findByName(rootName);
+        if (root == null) root = globalEntity(rootName);
+        java.util.Map<String, io.elasticore.base.model.core.Annotation> meta =
+                root == null ? null : root.getMetaInfo().getMetaAnnotationMap();
+        if (meta == null) return false;
+        for (java.util.Map.Entry<String, io.elasticore.base.model.core.Annotation> en : meta.entrySet()) {
+            boolean nativeLine = en.getKey().contains("jpa:") || en.getKey().contains("entity:");
+            if (nativeLine && String.valueOf(en.getValue()).contains("JOINED")) return true;
+        }
+        return false;
     }
 
     public static EntitySpec fromDto(io.elasticore.base.model.dto.DataTransfer dto,
@@ -2158,6 +2182,61 @@ public final class SpecFactory {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * What a subclass's @deleted needs of the @abstract(entity) above it: the root's
+     * {@code @jpa:Inheritance}, its table, and whether the root has the @deleted field.
+     */
+    private static void teachAbstractEntityRoot(EntitySpec spec, ECoreModel model) {
+        String rootName = spec.abstractEntityAbove();
+        if (rootName == null) return;
+        Entity root = model.getEntityModels().findByName(rootName);
+        // A root of another domain: its table is named by that domain's settings (table.prefix, tableSchema).
+        ECoreModel rootModel = root != null ? model : modelOf(rootName);
+        if (root == null && rootModel != null)
+            root = rootModel.getEntityModels().findByName(rootName);
+        if (root == null || rootModel == null) return;
+        StringBuilder inheritance = new StringBuilder();
+        java.util.Map<String, io.elasticore.base.model.core.Annotation> meta =
+                root.getMetaInfo().getMetaAnnotationMap();
+        if (meta != null) {
+            for (java.util.Map.Entry<String, io.elasticore.base.model.core.Annotation> en : meta.entrySet()) {
+                // The same lines the root's own checks read: @jpa:... and the env.yml @entity:... mappings.
+                if (en.getKey().contains("jpa:") || en.getKey().contains("entity:")) {
+                    inheritance.append(' ').append(en.getValue());
+                }
+            }
+        }
+        EntitySpec table = new EntitySpec(rootName).tablePrefix(rootModel.getConfig("table.prefix", ""));
+        String named = root.getMetaInfo().getMetaAnnotationValue("table");
+        if (named != null && !named.isEmpty()) table.meta("table", named);
+        String schema = root.getMetaInfo().getMetaAnnotationValue("schema");
+        table.schema(schema == null || schema.isEmpty() ? rootModel.getConfig("tableSchema") : schema);
+        spec.abstractEntityRoot(
+                inheritance.toString(),
+                io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.table(table),
+                deletedFieldOf(root, rootModel) != null);
+    }
+
+    /** The model of the domain that declares an entity of that name, or null. */
+    private static ECoreModel modelOf(String entityName) {
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            if (ctx == null) return null;
+            for (String domain : ctx.getAllDomainNames()) {
+                io.elasticore.base.ModelDomain d = ctx.getDomain(domain);
+                ECoreModel m = d == null ? null : d.getModel();
+                if (m != null
+                        && m.getEntityModels() != null
+                        && m.getEntityModels().findByName(entityName) != null) {
+                    return m;
+                }
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+        return null;
     }
 
     /** The @abstract(entity) above an entity, through its @extend, of this domain or another; null when there is none. */

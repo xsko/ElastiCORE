@@ -121,24 +121,120 @@ public class SoftDeleteRulesTest {
         assertFalse(SoftDelete.applies(parent));
     }
 
+    private static final String JOINED = "@Inheritance(strategy = InheritanceType.JOINED)";
+    private static final String PER_CLASS = "@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)";
+
+    /** The root of a hierarchy, Product, with the given @jpa:Inheritance line (or none). */
+    private static EntitySpec root(String inheritance, String... extra) {
+        EntitySpec root = product(extra).meta("abstract", "entity");
+        return inheritance == null ? root : root.nativeEntityAnnotation(inheritance);
+    }
+
+    /** Gadget extends the root: a field of its own, and the root's - the key among them - inherited. */
+    private static EntitySpec gadget(EntitySpec root, String inheritance, boolean rootDeleted, String... extra) {
+        EntitySpec s = new EntitySpec("Gadget").field("color", "string(6)");
+        for (int i = 0; i < extra.length; i += 2) s.field(extra[i], extra[i + 1]);
+        for (io.elasticore.base.model.pub.rules.FieldSpec f : root.fields()) s.addAllField(f.raw());
+        for (io.elasticore.base.model.pub.rules.FieldSpec f : s.fields()) s.addAllField(f.raw());
+        return s.abstractEntityAbove("Product").abstractEntityRoot(inheritance, "product", rootDeleted);
+    }
+
     @Test
-    public void anAbstractEntityHierarchyIsNotSupportedYet() {
-        String notYet = " @deleted in an @abstract(entity) hierarchy is not supported yet";
-        EntitySpec root = product("deletedAt", "timestamp @deleted").meta("abstract", "entity");
-        assertEquals(notYet, SoftDelete.problem(root));
-        assertFalse(SoftDelete.applies(root));
-        assertNull(SoftDelete.field(root));
-        EntitySpec subclass = product("deletedAt", "timestamp @deleted").abstractEntityAbove("Code");
-        assertEquals(notYet, SoftDelete.problem(subclass));
-        assertFalse(SoftDelete.applies(subclass));
-        assertNull(SoftDelete.field(subclass));
+    public void anAbstractEntityHierarchyKeepsItsRowsByTheRootsField() {
+        for (String inheritance : new String[] {JOINED, PER_CLASS}) {
+            EntitySpec root = root(inheritance, "deletedAt", "timestamp @deleted");
+            assertNull(SoftDelete.problem(root), inheritance);
+            assertTrue(SoftDelete.applies(root), inheritance);
+            EntitySpec gadget = gadget(root, inheritance, true);
+            assertNull(gadget.pkField(), "the key is inherited");
+            assertNull(SoftDelete.problem(gadget), inheritance);
+            assertTrue(SoftDelete.applies(gadget), inheritance);
+            assertEquals("productId", SoftDelete.key(gadget).name());
+        }
+        // JOINED: the root's statement writes the time in its table; a subclass's keeps its own row as it is.
+        assertSqlDelete(
+                "UPDATE product SET deleted_at = CURRENT_TIMESTAMP WHERE product_id = ? AND deleted_at IS NULL",
+                root(JOINED, "deletedAt", "timestamp @deleted"));
+        assertSqlDelete(
+                "UPDATE product SET deleted_at = deleted_at WHERE product_id = ?",
+                gadget(root(JOINED, "deletedAt", "timestamp @deleted"), JOINED, true));
+        // TABLE_PER_CLASS: the root has no table; each subclass's table has the column.
+        assertSqlDelete(null, root(PER_CLASS, "deletedAt", "timestamp @deleted"));
+        assertSqlDelete(
+                "UPDATE gadget SET deleted_at = CURRENT_TIMESTAMP WHERE product_id = ? AND deleted_at IS NULL",
+                gadget(root(PER_CLASS, "deletedAt", "timestamp @deleted"), PER_CLASS, true));
+        // A version is bound with the key where the time is written, as for any entity.
+        EntitySpec versioned = root(JOINED, "version", "long @jpa:Version", "deletedAt", "timestamp @deleted");
+        assertSqlDelete(
+                "UPDATE product SET deleted_at = CURRENT_TIMESTAMP WHERE product_id = ? AND version = ?"
+                        + " AND deleted_at IS NULL",
+                versioned);
+        assertSqlDelete(
+                "UPDATE product SET deleted_at = deleted_at WHERE product_id = ?",
+                gadget(root(JOINED, "version", "long @jpa:Version", "deletedAt", "timestamp @deleted"), JOINED, true));
+    }
+
+    /** The entity's @SQLDelete statement, as the JPA bundle writes it on the class (null: none). */
+    private static void assertSqlDelete(String sql, EntitySpec e) {
+        String code = render(e, "jpa-springboot-v3", "entity");
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("@SQLDelete\\(sql = \"([^\"]*)\"\\)")
+                .matcher(code);
+        assertEquals(sql, m.find() ? m.group(1) : null, code);
+    }
+
+    @Test
+    public void whatAnAbstractEntityHierarchyCannotHonourIsSaid() {
+        String strategy = " @deleted in an @abstract(entity) hierarchy needs @jpa:Inheritance(strategy ="
+                + " InheritanceType.JOINED) or TABLE_PER_CLASS on its root";
+        EntitySpec single = root(null, "deletedAt", "timestamp @deleted");
+        assertEquals(strategy, SoftDelete.problem(single));
+        assertFalse(SoftDelete.applies(single));
+        assertNull(SoftDelete.field(single));
+        assertEquals(
+                strategy,
+                SoftDelete.problem(root(
+                        "@Inheritance(strategy = InheritanceType.SINGLE_TABLE)", "deletedAt", "timestamp @deleted")));
+        assertEquals(strategy, SoftDelete.problem(gadget(single, null, true)));
+
+        // On some subclasses only: a read through the root would find kept and removed rows alike.
+        EntitySpec some = gadget(root(JOINED), JOINED, false, "deletedAt", "timestamp @deleted");
+        assertEquals(
+                " @deleted on a subclass of the @abstract(entity) Product is not supported - a read through"
+                        + " Product would find kept and removed rows alike; declare it on Product",
+                SoftDelete.problem(some));
+        assertFalse(SoftDelete.applies(some));
         // Nothing to refuse without the annotation.
-        assertNull(SoftDelete.problem(product().meta("abstract", "entity")));
-        assertNull(SoftDelete.problem(product().abstractEntityAbove("Code")));
+        assertNull(SoftDelete.problem(root(null)));
+        assertNull(SoftDelete.problem(gadget(root(null), null, false)));
+        // What holds for any entity holds in the hierarchy: the root's key the request gives needs a version.
+        EntitySpec given = new EntitySpec("Code")
+                .meta("abstract", "entity")
+                .nativeEntityAnnotation(PER_CLASS)
+                .field("code", "string(10) @id")
+                .field("deletedAt", "timestamp @deleted");
+        assertTrue(SoftDelete.problem(given).contains("a key the request gives (code) needs a version"));
+        assertTrue(SoftDelete.problem(gadget(given, PER_CLASS, true)).contains("a key the request gives (code)"));
         // A plain @abstract stays what it was: checked in what extends it.
         assertNull(SoftDelete.problem(product("deletedAt", "timestamp @deleted").meta("abstract", "")));
-        SoftDelete.check(root);
-        assertEquals(java.util.Collections.singletonList("[elcore3] Product" + notYet + "."), ModelCheck.failures());
+        SoftDelete.check(some);
+        assertEquals(1, ModelCheck.failures().size());
+        assertTrue(ModelCheck.failures().get(0).startsWith("[elcore3] Gadget @deleted on a subclass"));
+    }
+
+    @Test
+    public void theHierarchysStatementsAreOnTheClassesThatHaveTheTables() {
+        EntitySpec joined = root(JOINED, "deletedAt", "timestamp @deleted");
+        assertTrue(render(joined, "jpa-springboot-v3", "entity")
+                .contains("@SQLDelete(sql = \"UPDATE product SET deleted_at = CURRENT_TIMESTAMP WHERE product_id = ?"
+                        + " AND deleted_at IS NULL\")"));
+        String perClass = render(root(PER_CLASS, "deletedAt", "timestamp @deleted"), "jpa-springboot-v3", "entity");
+        assertFalse(perClass.contains("SQLDelete"), perClass);
+        assertTrue(perClass.contains("insertable = false, updatable = false"), perClass);
+        // The root's repository reads every subclass's rows, and leaves the deleted out.
+        String repository = render(joined, "jpa-springboot-v3", "repository");
+        assertTrue(
+                repository.contains("SELECT e FROM Product e WHERE e.productId = :id AND e.deletedAt IS NULL"),
+                repository);
     }
 
     @Test

@@ -188,7 +188,7 @@
         <thead><tr><th>DSL</th><th>layered (v3)</th><th>ddd · hexagonal</th><th>2.x 호환 출력 (<code>output = 'v2'</code>)</th><th>그 밖에</th></tr></thead>
         <tbody>
           <tr><td><code>@access</code> <code>@owner</code> <code>@password</code> <code>@login</code> <code>@signin</code></td><td>동작</td><td>동작</td><td>경고 - 검사·해시 안 함</td><td>MyBatis 도 동작</td></tr>
-          <tr><td><code>@deleted</code></td><td>동작</td><td>동작</td><td>경고 - 행이 지워짐</td><td>MyBatis 도 동작 · <code>mapping: xml</code> 은 Spring Boot 4 만 (3 은 빌드 중단)</td></tr>
+          <tr><td><code>@deleted</code></td><td>동작</td><td>동작</td><td>경고 - 행이 지워짐</td><td>MyBatis 도 동작 · <code>mapping: xml</code> 은 Spring Boot 4 만 (3 은 빌드 중단) · <code>@abstract(entity)</code> 계층은 루트에 두면 동작 (JOINED · TABLE_PER_CLASS, 하위 클래스에만 두면 빌드 중단)</td></tr>
           <tr><td><code>states:</code> <code>@compute</code> <code>@snapshot</code></td><td>경고 - 생성 안 됨</td><td>동작</td><td>경고 - 생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
           <tr><td><code>@root</code> <code>@behavior</code> <code>@editable</code> <code>@event</code></td><td>생성 안 됨</td><td>동작</td><td>생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
           <tr><td><code>referenceColumn: short</code></td><td>바뀌는 것 없음</td><td>동작</td><td>바뀌는 것 없음</td><td>다른 애그리거트를 id 로 참조할 때의 컬럼 이름</td></tr>

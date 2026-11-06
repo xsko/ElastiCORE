@@ -120,7 +120,8 @@ public class JpaEntityAnnotationRules implements CodeRules {
     private static void softDelete(SourceCode c, EntitySpec e) {
         SoftDelete.check(e);
         if (!SoftDelete.applies(e) || io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)) return;
-        c.ensureClassAnnotation(AnnoCode.of(SQL_DELETE).val("sql", SoftDelete.jpaDelete(e)));
+        String sql = SoftDelete.jpaDelete(e);
+        if (sql != null) c.ensureClassAnnotation(AnnoCode.of(SQL_DELETE).val("sql", sql));
     }
 
     /** Hibernate's annotation for @deleted, on the class that has the table. */

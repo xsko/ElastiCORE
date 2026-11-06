@@ -6,8 +6,15 @@ import io.elasticore.blueprint.domain.refdata.entity.Code
 import io.elasticore.blueprint.domain.refdata.entity.RegionCode
 import io.elasticore.blueprint.domain.refdata.entity.StatusCode
 import io.elasticore.blueprint.domain.refdata.entity.CaseNote
+import io.elasticore.blueprint.domain.refdata.entity.ColorMarker
+import io.elasticore.blueprint.domain.refdata.entity.Person
 import io.elasticore.blueprint.domain.refdata.repository.CodeRepository
 import io.elasticore.blueprint.domain.refdata.repository.CaseNoteRepository
+import io.elasticore.blueprint.domain.refdata.repository.MarkerRepository
+import io.elasticore.blueprint.domain.refdata.repository.PartyRepository
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
+import org.junit.jupiter.api.Assertions.assertFalse
 import io.elasticore.springboot3.bean.ApplicationContextProvider
 import jakarta.persistence.EntityManager
 import io.elasticore.springboot3.bean.DbTransactionGateway
@@ -55,6 +62,9 @@ class AbstractEntityTest {
     @Autowired lateinit var repository: CodeRepository
     @Autowired lateinit var notes: CaseNoteRepository
     @Autowired lateinit var em: EntityManager
+    @Autowired lateinit var parties: PartyRepository
+    @Autowired lateinit var markers: MarkerRepository
+    @Autowired lateinit var transactions: PlatformTransactionManager
 
     @Test
     @Transactional
@@ -89,6 +99,46 @@ class AbstractEntityTest {
             ),
         )
     }
+
+    /** @deleted under JOINED: the column in the root's table, a version, and the subclass's row kept. */
+    @Test
+    fun aDeletedPersonIsKeptInBothTablesAndNotFound() {
+        val tx = TransactionTemplate(transactions)
+        val id = tx.execute {
+            val p = Person()
+            p.name = "Kim"
+            p.birthYear = 1990
+            em.persist(p)
+            p.partyId
+        }!!
+        tx.executeWithoutResult { parties.delete(parties.findById(id).orElseThrow()) }
+
+        assertTrue(parties.findById(id).isEmpty)
+        assertFalse(parties.existsById(id))
+        assertFalse(parties.findAll().any { it.partyId == id })
+        assertEquals(1, count("SELECT COUNT(*) FROM ref_party WHERE party_id = ? AND left_at IS NOT NULL", id))
+        assertEquals(1, count("SELECT COUNT(*) FROM ref_person WHERE party_id = ?", id))
+    }
+
+    /** @deleted under TABLE_PER_CLASS: the column in the subclass's own table. */
+    @Test
+    fun aDeletedMarkerIsKeptInItsTableAndNotFound() {
+        val tx = TransactionTemplate(transactions)
+        val id = tx.execute {
+            val m = ColorMarker()
+            m.label = "Red"
+            m.rgb = "FF0000"
+            em.persist(m)
+            m.markerId
+        }!!
+        tx.executeWithoutResult { markers.delete(markers.findById(id).orElseThrow()) }
+
+        assertTrue(markers.findById(id).isEmpty)
+        assertEquals(0L, markers.findAll().count { it.markerId == id }.toLong())
+        assertEquals(1, count("SELECT COUNT(*) FROM ref_color_marker WHERE marker_id = ? AND retired_at IS NOT NULL", id))
+    }
+
+    private fun count(sql: String, id: Long): Int = jdbc.queryForObject(sql, Int::class.java, id)!!
 
     /** Without an EntityManager there is no proxy and no stub to make, and it is not left unset without a word. */
     @Test

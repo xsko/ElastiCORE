@@ -35,11 +35,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.sql.init.data-locations=optional:classpath:none.sql",
         "spring.sql.init.continue-on-error=false"})
 @AutoConfigureMockMvc
-@org.springframework.context.annotation.Import(AbstractEntityCheck.class)
+@org.springframework.context.annotation.Import({AbstractEntityCheck.class, SoftDeleteHierarchyCheck.class})
 abstract class SchemaValidateOnDatabase {
 
     @Autowired MockMvc mvc;
     @Autowired AbstractEntityCheck codes;
+    @Autowired SoftDeleteHierarchyCheck kept;
     @Autowired JdbcTemplate jdbc;
 
     /** What the export writes in the portable language runs here: each metric, over its dataset's table. */
@@ -83,6 +84,13 @@ abstract class SchemaValidateOnDatabase {
     @Test
     void anAbstractEntityReadsItsSubclassesTogether() throws Exception {
         codes.readsEveryTable();
+    }
+
+    /** @deleted in a JOINED and a TABLE_PER_CLASS hierarchy: the row is kept with the time, and not read. */
+    @Test
+    void aHierarchysDeleteKeepsTheRow() throws Exception {
+        kept.aDeletedPersonIsKeptAndNotFound(mvc);
+        kept.aDeletedTagIsKeptAndNotFound(mvc);
     }
 
     static void database(DynamicPropertyRegistry r, String vendor) {
