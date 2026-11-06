@@ -2164,7 +2164,7 @@ PurchaseOrder:
 ## @deleted — 삭제해도 행을 남김 (v3)
 > **동작:** v3 (JPA, MyBatis), Kotlin · **안 됨:** 2.x-compatible output (output = 'v2') - 삭제가 행을 지움 (경고); 2.x generator (생성 안 됨); mapping: xml + Spring Boot 3 (빌드 중단)
 
-삭제가 행을 지우는 대신 **지운 시각**을 쓰고, API 의 어떤 조회도 그 행을 다시 찾지 않습니다. Since: 3.0 (3.0.261105-rc10 다음)
+삭제가 행을 지우는 대신 **지운 시각**을 쓰고, API 의 어떤 조회도 그 행을 다시 찾지 않습니다. Since: 3.0 (3.0.261106-rc11)
 
 ```yaml
 Product:

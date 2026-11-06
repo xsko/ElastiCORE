@@ -2164,7 +2164,7 @@ PurchaseOrder:
 ## @deleted - a delete keeps the row (v3)
 > **Works in:** v3 (JPA, MyBatis), Kotlin · **Not in:** 2.x-compatible output (output = 'v2') - a delete removes the row (warning); 2.x generator (not generated); mapping: xml on Spring Boot 3 (stops the build)
 
-A delete writes **when the row was deleted** instead of removing it, and no read of the API finds the row again. Since: 3.0 (after 3.0.261105-rc10)
+A delete writes **when the row was deleted** instead of removing it, and no read of the API finds the row again. Since: 3.0 (3.0.261106-rc11)
 
 ```yaml
 Product:

@@ -481,7 +481,7 @@ HTTP/1.1 409
 > **Works in:** ddd, hexagonal · **Not in:** layered (warning)
 
 "When was it sent?", "when was it cancelled?" - write the state on a time field, and the command that moves the row into that
-state records the time. Since: 3.0 (after 3.0.261105-rc10)
+state records the time. Since: 3.0 (3.0.261106-rc11)
 
 ```yaml
     fields:
