@@ -79,8 +79,14 @@ class MetricsTest {
         // The same, from the entities.
         List<PurchaseOrder> orders = entityManager.createQuery("select o from PurchaseOrder o", PurchaseOrder.class).getResultList();
         BigDecimal revenue = BigDecimal.ZERO;
-        long kept = 0, shippedCount = 0, cancelledCount = 0;
+        long kept = 0, shippedCount = 0, cancelledCount = 0, placedCount = 0, paidFinished = 0;
+        java.util.Set<Long> buyers = new java.util.HashSet<Long>();
+        java.util.Set<Long> keptBuyers = new java.util.HashSet<Long>();
         for (PurchaseOrder o : orders) {
+            buyers.add(o.getCustomerId());
+            if (o.getStatus() != OrderStatus.CANCELLED) keptBuyers.add(o.getCustomerId());
+            if (o.getStatus() == OrderStatus.PLACED) placedCount++;
+            if (o.getStatus() != OrderStatus.PLACED && o.getTotal().toBigDecimal().signum() > 0) paidFinished++;
             if (o.getStatus() != OrderStatus.CANCELLED) {
                 revenue = revenue.add(o.getTotal().toBigDecimal());
                 kept++;
@@ -99,6 +105,45 @@ class MetricsTest {
         assertThat(measured.get("shippedOrders")).isEqualByComparingTo(BigDecimal.valueOf(shippedCount));
         assertThat(measured.get("cancelledOrders")).isEqualByComparingTo(BigDecimal.valueOf(cancelledCount));
         assertThat(measured.get("customerCount")).isEqualByComparingTo(BigDecimal.valueOf(customers));
+
+        // Written with a list, an or, a group, a not: the same numbers a second way.
+        assertThat(placedCount).as("every state has a row").isPositive();
+        assertThat(shippedCount).isPositive();
+        assertThat(cancelledCount).isPositive();
+        assertThat(paidFinished).isPositive();
+        assertThat(measured.get("liveOrders")).isEqualByComparingTo(BigDecimal.valueOf(placedCount + shippedCount));
+        assertThat(measured.get("otherOrders")).isEqualByComparingTo(BigDecimal.valueOf(kept));
+        assertThat(measured.get("finishedOrders")).isEqualByComparingTo(BigDecimal.valueOf(shippedCount + cancelledCount));
+        assertThat(measured.get("paidFinished")).isEqualByComparingTo(BigDecimal.valueOf(paidFinished));
+        assertThat(measured.get("unfinished")).isEqualByComparingTo(BigDecimal.valueOf(placedCount));
+        // Three orders by one customer are one buyer.
+        assertThat((long) orders.size()).as("a customer with several orders").isGreaterThan(buyers.size());
+        assertThat(measured.get("buyers")).isEqualByComparingTo(BigDecimal.valueOf(buyers.size()));
+        assertThat(measured.get("keptBuyers")).isEqualByComparingTo(BigDecimal.valueOf(keptBuyers.size()));
+    }
+
+    /** A line without in, or, a parenthesis or distinct is written as it was before they could be read. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theMetricsOfTheOldFormAreWrittenAsTheyWere() throws Exception {
+        Map<String, Object> model;
+        try (InputStream in = getClass().getResourceAsStream("/blueprint/semantic_model.yml")) {
+            model = new Yaml().load(in);
+        }
+        Map<String, String> written = new HashMap<String, String>();
+        for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
+            written.put((String) m.get("name"), (String) ((Map<String, Object>) m.get("expression")).get("sql"));
+        }
+        assertThat(written)
+                .containsEntry("revenue", "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)")
+                .containsEntry("orderCount", "COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)")
+                .containsEntry(
+                        "averageOrder",
+                        "(SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END))"
+                                + " / NULLIF((COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)), 0)")
+                .containsEntry("shippedOrders", "COUNT(CASE WHEN PurchaseOrder.status = 'SHP' THEN 1 END)")
+                .containsEntry("cancelledOrders", "COUNT(CASE WHEN PurchaseOrder.status = 'CAN' THEN 1 END)")
+                .containsEntry("customerCount", "COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)");
     }
 
     /** A metric's SQL names datasets; on the database it reads their tables. */

@@ -8,3 +8,11 @@ metrics:
   shippedOrders:   count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수
   cancelledOrders: count(PurchaseOrder) where status = CANCELLED -- 취소된 주문 수
   customerCount:   count(Customer) where role = USER @terms(members, 회원 수) -- 고객 수 (관리자 제외)
+  # By a list, so a status added later is not counted until it is named here.
+  liveOrders:      count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 취소되지 않은 주문 수 (상태 목록)
+  otherOrders:     count(PurchaseOrder) where status not in (CANCELLED) -- 취소 외 상태의 주문 수
+  finishedOrders:  count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수
+  paidFinished:    count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 0 -- 금액이 있는 끝난 주문 수
+  unfinished:      count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수
+  buyers:          count(distinct PurchaseOrder.customerId) -- 주문한 고객 수
+  keptBuyers:      count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수

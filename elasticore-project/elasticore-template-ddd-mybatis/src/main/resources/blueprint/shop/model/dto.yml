@@ -25,10 +25,10 @@ dto:
 
   CategoryDTO:
     meta: dto @template(Category)
+    # A category names its parent by identity, parentCategoryCatId from the
+    # template. Another instance of the same root is another aggregate, so
+    # this crosses a boundary like any other.
     fields:
-      # A category names its parent by identity, parentCategoryCatId from the
-      # template. Another instance of the same root is another aggregate, so
-      # this crosses a boundary like any other.
       subCategories: List<CategoryDTO>
 
   OrderDTO:

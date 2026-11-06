@@ -580,13 +580,23 @@ metrics:
   averageOrder:    revenue / orderCount @terms(AOV, 객단가) -- 주문 1건 평균 금액
   shippedOrders:   count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수
   customerCount:   count(Customer) where role = USER -- 고객 수 (관리자 제외)
+  liveOrders:      count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 적은 상태의 주문 수: 나중에 추가된 상태는 적기 전까지 세지 않음
+  otherOrders:     count(PurchaseOrder) where status not in (CANCELLED) -- 그 밖의 상태인 주문 수
+  finishedOrders:  count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수
+  bigFinished:     count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 100 -- 100 을 넘는 끝난 주문 수
+  unfinished:      count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수
+  buyers:          count(distinct PurchaseOrder.customerId) -- 주문한 고객 수
+  keptBuyers:      count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수
 ```
 
 | 쓰는 법 | 뜻 | Ossie SQL |
 |---|---|---|
 | `sum(엔티티.필드)` / `avg` / `min` / `max` | 한 엔티티의 필드 집계 | `SUM(PurchaseOrder.total)` |
 | `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(PurchaseOrder.order_id)` (키 컬럼 - BI 도구가 어느 dataset 을 세는지 알도록) / `COUNT(PurchaseOrder.total)` |
-| `… where 필드 != 값 and 필드 >= 값` | 조건 (`=`, `!=`, `<`, `<=`, `>`, `>=`, `and`) | `SUM(CASE WHEN … THEN … END)` |
+| `count(distinct 엔티티.필드)` | 서로 다른 값의 수 (null 제외). `distinct` 는 `count` 에만, 필드와 함께 씁니다. `sum(distinct …)` 은 거부 | `COUNT(DISTINCT Login.user_id)`, `where` 가 있으면 `COUNT(DISTINCT CASE WHEN … THEN Login.user_id END)` |
+| `… where 필드 != 값 and 필드 >= 값` | 조건 (`=`, `!=`, `<`, `<=`, `>`, `>=`). `and` 로 이음 | `SUM(CASE WHEN … THEN … END)` |
+| `… where 필드 in (A, B)` / `not in (A, B)` | 값 목록. 값 하나하나를 단일 값과 똑같이 읽음 | `Offer.status IN ('PND', 'AWD')` |
+| `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`. SQL 처럼 `and` 가 먼저 묶임. 괄호로 묶고, `not` 은 괄호 앞에 씀 | `(… OR …) AND …`, `NOT (…)` |
 | 값 | 숫자, `'글자'`(안의 `'` 는 `''`), `true`/`false`, **enum 상수 이름** (저장된 값으로 바뀜: `@db` 코드 `'CAN'`, `@jpa:Enumerated(STRING)` 면 이름, 둘 다 없으면 순번 `2`) | |
 | `지표A / 지표B` (`+ - * /`) | 앞에서 선언한 지표끼리 계산. 나누기는 0 으로 나누지 않고, 개수 / 개수는 소수로 | `(…) / NULLIF((…), 0)` |
 | `@terms(sales, 매출액)` | 업무 용어·동의어 | `ai_context.synonyms` |
@@ -594,9 +604,10 @@ metrics:
 
 - 데이터 타입: `count` 는 `Integer`, `sum`·`min`·`max` 는 그 필드의 타입, `avg`·나누기는 `Decimal`(`Float` 필드면 `Float`),
   `+ - *` 는 둘 다 `Integer` 면 `Integer`, 아니면 `Decimal`. `sum`·`avg` 는 숫자 필드에만.
+- SQL 과 같이 `!=` 와 `not in` 은 필드가 null 인 행을 세지 않습니다.
 - 줄에 ` #` 나 `: ` 가 들어가면 YAML 이 줄을 자르거나 파일을 못 읽으므로 줄 전체를 따옴표로 감쌉니다:
   `ratio: "shippedOrders / orderCount -- 배송 비율: 배송 / 전체"`.
-- 못 읽는 줄(없는 엔티티·필드, enum 에 없는 상수, 뒤에 선언된 지표, enum 이 아닌 필드에 따옴표 없는 값)은 생성할 때
+- 못 읽는 줄(없는 엔티티·필드, enum 에 없는 상수, 뒤에 선언된 지표, enum 이 아닌 필드에 따옴표 없는 값, 짝이 맞지 않는 괄호, 빈 `in ()`, 한쪽이 빈 `or`·`and`, `sum(distinct …)`)은 생성할 때
   `[ossie] [도메인] metric 이름: … ; it is left out.` 경고 후 빠집니다 - 추측해서 내보내지 않습니다.
 - **한 엔티티 안에서만** 셉니다. "취소되지 않은 주문의 팔린 수량" 처럼 다른 엔티티의 조건(주문 줄 → 주문 상태)이 필요한 지표는
   아직 쓸 수 없습니다 - 억지로 쓰면 취소분까지 세게 되므로 넣지 마세요.

@@ -580,13 +580,23 @@ metrics:
   averageOrder:    revenue / orderCount @terms(AOV, 객단가) -- Average amount per order
   shippedOrders:   count(PurchaseOrder) where status = SHIPPED -- Shipped order count
   customerCount:   count(Customer) where role = USER -- Customer count (administrators excluded)
+  liveOrders:      count(PurchaseOrder) where status in (PLACED, SHIPPED) -- Orders in a listed status: one added later is not counted until it is listed
+  otherOrders:     count(PurchaseOrder) where status not in (CANCELLED) -- Orders in any other status
+  finishedOrders:  count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- Finished orders
+  bigFinished:     count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 100 -- Finished orders over 100
+  unfinished:      count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- Orders not finished
+  buyers:          count(distinct PurchaseOrder.customerId) -- Customers who ordered
+  keptBuyers:      count(distinct PurchaseOrder.customerId) where status != CANCELLED -- Customers with an order not cancelled
 ```
 
 | How to write | Meaning | Ossie SQL |
 |---|---|---|
 | `sum(Entity.field)` / `avg` / `min` / `max` | Aggregate a field of one entity | `SUM(PurchaseOrder.total)` |
 | `count(Entity)` / `count(Entity.field)` | Number of rows / number of rows with a value | `COUNT(PurchaseOrder.order_id)` (the key column - so that BI tools know which dataset is counted) / `COUNT(PurchaseOrder.total)` |
-| `… where field != value and field >= value` | Condition (`=`, `!=`, `<`, `<=`, `>`, `>=`, `and`) | `SUM(CASE WHEN … THEN … END)` |
+| `count(distinct Entity.field)` | Number of different values, nulls not counted. `distinct` goes only with `count` and needs a field; `sum(distinct …)` is refused | `COUNT(DISTINCT Login.user_id)`, with `where` `COUNT(DISTINCT CASE WHEN … THEN Login.user_id END)` |
+| `… where field != value and field >= value` | Conditions (`=`, `!=`, `<`, `<=`, `>`, `>=`), joined with `and` | `SUM(CASE WHEN … THEN … END)` |
+| `… where field in (A, B)` / `not in (A, B)` | A list of values, each read as a single value is | `Offer.status IN ('PND', 'AWD')` |
+| `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`, with `and` binding tighter as in SQL. Parentheses group, and `not` goes before a parenthesis | `(… OR …) AND …`, `NOT (…)` |
 | Value | A number, `'text'` (a `'` inside is `''`), `true`/`false`, **an enum constant name** (converted to the stored value: the `@db` code `'CAN'`, the name if `@jpa:Enumerated(STRING)`, the ordinal `2` if neither) | |
 | `metricA / metricB` (`+ - * /`) | Calculate between metrics declared earlier. Division never divides by 0, and count / count gives a decimal | `(…) / NULLIF((…), 0)` |
 | `@terms(sales, 매출액)` | Business terms and synonyms | `ai_context.synonyms` |
@@ -594,9 +604,10 @@ metrics:
 
 - Data types: `count` is `Integer`, `sum`, `min` and `max` take the type of that field, `avg` and division are `Decimal` (`Float` for a `Float` field),
   `+ - *` is `Integer` if both are `Integer`, otherwise `Decimal`. `sum` and `avg` work only on numeric fields.
+- As in SQL, `!=` and `not in` do not count a row whose field is null.
 - If a line contains ` #` or `: `, YAML cuts the line or cannot read the file, so wrap the whole line in quotes:
   `ratio: "shippedOrders / orderCount -- Shipped ratio: shipped / total"`.
-- A line that cannot be read (an entity or field that does not exist, a constant the enum does not have, a metric declared later, an unquoted value on a field that is not an enum) is dropped at generation
+- A line that cannot be read (an entity or field that does not exist, a constant the enum does not have, a metric declared later, an unquoted value on a field that is not an enum, parentheses that do not balance, an empty `in ()`, an `or` or `and` with nothing on one side, `sum(distinct …)`) is dropped at generation
   with the warning `[ossie] [domain] metric name: … ; it is left out.` - it does not guess and export.
 - It counts **within one entity only**. A metric that needs a condition on another entity, such as "the quantity sold in orders that are not cancelled" (order line -> order status), cannot be
   written yet - if you force it, cancelled lines would be counted too, so do not add it.
