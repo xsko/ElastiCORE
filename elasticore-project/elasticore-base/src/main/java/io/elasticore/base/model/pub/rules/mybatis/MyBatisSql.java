@@ -620,6 +620,8 @@ public final class MyBatisSql {
     /** Whether a column keeps its value once written: @updatable(false), as JPA's @Column(updatable = false). */
     public static boolean updatable(FieldSpec f) {
         if ("false".equals(f.dslValue("updatable"))) return false;
+        // When a row was deleted is the delete's to write (SoftDelete).
+        if (f.hasDsl(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) return false;
         for (String line : f.nativeAnnotationLines()) {
             if (line.replace(" ", "").contains("updatable=false")) return false;
         }

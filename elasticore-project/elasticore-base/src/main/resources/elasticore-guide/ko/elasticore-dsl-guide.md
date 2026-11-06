@@ -474,7 +474,76 @@ HTTP/1.1 409
 - 루트에 불변식(`@invariant`, `@min` 등)이 있으면 JPA 가 클래스당 `@PreRemove` 하나만 허용하므로 검사가
   불변식 쪽 `markBeingRemoved()` 안에서 먼저 불립니다. 동작은 같습니다.
 
-#### 7. 빌드 경고 (생명주기가 빠지는 경우)
+#### 7. 상태에 들어간 시각 (`@stamp`)
+
+"언제 발송됐나", "언제 취소됐나" - 시간 필드에 상태 이름을 적으면, 행을 그 상태로 옮기는 명령이
+시각을 기록합니다. Since: 3.0 (3.0.261105-rc10 다음)
+
+```yaml
+    fields:
+      status:      ShipmentStatus
+      fee:         FeeStatus
+      sentAt:      timestamp @stamp(SENT)          # send 가 기록
+      cancelledAt: datetime @stamp(CANCELLED)
+      refundedOn:  date @stamp(fee.REFUNDED)       # 생명주기 필드 이름, 그다음 상태
+    states:
+      status:
+        initial: READY
+        send:    READY -> SENT
+        cancel:  READY -> CANCELLED
+      fee:
+        initial: DUE
+        pay:     DUE -> PAID
+        cancel:  PAID -> REFUNDED
+```
+
+생성 결과 (`ShipmentBase`, `elasticore-template-ddd` 에서):
+
+```java
+public void send() {
+    moveStatus("send", ShipmentStatus.SENT, ShipmentStatus.READY);
+    this.sentAt = java.time.Instant.now();
+    raiseSent();
+}
+
+public void cancel() {
+    requireStatus("cancel", ShipmentStatus.READY);
+    requireFee("cancel", FeeStatus.PAID);
+    this.status = ShipmentStatus.CANCELLED;
+    this.cancelledAt = java.time.LocalDateTime.now();
+    this.fee = FeeStatus.REFUNDED;
+    this.refundedOn = java.time.LocalDate.now();
+    raiseCancelled();
+    raiseRefunded();
+}
+```
+
+- **명령이 아니라 상태 기준**: 어느 명령으로 그 상태가 되든 기록합니다 (`close` 로 닫든 `cancel` 로 닫든 -
+  Kotlin 샘플 `ticket.yml`). 같은 상태에 다시 들어가면 새 시각으로 바뀝니다. 필드는 마지막에 들어간 시각입니다.
+- **어느 생명주기인가**: 그 상태를 가진 생명주기가 하나면 상태 이름만 씁니다. 둘이면(두 enum 에 모두 `CANCELLED`)
+  필드 이름을 앞에 씁니다: `@stamp(status.CANCELLED)`.
+- **상태 여러 개**: `@stamp(CANCELLED, LOST)` 는 둘 중 들어간 상태의 시각을 기록합니다.
+- **타입**: `timestamp` -> `Instant.now()`, `datetime` -> `LocalDateTime.now()`, `date` -> `LocalDate.now()`.
+- **읽기 전용**: 상태 필드처럼 요청으로 쓸 수 없습니다. 생성·수정 요청의 `"sentAt": "2000-01-01T00:00:00Z"` 는 무시되고,
+  TypeScript 필드 메타데이터도 `readOnly: true` 입니다.
+- **거절된 명령은 기록하지 않음**: 모든 검사를 통과한 뒤, 이동과 함께 씁니다.
+- JPA 와 MyBatis 모두 (`ddd-mybatis-springboot`, `hexagonal-mybatis-springboot`): 엔티티의 명령 안에 있는 줄이고,
+  어댑터의 UPDATE 가 저장합니다. Java 와 Kotlin.
+- 행을 만든 시각은 stamp 가 아닙니다: 시작 상태는 어떤 명령으로도 들어가지 않습니다. `createdAt: timestamp @default(now)` 를 쓰세요.
+- 생명주기의 나머지와 같이, 행위 클래스가 있는(나뉜) 루트에만 생성됩니다. `@editable` 루트에서는 경고가 나고
+  필드는 보통의(쓸 수 있는) 필드로 남습니다. layered 번들은 경고 `..., which the selected rules do not enforce`
+  에 `@stamp (ddd-state)` 를 적어 알립니다.
+- **상속 필드**: `@abstract` 부모의 `@stamp` 는 그 부모를 `@extend` 하는 나뉜 루트마다, 그 루트의 생명주기로 기록됩니다.
+- **쓸 수 없는 `@stamp` 는 빌드를 멈춥니다** (나뉜 루트에서, 아래 표). 이유도 함께 나옵니다: 필드가 생명주기의 것이라,
+  빼 버리면 아무것도 쓰지 않는 컬럼이 되기 때문입니다.
+
+| 쓰임 | YAML |
+|---|---|
+| 발송·배송 완료 시각 | `shippedAt: timestamp @stamp(SHIPPED)`, `deliveredAt: timestamp @stamp(DELIVERED)` |
+| 문서 결재일 | `approvedOn: date @stamp(APPROVED)` |
+| 어떻게 닫혔든 티켓이 닫힌 시각 | `closedAt: timestamp @stamp(CLOSED, CANCELLED)` |
+
+#### 8. 빌드 경고 (생명주기가 빠지는 경우)
 
 | 경고 | 원인 | 결과 |
 |---|---|---|
@@ -485,6 +554,11 @@ HTTP/1.1 409
 | `states.status.delete: '...' is not a list of states` | `delete:` 에 `->` 를 쓰거나 비움 | 삭제 검사 생략 |
 | `has @default and states.status.initial` | 상태 필드에 `@default` 도 있음 | `initial` 이 이김 |
 | `still has the stub that throws` | 예전에 만든 행위 클래스에 예외를 던지는 틀이 남아 이동을 덮음 | 틀을 지우세요 |
+| `@stamp names SENTT, which no lifecycle of Shipment has` | 엔티티의 어느 생명주기에도 없는 상태 (오타, 코드값) | **빌드 실패** |
+| `@stamp names CANCELLED, which status and fee both have` | 두 생명주기에 같은 상태가 있음 | **빌드 실패** - `@stamp(status.CANCELLED)` 로 쓰세요 |
+| `@stamp names READY, which no move of states.status enters` | 시작 상태뿐이거나 어떤 명령도 가지 않는 상태 | **빌드 실패** - 만든 시각은 `@default(now)` |
+| `@stamp is String, not a time` | 필드가 `date`, `datetime`, `timestamp` 가 아님 | **빌드 실패** |
+| `@stamp: written only for a root with a behaviour class` | `@editable` 루트 | 기록 안 함. 필드는 쓸 수 있는 채로 |
 
 경고는 `elcore3` 출력 끝의 `[elcore3] DSL validation warnings:` 아래에 모여 나옵니다. 빌드는 멈추지 않으므로
 생성 후 이 목록을 꼭 확인하세요. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
@@ -556,6 +630,8 @@ Item:
 | 필드 | `@role` | `@signin` 의 로그인이 세션에 넣는 역할 (없으면 `role` 필드). `@access(admin)` 인 enum·문자열만 - 아니면 역할 없이 로그인하고 DSL 경고 |
 | 필드 | `@snapshot(item.unitCost)` | 참조한 행의 값을 한 번 복사 |
 | 필드 | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | 저장할 때마다 계산 |
+| 필드 | `@stamp(SHIPPED)` | 생명주기가 그 상태에 마지막으로 들어간 시각 (`states:` 의 "상태에 들어간 시각") |
+| 필드 | `@deleted` | 삭제가 행을 남기고 여기에 시각을 씀. 어떤 조회도 다시 찾지 않음 (`elasticore-annotation-guide.md` 의 "@deleted") |
 
 상세: `elasticore-annotation-guide.md` 의 "@access / @owner", "@password / @login", "@snapshot / @compute".
 

@@ -2127,6 +2127,76 @@ PurchaseOrder:
 - `@compute` 는 저장할 때마다 다시 계산합니다. 피연산자 중 하나가 null 이면 결과도 null.
 - **`@formula` 와 다릅니다**: `@formula("...")` 는 DB 가 계산하는 Hibernate SQL 식입니다.
 
+## @deleted — 삭제해도 행을 남김 (v3)
+
+삭제가 행을 지우는 대신 **지운 시각**을 쓰고, API 의 어떤 조회도 그 행을 다시 찾지 않습니다. Since: 3.0 (3.0.261105-rc10 다음)
+
+```yaml
+Product:
+  meta: entity @root @editable @expose(20)
+  fields:
+    productId:      long @id @sequence
+    name:           string(30)!
+    discontinuedAt: timestamp @deleted     # 판매 중단: 상품 단위와 주문이 아직 가리키므로 남김
+```
+
+생성 결과 (펫스토어, JPA):
+
+```java
+@SQLDelete(sql = "UPDATE ps_product SET discontinued_at = CURRENT_TIMESTAMP WHERE product_id = ? AND discontinued_at IS NULL")
+public class Product implements java.io.Serializable {
+    @Column(name = "discontinued_at", insertable = false, updatable = false)
+    private Instant discontinuedAt;
+```
+
+```java
+public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
+    @Override
+    @Query("SELECT e FROM Product e WHERE e.productId = :id AND e.discontinuedAt IS NULL")
+    java.util.Optional<Product> findById(@Param("id") Long id);
+    // existsById, findAll(), findAll(Sort), findAll(Pageable), count() 도 같은 방식
+```
+
+검색의 `toSpec` 은 `sp = sp.and((r,q,c) -> c.isNull(r.get("discontinuedAt")))` 로 끝납니다. `mode: mybatis` 에서는 매퍼가
+같은 일을 문장으로 합니다: `deleteById` 가 `UPDATE ... SET discontinued_at = CURRENT_TIMESTAMP WHERE ... AND discontinued_at IS NULL`
+이고, `findById`, `countById`, `findAll`, 검색에 `AND t.discontinued_at IS NULL` 이 붙습니다.
+
+| 무엇 | `@deleted` 이면 |
+|---|---|
+| `DELETE /{id}`, `POST /delete`, 조건 삭제 | 행은 남고 시각이 기록됨 (DB 의 `CURRENT_TIMESTAMP`). 다시 지워도 바뀌지 않음 |
+| `GET /{id}`, 검색, 건수 | 찾지 못함 (404, 페이지에 없음) |
+| 그 행을 가리키는 행 (`Item.product`) | 여전히 읽음 - 상품 단위는 상품 이름을 계속 보여 줌. 참조 검사(`reference.Item.product`)도 찾으므로 가리키는 행을 다시 저장할 수 있음 |
+| 그런 행의 컬렉션 (`Ticket.entries`) | 살아 있는 것만: 티켓에서 뺀 항목은 남지만 다시 나타나지 않음 |
+| 삭제 가드 (`states: delete:`), `@PreRemove`, 불변식 | 예전처럼 실행: 삭제는 여전히 JPA 의 remove (Hibernate `@SQLDelete`), 또는 MyBatis 어댑터의 `beforeDelete` |
+| 로그인 (`@login`, `authenticate`) | 지운 행은 더 이상 로그인하지 못함 |
+| 필드 | 읽기 전용: 요청(생성·수정의 `"discontinuedAt": "..."`)으로 쓸 수 없고, TypeScript 필드 메타데이터는 `readOnly: true`, 검색 DTO 에는 없음 |
+
+- **타입**: `timestamp` 또는 `datetime`. 엔티티마다 한 필드. `@abstract` 부모(`@extend`)에서 물려받아도 됩니다.
+- **멤버도 남겨야 합니다**: 삭제가 다른 행을 함께 아예 지우게 되면 - 애그리거트의 멤버, `@cascade` 나 `orphanRemoval` 인 관계 -
+  그 엔티티도 `@deleted` 여야 합니다. 아니면 빌드가 멈춥니다:
+  `Order @deleted keeps its rows, but a delete would remove lines (OrderLine) outright with it - mark that entity @deleted too.`
+  그러면 티켓을 지울 때 티켓과 그 항목이 함께 남습니다 (Kotlin 샘플 `ticket.yml`).
+- JPA (Java, Kotlin, Spring Boot 3.2 이상과 4) 와 MyBatis (layered, DDD, hexagonal). 펫스토어
+  (Hibernate 7), `elasticore-template-mybatis`, `elasticore-template-ddd-mybatis` (H2, Oracle, PostgreSQL, SQL Server),
+  `elasticore-template-kt` 에서 HTTP 와 테이블로 확인했습니다.
+
+**아직 지원하지 않는 것** (반쯤 되는 대신 알립니다):
+- Spring Boot 3 의 JPA 에서 `mapping: xml` - 빌드가 멈춥니다: Hibernate 6 은 orm.xml 의 `<sql-delete>` 를 읽기만 하고 적용하지 않습니다. Spring Boot 4
+  (Hibernate 7) 에서는 됩니다: orm.xml 을 Hibernate 스키마(`mapping-7.0`)로 쓰고 `<sql-delete>`, `<sql-restriction>` 을 넣습니다.
+- 지운 행 되살리기(복구)는 생성되지 않습니다. `UPDATE <테이블> SET <컬럼> = NULL WHERE <키> = ?` 를 선언 쿼리
+  (`repository.yml`)로 두면 됩니다.
+- 직접 선언한 쿼리(`repository.yml` 의 `@query` 나 파생 finder, dbms 포트, 네이티브 SQL)는 바뀌지 않습니다: 거기에 `<컬럼> IS NULL` 을 넣으세요.
+- unique 컬럼은 지운 행의 값을 그대로 가지므로 새 행이 그 값을 쓸 수 없습니다.
+- 복합 키, `@rollup` 엔티티, 단일 테이블 상속(`@discriminator`), 테이블을 가진 부모에서 물려받은 `@deleted` 는
+  빌드가 멈춥니다. JPA 에서 요청이 키를 주는 엔티티는 버전(`@jpa:Version`)이 있어야 합니다 - 없으면 빌드가 멈춥니다.
+- layered MyBatis 서비스는 수정할 때 컬렉션을 갈아 끼웁니다: 이때 `@deleted` 멤버의 예전 살아 있는 행은 아예 지워집니다.
+
+| 쓰임 | YAML |
+|---|---|
+| 주문이 아직 가리키는 판매 중단 상품 | `discontinuedAt: timestamp @deleted` |
+| 기록을 위해 남기는 탈퇴 회원 | `withdrawnAt: datetime @deleted` |
+| 상품이 아직 가리키는 폐지된 분류 | `retiredAt: datetime @deleted` |
+
 ## @event — 도메인 이벤트 (DDD 룰셋)
 
 애그리거트 루트에 **무슨 일이 일어날 수 있는지**를 선언합니다. `ddd-event` 규칙이

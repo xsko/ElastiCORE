@@ -353,6 +353,77 @@ abstract class DomainOnDatabase {
     }
 
     @Test
+    @DisplayName("@stamp: the command that enters a state writes when, through the adapter's UPDATE, and a request cannot")
+    void aLifecycleStampIsStored() throws Exception {
+        String sent = shipment("{\"carrier\":\"DHL\",\"sentAt\":\"2000-01-01T00:00:00Z\"}");
+        assertThat(blank(read("/api/v1/shop/shipment/" + sent), "sentAt")).as("a request does not write it").isTrue();
+        java.time.Instant before = java.time.Instant.now().minusSeconds(2);
+        assertThat(command(sent, "send")).isEqualTo(200);
+        JsonNode s = read("/api/v1/shop/shipment/" + sent);
+        assertThat(java.time.Instant.parse(s.path("sentAt").asText())).isAfter(before);
+        assertThat(blank(s, "cancelledAt")).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and sent_at is not null"
+                + " and cancelled_at is null", Long.class, sent)).isEqualTo(1L);
+
+        // One command, two lifecycles: each state it enters is stamped.
+        String cancelled = shipment("{\"carrier\":\"UPS\"}");
+        assertThat(command(cancelled, "pay")).isEqualTo(200);
+        assertThat(command(cancelled, "cancel")).isEqualTo(200);
+        JsonNode c = read("/api/v1/shop/shipment/" + cancelled);
+        assertThat(blank(c, "cancelledAt")).isFalse();
+        assertThat(java.time.LocalDate.parse(c.path("refundedOn").asText()))
+                .isBetween(java.time.LocalDate.now().minusDays(1), java.time.LocalDate.now());
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and cancelled_at is not null"
+                + " and refunded_on is not null and sent_at is null", Long.class, cancelled)).isEqualTo(1L);
+
+        // Refused: nothing moves, nothing is stamped.
+        String due = shipment("{\"carrier\":\"FedEx\"}");
+        assertThat(command(due, "cancel")).isEqualTo(409);
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and cancelled_at is null",
+                Long.class, due)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("@deleted: a delete keeps the row with its time, and no read of the API sees it again")
+    void aSoftDeleteKeepsTheRow() throws Exception {
+        String kept = shipment("{\"carrier\":\"SoftCo\",\"deletedAt\":\"2000-01-01T00:00:00Z\"}");
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and deleted_at is null",
+                Long.class, kept)).as("a request does not write it").isEqualTo(1L);
+        assertThat(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                "/api/v1/shop/shipment/" + kept)).andReturn().getResponse().getStatus()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where shipment_id = ? and deleted_at is not null"
+                + " and carrier = 'SoftCo'", Long.class, kept)).isEqualTo(1L);
+        assertThat(mvc.perform(get("/api/v1/shop/shipment/" + kept)).andReturn().getResponse().getStatus()).isEqualTo(404);
+        String found = mvc.perform(post("/api/v1/shop/shipment/search").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"carrier\":\"SoftCo\"}")).andReturn().getResponse().getContentAsString();
+        assertThat(json.readTree(found).path("content").size()).as(found).isZero();
+
+        // A delete by the list endpoint, and a second delete that finds nothing to delete.
+        String other = shipment("{\"carrier\":\"SoftCo\"}");
+        mvc.perform(post("/api/v1/shop/shipment/delete").contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"shipmentId\":\"" + other + "\"},{\"shipmentId\":\"" + kept + "\"}]"));
+        assertThat(jdbc.queryForObject("select count(*) from shop_shipment where carrier = 'SoftCo' and deleted_at is not null",
+                Long.class)).isEqualTo(2L);
+    }
+
+    private String shipment(String body) throws Exception {
+        String created = mvc.perform(post("/api/v1/shop/shipment").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn().getResponse().getContentAsString();
+        String id = json.readTree(created).path("shipmentId").asText();
+        assertThat(id).as(created).isNotEmpty();
+        return id;
+    }
+
+    private int command(String id, String name) throws Exception {
+        return mvc.perform(post("/api/v1/shop/shipment/" + id + "/" + name)).andReturn().getResponse().getStatus();
+    }
+
+    /** Not in the reply, or null: the reply leaves out what is empty. */
+    private static boolean blank(JsonNode node, String field) {
+        return node.path(field).isNull() || node.path(field).isMissingNode();
+    }
+
+    @Test
     @DisplayName("every value type survives the request, the column and the reply")
     void everyType() throws Exception {
         byte[] image = {1, 2, 3, (byte) 0xFF};

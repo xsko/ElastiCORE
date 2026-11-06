@@ -60,6 +60,7 @@ CREATE TABLE ps_product (
     name NVARCHAR(30) NOT NULL,
     description NVARCHAR(3000) NOT NULL,
     category_id BIGINT,
+    discontinued_at DATETIMEOFFSET(6),
     PRIMARY KEY (product_id)
 );
 

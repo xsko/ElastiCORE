@@ -264,6 +264,110 @@ public class OrmMappingTest {
                 "");
     }
 
+    /** An entity with Hibernate's soft-delete annotations on the class and a collection. */
+    private static String softDeleted(String classExtra) {
+        return String.join(
+                "\n",
+                "package com.acme.shop;",
+                "",
+                "import jakarta.persistence.Entity;",
+                "import jakarta.persistence.Id;",
+                "import jakarta.persistence.OneToMany;",
+                "import jakarta.persistence.Cacheable;",
+                "import org.hibernate.annotations.SQLDelete;",
+                "import org.hibernate.annotations.SQLRestriction;",
+                "import org.hibernate.annotations.DynamicUpdate;",
+                "import org.hibernate.annotations.Immutable;",
+                "import lombok.Getter;",
+                "",
+                "@Getter",
+                "@Entity",
+                classExtra,
+                "@DynamicUpdate",
+                "@SQLDelete(sql = \"UPDATE shop_order SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?\")",
+                "public class Order {",
+                "",
+                "\t@Id",
+                "\tprivate Long id;",
+                "",
+                "\t@OneToMany(mappedBy = \"order\")",
+                "\t@SQLRestriction(\"deleted_at IS NULL\")",
+                "\tprivate java.util.List<Line> lines;",
+                "}",
+                "");
+    }
+
+    private static String[] extractOnSpringBoot(String major, String source) {
+        String was = System.getProperty(io.elasticore.base.model.pub.rules.RulesConfig.PROP_SPRING_BOOT);
+        System.setProperty(io.elasticore.base.model.pub.rules.RulesConfig.PROP_SPRING_BOOT, major);
+        try {
+            OrmMapping m = new OrmMapping();
+            String java = m.extract(source, "com.acme.shop", "Order", false);
+            return new String[] {java, m.toXml(), String.join("\n", m.warnings())};
+        } finally {
+            if (was == null) System.clearProperty(io.elasticore.base.model.pub.rules.RulesConfig.PROP_SPRING_BOOT);
+            else System.setProperty(io.elasticore.base.model.pub.rules.RulesConfig.PROP_SPRING_BOOT, was);
+        }
+    }
+
+    @Test
+    public void onSpringBoot4TheSoftDeleteMovesIntoHibernatesSchema() {
+        String[] r = extractOnSpringBoot("4", softDeleted(""));
+        String java = r[0], xml = r[1], warned = r[2];
+        assertFalse(java.contains("SQLDelete"), java);
+        assertFalse(java.contains("SQLRestriction"), java);
+        assertFalse(java.contains("import org.hibernate.annotations.SQL"), java);
+        assertFalse(java.contains("DynamicUpdate"), java);
+        assertTrue(java.contains("@Getter"), java);
+        assertTrue(xml.contains("xmlns=\"" + OrmMapping.HIBERNATE_NS + "\""), xml);
+        assertTrue(xml.contains("version=\"7.0\""), xml);
+        assertTrue(
+                xml.contains(
+                        "<sql-delete>UPDATE shop_order SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?</sql-delete>"),
+                xml);
+        assertTrue(xml.contains("<sql-restriction>deleted_at IS NULL</sql-restriction>"), xml);
+        assertTrue(xml.indexOf("<one-to-many name=\"lines\"") < xml.indexOf("<sql-restriction>"), xml);
+        // Neither moved annotation, nor the dropped @DynamicUpdate, is reported.
+        assertFalse(warned.contains("SQLDelete"), warned);
+        assertFalse(warned.contains("SQLRestriction"), warned);
+        assertFalse(warned.contains("DynamicUpdate"), warned);
+        assertFalse(warned.contains("Getter"), warned);
+    }
+
+    @Test
+    public void onSpringBoot3TheSoftDeleteStaysOnTheClass() {
+        String[] r = extractOnSpringBoot("3", softDeleted(""));
+        String java = r[0], xml = r[1], warned = r[2];
+        assertTrue(java.contains("@SQLDelete("), java);
+        assertTrue(java.contains("@SQLRestriction(\"deleted_at IS NULL\")"), java);
+        assertTrue(java.contains("import org.hibernate.annotations.SQLDelete;"), java);
+        assertFalse(java.contains("DynamicUpdate"), java);
+        assertFalse(xml.contains(OrmMapping.HIBERNATE_NS), xml);
+        assertTrue(xml.contains(OrmMapping.NS), xml);
+        assertFalse(xml.contains("sql-delete"), xml);
+        assertFalse(xml.contains("sql-restriction"), xml);
+        assertTrue(warned.contains("Order: @SQLDelete is Hibernate's and stays on the class"), warned);
+        assertTrue(warned.contains("Order.lines: @SQLRestriction is Hibernate's and stays on the field"), warned);
+        assertFalse(warned.contains("DynamicUpdate"), warned);
+    }
+
+    @Test
+    public void onSpringBoot4OtherHibernateAnnotationsStayAndAreReported() {
+        // Another Hibernate annotation stays; the soft delete still moves.
+        String[] r = extractOnSpringBoot("4", softDeleted("@Immutable"));
+        assertTrue(r[0].contains("@Immutable"), r[0]);
+        assertTrue(r[2].contains("Order: @Immutable is Hibernate's and stays on the class"), r[2]);
+        assertFalse(r[2].contains("@SQLDelete"), r[2]);
+        assertTrue(r[1].contains("<sql-delete>"), r[1]);
+
+        // A JPA class annotation orm.xml cannot say keeps the class's mapping on it - the soft delete too.
+        String[] kept = extractOnSpringBoot("4", softDeleted("@Cacheable"));
+        assertTrue(kept[0].contains("@SQLDelete("), kept[0]);
+        assertTrue(kept[0].contains("@Entity"), kept[0]);
+        assertTrue(kept[2].contains("Order: @SQLDelete is Hibernate's and stays on the class"), kept[2]);
+        assertFalse(kept[1].contains("<sql-delete>"), kept[1]);
+    }
+
     @Test
     public void aRunOverOneDomainKeepsOnlyTheOtherDomainsClasses() {
         // The last whole run: shop's Order, Item and Coupon, billing's Invoice.

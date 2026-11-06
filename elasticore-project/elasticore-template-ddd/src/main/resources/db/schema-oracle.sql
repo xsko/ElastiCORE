@@ -213,6 +213,9 @@ CREATE TABLE shop_shipment (
     carrier VARCHAR2(30 CHAR),
     status VARCHAR2(3 CHAR),
     fee VARCHAR2(3 CHAR),
+    sent_at TIMESTAMP(6) WITH TIME ZONE,
+    cancelled_at TIMESTAMP(6),
+    refunded_on DATE,
     PRIMARY KEY (shipment_id)
 );
 

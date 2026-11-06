@@ -212,6 +212,7 @@ public final class RulesGenRunner {
         boolean access = selectsNamed("ServiceAccessRules");
         boolean states = selectsNamed("DddStateRules");
         boolean derive = selectsNamed("DddDeriveRules");
+        boolean keeps = selectsNamed("JpaEntityAnnotationRules") || selectsNamed("MyBatisMapperRules");
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         for (int i = 0; i < all.size(); i++) {
             Entity entity = all.get(i);
@@ -219,15 +220,23 @@ public final class RulesGenRunner {
             java.util.Map<String, io.elasticore.base.model.core.Annotation> meta = entity.getMetaInfo().getMetaAnnotationMap();
             boolean wantsAccess = meta != null && (meta.containsKey("access") || meta.containsKey("owner"));
             boolean wantsDerive = false;
+            boolean wantsStamp = false;
+            boolean wantsKept = false;
             ModelComponentItems<io.elasticore.base.model.entity.Field> fields = entity.getItems();
             for (int j = 0; fields != null && j < fields.size(); j++) {
                 io.elasticore.base.model.entity.Field f = fields.get(j);
                 if (f.hasAnnotation("password") || f.hasAnnotation("access")) wantsAccess = true;
                 if (f.hasAnnotation("snapshot") || f.hasAnnotation("compute")) wantsDerive = true;
+                if (f.hasAnnotation("stamp")) wantsStamp = true;
+                if (f.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) wantsKept = true;
             }
             String missing = null;
             if (wantsAccess && !access) missing = "@access, @owner and @password (jpa-service-access)";
-            else if (!entity.getStates().isEmpty() && !states) missing = "states: (ddd-state)";
+            else if (!entity.getStates().isEmpty() && !states)
+                missing = wantsStamp ? "states: and @stamp (ddd-state)" : "states: (ddd-state)";
+            else if (wantsStamp && !states) missing = "@stamp (ddd-state)";
+            // The 2.x-compatible bundle writes no delete that keeps the row: a delete would remove it.
+            else if (wantsKept && !keeps) missing = "@deleted (jpa-entity-annotations or mode: mybatis)";
             else if (wantsDerive && !derive) missing = "@snapshot and @compute (ddd-derive)";
             if (missing != null) {
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
@@ -3174,14 +3183,15 @@ public final class RulesGenRunner {
         // missing and never written into the developer's file: comparing it
         // too made the file differ on every run, and writing it put a second
         // copy beside one the developer had already added.
-        java.util.List<String> expected = managedOnly(would);
+        boolean deletes = writesDelete(would);
+        java.util.List<String> expected = managedOnly(would, deletes);
         // Compared as written: a name in full (@org.jmolecules.ddd.annotation.Entity)
         // is not the same annotation as another of its simple name (@Entity).
         java.util.Set<String> haveNames = new java.util.HashSet<String>();
         for (String h : have) haveNames.add(annotationToken(h));
         java.util.List<String> notCarried = new java.util.ArrayList<String>();
         for (String w : would) {
-            if (!MANAGED_CLASS_ANNOTATIONS.contains(annotationName(w)) && !haveNames.contains(annotationToken(w))) {
+            if (!managed(w, deletes) && !haveNames.contains(annotationToken(w))) {
                 notCarried.add(w);
             }
         }
@@ -3197,7 +3207,7 @@ public final class RulesGenRunner {
         // Compared as sorted lists rather than sets: a repeated line is a
         // difference - an annotation written twice does not compile.
         java.util.List<String> want = new java.util.ArrayList<String>(expected);
-        java.util.List<String> got = new java.util.ArrayList<String>(managedOnly(have));
+        java.util.List<String> got = new java.util.ArrayList<String>(managedOnly(have, deletes));
         java.util.Collections.sort(want);
         java.util.Collections.sort(got);
         if (want.equals(got)) return;
@@ -3232,6 +3242,22 @@ public final class RulesGenRunner {
                     "Audited", "Inheritance", "DiscriminatorColumn", "DiscriminatorValue", "IdClass",
                     "PersistentModel"));
 
+    /**
+     * Whether the generator keeps this class annotation in line. @SQLDelete only
+     * where it writes one (@deleted): one the developer wrote by hand is theirs.
+     */
+    private static boolean managed(String line, boolean writesDelete) {
+        String name = annotationName(line);
+        return MANAGED_CLASS_ANNOTATIONS.contains(name) || (writesDelete && "SQLDelete".equals(name));
+    }
+
+    private static boolean writesDelete(java.util.List<String> would) {
+        for (String w : would) {
+            if ("SQLDelete".equals(annotationName(w))) return true;
+        }
+        return false;
+    }
+
     /** The annotation's name as written, qualified or not: "AggregateRoot", "org.jmolecules.ddd.annotation.Entity". */
     private static String annotationToken(String line) {
         String t = line.trim();
@@ -3250,10 +3276,10 @@ public final class RulesGenRunner {
         return name.substring(name.lastIndexOf('.') + 1);
     }
 
-    private static java.util.List<String> managedOnly(java.util.List<String> lines) {
+    private static java.util.List<String> managedOnly(java.util.List<String> lines, boolean writesDelete) {
         java.util.List<String> out = new java.util.ArrayList<String>();
         for (String l : lines) {
-            if (MANAGED_CLASS_ANNOTATIONS.contains(annotationName(l))) out.add(l);
+            if (managed(l, writesDelete)) out.add(l);
         }
         return out;
     }
@@ -3288,7 +3314,7 @@ public final class RulesGenRunner {
             int open = t.length() - t.replace("(", "").length();
             int close = t.length() - t.replace(")", "").length();
             if (!t.startsWith("@") || open != close) return null;
-            if (!MANAGED_CLASS_ANNOTATIONS.contains(annotationName(t))) kept.add(lines[i]);
+            if (!managed(t, wouldWrite.contains("@SQLDelete("))) kept.add(lines[i]);
         }
         StringBuilder sb = new StringBuilder();
         java.util.Set<String> haveImports = new java.util.HashSet<String>();

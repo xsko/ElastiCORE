@@ -122,7 +122,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-behavior` | O | O | - | `XxxBase`(재생성) + `Xxx`(개발자 소유) 로 분리 |
 | `ddd-command` | O | O | - | `commands:` -> 엔드포인트·명령 DTO·유스케이스·서비스·추상 메서드 |
 | `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
-| `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값. TS 는 `canShip(dto)` |
+| `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값·`@stamp` 시각. TS 는 `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
 | `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |

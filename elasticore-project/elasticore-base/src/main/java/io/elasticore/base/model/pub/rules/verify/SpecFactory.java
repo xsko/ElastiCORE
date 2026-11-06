@@ -336,6 +336,7 @@ public final class SpecFactory {
 
         spec.containedIn(aggregateOf(name, model));
         teachAggregates(spec, model);
+        teachSoftDeletes(spec, model);
         for (java.util.Map.Entry<String, java.util.Map<String, String>> machine : entity.getStates().entrySet()) {
             spec.addStateMachine(machine.getKey(), machine.getValue());
         }
@@ -520,6 +521,43 @@ public final class SpecFactory {
      * the two disagree about - whether views are on, whether the search
      * derives a condition per field - and 2.x asks the DTO in every case.
      */
+    /**
+     * The entity's @deleted field, its own or a parent's (@extend), or null.
+     * The entity's own spec checks it (SoftDelete); a DTO only needs its name.
+     */
+    static Field deletedFieldOf(Entity entity, ECoreModel model) {
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        for (Entity at = entity; at != null && seen.add(at.getIdentity().getName()); ) {
+            ModelComponentItems<Field> items = at.getItems();
+            for (int i = 0; items != null && i < items.size(); i++) {
+                if (items.get(i).hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) {
+                    return items.get(i);
+                }
+            }
+            String parent = at.getMetaInfo().getMetaAnnotationValue("extend");
+            at = parent == null || parent.isEmpty()
+                    ? null
+                    : model.getEntityModels().findByName(parent);
+        }
+        return null;
+    }
+
+    /**
+     * The model's entities whose rows a delete keeps, with their column -
+     * for a rule about a relation to one (a collection of them leaves the
+     * deleted out; a delete that would remove them outright is refused).
+     */
+    static void teachSoftDeletes(EntitySpec spec, ECoreModel model) {
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity entity = all.get(i);
+            if (entity.getMetaInfo().hasMetaAnnotation("abstract")
+                    || entity.getMetaInfo().hasMetaAnnotation("embeddable")) continue;
+            Field deleted = deletedFieldOf(entity, model);
+            if (deleted != null) spec.knownSoftDeleted(entity.getIdentity().getName(), spec.columnOf(deleted));
+        }
+    }
+
     public static EntitySpec fromDto(io.elasticore.base.model.dto.DataTransfer dto,
                                      ECoreModel model, String domainDirName) {
         // A relation the DSL deferred is resolved before the field list is
@@ -540,6 +578,7 @@ public final class SpecFactory {
         // spec would see every one of them as a root.
         if (entityName != null) spec.containedIn(aggregateOf(entityName, model));
         teachAggregates(spec, model);
+        teachSoftDeletes(spec, model);
 
         // Sibling entities and the domain's enums and embeddables: the same
         // model knowledge an entity spec carries, since the DTO's fields are
@@ -557,6 +596,8 @@ public final class SpecFactory {
         if (entity != null) {
             String parent = entity.getMetaInfo().getMetaAnnotationValue("extend");
             if (parent != null && !parent.isEmpty()) spec.parent(parent);
+            Field deleted = deletedFieldOf(entity, model);
+            spec.softDeleteField(deleted == null ? null : deleted.getName());
         }
 
         // The DTO's own fields, expanded: what @template brought in, minus

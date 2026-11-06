@@ -135,6 +135,15 @@
                 <column length="3"/>
                 <convert converter="io.elasticore.sample.ddd.shop.infrastructure.persistence.FeeStatusConverter"/>
             </basic>
+            <basic name="sentAt">
+                <column name="sent_at"/>
+            </basic>
+            <basic name="cancelledAt">
+                <column name="cancelled_at"/>
+            </basic>
+            <basic name="refundedOn">
+                <column name="refunded_on"/>
+            </basic>
             <transient name="domainEvents"/>
             <transient name="settled"/>
         </attributes>

@@ -18,6 +18,7 @@ entity:
       name: string(50)! @search(like)
       slug: string(30) @search(_%)
       parent: Category @ManyToOne @search(eq)
+      retiredAt: datetime @deleted   # a delete keeps the row: products and child categories still name it
 
   # A key the service makes (@genid), not the database.
   Product:

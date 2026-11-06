@@ -623,20 +623,40 @@ public class ServiceAccessRules implements CodeRules {
         String query = orDefault(c.varValue("qryRef"), "repository");
         String mapper = orDefault(c.varValue("mapperName"), e.domainClassName() + "Mapper");
 
+        // @deleted: a deleted row signs in no more (the MyBatis findAllByLogin says the same).
+        FieldSpec deleted = SoftDelete.field(e);
+        boolean kept = SoftDelete.applies(e);
         StringBuilder m = new StringBuilder();
         m.append("    /** The ").append(entity).append(" this ").append(loginName).append(" and password belong to, or empty. */\n");
         if (kt) {
-            m.append("    open fun authenticate(").append(loginName).append(": String?, password: String?): Optional<").append(dto).append("> {\n")
-             .append("        if (").append(loginName).append(" == null || password == null) return Optional.empty()\n")
-             .append("        val found = ").append(query).append(".findAll(Specification<").append(entity).append("> { r, _, cb -> cb.equal(r.get<Any>(\"")
-             .append(loginName).append("\"), ").append(loginName).append(") })\n")
-             .append("        if (found.size != 1) {\n")
-             .append("            passwordHasher.hash(password)\n")
-             .append("            return Optional.empty()\n")
-             .append("        }\n")
-             .append("        if (!passwordHasher.matches(password, found[0].").append(password.name()).append(")) return Optional.empty()\n")
-             .append("        return Optional.ofNullable(").append(mapper).append(".toDTO(found[0]))\n")
-             .append("    }");
+            String byLogin = "cb.equal(r.get<Any>(\"" + loginName + "\"), " + loginName + ")";
+            if (kept) byLogin = "cb.and(" + byLogin + ", cb.isNull(r.get<Any>(\"" + deleted.name() + "\")))";
+            m.append("    open fun authenticate(")
+                    .append(loginName)
+                    .append(": String?, password: String?): Optional<")
+                    .append(dto)
+                    .append("> {\n")
+                    .append("        if (")
+                    .append(loginName)
+                    .append(" == null || password == null) return Optional.empty()\n")
+                    .append("        val found = ")
+                    .append(query)
+                    .append(".findAll(Specification<")
+                    .append(entity)
+                    .append("> { r, _, cb -> ")
+                    .append(byLogin)
+                    .append(" })\n")
+                    .append("        if (found.size != 1) {\n")
+                    .append("            passwordHasher.hash(password)\n")
+                    .append("            return Optional.empty()\n")
+                    .append("        }\n")
+                    .append("        if (!passwordHasher.matches(password, found[0].")
+                    .append(password.name())
+                    .append(")) return Optional.empty()\n")
+                    .append("        return Optional.ofNullable(")
+                    .append(mapper)
+                    .append(".toDTO(found[0]))\n")
+                    .append("    }");
         } else {
             m.append("    public Optional<").append(dto).append("> authenticate(String ").append(loginName).append(", String password) {\n")
              .append("        if (").append(loginName).append(" == null || password == null) return Optional.empty();\n")
@@ -644,8 +664,13 @@ public class ServiceAccessRules implements CodeRules {
             if ("mybatis".equals(c.varValue("persistence"))) {
                 m.append(".findAllByLogin(").append(loginName).append(");\n");
             } else {
-                m.append(".findAll((Specification<").append(entity).append(">) (r, q, cb) -> cb.equal(r.get(\"")
-                 .append(loginName).append("\"), ").append(loginName).append("));\n");
+                String byLogin = "cb.equal(r.get(\"" + loginName + "\"), " + loginName + ")";
+                if (kept) byLogin = "cb.and(" + byLogin + ", cb.isNull(r.get(\"" + deleted.name() + "\")))";
+                m.append(".findAll((Specification<")
+                        .append(entity)
+                        .append(">) (r, q, cb) -> ")
+                        .append(byLogin)
+                        .append(");\n");
             }
             m
              .append("        if (found.size() != 1) {\n")

@@ -73,6 +73,14 @@ public class EntityModelLoader extends AbstractModelLoader implements ConstantPa
         if (fields != null)
             fieldItems = parseField(fields, entityNm ,metaInfo);
 
+        // When a row was deleted (@deleted) is the delete's to write, never a request's.
+        if (fieldItems != null) {
+            for (Field f : fieldItems.getItemList()) {
+                if (f.hasAnnotation("deleted") && !f.hasAnnotation("readonly")) {
+                    f.getAnnotationMap().put("readonly", Annotation.create("readonly"));
+                }
+            }
+        }
         Entity entity = Entity.create(ctx.getDomainId(), entityNm, metaInfo, fieldItems);
         Map<String, Items<Field>> commands = parseCommands(entityNm, entityMap.get(PROPERTY_COMMANDS), metaInfo);
         Map<String, Map<String, String>> states = parseStates(entityMap.get(PROPERTY_STATES));
