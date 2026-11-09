@@ -67,7 +67,8 @@ public class DtoBaseRules implements CodeRules {
         String ref = f.dslValue("ref");
         int dot = ref.indexOf('.');
         String flattened = ref.substring(0, dot) + Character.toUpperCase(ref.charAt(dot + 1)) + ref.substring(dot + 2);
-        if (!f.name().equals(identity.name()) && !f.name().equals(flattened)) {
+        // A field under the identity's own name is the identity: a DTO has one field of a name.
+        if (!f.name().equals(flattened)) {
             io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                     "[%s] %s.%s @ref(%s) is the key the reference by id already holds, so the DTO has it as %s"
                             + " and has no %s - a request that sends %s is not read. Name the field %s, or"

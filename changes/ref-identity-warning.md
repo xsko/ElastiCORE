@@ -16,9 +16,13 @@
   for itself (`departmentDepartmentId`), say nothing. The identity is found by `SearchDtoBaseRules.identityOfReference`,
   which `flattensAReferenceById` (the DTO, the search DTO and the mapper) now reads too, so the warning and the
   removal cannot disagree. Only the DDD bundles write the identity (`@idof`), so the 2.x output is untouched.
-- Checked: `SelfReferenceByIdTest.aRefDeclaredUnderAnotherNameIsSaid` - over the hexagonal run, the warning is printed
+- Checked: `ReferenceOnceTest` runs the rule on a DTO: a key under a name of its own is left out and said once,
+  with the sentence above; under the identity's name, or as the relation's flattened key (`departmentDepartmentId`
+  beside `departmentId`), nothing is said; a `@ref` to another field, to the relation itself, two levels deep or to
+  a relation with no identity stays as declared.
+  `SelfReferenceByIdTest.aRefDeclaredUnderAnotherNameIsSaid` - over the hexagonal run, the warning is printed
   once for `SfCommentKeyedDTO.parentKey`, and not for `SfCommentSameNameDTO.parentCommentId`, for `SfTopicDTO`
   (`@objectref`, no identity) or for the DTOs the model does not declare. Without the change the run prints no
   such line.
-- Files: `DtoBaseRules.java`, `SearchDtoBaseRules.java`, `SelfReferenceByIdTest.java`, `elasticore-rule-guide.md`
+- Files: `DtoBaseRules.java`, `SearchDtoBaseRules.java`, `ReferenceOnceTest.java`, `SelfReferenceByIdTest.java`, `elasticore-rule-guide.md`
   "Refer to another aggregate by ID" (en, ko)
