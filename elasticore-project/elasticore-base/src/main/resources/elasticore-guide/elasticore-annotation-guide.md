@@ -111,7 +111,7 @@ StatusCode:
 - Under `TABLE_PER_CLASS` the abstract class has no table, each subclass's table has its columns, and a relation to it has no foreign key, as its rows are in several tables. A key must be unique across all the subclass tables, and nothing in the database enforces that. Hibernate refuses an identity column there, so the key cannot be an identity: a plain `@sequence`, which means `IDENTITY`, stops generation, and `@sequence(SEQUENCE)` works.
 - A subclass, whose key is inherited, gets no repository or service of its own, and `@expose` or `@service` on it gets a warning: write its rows through a repository of your own.
 - Generation stops on a root without a key, and on `mode: mybatis`. The 2.x generator and `output = 'v2'` read it as plain `@abstract`. The Ossie export has no dataset for it, as for plain `@abstract`.
-- On Oracle 23 a boolean column, of a subclass as of any entity, fails `ddl-auto=validate`: the project DDL writes `NUMBER(1)`, and Hibernate expects `BOOLEAN` from that version.
+- On Oracle 23 a boolean column, of a subclass as of any entity, needs `ddl { oracleVersion = 23 }` in the build (env guide, 9-1): without it the project DDL writes `NUMBER(1)`, Hibernate expects `BOOLEAN` from that version, and `ddl-auto=validate` fails.
 - `@deleted` on the root (or on an `@abstract` frame it extends) keeps the rows of every subclass: see [@deleted in an `@abstract(entity)` hierarchy](#deleted-in-an-abstractentity-hierarchy).
 
 ### @extend(ParentEntity)

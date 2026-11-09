@@ -41,8 +41,24 @@ public enum Database {
     public static final int DEFAULT_PRECISION = 38;
     public static final int DEFAULT_SCALE = 2;
 
-    /** The column's type in this database's words. */
+    /**
+     * The first Oracle version with a BOOLEAN column, which Hibernate's OracleDialect maps a
+     * boolean to from then on (BIT, a NUMBER(1), below it).
+     */
+    public static final int ORACLE_BOOLEAN = 23;
+
+    /** The title of the database the DDL is for: on Oracle 23 or later, said as that. */
+    public String title(int oracleVersion) {
+        return this == ORACLE && oracleVersion >= ORACLE_BOOLEAN ? "Oracle " + ORACLE_BOOLEAN + " or later" : title;
+    }
+
+    /** The column's type in this database's words, for an Oracle below 23 or unsaid. */
     public String type(Column c) {
+        return type(c, 0);
+    }
+
+    /** The column's type in this database's words, for the Oracle version the DDL is for (0: unsaid). */
+    public String type(Column c, int oracleVersion) {
         int len = c.length > 0 ? c.length : DEFAULT_LENGTH;
         switch (c.type) {
             case TEXT:
@@ -72,7 +88,9 @@ public enum Database {
             case SMALLINT: return this == ORACLE ? "NUMBER(5)" : "SMALLINT";
             // SQL Server's TINYINT has no negative values; a Java byte has.
             case TINYINT: return this == ORACLE ? "NUMBER(3)" : this == H2 ? "TINYINT" : "SMALLINT";
-            case BOOLEAN: return this == ORACLE ? "NUMBER(1)" : this == SQLSERVER ? "BIT" : "BOOLEAN";
+            case BOOLEAN:
+                if (this == ORACLE) return oracleVersion >= ORACLE_BOOLEAN ? "BOOLEAN" : "NUMBER(1)";
+                return this == SQLSERVER ? "BIT" : "BOOLEAN";
             case DECIMAL: {
                 int p = c.precision > 0 ? c.precision : DEFAULT_PRECISION;
                 int s = c.precision > 0 ? Math.max(0, c.scale) : DEFAULT_SCALE;
@@ -94,9 +112,9 @@ public enum Database {
         }
     }
 
-    /** The column as a CREATE TABLE or ADD COLUMN declares it. */
-    public String declare(Column c) {
-        StringBuilder sb = new StringBuilder(c.name).append(' ').append(type(c));
+    /** The column as a CREATE TABLE or ADD COLUMN declares it, for the Oracle version the DDL is for. */
+    public String declare(Column c, int oracleVersion) {
+        StringBuilder sb = new StringBuilder(c.name).append(' ').append(type(c, oracleVersion));
         if (c.identity) sb.append(identity());
         if (!c.nullable) sb.append(" NOT NULL");
         return sb.toString();
@@ -113,11 +131,14 @@ public enum Database {
 
     // ---- what a migration changes -------------------------------------------
 
-    public String addColumn(String table, Column c) {
+    public String addColumn(String table, Column c, int oracleVersion) {
         switch (this) {
-            case ORACLE: return "ALTER TABLE " + table + " ADD (" + declare(c) + ")";
-            case SQLSERVER: return "ALTER TABLE " + table + " ADD " + declare(c);
-            default: return "ALTER TABLE " + table + " ADD COLUMN " + declare(c);
+            case ORACLE:
+                return "ALTER TABLE " + table + " ADD (" + declare(c, oracleVersion) + ")";
+            case SQLSERVER:
+                return "ALTER TABLE " + table + " ADD " + declare(c, oracleVersion);
+            default:
+                return "ALTER TABLE " + table + " ADD COLUMN " + declare(c, oracleVersion);
         }
     }
 
@@ -126,10 +147,11 @@ public enum Database {
     }
 
     /** The column's type changed; its nullability is restated where the database resets it (SQL Server). */
-    public String alterType(String table, Column c) {
+    public String alterType(String table, Column c, int oracleVersion) {
         switch (this) {
             case POSTGRESQL: return "ALTER TABLE " + table + " ALTER COLUMN " + c.name + " TYPE " + type(c);
-            case ORACLE: return "ALTER TABLE " + table + " MODIFY (" + c.name + " " + type(c) + ")";
+            case ORACLE:
+                return "ALTER TABLE " + table + " MODIFY (" + c.name + " " + type(c, oracleVersion) + ")";
             case SQLSERVER: return "ALTER TABLE " + table + " ALTER COLUMN " + c.name + " " + type(c) + (c.nullable ? " NULL" : " NOT NULL");
             default: return "ALTER TABLE " + table + " ALTER COLUMN " + c.name + " SET DATA TYPE " + type(c);
         }

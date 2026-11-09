@@ -360,6 +360,10 @@ datasets:
         expression:
           sql: "phase"
         datatype: String
+      - name: terminal
+        expression:
+          sql: "terminal"
+        datatype: Boolean
       - name: code
         expression:
           sql: "code"

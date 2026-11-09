@@ -33,9 +33,9 @@
   - The Ossie export has no dataset for the root, as for plain `@abstract`, which fits `TABLE_PER_CLASS`; a relation to
     the root is not exported either. Under `JOINED` a subclass's dataset claims the root's columns, so the export is not
     right for that strategy yet.
-  - On Oracle 23 a boolean column, of a subclass as of any entity, fails `ddl-auto=validate`: the project DDL writes
-    `NUMBER(1)` (`Database.java:75`), and Hibernate expects `BOOLEAN` from that version. The samples hold a string field
-    for this reason. It is not caused by this change.
+  - On Oracle 23 a boolean column, of a subclass as of any entity, needs `ddl { oracleVersion = 23 }`
+    (`oracle-version.md`): without it the project DDL writes `NUMBER(1)`, Hibernate expects `BOOLEAN` from that
+    version, and `ddl-auto=validate` fails. It is not caused by this change.
 - Checked: `AbstractEntityTest` - the entity, the repository and Q class, the service, the controller, the mapper, under
   `layered`, `hexagonal` and `ddd`; the hexagonal use case, the Kotlin service test, the TypeScript client, the schema
   under `TABLE_PER_CLASS` and `JOINED`, plain `@abstract` as it was, each refusal, the warning on a subclass and the

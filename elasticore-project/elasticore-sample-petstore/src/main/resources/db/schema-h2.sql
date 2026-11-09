@@ -147,6 +147,7 @@ CREATE TABLE ref_status_code (
     code VARCHAR(10) NOT NULL,
     name VARCHAR(50) NOT NULL,
     phase VARCHAR(10),
+    terminal BOOLEAN,
     PRIMARY KEY (code)
 );
 

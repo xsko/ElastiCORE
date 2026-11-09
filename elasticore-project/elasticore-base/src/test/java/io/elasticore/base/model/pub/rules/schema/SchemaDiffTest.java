@@ -261,11 +261,11 @@ public class SchemaDiffTest {
                 around.description);
         List<SchemaDiff.Change> one = Collections.singletonList(around);
         assertTrue(
-                SchemaDiff.render(one, Database.SQLSERVER, "t").contains("-- ALTER TABLE"),
-                SchemaDiff.render(one, Database.SQLSERVER, "t"));
+                SchemaDiff.render(one, Database.SQLSERVER, 0, "t").contains("-- ALTER TABLE"),
+                SchemaDiff.render(one, Database.SQLSERVER, 0, "t"));
         assertTrue(
-                SchemaDiff.render(one, Database.POSTGRESQL, "t").contains("\nALTER TABLE"),
-                SchemaDiff.render(one, Database.POSTGRESQL, "t"));
+                SchemaDiff.render(one, Database.POSTGRESQL, 0, "t").contains("\nALTER TABLE"),
+                SchemaDiff.render(one, Database.POSTGRESQL, 0, "t"));
 
         // The index itself changes: dropped and made again by that name, both wait.
         Schema moved = of(Column.of("code", ColumnType.TEXT).length(10).nullable(false));

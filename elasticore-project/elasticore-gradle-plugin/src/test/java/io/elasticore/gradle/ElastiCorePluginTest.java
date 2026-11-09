@@ -172,6 +172,22 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("the Oracle version the DDL is for is passed when said, and not otherwise")
+    public void theOracleVersionIsPassedWhenSaid() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { ddl { databases = ['oracle']; oracleVersion = 23 } }",
+                REPORTER);
+        assertTrue(reportOf(run("reportElcore")).contains("elasticore.ddl.oracleVersion=23"));
+
+        // Unset, as by default: the DDL is for an Oracle below 23.
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { ddl { databases = ['oracle'] } }", REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.ddl.oracleVersion"), reported);
+    }
+
+    @Test
     @DisplayName("the guides' language is passed, and only when one is given")
     public void theGuidesLanguageIsPassed() throws IOException {
         writeSettings("single");

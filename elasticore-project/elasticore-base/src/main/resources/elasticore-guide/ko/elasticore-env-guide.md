@@ -971,11 +971,14 @@ elasticore {
         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver (postgres, mssql 도 됨)
         migration = 'flyway'                   // 생략·none: 전체 스키마만
         comments = true                        // 각 컬럼의 라벨을 그 주석으로 (기본은 꺼짐)
+        oracleVersion = 23                     // 테이블이 도는 Oracle: 23 부터 boolean 은 BOOLEAN (미설정: NUMBER(1))
     }
 }
 ```
 
 **컬럼 주석** (`comments = true`): 각 컬럼의 라벨 - 필드의 `-- 라벨`, 엔티티에는 Hibernate 의 `@Comment` 로 실림 - 을 DB 에 알립니다: H2·PostgreSQL·Oracle 은 `COMMENT ON COLUMN`, SQL Server 는 `MS_Description` 속성. 도메인은 env.yml 의 `ddl.comments` 로 켜고 끕니다. 라벨이 바뀌면 그대로 실행되는 마이그레이션이 됩니다. 기본이 꺼짐인 것은, 주석 없이 쓰인 상태가 처음 켤 때 모든 라벨을 한 마이그레이션으로 받기 때문입니다. Oracle 이 담는 것(UTF-8 로 4000 바이트)이나 SQL Server(7500 바이트)보다 긴 라벨은 실행을 멈춥니다. 끄면 DB 에 이미 있는 주석은 그대로 남습니다 - 지우는 마이그레이션은 없습니다. 컬럼만입니다: 엔티티의 라벨은 쓰지 않습니다.
+
+**Oracle 버전** (`oracleVersion = 23`): Oracle 23 부터 boolean 은 그곳에서 `BOOLEAN` 컬럼입니다 - Hibernate 의 `OracleDialect` 가 그 버전부터 그렇게 매핑합니다. 23 에서 `NUMBER(1)` 이면 `ddl-auto=validate` 가 실패합니다(`found [number (Types#NUMERIC)], but expecting [boolean (Types#BOOLEAN)]`). 23 미만과, 설정하지 않았을 때(기본) boolean 은 `NUMBER(1)` 그대로라, 말하지 않는 프로젝트는 아무것도 바뀌지 않습니다. 테이블이 실제로 도는 Oracle 의 버전을 적습니다: 23 미만에는 `BOOLEAN` 타입이 없습니다. 바뀌는 것은 boolean 하나, Oracle 의 DDL 뿐이고, 프로젝트에 한 값입니다(도메인의 env.yml 은 바꾸지 않습니다). 스키마 파일은 그때 `for Oracle 23 or later` 라고 씁니다. 마이그레이션 상태가 이 값을 기록하므로, Oracle 테이블이 이미 있는 데서 켜면 Oracle 만의 **검토** 마이그레이션이 됩니다: Oracle 은 컬럼이 비어 있을 때만 타입을 바꾸므로(ORA-01439) boolean 컬럼마다 `BOOLEAN` 으로 새로 더하고, 값을 옮기고(1 은 TRUE, 0 은 FALSE, 빈 값은 빈 채로), 옛 컬럼을 지운 뒤 새 컬럼에 그 이름을 줍니다. 그 `NOT NULL`, 그 컬럼이 든 인덱스, 주석도 다시 만듭니다. 이미 있는 행 위에서 실행됩니다: 행을 확인하고 주석을 푸세요. MyBatis 도메인은 boolean 을 `jdbcType=BOOLEAN` 으로 묶고, Oracle 드라이버(ojdbc11 23)는 두 컬럼 어느 쪽에도 그대로 쓰고 읽습니다.
 
 **만들어지는 것** (`src/main/resources/`)
 
@@ -1013,6 +1016,7 @@ spring:
 | 필수 → 선택 | `DROP NOT NULL` |
 | 관계·`@unique`·`@Index` 추가/삭제 | 외래키·인덱스 추가/삭제 |
 | 필드·엔티티 삭제, 타입 변경·줄임, 선택 → 필수, 키 변경 | **검토**: 파일 끝에 주석으로 - 데이터를 잃거나 기존 행에서 실패할 수 있는 것 |
+| Oracle 테이블이 있는 데서 `oracleVersion` 을 23 이상으로 (또는 다시 해제) | Oracle 만, **검토**: boolean 컬럼마다 다른 타입의 새 컬럼으로 옮겨, 그 컬럼이 자리를 잇습니다 (위) |
 
 검토가 필요한 변경은 빌드 로그에 `REVIEW` 로도 나옵니다. 주석을 풀고(또는 데이터를 옮기는 SQL 을 더해) 커밋하세요.
 
@@ -1062,7 +1066,7 @@ config:
 `audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 쓰고, 빌드가 컴파일 전에 생성할 때(`generateBeforeCompile`, 기본 켬)만 `processResources` 전에도 씁니다.
 
 확인: ElastiCORE 의 JPA 샘플 넷(2.x·헥사고날·Kotlin·펫스토어)이 이 DDL 로 만든 테이블에서 Hibernate
-`ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·Oracle·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로
+`ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·`oracleVersion = 23` 의 Oracle 23·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로
 세 DB 에서 도는지, 변경 마이그레이션(ALTER)이 세 DB 에서 실행되는지 CI 가 매번 봅니다.
 
 **한계**: Oracle 에는 `TEXT` 가 없어, JPA 의 `columnDefinition = "TEXT"`(DSL `text`)는 Oracle 에서 CLOB 이 되고 Hibernate

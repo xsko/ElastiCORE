@@ -31,6 +31,9 @@ elasticore {
 	// by SchemaValidateTest with ddl-auto=validate.
 	ddl {
 		databases = ['h2', 'postgresql', 'oracle', 'sqlserver']
+		// The Oracle the CI job runs: a boolean is a BOOLEAN column there, as
+		// Hibernate maps it from 23 (StatusCode.terminal).
+		oracleVersion = 23
 	}
 }
 

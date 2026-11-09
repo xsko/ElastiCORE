@@ -16,6 +16,7 @@ import java.util.Locale;
  *         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver
  *         migration = 'flyway'                   // or none: the schema only
  *         comments = true                        // each column's label as its comment
+ *         oracleVersion = 23                     // the Oracle the tables are for: a boolean is BOOLEAN from 23
  *     }
  * }
  * </pre>
@@ -23,16 +24,18 @@ import java.util.Locale;
  * leave its tables out (a domain that reads tables another system owns), or
  * any of {@code ddl.databases}, {@code ddl.migration}, {@code ddl.comments},
  * and {@code ddl.separate: true} for a domain whose tables are in a database
- * of their own (its files under db/{domain}/).
+ * of their own (its files under db/{domain}/). The Oracle version is the
+ * project's alone.
  */
 public final class DdlConfig {
 
     public static final String DATABASES = "elasticore.ddl.databases";
     public static final String MIGRATION = "elasticore.ddl.migration";
     public static final String COMMENTS = "elasticore.ddl.comments";
+    public static final String ORACLE_VERSION = "elasticore.ddl.oracleVersion";
 
     /** Off: the DDL is not written for these tables. */
-    public static final DdlConfig OFF = new DdlConfig(Collections.<Database>emptyList(), false, false, false);
+    public static final DdlConfig OFF = new DdlConfig(Collections.<Database>emptyList(), false, false, false, 0);
 
     public final List<Database> databases;
     /** Whether the changes are written as Flyway migrations, with the state they build. */
@@ -41,12 +44,16 @@ public final class DdlConfig {
     public final boolean separate;
     /** Whether the DDL says what each column holds - its label - as a comment (ddl { comments = true }). */
     public final boolean comments;
+    /** The Oracle version the tables are for (ddl { oracleVersion = 23 }); 0 when unsaid, as below 23. */
+    public final int oracleVersion;
 
-    private DdlConfig(List<Database> databases, boolean migration, boolean separate, boolean comments) {
+    private DdlConfig(
+            List<Database> databases, boolean migration, boolean separate, boolean comments, int oracleVersion) {
         this.databases = Collections.unmodifiableList(databases);
         this.migration = migration;
         this.separate = separate;
         this.comments = comments;
+        this.oracleVersion = oracleVersion;
     }
 
     public boolean enabled() {
@@ -56,13 +63,16 @@ public final class DdlConfig {
     /** The project's DDL, from the build; OFF when it says none. */
     public static DdlConfig global() {
         List<Database> dbs = databases(System.getProperty(DATABASES));
-        if (dbs.isEmpty()) return OFF;
+        int oracleVersion = oracleVersion(System.getProperty(ORACLE_VERSION));
+        // Off, but still the Oracle a domain that switches its DDL on writes for.
+        if (dbs.isEmpty()) return oracleVersion == 0 ? OFF : new DdlConfig(dbs, false, false, false, oracleVersion);
         return new DdlConfig(
                 dbs,
                 flyway(System.getProperty(MIGRATION)),
                 false,
                 Boolean.parseBoolean(
-                        String.valueOf(System.getProperty(COMMENTS)).trim()));
+                        String.valueOf(System.getProperty(COMMENTS)).trim()),
+                oracleVersion);
     }
 
     /** A source of a domain's env.yml settings by dotted key. */
@@ -85,7 +95,7 @@ public final class DdlConfig {
         boolean separate = "true".equalsIgnoreCase(String.valueOf(env.get("ddl.separate")).trim());
         String c = env.get("ddl.comments");
         boolean comments = c != null ? "true".equalsIgnoreCase(c.trim()) : project.comments;
-        return new DdlConfig(new ArrayList<Database>(dbs), migration, separate, comments);
+        return new DdlConfig(new ArrayList<Database>(dbs), migration, separate, comments, project.oracleVersion);
     }
 
     /** "h2, oracle", "[postgresql, sqlserver]" - an unknown name stops the run. */
@@ -105,6 +115,19 @@ public final class DdlConfig {
             if (!out.contains(db)) out.add(db);
         }
         return out;
+    }
+
+    /** "23" - a major version, from 12 on; none said is 0. Anything else stops the run. */
+    static int oracleVersion(String text) {
+        if (text == null || text.trim().isEmpty()) return 0;
+        String t = text.trim();
+        int version = t.matches("\\d{1,4}") ? Integer.parseInt(t) : 0;
+        if (version < 12) {
+            throw new IllegalArgumentException(
+                    "ddl: oracleVersion = '" + text + "' - the major version of the Oracle the"
+                            + " tables are for, 12 or later (23 for BOOLEAN columns)");
+        }
+        return version;
     }
 
     static boolean flyway(String text) {

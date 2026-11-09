@@ -23,7 +23,7 @@ public final class SchemaWriter {
         for (Schema.Sequence s : schema.sequences()) sb.append(db.createSequence(s)).append(";\n");
         for (Table t : schema.tables()) {
             if (sb.length() > 0) sb.append("\n");
-            sb.append(createTable(t, db));
+            sb.append(createTable(t, db, schema.oracleVersion()));
             for (String comment : comments(t, db)) sb.append(comment).append(";\n");
         }
         StringBuilder keys = new StringBuilder();
@@ -60,8 +60,13 @@ public final class SchemaWriter {
     }
 
     public static String createTable(Table t, Database db) {
+        return createTable(t, db, 0);
+    }
+
+    /** The table's CREATE TABLE, for the Oracle version the DDL is for. */
+    public static String createTable(Table t, Database db, int oracleVersion) {
         List<String> lines = new ArrayList<String>();
-        for (Column c : t.columns()) lines.add(db.declare(c));
+        for (Column c : t.columns()) lines.add(db.declare(c, oracleVersion));
         if (!t.primaryKey().isEmpty()) lines.add("PRIMARY KEY (" + String.join(", ", t.primaryKey()) + ")");
         StringBuilder sb = new StringBuilder("CREATE TABLE ").append(t.name).append(" (\n");
         for (int i = 0; i < lines.size(); i++) {

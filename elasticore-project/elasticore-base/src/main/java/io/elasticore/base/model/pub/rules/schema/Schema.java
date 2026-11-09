@@ -40,6 +40,8 @@ public final class Schema {
      * None said: every database.
      */
     private final Set<String> takenOverOn = new LinkedHashSet<String>();
+    /** The Oracle version the tables are for (ddl { oracleVersion }); 0 when unsaid, as below 23. */
+    private int oracleVersion;
 
     /** Adds a table; one already there by the name stays and the new one's columns are added to it. */
     public Table table(Table t) {
@@ -87,6 +89,15 @@ public final class Schema {
 
     public Set<String> takenOverOn() {
         return takenOverOn;
+    }
+
+    public int oracleVersion() {
+        return oracleVersion;
+    }
+
+    public Schema oracleVersion(int version) {
+        this.oracleVersion = version;
+        return this;
     }
 
     /** Every key and index of the schema, as named by a history this state takes over. */
@@ -150,6 +161,8 @@ public final class Schema {
                 + " Commit it with them; the next change of the model is a migration from this.");
         ArrayNode dbs = root.putArray("databases");
         for (String d : databases) dbs.add(d);
+        // Only when said: a state of a history without it reads as it did.
+        if (oracleVersion > 0) root.put("oracleVersion", oracleVersion);
         if (!takenOver.isEmpty()) {
             // Only when there is one: a state of a history these migrations built reads as it did.
             ArrayNode to = root.putArray("takenOver");
@@ -224,6 +237,7 @@ public final class Schema {
             throw new IllegalArgumentException("The schema state is not JSON: " + e.getMessage(), e);
         }
         for (JsonNode d : root.path("databases")) s.databases.add(d.asText());
+        s.oracleVersion = root.path("oracleVersion").asInt(0);
         for (JsonNode n : root.path("takenOver")) s.takenOver.add(n.asText());
         for (JsonNode d : root.path("takenOverOn")) s.takenOverOn.add(d.asText());
         for (JsonNode tn : root.path("tables")) {

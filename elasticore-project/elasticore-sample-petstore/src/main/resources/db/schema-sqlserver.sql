@@ -147,6 +147,7 @@ CREATE TABLE ref_status_code (
     code NVARCHAR(10) NOT NULL,
     name NVARCHAR(50) NOT NULL,
     phase NVARCHAR(10),
+    terminal BIT,
     PRIMARY KEY (code)
 );
 

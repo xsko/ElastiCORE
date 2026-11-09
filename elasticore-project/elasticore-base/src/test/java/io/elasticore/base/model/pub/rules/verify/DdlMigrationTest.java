@@ -17,6 +17,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -41,6 +42,7 @@ public class DdlMigrationTest {
         DdlConfig.DATABASES,
         DdlConfig.MIGRATION,
         DdlConfig.COMMENTS,
+        DdlConfig.ORACLE_VERSION,
         "elasticore.ddl.now",
         "elasticore.architecture",
         "elasticore.language"
@@ -157,6 +159,53 @@ public class DdlMigrationTest {
             // The dropped column waits for review: it is still there.
             assertTrue(columnSize(md, "CUSTOMER", "NICKNAME") > 0);
         }
+    }
+
+    @Test
+    public void turningOracle23OnIsAMigrationOfOraclesBooleanColumnsAlone() throws Exception {
+        File project = project(V1.replace("      grade: int\n", "      grade: int\n      vip: boolean\n"));
+        System.setProperty(DdlConfig.DATABASES, "h2,oracle");
+        System.setProperty(DdlConfig.MIGRATION, "flyway");
+        System.setProperty("elasticore.ddl.now", "20260101000000");
+        run(project);
+        File migration = new File(project, "src/main/resources/db/migration");
+        assertTrue(read(new File(migration, "oracle/V20260101000000__init.sql")).contains("    vip NUMBER(1),\n"));
+        assertFalse(read(new File(migration, "schema-state.json")).contains("oracleVersion"));
+
+        System.setProperty(DdlConfig.ORACLE_VERSION, "23");
+        System.setProperty("elasticore.ddl.now", "20260102000000");
+        String log = run(project);
+        // A generated file, in the platform's line endings.
+        String schema = read(new File(project, "src/main/resources/db/schema-oracle.sql"))
+                .replace("\r\n", "\n");
+        assertTrue(schema.startsWith("-- The tables of the project, for Oracle 23 or later.\n"), schema);
+        assertTrue(schema.contains("    vip BOOLEAN,\n"), schema);
+        assertTrue(read(new File(migration, "schema-state.json")).contains("\"oracleVersion\" : 23"));
+        // Oracle changes the type of an empty column only: the values are copied, for review.
+        String[] oracle = new File(migration, "oracle").list();
+        assertEquals(2, oracle.length, Arrays.toString(oracle));
+        String change = read(new File(migration, "oracle/V20260102000000__change_customer.sql"));
+        assertTrue(
+                change.startsWith("-- The change of the project's model since the last migration, for Oracle 23 or"
+                        + " later.\n"),
+                change);
+        assertTrue(
+                change.contains(
+                        "-- ALTER TABLE customer ADD (vip_new BOOLEAN);\n-- UPDATE customer SET vip_new = vip;\n"
+                                + "-- ALTER TABLE customer DROP COLUMN vip;\n-- ALTER TABLE customer RENAME COLUMN vip_new TO vip;\n"),
+                change);
+        assertTrue(
+                log.contains("REVIEW src/main/resources/db/migration/oracle/V20260102000000: customer.vip: NUMBER(1)"
+                        + " -> BOOLEAN"),
+                log);
+        // H2 holds a boolean as it did: no migration in its history.
+        assertEquals(1, new File(migration, "h2").list().length);
+        assertFalse(log.contains("migration/h2/V20260102000000"), log);
+
+        // Built again: nothing more.
+        System.setProperty("elasticore.ddl.now", "20260103000000");
+        run(project);
+        assertEquals(2, new File(migration, "oracle").list().length);
     }
 
     @Test

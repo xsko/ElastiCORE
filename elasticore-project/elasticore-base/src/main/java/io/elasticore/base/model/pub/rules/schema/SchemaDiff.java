@@ -29,6 +29,9 @@ public final class SchemaDiff {
         /** The databases this change waits on for review although it runs as written elsewhere. */
         private final java.util.Set<Database> reviewOn = java.util.EnumSet.noneOf(Database.class);
 
+        /** The databases this change is for, when not every one: it is not in the others' migrations. */
+        private final java.util.Set<Database> only = java.util.EnumSet.noneOf(Database.class);
+
         Change(String description, boolean safe) {
             this.description = description;
             this.safe = safe;
@@ -41,6 +44,15 @@ public final class SchemaDiff {
         /** Whether the change runs as written on this database. */
         public boolean safeOn(Database db) {
             return safe && !reviewOn.contains(db);
+        }
+
+        void only(Database db) {
+            only.add(db);
+        }
+
+        /** Whether the change is for this database: every one's, unless it is for some only. */
+        public boolean on(Database db) {
+            return only.isEmpty() || only.contains(db);
         }
 
         Change sql(Database db, String statement) {
@@ -59,8 +71,16 @@ public final class SchemaDiff {
     private SchemaDiff() {
     }
 
+    /** The changes a database's migration holds: every one but those for other databases only. */
+    public static List<Change> on(List<Change> changes, Database db) {
+        List<Change> out = new ArrayList<Change>();
+        for (Change c : changes) if (c.on(db)) out.add(c);
+        return out;
+    }
+
     public static List<Change> between(Schema before, Schema after) {
         List<Change> out = new ArrayList<Change>();
+        int now = after.oracleVersion();
 
         for (Schema.Sequence s : after.sequences()) {
             Schema.Sequence was = null;
@@ -91,7 +111,7 @@ public final class SchemaDiff {
             added.add(t);
             Change c = new Change("table " + t.name, true);
             for (Database db : Database.values()) {
-                c.sql(db, SchemaWriter.createTable(t, db).trim().replaceAll(";$", ""));
+                c.sql(db, SchemaWriter.createTable(t, db, now).trim().replaceAll(";$", ""));
                 for (String comment : SchemaWriter.comments(t, db)) c.sql(db, comment);
             }
             out.add(c);
@@ -124,7 +144,13 @@ public final class SchemaDiff {
                     out.add(c);
                 }
             }
-            columns(old, t, out, sqlServer ? before.takenOver() : java.util.Collections.<String>emptySet());
+            columns(
+                    old,
+                    t,
+                    out,
+                    sqlServer ? before.takenOver() : java.util.Collections.<String>emptySet(),
+                    before.oracleVersion(),
+                    now);
             if (!old.primaryKey().equals(t.primaryKey())) {
                 out.add(new Change(String.format("the key of %s is now (%s), was (%s) - change it by hand",
                         t.name, String.join(", ", t.primaryKey()), String.join(", ", old.primaryKey())), false));
@@ -160,21 +186,22 @@ public final class SchemaDiff {
     /**
      * The changes of a table's columns. {@code takenOver}: the names SQL Server's
      * drop-and-make-again around an altered column must not trust - empty where
-     * the history is not for SQL Server.
+     * the history is not for SQL Server. {@code was}, {@code now}: the Oracle
+     * versions the state's tables and the model's are for.
      */
-    private static void columns(Table old, Table t, List<Change> out, Set<String> takenOver) {
+    private static void columns(Table old, Table t, List<Change> out, Set<String> takenOver, int was, int now) {
         for (Column c : t.columns()) {
             Column o = old.column(c.name);
             if (o == null) {
                 if (c.nullable || c.identity) {
                     Change ch = new Change("column " + t.name + "." + c.name, true);
-                    for (Database db : Database.values()) ch.sql(db, db.addColumn(t.name, c));
+                    for (Database db : Database.values()) ch.sql(db, db.addColumn(t.name, c, now));
                     comment(ch, t, null, c);
                     out.add(ch);
                 } else {
                     // NOT NULL on a table with rows needs a value first: added empty, closed by hand.
                     Change ch = new Change("column " + t.name + "." + c.name, true);
-                    for (Database db : Database.values()) ch.sql(db, db.addColumn(t.name, c.nullable(true)));
+                    for (Database db : Database.values()) ch.sql(db, db.addColumn(t.name, c.nullable(true), now));
                     comment(ch, t, null, c);
                     out.add(ch);
                     Change close = new Change(String.format("%s.%s is required: give the rows a value, then make it NOT NULL",
@@ -204,8 +231,10 @@ public final class SchemaDiff {
                 if (!around.isEmpty()) ch.reviewOn(Database.SQLSERVER);
                 // The type alone: a NOT NULL the change also brings is its own step (below), and a review one.
                 Column typed = c.nullable(o.nullable);
-                for (Database db : Database.values()) alterAround(ch, db, old, t, c, db.alterType(t.name, typed));
+                for (Database db : Database.values()) alterAround(ch, db, old, t, c, db.alterType(t.name, typed, now));
                 out.add(ch);
+            } else if (!Database.ORACLE.type(o, was).equals(Database.ORACLE.type(c, now))) {
+                out.add(oracleRetyped(old, t, o, was, now));
             }
             if (o.nullable != c.nullable && !keyColumn) {
                 Change ch = new Change(
@@ -238,6 +267,36 @@ public final class SchemaDiff {
             for (Database db : Database.values()) ch.sql(db, db.dropColumn(t.name, o.name));
             out.add(ch);
         }
+    }
+
+    /**
+     * A column whose type on Oracle is another for the version the DDL is now for - a boolean, BOOLEAN
+     * from 23 and NUMBER(1) below. Oracle changes the type of an empty column only (ORA-01439), so the
+     * values are copied into a new column, which takes the old one's place: its nullability, the indexes
+     * it was in and its comment are made again. A change of those in the same run is a change of its own.
+     */
+    private static Change oracleRetyped(Table old, Table t, Column o, int was, int now) {
+        Database oracle = Database.ORACLE;
+        Change ch = new Change(
+                String.format(
+                        "%s.%s: %s -> %s, the DDL being for %s now - on Oracle only; its values are"
+                                + " copied into a new column, which takes the old one's place",
+                        t.name, o.name, oracle.type(o, was), oracle.type(o, now), oracle.title(now)),
+                true);
+        ch.only(oracle);
+        ch.reviewOn(oracle);
+        String copy = o.name + "_new";
+        while (old.column(copy) != null) copy += "_";
+        ch.sql(oracle, oracle.addColumn(t.name, o.named(copy).nullable(true), now));
+        ch.sql(oracle, "UPDATE " + t.name + " SET " + copy + " = " + o.name);
+        ch.sql(oracle, oracle.dropColumn(t.name, o.name));
+        ch.sql(oracle, "ALTER TABLE " + t.name + " RENAME COLUMN " + copy + " TO " + o.name);
+        if (!o.nullable) ch.sql(oracle, oracle.alterNullable(t.name, o));
+        for (Table.Index i : old.indexes()) {
+            if (i.columns.contains(o.name) && t.indexes().contains(i)) ch.sql(oracle, oracle.createIndex(t, i));
+        }
+        if (old.comments() && o.comment != null) ch.sql(oracle, oracle.comment(t.name, o.name, o.comment));
+        return ch;
     }
 
     /** The statement that makes the column say what it now holds - none where nothing changes or comments are off. */
@@ -380,9 +439,13 @@ public final class SchemaDiff {
      * A migration's SQL for one database: what runs, then what waits for
      * review, as comments under a heading saying why.
      */
-    public static String render(List<Change> changes, Database db, String title) {
+    public static String render(List<Change> changes, Database db, int oracleVersion, String title) {
         StringBuilder sb = new StringBuilder();
-        sb.append("-- ").append(title).append(", for ").append(db.title).append(".\n");
+        sb.append("-- ")
+                .append(title)
+                .append(", for ")
+                .append(db.title(oracleVersion))
+                .append(".\n");
         sb.append("-- Written by ElastiCORE from the change of the model; yours from now on - it is never written again.\n");
         List<Change> review = new ArrayList<Change>();
         for (Change c : changes) if (!c.safeOn(db)) review.add(c);

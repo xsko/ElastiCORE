@@ -13,6 +13,7 @@ import org.gradle.api.provider.Property;
  *         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver
  *         migration = 'flyway'                   // none (the default): the schema only
  *         comments = true                        // each column's label as its comment (off by default)
+ *         oracleVersion = 23                     // the Oracle the tables are for (unset: below 23)
  *     }
  * }
  * </pre>
@@ -36,4 +37,12 @@ public abstract class DdlSpec {
      * every one of them in its next migration.
      */
     public abstract Property<Boolean> getComments();
+
+    /**
+     * The major version of the Oracle the tables are for. From 23 a boolean is
+     * a BOOLEAN column there, as Hibernate's OracleDialect maps it from that
+     * version; below it, and when unset, a NUMBER(1). The other databases'
+     * DDL is the same either way.
+     */
+    public abstract Property<Integer> getOracleVersion();
 }

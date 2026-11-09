@@ -291,6 +291,11 @@ public class ElastiCorePlugin implements Plugin<Project> {
         if (Boolean.TRUE.equals(extension.getDdl().getComments().getOrElse(false))) {
             task.systemProperty("elasticore.ddl.comments", "true");
         }
+        if (extension.getDdl().getOracleVersion().isPresent()) {
+            task.systemProperty(
+                    "elasticore.ddl.oracleVersion",
+                    String.valueOf(extension.getDdl().getOracleVersion().get()));
+        }
 
         // Once, to start the history over a Flyway history of the project's own: -PddlBaseline.
         passThrough(project, task, "ddlBaseline", "elasticore.ddl.baseline");

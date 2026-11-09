@@ -65,6 +65,17 @@ public class MigrationTest {
             run("sqlserver", Database.SQLSERVER);
         }
 
+        /** CI's Oracle is 23: the boolean columns of tables made below it become BOOLEAN ones, rows and all. */
+        @Test
+        @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_ORACLE_URL", matches = ".+")
+        public void oracle23BooleansOnOracle() throws Exception {
+            Map<String, String> p = TestDatabase.fresh("oracle", "booleans");
+            try (Connection c = DriverManager.getConnection(p.get("spring.datasource.url"),
+                    p.get("spring.datasource.username"), p.get("spring.datasource.password"))) {
+                MigrationRun.oracleBooleans(c);
+            }
+        }
+
         @Test
         @EnabledIfEnvironmentVariable(named = "ELASTICORE_IT_POSTGRESQL_URL", matches = ".+")
         public void commentsOnPostgreSql() throws Exception {

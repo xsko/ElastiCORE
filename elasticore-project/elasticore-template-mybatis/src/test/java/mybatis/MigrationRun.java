@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -83,7 +84,7 @@ final class MigrationRun {
         execute(c, SchemaWriter.body(first(), db));
         List<SchemaDiff.Change> changes = SchemaDiff.between(first(), second());
         for (SchemaDiff.Change ch : changes) assertTrue(ch.safe, ch.description + " should run as written");
-        execute(c, SchemaDiff.render(changes, db, "test"));
+        execute(c, SchemaDiff.render(changes, db, 0, "test"));
 
         DatabaseMetaData md = c.getMetaData();
         assertEquals(60, size(md, db, "mig_customer", "name"));
@@ -144,7 +145,7 @@ final class MigrationRun {
         Schema second = commented("the title", null, "the body", true);
         List<SchemaDiff.Change> changes = SchemaDiff.between(first, second);
         for (SchemaDiff.Change ch : changes) assertTrue(ch.safe, ch.description + " should run as written");
-        execute(c, SchemaDiff.render(changes, db, "test"));
+        execute(c, SchemaDiff.render(changes, db, 0, "test"));
         assertEquals("the title", comment(c, db, "mig_note", "title"));
         assertEquals(null, comment(c, db, "mig_note", "memo"));
         assertEquals("the body", comment(c, db, "mig_note", "body"));
@@ -153,13 +154,75 @@ final class MigrationRun {
         // Comments off, a change, and on again: the state holds none, the database still does. Each is
         // said as new, and runs whatever the database holds.
         Schema forgotten = commented(null, null, null, true);
-        execute(c, SchemaDiff.render(SchemaDiff.between(forgotten, commented("again", null, "the body", true)), db, "on"));
+        execute(c, SchemaDiff.render(SchemaDiff.between(forgotten, commented("again", null, "the body", true)), db, 0, "on"));
         assertEquals("again", comment(c, db, "mig_note", "title"));
         assertEquals("the body", comment(c, db, "mig_note", "body"));
         // A state that says memo has a comment the database does not: removing it runs all the same.
         Schema stale = commented("again", "a memo", "the body", true);
-        execute(c, SchemaDiff.render(SchemaDiff.between(stale, commented("again", null, "the body", true)), db, "drop"));
+        execute(c, SchemaDiff.render(SchemaDiff.between(stale, commented("again", null, "the body", true)), db, 0, "drop"));
         assertEquals(null, comment(c, db, "mig_note", "memo"));
+    }
+
+    /** Two boolean columns, one required, one indexed, for an Oracle below 23 (0) or from it. */
+    static Schema flags(int oracleVersion) {
+        Table t = new Table("mig_flag", "test");
+        t.column(Column.of("flag_id", ColumnType.BIGINT).nullable(false));
+        t.column(Column.of("active", ColumnType.BOOLEAN));
+        t.column(Column.of("shown", ColumnType.BOOLEAN).nullable(false));
+        t.primaryKey("flag_id");
+        t.index(new Table.Index("ix_mig_flag_active", Collections.singletonList("active"), false));
+        Schema s = new Schema().oracleVersion(oracleVersion);
+        s.table(t);
+        return s;
+    }
+
+    /**
+     * ddl { oracleVersion = 23 } turned on over Oracle tables made below it, with rows: the change
+     * is Oracle's alone and waits for review; run as written - uncommented - it makes BOOLEAN columns
+     * of the NUMBER(1) ones, which Oracle alters only when empty, and keeps their values, their
+     * nullability and their index.
+     */
+    static void oracleBooleans(Connection c) throws Exception {
+        execute(c, SchemaWriter.body(flags(0), Database.ORACLE));
+        try (Statement st = c.createStatement()) {
+            st.execute("INSERT INTO mig_flag (flag_id, active, shown) VALUES (1, 1, 1)");
+            st.execute("INSERT INTO mig_flag (flag_id, active, shown) VALUES (2, 0, 0)");
+            st.execute("INSERT INTO mig_flag (flag_id, active, shown) VALUES (3, NULL, 1)");
+        }
+        List<SchemaDiff.Change> changes = SchemaDiff.between(flags(0), flags(23));
+        assertEquals(2, changes.size(), changes.toString());
+        for (SchemaDiff.Change ch : changes) {
+            assertFalse(ch.safeOn(Database.ORACLE), ch.description + " should wait for review");
+            assertTrue(SchemaDiff.on(changes, Database.H2).isEmpty(), ch.description + " is for Oracle only");
+            try (Statement st = c.createStatement()) {
+                for (String s : ch.sql(Database.ORACLE)) st.execute(s);
+            }
+        }
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT column_name, data_type, nullable FROM user_tab_columns"
+                     + " WHERE table_name = 'MIG_FLAG' AND column_name IN ('ACTIVE', 'SHOWN') ORDER BY column_name")) {
+            assertTrue(rs.next());
+            assertEquals("ACTIVE BOOLEAN Y", rs.getString(1) + " " + rs.getString(2) + " " + rs.getString(3));
+            assertTrue(rs.next());
+            assertEquals("SHOWN BOOLEAN N", rs.getString(1) + " " + rs.getString(2) + " " + rs.getString(3));
+        }
+        StringBuilder rows = new StringBuilder();
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT flag_id, active, shown FROM mig_flag ORDER BY flag_id")) {
+            while (rs.next()) {
+                long id = rs.getLong(1);
+                boolean active = rs.getBoolean(2);
+                String said = rs.wasNull() ? "null" : String.valueOf(active);
+                rows.append(id).append(' ').append(said).append(' ').append(rs.getBoolean(3)).append("; ");
+            }
+        }
+        assertEquals("1 true true; 2 false false; 3 null true; ", rows.toString());
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM user_ind_columns"
+                     + " WHERE index_name = 'IX_MIG_FLAG_ACTIVE' AND column_name = 'ACTIVE'")) {
+            rs.next();
+            assertEquals(1, rs.getInt(1), "the index on active was made again");
+        }
     }
 
     /** A column's comment as the database keeps it, or null for none (Oracle keeps '' as none). */

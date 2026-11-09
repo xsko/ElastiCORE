@@ -971,11 +971,14 @@ elasticore {
         databases = ['postgresql', 'oracle']   // h2, postgresql, oracle, sqlserver (postgres, mssql also work)
         migration = 'flyway'                   // omitted or none: full schema only
         comments = true                        // each column's label as its comment (off by default)
+        oracleVersion = 23                     // the Oracle the tables are for: a boolean is BOOLEAN from 23 (unset: NUMBER(1))
     }
 }
 ```
 
 **Column comments** (`comments = true`): each column's label - the field's `-- label`, which the entity carries as Hibernate's `@Comment` - is said to the database: `COMMENT ON COLUMN` on H2, PostgreSQL and Oracle, the `MS_Description` property on SQL Server. A domain turns it on or off with `ddl.comments` in its env.yml. A label that changes is a migration that runs as written. Off by default, because a state written without comments gets every label in one migration the first time it is on. A label longer than Oracle keeps (4000 bytes in UTF-8) or SQL Server (7500 bytes) stops the run. Turning it off leaves the comments already in the database; no migration removes them. Columns only: an entity's label is not written.
+
+**The Oracle version** (`oracleVersion = 23`): from Oracle 23 a boolean is a `BOOLEAN` column there, as Hibernate's `OracleDialect` maps it from that version; with `NUMBER(1)` on 23, `ddl-auto=validate` fails (`found [number (Types#NUMERIC)], but expecting [boolean (Types#BOOLEAN)]`). Below 23, and when it is not set - the default - a boolean stays `NUMBER(1)`, so nothing changes for a project that does not say it. Set it to the Oracle the tables run on: below 23 there is no `BOOLEAN` type. It changes only the boolean and only Oracle's DDL, once for the project (a domain's env.yml does not change it), and the schema file then says `for Oracle 23 or later`. The migration state records it, so setting it over Oracle tables already there is a migration of Oracle's alone, for **review**: Oracle changes a column's type only while the column is empty (ORA-01439), so each boolean column is added again as `BOOLEAN`, its values copied (1 is TRUE, 0 FALSE, an empty one stays empty), the old column dropped and the new one given its name; its `NOT NULL`, the indexes it is in and its comment are made again. It runs on the rows already there: check them, then uncomment it. A MyBatis domain binds a boolean as `jdbcType=BOOLEAN`, which the Oracle driver (ojdbc11 23) writes and reads with either column.
 
 **What is produced** (`src/main/resources/`)
 
@@ -1013,6 +1016,7 @@ Dependencies: `spring-boot-starter-flyway` (Boot 4; for Boot 3 it is `org.flyway
 | Required -> optional | `DROP NOT NULL` |
 | Relation, `@unique`, `@Index` added/removed | Foreign key or index added/removed |
 | Field or entity removed, type changed or narrowed, optional -> required, key changed | **Review**: as a comment at the end of the file - what can lose data or fail on existing rows |
+| `oracleVersion` set to 23 or later (or unset again) over Oracle tables | Oracle only, **review**: each boolean column copied into a new one of the other type, which takes its place (above) |
 
 A change that needs review also appears in the build log as `REVIEW`. Uncomment it (or add SQL that moves the data) and commit.
 
@@ -1062,7 +1066,7 @@ reflect `@Size` and `@NotNull` too. It also writes the audit tables of Envers (`
 `audit_table_suffix` in `application.yml`. In a project that keeps 2.x code (`output = 'v2'`), the `elcoreDdl` task writes after `elcore`, and before `processResources` only when the build generates before it compiles (`generateBeforeCompile`, on by default).
 
 Verification: CI checks every time that the four JPA samples of ElastiCORE (2.x, hexagonal, Kotlin, pet store) start with Hibernate
-`ddl-auto=validate` on the tables created by this DDL (H2; the pet store also on PostgreSQL, Oracle and SQL Server), that the MyBatis pet store runs with Flyway on
+`ddl-auto=validate` on the tables created by this DDL (H2; the pet store also on PostgreSQL, Oracle 23 with `oracleVersion = 23`, and SQL Server), that the MyBatis pet store runs with Flyway on
 the three DBs, and that the change migrations (ALTER) run on the three DBs.
 
 **Limits**: Oracle has no `TEXT`, so for JPA `columnDefinition = "TEXT"` (DSL `text`) becomes CLOB on Oracle and Hibernate

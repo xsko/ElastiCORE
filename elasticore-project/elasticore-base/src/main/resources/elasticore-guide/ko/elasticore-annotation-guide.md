@@ -111,7 +111,7 @@ StatusCode:
 - `TABLE_PER_CLASS` 에서는 추상 클래스에 테이블이 없고, 각 하위 클래스의 테이블이 그 컬럼을 갖습니다. 행이 여러 테이블에 있으므로 이 루트를 가리키는 관계에는 외래키가 없습니다. 키는 모든 하위 테이블에 걸쳐 유일해야 하며, 데이터베이스가 이를 강제하지는 않습니다. Hibernate 가 여기서 identity 컬럼을 거부하므로 키를 identity 로 둘 수 없습니다. `IDENTITY` 를 뜻하는 `@sequence` 는 생성을 멈추고, `@sequence(SEQUENCE)` 는 동작합니다.
 - 키를 상속받는 하위 클래스에는 리포지토리와 서비스가 생기지 않고, 거기에 `@expose` 나 `@service` 를 적으면 경고가 나옵니다. 그 행은 직접 만든 리포지토리로 씁니다.
 - 키가 없는 루트와 `mode: mybatis` 는 생성을 멈춥니다. 2.x 생성기와 `output = 'v2'` 는 일반 `@abstract` 로 읽습니다. Ossie 내보내기에는 일반 `@abstract` 처럼 이 루트의 dataset 이 없습니다.
-- Oracle 23 에서는 하위 클래스를 포함해 어떤 엔티티든 boolean 컬럼이 있으면 `ddl-auto=validate` 가 실패합니다. 프로젝트 DDL 은 `NUMBER(1)` 을 쓰는데, Hibernate 는 이 버전부터 `BOOLEAN` 을 기대합니다.
+- Oracle 23 에서는 하위 클래스를 포함해 어떤 엔티티든 boolean 컬럼에 빌드의 `ddl { oracleVersion = 23 }` 이 필요합니다(env 가이드 9-1). 없으면 프로젝트 DDL 은 `NUMBER(1)` 을 쓰는데 Hibernate 는 이 버전부터 `BOOLEAN` 을 기대해서 `ddl-auto=validate` 가 실패합니다.
 - 루트(또는 루트가 확장하는 `@abstract` 틀)에 둔 `@deleted` 는 모든 하위 클래스의 행을 남깁니다: [@abstract(entity) 계층의 @deleted](#abstractentity-계층의-deleted) 를 보세요.
 
 ### @extend(ParentEntity)
