@@ -1064,6 +1064,8 @@ entities edited by the developer and hand-written entities (outbox etc.) are inc
 `field_targetKey`, join table `ownerTable_property`), types are Hibernate's choice, and length and NOT NULL
 reflect `@Size` and `@NotNull` too. It also writes the audit tables of Envers (`@Audited`), `revinfo` and `revinfo_seq`, and reads settings such as
 `audit_table_suffix` in `application.yml`. In a project that keeps 2.x code (`output = 'v2'`), the `elcoreDdl` task writes after `elcore`, and before `processResources` only when the build generates before it compiles (`generateBeforeCompile`, on by default).
+Since the tables are read from the generated sources, `elcoreDdl` run before the code is generated (a fresh checkout whose generated
+sources are git-ignored) stops the build and names the entities with no source, or with no column read - run `elcore3` (or `elcore`) first.
 
 Verification: CI checks every time that the four JPA samples of ElastiCORE (2.x, hexagonal, Kotlin, pet store) start with Hibernate
 `ddl-auto=validate` on the tables created by this DDL (H2; the pet store also on PostgreSQL, Oracle 23 with `oracleVersion = 23`, and SQL Server), that the MyBatis pet store runs with Flyway on

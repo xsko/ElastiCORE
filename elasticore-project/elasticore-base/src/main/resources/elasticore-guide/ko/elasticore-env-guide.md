@@ -1064,6 +1064,8 @@ config:
 `필드_대상키`, 조인 테이블 `소유테이블_속성`), 타입은 Hibernate 의 선택, 길이·NOT NULL 은 `@Size`·`@NotNull` 까지
 반영합니다. Envers(`@Audited`) 의 감사 테이블·`revinfo`·`revinfo_seq` 도 쓰며, `application.yml` 의
 `audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 쓰고, 빌드가 컴파일 전에 생성할 때(`generateBeforeCompile`, 기본 켬)만 `processResources` 전에도 씁니다.
+테이블을 생성된 소스에서 읽으므로, 코드를 생성하기 전에 `elcoreDdl` 을 돌리면(생성 소스를 git 에서 빼 둔 새 체크아웃) 빌드가
+멈추고 소스가 없거나 컬럼을 읽지 못한 엔티티를 알려 줍니다 - `elcore3`(또는 `elcore`)을 먼저 돌리십시오.
 
 확인: ElastiCORE 의 JPA 샘플 넷(2.x·헥사고날·Kotlin·펫스토어)이 이 DDL 로 만든 테이블에서 Hibernate
 `ddl-auto=validate` 로 기동하는지(H2, 펫스토어는 PostgreSQL·`oracleVersion = 23` 의 Oracle 23·SQL Server 에서도), MyBatis 펫스토어가 Flyway 로

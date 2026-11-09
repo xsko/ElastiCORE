@@ -48,13 +48,22 @@ final class DdlRun {
         /** A MyBatis domain's entities; null for a JPA one, whose tables are read off its entity package. */
         final List<EntitySpec> mybatis;
         final String entityPackage;
+        /** The model's entities, each with a source in the entity package once the code is generated. */
+        final List<String> entities;
 
-        Part(String domain, DdlConfig config, String root, List<EntitySpec> mybatis, String entityPackage) {
+        Part(
+                String domain,
+                DdlConfig config,
+                String root,
+                List<EntitySpec> mybatis,
+                String entityPackage,
+                List<String> entities) {
             this.domain = domain;
             this.config = config;
             this.root = root;
             this.mybatis = mybatis;
             this.entityPackage = entityPackage;
+            this.entities = entities;
         }
     }
 
@@ -202,6 +211,7 @@ final class DdlRun {
                 }
             }
             dropForeignKeysLeaving(schema, g);
+            if (!sourcesRead(schema, g)) continue;
             if (schema.isEmpty() || !commentsFit(schema, g)) continue;
             write(g, schema);
         }
@@ -221,6 +231,45 @@ final class DdlRun {
             if (c.comment != null) t.replace(c.comment(null));
         }
         return t;
+    }
+
+    /**
+     * A JPA domain's tables are read off its entity sources. Before the code is generated - elcoreDdl run
+     * first - an entity has no source, or only the class written by hand without its generated base, and
+     * its table would be left out or written with no column. That stops the run, naming them; nothing is
+     * written for the group.
+     */
+    private boolean sourcesRead(Schema schema, Group g) {
+        List<String> missing = new ArrayList<String>();
+        for (Part p : g.parts) {
+            // A MyBatis domain's tables come from its model, not from sources.
+            if (p.mybatis != null || p.entityPackage == null) continue;
+            String dir = p.entityPackage.replace('.', '/');
+            for (String name : p.entities) {
+                if (!hasSource(dir + "/" + name)) missing.add(p.domain + "." + name);
+            }
+        }
+        List<String> empty = new ArrayList<String>();
+        for (Table t : schema.tables()) if (t.columns().isEmpty()) empty.add(t.name + " (" + t.source + ")");
+        List<String> why = new ArrayList<String>();
+        if (!missing.isEmpty()) why.add("no source for " + String.join(", ", missing));
+        if (!empty.isEmpty()) why.add("no column read for " + String.join(", ", empty));
+        if (why.isEmpty()) return true;
+        problems.add(String.format(
+                "[elcore3] ddl: the tables are read off the generated entity sources, and %s - run elcore3 first;"
+                        + " nothing was written for %s",
+                String.join("; ", why), g.name));
+        return false;
+    }
+
+    /** Whether a class has a Java or Kotlin source under a source root of the run. */
+    private boolean hasSource(String path) {
+        for (File root : roots()) {
+            for (String ext : new String[] {".java", ".kt"}) {
+                if (new File(root, path + ext).isFile()) return true;
+            }
+        }
+        return false;
     }
 
     /** A comment longer than a database keeps stops the run, each one said; nothing is written for the group. */

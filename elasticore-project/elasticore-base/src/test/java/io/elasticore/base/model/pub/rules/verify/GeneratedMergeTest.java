@@ -815,6 +815,51 @@ public class GeneratedMergeTest {
         }
     }
 
+    /**
+     * elcoreDdl reads the tables off the generated entity sources. Run before them, it wrote tables
+     * with no column and said WROTE (#107); now it stops, naming what it could not read.
+     */
+    @Test
+    public void theDdlAloneBeforeTheCodeIsRefused() throws Exception {
+        System.setProperty("elasticore.architecture", "hexagonal");
+        File project = project(CUSTOMER + ORDER, "jpa", "");
+        System.setProperty("elasticore.ddl.databases", "h2");
+        System.setProperty("elasticore.ddl.only", "true");
+        String log = run(project, 1);
+        assertTrue(
+                log.contains("[elcore3] ddl: the tables are read off the generated entity sources, and no source for"
+                        + " dgshop.Customer, dgshop.PurchaseOrder - run elcore3 first; nothing was written for the"
+                        + " project"),
+                log);
+        assertNull(resource(project, "schema-h2.sql"), log);
+
+        // The class written once is there, its generated base is not: a table with no column.
+        System.clearProperty("elasticore.ddl.only");
+        run(project, 0);
+        Path schema = resource(project, "schema-h2.sql");
+        assertNotNull(schema);
+        String full = read(schema);
+        Files.delete(schema);
+        Files.delete(java(project, "PurchaseOrderBase.java"));
+        assertNotNull(java(project, "PurchaseOrder.java"));
+        System.setProperty("elasticore.ddl.only", "true");
+        log = run(project, 1);
+        assertTrue(
+                log.contains("[elcore3] ddl: the tables are read off the generated entity sources, and no column read"
+                        + " for purchase_order (io.acme.dgshop.entity.PurchaseOrder) - run elcore3 first; nothing was"
+                        + " written for the project"),
+                log);
+        assertNull(resource(project, "schema-h2.sql"), log);
+
+        // Generated again, the DDL alone writes what elcore3 wrote.
+        System.clearProperty("elasticore.ddl.only");
+        run(project, 0);
+        Files.delete(resource(project, "schema-h2.sql"));
+        System.setProperty("elasticore.ddl.only", "true");
+        run(project, 0);
+        assertEquals(full, read(resource(project, "schema-h2.sql")));
+    }
+
     @Test
     public void theOrmXmlIsMerged() throws Exception {
         File project = project(CUSTOMER + ORDER, "jpa", "    mapping: xml");

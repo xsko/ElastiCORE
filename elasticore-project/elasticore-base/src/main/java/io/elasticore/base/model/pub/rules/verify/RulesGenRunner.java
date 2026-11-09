@@ -2024,7 +2024,12 @@ public final class RulesGenRunner {
         io.elasticore.base.model.pub.rules.schema.DdlConfig ddl = ddlOf(model);
         boolean mybatis = RulesConfig.mybatis(model.getConfig("mode"));
         String root = domainRoot != null ? domainRoot : projectRoot;
-        ddlParts.add(new DdlRun.Part(domainDirName, ddl, root, mybatis ? specs : null, model.getNamespace("entity")));
+        List<String> entities = new ArrayList<String>();
+        ModelComponentItems<Entity> items = model.getEntityModels().getItems();
+        for (int i = 0; i < items.size(); i++)
+            entities.add(items.get(i).getIdentity().getName());
+        ddlParts.add(new DdlRun.Part(
+                domainDirName, ddl, root, mybatis ? specs : null, model.getNamespace("entity"), entities));
     }
 
     /** The project's DDL: run when every domain has been generated and the model check passed. */
