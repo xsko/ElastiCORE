@@ -53,10 +53,34 @@ public class DtoBaseRules implements CodeRules {
      * the relation and once as the identity a DDD reference wrote. The DTO
      * keeps the identity; with both, a request could set one and clear the
      * other, and which won depended on the order the mapper wrote them in.
+     *
+     * A field declared under a name of its own is said once: the API has the
+     * identity's name, so a client written from the model sends one nobody reads.
+     * The relation's flattened key (customerCustomerId) is the name the DTO
+     * itself adds for a relation, so it is not said.
      */
     @Rule(value = "dto-reference-once", target = "dto", order = 0)
     void referenceOnce(EntitySpec e, FieldSpec f) {
-        if (SearchDtoBaseRules.flattensAReferenceById(e, f)) ctx(e).removeField(f);
+        FieldSpec identity = SearchDtoBaseRules.identityOfReference(e, f);
+        if (identity == null) return;
+        ctx(e).removeField(f);
+        String ref = f.dslValue("ref");
+        int dot = ref.indexOf('.');
+        String flattened = ref.substring(0, dot) + Character.toUpperCase(ref.charAt(dot + 1)) + ref.substring(dot + 2);
+        if (!f.name().equals(identity.name()) && !f.name().equals(flattened)) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s @ref(%s) is the key the reference by id already holds, so the DTO has it as %s"
+                            + " and has no %s - a request that sends %s is not read. Name the field %s, or"
+                            + " drop it.",
+                    e.domainClassName(),
+                    e.dtoClassName(),
+                    f.name(),
+                    ref,
+                    identity.name(),
+                    f.name(),
+                    f.name(),
+                    identity.name()));
+        }
     }
 
     /**
