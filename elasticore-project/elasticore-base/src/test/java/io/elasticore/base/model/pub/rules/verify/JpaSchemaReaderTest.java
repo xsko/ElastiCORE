@@ -394,6 +394,97 @@ public class JpaSchemaReaderTest {
     }
 
     @Test
+    public void anOrmXmlNamesANestedConverterByItsBinaryName() throws Exception {
+        dir = Files.createTempDirectory("jpa-reader-orm");
+        // mapping: xml - the class says nothing of JPA; its orm.xml does.
+        source(
+                "acme/Shipment.java",
+                String.join(
+                        "\n",
+                        "package acme;",
+                        "import io.elasticore.springboot3.domain.Money;",
+                        "import io.elasticore.springboot3.domain.Quantity;",
+                        "public class Shipment {",
+                        "    private Long shipmentId;",
+                        "    private Money freight;",
+                        "    private Quantity parcels;",
+                        "    private Level level;",
+                        "    private Carrier carrier;",
+                        "}"));
+        // A converter of the project's own, nested in its enum.
+        source(
+                "acme/Level.java",
+                String.join(
+                        "\n",
+                        "package acme;",
+                        "public enum Level {",
+                        "    LOW, HIGH;",
+                        "    public static class DbConverter implements jakarta.persistence.AttributeConverter<Level, Integer> {",
+                        "        public Integer convertToDatabaseColumn(Level l) { return l == null ? null : l.ordinal(); }",
+                        "        public Level convertToEntityAttribute(Integer i) { return i == null ? null : values()[i]; }",
+                        "    }",
+                        "}"));
+        // An enum's converter as mapping: xml writes it, moved out to a class of its own.
+        source("acme/Carrier.java", "package acme;\npublic enum Carrier { POST, COURIER }\n");
+        source(
+                "acme/persistence/CarrierConverter.java",
+                String.join(
+                        "\n",
+                        "package acme.persistence;",
+                        "import acme.Carrier;",
+                        "public class CarrierConverter implements jakarta.persistence.AttributeConverter<Carrier, String> {",
+                        "    public String convertToDatabaseColumn(Carrier c) { return c == null ? null : c.name(); }",
+                        "    public Carrier convertToEntityAttribute(String s) { return s == null ? null : Carrier.valueOf(s); }",
+                        "}"));
+        // A nested class by its binary name, Outer$Inner, as OrmMapping writes it.
+        File xml = new File(dir.toFile(), "src/main/resources/META-INF/orm.xml");
+        assertTrue(xml.getParentFile().mkdirs());
+        Files.write(
+                xml.toPath(),
+                String.join(
+                                "\n",
+                                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                                "<entity-mappings xmlns=\"https://jakarta.ee/xml/ns/persistence/orm\" version=\"3.1\">",
+                                "  <entity class=\"acme.Shipment\" access=\"FIELD\">",
+                                "    <table name=\"ship_shipment\"/>",
+                                "    <attributes>",
+                                "      <id name=\"shipmentId\"/>",
+                                "      <basic name=\"freight\">",
+                                "        <column name=\"freight\" precision=\"14\" scale=\"2\"/>",
+                                "        <convert converter=\"io.elasticore.springboot3.domain.Money$JpaConverter\"/>",
+                                "      </basic>",
+                                "      <basic name=\"parcels\"><convert converter=\"io.elasticore.springboot3.domain.Quantity$JpaConverter\"/></basic>",
+                                "      <basic name=\"level\"><convert converter=\"acme.Level$DbConverter\"/></basic>",
+                                "      <basic name=\"carrier\">",
+                                "        <column name=\"carrier\" length=\"10\"/>",
+                                "        <convert converter=\"acme.persistence.CarrierConverter\"/>",
+                                "      </basic>",
+                                "    </attributes>",
+                                "  </entity>",
+                                "</entity-mappings>",
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
+
+        JpaSchemaReader r = new JpaSchemaReader()
+                .readSettings(Collections.singletonList(new File(dir.toFile(), "src/main/resources")))
+                .read(Collections.singletonList(new File(dir.toFile(), "src/main/java")))
+                .readOrmXml(xml);
+        Table t = r.schema(Collections.singletonList("acme.Shipment")).table("ship_shipment");
+
+        assertNotNull(t, r.warnings().toString());
+        assertEquals(ColumnType.DECIMAL, t.column("freight").type, r.warnings().toString());
+        assertEquals(14, t.column("freight").precision);
+        assertEquals(2, t.column("freight").scale);
+        assertEquals(ColumnType.INTEGER, t.column("parcels").type, r.warnings().toString());
+        assertEquals(ColumnType.INTEGER, t.column("level").type, r.warnings().toString());
+        assertEquals(ColumnType.TEXT, t.column("carrier").type);
+        assertEquals(10, t.column("carrier").length);
+        assertTrue(
+                r.warnings().stream().noneMatch(w -> w.contains("was not read")),
+                r.warnings().toString());
+    }
+
+    @Test
     public void kotlinEntitiesAreReadToo() throws Exception {
         dir = Files.createTempDirectory("jpa-reader-kt");
         File f = new File(dir.toFile(), "src/main/kotlin/acme/Order.kt");

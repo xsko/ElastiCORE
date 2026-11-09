@@ -889,6 +889,8 @@ public final class JpaSchemaReader {
     /** The column type a converter declares (AttributeConverter&lt;X, Y&gt;): the runtime's known ones, or one read. */
     private String converterColumn(JClass owner, String converter) {
         String s = converter.replace("::class.java", "").replace("::class", "").replace(".class", "").trim();
+        // orm.xml names a nested class by its binary name (Money$JpaConverter), the sources by its dotted one.
+        s = s.replace('$', '.');
         // The runtime library's converters, which are not among the project's sources.
         if (s.endsWith("Money.JpaConverter")) return "BigDecimal";
         if (s.endsWith("Quantity.JpaConverter")) return "Integer";
