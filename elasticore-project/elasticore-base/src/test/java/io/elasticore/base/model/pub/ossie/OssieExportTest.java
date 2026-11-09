@@ -377,6 +377,87 @@ public class OssieExportTest {
                 out);
     }
 
+    // ---- a schema: the source is the table it names, as @Table(schema=...) does ----
+
+    /** Customer with those marks on its meta line; Tag with none. */
+    private static String schemaDesk(String customerMarks) {
+        return String.join(
+                "\n",
+                "entity:",
+                "  Customer:",
+                "    meta: entity @root @expose(20)" + customerMarks,
+                "    fields:",
+                "      customerId: long @id @sequence",
+                "",
+                "  Tag:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      tagId: long @id @sequence",
+                "");
+    }
+
+    private static Object source(String yaml, String name) throws IOException {
+        return dataset(yaml, name).get("source");
+    }
+
+    @Test
+    @DisplayName("an entity @schema is the source's schema, joined by a dot")
+    public void anEntitySchemaIsInTheSource() throws Exception {
+        String out = export(schemaDesk(" @schema(schema_a)"))[0];
+        assertEquals("schema_a.customer", source(out, "Customer"));
+        assertEquals("tag", source(out, "Tag"));
+    }
+
+    @Test
+    @DisplayName("the env.yml tableSchema is the schema of every entity of the domain")
+    public void theDomainTableSchemaIsInTheSource() throws Exception {
+        String out = export(schemaDesk(""), "tableSchema: schema_a")[0];
+        assertEquals("schema_a.customer", source(out, "Customer"));
+        assertEquals("schema_a.tag", source(out, "Tag"));
+    }
+
+    @Test
+    @DisplayName("an entity @schema wins over the domain's tableSchema")
+    public void anEntitySchemaWinsOverTheDomains() throws Exception {
+        String out = export(schemaDesk(" @schema(sales)"), "tableSchema: schema_a")[0];
+        assertEquals("sales.customer", source(out, "Customer"));
+        assertEquals("schema_a.tag", source(out, "Tag"));
+    }
+
+    @Test
+    @DisplayName("no schema anywhere: the table alone, and a dataset no schema touches is as before")
+    public void noSchemaIsTheTableAlone() throws Exception {
+        String without = export(schemaDesk(""))[0];
+        String with = export(schemaDesk(" @schema(schema_a)"))[0];
+        assertEquals("customer", source(without, "Customer"));
+        assertEquals("tag", source(without, "Tag"));
+        assertTrue(without.contains("\n    source: customer\n"), without);
+        assertEquals(block(without, "Tag"), block(with, "Tag"));
+    }
+
+    @Test
+    @DisplayName("a schema or a table with a dot in its name keeps the table alone: a dotted source cannot say it")
+    public void aDottedNameKeepsTheTableAlone() throws Exception {
+        assertEquals("customer", source(export(schemaDesk(" @schema(a.b)"))[0], "Customer"));
+        assertEquals("tag", source(export(schemaDesk(""), "tableSchema: a.b")[0], "Tag"));
+        assertEquals(
+                "legacy.customer",
+                source(export(schemaDesk(" @table(legacy.customer) @schema(sales)"))[0], "Customer"));
+    }
+
+    @Test
+    @DisplayName("an explicit @table takes the schema and no prefix; a derived name takes both")
+    public void anExplicitTableTakesTheSchema() throws Exception {
+        String own = export(schemaDesk(" @table(cust_master) @schema(sales)"), "table:", "  prefix: tbl_")[0];
+        assertEquals("sales.cust_master", source(own, "Customer"));
+        assertEquals("tbl_tag", source(own, "Tag"));
+
+        String domain =
+                export(schemaDesk(" @table(cust_master)"), "tableSchema: schema_a", "table:", "  prefix: tbl_")[0];
+        assertEquals("schema_a.cust_master", source(domain, "Customer"));
+        assertEquals("schema_a.tbl_tag", source(domain, "Tag"));
+    }
+
     /** The entry of datasets: or metrics: with that name, from its line to the next entry or section. */
     private static String block(String yaml, String name) {
         int start = yaml.indexOf("\n  - name: " + name + "\n");
@@ -415,10 +496,13 @@ public class OssieExportTest {
      * diffMutation runs the tests again on each mutation in one JVM, and a kept
      * export would be the one generated before it.
      */
-    private static String[] export(String model) throws Exception {
+    private static String[] export(String model, String... config) throws Exception {
         File project = Files.createTempDirectory("elcore-ossie-filter").toFile();
         File dir = new File(project, "src/main/resources/blueprint/desk");
         assertTrue(new File(dir, "model").mkdirs());
+        // Lines of env.yml's config:, below its fixed ones.
+        StringBuilder extra = new StringBuilder();
+        for (String line : config) extra.append("\n    ").append(line);
         String env = String.join(
                 "\n",
                 "elasticore:",
@@ -427,7 +511,7 @@ public class OssieExportTest {
                 "    domainName: desk",
                 "    framework: springboot",
                 "    mode: jpa",
-                "    j2ee: jakarta",
+                "    j2ee: jakarta" + extra,
                 "    publisher:",
                 "      rules: [hexagonal-springboot, ossie-export]",
                 "  namespace:",

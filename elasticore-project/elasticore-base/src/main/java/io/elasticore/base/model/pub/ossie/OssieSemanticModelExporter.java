@@ -439,9 +439,20 @@ public final class OssieSemanticModelExporter {
         // The prefix applies only where the DSL named no table - the same
         // answer the generated @Table annotation gives.
         String declared = entity.getMetaInfo().getMetaAnnotationValue("table");
-        if (declared != null) return declared;
         String prefix = model.getConfig("table.prefix");
-        return (prefix != null && !prefix.isEmpty() ? prefix : "") + entity.getTableName();
+        String table = declared != null
+                ? declared
+                : (prefix != null && !prefix.isEmpty() ? prefix : "") + entity.getTableName();
+        // Entity @schema wins over the env.yml tableSchema config.
+        String schema = entity.getMetaInfo().getMetaAnnotationValue("schema");
+        if (schema == null || schema.isEmpty()) {
+            schema = model.getConfig("tableSchema");
+        }
+        if (schema == null || schema.isEmpty()) return table;
+        // A dotted source cannot hold a part that has a dot itself; such a
+        // name keeps the table alone, as before.
+        if (schema.contains(".") || table.contains(".")) return table;
+        return schema + "." + table;
     }
 
     private static boolean isKey(Field f) {
