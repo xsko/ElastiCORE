@@ -120,10 +120,21 @@ public class SelfReferenceByIdTest {
     private static File kotlin;
     private static File layered;
     private static File shortColumns;
+    /** What the hexagonal run printed. */
+    private static String hexagonalLog;
 
     @BeforeAll
     static void generate() throws Exception {
-        hexagonal = run("elcore-selfref-hex", "hexagonal", "java");
+        java.io.PrintStream out = System.out;
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(bytes, true, "UTF-8"));
+        try {
+            hexagonal = run("elcore-selfref-hex", "hexagonal", "java");
+        } finally {
+            System.setOut(out);
+        }
+        hexagonalLog = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        out.print(hexagonalLog);
         ddd = run("elcore-selfref-ddd", "ddd", "java");
         kotlin = run("elcore-selfref-kt", "hexagonal", "kotlin");
         layered = run("elcore-selfref-layered", "layered", "java");
@@ -215,6 +226,25 @@ public class SelfReferenceByIdTest {
         String dto = found(hexagonal, "SfCommentKeyedDTO.java");
         assertFalse(dto.contains("parentKey"), dto);
         assertTrue(dto.contains("private Long parentCommentId;"), dto);
+    }
+
+    /**
+     * And it is said, once: a client written from the model sends parentKey, which nobody reads (#103).
+     * The DTO that names it as the id's field, and the one whose relation stays an object, say nothing.
+     */
+    @Test
+    public void aRefDeclaredUnderAnotherNameIsSaid() {
+        String warning = "SfCommentKeyedDTO.parentKey @ref(parent.commentId) is the key the reference by id already"
+                + " holds, so the DTO has it as parentCommentId and has no parentKey - a request that sends parentKey"
+                + " is not read. Name the field parentCommentId, or drop it.";
+        assertEquals(1, count(hexagonalLog, warning), hexagonalLog);
+        assertFalse(hexagonalLog.contains("SfCommentSameNameDTO.parentCommentId @ref"), hexagonalLog);
+        assertFalse(hexagonalLog.contains("SfTopicDTO.parentKey @ref"), hexagonalLog);
+        // The DTOs the model does not declare add the relation's flattened key themselves.
+        assertFalse(
+                hexagonalLog.contains("is the key the reference by id already holds, so the DTO has it as postId"),
+                hexagonalLog);
+        assertEquals(1, count(hexagonalLog, "is the key the reference by id already holds"), hexagonalLog);
     }
 
     /** The way around the #93 report: it has the id's own name, so the API stays and the id is what is written. */

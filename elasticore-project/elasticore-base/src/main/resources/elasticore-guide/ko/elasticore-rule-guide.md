@@ -633,6 +633,9 @@ private Partner partner;                // 같은 컬럼의 읽기 전용 조인
   private String bookIsbn;
   ```
 - 매퍼는 `@ref(partner.partnerId)` 를 `partnerId` 로 씁니다 (관계 객체는 쓰지 않음).
+- 그 키를 선언한 DTO 필드(`@ref(partner.partnerId)`)는 ID 필드입니다: DTO 에는 `partnerId` 가 있고 선언한
+  필드는 없습니다. 다른 이름(`partnerKey: long @ref(partner.partnerId)`)이면 DSL 경고 - `partnerKey` 를 보낸
+  요청은 읽히지 않으므로, 필드 이름을 `partnerId` 로 하거나 빼십시오.
 - 적용 대상: 같은 도메인의, 키가 하나인 다른 루트를 가리키는 to-one (`cascade`, `@embedded`, 역방향
   `@OneToOne(mappedBy)`, 이미 `@joinBy` 를 쓴 필드는 제외). 자기 루트를 가리키는 멤버의 역참조는 그대로.
 - 루트가 자기와 같은 종류를 가리키는 참조(루트 `Comment` 의 `parent: Comment`)는 다른 인스턴스, 즉 다른 애그리거트이므로 역시

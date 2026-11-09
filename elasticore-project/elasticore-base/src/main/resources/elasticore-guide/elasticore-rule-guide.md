@@ -633,6 +633,9 @@ private Partner partner;                // read-only join on the same column - n
   private String bookIsbn;
   ```
 - The mapper writes `@ref(partner.partnerId)` as `partnerId` (it does not write the relation object).
+- A DTO field declaring that key, `@ref(partner.partnerId)`, is the ID field: the DTO has `partnerId` and not
+  the declared field. Under another name (`partnerKey: long @ref(partner.partnerId)`) the DSL warns, since a
+  request sending `partnerKey` is not read - name the field `partnerId`, or drop it.
 - Applies to: a to-one that points to another root of the same domain with a single key (`cascade`, `@embedded`, the reverse
   `@OneToOne(mappedBy)` and fields that already use `@joinBy` are excluded). A member's back reference to its own root stays as it is.
 - A root's reference to its own kind (`parent: Comment` on the root `Comment`) points to another instance, another aggregate, so it is
