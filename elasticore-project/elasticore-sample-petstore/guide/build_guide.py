@@ -588,7 +588,7 @@ page.append('''
         서버·화면 코드와 Ossie 모델이 모두 거기서 생성됩니다.</p>
 
       <h2 id="ossie">Apache Ossie 시맨틱 모델</h2>
-      <p>빌드할 때마다 같은 DSL 에서 <code>blueprint/semantic_model.yml</code> 이 만들어집니다 (<a href="https://github.com/apache/ossie">Apache Ossie</a> core spec 0.2.0.dev0).
+      <p>빌드할 때마다 같은 DSL 에서 <code>blueprint/semantic_model.yml</code> 이 만들어집니다 (<a href="https://github.com/apache/ossie">Apache Ossie</a> core spec 0.3.0.dev0).
         분석·BI·AI 도구가 이 파일로 테이블의 뜻을 압니다: 컬럼의 타입, 조인, 상태 코드의 뜻(<code>PLC = Placed</code>), 그리고 비밀번호·카드 번호 컬럼은 <b>내보내지 않습니다</b>.
         내보낸 모든 테이블·컬럼·키·조인이 실제 DB 에 있는지 빌드할 때마다 테스트(<code>SemanticModelTest</code>)가 확인합니다.
         Ossie 공식 스키마(<code>ossie-schema.json</code>)로 직접 검증한 결과 오류는 0 이었습니다(2026-10-03).</p>

@@ -100,7 +100,7 @@ public class OssieExportTest {
         String yaml = exportedModel();
 
         assertTrue(yaml.startsWith("# Apache Ossie"), "no provenance header");
-        // Core spec 0.2.0.dev0: one model, flat at the root - the semantic_model
+        // Core spec 0.3.0.dev0: one model, flat at the root - the semantic_model
         // array of 0.1.x is no longer accepted.
         assertTrue(yaml.contains("\nversion: " + OssieSemanticModelExporter.SPEC_VERSION + "\n"), "no spec version");
         // No ossieName in the ddd sample: the model is named after its domains, as before the setting existed.

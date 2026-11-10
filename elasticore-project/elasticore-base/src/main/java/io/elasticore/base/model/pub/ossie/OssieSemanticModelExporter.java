@@ -43,7 +43,7 @@ import java.util.regex.Pattern;
  * domain generated here is consumable by the tools that read them, without
  * anyone re-declaring the model in a second file that then drifts.
  *
- * Written to the core spec 0.2.0.dev0 (core-spec/spec.md): one model per
+ * Written to the core spec 0.3.0.dev0 (core-spec/spec.md): one model per
  * document, flat at the root; every field an expression; each value type one
  * of the spec's DataTypes. One document for the whole project, so the
  * relationships that cross domain files stay inside one model. Expressions
@@ -75,7 +75,7 @@ public final class OssieSemanticModelExporter {
     public static final String RULE_SET = "ossie-export";
 
     /** The core spec version this writes. */
-    public static final String SPEC_VERSION = "0.2.0.dev0";
+    public static final String SPEC_VERSION = "0.3.0.dev0";
 
     /** The vendor name of what Ossie has no word for. */
     public static final String VENDOR = "ELASTICORE";

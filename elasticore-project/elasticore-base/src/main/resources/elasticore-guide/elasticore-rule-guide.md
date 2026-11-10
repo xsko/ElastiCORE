@@ -1710,7 +1710,8 @@ waiting for generation. For examples and how to test, see `elasticore-ddd-custom
 [Apache Ossie](https://github.com/apache/ossie) (incubating) is the ASF's vendor-neutral standard for exchanging semantic metadata between analytics, BI and AI platforms -
 dataset (table), field (column), relationship (join), metric (measure).
 The ElastiCORE blueprint already says everything the dataset side requires, so it exports it
-without declaring the same content twice. It is based on **core spec `0.2.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`).
+without declaring the same content twice. It is based on **core spec `0.3.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`).
+ElastiCORE 3.0.261106-rc11 and earlier write `0.2.0.dev0`, which Ossie replaced with `0.3.0.dev0` (there is no 0.2.0 release). Its schema accepts only its own version, so a document one of those releases wrote no longer validates; generating again with a later release writes `0.3.0.dev0`.
 
 How to turn it on (either one):
 
@@ -1748,7 +1749,7 @@ domains as they are.
 Part of the Pet Store:
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: petstore
 datasets:
   - name: PurchaseOrder

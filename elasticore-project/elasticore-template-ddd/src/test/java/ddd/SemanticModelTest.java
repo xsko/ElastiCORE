@@ -40,7 +40,7 @@ class SemanticModelTest {
             assertThat(in).as("the build exports blueprint/semantic_model.yml").isNotNull();
             model = new Yaml().load(in);
         }
-        assertThat(model.get("version")).isEqualTo("0.2.0.dev0");
+        assertThat(model.get("version")).isEqualTo("0.3.0.dev0");
 
         List<String> problems = new ArrayList<String>();
         try (Connection c = dataSource.getConnection()) {

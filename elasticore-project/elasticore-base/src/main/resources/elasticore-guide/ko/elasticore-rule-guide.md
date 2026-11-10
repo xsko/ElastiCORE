@@ -1710,7 +1710,8 @@ dependencies {
 [Apache Ossie](https://github.com/apache/ossie) (incubating) 는 분석·BI·AI 플랫폼 간에 시맨틱 메타데이터 -
 dataset(테이블), field(컬럼), relationship(조인), metric(지표) - 를 교환하는 ASF 의 벤더 중립 표준입니다.
 ElastiCORE blueprint 는 dataset 쪽이 요구하는 것을 이미 다 말하고 있으므로, 같은 내용을 두 번 선언하지 않고
-내보냅니다. **core spec `0.2.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`) 기준입니다.
+내보냅니다. **core spec `0.3.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`) 기준입니다.
+ElastiCORE 3.0.261106-rc11 까지는 `0.2.0.dev0` 을 씁니다. Ossie 는 0.2.0 을 릴리스하지 않고 `0.3.0.dev0` 으로 넘어갔고 스키마는 자기 버전만 받으므로, 그 릴리스들이 쓴 문서는 더 이상 검증을 통과하지 않습니다. 이후 릴리스로 다시 생성하면 `0.3.0.dev0` 으로 써집니다.
 
 켜는 방법 (둘 중 하나):
 
@@ -1748,7 +1749,7 @@ acme_erp` 경고가 나옵니다. 바뀌는 것은 `name` 뿐이고 `description
 Pet Store 의 일부:
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: petstore
 datasets:
   - name: PurchaseOrder
