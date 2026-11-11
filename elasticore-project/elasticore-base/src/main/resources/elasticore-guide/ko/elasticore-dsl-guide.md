@@ -1163,6 +1163,7 @@ dto:
 ### 10.1 잘못된 DSL 타입 (Invalid DSL Types)
 
 필드 타입은 "3. 필드 타입" 의 표에 있는 것만 씁니다. 표에 없는 단어는 엔티티에 그대로 쓰여(`private uuid id;`) 컴파일되지 않습니다.
+생성할 때 그런 단어를 경고하고, `uuid`, `short`, `byte`, `char`, `OffsetDateTime`, `ZonedDateTime` 이면 무엇을 쓸지도 알려 줍니다: `unresolved type 'uuid' - ... - write string(36), or string @id @genid for a generated key instead`.
 
 | 잘못된 타입 | 대신 |
 |-----------|------|
@@ -1200,39 +1201,38 @@ fields:
 2.x 호환 출력(`output = 'v2'`)은 2.x 가 늘 그랬듯 `@Min(0.5)` 를 쓰고, 이것은 컴파일되지 않습니다. 그 출력에서는 정수
 경계를 쓰거나 3.0 코드로 생성하세요.
 
-### 10.3 @ManyToOne @id 필드의 SQL 예약어 (Reserved SQL Keywords)
+### 10.3 SQL 예약어, 그리고 복합 키 안의 관계
+> **동작:** v3, Kotlin (JPA) · **안 됨:** 2.x 호환 출력(output = 'v2')과 2.x 생성기 (알리지 않음); MyBatis (mode: mybatis) 는 예약어를 따로 알림
 
-`@ManyToOne` 필드가 `@id`(복합키)로 사용될 때, 필드명이 그대로 SQL 컬럼명이 됩니다. SQL 예약어(order, group, select 등)를 사용하면 테이블 생성이 실패합니다.
+Oracle, PostgreSQL, SQL Server 가 예약한 단어로 이름 붙은 테이블·컬럼은 그 DB 에서 만들 수 없습니다. Hibernate 는
+기본으로 이름을 따옴표로 감싸지 않기 때문입니다: `order`, `group`, `user`, `date`, `level`, `comment`, `size`,
+`number` 등. 엔티티 `Order` 는 테이블 `order` 가 됩니다. 3.0 코드는 생성할 때 엔티티마다 한 번 이것을 알리고 계속
+진행합니다:
 
-#### 예시
-```yaml
-# WRONG - 'order' is a SQL reserved keyword
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      order: Order @id @ManyToOne       # SQL: order_id - reserved keyword error
-      itemSeq: int @id
-
-# SOLUTION 1 - Use non-reserved field name
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      orderRef: Order @id @ManyToOne    # SQL: order_ref_id - safe
-      itemSeq: int @id
-
-# SOLUTION 2 - Manually add @Column annotation after code generation
-# Generated Java code after build:
-# @Column(name = "\"order_id\"")  // Add quotes manually for reserved keywords
+```
+[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
 ```
 
-#### 일반적인 SQL 예약어
-`order`, `group`, `select`, `from`, `where`, `table`, `index`, `key`, `value`, `user`, `date`, `time`, `timestamp`
+DSL 에서 다른 이름을 주세요. Java 이름은 그대로입니다:
 
-#### 해결방법
-1. **권장**: SQL 예약어가 아닌 필드명 사용 (order → orderRef, user → userRef)
-2. 생성된 코드에서 `@Column(name = "\"field_id\"")`로 수동 추가 (따옴표로 감싸기)
+```yaml
+entity:
+  Order:
+    meta: entity @table(purchase_order)
+    fields:
+      orderId: long @id @sequence
+      group: string(10) @column(group_code)
+```
+
+`@expose` 엔티티에서는 관계가 복합 키의 일부가 될 수 없습니다 (`itemSeq: int @id` 옆의 `order: Order @id @ManyToOne`).
+컨트롤러가 키 필드마다 경로 변수로 받는데, 관계는 관련 엔티티 자체라 경로로 받을 수 없어 컨트롤러가 컴파일되지
+않았습니다. 3.0 코드는 여기서 빌드를 멈춥니다:
+
+```
+[elcore3] Shop.OrderItem: its composite key holds the relation order: Order, and an exposed entity's controller takes each key field in the path, which a relation cannot be - key it by the related key's value (orderId: long @id), or do not expose it
+```
+
+키를 값으로 두거나(`orderId: long @id` 와 `itemSeq: int @id`, DSL 가이드의 "복합 키"), 엔티티를 노출하지 마세요.
 
 ### 10.4 @audited와 연관관계 (Relationships with Audited Entities)
 
@@ -1275,6 +1275,6 @@ fields:
 
 1. **타입 선택**: "3. 필드 타입" 표에 있는 타입만. `uuid` 대신 `string(36)`, UUID 키는 `string @id @genid`
 2. **검증 범위**: `double`·`float` 의 `@min/@max` 에 쓴 소수는 3.0 코드에서 `@DecimalMin/@DecimalMax` 가 됩니다. 2.x 호환 출력에서는 정수를 쓰세요
-3. **필드명**: SQL 예약어 회피. 특히 `@id` 복합키 필드
+3. **필드명**: SQL 예약어로 된 테이블·컬럼 이름은 3.0 코드가 생성할 때 알림 - `@table` / `@column` 으로 다른 이름을 줌 (10.3)
 4. **감사 설정**: `@audited` 엔티티의 관계 필드는 생성 후 `@NotAudited` 검증
 5. **코드 리뷰**: 생성된 Java 코드 컴파일 후 오류 확인 필수

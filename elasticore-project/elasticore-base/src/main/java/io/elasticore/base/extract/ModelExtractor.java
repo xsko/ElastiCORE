@@ -262,9 +262,15 @@ public class ModelExtractor {
             if (typeToCheck.contains(":")) continue;
 
             if (!typeRegistry.containsKey(typeToCheck)) {
-                ConsoleLog.storeLog("DSL_WARN",
-                        String.format("[%s] %s.%s: unresolved type '%s' - no matching Entity, DTO, or Enum found in any domain",
-                                domainName, componentName, field.getName(), typeToCheck));
+                ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format(
+                                "[%s] %s.%s: unresolved type '%s' - no matching Entity, DTO, or Enum found in any domain%s",
+                                domainName,
+                                componentName,
+                                field.getName(),
+                                typeToCheck,
+                                BaseFieldType.insteadOfSuffix(typeToCheck)));
             }
         }
     }

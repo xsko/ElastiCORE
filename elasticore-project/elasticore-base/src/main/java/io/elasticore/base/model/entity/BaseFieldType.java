@@ -111,6 +111,37 @@ public enum BaseFieldType {
         return wrapperClassName;
     }
 
+    /**
+     * What the DSL writes for a type name it does not have but a developer
+     * reaches for - uuid, short, char - or null. Such a name is written into
+     * the class as it is, and either does not compile or is not what was
+     * meant, so the unresolved-type warning says what to write instead.
+     */
+    public static String insteadOf(String typeName) {
+        if (typeName == null) return null;
+        switch (typeName.toLowerCase(java.util.Locale.ROOT)) {
+            case "uuid":
+                return "string(36), or string @id @genid for a generated key";
+            case "short":
+            case "byte":
+                return "int";
+            case "char":
+            case "character":
+                return "string(1)";
+            case "offsetdatetime":
+            case "zoneddatetime":
+                return "timestamp";
+            default:
+                return null;
+        }
+    }
+
+    /** The unresolved-type warning's ending: what to write instead, or nothing. */
+    public static String insteadOfSuffix(String typeName) {
+        String instead = insteadOf(typeName);
+        return instead == null ? "" : " - write " + instead + " instead";
+    }
+
     public static BaseFieldType findByName(String name) {
         BaseFieldType findType = null;
         Stream<BaseFieldType> stream = java.util.Arrays.stream(BaseFieldType.values());
