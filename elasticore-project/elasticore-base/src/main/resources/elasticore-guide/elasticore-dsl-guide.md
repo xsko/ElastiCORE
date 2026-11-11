@@ -1183,26 +1183,22 @@ entity:
       createdAt: timestamp               # Instant (a single moment)
 ```
 
-### 10.2 @min/@max and decimal values
+### 10.2 @min/@max with a fraction
+> **Works in:** v3, Kotlin · **Not in:** 2.x-compatible output (output = 'v2') and 2.x generator (a fraction on a `double` or `float` does not compile)
 
-The Jakarta Bean Validation annotations `@Min` and `@Max` accept only the `long` type. Decimal values (0.0, 5.0 and so on) cause a compile error.
+`@Min` and `@Max` take a `long`. So the 3.0 code writes a bound with a fraction on a `double` or a `float` as
+`@DecimalMin` / `@DecimalMax`, which Hibernate Validator checks on any number. A whole bound stays `@Min` / `@Max`, and
+`bigdecimal` and `money` always get `@DecimalMin` / `@DecimalMax`.
 
-#### Example
 ```yaml
-# WRONG - decimal values cause compile errors
 fields:
-  rating: double @min(0.0) @max(5.0)   # Generates @Min(0.0) - compile error
-  temperature: float @min(-273.15)     # Generates @Min(-273.15) - compile error
-
-# CORRECT - use integer values
-fields:
-  rating: double @min(0) @max(5)        # Generates @Min(0) @Max(5) - valid
-  temperature: float @min(-273)         # Generates @Min(-273) - valid
+  rating: double @min(0.5) @max(5.0)   # @DecimalMin("0.5") @DecimalMax("5.0")
+  temperature: float @min(-273)        # @Min(-273)
+  price: bigdecimal(10.2) @min(0.01)   # @DecimalMin("0.01")
 ```
 
-#### Workaround
-- Use integer values only (0.0 -> 0, 5.0 -> 5)
-- If you need to validate a decimal range, a custom Bean Validation annotation is recommended
+The 2.x-compatible output (`output = 'v2'`) writes `@Min(0.5)` there, as 2.x always did, and it does not compile: write a
+whole bound there, or generate the 3.0 code.
 
 ### 10.3 SQL reserved words in a @ManyToOne @id field
 
@@ -1278,7 +1274,7 @@ fields:
 ### 10.5 Summary of recommendations
 
 1. **Choose types**: Use only the types in the "3. Field types" table. Use `string(36)` instead of `uuid`, and `string @id @genid` for a UUID key
-2. **Validation range**: Use only integer values in `@min/@max`. For decimal validation, consider a custom annotation
+2. **Validation range**: A fraction in `@min/@max` on a `double` or `float` is a `@DecimalMin/@DecimalMax` in the 3.0 code; in the 2.x-compatible output use whole numbers there
 3. **Field names**: Avoid SQL reserved words. This matters most for `@id` composite key fields
 4. **Audit setting**: After generation, check the relationship fields of `@audited` entities for `@NotAudited`
 5. **Code review**: Compile the generated Java code and check for errors

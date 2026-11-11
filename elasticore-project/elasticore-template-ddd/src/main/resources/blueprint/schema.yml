@@ -32,6 +32,7 @@ entities:
       title: string(100) @Column(name = "title", length = 100)
       isbn: string(13) @Column(name = "isbn", length = 13)
       price: java.math.BigDecimal @relation(mappedBy="price_id") @foreignKey(price_id) -- java.math.BigDecimal entity relationship
+      rating: Double @Column(name = "rating")
       author: Author @relation(mappedBy="book_id") @foreignKey(author_author_id) -- Author entity relationship
       version: Long @Column(name = "version")
       lastModifiedBy: string(50) @Column(name = "last_modified_by", length = 50)

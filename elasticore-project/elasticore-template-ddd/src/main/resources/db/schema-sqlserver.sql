@@ -22,6 +22,7 @@ CREATE TABLE cat_book (
     title NVARCHAR(100) NOT NULL,
     isbn NVARCHAR(13),
     price DECIMAL(10,2),
+    rating FLOAT(53),
     author_author_id BIGINT,
     version BIGINT,
     last_modified_by NVARCHAR(50),

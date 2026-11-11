@@ -163,10 +163,17 @@ public class DtoBaseRules implements CodeRules {
      * their range; every other numeric type takes the plain one.
      */
     private void bound(EntitySpec e, FieldSpec f, String kind, String declared) {
-        boolean arbitraryPrecision = f.isBigDecimal() || f.isMoney() || "BIGINTEGER".equals(f.baseTypeName());
         String[] bound = Bound.split(declared);
         String value = bound[0];
         String message = bound[1];
+        // @Min/@Max take a long, so a fraction on a double or a float - @min(0.5) -
+        // does not compile there; it is a DecimalMin/DecimalMax, which Hibernate
+        // Validator checks on any Number. A whole bound stays @Min/@Max, and the
+        // compatible output keeps what 2.x writes.
+        boolean arbitraryPrecision = f.isBigDecimal()
+                || f.isMoney()
+                || "BIGINTEGER".equals(f.baseTypeName())
+                || (!ctx(e).compatible() && isFloating(f) && !isWhole(value));
         AnnoCode a;
         if (message == null) {
             // As 2.x writes it: the bare value.
@@ -180,6 +187,17 @@ public class DtoBaseRules implements CodeRules {
             a.val("message", message);
         }
         ctx(e).field(f).ensure(a);
+    }
+
+    /** A double or a float, boxed or not. */
+    private static boolean isFloating(FieldSpec f) {
+        String type = f.baseTypeName();
+        return "DOUBLE".equals(type) || "P_DOUBLE".equals(type) || "FLOAT".equals(type) || "P_FLOAT".equals(type);
+    }
+
+    /** A bound @Min/@Max can hold: digits, with a minus sign or not. */
+    public static boolean isWhole(String value) {
+        return value.matches("-?\\d+");
     }
 
     /**
