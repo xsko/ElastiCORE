@@ -60,7 +60,19 @@ public class TwoXBoundTest {
                                     "      count: int @min(1) @max(9)",
                                     "")
                             .getBytes(StandardCharsets.UTF_8));
-            new ModelExtractor(new File(project, "src/main/resources/blueprint").getAbsolutePath()).extract(null);
+            // The generator writes under the working directory unless told the project: told both ways here.
+            String basePath = System.getProperty("elasticore.base.path");
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            Object[] context = saveContext();
+            try {
+                new ModelExtractor(new File(project, "src/main/resources/blueprint").getAbsolutePath())
+                        .extract(new io.elasticore.base.extract.FileBasedSourceFileAccessFactory(
+                                new File(project, "src/main/java").getAbsolutePath()));
+            } finally {
+                restoreContext(context);
+                if (basePath == null) System.clearProperty("elasticore.base.path");
+                else System.setProperty("elasticore.base.path", basePath);
+            }
 
             String dto = new String(
                     Files.readAllBytes(new File(project, "src/main/java/com/acme/probe/dto/PriceDTO.java").toPath()),
@@ -72,6 +84,37 @@ public class TwoXBoundTest {
             assertTrue(dto.contains("@jakarta.validation.constraints.Max(9)"), dto);
         } finally {
             delete(project);
+        }
+    }
+
+    private static final String[] CONTEXT = {"STATIC_DOMAIN_MAP", "context", "tmpCtx"};
+
+    /** The generator's model context is static; a run leaves its domains there for the tests after it. */
+    private static Object[] saveContext() throws Exception {
+        Object[] saved = new Object[CONTEXT.length];
+        for (int i = 0; i < CONTEXT.length; i++) {
+            java.lang.reflect.Field f =
+                    io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField(CONTEXT[i]);
+            f.setAccessible(true);
+            Object value = f.get(null);
+            saved[i] = value instanceof java.util.Map ? new java.util.HashMap<Object, Object>((java.util.Map<?, ?>) value) : value;
+        }
+        return saved;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void restoreContext(Object[] saved) throws Exception {
+        for (int i = 0; i < CONTEXT.length; i++) {
+            java.lang.reflect.Field f =
+                    io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField(CONTEXT[i]);
+            f.setAccessible(true);
+            if (saved[i] instanceof java.util.Map) {
+                java.util.Map map = (java.util.Map) f.get(null);
+                map.clear();
+                map.putAll((java.util.Map) saved[i]);
+            } else {
+                f.set(null, saved[i]);
+            }
         }
     }
 
