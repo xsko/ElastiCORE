@@ -76,9 +76,9 @@ public final class EntityChecks {
     }
 
     /**
-     * A field written as one column of the entity's own table, named by
-     * @column or by its own name: a value of a DSL type or an enum. A relation,
-     * a collection, a value type (embedded, Money) or a formula is not.
+     * A field written as one column of the entity's own table, named by its
+     * {@code @column} or by its own name: a value of a DSL type or an enum. A
+     * relation, a collection, a value type (embedded, Money) or a formula is not.
      */
     private static boolean isOneColumn(EntitySpec e, FieldSpec f) {
         if (f.isList() || f.isMoney() || f.isQuantity() || f.hasDsl("formula") || f.hasDsl("transient")) return false;
