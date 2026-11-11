@@ -14,6 +14,8 @@ entity:
       title: string(100)! @search(like)
       isbn: string(13) @search(eq)
       price: bigdecimal(10.2) @min(0)
+      # A fraction on a double is a DecimalMin/DecimalMax: @Min takes a long.
+      rating: double @min(0.5) @max(5.0)
       author: Author @ManyToOne
       version: long @jpa:Version
       # Written by Spring Data auditing, never by a request - in the plain

@@ -1183,26 +1183,22 @@ entity:
       createdAt: timestamp               # Instant (한 순간)
 ```
 
-### 10.2 @min/@max와 실수 값 (Decimal Values)
+### 10.2 소수가 있는 @min/@max
+> **동작:** v3, Kotlin · **안 됨:** 2.x 호환 출력(output = 'v2')과 2.x 생성기 (`double`·`float` 의 소수 경계는 컴파일되지 않음)
 
-Jakarta Bean Validation의 `@Min`, `@Max` 어노테이션은 `long` 타입만 허용합니다. 실수 값(0.0, 5.0 등)을 사용하면 컴파일 오류가 발생합니다.
+`@Min`, `@Max` 는 `long` 만 받습니다. 그래서 3.0 코드는 `double`·`float` 에 소수가 있는 경계를 `@DecimalMin` /
+`@DecimalMax` 로 씁니다. Hibernate Validator 는 이것을 어떤 숫자 타입에서도 검사합니다. 정수 경계는 `@Min` / `@Max`
+그대로이고, `bigdecimal`·`money` 는 항상 `@DecimalMin` / `@DecimalMax` 입니다.
 
-#### 예시
 ```yaml
-# WRONG - decimal values cause compile errors
 fields:
-  rating: double @min(0.0) @max(5.0)   # Generates @Min(0.0) - compile error
-  temperature: float @min(-273.15)     # Generates @Min(-273.15) - compile error
-
-# CORRECT - use integer values
-fields:
-  rating: double @min(0) @max(5)        # Generates @Min(0) @Max(5) - valid
-  temperature: float @min(-273)         # Generates @Min(-273) - valid
+  rating: double @min(0.5) @max(5.0)   # @DecimalMin("0.5") @DecimalMax("5.0")
+  temperature: float @min(-273)        # @Min(-273)
+  price: bigdecimal(10.2) @min(0.01)   # @DecimalMin("0.01")
 ```
 
-#### 해결방법
-- 정수값만 사용 (0.0 → 0, 5.0 → 5)
-- 실수 범위 검증이 필요한 경우 커스텀 Bean Validation 어노테이션 사용 권장
+2.x 호환 출력(`output = 'v2'`)은 2.x 가 늘 그랬듯 `@Min(0.5)` 를 쓰고, 이것은 컴파일되지 않습니다. 그 출력에서는 정수
+경계를 쓰거나 3.0 코드로 생성하세요.
 
 ### 10.3 @ManyToOne @id 필드의 SQL 예약어 (Reserved SQL Keywords)
 
@@ -1278,7 +1274,7 @@ fields:
 ### 10.5 권장사항 요약
 
 1. **타입 선택**: "3. 필드 타입" 표에 있는 타입만. `uuid` 대신 `string(36)`, UUID 키는 `string @id @genid`
-2. **검증 범위**: `@min/@max`에 정수값만 사용. 실수 검증은 커스텀 어노테이션 고려
+2. **검증 범위**: `double`·`float` 의 `@min/@max` 에 쓴 소수는 3.0 코드에서 `@DecimalMin/@DecimalMax` 가 됩니다. 2.x 호환 출력에서는 정수를 쓰세요
 3. **필드명**: SQL 예약어 회피. 특히 `@id` 복합키 필드
 4. **감사 설정**: `@audited` 엔티티의 관계 필드는 생성 후 `@NotAudited` 검증
 5. **코드 리뷰**: 생성된 Java 코드 컴파일 후 오류 확인 필수

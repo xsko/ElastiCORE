@@ -1443,46 +1443,22 @@ port:
 
 ## 8. 주의사항 및 해결방법 (Known Limitations & Workarounds)
 
-### 8.1 @min/@max 어노테이션 제약사항
+### 8.1 소수가 있는 @min/@max
+> **동작:** v3, Kotlin · **안 됨:** 2.x 호환 출력(output = 'v2')과 2.x 생성기 (`double`·`float` 의 소수 경계는 컴파일되지 않음)
 
-Jakarta Bean Validation의 `@Min`, `@Max` 어노테이션은 `long` 타입 매개변수만 허용합니다. 실수 값(0.0, 5.0 등)을 사용하면 컴파일 오류가 발생합니다.
+`@Min`, `@Max` 는 `long` 만 받습니다. 그래서 3.0 코드는 `double`·`float` 에 소수가 있는 경계를 `@DecimalMin` /
+`@DecimalMax` 로 씁니다. Hibernate Validator 는 이것을 어떤 숫자 타입에서도 검사합니다. 정수 경계는 `@Min` / `@Max`
+그대로이고, `bigdecimal`·`money` 는 항상 `@DecimalMin` / `@DecimalMax` 입니다.
 
-#### 문제 상황
 ```yaml
-# WRONG - decimal values cause compile errors
 fields:
-  rating: double @min(0.0) @max(5.0)   # Generates @Min(0.0) @Max(5.0) - compile error
-  temperature: float @min(-273.15)     # Generates @Min(-273.15) - compile error
-  price: bigdecimal @min(0.01)         # Generates @Min(0.01) - compile error
+  rating: double @min(0.5) @max(5.0)   # @DecimalMin("0.5") @DecimalMax("5.0")
+  temperature: float @min(-273)        # @Min(-273)
+  price: bigdecimal(10.2) @min(0.01)   # @DecimalMin("0.01")
 ```
 
-생성되는 Java 코드:
-```java
-@Min(0.0)  // Error: incompatible types: possible lossy conversion from double to long
-@Max(5.0)  // Error: incompatible types: possible lossy conversion from double to long
-private Double rating;
-```
-
-#### 올바른 사용법
-```yaml
-# CORRECT - use integer values only
-fields:
-  rating: double @min(0) @max(5)        # Generates @Min(0) @Max(5) - valid
-  temperature: float @min(-273)         # Generates @Min(-273) - valid
-  price: bigdecimal @min(0)             # Generates @Min(0) - valid
-```
-
-생성되는 Java 코드:
-```java
-@Min(0)
-@Max(5)
-private Double rating;
-```
-
-#### 해결방법
-1. **정수값 사용**: 실수값을 정수로 변환 (0.0 → 0, 5.0 → 5, -273.15 → -273)
-2. **커스텀 검증**: 정밀한 실수 범위 검증이 필요한 경우 커스텀 Bean Validation 어노테이션 구현
-3. **서비스 레이어 검증**: 복잡한 비즈니스 규칙은 서비스 계층에서 검증
+2.x 호환 출력(`output = 'v2'`)은 2.x 가 늘 그랬듯 `@Min(0.5)` 를 쓰고, 이것은 컴파일되지 않습니다. 그 출력에서는 정수
+경계를 쓰거나 3.0 코드로 생성하세요.
 
 ### 8.2 DSL 타입이 아닌 단어 주의 (Invalid Field Types)
 
@@ -1665,7 +1641,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 
 ### 8.7 권장사항 요약
 
-1. **@min/@max**: 정수값만 사용. 실수 검증은 커스텀 어노테이션 또는 서비스 레이어
+1. **@min/@max**: `double`·`float` 의 소수는 3.0 코드에서 `@DecimalMin/@DecimalMax` 가 됩니다. 2.x 호환 출력에서는 정수만 쓰세요
 2. **DSL 타입**: DSL 가이드 값 타입 표에 있는 타입만. `uuid` 는 타입이 아님 (UUID 키는 `string @id @genid`)
 3. **필드명**: SQL 예약어 회피. 특히 복합키 `@id` 필드
 4. **검색 연산자**: 3.2 의 연산자만 사용. 비교는 기호(`>`, `<=`)가 모든 모드에서 같음 (키워드·`!=` 는 v3 모드만, 8.5)
