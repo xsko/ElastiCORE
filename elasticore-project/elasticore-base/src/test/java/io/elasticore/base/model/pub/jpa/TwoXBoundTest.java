@@ -97,7 +97,9 @@ public class TwoXBoundTest {
                     io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField(CONTEXT[i]);
             f.setAccessible(true);
             Object value = f.get(null);
-            saved[i] = value instanceof java.util.Map ? new java.util.HashMap<Object, Object>((java.util.Map<?, ?>) value) : value;
+            saved[i] = value instanceof java.util.Map
+                    ? new java.util.HashMap<Object, Object>((java.util.Map<?, ?>) value)
+                    : value;
         }
         return saved;
     }
