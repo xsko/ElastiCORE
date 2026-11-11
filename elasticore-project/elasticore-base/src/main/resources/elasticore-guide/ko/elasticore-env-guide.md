@@ -197,8 +197,7 @@ Since: 3.0.261030-rc6
 `/* if-end */` 는 열린 블록 중 가장 안쪽 것을 닫습니다(런타임과 같음). 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
 camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬럼이 NULL 인 행은 필드가 모두 null 인 DTO, `Map` 에는
 모든 컬럼이 - NULL 이면 null 로 - 들어감. 이것은 MyBatis Spring Boot starter 가 적용하는 런타임 라이브러리의
-`PortRowColumns` 가 합니다). `/* if:` 에 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`)
-메서드는 문장만 실행합니다.
+`PortRowColumns` 가 합니다). `/* if:` 에 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`) 메서드는 문장만 실행합니다.
 페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
 `ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 페이지는 입력의 것, 또는 `Pageable`
 파라미터의 것입니다(`customersByPage(String lastName, Pageable pageable)`. 포트 인터페이스가 import 합니다). 호출의 정렬 -
