@@ -52,6 +52,70 @@ public class FieldBoundTest {
         assertTrue(dto.contains("@Max(9999)"), dto);
     }
 
+    private EntitySpec gauge() {
+        return new EntitySpec("Gauge")
+                .domain("erp", "Erp")
+                .pkg("entity", "com.acme.erp.domain.model")
+                .pkg("dto", "com.acme.erp.application.dto")
+                .addField(loader.parse("gaugeId", "long @id"))
+                .addField(loader.parse("rating", "double @min(0.5) @max(5.0)"))
+                .addField(loader.parse("temperature", "float @min(-273.15, 'below absolute zero')"))
+                .addField(loader.parse("weight", "Double @max(1.5)"))
+                .addField(loader.parse("load", "Float @min(0.25)"))
+                .addField(loader.parse("whole", "double @min(0) @max(-10)"));
+    }
+
+    /**
+     * @Min/@Max take a long: a fraction on a double or a float did not compile.
+     * It is a DecimalMin/DecimalMax, which Hibernate Validator checks on a
+     * Number; a whole bound stays as it was.
+     */
+    @Test
+    public void aFractionOnADoubleOrAFloatIsADecimalBound() {
+        String dto = RuleCatalog.standard()
+                .engineFor("jpa-dto", "jpa-dto-file")
+                .templateSet(SourceCode.TemplateSet.V3)
+                .run(gauge(), "dto")
+                .render();
+        assertTrue(dto.contains("@DecimalMin(\"0.5\")"), dto);
+        assertTrue(dto.contains("@DecimalMax(\"5.0\")"), dto);
+        assertTrue(
+                dto.contains("@DecimalMin(value=\"-273.15\", message=\"below absolute zero\")")
+                        || dto.contains("@DecimalMin(value = \"-273.15\", message = \"below absolute zero\")"),
+                dto);
+        assertTrue(dto.contains("@DecimalMax(\"1.5\")"), dto);
+        assertTrue(dto.contains("@DecimalMin(\"0.25\")"), dto);
+        assertTrue(dto.contains("@Min(0)"), dto);
+        assertTrue(dto.contains("@Max(-10)"), dto);
+        assertFalse(dto.contains("@Min(0."), dto);
+        assertFalse(dto.contains("@Max(5."), dto);
+        assertFalse(dto.contains("@Min(-273"), dto);
+    }
+
+    /** The compatible output is what 2.x writes, fraction and all. */
+    @Test
+    public void theCompatibleOutputKeepsWhat2xWrites() {
+        String dto = RuleCatalog.standard()
+                .engineFor("jpa-dto", "jpa-dto-file")
+                .templateSet(SourceCode.TemplateSet.COMPATIBLE)
+                .run(gauge(), "dto")
+                .render();
+        assertTrue(dto.contains("Min(0.5)"), dto);
+        assertFalse(dto.contains("DecimalMin(\"0.5\")"), dto);
+    }
+
+    @Test
+    public void aBoundIsWholeWhenItHasNoFraction() {
+        assertTrue(DtoBaseRules.isWhole("0"));
+        assertTrue(DtoBaseRules.isWhole("-273"));
+        assertTrue(DtoBaseRules.isWhole("9999"));
+        assertFalse(DtoBaseRules.isWhole("0.0"));
+        assertFalse(DtoBaseRules.isWhole("-0.5"));
+        assertFalse(DtoBaseRules.isWhole("1e3"));
+        assertFalse(DtoBaseRules.isWhole("x1"));
+        assertFalse(DtoBaseRules.isWhole("1x"));
+    }
+
     /** How many members a collection holds is a rule about that field too. */
     @Test
     public void aCollectionSaysHowManyItHolds() {

@@ -1443,46 +1443,22 @@ port:
 
 ## 8. Known Limitations & Workarounds
 
-### 8.1 @min/@max annotation restrictions
+### 8.1 @min/@max with a fraction
+> **Works in:** v3, Kotlin · **Not in:** 2.x-compatible output (output = 'v2') and 2.x generator (a fraction on a `double` or `float` does not compile)
 
-The Jakarta Bean Validation annotations `@Min` and `@Max` accept only `long` arguments. A decimal value (0.0, 5.0, and so on) causes a compile error.
+`@Min` and `@Max` take a `long`. So the 3.0 code writes a bound with a fraction on a `double` or a `float` as
+`@DecimalMin` / `@DecimalMax`, which Hibernate Validator checks on any number. A whole bound stays `@Min` / `@Max`, and
+`bigdecimal` and `money` always get `@DecimalMin` / `@DecimalMax`.
 
-#### The problem
 ```yaml
-# WRONG - decimal values cause compile errors
 fields:
-  rating: double @min(0.0) @max(5.0)   # Generates @Min(0.0) @Max(5.0) - compile error
-  temperature: float @min(-273.15)     # Generates @Min(-273.15) - compile error
-  price: bigdecimal @min(0.01)         # Generates @Min(0.01) - compile error
+  rating: double @min(0.5) @max(5.0)   # @DecimalMin("0.5") @DecimalMax("5.0")
+  temperature: float @min(-273)        # @Min(-273)
+  price: bigdecimal(10.2) @min(0.01)   # @DecimalMin("0.01")
 ```
 
-Generated Java code:
-```java
-@Min(0.0)  // Error: incompatible types: possible lossy conversion from double to long
-@Max(5.0)  // Error: incompatible types: possible lossy conversion from double to long
-private Double rating;
-```
-
-#### Correct usage
-```yaml
-# CORRECT - use integer values only
-fields:
-  rating: double @min(0) @max(5)        # Generates @Min(0) @Max(5) - valid
-  temperature: float @min(-273)         # Generates @Min(-273) - valid
-  price: bigdecimal @min(0)             # Generates @Min(0) - valid
-```
-
-Generated Java code:
-```java
-@Min(0)
-@Max(5)
-private Double rating;
-```
-
-#### Workarounds
-1. **Use integer values**: Convert decimal values to integers (0.0 -> 0, 5.0 -> 5, -273.15 -> -273)
-2. **Custom validation**: If you need a precise decimal range check, implement a custom Bean Validation annotation
-3. **Service layer validation**: Validate complex business rules in the service layer
+The 2.x-compatible output (`output = 'v2'`) writes `@Min(0.5)` there, as 2.x always did, and it does not compile: write a
+whole bound there, or generate the 3.0 code.
 
 ### 8.2 Words that are not DSL types (Invalid Field Types)
 
@@ -1641,7 +1617,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 
 ### 8.7 Summary of recommendations
 
-1. **@min/@max**: Use integer values only. For decimal validation, use a custom annotation or the service layer
+1. **@min/@max**: A fraction on a `double` or `float` is a `@DecimalMin/@DecimalMax` in the 3.0 code; in the 2.x-compatible output use whole numbers
 2. **DSL types**: Use only the types in the DSL guide's value types table. `uuid` is not a type (a UUID key is `string @id @genid`)
 3. **Field names**: A table or column named with an SQL reserved word is said when the 3.0 code generates - name it with `@table` / `@column` (8.3)
 4. **Search operators**: Use only the operators in 3.2. The symbols (`>`, `<=`) mean the same in every mode (the keywords and `!=` work in v3 mode only, 8.5)

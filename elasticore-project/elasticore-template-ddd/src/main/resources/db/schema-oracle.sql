@@ -22,6 +22,7 @@ CREATE TABLE cat_book (
     title VARCHAR2(100 CHAR) NOT NULL,
     isbn VARCHAR2(13 CHAR),
     price NUMBER(10,2),
+    rating BINARY_DOUBLE,
     author_author_id NUMBER(19),
     version NUMBER(19),
     last_modified_by VARCHAR2(50 CHAR),

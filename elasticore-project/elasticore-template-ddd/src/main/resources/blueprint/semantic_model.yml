@@ -105,6 +105,10 @@ datasets:
         expression:
           sql: "price"
         datatype: Decimal
+      - name: rating
+        expression:
+          sql: "rating"
+        datatype: Float
       - name: author_author_id
         expression:
           sql: "author_author_id"

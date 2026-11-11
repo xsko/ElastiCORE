@@ -124,6 +124,21 @@ class CatalogApiTest {
     }
 
     @Test
+    @DisplayName("a fractional bound on a double holds on both sides: 400 outside, stored inside")
+    void fractionalBoundOnADouble() throws Exception {
+        long id = createBook("Rated");
+        assertThat(status(put(BOOKS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bookId\":" + id + ",\"rating\":5.5}"))).isEqualTo(400);
+        assertThat(status(put(BOOKS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bookId\":" + id + ",\"rating\":0.4}"))).isEqualTo(400);
+        assertThat(status(put(BOOKS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bookId\":" + id + ",\"rating\":4.5}"))).isEqualTo(200);
+        assertThat(book(id).path("rating").asDouble()).isEqualTo(4.5);
+        assertThat(status(put(BOOKS).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bookId\":" + id + ",\"rating\":5.0}"))).isEqualTo(200);
+    }
+
+    @Test
     @DisplayName("delete and update by condition go row by row, and one bean serves each type")
     void conditionalWrites() throws Exception {
         createBook("Bulk-A");
