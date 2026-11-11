@@ -24,11 +24,13 @@
   with the same metric on one dataset and the same root metric.
   - The pet store's `semantic_model.yml`, regenerated, has its 13 metrics in the `Customer` and `PurchaseOrder` datasets and
     no root `metrics`; its `MetricsTest` runs each one on the database as `SELECT <sql> FROM <table>`, and each equals
-    what the test computes from the entities. The two templates declare no metrics and generate the same document.
+    what the test computes from the entities, and `SchemaValidateOnDatabase` runs each one the same way on Oracle,
+    PostgreSQL and SQL Server. The two templates declare no metrics and generate the same document.
   - Against apache/ossie `ee89dbd`, with sqlglot, `validation/validate.py` passes the three documents, and a copy of
     the pet store's with a two-entity composite at the root as well. A dataset's metric written with `PurchaseOrder.` fails
     with `[Scope] ... uses qualified reference(s) 'PurchaseOrder'`, and one named `total` with `[Unique] Name 'total' in
     dataset 'PurchaseOrder' is used by both a field and a dataset-scoped metric`.
 - Files: `OssieMetrics.java`, `OssieSemanticModelExporter.java`, `OssieMetricsTest.java`, `OssieExportTest.java`,
-  `OssieMetricScopeTest.java` (new), the pet store's `semantic_model.yml`, `MetricsTest.java`, `build_guide.py` and
+  `OssieMetricScopeTest.java` (new), the pet store's `semantic_model.yml`, `MetricsTest.java`,
+  `SchemaValidateOnDatabase.java`, `build_guide.py` and
   `dsl-guide.html`, the rule guide and the DSL guide (en, ko)
