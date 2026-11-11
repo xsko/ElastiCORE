@@ -2611,6 +2611,14 @@ public final class RulesGenRunner {
         System.out.println("  " + name);
 
         if ((v3 || kotlin) && !typescript && spec.isAbstractEntity()) checkAbstractEntity(spec, name);
+        if ((v3 || kotlin) && !typescript && persistence() == RulesConfig.Persistence.JPA) {
+            if (exposed) {
+                String problem = io.elasticore.base.model.pub.rules.base.EntityChecks.relationInExposedKey(spec);
+                if (problem != null) io.elasticore.base.model.pub.rules.ModelCheck.fail(problem);
+            }
+            String reserved = io.elasticore.base.model.pub.rules.base.EntityChecks.reservedNames(spec);
+            if (reserved != null) io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(reserved);
+        }
         if ((v3 || kotlin) && !typescript && serviced && !hasPk) {
             String root = spec.abstractEntityAbove();
             if (root != null) {

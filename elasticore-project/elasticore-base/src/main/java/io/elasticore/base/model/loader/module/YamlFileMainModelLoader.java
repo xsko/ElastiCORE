@@ -410,9 +410,16 @@ public class YamlFileMainModelLoader implements MainModelLoader {
                     || dtos.findByName(typeToCheck) != null;
 
             if (!resolved) {
-                ConsoleLog.storeLog("DSL_WARN",
-                        String.format("[%s] %s.%s: unresolved type '%s' - no matching Entity, DTO, or Enum found in domain '%s'",
-                                domainId, componentName, field.getName(), typeToCheck, domainId));
+                ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format(
+                                "[%s] %s.%s: unresolved type '%s' - no matching Entity, DTO, or Enum found in domain '%s'%s",
+                                domainId,
+                                componentName,
+                                field.getName(),
+                                typeToCheck,
+                                domainId,
+                                BaseFieldType.insteadOfSuffix(typeToCheck)));
             }
         }
 

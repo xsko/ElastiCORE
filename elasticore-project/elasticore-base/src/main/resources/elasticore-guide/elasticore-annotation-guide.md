@@ -1488,6 +1488,7 @@ private Double rating;
 
 For a field type, use only the types in the "Value types at a glance" table of the DSL guide. A word that is not in the table
 becomes a Java type name as it is (`private uuid id;`) and does not compile.
+The run warns of such a word, and for `uuid`, `short`, `byte`, `char`, `OffsetDateTime` and `ZonedDateTime` it says what to write instead: `unresolved type 'uuid' - ... - write string(36), or string @id @genid for a generated key instead`.
 
 | What you want | How to write it | Note |
 |-----------|--------|-----|
@@ -1509,63 +1510,38 @@ entity:
       attachment: blob
 ```
 
-### 8.3 @ManyToOne @id fields and SQL reserved words
+### 8.3 SQL reserved words, and a relation in a composite key
+> **Works in:** v3, Kotlin (JPA) · **Not in:** 2.x-compatible output (output = 'v2') and 2.x generator (nothing is said); MyBatis (mode: mybatis) says reserved names itself
 
-When a `@ManyToOne` field is used as an `@id` in a composite key, the field name becomes the SQL column name (`field_name_id`). If you use an SQL reserved word as the field name, table creation fails.
+A table or a column named with a word Oracle, PostgreSQL or SQL Server reserves cannot be created there, since
+Hibernate quotes nothing by default: `order`, `group`, `user`, `date`, `level`, `comment`, `size`, `number` and so on.
+An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, and goes on:
 
-#### Problem reserved words
-`order`, `group`, `select`, `from`, `where`, `table`, `index`, `key`, `value`, `user`, `date`, `time`, `timestamp`, `status`
+```
+[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
+```
 
-#### The problem
+Name them otherwise in the DSL; the Java names stay as they are:
+
 ```yaml
-# WRONG - 'order' is a SQL reserved keyword
 entity:
-  OrderItem:
-    meta: entity
+  Order:
+    meta: entity @table(purchase_order)
     fields:
-      order: Order @id @ManyToOne       # Generates column: order_id - reserved keyword
-      itemSeq: int @id                  # SQL: CREATE TABLE fails
-
-# Database error:
-# Syntax error near 'order_id' - reserved keyword
+      orderId: long @id @sequence
+      group: string(10) @column(group_code)
 ```
 
-#### Solution 1: Use a non-reserved field name (recommended)
-```yaml
-# RECOMMENDED - use non-reserved field names
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      orderRef: Order @id @ManyToOne    # Generates column: order_ref_id - safe
-      itemSeq: int @id
+In an entity with `@expose`, a relation cannot be part of the composite key (`order: Order @id @ManyToOne` beside
+`itemSeq: int @id`): the controller takes each key field in the path, a relation there is the related entity itself,
+and the controller did not compile. The 3.0 code stops the build there:
 
-  UserProfile:
-    meta: entity
-    fields:
-      userRef: User @id @ManyToOne      # Not 'user'
-      profileSeq: int @id
+```
+[elcore3] Shop.OrderItem: its composite key holds the relation order: Order, and an exposed entity's controller takes each key field in the path, which a relation cannot be - key it by the related key's value (orderId: long @id), or do not expose it
 ```
 
-#### Solution 2: Edit by hand after generation
-```yaml
-# If you must use reserved keyword, manually add @Column annotation after generation
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      order: Order @id @ManyToOne       # Generate first
-      itemSeq: int @id
-```
-
-Edit the generated Java code by hand:
-```java
-// Add quotes to escape reserved keyword
-@Id
-@ManyToOne
-@Column(name = "\"order_id\"")  // Add this manually
-private Order order;
-```
+Key it by the value (`orderId: long @id` and `itemSeq: int @id`, a composite key as in the DSL guide's "Composite key"),
+or leave the entity unexposed.
 
 ### 8.4 @audited entities and relationships
 
@@ -1667,7 +1643,7 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 
 1. **@min/@max**: Use integer values only. For decimal validation, use a custom annotation or the service layer
 2. **DSL types**: Use only the types in the DSL guide's value types table. `uuid` is not a type (a UUID key is `string @id @genid`)
-3. **Field names**: Avoid SQL reserved words, especially for composite key `@id` fields
+3. **Field names**: A table or column named with an SQL reserved word is said when the 3.0 code generates - name it with `@table` / `@column` (8.3)
 4. **Search operators**: Use only the operators in 3.2. The symbols (`>`, `<=`) mean the same in every mode (the keywords and `!=` work in v3 mode only, 8.5)
 5. **between + LocalDate**: Know that +1 day is applied automatically
 6. **@audited**: After generation, you must verify `@NotAudited` on relationship fields

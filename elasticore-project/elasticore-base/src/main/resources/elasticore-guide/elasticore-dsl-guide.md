@@ -1163,6 +1163,7 @@ dto:
 ### 10.1 Invalid DSL types
 
 Use only the field types in the table in "3. Field types". A word that is not in the table is written into the entity as it is (`private uuid id;`) and does not compile.
+The run warns of such a word, and for `uuid`, `short`, `byte`, `char`, `OffsetDateTime` and `ZonedDateTime` it says what to write instead: `unresolved type 'uuid' - ... - write string(36), or string @id @genid for a generated key instead`.
 
 | Invalid type | Use instead |
 |-----------|------|
@@ -1204,39 +1205,38 @@ fields:
 - Use integer values only (0.0 -> 0, 5.0 -> 5)
 - If you need to validate a decimal range, a custom Bean Validation annotation is recommended
 
-### 10.3 SQL reserved words in a @ManyToOne @id field
+### 10.3 SQL reserved words, and a relation in a composite key
+> **Works in:** v3, Kotlin (JPA) · **Not in:** 2.x-compatible output (output = 'v2') and 2.x generator (nothing is said); MyBatis (mode: mybatis) says reserved names itself
 
-When a `@ManyToOne` field is used as an `@id` (composite key), the field name becomes the SQL column name as it is. If you use an SQL reserved word (order, group, select and so on), table creation fails.
+A table or a column named with a word Oracle, PostgreSQL or SQL Server reserves cannot be created there, since
+Hibernate quotes nothing by default: `order`, `group`, `user`, `date`, `level`, `comment`, `size`, `number` and so on.
+An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, and goes on:
 
-#### Example
-```yaml
-# WRONG - 'order' is a SQL reserved keyword
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      order: Order @id @ManyToOne       # SQL: order_id - reserved keyword error
-      itemSeq: int @id
-
-# SOLUTION 1 - Use non-reserved field name
-entity:
-  OrderItem:
-    meta: entity
-    fields:
-      orderRef: Order @id @ManyToOne    # SQL: order_ref_id - safe
-      itemSeq: int @id
-
-# SOLUTION 2 - Manually add @Column annotation after code generation
-# Generated Java code after build:
-# @Column(name = "\"order_id\"")  // Add quotes manually for reserved keywords
+```
+[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
 ```
 
-#### Common SQL reserved words
-`order`, `group`, `select`, `from`, `where`, `table`, `index`, `key`, `value`, `user`, `date`, `time`, `timestamp`
+Name them otherwise in the DSL; the Java names stay as they are:
 
-#### Workaround
-1. **Recommended**: Use a field name that is not an SQL reserved word (order -> orderRef, user -> userRef)
-2. Add `@Column(name = "\"field_id\"")` by hand in the generated code (wrap the name in quotes)
+```yaml
+entity:
+  Order:
+    meta: entity @table(purchase_order)
+    fields:
+      orderId: long @id @sequence
+      group: string(10) @column(group_code)
+```
+
+In an entity with `@expose`, a relation cannot be part of the composite key (`order: Order @id @ManyToOne` beside
+`itemSeq: int @id`): the controller takes each key field in the path, a relation there is the related entity itself,
+and the controller did not compile. The 3.0 code stops the build there:
+
+```
+[elcore3] Shop.OrderItem: its composite key holds the relation order: Order, and an exposed entity's controller takes each key field in the path, which a relation cannot be - key it by the related key's value (orderId: long @id), or do not expose it
+```
+
+Key it by the value (`orderId: long @id` and `itemSeq: int @id`, a composite key as in the DSL guide's "Composite key"),
+or leave the entity unexposed.
 
 ### 10.4 @audited and relationships (Relationships with Audited Entities)
 
@@ -1279,6 +1279,6 @@ fields:
 
 1. **Choose types**: Use only the types in the "3. Field types" table. Use `string(36)` instead of `uuid`, and `string @id @genid` for a UUID key
 2. **Validation range**: Use only integer values in `@min/@max`. For decimal validation, consider a custom annotation
-3. **Field names**: Avoid SQL reserved words. This matters most for `@id` composite key fields
+3. **Field names**: A table or column named with an SQL reserved word is said when the 3.0 code generates - name it with `@table` / `@column` (10.3)
 4. **Audit setting**: After generation, check the relationship fields of `@audited` entities for `@NotAudited`
 5. **Code review**: Compile the generated Java code and check for errors
