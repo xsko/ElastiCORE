@@ -550,7 +550,7 @@ public class SrcFilePublisher {
         if (maxValue != null) {
             String persistentPackageName = getPersistentPackageName(null);
             if(f.getTypeInfo().equals(BaseFieldType.BIGDECIMAL) || f.getTypeInfo().equals(BaseFieldType.BIGINTEGER)) {
-                p.add("@" + persistentPackageName + ".validation.constraints.DecimalMax(\"" + minValue + "\")");
+                p.add("@" + persistentPackageName + ".validation.constraints.DecimalMax(\"" + maxValue + "\")");
             }else {
                 p.add("@" + persistentPackageName + ".validation.constraints.Max(" + maxValue + ")");
             }
