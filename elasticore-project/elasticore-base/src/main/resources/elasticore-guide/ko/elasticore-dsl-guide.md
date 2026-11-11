@@ -596,11 +596,11 @@ metrics:
 
 | 쓰는 법 | 뜻 | Ossie SQL |
 |---|---|---|
-| `sum(엔티티.필드)` / `avg` / `min` / `max` | 한 엔티티의 필드 집계 | `SUM(PurchaseOrder.total)` |
-| `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(PurchaseOrder.order_id)` (키 컬럼 - BI 도구가 어느 dataset 을 세는지 알도록) / `COUNT(PurchaseOrder.total)` |
-| `count(distinct 엔티티.필드)` | 서로 다른 값의 수 (null 제외). `distinct` 는 `count` 에만, 필드와 함께 씁니다. `sum(distinct …)` 은 거부 | `COUNT(DISTINCT PurchaseOrder.customer_id)`, `where` 가 있으면 `COUNT(DISTINCT CASE WHEN … THEN PurchaseOrder.customer_id END)` |
+| `sum(엔티티.필드)` / `avg` / `min` / `max` | 한 엔티티의 필드 집계 | `SUM(total)` |
+| `count(엔티티)` / `count(엔티티.필드)` | 행 수 / 값 있는 행 수 | `COUNT(order_id)` (키 컬럼, null 이 없음 - 두 엔티티의 지표 안에서도 어느 dataset 을 세는지 보임) / `COUNT(total)` |
+| `count(distinct 엔티티.필드)` | 서로 다른 값의 수 (null 제외). `distinct` 는 `count` 에만, 필드와 함께 씁니다. `sum(distinct …)` 은 거부 | `COUNT(DISTINCT customer_id)`, `where` 가 있으면 `COUNT(DISTINCT CASE WHEN … THEN customer_id END)` |
 | `… where 필드 != 값 and 필드 >= 값` | 조건 (`=`, `!=`, `<`, `<=`, `>`, `>=`). `and` 로 이음 | `SUM(CASE WHEN … THEN … END)` |
-| `… where 필드 in (A, B)` / `not in (A, B)` | 값 목록. 값 하나하나를 단일 값과 똑같이 읽음 | `PurchaseOrder.status IN ('PLC', 'SHP')` |
+| `… where 필드 in (A, B)` / `not in (A, B)` | 값 목록. 값 하나하나를 단일 값과 똑같이 읽음 | `status IN ('PLC', 'SHP')` |
 | `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`. SQL 처럼 `and` 가 먼저 묶임. 괄호로 묶고, `not` 은 괄호 앞에 씀 | `(… OR …) AND …`, `NOT (…)` |
 | 값 | 숫자, `'글자'`(안의 `'` 는 `''`), `true`/`false`, **enum 상수 이름** (저장된 값으로 바뀜: `@db` 코드 `'CAN'`, `@jpa:Enumerated(STRING)` 면 이름, 둘 다 없으면 순번 `2`) | |
 | `지표A / 지표B` (`+ - * /`) | 앞에서 선언한 지표끼리 계산. 나누기는 0 으로 나누지 않고, 개수 / 개수는 소수로 | `(…) / NULLIF((…), 0)` |
@@ -612,8 +612,12 @@ metrics:
 - SQL 과 같이 `!=`, `not in`, `not (…)` 은 필드가 null 인 행을 세지 않습니다. `status` 가 null 일 수 있으면 위의 `unfinished` 는 `finishedOrders` 의 나머지가 아닙니다.
 - 줄에 ` #` 나 `: ` 가 들어가면 YAML 이 줄을 자르거나 파일을 못 읽으므로 줄 전체를 따옴표로 감쌉니다:
   `ratio: "shippedOrders / orderCount -- 배송 비율: 배송 / 전체"`.
+- 엔티티 하나의 지표는 - 그 엔티티의 지표끼리 계산한 것도 - 그 엔티티의 dataset 에 들어가고, 표처럼 컬럼을 이름만으로 부릅니다:
+  BI·AI 도구는 `PurchaseOrder.revenue` 로 부릅니다. 두 엔티티의 지표를 계산하는 지표(`orderCount / customerCount`)는 모델의
+  `metrics` 에 들어가 컬럼을 dataset 이름과 함께 부릅니다(`PurchaseOrder.order_id`). 룰 가이드 "지표가 들어가는 곳" 참고.
 - 못 읽는 줄(없는 엔티티·필드, enum 에 없는 상수, 뒤에 선언된 지표, enum 이 아닌 필드에 따옴표 없는 값, 짝이 맞지 않는 괄호, 빈 `in ()`, 한쪽이 빈 `or`·`and`, `sum(distinct …)`)은 생성할 때
-  `[ossie] [도메인] metric 이름: … ; it is left out.` 경고 후 빠집니다 - 추측해서 내보내지 않습니다.
+  `[ossie] [도메인] metric 이름: … ; it is left out.` 경고 후 빠집니다 - 추측해서 내보내지 않습니다. 엔티티 하나의 지표가 그 엔티티의
+  컬럼과 대소문자 구분 없이 같은 이름(`total`, `Status`)이어도 마찬가지입니다: 지표 이름을 바꾸세요.
 - **한 엔티티 안에서만** 셉니다. "취소되지 않은 주문의 팔린 수량" 처럼 다른 엔티티의 조건(주문 줄 → 주문 상태)이 필요한 지표는
   아직 쓸 수 없습니다 - 억지로 쓰면 취소분까지 세게 되므로 넣지 마세요.
 - 기간(월별 매출)은 지표에 넣지 않습니다. 시간 축은 BI 도구가 날짜 필드(`orderDate`, Ossie 의 time dimension)로 나눕니다.

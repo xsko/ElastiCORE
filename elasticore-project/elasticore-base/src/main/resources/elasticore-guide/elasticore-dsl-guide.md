@@ -596,11 +596,11 @@ metrics:
 
 | How to write | Meaning | Ossie SQL |
 |---|---|---|
-| `sum(Entity.field)` / `avg` / `min` / `max` | Aggregate a field of one entity | `SUM(PurchaseOrder.total)` |
-| `count(Entity)` / `count(Entity.field)` | Number of rows / number of rows with a value | `COUNT(PurchaseOrder.order_id)` (the key column - so that BI tools know which dataset is counted) / `COUNT(PurchaseOrder.total)` |
-| `count(distinct Entity.field)` | Number of different values, nulls not counted. `distinct` goes only with `count` and needs a field; `sum(distinct …)` is refused | `COUNT(DISTINCT PurchaseOrder.customer_id)`, with `where` `COUNT(DISTINCT CASE WHEN … THEN PurchaseOrder.customer_id END)` |
+| `sum(Entity.field)` / `avg` / `min` / `max` | Aggregate a field of one entity | `SUM(total)` |
+| `count(Entity)` / `count(Entity.field)` | Number of rows / number of rows with a value | `COUNT(order_id)` (the key column, never null - in a metric of two entities it still says which dataset is counted) / `COUNT(total)` |
+| `count(distinct Entity.field)` | Number of different values, nulls not counted. `distinct` goes only with `count` and needs a field; `sum(distinct …)` is refused | `COUNT(DISTINCT customer_id)`, with `where` `COUNT(DISTINCT CASE WHEN … THEN customer_id END)` |
 | `… where field != value and field >= value` | Conditions (`=`, `!=`, `<`, `<=`, `>`, `>=`), joined with `and` | `SUM(CASE WHEN … THEN … END)` |
-| `… where field in (A, B)` / `not in (A, B)` | A list of values, each read as a single value is | `PurchaseOrder.status IN ('PLC', 'SHP')` |
+| `… where field in (A, B)` / `not in (A, B)` | A list of values, each read as a single value is | `status IN ('PLC', 'SHP')` |
 | `… where a = 1 or b = 2`, `(a = 1 or b = 2) and c = 3`, `not (a = 1)` | `or`, with `and` binding tighter as in SQL. Parentheses group, and `not` goes before a parenthesis | `(… OR …) AND …`, `NOT (…)` |
 | Value | A number, `'text'` (a `'` inside is `''`), `true`/`false`, **an enum constant name** (converted to the stored value: the `@db` code `'CAN'`, the name if `@jpa:Enumerated(STRING)`, the ordinal `2` if neither) | |
 | `metricA / metricB` (`+ - * /`) | Calculate between metrics declared earlier. Division never divides by 0, and count / count gives a decimal | `(…) / NULLIF((…), 0)` |
@@ -612,8 +612,12 @@ metrics:
 - As in SQL, `!=`, `not in` and `not (…)` do not count a row whose field is null: where `status` may be null, `unfinished` above is not what `finishedOrders` leaves.
 - If a line contains ` #` or `: `, YAML cuts the line or cannot read the file, so wrap the whole line in quotes:
   `ratio: "shippedOrders / orderCount -- Shipped ratio: shipped / total"`.
+- A metric over one entity, also arithmetic over that entity's metrics, goes in that entity's dataset and names its columns alone, as the table shows:
+  a BI or AI tool names it `PurchaseOrder.revenue`. Arithmetic over the metrics of two entities (`orderCount / customerCount`) goes in the model's
+  `metrics`, on columns named with their dataset (`PurchaseOrder.order_id`). See "Where a metric goes" in the rule guide.
 - A line that cannot be read (an entity or field that does not exist, a constant the enum does not have, a metric declared later, an unquoted value on a field that is not an enum, parentheses that do not balance, an empty `in ()`, an `or` or `and` with nothing on one side, `sum(distinct …)`) is dropped at generation
-  with the warning `[ossie] [domain] metric name: … ; it is left out.` - it does not guess and export.
+  with the warning `[ossie] [domain] metric name: … ; it is left out.` - it does not guess and export. So is a metric over one entity named like
+  a column of that entity, in any case (`total`, `Status`): rename the metric.
 - It counts **within one entity only**. A metric that needs a condition on another entity, such as "the quantity sold in orders that are not cancelled" (order line -> order status), cannot be
   written yet - if you force it, cancelled lines would be counted too, so do not add it.
 - A period (monthly revenue) is not put in a metric. The time axis is split by the BI tool on a date field (`orderDate`, the time dimension of Ossie).

@@ -1798,7 +1798,7 @@ relationships:
 | `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
 | 엔티티의 행 필터: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | dataset `custom_extensions` 의 `row_filter`(적은 절 그대로) + `description` 끝의 `(rows only where: ...)` | Ossie 에는 dataset 의 행 필터가 없어 `source` 는 테이블 그대로. 엔티티 자신의 것만, `Where` 보다 `SQLRestriction`. `@abstract` 부모의 것은 경고하고 내보내지 않음: Hibernate 는 부모가 `@MappedSuperclass` 가 아니라 엔티티로 쓰였을 때만 자식에 적용한다. 그 dataset 의 지표는 `custom_extensions` 에 `dataset_row_filter: true` |
 | `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `custom_extensions` | 파생 규칙과 값 타입 |
-| `metrics:` 의 지표 | `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표" |
+| `metrics:` 의 지표 | 엔티티 하나: 그 dataset 의 `metrics[]`. 두 엔티티 이상의 지표를 계산: 모델의 `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표". 아래 "지표가 들어가는 곳" |
 | `@terms(…)` (엔티티·필드·지표) | `ai_context.synonyms` | 업무 용어 |
 
 **식의 형태**: Ossie 의 `expression` 은 최상위 `sql` 과 `dialects` 목록 중 하나 이상을 가집니다. 최상위 `sql` 은
@@ -1825,6 +1825,33 @@ expression:
 `custom_extensions` 에 `"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
 3.0.261027-rc2 까지는 모든 식을 `dialects` 목록으로 내보냈습니다(이식 가능한 식은 `dialect: OSSIE_SQL_2026`). Ossie 가 최상위
 `sql` 을 이식 가능한 형태로 정한 뒤(apache/ossie #617) 지금 형태로 바뀌었습니다 - 식의 내용은 같습니다.
+
+**지표가 들어가는 곳**: Ossie 는 지표에 범위를 둡니다(스펙 "Metric Scoping"). 집계가 모두 엔티티 하나를 읽는 지표는 - 그 엔티티의
+지표끼리 계산한 `averageOrder: revenue / orderCount` 도 - 그 엔티티의 dataset 에 속합니다. dataset 의 `metrics` 에 쓰이고,
+dataset 의 필드를 dataset 이름 없이 부르며(`PurchaseOrder.total` 이 아니라 `total`), 읽는 쪽은 `PurchaseOrder.revenue` 로 부릅니다.
+관계형 인터페이스(Layer 2)는 이것을 그 dataset 의 measure 로 보여 줍니다. 두 엔티티 이상의 지표를 계산하는 지표만 dataset 을 넘나듭니다.
+이것은 모델의 `metrics` 에 남아 필드를 dataset 이름과 함께 부르고, 두 도메인이 같이 쓰는 이름에는 전처럼 도메인이 앞에 붙습니다:
+
+```yaml
+datasets:
+  - name: PurchaseOrder
+    ...
+    metrics:
+      - name: revenue
+        expression:
+          sql: "SUM(CASE WHEN status <> 'CAN' THEN total END)"
+        datatype: Decimal
+metrics:
+  - name: ordersPerCustomer          # orderCount / customerCount: 두 엔티티 (Pet Store 에는 없음)
+    expression:
+      sql: "CAST((COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)) AS DECIMAL(38, 10)) / NULLIF((COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)), 0)"
+```
+
+dataset 의 필드와 지표는 대소문자 구분 없이 이름 하나를 같이 씁니다. dataset 의 필드와 같은 이름(`total`, `Status`)이거나 다른 도메인이 이미
+넣은 지표와 같은 이름인 지표는 이름을 바꾸지 않고 경고 후 빠집니다:
+`[ossie] [petstore] metric total: PurchaseOrder has a field total, and a dataset's fields and metrics share one set of names - rename the metric; it is left out.`
+dataset 의 지표 이름 앞에는 도메인을 붙이지 않습니다.
+ElastiCORE 3.0.261106-rc11 까지는 모든 지표를 모델의 `metrics` 에 씁니다. 지표를 이름으로 부르는 쪽은 업그레이드 때 바뀝니다: `revenue` 가 이제 `PurchaseOrder.revenue` 입니다.
 
 **내보내지 않는 것**: 선언하지 않은 지표 - 엔티티 필드에서 매출 공식을 지어내는 것은 추측을 내보내는 일입니다.
 `is_time` 은 쓰지 않습니다 - 스펙이 `datatype`(Date/Time/DateTime/DateTimeTz)

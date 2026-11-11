@@ -61,8 +61,9 @@ import java.util.regex.Pattern;
  * - what Ossie has no word for (a lifecycle, who may read a row, a value the
  *   model derives) as an ELASTICORE custom extension;
  * - the business's own words (@terms) as synonyms, and its measures
- *   (metrics:) as Ossie metrics - only those the DSL declares. A metric
- *   invented from entity fields would be exporting a guess.
+ *   (metrics:) as Ossie metrics, one over one entity in that entity's
+ *   dataset - only those the DSL declares. A metric invented from entity
+ *   fields would be exporting a guess.
  *
  * The export is opt-in - a project asks for it by naming the ossie-export
  * rule set - and a failure degrades the export, never the build.
@@ -201,15 +202,32 @@ public final class OssieSemanticModelExporter {
                 + "Password and write-only columns are left out on purpose. "
                 + "Lifecycles, access rules and derived values are in the ELASTICORE custom extensions.")).append('\n');
         out.append("datasets:\n");
+        List<Written> written = new ArrayList<Written>();
         for (Unit u : units) {
             ctx = u.ctx;
-            dataset(u);
+            written.add(dataset(u));
+        }
+        // The metrics are read once every dataset is: one of a dataset goes in it, beside its fields.
+        Map<String, List<String>> ofDataset = new LinkedHashMap<String, List<String>>();
+        List<String> ofModel = new ArrayList<String>();
+        metrics(written, ofDataset, ofModel);
+        for (Written w : written) {
+            out.append(w.head);
+            List<String> own = ofDataset.get(w.name);
+            if (own != null) {
+                out.append("    metrics:\n");
+                for (String m : own) out.append(m);
+            }
+            out.append(w.tail);
         }
         if (!relationships.isEmpty()) {
             out.append("relationships:\n");
             for (String r : relationships) out.append(r);
         }
-        metrics(units);
+        if (!ofModel.isEmpty()) {
+            out.append("metrics:\n");
+            for (String m : ofModel) out.append(m);
+        }
         Map<String, Object> ext = new LinkedHashMap<String, Object>();
         ext.put("generator", "ElastiCORE");
         ext.put("domains", domains);
@@ -242,12 +260,28 @@ public final class OssieSemanticModelExporter {
 
     // ---- a dataset ---------------------------------------------------------------
 
-    private void dataset(Unit u) {
+    /** A dataset as written, up to where its metrics go and from there, and the names of its fields. */
+    private static final class Written {
+        final String name;
+        final String head;
+        final List<String> fields;
+        final String tail;
+
+        Written(String name, String head, List<String> fields, String tail) {
+            this.name = name;
+            this.head = head;
+            this.fields = fields;
+            this.tail = tail;
+        }
+    }
+
+    private Written dataset(Unit u) {
         Entity entity = u.entity;
         String name = datasetNames.get(entity);
+        StringBuilder b = new StringBuilder();
 
-        out.append("  - name: ").append(name).append('\n');
-        out.append("    source: ").append(plain(table(entity, u.model))).append('\n');
+        b.append("  - name: ").append(name).append('\n');
+        b.append("    source: ").append(plain(table(entity, u.model))).append('\n');
 
         List<Field> all = inItsTable(
                 entity, new ArrayList<Field>(entity.getAllFieldListMap().values()));
@@ -255,12 +289,14 @@ public final class OssieSemanticModelExporter {
         for (Field f : all) {
             if (isKey(f) && f.getTypeInfo().isBaseType()) pk.add(f.getDbColumnName());
         }
-        if (!pk.isEmpty()) out.append("    primary_key: [").append(join(plain(pk), ", ")).append("]\n");
+        if (!pk.isEmpty())
+            b.append("    primary_key: [").append(join(plain(pk), ", ")).append("]\n");
 
         List<List<String>> unique = uniqueKeys(entity, all);
         if (!unique.isEmpty()) {
-            out.append("    unique_keys:\n");
-            for (List<String> key : unique) out.append("      - [").append(join(plain(key), ", ")).append("]\n");
+            b.append("    unique_keys:\n");
+            for (List<String> key : unique)
+                b.append("      - [").append(join(plain(key), ", ")).append("]\n");
         }
 
         String label = entity.getMetaInfo().getMetaAnnotationValue("label");
@@ -272,9 +308,10 @@ public final class OssieSemanticModelExporter {
             description = (description == null ? "" : description + " ") + "(rows only where: " + filter + ")";
         }
         if (description != null)
-            out.append("    description: ").append(yaml(description)).append('\n');
+            b.append("    description: ").append(yaml(description)).append('\n');
         List<String> terms = termsOf(entity.getMetaInfo().getMetaAnnotationValue("terms"));
-        if (!terms.isEmpty()) out.append("    ai_context:\n      synonyms: ").append(list(terms)).append('\n');
+        if (!terms.isEmpty())
+            b.append("    ai_context:\n      synonyms: ").append(list(terms)).append('\n');
 
         // The fields, keyed by column: a column is in a table once.
         Map<String, String> fields = new LinkedHashMap<String, String>();
@@ -295,8 +332,8 @@ public final class OssieSemanticModelExporter {
                 reference(fields, entity, f, target, all);
             }
         }
-        out.append("    fields:\n");
-        for (String text : fields.values()) out.append(text);
+        b.append("    fields:\n");
+        for (String text : fields.values()) b.append(text);
 
         Map<String, Object> ext = new LinkedHashMap<String, Object>();
         ext.put("entity", entity.getIdentity().getName());
@@ -313,7 +350,7 @@ public final class OssieSemanticModelExporter {
         String events = entity.getMetaInfo().getMetaAnnotationValue("event");
         if (events != null) ext.put("events", events);
         if (!omitted.isEmpty()) ext.put("omitted_columns", omitted);
-        customExtension("    ", ext);
+        return new Written(name, b.toString(), new ArrayList<String>(fields.keySet()), extension("    ", ext));
     }
 
     /** Hibernate's Where or SQLRestriction as the class says it, fully qualified or not, and its arguments. */
@@ -676,18 +713,27 @@ public final class OssieSemanticModelExporter {
     // ---- metrics ----------------------------------------------------------------------
 
     /**
-     * The metrics: of every domain, as Ossie metrics. A name two domains both
-     * use is qualified with its domain, as a dataset name is.
+     * The metrics: of every domain, as Ossie metrics, each in its scope (core
+     * spec, "Metric Scoping"). One whose aggregates all read one entity - also
+     * arithmetic over that entity's metrics - is its dataset's: the measure
+     * the relational interface (Layer 2) exposes on the dataset, written in
+     * its metrics on its fields by their own names, and named
+     * PurchaseOrder.revenue. Its fields and its metrics share one set of
+     * names, so a metric named like one is refused and said, never renamed;
+     * no domain is put before it. Only arithmetic over metrics of more than
+     * one entity spans datasets and stays at the model root, where a name two
+     * domains both use is qualified with its domain, as a dataset name is.
      */
-    private void metrics(List<Unit> units) {
+    private void metrics(List<Written> datasets, Map<String, List<String>> ofDataset, List<String> ofModel) {
+        Map<String, Written> byName = new LinkedHashMap<String, Written>();
+        for (Written w : datasets) byName.put(w.name, w);
         Map<String, Unit> byDomain = new LinkedHashMap<String, Unit>();
         for (Unit u : domainUnits) if (!byDomain.containsKey(u.domain)) byDomain.put(u.domain, u);
+        // A dataset's metrics so far, by their name in lower case: the name and its domain.
+        Map<String, Map<String, String[]>> named = new LinkedHashMap<String, Map<String, String[]>>();
+        List<Unit> rootDomains = new ArrayList<Unit>();
+        List<OssieMetrics.Metric> root = new ArrayList<OssieMetrics.Metric>();
         Map<String, Integer> seen = new LinkedHashMap<String, Integer>();
-        for (Unit u : byDomain.values()) {
-            if (u.model.getMetrics() == null) continue;
-            for (String name : u.model.getMetrics().keySet()) seen.put(name, seen.containsKey(name) ? seen.get(name) + 1 : 1);
-        }
-        List<String> written = new ArrayList<String>();
         for (final Unit u : byDomain.values()) {
             Map<String, String> declared = u.model.getMetrics();
             if (declared == null || declared.isEmpty()) continue;
@@ -696,28 +742,76 @@ public final class OssieSemanticModelExporter {
             for (Map.Entry<String, String> d : declared.entrySet()) {
                 OssieMetrics.Metric m = reader.read(d.getKey(), d.getValue());
                 if (m == null) continue;
-                String name = seen.get(m.name) > 1 ? u.domain + "_" + m.name : m.name;
-                StringBuilder b = new StringBuilder();
-                b.append("  - name: ").append(plain(name)).append('\n');
-                // Aggregates, CASE WHEN, CAST, NULLIF and comparisons: all of
-                // it in the Ossie language, so declared as such.
-                b.append(expression("    ", m.sql));
-                if (m.label != null && !m.label.isEmpty()) b.append("    description: ").append(yaml(m.label)).append('\n');
-                if (m.datatype != null) b.append("    datatype: ").append(m.datatype).append('\n');
-                if (!m.terms.isEmpty()) b.append("    ai_context:\n      synonyms: ").append(list(m.terms)).append('\n');
-                Map<String, Object> ext = new LinkedHashMap<String, Object>();
-                ext.put("domain", u.domain);
-                ext.put("declared", m.declared);
-                // What the application counts and a reader of the table would not: the filter is on the dataset.
-                for (String ds : m.datasets) if (filtered.contains(ds)) ext.put("dataset_row_filter", true);
-                b.append(extension("    ", ext));
-                written.add(b.toString());
+                if (m.datasets.size() != 1) {
+                    rootDomains.add(u);
+                    root.add(m);
+                    seen.put(m.name, seen.containsKey(m.name) ? seen.get(m.name) + 1 : 1);
+                    continue;
+                }
+                String ds = m.datasets.get(0);
+                if (!named.containsKey(ds)) named.put(ds, new LinkedHashMap<String, String[]>());
+                String clash = clash(byName.get(ds), named.get(ds), m.name);
+                if (clash != null) {
+                    ConsoleLog.printWarn(
+                            "[ossie] [" + u.domain + "] metric " + m.name + ": " + clash + "; it is left out.");
+                    continue;
+                }
+                named.get(ds).put(m.name.toLowerCase(java.util.Locale.ROOT), new String[] {m.name, u.domain});
+                if (!ofDataset.containsKey(ds)) ofDataset.put(ds, new ArrayList<String>());
+                ofDataset.get(ds).add(metric("      ", m.name, u, m, m.local));
             }
             for (String p : reader.problems()) ConsoleLog.printWarn("[ossie] [" + u.domain + "] " + p);
         }
-        if (written.isEmpty()) return;
-        out.append("metrics:\n");
-        for (String w : written) out.append(w);
+        for (int i = 0; i < root.size(); i++) {
+            OssieMetrics.Metric m = root.get(i);
+            Unit u = rootDomains.get(i);
+            ofModel.add(metric("  ", seen.get(m.name) > 1 ? u.domain + "_" + m.name : m.name, u, m, m.sql));
+        }
+    }
+
+    /**
+     * Why the dataset cannot take a metric of that name, or null. Its fields and
+     * metrics share one set of names, which a query reads in any case.
+     */
+    private static String clash(Written dataset, Map<String, String[]> metrics, String name) {
+        for (String field : dataset.fields) {
+            if (field.equalsIgnoreCase(name)) {
+                return dataset.name + " has a field " + field
+                        + ", and a dataset's fields and metrics share one set of names - rename the metric";
+            }
+        }
+        String[] other = metrics.get(name.toLowerCase(java.util.Locale.ROOT));
+        if (other == null) return null;
+        return dataset.name + " already has a metric " + other[0] + ", from domain " + other[1]
+                + " - rename the metric";
+    }
+
+    /** One metric, its entry at the indent of the section it is in: the model root's, or a dataset's. */
+    private String metric(String indent, String name, Unit u, OssieMetrics.Metric m, String sql) {
+        String in = indent + "  ";
+        StringBuilder b = new StringBuilder();
+        b.append(indent).append("- name: ").append(plain(name)).append('\n');
+        // Aggregates, CASE WHEN, CAST, NULLIF and comparisons: all of
+        // it in the Ossie language, so declared as such.
+        b.append(expression(in, sql));
+        if (m.label != null && !m.label.isEmpty())
+            b.append(in).append("description: ").append(yaml(m.label)).append('\n');
+        if (m.datatype != null)
+            b.append(in).append("datatype: ").append(m.datatype).append('\n');
+        if (!m.terms.isEmpty())
+            b.append(in)
+                    .append("ai_context:\n")
+                    .append(in)
+                    .append("  synonyms: ")
+                    .append(list(m.terms))
+                    .append('\n');
+        Map<String, Object> ext = new LinkedHashMap<String, Object>();
+        ext.put("domain", u.domain);
+        ext.put("declared", m.declared);
+        // What the application counts and a reader of the table would not: the filter is on the dataset.
+        for (String ds : m.datasets) if (filtered.contains(ds)) ext.put("dataset_row_filter", true);
+        b.append(extension(in, ext));
+        return b.toString();
     }
 
     /** What a metric line may name, answered from the exported model: the entities of the metric's domain first. */

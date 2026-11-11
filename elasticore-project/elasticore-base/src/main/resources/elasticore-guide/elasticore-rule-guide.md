@@ -1798,7 +1798,7 @@ relationships:
 | `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |
 | A row filter on the entity: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | `row_filter` in the dataset's `custom_extensions` (the clause as written) + `(rows only where: ...)` at the end of `description` | Ossie has no row filter on a dataset, so `source` stays the table. Only the entity's own, `SQLRestriction` over `Where`. One on an `@abstract` parent is a warning and is not exported: Hibernate applies it to the child only when the parent is written as an entity, not as a `@MappedSuperclass`. A metric over that dataset gets `dataset_row_filter: true` in its `custom_extensions` |
 | `@compute`, `@snapshot`, `money`/`quantity` | `custom_extensions` of the field | Derived rules and value types |
-| A metric in `metrics:` | `metrics[]` (`expression.sql`, `datatype`, `description`) | Only what you declare. The syntax is "Business metrics" in the DSL guide |
+| A metric in `metrics:` | Over one entity: that dataset's `metrics[]`. Over the metrics of two or more entities: the model's `metrics[]` (`expression.sql`, `datatype`, `description`) | Only what you declare. The syntax is "Business metrics" in the DSL guide. See "Where a metric goes" below |
 | `@terms(…)` (entity, field, metric) | `ai_context.synonyms` | Business terms |
 
 **Form of the expression**: The Ossie `expression` has a top-level `sql` and/or a `dialects` list, at least one of them. The top-level `sql` is
@@ -1825,6 +1825,33 @@ without a top-level `sql` - the reader uses that SQL if it understands it, and s
 carries `"formula": "database"` in `custom_extensions` to say that the database computes the column.
 Up to 3.0.261027-rc2, every expression was exported as a `dialects` list (a portable expression was `dialect: OSSIE_SQL_2026`). After Ossie fixed the top-level
 `sql` as the portable form (apache/ossie #617), it changed to the current form - the content of the expression is the same.
+
+**Where a metric goes**: Ossie gives a metric a scope (spec "Metric Scoping"). A metric whose aggregates all read one entity - also arithmetic over
+that entity's metrics, such as `averageOrder: revenue / orderCount` - belongs to that entity's dataset. It is written in the dataset's `metrics`,
+names the dataset's fields without the dataset (`total`, not `PurchaseOrder.total`), and a consumer names it `PurchaseOrder.revenue`.
+The relational interface (Layer 2) exposes it as a measure of its dataset. Only arithmetic over the metrics of two or more entities spans datasets.
+It stays in the model's `metrics`, on fields named with their dataset, and a name two domains both use there still gets the domain before it:
+
+```yaml
+datasets:
+  - name: PurchaseOrder
+    ...
+    metrics:
+      - name: revenue
+        expression:
+          sql: "SUM(CASE WHEN status <> 'CAN' THEN total END)"
+        datatype: Decimal
+metrics:
+  - name: ordersPerCustomer          # orderCount / customerCount: two entities (not in the Pet Store)
+    expression:
+      sql: "CAST((COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)) AS DECIMAL(38, 10)) / NULLIF((COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)), 0)"
+```
+
+A dataset's fields and its metrics share one set of names, in any case. A metric named like a field of its dataset (`total`, `Status`), or like a metric
+another domain already put there, is left out with a warning, not renamed:
+`[ossie] [petstore] metric total: PurchaseOrder has a field total, and a dataset's fields and metrics share one set of names - rename the metric; it is left out.`
+No domain goes before the name of a dataset's metric.
+ElastiCORE 3.0.261106-rc11 and earlier write every metric in the model's `metrics`. A consumer that names one changes with the upgrade: `revenue` is now `PurchaseOrder.revenue`.
 
 **What is not exported**: metrics you did not declare - inventing a revenue formula from entity fields would be exporting a guess.
 `is_time` is not used - the spec decides the default from `datatype` (Date/Time/DateTime/DateTimeTz),

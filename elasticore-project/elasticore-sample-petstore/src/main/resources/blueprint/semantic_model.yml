@@ -192,6 +192,17 @@ datasets:
           sql: "country_code"
         datatype: String
         description: "homeAddress.countryCode"
+    metrics:
+      - name: customerCount
+        expression:
+          sql: "COUNT(CASE WHEN role = 'U' THEN 1 END)"
+        description: "고객 수 (관리자 제외)"
+        datatype: Integer
+        ai_context:
+          synonyms: ["members", "회원 수"]
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(Customer) where role = USER @terms(members, 회원 수) -- 고객 수 (관리자 제외)\"}"
     custom_extensions:
       - vendor_name: ELASTICORE
         data: "{\"entity\": \"Customer\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"create\": \"public\", \"read\": \"owner\", \"update\": \"owner\"}, \"omitted_columns\": [\"password\"]}"
@@ -306,6 +317,109 @@ datasets:
         expression:
           sql: "customer_id"
         datatype: Integer
+    metrics:
+      - name: revenue
+        expression:
+          sql: "SUM(CASE WHEN status <> 'CAN' THEN total END)"
+        description: "매출 (취소 제외, VAT 포함·할인 후 금액)"
+        datatype: Decimal
+        ai_context:
+          synonyms: ["sales", "매출액"]
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)\"}"
+      - name: orderCount
+        expression:
+          sql: "COUNT(CASE WHEN status <> 'CAN' THEN 1 END)"
+        description: "주문 수 (취소 제외)"
+        datatype: Integer
+        ai_context:
+          synonyms: ["orders", "주문 건수"]
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status != CANCELLED @terms(orders, 주문 건수) -- 주문 수 (취소 제외)\"}"
+      - name: averageOrder
+        expression:
+          sql: "(SUM(CASE WHEN status <> 'CAN' THEN total END)) / NULLIF((COUNT(CASE WHEN status <> 'CAN' THEN 1 END)), 0)"
+        description: "주문 1건 평균 금액"
+        datatype: Decimal
+        ai_context:
+          synonyms: ["AOV", "객단가"]
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"revenue / orderCount @terms(AOV, 객단가) -- 주문 1건 평균 금액\"}"
+      - name: shippedOrders
+        expression:
+          sql: "COUNT(CASE WHEN status = 'SHP' THEN 1 END)"
+        description: "배송된 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수\"}"
+      - name: cancelledOrders
+        expression:
+          sql: "COUNT(CASE WHEN status = 'CAN' THEN 1 END)"
+        description: "취소된 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = CANCELLED -- 취소된 주문 수\"}"
+      - name: liveOrders
+        expression:
+          sql: "COUNT(CASE WHEN status IN ('PLC', 'SHP') THEN 1 END)"
+        description: "취소되지 않은 주문 수 (상태 목록)"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 취소되지 않은 주문 수 (상태 목록)\"}"
+      - name: otherOrders
+        expression:
+          sql: "COUNT(CASE WHEN status NOT IN ('CAN') THEN 1 END)"
+        description: "취소 외 상태의 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status not in (CANCELLED) -- 취소 외 상태의 주문 수\"}"
+      - name: finishedOrders
+        expression:
+          sql: "COUNT(CASE WHEN status = 'SHP' OR status = 'CAN' THEN 1 END)"
+        description: "끝난 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수\"}"
+      - name: paidFinished
+        expression:
+          sql: "COUNT(CASE WHEN (status = 'SHP' OR status = 'CAN') AND total > 0 THEN 1 END)"
+        description: "금액이 있는 끝난 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 0 -- 금액이 있는 끝난 주문 수\"}"
+      - name: unfinished
+        expression:
+          sql: "COUNT(CASE WHEN NOT (status = 'SHP' OR status = 'CAN') THEN 1 END)"
+        description: "끝나지 않은 주문 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수\"}"
+      - name: buyers
+        expression:
+          sql: "COUNT(DISTINCT customer_id)"
+        description: "주문한 고객 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) -- 주문한 고객 수\"}"
+      - name: keptBuyers
+        expression:
+          sql: "COUNT(DISTINCT CASE WHEN status <> 'CAN' THEN customer_id END)"
+        description: "취소되지 않은 주문이 있는 고객 수"
+        datatype: Integer
+        custom_extensions:
+          - vendor_name: ELASTICORE
+            data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수\"}"
     custom_extensions:
       - vendor_name: ELASTICORE
         data: "{\"entity\": \"PurchaseOrder\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"cancel\": \"owner\", \"create\": \"user\", \"read\": \"owner\"}, \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", \"cancel\": \"PLACED -> CANCELLED\", \"delete\": \"CANCELLED\"}}, \"events\": \"Placed(total), Shipped, Cancelled\", \"omitted_columns\": [\"credit_card_number\"]}"
@@ -537,119 +651,6 @@ relationships:
     to: CaseNote
     from_columns: [note_note_id]
     to_columns: [note_id]
-metrics:
-  - name: revenue
-    expression:
-      sql: "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)"
-    description: "매출 (취소 제외, VAT 포함·할인 후 금액)"
-    datatype: Decimal
-    ai_context:
-      synonyms: ["sales", "매출액"]
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)\"}"
-  - name: orderCount
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)"
-    description: "주문 수 (취소 제외)"
-    datatype: Integer
-    ai_context:
-      synonyms: ["orders", "주문 건수"]
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status != CANCELLED @terms(orders, 주문 건수) -- 주문 수 (취소 제외)\"}"
-  - name: averageOrder
-    expression:
-      sql: "(SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)) / NULLIF((COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)), 0)"
-    description: "주문 1건 평균 금액"
-    datatype: Decimal
-    ai_context:
-      synonyms: ["AOV", "객단가"]
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"revenue / orderCount @terms(AOV, 객단가) -- 주문 1건 평균 금액\"}"
-  - name: shippedOrders
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status = 'SHP' THEN 1 END)"
-    description: "배송된 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수\"}"
-  - name: cancelledOrders
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status = 'CAN' THEN 1 END)"
-    description: "취소된 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = CANCELLED -- 취소된 주문 수\"}"
-  - name: customerCount
-    expression:
-      sql: "COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)"
-    description: "고객 수 (관리자 제외)"
-    datatype: Integer
-    ai_context:
-      synonyms: ["members", "회원 수"]
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(Customer) where role = USER @terms(members, 회원 수) -- 고객 수 (관리자 제외)\"}"
-  - name: liveOrders
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status IN ('PLC', 'SHP') THEN 1 END)"
-    description: "취소되지 않은 주문 수 (상태 목록)"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 취소되지 않은 주문 수 (상태 목록)\"}"
-  - name: otherOrders
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status NOT IN ('CAN') THEN 1 END)"
-    description: "취소 외 상태의 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status not in (CANCELLED) -- 취소 외 상태의 주문 수\"}"
-  - name: finishedOrders
-    expression:
-      sql: "COUNT(CASE WHEN PurchaseOrder.status = 'SHP' OR PurchaseOrder.status = 'CAN' THEN 1 END)"
-    description: "끝난 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수\"}"
-  - name: paidFinished
-    expression:
-      sql: "COUNT(CASE WHEN (PurchaseOrder.status = 'SHP' OR PurchaseOrder.status = 'CAN') AND PurchaseOrder.total > 0 THEN 1 END)"
-    description: "금액이 있는 끝난 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 0 -- 금액이 있는 끝난 주문 수\"}"
-  - name: unfinished
-    expression:
-      sql: "COUNT(CASE WHEN NOT (PurchaseOrder.status = 'SHP' OR PurchaseOrder.status = 'CAN') THEN 1 END)"
-    description: "끝나지 않은 주문 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수\"}"
-  - name: buyers
-    expression:
-      sql: "COUNT(DISTINCT PurchaseOrder.customer_id)"
-    description: "주문한 고객 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) -- 주문한 고객 수\"}"
-  - name: keptBuyers
-    expression:
-      sql: "COUNT(DISTINCT CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.customer_id END)"
-    description: "취소되지 않은 주문이 있는 고객 수"
-    datatype: Integer
-    custom_extensions:
-      - vendor_name: ELASTICORE
-        data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수\"}"
 custom_extensions:
   - vendor_name: ELASTICORE
     data: "{\"generator\": \"ElastiCORE\", \"domains\": [\"petstore\", \"refdata\"]}"

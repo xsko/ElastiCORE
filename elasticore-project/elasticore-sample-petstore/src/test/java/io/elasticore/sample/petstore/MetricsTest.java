@@ -25,8 +25,6 @@ import java.sql.Statement;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -63,18 +61,19 @@ class MetricsTest {
         try (InputStream in = getClass().getResourceAsStream("/blueprint/semantic_model.yml")) {
             model = new Yaml().load(in);
         }
-        Map<String, String> tables = new HashMap<String, String>();
-        for (Map<String, Object> ds : (List<Map<String, Object>>) model.get("datasets")) {
-            tables.put((String) ds.get("name"), (String) ds.get("source"));
-        }
         Map<String, BigDecimal> measured = new HashMap<String, BigDecimal>();
-        for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
-            Map<String, Object> expression = (Map<String, Object>) m.get("expression");
-            // The portable form: a metric is always in the Ossie language.
-            String sql = (String) expression.get("sql");
-            assertThat(expression).as((String) m.get("name")).containsKey("sql").doesNotContainKey("dialects");
-            measured.put((String) m.get("name"), run(sql, tables));
+        for (Map<String, Object> ds : (List<Map<String, Object>>) model.get("datasets")) {
+            if (!ds.containsKey("metrics")) continue;
+            for (Map<String, Object> m : (List<Map<String, Object>>) ds.get("metrics")) {
+                Map<String, Object> expression = (Map<String, Object>) m.get("expression");
+                // The portable form: a metric is always in the Ossie language.
+                String sql = (String) expression.get("sql");
+                assertThat(expression).as((String) m.get("name")).containsKey("sql").doesNotContainKey("dialects");
+                measured.put((String) m.get("name"), run(sql, (String) ds.get("source")));
+            }
         }
+        // Each reads one entity, so each is its dataset's: none is left at the model root.
+        assertThat(model).doesNotContainKey("metrics");
 
         // The same, from the entities.
         List<PurchaseOrder> orders = entityManager.createQuery("select o from PurchaseOrder o", PurchaseOrder.class).getResultList();
@@ -122,28 +121,40 @@ class MetricsTest {
         assertThat(measured.get("keptBuyers")).isEqualByComparingTo(BigDecimal.valueOf(keptBuyers.size()));
     }
 
-    /** A line without in, or, a parenthesis or distinct is written as it was before they could be read. */
+    /**
+     * A line without in, or, a parenthesis or distinct is written as it was before they could be read,
+     * now in its dataset's metrics, on the dataset's fields by their own names.
+     */
     @Test
-    @SuppressWarnings("unchecked")
     void theMetricsOfTheOldFormAreWrittenAsTheyWere() throws Exception {
         Map<String, Object> model;
         try (InputStream in = getClass().getResourceAsStream("/blueprint/semantic_model.yml")) {
             model = new Yaml().load(in);
         }
-        Map<String, String> written = new HashMap<String, String>();
-        for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
-            written.put((String) m.get("name"), (String) ((Map<String, Object>) m.get("expression")).get("sql"));
-        }
-        assertThat(written)
-                .containsEntry("revenue", "SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)")
-                .containsEntry("orderCount", "COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)")
+        assertThat(datasetMetrics(model))
+                .containsEntry("PurchaseOrder.revenue", "SUM(CASE WHEN status <> 'CAN' THEN total END)")
+                .containsEntry("PurchaseOrder.orderCount", "COUNT(CASE WHEN status <> 'CAN' THEN 1 END)")
                 .containsEntry(
-                        "averageOrder",
-                        "(SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END))"
-                                + " / NULLIF((COUNT(CASE WHEN PurchaseOrder.status <> 'CAN' THEN 1 END)), 0)")
-                .containsEntry("shippedOrders", "COUNT(CASE WHEN PurchaseOrder.status = 'SHP' THEN 1 END)")
-                .containsEntry("cancelledOrders", "COUNT(CASE WHEN PurchaseOrder.status = 'CAN' THEN 1 END)")
-                .containsEntry("customerCount", "COUNT(CASE WHEN Customer.role = 'U' THEN 1 END)");
+                        "PurchaseOrder.averageOrder",
+                        "(SUM(CASE WHEN status <> 'CAN' THEN total END))"
+                                + " / NULLIF((COUNT(CASE WHEN status <> 'CAN' THEN 1 END)), 0)")
+                .containsEntry("PurchaseOrder.shippedOrders", "COUNT(CASE WHEN status = 'SHP' THEN 1 END)")
+                .containsEntry("PurchaseOrder.cancelledOrders", "COUNT(CASE WHEN status = 'CAN' THEN 1 END)")
+                .containsEntry("Customer.customerCount", "COUNT(CASE WHEN role = 'U' THEN 1 END)");
+    }
+
+    /** Each dataset's metrics, named as a consumer names them - PurchaseOrder.revenue - and their SQL. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> datasetMetrics(Map<String, Object> model) {
+        Map<String, String> written = new HashMap<String, String>();
+        for (Map<String, Object> ds : (List<Map<String, Object>>) model.get("datasets")) {
+            if (!ds.containsKey("metrics")) continue;
+            for (Map<String, Object> m : (List<Map<String, Object>>) ds.get("metrics")) {
+                written.put(ds.get("name") + "." + m.get("name"),
+                        (String) ((Map<String, Object>) m.get("expression")).get("sql"));
+            }
+        }
+        return written;
     }
 
     /**
@@ -161,8 +172,8 @@ class MetricsTest {
             model = new Yaml().load(in);
         }
         Map<String, String> sqls = new HashMap<String, String>();
-        for (Map<String, Object> m : (List<Map<String, Object>>) model.get("metrics")) {
-            sqls.put((String) m.get("name"), (String) ((Map<String, Object>) m.get("expression")).get("sql"));
+        for (Map.Entry<String, String> m : datasetMetrics(model).entrySet()) {
+            if (m.getKey().startsWith("PurchaseOrder.")) sqls.put(m.getKey().substring("PurchaseOrder.".length()), m.getValue());
         }
         try (Connection c = dataSource.getConnection()) {
             c.setAutoCommit(false);
@@ -189,9 +200,9 @@ class MetricsTest {
         }
     }
 
-    /** A PurchaseOrder metric as a query on its table. */
+    /** A PurchaseOrder metric as a query on its table, whose columns its fields are. */
     private static String metric(String sql) {
-        return "SELECT " + sql.replace("PurchaseOrder.", "ps_purchase_order.") + " FROM ps_purchase_order";
+        return "SELECT " + sql + " FROM ps_purchase_order";
     }
 
     private static long count(Connection c, String query) throws Exception {
@@ -201,20 +212,13 @@ class MetricsTest {
         }
     }
 
-    /** A metric's SQL names datasets; on the database it reads their tables. */
-    private BigDecimal run(String expression, Map<String, String> tables) throws Exception {
-        String sql = expression;
-        String from = null;
-        for (Map.Entry<String, String> t : tables.entrySet()) {
-            Matcher m = Pattern.compile("\\b" + t.getKey() + "\\.").matcher(sql);
-            if (!m.find()) continue;
-            assertThat(from).as("one dataset per metric here: " + expression).isNull();
-            from = t.getValue();
-            sql = sql.replaceAll("\\b" + t.getKey() + "\\.", t.getValue() + ".");
-        }
-        assertThat(from).as("a dataset in " + expression).isNotNull();
+    /**
+     * A dataset's metric names its fields by their own names, and each field here is the column of
+     * the same name: on the database it is a query on the dataset's table as written.
+     */
+    private BigDecimal run(String expression, String table) throws Exception {
         try (Connection c = dataSource.getConnection(); Statement s = c.createStatement();
-             ResultSet rs = s.executeQuery("SELECT " + sql + " FROM " + from)) {
+             ResultSet rs = s.executeQuery("SELECT " + expression + " FROM " + table)) {
             rs.next();
             BigDecimal value = rs.getBigDecimal(1);
             return value == null ? BigDecimal.ZERO : value;

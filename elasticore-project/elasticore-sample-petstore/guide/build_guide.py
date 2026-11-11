@@ -76,10 +76,11 @@ def method(path, head):
     return '\n'.join(l[lead:] for l in lines)
 
 
-def semantic_metric(name):
+def semantic_metric(dataset, name):
+    # A metric over one entity is in that dataset's metrics, after its fields.
     s = SEMANTIC
-    a = s.index('  - name: ' + name + '\n', s.index('\nmetrics:\n'))
-    b = s.index('\n  - name: ', a + 5)
+    a = s.index('      - name: ' + name + '\n', s.index('\n    metrics:\n', s.index('\n  - name: ' + dataset + '\n')))
+    b = s.index('\n      - name: ', a + 5)
     return s[a:b]
 
 
@@ -87,7 +88,12 @@ def semantic_dataset(name):
     s = SEMANTIC
     a = s.index('  - name: ' + name + '\n')
     b = s.index('\n  - name: ', a + 5)
-    return s[a:b]
+    d = s[a:b]
+    # Its metrics are shown with metrics:, not here.
+    if '\n    metrics:\n' in d:
+        m = d.index('\n    metrics:\n')
+        d = d[:m] + d[d.index('\n    custom_extensions:\n', m):]
+    return d
 
 
 def src(id_, text):
@@ -521,7 +527,8 @@ page.append('''
         <li>enum 은 상수 이름으로 씁니다(<code>CANCELLED</code>) - 내보낼 때 저장 코드(<code>'CAN'</code>)로 바뀝니다.</li>
         <li><code>@terms(…)</code> 는 업무에서 부르는 이름·동의어입니다. 엔티티(<code>주문 = order, purchase, 구매</code>)·필드(<code>가격</code>)·지표에 붙입니다.</li>
         <li>애플리케이션 코드는 만들지 않습니다. Apache Ossie 시맨틱 모델의 <code>metrics</code> 와 <code>ai_context.synonyms</code> 로 나가서,
-          BI·AI 도구가 "매출" 을 물으면 이 정의를 씁니다.</li>
+          BI·AI 도구가 "매출" 을 물으면 이 정의를 씁니다. 엔티티 하나를 세는 지표는 그 dataset 의 <code>metrics</code> 에 들어가
+          <code>PurchaseOrder.revenue</code> 로 부릅니다. 두 엔티티의 지표를 계산하는 지표만 모델의 <code>metrics</code> 에 남습니다.</li>
       </ul>
       ''' + code('ossie-metric') + '''
       <p><b>확인:</b> <code>MetricsTest</code> 가 주문을 접수·배송·취소한 뒤, 내보낸 지표 SQL 을 실제 DB 에서 실행한 값과 엔티티로 직접 계산한 값이
@@ -610,7 +617,8 @@ page.append('''
 ''')
 SECTIONS.append(src('ossie', semantic_dataset('PurchaseOrder').rstrip()))
 SECTIONS.append(src('metrics', METRICS))
-SECTIONS.append(src('ossie-metric', '# blueprint/semantic_model.yml (생성)\n' + semantic_metric('revenue').rstrip()))
+SECTIONS.append(src('ossie-metric', '# blueprint/semantic_model.yml (생성)\ndatasets:\n  - name: PurchaseOrder\n    ...\n    metrics:\n'
+                    + semantic_metric('PurchaseOrder', 'revenue').rstrip()))
 SECTIONS.append(src('env', ENV))
 SECTIONS.append(src('enum', ENUM))
 SECTIONS.append(src('entity', ENTITY.rstrip()))

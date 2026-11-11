@@ -27,7 +27,9 @@ import java.util.regex.Pattern;
  * 'text', true/false or an enum constant (written as the constant, stored as
  * its code). Conditions join with "and" and "or", "and" binding tighter as in
  * SQL; parentheses group them, and "not" goes before a parenthesis. The SQL is
- * ANSI and names the dataset and its columns, as Ossie's own examples do:
+ * ANSI, in two forms (core spec, "Metric Scoping"): on the dataset's fields by
+ * their own names, as a metric of that dataset says them - SUM(amount) - and
+ * on fields named with their dataset, as a model-root metric says them -
  * SUM(orders.amount).
  *
  * A line that cannot be read is said and left out - the export never guesses.
@@ -63,7 +65,11 @@ final class OssieMetrics {
 
     static final class Metric {
         final String name;
+        /** On fields named with their dataset: PurchaseOrder.total. */
         final String sql;
+        /** The same on its dataset's fields by their own names - total - for a metric that reads one dataset. */
+        final String local;
+
         final String datatype;
         final String label;
         final List<String> terms;
@@ -74,6 +80,7 @@ final class OssieMetrics {
         Metric(
                 String name,
                 String sql,
+                String local,
                 String datatype,
                 String label,
                 List<String> terms,
@@ -81,6 +88,7 @@ final class OssieMetrics {
                 List<String> datasets) {
             this.name = name;
             this.sql = sql;
+            this.local = local;
             this.datatype = datatype;
             this.label = label;
             this.terms = terms;
@@ -175,49 +183,61 @@ final class OssieMetrics {
         }
 
         String condition = null;
+        String local = null;
         if (where != null) {
-            condition = filter(name, entity, ds, where);
+            condition = filter(name, entity, ds + ".", where);
             if (condition == null) return null;
-        }
-
-        String target = column != null ? ds + "." + column : null;
-        String sql;
-        // count(Entity) counts the rows by their key, which is never null:
-        // COUNT(*) names no dataset, and a BI tool could not tell which table
-        // it counts. A condition already names the dataset's columns.
-        if (target == null && condition == null && model.keyColumn(entity) != null) {
-            target = ds + "." + model.keyColumn(entity);
-        }
-        if ("COUNT".equals(fn)) {
-            String counts = distinct ? "COUNT(DISTINCT " : "COUNT(";
-            if (condition == null) sql = target != null ? counts + target + ")" : "COUNT(*)";
-            else sql = counts + "CASE WHEN " + condition + " THEN " + (target != null ? target : "1") + " END)";
-        } else {
-            sql = fn + "(" + (condition == null ? target : "CASE WHEN " + condition + " THEN " + target + " END") + ")";
+            // The same conditions on the dataset's own fields: read once, they read again, and say nothing.
+            local = filter(name, entity, "", where);
         }
 
         String datatype;
         if ("COUNT".equals(fn)) datatype = "Integer";
         else if ("AVG".equals(fn)) datatype = "Float".equals(model.datatype(entity, field)) ? "Float" : "Decimal";
         else datatype = model.datatype(entity, field);
-        return new Metric(name, sql, datatype, label, terms, line, java.util.Collections.singletonList(ds));
+        return new Metric(
+                name,
+                sql(fn, distinct, entity, column, condition, ds + "."),
+                sql(fn, distinct, entity, column, local, ""),
+                datatype,
+                label,
+                terms,
+                line,
+                java.util.Collections.singletonList(ds));
     }
 
-    /** A filter as SQL, or null with the problem said. */
-    private String filter(String metric, String entity, String ds, String where) {
+    /** The aggregate as SQL, each column after the prefix: its dataset and a dot, or nothing. */
+    private String sql(String fn, boolean distinct, String entity, String column, String condition, String prefix) {
+        String target = column != null ? prefix + column : null;
+        // count(Entity) counts the rows by their key, which is never null:
+        // COUNT(*) names no dataset, and a BI tool could not tell which table
+        // it counts. A condition already names the dataset's columns.
+        if (target == null && condition == null && model.keyColumn(entity) != null) {
+            target = prefix + model.keyColumn(entity);
+        }
+        if ("COUNT".equals(fn)) {
+            String counts = distinct ? "COUNT(DISTINCT " : "COUNT(";
+            if (condition == null) return target != null ? counts + target + ")" : "COUNT(*)";
+            return counts + "CASE WHEN " + condition + " THEN " + (target != null ? target : "1") + " END)";
+        }
+        return fn + "(" + (condition == null ? target : "CASE WHEN " + condition + " THEN " + target + " END") + ")";
+    }
+
+    /** A filter as SQL, each column after the prefix, or null with the problem said. */
+    private String filter(String metric, String entity, String prefix, String where) {
         if (!balanced(where)) {
             fail(metric, "the parentheses of '" + where + "' do not balance");
             return null;
         }
-        return anyOf(metric, entity, ds, where);
+        return anyOf(metric, entity, prefix, where);
     }
 
     /** Conditions joined by "or", which binds loosest. */
-    private String anyOf(String metric, String entity, String ds, String text) {
+    private String anyOf(String metric, String entity, String prefix, String text) {
         List<String> out = new ArrayList<String>();
         for (String part : splitOnWord(text, "or")) {
             if (part.trim().isEmpty()) return nothingBeside(metric, "or", text);
-            String sql = allOf(metric, entity, ds, part);
+            String sql = allOf(metric, entity, prefix, part);
             if (sql == null) return null;
             out.add(sql);
         }
@@ -225,11 +245,11 @@ final class OssieMetrics {
     }
 
     /** Conditions joined by "and". */
-    private String allOf(String metric, String entity, String ds, String text) {
+    private String allOf(String metric, String entity, String prefix, String text) {
         List<String> out = new ArrayList<String>();
         for (String part : splitOnWord(text, "and")) {
             if (part.trim().isEmpty()) return nothingBeside(metric, "and", text);
-            String sql = term(metric, entity, ds, part.trim());
+            String sql = term(metric, entity, prefix, part.trim());
             if (sql == null) return null;
             out.add(sql);
         }
@@ -242,19 +262,19 @@ final class OssieMetrics {
     }
 
     /** One condition, a list of values, or a group of conditions. */
-    private String term(String metric, String entity, String ds, String text) {
+    private String term(String metric, String entity, String prefix, String text) {
         Matcher not = NOT_GROUP.matcher(text);
         if (not.matches()) {
-            String group = group(metric, entity, ds, not.group(1));
+            String group = group(metric, entity, prefix, not.group(1));
             return group == null ? null : "NOT " + group;
         }
-        if (text.startsWith("(")) return group(metric, entity, ds, text);
+        if (text.startsWith("(")) return group(metric, entity, prefix, text);
         Matcher list = IN_LIST.matcher(text);
-        if (list.matches()) return inList(metric, entity, ds, list.group(1), list.group(2) != null, list.group(3));
-        return condition(metric, entity, ds, text);
+        if (list.matches()) return inList(metric, entity, prefix, list.group(1), list.group(2) != null, list.group(3));
+        return condition(metric, entity, prefix, text);
     }
 
-    private String group(String metric, String entity, String ds, String text) {
+    private String group(String metric, String entity, String prefix, String text) {
         if (closingOf(text) != text.length() - 1) {
             fail(metric, "'" + text + "' is not FIELD OP VALUE");
             return null;
@@ -264,12 +284,12 @@ final class OssieMetrics {
             fail(metric, "'" + text + "' has nothing in its parentheses");
             return null;
         }
-        String sql = anyOf(metric, entity, ds, inside);
+        String sql = anyOf(metric, entity, prefix, inside);
         return sql == null ? null : "(" + sql + ")";
     }
 
     /** Every value is read as a single one is, so a constant the enum does not have is named. */
-    private String inList(String metric, String entity, String ds, String field, boolean not, String list) {
+    private String inList(String metric, String entity, String prefix, String field, boolean not, String list) {
         String column = model.column(entity, field);
         if (column == null) {
             fail(metric, entity + " has no column for " + field);
@@ -289,10 +309,10 @@ final class OssieMetrics {
             if (value == null) return null;
             values.add(value);
         }
-        return ds + "." + column + (not ? " NOT IN (" : " IN (") + join(values, ", ") + ")";
+        return prefix + column + (not ? " NOT IN (" : " IN (") + join(values, ", ") + ")";
     }
 
-    private String condition(String metric, String entity, String ds, String text) {
+    private String condition(String metric, String entity, String prefix, String text) {
         Matcher c = CONDITION.matcher(text);
         if (!c.matches()) {
             fail(metric, "'" + text + "' is not FIELD OP VALUE");
@@ -310,7 +330,7 @@ final class OssieMetrics {
         if ("!=".equals(op)) op = "<>";
 
         String sqlValue = literal(metric, entity, field, value);
-        return sqlValue == null ? null : ds + "." + column + " " + op + " " + sqlValue;
+        return sqlValue == null ? null : prefix + column + " " + op + " " + sqlValue;
     }
 
     /** A value as SQL, or null with the problem said. */
@@ -358,29 +378,36 @@ final class OssieMetrics {
         }
         String[] sides = {m.group(1), m.group(3)};
         String[] sql = new String[2];
+        String[] local = new String[2];
         String[] types = new String[2];
         List<String> datasets = new ArrayList<String>();
         for (int i = 0; i < 2; i++) {
             if (sides[i].matches("\\d+(\\.\\d+)?")) {
                 sql[i] = sides[i];
+                local[i] = sides[i];
                 types[i] = sides[i].contains(".") ? "Decimal" : "Integer";
                 continue;
             }
             Metric other = done.get(sides[i]);
             if (other == null) return fail(name, sides[i] + " is not a metric declared before it");
             sql[i] = "(" + other.sql + ")";
+            local[i] = "(" + other.local + ")";
             types[i] = other.datatype;
             for (String ds : other.datasets) if (!datasets.contains(ds)) datasets.add(ds);
         }
         String op = m.group(2);
         // Two whole numbers divide as whole numbers in most databases (3 / 4 = 0): the ratio is made a decimal first.
         boolean whole = "Integer".equals(types[0]) && "Integer".equals(types[1]);
-        String expression = "/".equals(op)
-                ? (whole ? "CAST(" + sql[0] + " AS DECIMAL(38, 10))" : sql[0]) + " / NULLIF(" + sql[1] + ", 0)"
-                : sql[0] + " " + op + " " + sql[1];
         String datatype = "/".equals(op) ? ("Float".equals(types[0]) || "Float".equals(types[1]) ? "Float" : "Decimal")
                 : ("Integer".equals(types[0]) && "Integer".equals(types[1]) ? "Integer" : "Decimal");
-        return new Metric(name, expression, datatype, label, terms, line, datasets);
+        return new Metric(
+                name, combined(sql, op, whole), combined(local, op, whole), datatype, label, terms, line, datasets);
+    }
+
+    private static String combined(String[] sides, String op, boolean whole) {
+        return "/".equals(op)
+                ? (whole ? "CAST(" + sides[0] + " AS DECIMAL(38, 10))" : sides[0]) + " / NULLIF(" + sides[1] + ", 0)"
+                : sides[0] + " " + op + " " + sides[1];
     }
 
     private static final java.util.Set<String> NUMBERS =

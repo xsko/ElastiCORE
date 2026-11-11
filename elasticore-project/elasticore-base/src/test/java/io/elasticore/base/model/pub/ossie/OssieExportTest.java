@@ -320,9 +320,14 @@ public class OssieExportTest {
     @DisplayName("a metric over a filtered dataset says so, also through another metric")
     public void aMetricOverAFilteredDatasetSaysSo() throws Exception {
         String[] filtered = export(desk(true));
-        assertEquals(true, metricExtension(filtered[0], "noteCount").get("dataset_row_filter"));
+        // noteCount and tagCount are their datasets'; notesPerTag spans both, at the root.
+        assertEquals(
+                true,
+                extension(named(dataset(filtered[0], "Note"), "metrics", "noteCount"))
+                        .get("dataset_row_filter"));
         assertEquals(true, metricExtension(filtered[0], "notesPerTag").get("dataset_row_filter"));
-        assertFalse(metricExtension(filtered[0], "tagCount").containsKey("dataset_row_filter"));
+        assertFalse(extension(named(dataset(filtered[0], "Tag"), "metrics", "tagCount"))
+                .containsKey("dataset_row_filter"));
     }
 
     @Test
@@ -331,9 +336,11 @@ public class OssieExportTest {
         String with = export(desk(true))[0];
         String without = export(desk(false))[0];
         assertFalse(without.contains("row_filter") || without.contains("rows only where"), without);
-        for (String name : new String[] {"Tag", "Child", "tagCount"}) {
+        // Tag's entry holds its metric tagCount.
+        for (String name : new String[] {"Tag", "Child"}) {
             assertEquals(block(without, name), block(with, name), name);
         }
+        assertTrue(block(with, "Tag").contains("\n      - name: tagCount\n"), block(with, "Tag"));
     }
 
     @Test
@@ -473,10 +480,16 @@ public class OssieExportTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> named(String yaml, String section, String name) throws IOException {
         Map<String, Object> doc = new ObjectMapper(new YAMLFactory()).readValue(yaml, Map.class);
-        for (Map<String, Object> each : (List<Map<String, Object>>) doc.get(section)) {
+        return named(doc, section, name);
+    }
+
+    /** The entry with that name in a section of the document or of one of its entries. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> named(Map<String, Object> owner, String section, String name) {
+        for (Map<String, Object> each : (List<Map<String, Object>>) owner.get(section)) {
             if (name.equals(each.get("name"))) return each;
         }
-        throw new AssertionError(name + " is not in " + section + ":\n" + yaml);
+        throw new AssertionError(name + " is not in " + section + ":\n" + owner);
     }
 
     @SuppressWarnings("unchecked")

@@ -15,16 +15,16 @@ public class OssieMetricsTest {
      * Order(total money, qty int, note string, status OrderStatus stored by
      * @db code: PLACED='PLC', CANCELLED='CAN'; kind Kind stored by ordinal: SHOP=0, WEB=1;
      * region Region stored by name: OR, WA, whose first constant reads like a word of a filter;
-     * orderNo and android, whose names hold one).
+     * orderNo and android, whose names hold one; weight float). Log has a table and no key.
      */
     private final OssieMetrics.Model shop = new OssieMetrics.Model() {
         public String dataset(String entity) {
-            return "Order".equals(entity) ? "Order" : null;
+            return "Order".equals(entity) || "Log".equals(entity) ? entity : null;
         }
 
         public String column(String entity, String field) {
             if (!"Order".equals(entity)) return null;
-            return Arrays.asList("total", "status", "note", "qty", "kind", "region", "orderNo", "android")
+            return Arrays.asList("total", "status", "note", "qty", "kind", "region", "orderNo", "android", "weight")
                             .contains(field)
                     ? field
                     : null;
@@ -32,6 +32,7 @@ public class OssieMetricsTest {
 
         public String datatype(String entity, String field) {
             if ("total".equals(field)) return "Decimal";
+            if ("weight".equals(field)) return "Float";
             if ("qty".equals(field) || "kind".equals(field)) return "Integer";
             return "String";
         }
@@ -89,6 +90,51 @@ public class OssieMetricsTest {
         OssieMetrics.Metric share = r.read("share", "quoted / orders");
         assertEquals("CAST((COUNT(CASE WHEN Order.note = 'gift' THEN 1 END)) AS DECIMAL(38, 10)) / NULLIF((COUNT(Order.order_id)), 0)", share.sql);
         assertEquals("Decimal", share.datatype);
+        assertTrue(r.problems().isEmpty(), r.problems().toString());
+    }
+
+    /** The same metrics on the dataset's fields by their own names, as a metric of that dataset writes them. */
+    @Test
+    public void onItsDatasetAMetricNamesTheFieldsAlone() {
+        OssieMetrics r = new OssieMetrics(shop);
+        OssieMetrics.Metric revenue = r.read("revenue", "sum(Order.total) where status != CANCELLED and qty >= 1");
+        assertEquals("SUM(CASE WHEN status <> 'CAN' AND qty >= 1 THEN total END)", revenue.local);
+        assertEquals("SUM(CASE WHEN Order.status <> 'CAN' AND Order.qty >= 1 THEN Order.total END)", revenue.sql);
+        assertEquals(Arrays.asList("Order"), revenue.datasets);
+        assertEquals("COUNT(order_id)", r.read("orders", "count(Order)").local);
+        assertEquals("MAX(total)", r.read("largest", "max(Order.total)").local);
+        assertEquals("COUNT(DISTINCT note)", r.read("notes", "count(distinct Order.note)").local);
+        assertEquals(
+                "COUNT(CASE WHEN status IN ('PLC') OR NOT (kind = 1 AND qty = 0) THEN 1 END)",
+                r.read("some", "count(Order) where status in (PLACED) or not (kind = WEB and qty = 0)").local);
+        assertEquals(
+                "COUNT(DISTINCT CASE WHEN status NOT IN ('CAN') THEN note END)",
+                r.read("kept", "count(distinct Order.note) where status not in (CANCELLED)").local);
+
+        // A metric made of the dataset's metrics is on its fields too.
+        OssieMetrics.Metric average = r.read("average", "revenue / orders");
+        assertEquals(
+                "(SUM(CASE WHEN status <> 'CAN' AND qty >= 1 THEN total END)) / NULLIF((COUNT(order_id)), 0)",
+                average.local);
+        assertEquals(Arrays.asList("Order"), average.datasets);
+        assertEquals(
+                "CAST((COUNT(DISTINCT note)) AS DECIMAL(38, 10)) / NULLIF((COUNT(order_id)), 0)",
+                r.read("share", "notes / orders").local);
+        assertEquals("(COUNT(order_id)) * 2", r.read("twice", "orders * 2").local);
+        assertEquals("3 - (MAX(total))", r.read("left", "3 - largest").local);
+        assertTrue(r.problems().isEmpty(), r.problems().toString());
+    }
+
+    /** What the two forms share is as it was: the type of an average, and the rows of an entity with no key. */
+    @Test
+    public void anAverageAndAKeylessCountAreAsBefore() {
+        OssieMetrics r = new OssieMetrics(shop);
+        assertEquals("Float", r.read("weight", "avg(Order.weight)").datatype);
+        assertEquals("Decimal", r.read("total", "avg(Order.total)").datatype);
+        assertEquals("Decimal", r.read("qty", "avg(Order.qty)").datatype);
+        OssieMetrics.Metric logs = r.read("logs", "count(Log)");
+        assertEquals("COUNT(*)", logs.sql);
+        assertEquals("COUNT(*)", logs.local);
         assertTrue(r.problems().isEmpty(), r.problems().toString());
     }
 
