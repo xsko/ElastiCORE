@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -336,6 +337,52 @@ abstract class DomainOnDatabase {
         assertThat(reports.updateCustomerPhone(c.getCustomerId(), "010-0000")).isEqualTo(1);
         assertThat(reports.customerPhones(tag).getContent()).containsExactlyInAnyOrder("010-0000", null);
         assertThat(reports.countOrdersByStatus("none")).isZero();
+    }
+
+    @Test
+    @DisplayName("the dbms port's SQL: a Pageable and its order, a block in a block, an order only when asked, a map's NULL column")
+    void theDbmsPortsSql() {
+        String tag = "Sql" + Long.toString(System.nanoTime(), 36);
+        Customer ada = customer("Ada", tag);
+        Customer bob = customer("Bob", tag);
+        Customer cy = customer("Cy", tag);
+        assertThat(reports.updateCustomerPhone(bob.getCustomerId(), "010-1111")).isEqualTo(1);
+
+        // The Pageable's page, and its order before the SQL's own.
+        Page<CustomerRevenueDTO> byPage = reports.customersByPage(tag,
+                PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "firstName")));
+        assertThat(byPage.getTotalElements()).isEqualTo(3L);
+        assertThat(byPage.getContent()).extracting(CustomerRevenueDTO::getFirstName).containsExactly("Cy", "Bob");
+        assertThat(reports.customersByPage(tag, PageRequest.of(1, 2)).getContent())
+                .extracting(CustomerRevenueDTO::getCustomerId).containsExactly(cy.getCustomerId());
+
+        // The inner block is read only when the outer one is; so is the line after it.
+        RevenueSearchInput named = new RevenueSearchInput();
+        named.setFirstName("Ada");
+        assertThat(reports.customersNamed(named)).extracting(CustomerRevenueDTO::getCustomerId)
+                .as("no last name: neither block, so no phone is asked for").contains(ada.getCustomerId());
+        named.setLastName(tag);
+        assertThat(reports.customersNamed(named)).as("Ada has no phone").isEmpty();
+        named.setFirstName(null);
+        assertThat(reports.customersNamed(named)).extracting(CustomerRevenueDTO::getCustomerId)
+                .containsExactly(bob.getCustomerId());
+        named.setFirstName("Bob");
+        assertThat(reports.customersNamed(named)).extracting(CustomerRevenueDTO::getCustomerId)
+                .containsExactly(bob.getCustomerId());
+
+        // An ORDER BY its condition leaves out: the page is still ordered on SQL Server.
+        RevenueSearchInput maybe = new RevenueSearchInput();
+        maybe.setLastName(tag);
+        assertThat(reports.customersMaybeOrdered(maybe).getTotalElements()).isEqualTo(3L);
+        maybe.setFirstName("any");
+        assertThat(reports.customersMaybeOrdered(maybe).getContent()).extracting(CustomerRevenueDTO::getFirstName)
+                .containsExactly("Cy", "Bob", "Ada");
+
+        // A map has every column, a NULL one as null - as the port runtime's has.
+        List<java.util.Map<String, Object>> rows = reports.customerRows(tag);
+        assertThat(rows).hasSize(3).allSatisfy(r -> assertThat(r).containsOnlyKeys("customerId", "phone"));
+        assertThat(rows.get(0)).containsEntry("phone", null);
+        assertThat(rows.get(1).get("phone")).isEqualTo("010-1111");
     }
 
     @Test

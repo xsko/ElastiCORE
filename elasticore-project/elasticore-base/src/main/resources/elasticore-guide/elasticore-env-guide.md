@@ -193,15 +193,19 @@ Since: 3.0.261030-rc6
 **dbms port** (`port: ... meta: dbms`) - in a MyBatis domain, ports are generated with MyBatis too: a mapper that holds the port's SQL
 (`<Port>Mapper` + XML) and an adapter that implements the port (`<Port>Adapter`, a bean) are created in `infrastructure.persistence` (the repository package if there is none),
 instead of a runtime proxy. The SQL is exactly what the port DSL says, `:name` becomes `#{}`, a trailing `/* if:name */` becomes `<if>` (when there is a value;
-an empty string counts as none), and the block `/* if:name */ ... /* if-end */` works the same way. The result is converted by the same rules as the runtime (column aliases to
-a DTO in camelCase, the first column for a single value - null if NULL, a row whose columns are all NULL becomes a DTO whose fields are all null). A port that uses
+an empty string counts as none), and the block `/* if:name */ ... /* if-end */` works the same way. A block may hold blocks and
+conditional lines: each `/* if-end */` closes the innermost open block, as in the runtime. The result is converted by the same rules as the runtime (column aliases to
+a DTO in camelCase, the first column for a single value - null if NULL, a row whose columns are all NULL becomes a DTO whose fields are all null,
+a `Map` has every column, a NULL one as null - the runtime library's `PortRowColumns` does this, which the MyBatis Spring Boot starter applies). A port that uses
 an expression (JEXL - `input.x > 3`) in `/* if: */` is refused - use a single name. A method with no answer (`void`) only runs the statement.
 A page is a count and one page. The count removes the last `ORDER BY` of the SQL (SQL Server does not accept an `ORDER BY` inside a derived table) - if
-`LIMIT`, `OFFSET` or `FETCH` follows, it is left as it is. A page of SQL without an order is cut with `ORDER BY (SELECT NULL)` on SQL Server
-(it does not cut a page without an order) - so do not put the `ORDER BY` of a page inside an `/* if: */` line or block
-(if the condition is false it fails on SQL Server). Putting a block inside a block (nesting) is
-not supported, as in the runtime - the inner `/* if-end */` closes the outer block. Sorting uses `sortCode` and
-`sortColumn` of the input, as in the runtime - the `Sort` of a `Pageable` is not read. Since: 3.0.261030-rc6
+`LIMIT`, `OFFSET` or `FETCH` follows, it is left as it is. The page is the input's, or that of a `Pageable` parameter
+(`customersByPage(String lastName, Pageable pageable)`; the port interface imports it). The call's sort - `sortCode` or `sortColumn` of the input,
+else the `Sort` of a `Pageable` (or `Sort`) parameter, checked as a sort code - goes first in the SQL's own `ORDER BY`, whose terms stay as tie
+breakers, or becomes the `ORDER BY` where the SQL has none or an `/* if: */` leaves it out. A page with no order at all is cut with
+`ORDER BY (SELECT NULL)` on SQL Server (it does not cut a page without an order) - also when the `ORDER BY` stands in an `/* if: */` line or
+block whose condition is false. Since: 3.0.261030-rc6 (blocks in blocks, the `Pageable` and its `Sort`, an `ORDER BY` inside `/* if: */`,
+a map's NULL column: 3.0.261107)
 
 In an app without JPA (an app that uses only MyBatis), a dbms port that remains a runtime proxy runs with JDBC (`JdbcDbmsGateway` - the runtime
 library registers it by itself). The JPQL of such a port is refused.
@@ -269,7 +273,7 @@ The difference is the **repository adapter** (`<Root>RepositoryAdapter`). The ad
 | Dirty checking, `@Version` | UPDATE of all columns, with the version compared and increased in the same statement (409 if stale), and the in-memory version raised too - for the root and for members |
 | Member cascade, orphanRemoval | Compares with the stored member rows - DELETE the missing, UPDATE the remaining, INSERT the new (member keys are kept) |
 | To-one member cascade (`@OneToOne @cascade` and so on) | INSERT/UPDATE before the root (the root holds the key), DELETE the old member that changed or is gone (reads the stored row after clearing the session cache, to compare) |
-| `delete()` | 409 before anything is deleted if the version is stale (locks the row), then DELETE in the order member collections -> row -> to-one members (the stored one and the in-memory one), and publishes the events raised in between |
+| `delete()` | 409 before anything is deleted if the version is stale (locks the row with `SELECT ... FOR UPDATE`, `UPDLOCK` on SQL Server - a database that counts changed rows, such as MySQL with `useAffectedRows=true`, reads it alike), then DELETE in the order member collections -> row -> to-one members (the stored one and the in-memory one), and publishes the events raised in between |
 | Derived `deleteBy...` | Reads the rows of the condition and deletes them one by one like `delete()` (delete guard, members) - like the derived delete of Spring Data JPA |
 | `@PrePersist`, `@PreUpdate` (invariants), `@PreRemove`, `@PostLoad`, `@PostPersist` | The adapter calls the same moments of `io.elasticore.springboot3.domain.Lifecycle`, which the root implements |
 | `@DomainEvents` publishing | Publishes with `ApplicationEventPublisher` after save or delete and clears them (once) |

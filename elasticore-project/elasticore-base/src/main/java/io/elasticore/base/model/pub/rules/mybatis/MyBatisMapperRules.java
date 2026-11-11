@@ -140,9 +140,14 @@ public class MyBatisMapperRules implements CodeRules {
         if (deletesVersioned(e)) {
             FieldSpec version = MyBatisSql.version(e);
             c.varLine("inboundFinders", "")
-             .varLine("inboundFinders", "/** Locks the row while it holds that version, before a delete: 0 when someone else wrote it first. */")
-             .varLine("inboundFinders", "int lockVersion(@Param(\"id\") %s id, @Param(\"version\") %s version);", keyType,
-                     c.syntax().nullableType(version.typeName()));
+                    .varLine(
+                            "inboundFinders",
+                            "/** Locks the row while it holds that version, before a delete: null when someone else wrote it first. */")
+                    .varLine(
+                            "inboundFinders",
+                            "Integer lockVersion(@Param(\"id\") %s id, @Param(\"version\") %s version);",
+                            keyType,
+                            c.syntax().nullableType(version.typeName()));
         }
         if (holdsMembers(e)) {
             c.varLine("inboundFinders", "")
@@ -508,9 +513,19 @@ public class MyBatisMapperRules implements CodeRules {
         if (kept) statement(x, "update", "deleteById", "", SoftDelete.update(e, pkColumn + " = " + pkParam));
         else statement(x, "delete", "deleteById", "", "DELETE FROM " + table + " WHERE " + pkColumn + " = " + pkParam);
         if (deletesVersioned(e)) {
+            // A row lock read, not an UPDATE that writes the version back: a database that
+            // counts changed rows rather than matched ones (MySQL, MariaDB with
+            // useAffectedRows=true) would report such an UPDATE as 0, a stale copy.
             String vc = MyBatisSql.column(version);
-            statement(x, "update", "lockVersion", "", "UPDATE " + table + " SET " + vc + " = " + vc + " WHERE " + pkColumn
-                    + " = " + pkParam + " AND " + vc + " = " + param(e, version, "version"));
+            statement(
+                    x,
+                    "select",
+                    "lockVersion",
+                    "resultType=\"int\"",
+                    "SELECT 1 FROM " + table
+                            + "<if test=\"_databaseId == 'sqlserver'\"> WITH (UPDLOCK, ROWLOCK)</if> WHERE " + pkColumn
+                            + " = " + pkParam + " AND " + vc + " = " + param(e, version, "version")
+                            + "<if test=\"_databaseId != 'sqlserver'\"> FOR UPDATE</if>");
         }
 
         // What repository.yml declares for the entity.

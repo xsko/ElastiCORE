@@ -1,5 +1,6 @@
 package io.elasticore.springboot.autoconfigure;
 
+import io.elasticore.springboot3.mybatis.PortRowColumns;
 import org.apache.ibatis.mapping.DatabaseIdProvider;
 import org.apache.ibatis.mapping.VendorDatabaseIdProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -27,11 +28,13 @@ import java.util.Properties;
  * not), where without one every such statement was left out. An application
  * that relies on that turns this off: elasticore.mybatis.database-id=false -
  * the generated mappers then page with LIMIT/OFFSET.
+ *
+ * It also registers {@link PortRowColumns}: the rows of a database port's
+ * mapper have every column the SQL selects, a NULL one too, as the port
+ * runtime's do. It touches no other statement.
  */
 @AutoConfiguration(beforeName = "org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration")
 @ConditionalOnClass(name = "org.apache.ibatis.mapping.VendorDatabaseIdProvider")
-@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "elasticore.mybatis",
-        name = "database-id", havingValue = "true", matchIfMissing = true)
 public class ElastiCoreMyBatisAutoConfiguration {
 
     /** The vendor names the drivers report, and the ids the generated mappers test. */
@@ -51,9 +54,20 @@ public class ElastiCoreMyBatisAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(DatabaseIdProvider.class)
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            prefix = "elasticore.mybatis",
+            name = "database-id",
+            havingValue = "true",
+            matchIfMissing = true)
     public DatabaseIdProvider elastiCoreDatabaseIdProvider() {
         VendorDatabaseIdProvider provider = new VendorDatabaseIdProvider();
         provider.setProperties(vendorIds());
         return provider;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(PortRowColumns.class)
+    public PortRowColumns elastiCorePortRowColumns() {
+        return new PortRowColumns();
     }
 }

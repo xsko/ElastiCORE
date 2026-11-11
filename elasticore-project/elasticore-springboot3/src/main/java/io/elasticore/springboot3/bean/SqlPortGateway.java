@@ -225,9 +225,38 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
 
         } catch (Exception e) { }
 
+        return sortCodeOf(sortOf(input));
+    }
+
+    /**
+     * The Sort a call carries besides a sort code: a Pageable it is, or one of
+     * its values by name (a port method's Pageable parameter) - or a Sort there.
+     */
+    static org.springframework.data.domain.Sort sortOf(Object input) {
+        if (input instanceof Pageable pageable) return pageable.getSort();
+        if (input instanceof org.springframework.data.domain.Sort sort) return sort;
+        if (input instanceof Map<?, ?> map) {
+            for (Object value : map.values()) {
+                if (value instanceof Pageable pageable && pageable.getSort().isSorted()) return pageable.getSort();
+                if (value instanceof org.springframework.data.domain.Sort sort) return sort;
+            }
+        }
         return null;
     }
 
+    /**
+     * A Sort as a sort code: each property and its direction, "lastName-,id+".
+     * The properties are the SQL's column names or labels, and are checked
+     * term by term as a sort code is.
+     */
+    static String sortCodeOf(org.springframework.data.domain.Sort sort) {
+        if (sort == null || sort.isUnsorted()) return null;
+        StringJoiner code = new StringJoiner(",");
+        for (org.springframework.data.domain.Sort.Order order : sort) {
+            code.add(order.getProperty() + (order.isAscending() ? "+" : "-"));
+        }
+        return code.toString();
+    }
 
     /**
      * Appends an ORDER BY clause to the SQL query based on sort information from input.
@@ -565,60 +594,63 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
         }
 
 
-        String[] lines = query.split("\n");
         StringBuilder processedQuery = new StringBuilder();
 
-
-        boolean isBlockScope = false;
-        boolean isBlockCondition = false;
-        for (String line : lines) {
-            if (isBlockScope) {
-                if (line.indexOf("/*") >= 0 && line.indexOf("if-end") > 0) {
-                    isBlockScope = false;
-                } else if (isBlockCondition) {
-                    processedQuery.append(line).append("\n");
-                }
+        // The blocks open at this line, innermost first: whether each one's lines are
+        // kept - its own condition and every one around it. A block inside a block
+        // closes at its own if-end, and a conditional line inside a block is read as
+        // one outside it is.
+        Deque<Boolean> blocks = new ArrayDeque<Boolean>();
+        for (String line : query.split("\n", -1)) {
+            boolean keeping = blocks.isEmpty() || blocks.peek();
+            if (!blocks.isEmpty() && isBlockEnd(line)) {
+                blocks.pop();
                 continue;
             }
 
-            Matcher matcher = Pattern.compile("/\\* if:(.*?) \\*/").matcher(line);
-            boolean conditionMet = false;
-
+            Matcher matcher = CONDITION.matcher(line);
             if (matcher.find()) {
-                String condition = matcher.group(1).trim();
-
-
-
-                if (isValidJavaIdentifier(condition)) {
-                    String paramName = condition;
-                    conditionMet = input instanceof Map ? ((Map<?, ?>) input).containsKey(paramName) && ((Map<?, ?>) input).get(paramName) != null : hasValue(input, paramName);
-                } else {
-                    conditionMet = evaluateCondition(condition, input);
-                }
-
-                isBlockCondition = false;
+                boolean conditionMet = keeping && conditionMet(matcher.group(1).trim(), input);
                 if (line.trim().indexOf("/*") == 0) {
-                    isBlockScope = true;
-                    isBlockCondition = conditionMet;
+                    blocks.push(conditionMet);
+                } else if (conditionMet) {
+                    processedQuery
+                            .append(stripTrailing(line.substring(0, matcher.start())))
+                            .append("\n");
                 }
-                if (!conditionMet) {
-                    continue;
-                }
-
+                continue;
             }
-            if (!isBlockScope) {
-                if (conditionMet) {
-                    int p = line.indexOf("/*");
-                    line = line.substring(0, p - 1);
-                }
-                processedQuery.append(line).append("\n");
-            }
+            if (keeping) processedQuery.append(line).append("\n");
         }
 
         //return processedQuery.toString().trim();
         // apply sort
         return appendSortClause(processedQuery.toString(), input);
 
+    }
+
+    /** A conditional line's mark: /* if:name *&#47; or /* if:expression *&#47;. */
+    private static final Pattern CONDITION = Pattern.compile("/\\* if:(.*?) \\*/");
+
+    /** The line that closes a block: a comment that names if-end. */
+    static boolean isBlockEnd(String line) {
+        return line.indexOf("/*") >= 0 && line.indexOf("if-end") > 0;
+    }
+
+    /** Whether a line or block is kept: a name with a value, or a JEXL expression that holds. */
+    private boolean conditionMet(String condition, Object input) {
+        if (!isValidJavaIdentifier(condition)) return evaluateCondition(condition, input);
+        if (input instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) input;
+            return map.containsKey(condition) && map.get(condition) != null;
+        }
+        return hasValue(input, condition);
+    }
+
+    private static String stripTrailing(String text) {
+        int end = text.length();
+        while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) end--;
+        return text.substring(0, end);
     }
 
     /**

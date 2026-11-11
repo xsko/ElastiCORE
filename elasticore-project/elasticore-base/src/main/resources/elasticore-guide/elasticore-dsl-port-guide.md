@@ -703,6 +703,23 @@ AND name LIKE :name /* if:name */
 - Starts with `/* if:condition */` and ends with `/* if-end */`
 - All lines in the block are included or removed according to the condition
 
+#### A block inside a block
+> **Works in:** JPA, MyBatis (mode: mybatis)
+```sql
+/* if:lastName */
+  AND last_name = :lastName
+  /* if:firstName */
+  AND first_name = :firstName
+  /* if-end */
+  AND phone IS NOT NULL
+/* if-end */
+```
+- Each `/* if-end */` closes the innermost open block: the inner block is read only when the outer one is kept, and
+  so is the line after it (`phone` above is asked for only with a last name)
+- An inline condition inside a block is read as one outside it is
+- Before 3.0.261107 the first `/* if-end */` closed the outer block: the lines after it were always kept, and an inline
+  condition inside a block was kept whatever its value
+
 #### JEXL expressions
 > **Works in:** JPA · **Not in:** MyBatis (mode: mybatis) (stops the build)
 ```sql
@@ -738,6 +755,9 @@ The sort information is extracted from the input object automatically to build t
 1. The `sortCode` key of a Map
 2. The `getSortCode()` method of the object
 3. The `getSortColumn()` + `getSortAscending()` methods of the object
+4. The `Sort` of a `Pageable` (or a `Sort`) the method takes as a parameter (Since: 3.0.261107):
+   `findPage(String name, Pageable pageable)` called with `PageRequest.of(0, 20, Sort.by(DESC, "createdDate"))` sorts by
+   `createdDate DESC`. Its properties are the SQL's column names or labels, checked as a sort code is
 
 **Format**: `field1+,field2-`
 - `+` = ASC (ascending)
@@ -748,7 +768,8 @@ The sort information is extracted from the input object automatically to build t
 **Example**: `name+,createdDate-` -> `ORDER BY name ASC, createdDate DESC`
 
 sortCode is appended to the end of the query after the conditional SQL processing is finished. It is appended only to SQL that has condition blocks (`/* if:... */`);
-for SQL without condition blocks, the sort information is not used.
+for SQL without condition blocks, the sort information is not used. Under MyBatis (`mode: mybatis`, a generated mapper runs the
+port) it is used for every query, with condition blocks or not.
 If the query has its own `ORDER BY` (at its top level - not in parentheses, quotes or comments), the requested terms go first and its own stay after them as tie breakers;
 if it has none but ends with `LIMIT`, `OFFSET` or `FETCH`, the clause goes before them (Since: 3.0.261103):
 `ORDER BY reg_date DESC LIMIT 10` + `amount-` -> `ORDER BY amount DESC, reg_date DESC LIMIT 10`.
@@ -828,8 +849,11 @@ port:
 - If the conversion fails, matches by the original column name (case-insensitive)
 - Example: `user_name` -> matches the field `userName`
 
-**Map mapping** (when a `Map` return type is used):
+**Map mapping** (when a `Map` return type is used, `List<Map<String,Object>>`):
 - `snake_case` column names are converted automatically to `camelCase` keys
+- Every column the SQL selects is a key, a NULL one with the value null. Under MyBatis (`mode: mybatis`) this needs the
+  MyBatis Spring Boot starter, which applies the runtime library's `PortRowColumns` (Since: 3.0.261107; before, a NULL
+  column was left out of the map there)
 
 **Date/time conversion**:
 - `java.sql.Date` -> `LocalDate`
@@ -857,8 +881,12 @@ The paging information is detected from the input object automatically (in prior
 
 1. If the input object is an instance of `Pageable`, it is used directly
 2. If it has a `getPageable()` method, it is called
-3. Map: the keys `pageNumber`/`page` + `sizeVal`/`size`
+3. Map: a `Pageable` among the parameters (`findPage(String name, Pageable pageable)`, Since: 3.0.261107), else the
+   keys `pageNumber`/`page` + `sizeVal`/`size`
 4. Object: fields with the same names
+
+The port interface imports `Pageable` (and `Sort`) when a method takes one (Since: 3.0.261107; v3 and Kotlin output -
+the 2.x output writes the interface as before).
 
 **Defaults**: page=0, size=50
 

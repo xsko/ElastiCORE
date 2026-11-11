@@ -29,7 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class PortModelImportsTest {
 
-    private static final String REPORT_PORT = String.join("\n",
+    private static final String REPORT_PORT = String.join(
+            "\n",
             "port:",
             "  ReportQueryService:",
             "    meta: dbms",
@@ -39,6 +40,15 @@ public class PortModelImportsTest {
             "        params:",
             "          fromDate: LocalDate",
             "        return: List<ReportRowDTO>",
+            "        nativeQuery: true",
+            "        query: |",
+            "          SELECT COUNT(*) AS total FROM report_log WHERE created_at >= :fromDate",
+            "      pageOf:",
+            "        meta: method",
+            "        params:",
+            "          fromDate: LocalDate",
+            "          pageable: Pageable",
+            "        return: Page<ReportRowDTO>",
             "        nativeQuery: true",
             "        query: |",
             "          SELECT COUNT(*) AS total FROM report_log WHERE created_at >= :fromDate",
@@ -92,11 +102,27 @@ public class PortModelImportsTest {
 
     private static File compat;
     private static File v3;
+    private static File kotlin;
 
     @BeforeAll
     static void generate() throws Exception {
-        compat = run("elcore-portimports-compat", false);
-        v3 = run("elcore-portimports-v3", true);
+        compat = run("elcore-portimports-compat", false, "java");
+        v3 = run("elcore-portimports-v3", true, "java");
+        kotlin = run("elcore-portimports-kt", true, "kotlin");
+    }
+
+    /** A method that takes a Pageable names Spring Data's type: the v3 and Kotlin interfaces import it. */
+    @Test
+    public void aPortThatTakesAPageableImportsIt() throws Exception {
+        String java = found(v3, "ReportQueryService.java");
+        assertTrue(java.contains("import org.springframework.data.domain.Pageable;"), java);
+        assertTrue(java.contains("Page<ReportRowDTO> pageOf(java.time.LocalDate fromDate, Pageable pageable);"), java);
+        String kt = found(kotlin, "ReportQueryService.kt").replace("\r\n", "\n");
+        assertTrue(kt.contains("import org.springframework.data.domain.Pageable\n"), kt);
+        assertFalse(found(v3, "PingQueryService.java").contains("domain.Pageable"));
+        // The 2.x-compatible output writes the interface as before.
+        assertFalse(
+                found(compat, "ReportQueryService.java").contains("import org.springframework.data.domain.Pageable"));
     }
 
     @AfterAll
@@ -134,7 +160,7 @@ public class PortModelImportsTest {
         }
     }
 
-    private static File run(String name, boolean clean) throws Exception {
+    private static File run(String name, boolean clean, String language) throws Exception {
         File project = Files.createTempDirectory(name).toFile();
         projects.add(project);
         domain(project, "report", new String[]{"port.yml", REPORT_PORT}, new String[]{"dto.yml", REPORT_DTO});
@@ -149,7 +175,7 @@ public class PortModelImportsTest {
             for (String k : keys) System.clearProperty(k);
             System.setProperty("elasticore.base.path", project.getAbsolutePath());
             System.setProperty("elasticore.architecture", "layered");
-            System.setProperty("elasticore.language", "java");
+            System.setProperty("elasticore.language", language);
             System.setProperty("elasticore.rules.force", "true");
             System.setProperty(clean ? "elasticore.rules.v3" : "elasticore.rules.v2", "true");
             assertEquals(0, RulesGenRunner.run(new String[0]), "the run failed: " + project);

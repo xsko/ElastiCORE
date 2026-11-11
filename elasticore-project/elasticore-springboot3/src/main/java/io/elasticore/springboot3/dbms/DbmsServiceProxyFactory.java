@@ -179,6 +179,10 @@ public class DbmsServiceProxyFactory {
 
             if (input instanceof Map) {
                 Map<?, ?> map = (Map<?, ?>) input;
+                // A method's Pageable parameter, among its values by name.
+                for (Object v : map.values()) {
+                    if (v instanceof Pageable asked) return asked;
+                }
                 Object pageVal = map.get("pageNumber");
                 if(pageVal==null)
                     pageVal = map.get("page");

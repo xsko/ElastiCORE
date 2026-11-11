@@ -65,8 +65,31 @@ public class PortBaseRules implements CodeRules {
          .var("description", p.description() == null ? "" : p.description())
          .var("classAnnotationList", serviceAnnotation(p));
         operations(c, p);
+        // A method that takes the page or the order it asks for names Spring Data's type.
+        // The 2.x skeleton imports neither; its output stays as it was.
+        if (!c.compatible()) {
+            String paging = pagingImports(p, c.syntax() == Syntax.KOTLIN ? "" : ";");
+            if (!paging.isEmpty()) c.var("importList", paging);
+        }
 
         if (p.pkg("enumeration") != null) c.var("enumPackageName", p.pkg("enumeration"));
+    }
+
+    /** Pageable and Sort, as the methods' parameters name them without a package: the import line's text. */
+    static String pagingImports(PortSpec p, String end) {
+        List<String> types = new ArrayList<String>();
+        for (PortSpec.Operation op : p.operations()) {
+            for (String[] param : op.params()) {
+                String type = PortSpec.Operation.typeOf(param).trim();
+                if (("Pageable".equals(type) || "Sort".equals(type)) && !types.contains(type)) types.add(type);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String type : types) {
+            if (sb.length() > 0) sb.append(end).append("\nimport ");
+            sb.append("org.springframework.data.domain.").append(type);
+        }
+        return sb.toString();
     }
 
     /**

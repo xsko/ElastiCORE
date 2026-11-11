@@ -652,14 +652,27 @@ public class MyBatisGenerationTest {
         assertTrue(adapter.contains("List<Basket> rows = loaded(helper.getBasket().deleteByNoteRows(note));"), adapter);
         assertTrue(adapter.contains("for (Basket row : rows) delete(row);"), adapter);
         assertTrue(adapter.contains("return (long) rows.size();"), adapter);
-        assertTrue(adapter.contains("if (basket.getVersion() != null && helper.getBasket().lockVersion(basket.getBasketId(), basket.getVersion()) == 0"), adapter);
+        assertTrue(
+                adapter.contains(
+                        "if (basket.getVersion() != null && helper.getBasket().lockVersion(basket.getBasketId(), basket.getVersion()) == null"),
+                adapter);
         assertTrue(adapter.contains("io.elasticore.springboot3.mybatis.LoadedRows.first(row)"), adapter);
 
         String xml = new String(Files.readAllBytes(findResource(project, "BasketRepository.xml")), StandardCharsets.UTF_8);
         assertTrue(xml.contains("<select id=\"findStoredById\" resultMap=\"row\" flushCache=\"true\">"), xml);
         assertTrue(xml.contains("<select id=\"deleteByNoteRows\" resultMap=\"row\">"), xml);
         assertFalse(xml.contains("<delete id=\"deleteByNote\""), xml);
-        assertTrue(xml.contains("<update id=\"lockVersion\">"), xml);
+        // The lock is a read of the row with its version, not an UPDATE: a database that
+        // counts changed rows (MySQL useAffectedRows) would read SET v = v as 0, a stale copy.
+        assertFalse(xml.contains("<update id=\"lockVersion\">"), xml);
+        String lock = xml.substring(xml.indexOf("<select id=\"lockVersion\" resultType=\"int\">"));
+        lock = lock.substring(0, lock.indexOf("</select>"));
+        assertTrue(lock.contains("SELECT 1 FROM "), lock);
+        assertTrue(lock.contains("<if test=\"_databaseId == 'sqlserver'\"> WITH (UPDLOCK, ROWLOCK)</if> WHERE "), lock);
+        assertTrue(lock.contains("<if test=\"_databaseId != 'sqlserver'\"> FOR UPDATE</if>"), lock);
+        assertTrue(
+                read(project, "BasketRepository.java").contains("Integer lockVersion(@Param(\"id\") "),
+                read(project, "BasketRepository.java"));
         assertNull(find(project, "BasketLineCoreService.java"));
         assertNull(find(project, "BasketLabelCoreService.java"));
     }
@@ -989,7 +1002,8 @@ public class MyBatisGenerationTest {
         assertTrue(log.contains("PurchaseOrder.findBig is JPQL"), log);
     }
 
-    private static final String PORT = String.join("\n",
+    private static final String PORT = String.join(
+            "\n",
             "dto:",
             "  OrderFind:",
             "    fields:",
@@ -1049,6 +1063,39 @@ public class MyBatisGenerationTest {
             "        return: void",
             "        nativeQuery: true",
             "        query: UPDATE purchase_order SET amount = amount WHERE order_no = :orderNo",
+            "      nested:",
+            "        meta: method",
+            "        params:",
+            "          input: OrderFind",
+            "        return: List<OrderRow>",
+            "        nativeQuery: true",
+            "        query: |",
+            "          SELECT order_no as orderNo, amount FROM purchase_order WHERE 1=1",
+            "          /* if:orderNo */",
+            "          AND order_no = :orderNo",
+            "          /* if:sortCode */",
+            "          AND amount > 0 /* if:orderNo */",
+            "          /* if-end */",
+            "          AND amount < 100",
+            "          /* if-end */",
+            "          ORDER BY amount",
+            "      maybeOrdered:",
+            "        meta: method",
+            "        params:",
+            "          input: OrderFind",
+            "        return: Page<OrderRow>",
+            "        nativeQuery: true",
+            "        query: |",
+            "          SELECT order_no as orderNo, amount FROM purchase_order",
+            "          ORDER BY amount /* if:orderNo */",
+            "      asMaps:",
+            "        meta: method",
+            "        params:",
+            "          row: string",
+            "          pageable: Pageable",
+            "        return: List<Map<String,Object>>",
+            "        nativeQuery: true",
+            "        query: SELECT order_no, amount FROM purchase_order WHERE order_no = :row",
             "");
 
     @Test
@@ -1062,7 +1109,9 @@ public class MyBatisGenerationTest {
 
         String xml = new String(Files.readAllBytes(findResource(project, "OrderReportMapper.xml")), StandardCharsets.UTF_8);
         assertTrue(xml.contains("<if test=\"@io.elasticore.springboot3.bean.PortRows@present(p.orderNo)\">AND order_no = #{p.orderNo}</if>"), xml);
-        assertTrue(xml.contains("<select id=\"findRowsRows\" resultType=\"java.util.LinkedHashMap\">"), xml);
+        assertTrue(
+                xml.contains("<select id=\"findRowsRows\" resultType=\"io.elasticore.springboot3.bean.PortRow\">"),
+                xml);
         assertTrue(xml.contains("<select id=\"findRowsCount\" resultType=\"long\">"), xml);
         assertTrue(xml.contains("<if test=\"orderBy != null\"> ORDER BY ${orderBy}</if>"), xml);
         assertTrue(xml.contains("WHERE status = #{status} AND note &lt;&gt; ':notABind'"), xml);
@@ -1073,13 +1122,71 @@ public class MyBatisGenerationTest {
 
         String adapter = read(project, "OrderReportAdapter.java");
         assertTrue(adapter.contains("public class OrderReportAdapter implements OrderReport"), adapter);
-        assertTrue(adapter.contains("return new PageImpl<>(PortRows.list(rows, OrderRow.class), pageable, total);"), adapter);
+        assertTrue(
+                adapter.contains(
+                        "return new PageImpl<>(PortRows.list(portRows, OrderRow.class), portPage, portTotal);"),
+                adapter);
         assertTrue(adapter.contains("return mapper.updateAmount(orderNo, amount);"), adapter);
         assertTrue(read(project, "OrderReportMapper.java").contains("@Mapper"));
 
-        // A page of no order: SQL Server pages only ordered rows.
+        // A page of no order: SQL Server pages only ordered rows. The Pageable names the page
+        // and the order; the interface imports it.
         String byStatus = xml.substring(xml.indexOf("<select id=\"byStatusRows\""));
-        assertTrue(byStatus.contains("<if test=\"_databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"), byStatus);
+        byStatus = byStatus.substring(0, byStatus.indexOf("</select>"));
+        assertTrue(
+                byStatus.contains("<if test=\"orderBy != null\"> ORDER BY ${orderBy}</if>"
+                        + "<if test=\"orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"),
+                byStatus);
+        assertTrue(adapter.contains("Pageable portPage = PortRows.pageable(pageable);"), adapter);
+        assertTrue(
+                adapter.contains("PortRows.orderBy(portInput), portPage.getOffset(), portPage.getPageSize()"), adapter);
+        String port = read(project, "OrderReport.java");
+        assertTrue(port.contains("import org.springframework.data.domain.Pageable;"), port);
+        assertTrue(port.contains("Page<OrderRow> byStatus(String status, Pageable pageable);"), port);
+
+        // A block inside a block: each closes at its own if-end; a conditional line inside one is read too.
+        String nested = xml.substring(xml.indexOf("<select id=\"nested\""));
+        nested = nested.substring(0, nested.indexOf("</select>"));
+        String present = "@io.elasticore.springboot3.bean.PortRows@present";
+        assertTrue(
+                nested.matches("(?s).*<if test=\"" + java.util.regex.Pattern.quote(present + "(p.orderNo)") + "\">\\s*"
+                        + "AND order_no = #\\{p.orderNo}\\s*"
+                        + "<if test=\"" + java.util.regex.Pattern.quote(present + "(p.sortCode)") + "\">\\s*"
+                        + "<if test=\"" + java.util.regex.Pattern.quote(present + "(p.orderNo)")
+                        + "\">AND amount &gt; 0</if>\\s*"
+                        + "</if>\\s*AND amount &lt; 100\\s*</if>\\s*ORDER BY .*"),
+                nested);
+        // The call's sort goes before the SQL's own order, as the runtime puts it.
+        assertTrue(nested.contains("ORDER BY <if test=\"orderBy != null\">${orderBy}, </if>amount"), nested);
+        assertTrue(
+                read(project, "OrderReportMapper.java")
+                        .contains(
+                                "List<java.util.LinkedHashMap<String, Object>> nested(@Param(\"p\") OrderFind p, @Param(\"orderBy\") String orderBy);"));
+
+        // An order its condition leaves out: then the call's sort, or SQL Server's order of no column.
+        String maybe = xml.substring(xml.indexOf("<select id=\"maybeOrderedRows\""));
+        maybe = maybe.substring(0, maybe.indexOf("</select>"));
+        String absent = "!(" + present + "(p.orderNo))";
+        assertTrue(
+                maybe.contains("<if test=\"" + present
+                        + "(p.orderNo)\">ORDER BY <if test=\"orderBy != null\">${orderBy}, </if>amount</if>"),
+                maybe);
+        assertTrue(
+                maybe.contains("<if test=\"" + absent + " and orderBy != null\"> ORDER BY ${orderBy}</if>"
+                        + "<if test=\"" + absent
+                        + " and orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"),
+                maybe);
+        String maybeCount = xml.substring(xml.indexOf("<select id=\"maybeOrderedCount\""));
+        maybeCount = maybeCount.substring(0, maybeCount.indexOf("</select>"));
+        assertFalse(maybeCount.contains("ORDER BY"), maybeCount);
+
+        // Maps: port rows, every column (PortRowColumns); a parameter may be named as the adapter's own words are not.
+        assertTrue(xml.contains("<select id=\"asMaps\" resultType=\"io.elasticore.springboot3.bean.PortRow\">"), xml);
+        assertTrue(
+                adapter.contains(
+                        "return PortRows.listOf(mapper.asMaps(row, PortRows.orderBy("
+                                + "io.elasticore.springboot3.bean.PortRows.named(\"row\", row, \"pageable\", pageable))), Map.class);"),
+                adapter);
         // One value per row: read from the first column, a NULL as null.
         assertTrue(xml.contains("<select id=\"orderNos\" resultType=\"string\">"), xml);
         assertTrue(adapter.contains("return mapper.orderNos();"), adapter);

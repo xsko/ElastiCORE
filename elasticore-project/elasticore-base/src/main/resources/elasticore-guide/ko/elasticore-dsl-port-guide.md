@@ -703,6 +703,23 @@ AND name LIKE :name /* if:name */
 - `/* if:조건 */`으로 시작, `/* if-end */`로 종료
 - 블록 내 모든 줄이 조건에 따라 포함/제거
 
+#### 블록 안의 블록
+> **동작:** JPA, MyBatis (mode: mybatis)
+```sql
+/* if:lastName */
+  AND last_name = :lastName
+  /* if:firstName */
+  AND first_name = :firstName
+  /* if-end */
+  AND phone IS NOT NULL
+/* if-end */
+```
+- `/* if-end */`는 열린 블록 중 가장 안쪽 것을 닫습니다: 안쪽 블록은 바깥 블록이 남을 때만 읽고, 그 뒤의 줄도
+  마찬가지입니다(위의 `phone`은 성이 있을 때만 조건이 됩니다)
+- 블록 안의 인라인 조건도 블록 밖에서와 똑같이 읽습니다
+- 3.0.261107 이전에는 첫 `/* if-end */`가 바깥 블록을 닫아, 그 뒤의 줄은 늘 남고 블록 안의 인라인 조건은 값과
+  상관없이 남았습니다
+
 #### JEXL 표현식
 > **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
 ```sql
@@ -738,6 +755,9 @@ query: |
 1. Map의 `sortCode` 키
 2. 객체의 `getSortCode()` 메서드
 3. 객체의 `getSortColumn()` + `getSortAscending()` 메서드
+4. 메서드가 파라미터로 받는 `Pageable`(또는 `Sort`)의 `Sort` (Since: 3.0.261107):
+   `findPage(String name, Pageable pageable)`를 `PageRequest.of(0, 20, Sort.by(DESC, "createdDate"))`로 부르면
+   `createdDate DESC`로 정렬합니다. 속성은 SQL 의 컬럼명이나 별칭이고, sortCode 처럼 검사합니다
 
 **형식**: `field1+,field2-`
 - `+` = ASC (오름차순)
@@ -748,7 +768,8 @@ query: |
 **예시**: `name+,createdDate-` → `ORDER BY name ASC, createdDate DESC`
 
 sortCode는 조건부 SQL 처리가 완료된 이후에 쿼리 끝에 추가됩니다. 조건 블록(`/* if:... */`)이 있는 SQL에만
-추가되고, 조건 블록이 없는 SQL에서는 정렬 정보를 쓰지 않습니다.
+추가되고, 조건 블록이 없는 SQL에서는 정렬 정보를 쓰지 않습니다. MyBatis(`mode: mybatis`, 생성된 매퍼가 포트를
+실행)에서는 조건 블록이 있든 없든 모든 쿼리에 씁니다.
 쿼리에 자기 `ORDER BY`가 있으면(최상위 - 괄호·따옴표·주석 밖) 요청한 항목이 앞에 오고 쿼리 자신의 항목은 동점 정리용으로 그 뒤에 남습니다.
 자기 `ORDER BY` 없이 `LIMIT`·`OFFSET`·`FETCH`로 끝나면 그 앞에 붙습니다 (Since: 3.0.261103):
 `ORDER BY reg_date DESC LIMIT 10` + `amount-` → `ORDER BY amount DESC, reg_date DESC LIMIT 10`.
@@ -828,8 +849,11 @@ port:
 - 변환 실패 시 원본 컬럼명으로 매칭 (대소문자 무시)
 - 예: `user_name` → `userName` 필드 매칭
 
-**Map 매핑** (`Map` 반환 타입 사용 시):
+**Map 매핑** (`Map` 반환 타입 사용 시, `List<Map<String,Object>>`):
 - `snake_case` 컬럼명 → `camelCase` 키로 자동 변환
+- SQL 이 고른 컬럼은 모두 키가 되고, NULL 이면 값이 null 입니다. MyBatis(`mode: mybatis`)에서는 런타임 라이브러리의
+  `PortRowColumns`를 적용하는 MyBatis Spring Boot starter 가 있어야 합니다 (Since: 3.0.261107. 그 전에는 거기서 NULL
+  컬럼이 맵에서 빠졌습니다)
 
 **날짜/시간 변환**:
 - `java.sql.Date` → `LocalDate`
@@ -857,8 +881,12 @@ params:
 
 1. 입력 객체가 `Pageable` 인스턴스인 경우 직접 사용
 2. `getPageable()` 메서드가 있으면 호출
-3. Map: `pageNumber`/`page` + `sizeVal`/`size` 키
+3. Map: 파라미터 중의 `Pageable`(`findPage(String name, Pageable pageable)`, Since: 3.0.261107), 없으면
+   `pageNumber`/`page` + `sizeVal`/`size` 키
 4. 객체: 동일 이름의 필드
+
+메서드가 `Pageable`(또는 `Sort`)을 받으면 포트 인터페이스가 그것을 import 합니다 (Since: 3.0.261107. v3·Kotlin 출력 -
+2.x 출력은 인터페이스를 전과 같이 씁니다).
 
 **기본값**: page=0, size=50
 

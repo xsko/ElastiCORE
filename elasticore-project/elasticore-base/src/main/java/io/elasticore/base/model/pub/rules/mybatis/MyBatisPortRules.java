@@ -29,16 +29,19 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *       into the text as the runtime puts it.</li>
  *   <li>A line ending /* if:name *&#47; is kept when name has a value (a text
  *       that is not empty); a line starting with it keeps the lines down to
- *       the one marked if-end. A condition that is an expression rather than
- *       a name is the port runtime's (JEXL), and is refused here.</li>
+ *       the one marked if-end, and a block may hold blocks. A condition that
+ *       is an expression rather than a name is the port runtime's (JEXL), and
+ *       is refused here.</li>
  *   <li>A list, a page (a count and a page of rows) and one row are read as
- *       maps and turned into the method's type as the runtime turns them
- *       (PortRows): a DTO by column label, camel-cased; a value from the first
- *       column. A method named for a write that answers int runs an UPDATE,
- *       INSERT or DELETE - once per element for a list of objects.</li>
- *   <li>The sort a call names (sortCode, or sortColumn and sortAscending) is
- *       appended as ORDER BY where the SQL names none, after it is checked
- *       term by term as the runtime checks it.</li>
+ *       port rows - every column, a NULL one too - and turned into the
+ *       method's type as the runtime turns them (PortRows): a DTO by column
+ *       label, camel-cased; a value from the first column. A method named for
+ *       a write that answers int runs an UPDATE, INSERT or DELETE - once per
+ *       element for a list of objects.</li>
+ *   <li>The sort a call names (sortCode, or sortColumn and sortAscending, else
+ *       the order of a Pageable or Sort it takes) is checked term by term as
+ *       the runtime checks it, and goes first in the SQL's own ORDER BY, or
+ *       makes one where the SQL - or a condition of it - leaves none.</li>
  * </ul>
  */
 public class MyBatisPortRules implements CodeRules {
@@ -97,7 +100,7 @@ public class MyBatisPortRules implements CodeRules {
         else o.kind = Kind.ROW;
         List<String[]> params = new ArrayList<String[]>();
         for (String[] param : op.params()) {
-            if (!"Pageable".equals(PortSpec.Operation.typeOf(param).trim())) params.add(param);
+            if (!paging(param)) params.add(param);
         }
         if (params.size() == 1 && !PortSpec.Operation.isSimple(params.get(0))) {
             String type = PortSpec.Operation.typeOf(params.get(0)).trim();
@@ -113,14 +116,23 @@ public class MyBatisPortRules implements CodeRules {
             fail(p, op, "has no query; under mode: mybatis a database port's method runs the SQL its query names");
             return null;
         }
-        // A sort comes with the call: an object's sortCode or sortColumn, or a parameter of that name.
+        o.sql = o.sql.replace("\r\n", "\n");
+        // A sort comes with the call: an object's sortCode or sortColumn, a parameter of
+        // that name, or a Pageable's (or a Sort's) order. As the runtime does, it goes
+        // before the SQL's own order, which stays as the tie breaker.
         boolean carriesSort = o.object != null;
         for (String[] param : op.params()) {
-            if ("sortCode".equals(param[1]) || "sortColumn".equals(param[1])) carriesSort = true;
+            if ("sortCode".equals(param[1]) || "sortColumn".equals(param[1]) || paging(param)) carriesSort = true;
         }
-        o.sorts = carriesSort && o.kind != Kind.WRITE && o.kind != Kind.VALUE && !hasOrderBy(o.sql);
+        o.sorts = carriesSort && o.kind != Kind.WRITE && o.kind != Kind.VALUE;
         o.values = (o.kind == Kind.LIST || o.kind == Kind.PAGE) && singleValue(o.item);
         return o;
+    }
+
+    /** A Pageable or a Sort the method takes: what page and order it asks for, never a value of the SQL. */
+    static boolean paging(String[] param) {
+        String type = RuleText.simpleName(PortSpec.Operation.typeOf(param).trim());
+        return "Pageable".equals(type) || "Sort".equals(type);
     }
 
     private static boolean singleValue(String type) {
@@ -141,11 +153,6 @@ public class MyBatisPortRules implements CodeRules {
             case "boolean": return "Boolean";
             default: return type.trim();
         }
-    }
-
-    /** Whether the SQL orders its rows itself, outside any parenthesis (its last ORDER BY). */
-    private static boolean hasOrderBy(String sql) {
-        return orderByAt(sql) >= 0;
     }
 
     private static final Pattern ORDER_BY = Pattern.compile("\\border\\s+by\\b");
@@ -191,6 +198,48 @@ public class MyBatisPortRules implements CodeRules {
         return at;
     }
 
+    /** Where the words ORDER BY of the SQL's own order end; -1 for none. */
+    static int orderByEnd(String sql) {
+        Matcher m = ORDER_BY.matcher(topLevel(sql));
+        int end = -1;
+        while (m.find()) end = m.end();
+        return end;
+    }
+
+    /**
+     * The names whose values keep the line the SQL's own ORDER BY stands on:
+     * the blocks around it and its own line's condition, outermost first.
+     * Empty when it always stands; null when the SQL has none. A condition
+     * that is not a name is left out - the SQL is refused for it anyway.
+     */
+    static List<String> orderConditions(String sql) {
+        int at = orderByAt(sql);
+        if (at < 0) return null;
+        List<String> open = new ArrayList<String>();
+        int start = 0;
+        for (String line : sql.split("\n", -1)) {
+            int end = start + line.length();
+            Matcher m = IF.matcher(line);
+            boolean condition = m.find();
+            String name = condition ? m.group(1).trim() : null;
+            boolean blockStart = condition && line.trim().indexOf("/*") == 0;
+            if (at >= start && at <= end) {
+                List<String> kept = new ArrayList<String>(open);
+                if (condition && !blockStart) kept.add(name);
+                return kept;
+            }
+            if (!open.isEmpty() && isBlockEnd(line)) open.remove(open.size() - 1);
+            else if (blockStart) open.add(name);
+            start = end + 1;
+        }
+        return new ArrayList<String>(open);
+    }
+
+    /** A line that closes a conditional block. */
+    static boolean isBlockEnd(String line) {
+        return line.contains("/*") && line.indexOf("if-end") > 0;
+    }
+
     /**
      * The SQL without its own ORDER BY, for the count of a page: SQL Server
      * refuses one inside a derived table, and a count needs no order. One
@@ -223,16 +272,22 @@ public class MyBatisPortRules implements CodeRules {
 
     /** The port's SQL with its binds and conditional lines in MyBatis's words. */
     static String translate(PortSpec p, Op o) {
+        return translate(p, o, o.sql);
+    }
+
+    /**
+     * SQL of the port's in MyBatis's words. A block opened inside a block is
+     * closed by the next if-end, and the outer one by the one after it; a
+     * conditional line inside a block is read as one outside it is.
+     */
+    static String translate(PortSpec p, Op o, String sql) {
         StringBuilder out = new StringBuilder();
-        boolean block = false;
-        for (String line : o.sql.replace("\r\n", "\n").split("\n")) {
-            if (block) {
-                if (line.contains("/*") && line.indexOf("if-end") > 0) {
-                    out.append("</if>\n");
-                    block = false;
-                } else {
-                    out.append(text(p, o, line)).append('\n');
-                }
+        int open = 0;
+        // -1: the trailing empty lines too, as the SQL has them.
+        for (String line : sql.replace("\r\n", "\n").split("\n", -1)) {
+            if (open > 0 && isBlockEnd(line)) {
+                out.append("</if>\n");
+                open--;
                 continue;
             }
             Matcher m = IF.matcher(line);
@@ -240,7 +295,7 @@ public class MyBatisPortRules implements CodeRules {
                 String test = test(p, o, m.group(1).trim());
                 if (line.trim().indexOf("/*") == 0) {
                     out.append("<if test=\"").append(test).append("\">\n");
-                    block = true;
+                    open++;
                 } else {
                     String kept = line.substring(0, m.start()).replaceAll("\\s+$", "");
                     out.append("<if test=\"").append(test).append("\">").append(text(p, o, kept)).append("</if>\n");
@@ -249,8 +304,61 @@ public class MyBatisPortRules implements CodeRules {
             }
             out.append(text(p, o, line)).append('\n');
         }
-        if (block) fail(p, o.op, "opens a /* if: */ block that no /* if-end */ line closes");
+        if (open > 0) fail(p, o.op, "opens a /* if: */ block that no /* if-end */ line closes");
         return out.toString().trim();
+    }
+
+    /** What stands for the call's sort in the SQL's own ORDER BY until the SQL is MyBatis's. */
+    private static final String SORT_MARK = "__elasticore_sort__";
+
+    /**
+     * The rows' SQL: the port's, the call's sort first in its own ORDER BY - or,
+     * where it has none or a condition leaves it out, an ORDER BY of the call's
+     * sort. A page on SQL Server without either is ordered by no column: it
+     * pages only ordered rows.
+     */
+    private static String[] rowsSql(PortSpec p, Op o, boolean page) {
+        List<String> conditions = orderConditions(o.sql);
+        String sql = o.sql;
+        if (o.sorts && conditions != null) {
+            int end = orderByEnd(sql);
+            sql = sql.substring(0, end) + " " + SORT_MARK + sql.substring(end);
+        }
+        String xml = translate(p, o, sql)
+                .replace(SORT_MARK + " ", "<if test=\"orderBy != null\">${orderBy}, </if>")
+                .replace(SORT_MARK, "<if test=\"orderBy != null\">${orderBy}, </if>");
+        // When the SQL has no order of its own: none at all, or one its conditions left out.
+        String unordered = conditions == null ? "" : conditions.isEmpty() ? null : notAll(p, o, conditions);
+        if (unordered == null) return new String[] {xml, ""};
+        StringBuilder tail = new StringBuilder();
+        if (o.sorts) {
+            tail.append("<if test=\"").append(and(unordered, "orderBy != null")).append("\"> ORDER BY ${orderBy}</if>");
+        }
+        if (page) {
+            tail.append("<if test=\"")
+                    .append(and(
+                            unordered,
+                            o.sorts ? "orderBy == null and _databaseId == 'sqlserver'" : "_databaseId == 'sqlserver'"))
+                    .append("\"> ORDER BY (SELECT NULL)</if>");
+        }
+        return new String[] {xml, tail.toString()};
+    }
+
+    /** The test that not every one of the names has a value. */
+    private static String notAll(PortSpec p, Op o, List<String> names) {
+        StringBuilder all = new StringBuilder();
+        for (String name : names) {
+            if (!name.matches("[a-zA-Z_$][a-zA-Z\\d_$]*")) continue;
+            if (all.length() > 0) all.append(" and ");
+            all.append("@io.elasticore.springboot3.bean.PortRows@present(")
+                    .append(expression(p, o, name))
+                    .append(')');
+        }
+        return all.length() == 0 ? "" : "!(" + all + ")";
+    }
+
+    private static String and(String a, String b) {
+        return a == null || a.isEmpty() ? b : a + " and " + b;
     }
 
     /** A condition the runtime keeps a line by: a name with a value. An expression is JEXL's, and refused. */
@@ -349,36 +457,36 @@ public class MyBatisPortRules implements CodeRules {
         for (PortSpec.Operation op : p.operations()) {
             Op o = read(p, op);
             if (o == null) continue;
-            String sql = translate(p, o);
-            String order = o.sorts ? "<if test=\"orderBy != null\"> ORDER BY ${orderBy}</if>" : "";
             switch (o.kind) {
                 case WRITE: {
                     String verb = o.sql.trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
                     String kind = "insert".equals(verb) ? "insert" : "delete".equals(verb) ? "delete" : "update";
-                    statement(x, kind, op.name(), "", sql);
+                    statement(x, kind, op.name(), "", translate(p, o));
                     break;
                 }
                 case VALUE:
-                    statement(x, "select", op.name(), "resultType=\"" + valueType(o.returnType) + "\"", sql);
+                    statement(
+                            x, "select", op.name(), "resultType=\"" + valueType(o.returnType) + "\"", translate(p, o));
                     break;
                 case PAGE: {
-                    // SQL Server pages only ordered rows: an order of no column where none is named.
-                    String unordered = hasOrderBy(o.sql) ? ""
-                            : o.sorts ? "<if test=\"orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"
-                            : "<if test=\"_databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>";
-                    statement(x, "select", op.name() + "Rows", resultType(o),
-                            sql + "\n" + order + unordered + PAGE);
+                    String[] rows = rowsSql(p, o, true);
+                    statement(x, "select", op.name() + "Rows", resultType(o), rows[0] + "\n" + rows[1] + PAGE);
+                    // The count's SQL is the rows' without their order: SQL Server refuses one in a derived table.
                     String counted = o.sql;
-                    o.sql = withoutOrderBy(counted);
-                    String countSql = translate(p, o);
-                    o.sql = counted;
+                    String countSql = translate(p, o, withoutOrderBy(counted));
                     statement(x, "select", op.name() + "Count", "resultType=\"long\"",
                             "SELECT COUNT(*) FROM (\n" + countSql + "\n" + I + I + ") X");
                     break;
                 }
-                default:
-                    statement(x, "select", op.name(), resultType(o),
-                            order.isEmpty() ? sql : sql + "\n" + order);
+                default: {
+                    String[] rows = rowsSql(p, o, false);
+                    statement(
+                            x,
+                            "select",
+                            op.name(),
+                            resultType(o),
+                            rows[1].isEmpty() ? rows[0] : rows[0] + "\n" + rows[1]);
+                }
             }
         }
         c.var("namespace", packageOf(p) + "." + p.getName() + "Mapper")
@@ -399,7 +507,7 @@ public class MyBatisPortRules implements CodeRules {
             for (String[] param : op.params()) {
                 if (sig.length() > 0) sig.append(", ");
                 sig.append(param[0]).append(' ').append(param[1]);
-                if ("Pageable".equals(PortSpec.Operation.typeOf(param).trim())) continue;
+                if (paging(param)) continue;
                 if (args.length() > 0) args.append(", ");
                 args.append(param[1]);
             }
@@ -408,16 +516,32 @@ public class MyBatisPortRules implements CodeRules {
                 .append(") {\n");
             String call = args.toString();
             String input = input(o);
+            // The adapter's own names start with "port": a parameter may be named anything else.
             switch (o.kind) {
                 case WRITE: {
                     boolean answers = !"void".equals(o.returnType);
                     if (o.batch) {
                         String list = o.op.params().get(0)[1];
-                        body.append(I).append(I).append("if (").append(list).append(" == null) return").append(answers ? " 0" : "").append(";\n")
-                            .append(I).append(I).append("int total = 0;\n")
-                            .append(I).append(I).append("for (").append(o.object[0]).append(" row : ").append(list)
-                            .append(") if (row != null) total += mapper.").append(op.name()).append("(row);\n");
-                        if (answers) body.append(I).append(I).append("return total;\n");
+                        body.append(I)
+                                .append(I)
+                                .append("if (")
+                                .append(list)
+                                .append(" == null) return")
+                                .append(answers ? " 0" : "")
+                                .append(";\n")
+                                .append(I)
+                                .append(I)
+                                .append("int portTotal = 0;\n")
+                                .append(I)
+                                .append(I)
+                                .append("for (")
+                                .append(o.object[0])
+                                .append(" portRow : ")
+                                .append(list)
+                                .append(") if (portRow != null) portTotal += mapper.")
+                                .append(op.name())
+                                .append("(portRow);\n");
+                        if (answers) body.append(I).append(I).append("return portTotal;\n");
                     } else {
                         body.append(I).append(I).append(answers ? "return " : "").append("mapper.").append(op.name()).append('(')
                             .append(call).append(");\n");
@@ -425,35 +549,93 @@ public class MyBatisPortRules implements CodeRules {
                     break;
                 }
                 case VALUE:
-                    body.append(I).append(I).append("List<").append(o.returnType).append("> rows = mapper.").append(op.name())
-                        .append('(').append(call).append(");\n")
-                        .append(I).append(I).append("return rows.isEmpty() ? null : rows.get(0);\n");
+                    body.append(I)
+                            .append(I)
+                            .append("List<")
+                            .append(o.returnType)
+                            .append("> portRows = mapper.")
+                            .append(op.name())
+                            .append('(')
+                            .append(call)
+                            .append(");\n")
+                            .append(I)
+                            .append(I)
+                            .append("return portRows.isEmpty() ? null : portRows.get(0);\n");
                     break;
                 case PAGE:
-                    body.append(I).append(I).append("Object portInput = ").append(input).append(";\n")
-                        .append(I).append(I).append("Pageable pageable = PortRows.pageable(").append(pageableOf(o)).append(");\n")
-                        .append(I).append(I).append("long total = mapper.").append(op.name()).append("Count(").append(call).append(");\n")
-                        .append(I).append(I).append("List<").append(rowType(o)).append("> rows = mapper.").append(op.name())
-                        .append("Rows(").append(join(call, "PortRows.orderBy(portInput), pageable.getOffset(), pageable.getPageSize()"))
-                        .append(");\n")
-                        .append(I).append(I).append("return new PageImpl<>(")
-                        .append(o.values ? "rows" : "PortRows.list(rows, " + o.item + ".class)")
-                        .append(", pageable, total);\n");
+                    body.append(I)
+                            .append(I)
+                            .append("Object portInput = ")
+                            .append(input)
+                            .append(";\n")
+                            .append(I)
+                            .append(I)
+                            .append("Pageable portPage = PortRows.pageable(")
+                            .append(pageableOf(o))
+                            .append(");\n")
+                            .append(I)
+                            .append(I)
+                            .append("long portTotal = mapper.")
+                            .append(op.name())
+                            .append("Count(")
+                            .append(call)
+                            .append(");\n")
+                            .append(I)
+                            .append(I)
+                            .append("List<")
+                            .append(rowType(o))
+                            .append("> portRows = mapper.")
+                            .append(op.name())
+                            .append("Rows(")
+                            .append(join(
+                                    call, orderBy(o, "portInput") + ", portPage.getOffset(), portPage.getPageSize()"))
+                            .append(");\n")
+                            .append(I)
+                            .append(I)
+                            .append("return new PageImpl<>(")
+                            .append(
+                                    o.values
+                                            ? "portRows"
+                                            : "PortRows." + (o.item.indexOf('<') >= 0 ? "listOf" : "list")
+                                                    + "(portRows, " + erasure(o.item) + ".class)")
+                            .append(", portPage, portTotal);\n");
                     break;
                 case LIST:
                     if (o.values) {
-                        body.append(I).append(I).append("return mapper.").append(op.name()).append('(')
-                            .append(o.sorts ? join(call, "PortRows.orderBy(" + input + ")") : call).append(");\n");
+                        body.append(I)
+                                .append(I)
+                                .append("return mapper.")
+                                .append(op.name())
+                                .append('(')
+                                .append(o.sorts ? join(call, orderBy(o, input)) : call)
+                                .append(");\n");
                         break;
                     }
-                    body.append(I).append(I).append("return PortRows.list(mapper.").append(op.name()).append('(')
-                        .append(o.sorts ? join(call, "PortRows.orderBy(" + input + ")") : call).append("), ")
-                        .append(erasure(o.item)).append(".class);\n");
+                    // A generic type (Map<String, Object>) is read by its class: listOf.
+                    body.append(I)
+                            .append(I)
+                            .append("return PortRows.")
+                            .append(o.item.indexOf('<') >= 0 ? "listOf" : "list")
+                            .append("(mapper.")
+                            .append(op.name())
+                            .append('(')
+                            .append(o.sorts ? join(call, orderBy(o, input)) : call)
+                            .append("), ")
+                            .append(erasure(o.item))
+                            .append(".class);\n");
                     break;
                 default:
-                    body.append(I).append(I).append("return PortRows.first(mapper.").append(op.name()).append('(')
-                        .append(o.sorts ? join(call, "PortRows.orderBy(" + input + ")") : call).append("), ")
-                        .append(erasure(o.returnType)).append(".class);\n");
+                    body.append(I)
+                            .append(I)
+                            .append("return PortRows.")
+                            .append(o.returnType.indexOf('<') >= 0 ? "firstOf" : "first")
+                            .append("(mapper.")
+                            .append(op.name())
+                            .append('(')
+                            .append(o.sorts ? join(call, orderBy(o, input)) : call)
+                            .append("), ")
+                            .append(erasure(o.returnType))
+                            .append(".class);\n");
             }
             body.append(I).append("}\n");
         }
@@ -471,8 +653,22 @@ public class MyBatisPortRules implements CodeRules {
         return o.values ? o.item : "java.util.LinkedHashMap<String, Object>";
     }
 
+    /** Rows as port rows: every column the SQL selects, a NULL one too (PortRowColumns), as the runtime reads them. */
     private static String resultType(Op o) {
-        return "resultType=\"" + (o.values ? valueType(o.item) : "java.util.LinkedHashMap") + "\"";
+        return "resultType=\"" + (o.values ? valueType(o.item) : "io.elasticore.springboot3.bean.PortRow") + "\"";
+    }
+
+    /**
+     * The ORDER BY the call names: the object's sort code, else the order of
+     * the Pageable or Sort it takes besides.
+     */
+    private static String orderBy(Op o, String input) {
+        if (o.object != null) {
+            for (String[] param : o.op.params()) {
+                if (paging(param)) return "PortRows.orderBy(" + input + ", " + param[1] + ")";
+            }
+        }
+        return "PortRows.orderBy(" + input + ")";
     }
 
     /** What the call carries, as the runtime reads its sort and page: the one object, or the values by name. */
@@ -491,7 +687,8 @@ public class MyBatisPortRules implements CodeRules {
     /** What the page is read off: a Pageable the method takes, else the call's input. */
     private static String pageableOf(Op o) {
         for (String[] param : o.op.params()) {
-            if ("Pageable".equals(PortSpec.Operation.typeOf(param).trim())) return param[1];
+            if ("Pageable"
+                    .equals(RuleText.simpleName(PortSpec.Operation.typeOf(param).trim()))) return param[1];
         }
         return "portInput";
     }
@@ -505,7 +702,7 @@ public class MyBatisPortRules implements CodeRules {
         if (o.object != null) return "@Param(\"p\") " + o.object[0] + " p";
         StringBuilder sb = new StringBuilder();
         for (String[] param : o.op.params()) {
-            if ("Pageable".equals(PortSpec.Operation.typeOf(param).trim())) continue;
+            if (paging(param)) continue;
             if (sb.length() > 0) sb.append(", ");
             sb.append("@Param(\"").append(param[1]).append("\") ").append(param[0]).append(' ').append(param[1]);
         }

@@ -274,10 +274,12 @@ final class DddMyBatisPorts {
             // of one is; a row already gone is not. The row stays locked till the end.
             String id = syntax.getter(var, pk.name());
             String ver = syntax.getter(var, deleteVersion.name());
-            b.add("    if (%s%s.lockVersion(%s, %s) == 0 && %s.existsById(%s))",
-                    primitive(deleteVersion) ? "" : ver + " != null && ", mapper, id, ver, mapper, id)
-             .add("        throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
-                    root, id);
+            b.add(
+                            "    if (%s%s.lockVersion(%s, %s) == null && %s.existsById(%s))",
+                            primitive(deleteVersion) ? "" : ver + " != null && ", mapper, id, ver, mapper, id)
+                    .add(
+                            "        throw new OptimisticLockingFailureException(\"%s \" + %s + \" was changed by someone else; read it again\");",
+                            root, id);
         }
         // The members the stored row holds, which may not be the ones held in memory.
         if (!singles.isEmpty()) b.add("    Object[] membersBefore = storedMembers(%s);", var);

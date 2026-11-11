@@ -39,6 +39,75 @@ port:
         query: |
           SELECT c.phone FROM shop_customer c WHERE c.last_name = :lastName
 
+      # A Pageable parameter: the page and the order are the call's. Its Sort names the
+      # SQL's column labels, and goes before the SQL's own order.
+      customersByPage:
+        meta: method
+        params:
+          lastName: string
+          pageable: Pageable
+        return: Page<CustomerRevenueDTO>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customerId,
+                 c.first_name as firstName,
+                 c.last_name as lastName
+          FROM shop_customer c
+          WHERE c.last_name LIKE CONCAT(:lastName, '%')
+          ORDER BY c.customer_id
+
+      # A block inside a block: the first name is read only with a last name, and so is
+      # the phone after it.
+      customersNamed:
+        meta: method
+        params:
+          input: RevenueSearchInput
+        return: List<CustomerRevenueDTO>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customerId,
+                 c.first_name as firstName,
+                 c.last_name as lastName
+          FROM shop_customer c
+          WHERE 1=1
+          /* if:lastName */
+          AND c.last_name = :lastName
+          /* if:firstName */
+          AND c.first_name = :firstName
+          /* if-end */
+          AND c.phone IS NOT NULL
+          /* if-end */
+          ORDER BY c.customer_id
+
+      # An order only when the call names a first name: without it, a page is still
+      # ordered on SQL Server, which pages only ordered rows.
+      customersMaybeOrdered:
+        meta: method
+        params:
+          input: RevenueSearchInput
+        return: Page<CustomerRevenueDTO>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customerId,
+                 c.first_name as firstName,
+                 c.last_name as lastName
+          FROM shop_customer c
+          WHERE c.last_name = :lastName
+          ORDER BY c.first_name DESC /* if:firstName */
+
+      # Rows as maps, keyed by the labels camel-cased: a NULL column is there, as null.
+      customerRows:
+        meta: method
+        params:
+          lastName: string
+        return: List<Map<String,Object>>
+        nativeQuery: true
+        query: |
+          SELECT c.customer_id as customer_id, c.phone as phone
+          FROM shop_customer c
+          WHERE c.last_name = :lastName
+          ORDER BY c.customer_id
+
       # A write that goes around the aggregate on purpose: a bulk correction.
       updateCustomerPhone:
         meta: method

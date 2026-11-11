@@ -193,15 +193,20 @@ Since: 3.0.261030-rc6
 **dbms 포트** (`port: ... meta: dbms`) - MyBatis 도메인에서는 포트도 MyBatis 로 생성합니다: 포트의 SQL 을 담은 매퍼
 (`<Port>Mapper` + XML)와 포트를 구현하는 어댑터(`<Port>Adapter`, 빈)가 `infrastructure.persistence`(없으면 repository 패키지)에
 생깁니다 - 런타임 프록시 대신. SQL 은 포트 DSL 에 적은 그대로이고, `:name` 은 `#{}`, 줄 끝의 `/* if:name */` 는 `<if>`(값이 있을
-때 - 빈 문자열은 없음), 블록 `/* if:name */ ... /* if-end */` 도 같습니다. 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
-camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬럼이 NULL 인 행은 필드가 모두 null 인 DTO). `/* if:` 에
-식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`) 메서드는 문장만 실행합니다.
+때 - 빈 문자열은 없음), 블록 `/* if:name */ ... /* if-end */` 도 같습니다. 블록 안에 블록과 조건 줄을 둘 수 있습니다:
+`/* if-end */` 는 열린 블록 중 가장 안쪽 것을 닫습니다(런타임과 같음). 결과는 런타임과 같은 규칙으로 바꿉니다(컬럼 별칭을
+camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬럼이 NULL 인 행은 필드가 모두 null 인 DTO, `Map` 에는
+모든 컬럼이 - NULL 이면 null 로 - 들어감. 이것은 MyBatis Spring Boot starter 가 적용하는 런타임 라이브러리의
+`PortRowColumns` 가 합니다). `/* if:` 에 식(JEXL - `input.x > 3`)을 쓴 포트는 거절합니다 - 이름 하나로. 답이 없는(`void`)
+메서드는 문장만 실행합니다.
 페이지는 count 와 한 페이지입니다. count 는 SQL 의 마지막 `ORDER BY` 를 빼고 셉니다(SQL Server 는 파생 테이블 안의
-`ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 순서가 없는 SQL 의 페이지는 SQL Server
-에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서 없이는 페이지를 자르지 않음) - 그러니 페이지의 `ORDER BY` 를
-`/* if: */` 줄·블록 안에 두지 마세요(조건이 거짓이면 SQL Server 에서 실패). 블록 안에 블록을 두는 것(중첩)은 런타임처럼
-지원하지 않습니다 - 안쪽 `/* if-end */` 가 바깥 블록을 닫습니다. 정렬은 런타임처럼 입력의 `sortCode`·
-`sortColumn` 으로 - `Pageable` 의 `Sort` 는 읽지 않습니다. Since: 3.0.261030-rc6
+`ORDER BY` 를 받지 않음) - 뒤에 `LIMIT`·`OFFSET`·`FETCH` 가 있으면 그대로 둡니다. 페이지는 입력의 것, 또는 `Pageable`
+파라미터의 것입니다(`customersByPage(String lastName, Pageable pageable)`. 포트 인터페이스가 import 합니다). 호출의 정렬 -
+입력의 `sortCode`·`sortColumn`, 없으면 `Pageable`(또는 `Sort`) 파라미터의 `Sort`, sortCode 처럼 검사 - 은 SQL 자신의
+`ORDER BY` 맨 앞에 들어가고(SQL 의 항목은 동점 정리용으로 뒤에 남음), SQL 에 `ORDER BY` 가 없거나 `/* if: */` 가 그것을
+빼면 그 자리의 `ORDER BY` 가 됩니다. 순서가 전혀 없는 페이지는 SQL Server 에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서
+없이는 페이지를 자르지 않음) - `ORDER BY` 가 조건이 거짓인 `/* if: */` 줄·블록 안에 있을 때도 그렇습니다.
+Since: 3.0.261030-rc6 (블록 안의 블록, `Pageable` 과 그 `Sort`, `/* if: */` 안의 `ORDER BY`, 맵의 NULL 컬럼: 3.0.261107)
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
 라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.
@@ -269,7 +274,7 @@ Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 �
 | 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 - 루트도 멤버도 |
 | 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
 | to-one 멤버 cascade (`@OneToOne @cascade` 등) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE(저장된 행을 세션 캐시를 비우고 읽어 비교) |
-| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(행을 잠금), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
+| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(`SELECT ... FOR UPDATE`, SQL Server 는 `UPDLOCK` 으로 행을 잠금 - `useAffectedRows=true` 인 MySQL 처럼 바뀐 행만 세는 DB 에서도 같음), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
 | 파생 `deleteBy...` | 조건의 행을 읽어 하나씩 `delete()` 처럼 지움(삭제 가드·멤버) - Spring Data JPA 의 파생 삭제처럼 |
 | `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
 | `@DomainEvents` 발행 | 저장·삭제 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |

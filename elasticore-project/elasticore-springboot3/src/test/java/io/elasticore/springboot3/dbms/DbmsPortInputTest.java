@@ -44,6 +44,20 @@ public class DbmsPortInputTest {
         String between(Long from, Long to);
 
         String search(Search search);
+
+        org.springframework.data.domain.Page<String> page(
+                String code, org.springframework.data.domain.Pageable pageable);
+    }
+
+    /** A Pageable among a method's parameters is the page it asks for, not page 0 of 50. */
+    @Test
+    public void aPageableParameterIsThePage() throws Exception {
+        org.springframework.data.domain.PageRequest asked = org.springframework.data.domain.PageRequest.of(3, 7);
+        port.page("A", asked);
+        ArgumentCaptor<org.springframework.data.domain.Pageable> pageable =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        Mockito.verify(executor).inqueryPage(any(), eq("page"), any(), eq(String.class), pageable.capture());
+        assertSame(asked, pageable.getValue());
     }
 
     private AnnotationConfigApplicationContext context;

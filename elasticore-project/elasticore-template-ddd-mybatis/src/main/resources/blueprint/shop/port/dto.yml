@@ -6,6 +6,7 @@ dto:
     meta: dto
     fields:
       lastName: string
+      firstName: string
 
   CustomerRevenueDTO:
     meta: dto

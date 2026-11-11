@@ -80,6 +80,77 @@ class JdbcDbmsGatewayTest {
         assertThat(gateway.executeQuery(entry(sql, true), input, Integer.class, null)).containsExactly(2, 3);
     }
 
+    /** A block inside a block closes at its own if-end; a conditional line inside a block is read as one outside. */
+    @Test
+    void blocksInsideBlocks() throws Exception {
+        String sql = String.join(
+                "\n",
+                "SELECT id FROM port_item",
+                "WHERE 1=1",
+                "/* if:min */",
+                "AND price >= :min",
+                "/* if:name */",
+                "AND item_name = :name",
+                "/* if-end */",
+                "AND id < :below /* if:below */",
+                "AND id <> 2",
+                "/* if-end */",
+                "ORDER BY id");
+        Map<String, Object> input = new LinkedHashMap<String, Object>();
+        input.put("name", "Pen");
+        input.put("below", 3);
+        assertThat(gateway.executeQuery(entry(sql, true), input, Integer.class, null))
+                .as("no min: the outer block and all inside it are left out")
+                .containsExactly(1, 2, 3);
+        input.put("min", new BigDecimal("1.00"));
+        assertThat(gateway.executeQuery(entry(sql, true), input, Integer.class, null))
+                .containsExactly(1);
+        input.remove("name");
+        assertThat(gateway.executeQuery(entry(sql, true), input, Integer.class, null))
+                .containsExactly(1);
+        input.remove("below");
+        assertThat(gateway.executeQuery(entry(sql, true), input, Integer.class, null))
+                .containsExactly(1, 3);
+    }
+
+    /** A Pageable among the call's values names the order, before the SQL's own; checked as a sort code is. */
+    @Test
+    void aPageablesSortOrdersTheRows() throws Exception {
+        Map<String, Object> input = new LinkedHashMap<String, Object>();
+        input.put(
+                "pageable",
+                PageRequest.of(
+                        0,
+                        2,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.DESC, "price")));
+        // The runtime sorts SQL that has a conditional line (the port guide).
+        Page<Integer> page = gateway.executePageQuery(
+                entry("SELECT id FROM port_item WHERE 1=1\nAND id > :min /* if:min */\nORDER BY id", true),
+                input,
+                Integer.class,
+                null,
+                (PageRequest) input.get("pageable"),
+                true);
+        assertThat(page.getTotalElements()).isEqualTo(3);
+        assertThat(page.getContent()).containsExactly(2, 3);
+
+        assertThat(PortRows.orderBy(PageRequest.of(0, 5, org.springframework.data.domain.Sort.by("item_name"))))
+                .isEqualTo("item_name ASC");
+        assertThat(PortRows.orderBy(
+                        new Object(),
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("price"),
+                                org.springframework.data.domain.Sort.Order.asc("id"))))
+                .isEqualTo("price DESC, id ASC");
+        assertThat(PortRows.orderBy(PageRequest.of(0, 5))).isNull();
+        input.put(
+                "pageable",
+                PageRequest.of(0, 2, org.springframework.data.domain.Sort.by("price; DROP TABLE port_item")));
+        assertThatThrownBy(() -> PortRows.orderBy(input))
+                .isInstanceOf(io.elasticore.springboot3.validation.BadRequestException.class);
+    }
+
     @Test
     void aPageIsACountAndASlice() throws Exception {
         Page<Integer> page = gateway.executePageQuery(entry("SELECT id FROM port_item ORDER BY id", true),
