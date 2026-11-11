@@ -116,8 +116,8 @@ public final class PortRows {
      * names none (as DbmsServiceProxyFactory reads it).
      */
     public static Pageable pageable(Object input) {
-        if (input instanceof Pageable) {
-            return (Pageable) input;
+        if (input instanceof Pageable asked) {
+            return paged(asked);
         }
         int defaultPage = 0;
         int defaultPageSize = 50;
@@ -137,7 +137,7 @@ public final class PortRows {
         if (input instanceof Map) {
             Map<?, ?> map = (Map<?, ?>) input;
             for (Object v : map.values()) {
-                if (v instanceof Pageable) return (Pageable) v;
+                if (v instanceof Pageable asked) return paged(asked);
             }
             Object pageVal = map.get("pageNumber");
             if (pageVal == null) pageVal = map.get("page");
@@ -162,5 +162,14 @@ public final class PortRows {
             }
         }
         return PageRequest.of(defaultPage, defaultPageSize);
+    }
+
+    /**
+     * A Pageable a page can be cut by: Pageable.unpaged() - every row - has no
+     * offset or size to ask, so it is the first page of as many rows as there
+     * can be, in its order.
+     */
+    public static Pageable paged(Pageable pageable) {
+        return pageable.isPaged() ? pageable : PageRequest.of(0, Integer.MAX_VALUE, pageable.getSort());
     }
 }

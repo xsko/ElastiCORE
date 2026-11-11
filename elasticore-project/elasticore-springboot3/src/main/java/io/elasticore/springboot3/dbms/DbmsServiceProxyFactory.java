@@ -181,7 +181,7 @@ public class DbmsServiceProxyFactory {
                 Map<?, ?> map = (Map<?, ?>) input;
                 // A method's Pageable parameter, among its values by name.
                 for (Object v : map.values()) {
-                    if (v instanceof Pageable asked) return asked;
+                    if (v instanceof Pageable asked) return io.elasticore.springboot3.bean.PortRows.paged(asked);
                 }
                 Object pageVal = map.get("pageNumber");
                 if(pageVal==null)

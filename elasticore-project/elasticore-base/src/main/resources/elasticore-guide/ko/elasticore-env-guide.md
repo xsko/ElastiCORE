@@ -274,7 +274,7 @@ Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 �
 | 변경 감지·`@Version` | 모든 컬럼 UPDATE + 같은 문장에서 버전 비교·증가(낡으면 409), 메모리의 버전도 올림 - 루트도 멤버도 |
 | 멤버 cascade·orphanRemoval | 저장된 멤버 행과 비교 - 빠진 것 DELETE, 남은 것 UPDATE, 새것 INSERT (멤버 키가 유지됨) |
 | to-one 멤버 cascade (`@OneToOne @cascade` 등) | 루트보다 먼저 INSERT/UPDATE(루트가 키를 가짐), 바뀌거나 빠진 이전 멤버 DELETE(저장된 행을 세션 캐시를 비우고 읽어 비교) |
-| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(`SELECT ... FOR UPDATE`, SQL Server 는 `UPDLOCK` 으로 행을 잠금 - `useAffectedRows=true` 인 MySQL 처럼 바뀐 행만 세는 DB 에서도 같음), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
+| `delete()` | 낡은 버전이면 아무것도 지우기 전에 409(`SELECT ... FOR UPDATE`, SQL Server 는 `UPDLOCK` 으로 트랜잭션 끝까지 행을 잠금 - SQL Server 는 페이징처럼 MyBatis 의 database id 로 구분 - `useAffectedRows=true` 인 MySQL 처럼 바뀐 행만 세는 DB 에서도 같음), 멤버 컬렉션 → 행 → to-one 멤버(저장된 것과 메모리의 것) 순서로 DELETE, 그 사이 발생한 이벤트 발행 |
 | 파생 `deleteBy...` | 조건의 행을 읽어 하나씩 `delete()` 처럼 지움(삭제 가드·멤버) - Spring Data JPA 의 파생 삭제처럼 |
 | `@PrePersist`·`@PreUpdate`(불변식)·`@PreRemove`·`@PostLoad`·`@PostPersist` | 루트가 구현하는 `io.elasticore.springboot3.domain.Lifecycle` 의 같은 순간을 어댑터가 부름 |
 | `@DomainEvents` 발행 | 저장·삭제 뒤 `ApplicationEventPublisher` 로 발행하고 비움(한 번만) |

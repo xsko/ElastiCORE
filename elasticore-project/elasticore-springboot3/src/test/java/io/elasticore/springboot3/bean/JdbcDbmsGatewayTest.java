@@ -144,6 +144,12 @@ class JdbcDbmsGatewayTest {
                                 org.springframework.data.domain.Sort.Order.asc("id"))))
                 .isEqualTo("price DESC, id ASC");
         assertThat(PortRows.orderBy(PageRequest.of(0, 5))).isNull();
+        // Every row: Pageable.unpaged() has no offset to ask; it is the first page of all.
+        org.springframework.data.domain.Pageable all = PortRows.pageable(
+                PortRows.named("name", "x", "pageable", org.springframework.data.domain.Pageable.unpaged()));
+        assertThat(all.getOffset()).isZero();
+        assertThat(all.getPageSize()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(PortRows.pageable(PageRequest.of(2, 4))).isEqualTo(PageRequest.of(2, 4));
         input.put(
                 "pageable",
                 PageRequest.of(0, 2, org.springframework.data.domain.Sort.by("price; DROP TABLE port_item")));

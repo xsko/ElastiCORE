@@ -19,7 +19,9 @@
   output is unchanged). The MyBatis adapter's own names start with `port` (`portPage`, `portTotal`, `portRows`,
   `portRow`). The page is the `Pageable` parameter's, in the runtime too. The order is the input's sort code, else the
   `Sort` of a `Pageable` or `Sort` parameter - its properties are column names or labels, checked term by term as a sort
-  code is (`PortRows.orderBy`, `SqlPortGateway.sortOf`).
+  code is (`PortRows.orderBy`, `SqlPortGateway.sortOf`). The runtime appends it, as any sort, only to SQL with
+  conditional lines (port guide 3.6); a `Sort` property that is not a column or label now fails there where it was
+  ignored. `Pageable.unpaged()` reads every row (`PortRows.paged`).
 - Checked: `PortModelImportsTest` (Java and Kotlin import it, 2.x does not), `MyBatisGenerationTest`,
   `DbmsPortInputTest.aPageableParameterIsThePage`, `JdbcDbmsGatewayTest.aPageablesSortOrdersTheRows` (an injected
   property is refused), `DomainOnDatabase.theDbmsPortsSql` (`customersByPage` with `Sort.by(DESC, "firstName")`).
@@ -29,8 +31,9 @@
   SQL's terms as tie breakers. An `ORDER BY` inside an `/* if: */` line or block was taken as always there, so when its
   condition was false a page reached SQL Server with no order, which it does not page. The guide said not to do it.
 - What: the sort goes first in the SQL's own `ORDER BY`, and becomes the `ORDER BY` where the SQL has none or its
-  conditions leave it out; there, SQL Server gets `ORDER BY (SELECT NULL)` when the call names no sort either. Every
-  read of a port that carries a sort takes it.
+  conditions leave it out; there, SQL Server gets `ORDER BY (SELECT NULL)` when the call names no sort either.
+  Alternative orders - several `ORDER BY` lines, each kept by its own condition - each take the sort, and the tail is
+  for when none is kept; the count cuts them all. Every read of a port that carries a sort takes it.
 - Checked: `MyBatisGenerationTest` (the XML of an own and a conditional `ORDER BY`), `DomainOnDatabase.theDbmsPortsSql`
   (`customersMaybeOrdered` with and without its condition).
 
@@ -50,7 +53,10 @@
 - Why: `lockVersion` was `UPDATE t SET v = v WHERE id = ? AND v = ?`. MySQL and MariaDB with `useAffectedRows=true`
   count changed rows, so they answer 0 and the adapter refused every delete of a current copy as stale (409).
 - What: `SELECT 1 FROM t WHERE id = ? AND v = ? FOR UPDATE` (`WITH (UPDLOCK, ROWLOCK)` on SQL Server); the mapper answers
-  `Integer`, null when the row has another version. The row stays locked to the end of the transaction, as before.
+  `Integer`, null when the row has another version. On H2, Oracle, PostgreSQL and SQL Server the row stays locked to
+  the end of the transaction, as before (DB2 is not checked). SQL Server is told apart by MyBatis's database id, as the
+  generated paging already is: with `elasticore.mybatis.database-id=false` the lock is `FOR UPDATE`, which SQL Server
+  refuses.
 - Checked: `MyBatisGenerationTest`, `DomainOnDatabase.aStaleDeleteIsRefused` (H2 locally; Oracle, PostgreSQL and SQL
   Server in CI).
 

@@ -66,6 +66,18 @@ public class MyBatisPortSqlTest {
                         "SELECT a FROM t\n/* if:x */\n/* if:y */\nWHERE b = :x\nORDER BY a\n/* if-end */\n/* if-end */"));
     }
 
+    /** Alternative orders, each kept by a condition, are all cut from the count. */
+    @Test
+    public void alternativeOrdersAreAllCut() {
+        assertEquals(
+                "SELECT a FROM t",
+                MyBatisPortRules.withoutOrderBy("SELECT a FROM t\nORDER BY a /* if:x */\nORDER BY b DESC /* if:y */"));
+        assertEquals(
+                2,
+                MyBatisPortRules.ordersBy("SELECT a FROM t\nORDER BY a /* if:x */\nORDER BY b /* if:y */")
+                        .size());
+    }
+
     /** The order cut from inside a conditional block leaves the block closed. */
     @Test
     public void aBlockTheOrderStoodInIsStillClosed() {

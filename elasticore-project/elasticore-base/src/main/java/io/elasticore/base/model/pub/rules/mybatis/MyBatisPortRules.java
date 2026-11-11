@@ -198,23 +198,34 @@ public class MyBatisPortRules implements CodeRules {
         return at;
     }
 
-    /** Where the words ORDER BY of the SQL's own order end; -1 for none. */
-    static int orderByEnd(String sql) {
+    /**
+     * Every ORDER BY at the SQL's top level, as {start, end of the words
+     * ORDER BY}: one, or several a condition each keeps - alternative orders.
+     */
+    static List<int[]> ordersBy(String sql) {
         Matcher m = ORDER_BY.matcher(topLevel(sql));
-        int end = -1;
-        while (m.find()) end = m.end();
-        return end;
+        List<int[]> all = new ArrayList<int[]>();
+        while (m.find()) all.add(new int[] {m.start(), m.end()});
+        return all;
     }
 
     /**
-     * The names whose values keep the line the SQL's own ORDER BY stands on:
-     * the blocks around it and its own line's condition, outermost first.
-     * Empty when it always stands; null when the SQL has none. A condition
-     * that is not a name is left out - the SQL is refused for it anyway.
+     * The names whose values keep the line the SQL's own (last) ORDER BY
+     * stands on: the blocks around it and its own line's condition, outermost
+     * first. Empty when it always stands; null when the SQL has none.
      */
     static List<String> orderConditions(String sql) {
         int at = orderByAt(sql);
-        if (at < 0) return null;
+        return at < 0 ? null : conditionsAt(sql, at);
+    }
+
+    /**
+     * The names whose values keep the line at that place: the blocks around
+     * it and its own line's condition, outermost first; empty when it always
+     * stands. A condition that is not a name is left out - the SQL is refused
+     * for it anyway.
+     */
+    static List<String> conditionsAt(String sql, int at) {
         List<String> open = new ArrayList<String>();
         int start = 0;
         for (String line : sql.split("\n", -1)) {
@@ -245,10 +256,12 @@ public class MyBatisPortRules implements CodeRules {
      * refuses one inside a derived table, and a count needs no order. One
      * that a LIMIT, OFFSET or FETCH follows stays: it says which rows there
      * are, and SQL Server takes it there. A conditional block the ORDER BY
-     * stood in is still closed.
+     * stood in is still closed. Alternative orders, each kept by a condition,
+     * all go: the SQL is cut at the first.
      */
     static String withoutOrderBy(String sql) {
-        int at = orderByAt(sql);
+        List<int[]> orders = ordersBy(sql);
+        int at = orders.isEmpty() ? -1 : orders.get(0)[0];
         if (at < 0 || PAGES.matcher(topLevel(sql).substring(at)).find()) return sql;
         String head = sql.substring(0, at);
         int open = 0;
@@ -318,17 +331,28 @@ public class MyBatisPortRules implements CodeRules {
      * pages only ordered rows.
      */
     private static String[] rowsSql(PortSpec p, Op o, boolean page) {
-        List<String> conditions = orderConditions(o.sql);
+        List<int[]> orders = ordersBy(o.sql);
         String sql = o.sql;
-        if (o.sorts && conditions != null) {
-            int end = orderByEnd(sql);
-            sql = sql.substring(0, end) + " " + SORT_MARK + sql.substring(end);
+        if (o.sorts) {
+            // Into each of its orders, from the last, so the places before stay where they are.
+            for (int i = orders.size() - 1; i >= 0; i--) {
+                int end = orders.get(i)[1];
+                sql = sql.substring(0, end) + " " + SORT_MARK + sql.substring(end);
+            }
         }
         String xml = translate(p, o, sql)
                 .replace(SORT_MARK + " ", "<if test=\"orderBy != null\">${orderBy}, </if>")
                 .replace(SORT_MARK, "<if test=\"orderBy != null\">${orderBy}, </if>");
-        // When the SQL has no order of its own: none at all, or one its conditions left out.
-        String unordered = conditions == null ? "" : conditions.isEmpty() ? null : notAll(p, o, conditions);
+        // When the SQL has no order of its own: none at all, or every one its conditions left out.
+        String unordered = "";
+        for (int[] order : orders) {
+            List<String> conditions = conditionsAt(o.sql, order[0]);
+            if (conditions.isEmpty()) {
+                unordered = null;
+                break;
+            }
+            unordered = and(unordered, notAll(p, o, conditions));
+        }
         if (unordered == null) return new String[] {xml, ""};
         StringBuilder tail = new StringBuilder();
         if (o.sorts) {
@@ -358,6 +382,7 @@ public class MyBatisPortRules implements CodeRules {
     }
 
     private static String and(String a, String b) {
+        if (b == null || b.isEmpty()) return a;
         return a == null || a.isEmpty() ? b : a + " and " + b;
     }
 

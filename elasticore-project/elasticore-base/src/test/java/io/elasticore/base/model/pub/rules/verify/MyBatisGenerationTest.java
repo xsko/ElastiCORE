@@ -1088,6 +1088,16 @@ public class MyBatisGenerationTest {
             "        query: |",
             "          SELECT order_no as orderNo, amount FROM purchase_order",
             "          ORDER BY amount /* if:orderNo */",
+            "      alternatives:",
+            "        meta: method",
+            "        params:",
+            "          input: OrderFind",
+            "        return: Page<OrderRow>",
+            "        nativeQuery: true",
+            "        query: |",
+            "          SELECT order_no as orderNo, amount FROM purchase_order",
+            "          ORDER BY amount DESC /* if:orderNo */",
+            "          ORDER BY order_no /* if:sortCode */",
             "      asMaps:",
             "        meta: method",
             "        params:",
@@ -1179,6 +1189,28 @@ public class MyBatisGenerationTest {
         String maybeCount = xml.substring(xml.indexOf("<select id=\"maybeOrderedCount\""));
         maybeCount = maybeCount.substring(0, maybeCount.indexOf("</select>"));
         assertFalse(maybeCount.contains("ORDER BY"), maybeCount);
+
+        // Alternative orders, each kept by its own condition: the sort goes into each, and the
+        // order of the call (or SQL Server's) only where neither is kept.
+        String alt = xml.substring(xml.indexOf("<select id=\"alternativesRows\""));
+        alt = alt.substring(0, alt.indexOf("</select>"));
+        assertTrue(
+                alt.contains("<if test=\"" + present
+                        + "(p.orderNo)\">ORDER BY <if test=\"orderBy != null\">${orderBy}, </if>amount DESC</if>"),
+                alt);
+        assertTrue(
+                alt.contains("<if test=\"" + present
+                        + "(p.sortCode)\">ORDER BY <if test=\"orderBy != null\">${orderBy}, </if>order_no</if>"),
+                alt);
+        String neither = absent + " and !(" + present + "(p.sortCode))";
+        assertTrue(
+                alt.contains("<if test=\"" + neither + " and orderBy != null\"> ORDER BY ${orderBy}</if>"
+                        + "<if test=\"" + neither
+                        + " and orderBy == null and _databaseId == 'sqlserver'\"> ORDER BY (SELECT NULL)</if>"),
+                alt);
+        String altCount = xml.substring(xml.indexOf("<select id=\"alternativesCount\""));
+        altCount = altCount.substring(0, altCount.indexOf("</select>"));
+        assertFalse(altCount.contains("ORDER BY"), altCount);
 
         // Maps: port rows, every column (PortRowColumns); a parameter may be named as the adapter's own words are not.
         assertTrue(xml.contains("<select id=\"asMaps\" resultType=\"io.elasticore.springboot3.bean.PortRow\">"), xml);
