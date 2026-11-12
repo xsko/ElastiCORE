@@ -76,6 +76,14 @@ public class ControllerBaseRules implements CodeRules {
          .var("searchResultDTOClassName", searchResultDto)
          .var("searchReturnType", searchReturnType);
 
+        // The skeleton imports the DTOs it names one by one; a search-result
+        // DTO is one more, and a model without one keeps its lines.
+        c.slot("searchResultImport");
+        if (!searchResultDto.equals(dtoName)) {
+            c.varLine(
+                    "searchResultImport", c.syntax().importLine(String.format("%s.%s", e.pkg("dto"), searchResultDto)));
+        }
+
         primaryKeyVars(c, e);
 
         if (e.jsonView()) {

@@ -1399,6 +1399,14 @@ public final class RulesGenRunner {
 
             collectMapperSection(spec, dto, model, searchable, searchDtoWritten);
 
+            // A @searchResult(entity) DTO with no @template is still what the
+            // entity's search answers with, so the mapper converts the entity
+            // to it - one way, as 2.x does for a SEARCH_RESULT relationship.
+            String resultOf = searchable ? null : SpecFactory.searchResultEntityOf(dto, model);
+            if (resultOf != null) {
+                collectSearchResultSection(SpecFactory.fromDto(dto, model, domainDirName, resultOf));
+            }
+
             if (!searchable) generateKeyDto(dto, model, domainDirName);
         }
     }
@@ -1590,6 +1598,22 @@ public final class RulesGenRunner {
             // and nothing downstream is missing a file to notice it by.
             failed++;
             notes.add(entityName + " mapper section: " + e);
+        }
+    }
+
+    /** The entity-to-DTO half of a mapper section, for a @searchResult DTO without a @template. */
+    private void collectSearchResultSection(EntitySpec spec) {
+        for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.dtoFields()) {
+            addMapperNamespace(f);
+        }
+        try {
+            SourceCode code = sectionEngine("jpa-mapper", kotlin ? "jpa-mapper-assemble-kt" : "jpa-mapper-assemble")
+                    .run(spec, "mapper");
+            String fwd = code.renderBlock("forward");
+            if (!fwd.isEmpty()) mapperForwardSections.add(new String[] {spec.getName(), fwd});
+        } catch (RuntimeException e) {
+            failed++;
+            notes.add(spec.getName() + " search result mapper section: " + e);
         }
     }
 

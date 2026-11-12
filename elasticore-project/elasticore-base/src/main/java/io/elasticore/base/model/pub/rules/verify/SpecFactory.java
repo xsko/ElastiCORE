@@ -484,6 +484,7 @@ public final class SpecFactory {
         // DTO names a page size, a List otherwise (ControlSrcPublisher.isPageable).
         io.elasticore.base.model.dto.DataTransfer srch = searchDtoOf(entity, model);
         if (srch != null) spec.searchDtoClassName(srch.getIdentity().getName());
+        spec.searchResultDtoName(searchResultDtoOf(entity, model));
         spec.testCode("true".equals(model.getConfig("testCode", "false")));
 
         spec.searchPageable(srch != null
@@ -590,12 +591,17 @@ public final class SpecFactory {
 
     public static EntitySpec fromDto(io.elasticore.base.model.dto.DataTransfer dto,
                                      ECoreModel model, String domainDirName) {
+        return fromDto(dto, model, domainDirName, viewedEntityOf(dto));
+    }
+
+    /** A DTO seen as a view of the entity named, as the mapper sees a @searchResult DTO. */
+    static EntitySpec fromDto(
+            io.elasticore.base.model.dto.DataTransfer dto, ECoreModel model, String domainDirName, String entityName) {
         // A relation the DSL deferred is resolved before the field list is
         // read: 2.x does this in DtoSrcFilePublisher before asking for the
         // fields, and the resolution adds fields of its own.
         resolveDeferredFields(dto, model);
 
-        String entityName = viewedEntityOf(dto);
         Entity entity = entityName == null ? null
                 : model.getEntityModels().findByName(entityName);
 
@@ -2386,5 +2392,40 @@ public final class SpecFactory {
             if (d != null) return d;
         }
         return null;
+    }
+
+    /**
+     * The DTO a search answers with: the first @searchResult(entity) DTO of
+     * the entity, as 2.x finds it (SrcFilePublisher.findSearchResultDTOName),
+     * when the model has it. The entity's own DTO is no result DTO of its own:
+     * the search already answers with it.
+     */
+    static String searchResultDtoOf(Entity entity, ECoreModel model) {
+        if (model.getDataTransferModels() == null) return null;
+        String name = entity.getIdentity().getName();
+        java.util.List<io.elasticore.base.model.relation.ModelRelationship> rels =
+                io.elasticore.base.model.core.RelationshipManager.getInstance(
+                                entity.getIdentity().getDomainId())
+                        .findByFromNameAndType(name, io.elasticore.base.model.relation.RelationType.SEARCH_RESULT);
+        for (io.elasticore.base.model.relation.ModelRelationship r : rels) {
+            String dto = r.getToName();
+            if (dto == null || dto.equals(String.format("%sDTO", name))) continue;
+            if (model.getDataTransferModels().getItems().findByName(dto) != null) return dto;
+        }
+        return null;
+    }
+
+    /**
+     * The entity a DTO declared @searchResult(entity) without a @template
+     * answers for, when the model has it; null otherwise. The mapper writes
+     * the DTO's to-method from this entity, as 2.x does.
+     */
+    static String searchResultEntityOf(io.elasticore.base.model.dto.DataTransfer dto, ECoreModel model) {
+        if (viewedEntityOf(dto) != null) return null;
+        String entity = dto.getMetaInfo()
+                .getMetaAnnotationValue(io.elasticore.base.model.dto.DataTransferAnnotation.META_SEARCH_RESULT_NAME);
+        if (entity == null || entity.trim().isEmpty()) return null;
+        entity = entity.trim();
+        return model.getEntityModels().findByName(entity) != null ? entity : null;
     }
 }

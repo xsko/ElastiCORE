@@ -165,6 +165,7 @@ public class HexUseCaseRules implements CodeRules, ArtifactContributor {
         // port" is a fact the compiler establishes rather than a hope.
         String resultDto = e.searchResultDtoName();
         if (resultDto == null) resultDto = dto;
+        else c.addImport("%s.%s", e.pkg("dto"), resultDto);
 
         // A read-only entity's service is missing every write method, so a
         // port that named them would promise what nothing behind it can do.
