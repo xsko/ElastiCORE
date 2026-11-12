@@ -80,6 +80,32 @@ public class ServiceCompatFileTest {
         assertFalse(out.contains("query.distinct(true);"), out);
     }
 
+    /**
+     * Spring Data JPA 4 (Spring Boot 4) has no JpaSpecificationExecutor.delete(Specification):
+     * the delete by search reads the rows and removes them. Spring Boot 3 keeps 2.x's line.
+     */
+    @Test
+    public void onBoot4TheDeleteBySearchRemovesTheRowsItReads() {
+        EntitySpec e = base("Order").meta("expose", null).addField(loader.parse("orderId", "long @id @sequence"));
+        String boot3 = run(e).render();
+        assertTrue(boot3.contains("        return helper.getOrder().delete(specification);\n    }"), boot3);
+        assertFalse(boot3.contains("deleteAll(rows)"), boot3);
+        assertFalse(boot3.contains("print-"), boot3);
+        try {
+            System.setProperty(RulesConfig.PROP_SPRING_BOOT, "4.0.8");
+            String boot4 = run(e).render();
+            assertFalse(boot4.contains(".delete(specification)"), boot4);
+            assertTrue(
+                    boot4.contains("        List<Order> rows = helper.getOrder().findAll(specification);\n"
+                            + "        helper.getOrder().deleteAll(rows);\n"
+                            + "        return rows.size();\n    }"),
+                    boot4);
+            assertFalse(boot4.contains("print-"), boot4);
+        } finally {
+            System.clearProperty(RulesConfig.PROP_SPRING_BOOT);
+        }
+    }
+
     @Test
     public void compositeKey_isWrappedInItsIdentityAndImported() {
         EntitySpec e = base("Order")

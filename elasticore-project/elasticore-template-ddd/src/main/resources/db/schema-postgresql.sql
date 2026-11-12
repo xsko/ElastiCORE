@@ -67,6 +67,12 @@ CREATE TABLE cat_status_code (
     PRIMARY KEY (code)
 );
 
+CREATE TABLE cat_supplier (
+    supplier_id VARCHAR(10) NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    PRIMARY KEY (supplier_id)
+);
+
 CREATE TABLE shop_category (
     created_by VARCHAR(50),
     create_date TIMESTAMP(6),

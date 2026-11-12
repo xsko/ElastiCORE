@@ -14,6 +14,74 @@ public class ThreeWayMergeTest {
 
     private static final String BASE = t("a", "b", "c", "d", "e");
 
+    /**
+     * 2.x imported a.dto.* and a.service.*; the 3.0 code names FolderDTO and
+     * FolderService. A controller the developer wrote more into kept the
+     * wildcards, and its own code uses NoteService through them: the merge
+     * keeps them, beside the generated imports and the developer's own. A
+     * wildcard of a package the generated code imports nothing from goes, and
+     * so does every one where the developer wrote no code.
+     */
+    @Test
+    public void aBaseWildcardTheEditedCodeKeptStaysWhileItsPackageIsImported() {
+        String base = t(
+                "package a.control;",
+                "",
+                "import a.dto.*;",
+                "import a.service.*;",
+                "import a.old.*;",
+                "",
+                "public class FolderController {",
+                "    private final FolderService folderService;",
+                "}");
+        String yours = t(
+                "package a.control;",
+                "",
+                "import a.dto.*;",
+                "import a.service.*;",
+                "import a.old.*;",
+                "import java.util.ArrayList;",
+                "",
+                "public class FolderController {",
+                "    private final FolderService folderService;",
+                "    private final NoteService noteService;",
+                "}");
+        String generated = t(
+                "package a.control;",
+                "",
+                "import a.dto.FolderDTO;",
+                "import a.service.FolderService;",
+                "",
+                "public class FolderController {",
+                "    private final FolderService folderService;",
+                "}");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(base, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        String text = r.text();
+        assertTrue(text.contains("import a.dto.FolderDTO;\nimport a.service.FolderService;\n"), text);
+        assertTrue(text.contains("import a.dto.*;\n"), text);
+        assertTrue(text.contains("import a.service.*;\n"), text);
+        assertTrue(text.contains("import java.util.ArrayList;\n"), text);
+        assertTrue(text.contains("private final NoteService noteService;"), text);
+        assertFalse(text.contains("import a.old.*;"), "no generated import from a.old: " + text);
+
+        // Nothing the developer wrote in the code: the generated imports alone.
+        String untouched = ThreeWayMerge.mergeSource(base, base.replace("import a.old.*;\n", ""), generated)
+                .text();
+        assertFalse(untouched.contains(".*;"), untouched);
+    }
+
+    @Test
+    public void aWildcardIsKeptOnlyForAPackageAClassIsStillImportedFrom() {
+        java.util.Set<String> generated = new java.util.HashSet<String>(java.util.Arrays.asList(
+                "import a.dto.FolderDTO", "import a.dto.sub.Deep", "import static a.util.Strings.trim"));
+        assertTrue(ThreeWayMerge.stillImportedFrom("import a.dto.*", generated));
+        assertFalse(ThreeWayMerge.stillImportedFrom("import a.dt.*", generated));
+        assertFalse(ThreeWayMerge.stillImportedFrom("import a.*", generated), "a.dto.FolderDTO is not of package a");
+        assertFalse(ThreeWayMerge.stillImportedFrom("import a.dto.FolderDTO", generated));
+        assertFalse(ThreeWayMerge.stillImportedFrom("import static a.util.Strings.*", generated));
+    }
+
     @Test
     public void whatOnlyOneSideChangedIsTaken() {
         assertMerged(t("a", "B", "c", "d", "e"), BASE, t("a", "B", "c", "d", "e"), BASE);

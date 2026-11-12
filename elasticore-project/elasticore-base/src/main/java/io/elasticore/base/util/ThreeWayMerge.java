@@ -144,6 +144,24 @@ public final class ThreeWayMerge {
             block.add(line);
         }
         java.util.Set<String> added = new java.util.LinkedHashSet<String>();
+        // The code the developer wrote may use what a wildcard of the base brought in,
+        // where the generated code now names its classes one by one: 2.x's dto.* and
+        // service.*, the 3.0 code's FolderDTO and FolderService. Where they edited the
+        // code, a base wildcard they kept stays while the generated code still imports
+        // from that package - so the package is there. A single-type import the DSL
+        // dropped goes, as before: its class may be gone.
+        if (!a.body.equals(o.body)) {
+            for (String line : a.imports) {
+                String key = importKey(line);
+                if (key != null
+                        && baseImports.contains(key)
+                        && !generatedImports.contains(key)
+                        && stillImportedFrom(key, generatedImports)
+                        && added.add(key)) {
+                    block.add(line);
+                }
+            }
+        }
         for (String line : a.imports) {
             String key = importKey(line);
             if (key != null && !baseImports.contains(key) && !generatedImports.contains(key) && added.add(key)) {
@@ -223,6 +241,19 @@ public final class ThreeWayMerge {
         if (!t.startsWith("import ")) return null;
         if (t.endsWith(";")) t = t.substring(0, t.length() - 1).trim();
         return t.replaceAll("\\s+", " ");
+    }
+
+    /**
+     * Whether a key is a type wildcard ("import a.b.*") whose package one of
+     * the others imports a class of ("import a.b.C"). A static wildcard is not one.
+     */
+    static boolean stillImportedFrom(String key, java.util.Set<String> others) {
+        if (key.startsWith("import static ") || !key.endsWith(".*")) return false;
+        String pkg = key.substring(0, key.length() - 1);
+        for (String other : others) {
+            if (other.startsWith(pkg) && other.indexOf('.', pkg.length()) < 0 && !other.endsWith(".*")) return true;
+        }
+        return false;
     }
 
     private static java.util.Set<String> imports(List<String> block) {

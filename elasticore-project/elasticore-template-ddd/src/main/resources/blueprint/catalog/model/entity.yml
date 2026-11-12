@@ -21,3 +21,11 @@ entity:
       # Written by Spring Data auditing, never by a request - in the plain
       # v3 bundle too.
       lastModifiedBy: string(50) @jpa:org.springframework.data.annotation.LastModifiedBy
+
+  # A table code of its own reads and writes, with no API: the repository and the
+  # helper's getter only (CatalogRepositoryHelper.getSupplier()).
+  Supplier:
+    meta: entity @repository
+    fields:
+      supplierId: string(10) @id
+      name: string(50)!

@@ -103,7 +103,14 @@ public class ${className} {
     @Transactional
     public long delete(${searchDTOClassName} searchDTO) {
         Specification<${entityClassName}> specification = ${mapperName}.toSpec(searchDTO);
+/*-- print-if:${rowByRowDelete} --*/
+        // Spring Data JPA 4 deletes by a PredicateSpecification only: the rows are read and removed one by one.
+        List<${entityClassName}> rows = helper.get${entityClassName}().findAll(specification);
+        helper.get${entityClassName}().deleteAll(rows);
+        return rows.size();
+/*-- print-elseif:${rowByRowDelete} --*/
         return helper.get${entityClassName}().delete(specification);
+/*-- print-if:end --*/
     }
 
 /*-- print-if:${isListOutput} --*/

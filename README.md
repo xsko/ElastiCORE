@@ -161,7 +161,8 @@ plugin's version, `./gradlew elcore3ts` for the TypeScript client, or only some 
 
 **3.0 is in pre-release** ([on Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
 A project on the Gradle plugin gets the 3.0 code unless it keeps 2.x's: `elasticore { output = 'v2' }` generates what 2.x generated, apart
-from the bug fixes the history lists and, on Spring Boot 4, enums written for Jackson 3. A project that holds code 2.x
+from the bug fixes the history lists and, on Spring Boot 4, enums written for Jackson 3 and a delete by search that
+removes the rows one by one (Spring Data JPA 4 has no `delete(Specification)`). A project that holds code 2.x
 generated and chose neither is stopped before anything is rewritten, with that choice to make
 ([migration guide](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-migration-guide.md)).
 On every pull request the 2.x generator's output for the reference project must stay as committed, and the rule

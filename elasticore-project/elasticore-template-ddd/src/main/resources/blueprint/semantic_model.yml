@@ -125,6 +125,21 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Book", "domain": "catalog"}
+  - name: Supplier
+    source: cat_supplier
+    primary_key: [supplier_id]
+    fields:
+      - name: supplier_id
+        expression:
+          sql: "supplier_id"
+        datatype: String
+      - name: name
+        expression:
+          sql: "name"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Supplier", "domain": "catalog"}
   - name: Reading
     source: cat_reading
     primary_key: [reading_id]
