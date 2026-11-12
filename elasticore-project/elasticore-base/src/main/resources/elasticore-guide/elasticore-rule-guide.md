@@ -969,7 +969,7 @@ The status codes are the same as before.
   `@RestControllerAdvice` also comes before the handler that `RequestShapeErrors` registers (`RequestShapeAdvice`) (that handler is last). To be sure, put `@Order` on the common
   advice.
 - **A common advice that answers every exception** (`@ExceptionHandler(Throwable.class)`, `Exception`, `RuntimeException`) with no `@Order`: Spring asks the
-  advice beans in order, and the first one with a matching handler answers. `ShopApiErrors` is `@Order(Ordered.LOWEST_PRECEDENCE - 1)` (from 3.0.261114), so
+  advice beans in order, and the first one with a matching handler answers. `ShopApiErrors` is `@Order(Ordered.LOWEST_PRECEDENCE - 1)` (from 3.0.261114-rc14), so
   it comes before such an advice and a generated controller's 404 / 409 stays one. An `XxxApiErrors` generated before is `LOWEST_PRECEDENCE`, the same
   as an advice without `@Order` - their order is not set, and the catch-all may answer 500. `elcore3` and `elcoreMigrationCheck` warn and name both
   files; change the line to `LOWEST_PRECEDENCE - 1` (an `XxxApiErrors` you never edited is regenerated with it) or give the common advice an `@Order`.
@@ -1614,7 +1614,7 @@ pluginManagement {
 
 ```gradle
 plugins {
-    id 'io.elasticore' version '3.0.261113-rc13'
+    id 'io.elasticore' version '3.0.261114-rc14'
 }
 
 elasticore {

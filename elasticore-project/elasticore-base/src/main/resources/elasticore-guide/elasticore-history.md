@@ -1,3 +1,69 @@
+## 3.0.261114-rc14
+
+### Changes (v3 API errors - their order beside an application's catch-all)
+
+#### A generated `XxxApiErrors` comes before an application's advice without `@Order`; a tie is warned about
+- Why: a project moving to 3.0 had a common `@RestControllerAdvice` with an `@ExceptionHandler(Throwable.class)` and no
+  `@Order`. The generated `XxxApiErrors` was `@Order(Ordered.LOWEST_PRECEDENCE)`, the same as an advice without one:
+  Spring consults advice beans of the same order in no set order and the first with a matching handler answers, so a
+  generated controller's 404 could go out as the catch-all's 500 - found by reading the code, not by a test.
+- What: a new `XxxApiErrors` (Java and Kotlin, v3) is `@Order(Ordered.LOWEST_PRECEDENCE - 1)`: an advice the
+  application orders itself still comes first, one without an order comes after. An `XxxApiErrors` never edited is
+  regenerated with it; for one that was edited, or any tie, `elcore3` and `elcoreMigrationCheck` warn and name both
+  files: an advice of the application's that answers `Throwable`, `Exception` or `RuntimeException`, has no `@Order` or
+  the lowest one, beside an `XxxApiErrors` that is last in line too. A project with no generated advice hears nothing.
+- Checked: `AdviceOrderTest` (the tie with `Throwable`, `{Exception.class}`, `value = RuntimeException.class` and an
+  explicit lowest order is said; an `XxxApiErrors` next to last, an ordered advice, one without a catch-all, or no
+  generated advice says nothing). Rule guide (en, ko), API errors.
+
+### Bug Fixes (migration check - preserved blocks)
+
+#### The check and the build say the imports a preserved block may lose
+- Why: in a repository 2.x generated, methods written in a preserved block (`// !---------- ... ------------!`) used
+  `java.util.*` and `...dto.*`. The 3.0 code imports each class by name; the block was put back as it was, and the file
+  failed to compile with 5 errors - which `elcoreMigrationCheck` did not list: it looked only at merged files, and a
+  file whose edits are all in blocks is rewritten, not merged. Its report also listed only "merged" files.
+- What: for a file whose code of the developer's is in preserved blocks, the imports it had that the new text does not,
+  and that a block's line may need (one it names, or a wildcard it may rely on), are in the check's report ("Imports the
+  build would take out of your files") and are a build warning that says to write them in the preserved block under
+  `package`. A merged file with blocks is read with its blocks too. The count is "files that would lose an import your
+  code may need".
+- Checked: `MigrationCheckTest` - the 2.2 project's `PurchaseOrderRepository` gets a block that uses `List` and
+  `Optional`: the report names it with `import java.util.*`, the build prints the warning, keeps the block and drops
+  the wildcard. `MigrationPreviewTest`. Migration guide (en, ko).
+
+- Files: `RulesGenRunner.java` (`checkAdviceOrder`, `adviceOrderClashes`, `blockImports`), `MigrationPreview.java`
+  (`dropped`, the report's wording), `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `AdviceOrderTest.java`,
+  `MigrationCheckTest.java`, `MigrationPreviewTest.java`, the rule and migration guides (en, ko)
+
+### Bug Fixes (v3 search - `@searchResult`)
+
+#### The 3.0 search answers with the `@searchResult(Entity)` DTO, as 2.x does
+- Why: a DTO declared `@searchResult(Entity)` (with `--` to leave a large column out of a list) was written by the rule
+  engine, but nothing used it: `findBySearch` still returned `Page<EntityDTO>` through `toDTO`, the mapper had no
+  `toEntityResultDTO`, and the list carried every field of the entity. Reported by a user moving a 2.x project to 3.0.
+  The spec field every consumer reads (`EntitySpec.searchResultDtoName`) was never set.
+- What: `SpecFactory` sets it from the `SEARCH_RESULT` relationship, as 2.x `findSearchResultDTOName` finds it, when
+  the model has that DTO (the entity's own `EntityDTO` is not taken: the search already answers with it). The service
+  (layered, ddd, hexagonal, MyBatis, Kotlin), the controller, the hexagonal use case and the TypeScript client then use the
+  result DTO. A result DTO without `@template` gets its entity-to-DTO mapping
+  (`toEntityResultDTO`, one way, as 2.x writes it for the relationship); one with `@template` already had it. The v3
+  controller and the hexagonal use case import the result DTO (`${searchResultImport}`, an empty slot without one).
+  An entity without `@searchResult` generates what it did. The 2.x-compatible output now matches the 2.x generator
+  for such a model too (service and mapper); the golden template has none, so its checks are unchanged.
+- Checked: `SearchResultDtoTest` (8 tests, all failing without the change): v3 layered service `Page<XResultDTO>` +
+  `Mapper::toXResultDTO`, the mapper method without the removed column, controller import and return type, an entity
+  without one unchanged (no added controller line); a `@template` + `@searchResult` DTO mapped once; the compatible
+  service and mapping body equal to the 2.x generator's; Kotlin, hexagonal, ddd, MyBatis and the TypeScript client.
+  Compiled with a `CategoryResultDTO @searchResult(Category)` added for the run (then removed) to
+  elasticore-template-ddd (hexagonal, and with `architecture` switched to `ddd` and `layered`), elasticore-template-kt
+  (`compileTestKotlin`, `elcore3tsVerify` type-checks the client), elasticore-template-mybatis and
+  elasticore-template-ddd-mybatis (`compileTestJava`). `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED,
+  `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `rules/verify/SpecFactory.java`, `rules/verify/RulesGenRunner.java`, `rules/base/ControllerBaseRules.java`,
+  `rules/hex/HexUseCaseRules.java`, `elasticore-template/v3/control.tmpl`, `elasticore-template/kt/control.tmpl`,
+  `SearchResultDtoTest.java`.
+
 ## 3.0.261113-rc13
 
 ### New Features (moving from 2.x - a check before the move)
