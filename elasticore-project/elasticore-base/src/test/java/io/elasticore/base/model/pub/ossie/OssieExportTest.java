@@ -82,16 +82,16 @@ public class OssieExportTest {
     }
 
     @Test
-    @DisplayName("an explicit @table is not prefixed a second time")
-    public void theTablePrefixIsNotDoubled() throws IOException {
+    @DisplayName("an explicit @table is the generated entity's table: the prefix, then the name")
+    public void theTableIsTheEntitysTable() throws IOException {
         String yaml = exportedModel();
 
-        // shop_products carries its prefix in the DSL's own @table; the first
-        // export prepended table.prefix on top and shipped shop_shop_products.
+        // @table(products) with table.prefix shop_: the generated Product is
+        // @Table(name = "shop_products"), so the metrics read that table.
         assertTrue(yaml.contains("source: shop_products"), yaml);
-        assertTrue(!yaml.contains("shop_shop_"), "the table prefix was applied twice");
+        assertTrue(!yaml.contains("source: products"), yaml);
 
-        // And an entity with no @table gets the prefix, or the fix overshot.
+        // And an entity with no @table gets the prefix too.
         assertTrue(yaml.contains("source: shop_category"), yaml);
     }
 
@@ -454,15 +454,15 @@ public class OssieExportTest {
     }
 
     @Test
-    @DisplayName("an explicit @table takes the schema and no prefix; a derived name takes both")
+    @DisplayName("an explicit @table takes the schema and the prefix, as a derived name does")
     public void anExplicitTableTakesTheSchema() throws Exception {
         String own = export(schemaDesk(" @table(cust_master) @schema(sales)"), "table:", "  prefix: tbl_")[0];
-        assertEquals("sales.cust_master", source(own, "Customer"));
+        assertEquals("sales.tbl_cust_master", source(own, "Customer"));
         assertEquals("tbl_tag", source(own, "Tag"));
 
         String domain =
                 export(schemaDesk(" @table(cust_master)"), "tableSchema: schema_a", "table:", "  prefix: tbl_")[0];
-        assertEquals("schema_a.cust_master", source(domain, "Customer"));
+        assertEquals("schema_a.tbl_cust_master", source(domain, "Customer"));
         assertEquals("schema_a.tbl_tag", source(domain, "Tag"));
     }
 

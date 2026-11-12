@@ -1487,11 +1487,11 @@ The run warns of such a word, and for `uuid`, `short`, `byte`, `char`, `OffsetDa
 |-----------|--------|-----|
 | UUID key | `string @id @genid` | `uuid` is not a type. If you give a length (`string(36)`), an ElastiCORE ID is made, not a UUID (see the `@genid` section above) |
 | JSON document | `json` | `String` + `columnDefinition = "json"` |
-| Large string | `clob` | `String` + `@Lob` (3.0 rule engine). The 2.x (`build`/`elcore`) does not add `@Lob`, so use `text` |
-| Binary | `blob` | `byte[]` + `@Lob`, base64 in JSON (3.0 rule engine only) |
+| Large string | `clob` | `String`, long text in the row: text on PostgreSQL, clob on Oracle, varchar(max) on SQL Server (3.0 rule engine). The 2.x (`build`/`elcore`) does not map it, so use `text` |
+| Binary | `blob` | `byte[]`, long binary in the row: bytea on PostgreSQL, blob on Oracle; base64 in JSON (3.0 rule engine only) |
 
 `json`, `blob` and `clob` are supported from 3.0.260925. In earlier versions, `private json metadata;` was generated
-with the DSL word as it is and did not compile, so `text` was used instead. Only the 3.0 rule engine (`elcore3`) adds `@Lob`.
+with the DSL word as it is and did not compile, so `text` was used instead. Up to 3.0.261115 `clob`/`blob` were `@Lob`, which PostgreSQL keeps apart (the column holds a number) - a hand-written `@Lob` there does the same.
 The generated result for each type follows the value types table in the DSL guide.
 
 ```yaml

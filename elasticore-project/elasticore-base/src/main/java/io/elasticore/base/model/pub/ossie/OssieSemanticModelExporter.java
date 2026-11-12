@@ -475,13 +475,12 @@ public final class OssieSemanticModelExporter {
     }
 
     private String table(Entity entity, ECoreModel model) {
-        // The prefix applies only where the DSL named no table - the same
-        // answer the generated @Table annotation gives.
+        // The prefix comes before the @table name too - the same answer the
+        // generated @Table annotation gives (2.x and 3.0).
         String declared = entity.getMetaInfo().getMetaAnnotationValue("table");
         String prefix = model.getConfig("table.prefix");
-        String table = declared != null
-                ? declared
-                : (prefix != null && !prefix.isEmpty() ? prefix : "") + entity.getTableName();
+        String table = (prefix != null && !prefix.isEmpty() ? prefix : "")
+                + (declared != null ? declared : entity.getTableName());
         // Entity @schema wins over the env.yml tableSchema config.
         String schema = entity.getMetaInfo().getMetaAnnotationValue("schema");
         if (schema == null || schema.isEmpty()) {

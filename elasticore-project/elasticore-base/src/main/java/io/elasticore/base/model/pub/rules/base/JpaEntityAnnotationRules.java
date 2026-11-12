@@ -214,10 +214,8 @@ public class JpaEntityAnnotationRules implements CodeRules {
               .addImport("org.springframework.data.jpa.domain.support.AuditingEntityListener");
     }
 
-    /** The table an entity maps to: what @table names, or its snake-cased name. */
+    /** The table an entity maps to: the prefix, then what @table names or its snake-cased name. */
     private String tableName(EntitySpec e) {
-        String explicit = e.metaValue("table");
-        if (explicit != null && !explicit.isEmpty()) return explicit;
-        return String.format("%s%s", e.tablePrefix(), StringUtils.camelToSnake(e.getName()));
+        return e.tableName();
     }
 }

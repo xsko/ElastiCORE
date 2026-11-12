@@ -110,7 +110,7 @@ entities:
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.dddmybatis.shop.domain.model.Product)
-    table: shop_shop_products
+    table: shop_products
     java: io.elasticore.sample.dddmybatis.shop.domain.model.Product
     fields:
       createdBy: string(50) @Column(name = "created_by", length = 50)

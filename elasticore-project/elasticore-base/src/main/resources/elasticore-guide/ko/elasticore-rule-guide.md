@@ -1789,7 +1789,7 @@ relationships:
 
 | DSL | Ossie | 비고 |
 |---|---|---|
-| 엔티티 (`@abstract`·`@embeddable` 제외) | `datasets[]` | `source` = 테이블 (`@table` 또는 `table.prefix` + 이름) |
+| 엔티티 (`@abstract`·`@embeddable` 제외) | `datasets[]` | `source` = 테이블 (`table.prefix` + `@table` 이름 또는 엔티티 이름) |
 | `-- 라벨` | `description` | |
 | `@id` 필드 (복합 키 포함) | `primary_key` | |
 | `@unique`, `@Index(unique="true")` | `unique_keys` | 데이터셋 필드의 컬럼 이름으로 - `columnList` 의 속성 이름(`seatNo`)은 그 필드의 컬럼(`seat_no`, `@column` 이면 그 이름), 컬럼 이름은 대소문자와 상관없이 그 필드의 것(`@column(HALL_ID)` 이면 `HALL_ID`), 그 밖의 이름은 Hibernate 처럼(`seqCd` → `seq_cd`). 같은 키는 한 번 |

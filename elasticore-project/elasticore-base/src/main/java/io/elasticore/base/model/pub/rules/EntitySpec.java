@@ -979,6 +979,17 @@ public final class EntitySpec {
         return tablePrefix;
     }
 
+    /**
+     * The table the entity maps to: the prefix, then what @table names or the
+     * snake-cased name - as 2.x names it, so a project keeps its tables.
+     */
+    public String tableName() {
+        String explicit = metaValue("table");
+        String name = explicit != null && !explicit.isEmpty() ? explicit
+                : io.elasticore.base.util.StringUtils.camelToSnake(getName());
+        return tablePrefix + name;
+    }
+
     public EntitySpec apiPath(String apiPath) {
         this.apiPath = apiPath;
         return this;

@@ -1789,7 +1789,7 @@ relationships:
 
 | DSL | Ossie | Note |
 |---|---|---|
-| Entity (except `@abstract` and `@embeddable`) | `datasets[]` | `source` = the table (`@table`, or `table.prefix` + name) |
+| Entity (except `@abstract` and `@embeddable`) | `datasets[]` | `source` = the table (`table.prefix` + the `@table` name or the entity's) |
 | `-- label` | `description` | |
 | `@id` field (including a composite key) | `primary_key` | |
 | `@unique`, `@Index(unique="true")` | `unique_keys` | By the column name of the dataset field - an attribute name in `columnList` (`seatNo`) becomes the column of that field (`seat_no`, or the `@column` name if there is one), a column name belongs to that field regardless of case (`HALL_ID` if `@column(HALL_ID)`), and any other name follows Hibernate (`seqCd` -> `seq_cd`). The same key appears once |

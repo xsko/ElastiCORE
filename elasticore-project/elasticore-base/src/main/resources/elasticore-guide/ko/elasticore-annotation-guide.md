@@ -1487,12 +1487,12 @@ fields:
 |-----------|--------|-----|
 | UUID 키 | `string @id @genid` | `uuid` 는 타입이 아닙니다. 길이를 주면(`string(36)`) UUID 가 아니라 ElastiCORE ID 가 만들어집니다 (위 `@genid` 절) |
 | JSON 문서 | `json` | `String` + `columnDefinition = "json"` |
-| 큰 문자열 | `clob` | `String` + `@Lob` (3.0 규칙 엔진). 2.x(`build`/`elcore`)에서는 `@Lob` 이 붙지 않으므로 `text` 를 씁니다 |
-| 바이너리 | `blob` | `byte[]` + `@Lob`, JSON 에서는 base64 (3.0 규칙 엔진 전용) |
+| 큰 문자열 | `clob` | `String`, 행 안의 긴 문자열: PostgreSQL text, Oracle clob, SQL Server varchar(max) (3.0 규칙 엔진). 2.x(`build`/`elcore`)는 매핑하지 않으므로 `text` 를 씁니다 |
+| 바이너리 | `blob` | `byte[]`, 행 안의 긴 바이트: PostgreSQL bytea, Oracle blob. JSON 에서는 base64 (3.0 규칙 엔진 전용) |
 
 `json`·`blob`·`clob` 은 3.0.260925 부터 지원하는 타입입니다. 그 이전 버전에서는 `private json metadata;` 처럼
-DSL 단어 그대로 생성되어 컴파일되지 않았으므로 `text` 로 대신했습니다. `@Lob` 은 3.0 규칙 엔진(`elcore3`)만
-붙입니다. 타입별 생성 결과는 DSL 가이드의 값 타입 표를 따릅니다.
+DSL 단어 그대로 생성되어 컴파일되지 않았으므로 `text` 로 대신했습니다. 3.0.261115 까지 `clob`·`blob` 은 `@Lob` 이었고,
+PostgreSQL 은 이를 따로 저장해 컬럼에 번호만 남깁니다 - 손으로 넣은 `@Lob` 도 같습니다. 타입별 생성 결과는 DSL 가이드의 값 타입 표를 따릅니다.
 
 ```yaml
 entity:

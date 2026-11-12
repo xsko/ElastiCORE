@@ -21,7 +21,7 @@ entity:
       subCategories: List<Category> @OneToMany(mappedBy="parentCategory") @dtype(List<CategoryDTO>)
 
   Product:
-    meta: entity @editable @expose(20) @extend(AuditEntity) @audited @pageable @table(shop_products) @Index(name="idx_shop_prod_sku", columnList="sku", unique="true")
+    meta: entity @editable @expose(20) @extend(AuditEntity) @audited @pageable @table(products) @Index(name="idx_shop_prod_sku", columnList="sku", unique="true")
     fields:
       productId: string(36) @id @genid
       name: string(200)! @search(like)

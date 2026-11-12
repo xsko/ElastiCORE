@@ -24,6 +24,16 @@ datasets:
         expression:
           sql: "description"
         datatype: String
+      - name: story
+        expression:
+          sql: "story"
+        datatype: String
+        description: "긴 소개 글 (행 안의 긴 문자열 - PostgreSQL text, Oracle clob)"
+      - name: icon
+        expression:
+          sql: "icon"
+        datatype: Opaque
+        description: "아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)"
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Category", "domain": "petstore", "access": {"*": "admin", "read": "public"}}

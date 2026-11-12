@@ -23,7 +23,7 @@ entity:
 
   # A root that promises something about a number rather than a collection.
   Product:
-    meta: entity @root @editable @expose(20) @invariant(price > 0, 'a product has a price') @extend(AuditEntity) @pageable @table(shop_products) @Index(name="idx_shop_prod_sku", columnList="sku", unique="true")
+    meta: entity @root @editable @expose(20) @invariant(price > 0, 'a product has a price') @extend(AuditEntity) @pageable @table(products) @Index(name="idx_shop_prod_sku", columnList="sku", unique="true")
     fields:
       productId: string(36) @id @genid
       name: string(200)! @search(like)

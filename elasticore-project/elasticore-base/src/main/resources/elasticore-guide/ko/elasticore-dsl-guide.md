@@ -670,7 +670,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
 |---|---|---|---|---|---|
 | `string` / `string(n)` | `String` | `"text"` | `string` | `String` | n = 최대 길이, `!` = NOT NULL |
 | `text` / `longtext` | `String` | `"text"` | `string` | `String` | `columnDefinition = "TEXT"` / `"LONGTEXT"` |
-| `clob` | `String` | `"text"` | `string` | `String` | `@Lob` (큰 문자열) |
+| `clob` | `String` | `"text"` | `string` | `String` | 행 안의 긴 문자열 (`@JdbcTypeCode(LONG32VARCHAR)`) |
 | `json` | `String` | `"{...}"` (문자열) | `string` | `Opaque` | `columnDefinition = "json"` + `@JdbcTypeCode(SqlTypes.JSON)` |
 | `int` / `Integer` | `Integer` | `42` | `number` | `Integer` | |
 | `long` / `Long` | `Long` | `42` | `number` | `Integer` | |
@@ -685,7 +685,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
 | `time` / `LocalTime` | `LocalTime` | `"09:30:00"` | `string` | `Time` | |
 | `datetime` / `LocalDateTime` | `LocalDateTime` | `"2026-10-03 09:30:00"` | `string` | `DateTime` | 시간대 없음. DTO 에 `@JsonFormat("yyyy-MM-dd HH:mm:ss")` |
 | `timestamp` | `java.time.Instant` | `"2026-10-03T00:30:00Z"` | `string` | `DateTimeTz` | 한 순간. `+09:00` 을 붙여 보내도 같은 순간으로 저장, UTC 로 돌려줌 |
-| `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | `@Lob` |
+| `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | 행 안의 긴 바이트 (`@JdbcTypeCode(LONG32VARBINARY)`) |
 | `EnumName` | 그 enum | 코드 (`"PLC"`) | enum | `String` | `@db(code)` 의 값이 저장됨. Ossie 에는 코드와 라벨을 `ai_context` 로 |
 | `EntityName` | 엔티티 참조 | (식별자 필드) | - | 관계 | `@ManyToOne` 자동. Ossie `relationships` 로 |
 
@@ -698,7 +698,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
   검증됩니다 (`TypeRoundTripTest`). 이전 버전에서는 `timestamp`, `clob`, `json`, `blob`, `decimal`(크기 없이)이
   엔티티에 DSL 단어 그대로 쓰여(`private timestamp at;`) 컴파일되지 않았습니다 - 3.0.260925 에서 고쳤습니다.
 - 표는 3.0 규칙 엔진(`elcore3`) 기준입니다. 2.x 생성기(`elcore`)의 출력은 바뀌지 않았습니다
-  (`timestamp` 는 2.x 에서도 `Instant`, `@Lob` 은 3.0 만).
+  (`timestamp` 는 2.x 에서도 `Instant`). `clob`·`blob` 은 PostgreSQL 에서 text·bytea, Oracle 에서 clob·blob 으로 행 안에 저장됩니다 - `@Lob` 이 아닙니다 (3.0.261116 전에는 `@Lob` 이라 PostgreSQL 에 번호만 남았음).
 
 ### 값 타입 (Value) - 3.0
 
@@ -1181,7 +1181,7 @@ entity:
     fields:
       productId: string @id @genid       # UUID 키 (UUID.randomUUID())
       metadata:  json                    # String + JSON 컬럼
-      document:  clob                    # String + @Lob
+      document:  clob                    # String, 행 안의 긴 문자열
       createdAt: timestamp               # Instant (한 순간)
 ```
 

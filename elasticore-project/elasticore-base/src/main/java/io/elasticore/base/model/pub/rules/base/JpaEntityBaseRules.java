@@ -326,9 +326,7 @@ public class JpaEntityBaseRules implements CodeRules {
         if (formula != null && !formula.isEmpty()) {
             ctx(e).field(f).ensure(AnnoCode.of(HIB, "Formula")
                     .valueRaw(StringUtils.quoteString(formula)));
-            if (f.hasDsl("lob")) {
-                ctx(e).field(f).ensure(AnnoCode.of(JPA, "Lob"));
-            }
+            if (f.hasDsl("lob")) large(e, f);
             return;
         }
 
@@ -398,10 +396,27 @@ public class JpaEntityBaseRules implements CodeRules {
             ctx(e).field(f).merge(AnnoCode.of(JPA, "Column").valRaw("length", "%s", enumLen));
         }
 
-        // clob and blob: a large object, stored apart from the row.
-        if (f.hasDsl("lob")) {
+        if (f.hasDsl("lob")) large(e, f);
+    }
+
+    /**
+     * clob and blob. The 3.0 code maps them to the database's long text and
+     * long binary type in the row - text / bytea on PostgreSQL, clob / blob on
+     * Oracle, varchar(max) / varbinary(max) on SQL Server, longtext / longblob
+     * on MySQL. A @Lob there made PostgreSQL keep the value apart as a large
+     * object and the column hold only its number (oid), which SQL cannot read
+     * and ddl-auto=validate refuses against a text column. The 2.x-compatible
+     * output keeps @Lob.
+     */
+    private void large(EntitySpec e, FieldSpec f) {
+        if (ctx(e).compatible()) {
             ctx(e).field(f).ensure(AnnoCode.of(JPA, "Lob"));
+            return;
         }
+        if (f.dslValue("jdbctype") != null && !f.dslValue("jdbctype").isEmpty()) return;
+        String code = f.isStringType() ? "LONG32VARCHAR" : "LONG32VARBINARY";
+        ctx(e).field(f).ensure(AnnoCode.of(HIB, "JdbcTypeCode")
+                .valueRaw(String.format("org.hibernate.type.SqlTypes.%s", code)));
     }
 
     /**

@@ -73,9 +73,9 @@ public final class MyBatisSql {
     /** The table, with its schema when the entity names one. */
     public static String table(EntitySpec e) {
         String explicit = e.metaValue("table");
-        String name = explicit != null && !explicit.isEmpty()
-                ? explicit
-                : (e.tablePrefix() == null ? "" : e.tablePrefix()) + springName(e.getName());
+        // The prefix comes before an @table name too, as the JPA table and 2.x name it.
+        String name = (e.tablePrefix() == null ? "" : e.tablePrefix())
+                + (explicit != null && !explicit.isEmpty() ? explicit : springName(e.getName()));
         name = springName(name);
         String schema = e.schema();
         return schema != null && !schema.isEmpty() ? springName(schema) + "." + name : name;

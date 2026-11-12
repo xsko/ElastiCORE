@@ -316,7 +316,7 @@ entities:
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.blueprint.domain.shop.entity.Product)
-    table: shop_shop_products
+    table: shop_products
     java: io.elasticore.blueprint.domain.shop.entity.Product
     fields:
       createdBy: string(50) @Column(name = "created_by", length = 50)

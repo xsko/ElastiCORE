@@ -87,8 +87,25 @@ public final class EntityChecks {
 
     /** The table the entity maps to, as JpaEntityAnnotationRules writes it. */
     private static String tableName(EntitySpec e) {
+        return e.tableName();
+    }
+
+    /**
+     * An @table name that already starts with the table.prefix: the prefix is
+     * put before it all the same (as 2.x did), so the table is el_el_note.
+     * Said, with the line that names el_note.
+     */
+    public static String prefixTwice(EntitySpec e) {
         String explicit = e.metaValue("table");
-        if (explicit != null && !explicit.isEmpty()) return explicit;
-        return String.format("%s%s", e.tablePrefix(), StringUtils.camelToSnake(e.getName()));
+        String prefix = e.tablePrefix();
+        if (explicit == null || prefix == null || prefix.isEmpty()) return null;
+        if (!explicit.toLowerCase(java.util.Locale.ROOT).startsWith(prefix.toLowerCase(java.util.Locale.ROOT))) {
+            return null;
+        }
+        return String.format(
+                "[%s] %s: @table(%s) with table.prefix %s maps to the table %s - the prefix comes before the @table"
+                        + " name, as in 2.x. If the table is %s, write @table(%s).",
+                e.domainClassName(), e.getName(), explicit, prefix, e.tableName(), explicit,
+                explicit.substring(prefix.length()));
     }
 }

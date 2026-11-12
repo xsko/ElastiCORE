@@ -41,6 +41,7 @@ abstract class SchemaValidateOnDatabase {
     @Autowired AbstractEntityCheck codes;
     @Autowired SoftDeleteHierarchyCheck kept;
     @Autowired JdbcTemplate jdbc;
+    @Autowired io.elasticore.sample.petstore.infrastructure.persistence.CategoryRepository categories;
 
     /** What the export writes in the portable language runs here: each metric of a dataset, over its table. */
     @Test
@@ -70,6 +71,34 @@ abstract class SchemaValidateOnDatabase {
         mvc.perform(post("/api/petstore/customer/signin").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"login\":\"user\",\"password\":\"user\"}"))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * clob and blob keep the value in the row: what Hibernate writes, SQL reads
+     * back as it is - not a large object's number (PostgreSQL's oid), as a
+     * @Lob String was.
+     */
+    @Test
+    void aLargeValueIsKeptInTheRow() {
+        StringBuilder text = new StringBuilder();
+        while (text.length() < 6000) text.append("A long story of the fish, 물고기 이야기. ");
+        String story = text.toString();
+        byte[] icon = new byte[5000];
+        for (int i = 0; i < icon.length; i++) icon[i] = (byte) (i % 251);
+
+        io.elasticore.sample.petstore.domain.model.Category c = new io.elasticore.sample.petstore.domain.model.Category();
+        c.setName("Large values");
+        c.setDescription("clob and blob in the row");
+        c.setStory(story);
+        c.setIcon(icon);
+        Long id = categories.saveAndFlush(c).getCategoryId();
+
+        assertThat(jdbc.queryForObject("SELECT story FROM ps_category WHERE category_id = ?", String.class, id))
+                .isEqualTo(story);
+        assertThat(jdbc.queryForObject("SELECT icon FROM ps_category WHERE category_id = ?", byte[].class, id))
+                .isEqualTo(icon);
+        assertThat(categories.findById(id).orElseThrow().getStory()).isEqualTo(story);
+        categories.deleteById(id);
     }
 
     /** An abstract entity's rows are in its subclasses' tables, and one repository reads them together. */

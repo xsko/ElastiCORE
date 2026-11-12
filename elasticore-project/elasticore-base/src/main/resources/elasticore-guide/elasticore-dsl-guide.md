@@ -670,7 +670,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
 |---|---|---|---|---|---|
 | `string` / `string(n)` | `String` | `"text"` | `string` | `String` | n = maximum length, `!` = NOT NULL |
 | `text` / `longtext` | `String` | `"text"` | `string` | `String` | `columnDefinition = "TEXT"` / `"LONGTEXT"` |
-| `clob` | `String` | `"text"` | `string` | `String` | `@Lob` (large string) |
+| `clob` | `String` | `"text"` | `string` | `String` | long text in the row (`@JdbcTypeCode(LONG32VARCHAR)`) |
 | `json` | `String` | `"{...}"` (string) | `string` | `Opaque` | `columnDefinition = "json"` + `@JdbcTypeCode(SqlTypes.JSON)` |
 | `int` / `Integer` | `Integer` | `42` | `number` | `Integer` | |
 | `long` / `Long` | `Long` | `42` | `number` | `Integer` | |
@@ -685,7 +685,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
 | `time` / `LocalTime` | `LocalTime` | `"09:30:00"` | `string` | `Time` | |
 | `datetime` / `LocalDateTime` | `LocalDateTime` | `"2026-10-03 09:30:00"` | `string` | `DateTime` | No time zone. `@JsonFormat("yyyy-MM-dd HH:mm:ss")` on the DTO |
 | `timestamp` | `java.time.Instant` | `"2026-10-03T00:30:00Z"` | `string` | `DateTimeTz` | One instant. Even if sent with `+09:00`, it is stored as the same instant and returned in UTC |
-| `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | `@Lob` |
+| `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | long binary in the row (`@JdbcTypeCode(LONG32VARBINARY)`) |
 | `EnumName` | That enum | Code (`"PLC"`) | enum | `String` | The value of `@db(code)` is stored. In Ossie, the code and the label go in `ai_context` |
 | `EntityName` | Entity reference | (identifier field) | - | Relationship | `@ManyToOne` automatically. Goes to Ossie `relationships` |
 
@@ -698,7 +698,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
   (`TypeRoundTripTest`). In earlier versions, `timestamp`, `clob`, `json`, `blob` and `decimal` (without a size) were
   written into the entity as the DSL word itself (`private timestamp at;`) and did not compile - fixed in 3.0.260925.
 - The table is based on the 3.0 rule engine (`elcore3`). The output of the 2.x generator (`elcore`) has not changed
-  (`timestamp` is `Instant` in 2.x too; `@Lob` is 3.0 only).
+  (`timestamp` is `Instant` in 2.x too). `clob` / `blob` are text / bytea on PostgreSQL, clob / blob on Oracle - in the row, not a `@Lob` (before 3.0.261116; PostgreSQL kept only its number).
 
 ### Value types (Value) - 3.0
 
@@ -1181,7 +1181,7 @@ entity:
     fields:
       productId: string @id @genid       # UUID key (UUID.randomUUID())
       metadata:  json                    # String + JSON column
-      document:  clob                    # String + @Lob
+      document:  clob                    # String, long text in the row
       createdAt: timestamp               # Instant (a single moment)
 ```
 

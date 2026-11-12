@@ -8,6 +8,8 @@ entity:
       categoryId:  long @id @sequence
       name:        string(30)! @search(like)
       description: string(3000)!
+      story:       clob -- 긴 소개 글 (행 안의 긴 문자열 - PostgreSQL text, Oracle clob)
+      icon:        blob -- 아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)
 
   Product:
     meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)

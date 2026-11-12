@@ -817,7 +817,10 @@ public final class RulesGenRunner {
             runner.removeStaleMerged();
             runner.removeUnused();
         }
-        if (domainFilter == null) runner.checkAdviceOrder();
+        if (domainFilter == null) {
+            runner.checkAdviceOrder();
+            runner.checkStringLobs();
+        }
         // Whatever else happened: the files this run wrote are on disk, and
         // the next run merges against what it wrote into them.
         runner.saveCache();
@@ -2667,6 +2670,10 @@ public final class RulesGenRunner {
         System.out.println("  " + name);
 
         if ((v3 || kotlin) && !typescript && spec.isAbstractEntity()) checkAbstractEntity(spec, name);
+        if ((v3 || kotlin) && !typescript) {
+            String twice = io.elasticore.base.model.pub.rules.base.EntityChecks.prefixTwice(spec);
+            if (twice != null) io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(twice);
+        }
         if ((v3 || kotlin) && !typescript && persistence() == RulesConfig.Persistence.JPA) {
             if (exposed) {
                 String problem = io.elasticore.base.model.pub.rules.base.EntityChecks.relationInExposedKey(spec);
@@ -4520,6 +4527,7 @@ public final class RulesGenRunner {
             runner.removeUnused();
             runner.findLeftBehind();
             runner.checkAdviceOrder();
+            runner.checkStringLobs();
         } else {
             preview.note("The generation failed or the model check did not pass: fix that first - the lists below"
                     + " are of what was generated before it stopped.");
@@ -4606,6 +4614,51 @@ public final class RulesGenRunner {
             notes.add(message);
             if (preview != null) preview.note(message);
         }
+    }
+
+    /**
+     * A String field with @Lob in the project's code, which the 3.0 code no
+     * longer writes (clob is long text in the row): on PostgreSQL Hibernate
+     * keeps such a value apart as a large object and the column holds only its
+     * number, which SQL cannot read and ddl-auto=validate refuses against a text
+     * column. Typically one added by hand to a 2.x file. Said, with the file.
+     */
+    private void checkStringLobs() {
+        if (!v3 && !kotlin) return;
+        Map<File, String> sources = projectSources();
+        Map<String, String> byPath = new java.util.TreeMap<String, String>();
+        for (Map.Entry<File, String> en : sources.entrySet()) byPath.put(relative(en.getKey()), en.getValue());
+        for (String message : stringLobs(byPath)) {
+            io.elasticore.base.util.ConsoleLog.printWarn(message);
+            notes.add(message);
+            if (preview != null) preview.note(message);
+        }
+    }
+
+    private static final java.util.regex.Pattern STRING_LOB = java.util.regex.Pattern.compile(
+            "@(?:jakarta\\.persistence\\.|javax\\.persistence\\.)?Lob\\b(?:\\s*\\(\\s*\\))?"
+                    + "((?:\\s*@[\\w.]+(?:\\([^)]*\\))?)*)\\s*"
+                    + "(?:(?:private|protected|public)\\s+)?(?:java\\.lang\\.)?String\\s+(\\w+)\\s*[;=]"
+                    + "|@(?:jakarta\\.persistence\\.|javax\\.persistence\\.)?Lob\\b(?:\\s*\\(\\s*\\))?"
+                    + "(?:\\s*@[\\w.:]+(?:\\([^)]*\\))?)*\\s*(?:(?:private|protected|public)\\s+)?va[rl]\\s+(\\w+)\\s*:"
+                    + "\\s*String\\??");
+
+    /** The messages for String fields with @Lob, by relative path. */
+    static java.util.List<String> stringLobs(Map<String, String> sources) {
+        java.util.List<String> out = new ArrayList<String>();
+        for (Map.Entry<String, String> en : sources.entrySet()) {
+            String text = withoutComments(en.getValue());
+            java.util.regex.Matcher m = STRING_LOB.matcher(text);
+            java.util.List<String> fields = new ArrayList<String>();
+            while (m.find()) fields.add(m.group(2) != null ? m.group(2) : m.group(3));
+            if (fields.isEmpty()) continue;
+            out.add("[elcore3] " + en.getKey() + ": " + String.join(", ", fields) + " - a String with @Lob. On"
+                    + " PostgreSQL Hibernate keeps it apart as a large object and the column holds only its number"
+                    + " (oid), which SQL cannot read and ddl-auto=validate refuses against a text column. The DSL's"
+                    + " text or clob keeps the value in the row: remove the @Lob, and move the rows it wrote"
+                    + " (elasticore-migration-guide.md).");
+        }
+        return out;
     }
 
     private static final java.util.regex.Pattern ADVICE =
