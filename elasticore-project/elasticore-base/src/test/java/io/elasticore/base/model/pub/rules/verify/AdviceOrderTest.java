@@ -99,13 +99,14 @@ public class AdviceOrderTest {
             } finally {
                 in.close();
             }
-            String generated = text.replaceAll("\\$\\{className\\}", "ShopApiErrors")
-                    .replaceAll("\\$\\{[A-Za-z]+\\}", "x");
+            String generated =
+                    text.replaceAll("\\$\\{className\\}", "ShopApiErrors").replaceAll("\\$\\{[A-Za-z]+\\}", "x");
             assertTrue(clashes(generated, CATCH_ALL).isEmpty(), tmpl);
             // and the same file at the lowest precedence is still said.
             assertEquals(
                     1,
-                    clashes(generated.replace("LOWEST_PRECEDENCE - 1", "LOWEST_PRECEDENCE"), CATCH_ALL).size(),
+                    clashes(generated.replace("LOWEST_PRECEDENCE - 1", "LOWEST_PRECEDENCE"), CATCH_ALL)
+                            .size(),
                     tmpl);
         }
     }
