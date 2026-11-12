@@ -205,7 +205,7 @@ camelCase 로 DTO 에, 값 하나면 첫 컬럼 - NULL 이면 null, 모든 컬�
 `ORDER BY` 맨 앞에 들어가고(SQL 의 항목은 동점 정리용으로 뒤에 남음), SQL 에 `ORDER BY` 가 없거나 `/* if: */` 가 그것을
 빼면 그 자리의 `ORDER BY` 가 됩니다. 순서가 전혀 없는 페이지는 SQL Server 에서 `ORDER BY (SELECT NULL)` 로 자릅니다(순서
 없이는 페이지를 자르지 않음) - `ORDER BY` 가 조건이 거짓인 `/* if: */` 줄·블록 안에 있을 때도 그렇습니다.
-Since: 3.0.261030-rc6 (블록 안의 블록, `Pageable` 과 그 `Sort`, `/* if: */` 안의 `ORDER BY`, 맵의 NULL 컬럼: 3.0.261107)
+Since: 3.0.261030-rc6 (블록 안의 블록, `Pageable` 과 그 `Sort`, `/* if: */` 안의 `ORDER BY`, 맵의 NULL 컬럼: 3.0.261112-rc12)
 
 JPA 가 없는 앱(MyBatis 만 쓰는 앱)에서 런타임 프록시로 남는 dbms 포트는 JDBC 로 실행됩니다(`JdbcDbmsGateway` - 런타임
 라이브러리가 저절로 등록). 그런 포트의 JPQL 은 거절됩니다.

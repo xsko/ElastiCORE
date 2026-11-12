@@ -1,3 +1,519 @@
+## 3.0.261112-rc12
+
+### Bug Fixes (2.x generator - `@max` on a `bigdecimal`)
+
+#### The 2.x generator writes `@DecimalMax` with the `@max` value, not the `@min` one
+- Why: `SrcFilePublisher.setFieldValidation` wrote the `@min` value into the `@DecimalMax` of a `bigdecimal` or
+  `biginteger` DTO field. `price: bigdecimal(10.2) @min(0.01) @max(999.99)` became `@DecimalMin("0.01")
+  @DecimalMax("0.01")`, so every request with a price above the minimum was refused (400). The 3.0 code and the
+  2.x-compatible output (`output = 'v2'`) already wrote `@DecimalMax("999.99")`; only the 2.x generator (`elcore`, the
+  annotation processor) had it.
+- What: the `@DecimalMax` carries the `@max` value. A field with `@max` on a `bigdecimal` or `biginteger` now gets the
+  bound it declares; nothing else the 2.x generator writes changes.
+- Checked: `TwoXBoundTest` runs the 2.x generator (`ModelExtractor`) on a DTO with `price: bigdecimal(10.2) @min(0.01)
+  @max(999.99)` and `count: int @min(1) @max(9)`: `@DecimalMin("0.01")`, `@DecimalMax("999.99")`, `@Min(1)`, `@Max(9)`.
+  Before the change it wrote `@DecimalMax("0.01")`.
+- Files: `SrcFilePublisher.java`, `TwoXBoundTest.java`
+
+### New Features (v3 entity - an abstract root)
+
+#### `@abstract(entity)`: an abstract `@Entity`, the root of a hierarchy read through one repository and one service
+- Why: the v3 output writes every `@abstract` as `@MappedSuperclass`, so a hierarchy whose root has a key and is never
+  stored as itself, read together through one repository, had no form: a repository for it could not start ("Not a
+  managed type"), and an `@Inheritance` it kept did nothing. The 2.x generator writes such a root as an abstract
+  `@Entity`, but both mappers wrote `new X()`, so with a service it did not compile. Reading every keyed `@abstract` as
+  an entity would silently turn v3's keyed mapped superclasses into a hierarchy, so it is opt-in (#74).
+- What: `meta: entity @abstract(entity)` gets `@Entity` and `@Table` on the abstract class, keeps the model's
+  `@jpa:Inheritance`, and has a repository, a Q class and a service that reads, searches, updates and deletes. Java and
+  Kotlin. Plain `@abstract` stays as it is.
+- It has no create: no `save`, no POST (405), no `toEntity`, no `create` in the TypeScript client, no create use case
+  under `hexagonal`, and the generated Kotlin service test makes its fixture with a mock and has no save test. A nested
+  DTO of it is not written back. A relation to it is written with `em.getReference`, where another entity's would make
+  a stub, and the mapper's overloads without an `EntityManager` throw when the DTO names one, rather than leave it unset.
+- **The project DDL changes for every project with an abstract `@Entity` under `TABLE_PER_CLASS`, not only one that uses
+  this.** `JpaSchemaReader` reads the entity's source, so a hand-written abstract root and the 2.x output of a keyed
+  `@abstract` are read the same way: the abstract class has no table, as Hibernate makes none, and a relation to it has
+  no foreign key, as its rows are in several tables. Their `schema-*.sql` lose that table and those foreign keys. Those
+  foreign keys pointed at a table that stays empty. With a strategy that gives the root a table, the table and the
+  foreign key are written.
+- Refused: a root without a key; a root whose `@jpa:Inheritance` does not say `TABLE_PER_CLASS` or `JOINED`, as each
+  subclass is written with a table of its own, which `SINGLE_TABLE`, the default, does not give it; an identity key under
+  `TABLE_PER_CLASS`, which Hibernate refuses at startup, and `@sequence` alone means one (`@sequence(SEQUENCE)` is taken);
+  and `mode: mybatis` ("does not write an abstract entity"). (`@deleted` in such a hierarchy was refused here too; the
+  same release supports it, #117.) The
+  2.x generator and `output = 'v2'` read it as plain
+  `@abstract`, as they did; the compatible output is unchanged.
+- Limits, said in the guide:
+  - A subclass, whose key is inherited, gets no repository or service of its own, as under a keyed `@abstract`; its rows
+    go through a repository of the project's. `@expose` or `@service` on one gets a DSL warning.
+  - Under `TABLE_PER_CLASS` a key must be unique across all the subclass tables, and nothing in the database enforces it.
+  - The Ossie export has no dataset for the root, as for plain `@abstract`, which fits `TABLE_PER_CLASS`; a relation to
+    the root is not exported either. Under `JOINED` a subclass's dataset claims the root's columns, so the export is not
+    right for that strategy yet.
+  - On Oracle 23 a boolean column, of a subclass as of any entity, needs `ddl { oracleVersion = 23 }`
+    (`oracle-version.md`): without it the project DDL writes `NUMBER(1)`, Hibernate expects `BOOLEAN` from that
+    version, and `ddl-auto=validate` fails. It is not caused by this change.
+- Checked: `AbstractEntityTest` - the entity, the repository and Q class, the service, the controller, the mapper, under
+  `layered`, `hexagonal` and `ddd`; the hexagonal use case, the Kotlin service test, the TypeScript client, the schema
+  under `TABLE_PER_CLASS` and `JOINED`, plain `@abstract` as it was, each refusal, the warning on a subclass and the
+  compatible output. `JpaSchemaReaderTest` holds a hand-written abstract root under both strategies. A `TABLE_PER_CLASS`
+  sample, `Code` / `StatusCode` / `RegionCode`, is generated, compiled and run in three modules:
+  `elasticore-sample-petstore` (hexagonal; a polymorphic `findAll` and the API on H2, and in `SchemaValidateOnDatabase` on
+  PostgreSQL, Oracle and SQL Server), `elasticore-template-ddd`'s `catalog` (the plain v3 bundle) and
+  `elasticore-template-kt` (Kotlin, with its generated service test). The pet store and the Kotlin template also have a
+  `CaseNote` with a relation to `Code`, written with `em.getReference` and refused without an `EntityManager`.
+  `elcoreRulesCheck` and `elcoreTreeCheck` are unchanged: `158 MATCH / 0 DIFF / 2 ACCEPTED / 0 SKIP` and `239 generated by 2.x
+  | 234 identical | 1 import order only | 4 accepted | 0 differ | 0 missing | 0 extra`.
+- The pet store's build sets `ossieName = 'petstore'`, so its semantic model keeps its name beside a second domain.
+- Files: `EntitySpec.java`, `SpecFactory.java`, `JpaEntityAnnotationRules.java`, `QBaseRules.java`, `KotlinQRules.java`,
+  `ControllerBaseRules.java`, `MapperAssembleRules.java`, `KotlinMapperAssembleRules.java`, `MapperBaseRules.java`,
+  `ServiceTestBaseRules.java`, `JpaServiceFileRules.java`, `MyBatisSql.java`, `RulesGenRunner.java`, `SoftDelete.java`,
+  `JpaSchemaReader.java`, `kt/service.tmpl`, `kt/service_test.tmpl`, `AbstractEntityTest.java`,
+  `SoftDeleteRulesTest.java`, `JpaSchemaReaderTest.java`, the three samples and
+  their regenerated schemas, `elasticore-annotation-guide.md` `@abstract`, `elasticore-dsl-guide.md` and
+  `elasticore-migration-guide.md` (en, ko)
+
+### Bug Fixes (project DDL - `elcoreDdl` before the code is generated)
+
+#### `elcoreDdl` run before generation stops, naming the entities it could not read, instead of writing tables without columns
+- Why: a JPA domain's tables are read off its generated entity sources. In a checkout where those have not been
+  generated yet (the pet store's are git-ignored), `elcoreDdl` wrote `schema-*.sql` from whatever was there and said
+  `WROTE`: the pet store got `ps_order_line` and `ps_purchase_order` with no column - from the two behaviour classes
+  that are committed, without their generated bases - and none of its other five tables. That is not valid SQL on any
+  of the four databases, and nothing said it was incomplete (#107).
+- What: `DdlRun` checks each JPA domain before it writes. An entity of the model with no source in its entity package
+  (`<Name>.java` or `.kt`, under any source root of the run), and a table read with no column, stop the run, and
+  nothing is written for that schema:
+  `[elcore3] ddl: the tables are read off the generated entity sources, and no source for dgshop.Customer,
+  dgshop.PurchaseOrder - run elcore3 first; nothing was written for the project`
+  (or `no column read for purchase_order (io.acme.dgshop.entity.PurchaseOrder)` where only the class written once is there). After
+  generation the same task writes what it did. `DdlRun.Part` carries the model's entity names for it.
+  Whether `elcoreDdl` should depend on the generation is left open; the refusal closes the issue.
+- Checked: `GeneratedMergeTest.theDdlAloneBeforeTheCodeIsRefused` - a hexagonal JPA project: `elcoreDdl` alone first
+  exits 1 with the message above and writes no `schema-h2.sql`; after `elcore3`, with `PurchaseOrderBase.java` and the
+  schema deleted, it exits 1 naming `purchase_order` and writes nothing; generated again, it writes the schema
+  `elcore3` wrote, byte for byte. Without the change the first and second runs exit 0.
+- Files: `DdlRun.java`, `RulesGenRunner.java`, `GeneratedMergeTest.java`, `elasticore-env-guide.md` (en, ko)
+
+### Bug Fixes (v3 DTO - a fraction in `@min` / `@max` on a `double` or `float`)
+
+#### A bound with a fraction on a `double` or a `float` is a `@DecimalMin` / `@DecimalMax`, so the DTO compiles
+- Why: `@Min` and `@Max` take a `long`. `rating: double @min(0.5) @max(5.0)` was written as `@Min(0.5)` / `@Max(5.0)`,
+  and the DTO did not compile (`incompatible types: possible lossy conversion from double to long`) - in every v3
+  bundle (layered, hexagonal, ddd) and in Kotlin. The guides told the reader to write whole numbers only, and also
+  said that `bigdecimal @min(0.01)` failed, which it never did: `bigdecimal` and `money` were already a
+  `@DecimalMin` / `@DecimalMax`.
+- What: `DtoBaseRules.bound` writes a bound with a fraction on a `double` or a `float` (boxed or not) as
+  `@DecimalMin("0.5")` / `@DecimalMax("5.0")`, with its message when one is given. Hibernate Validator checks these
+  on any `Number`. A whole bound (`@min(0)`, `@max(-10)`) stays `@Min` / `@Max`, so a project that compiled before
+  generates what it did. The 2.x-compatible output (`output = 'v2'`) keeps what 2.x writes, `@Min(0.5)`.
+- Checked: `FieldBoundTest` - on a `double`, a `float`, a `Double` and a `Float`, a fraction is a decimal bound, with
+  and without a message; a whole bound on a `double` stays `@Min(0)` / `@Max(-10)`; the compatible output keeps
+  `Min(0.5)`. In `elasticore-template-ddd` the catalog's `Book` has `rating: double @min(0.5) @max(5.0)`:
+  `CatalogApiTest.fractionalBoundOnADouble` sends 5.5 and 0.4 (400) and 4.5 and 5.0 (200, stored). Before the change
+  the module did not compile. The module's `db/schema-*.sql`, `schema.yml` and `semantic_model.yml` are regenerated
+  with the column.
+- Files: `DtoBaseRules.java`, `FieldBoundTest.java`, `elasticore-template-ddd` (`catalog/model/entity.yml`,
+  `CatalogApiTest.java`, generated schemas), `elasticore-dsl-guide.md` 10.2 and 10.5, `elasticore-annotation-guide.md`
+  8.1 and 8.7 (en, ko)
+
+### New Features (v3 entity - `@deleted` in an `@abstract(entity)` hierarchy)
+
+#### `@deleted` on the root of an `@abstract(entity)` hierarchy keeps the rows of every subclass
+- Why: `@deleted` (#112) was written before `@abstract(entity)` (#104) and read every `@abstract` as a mapped
+  superclass, so #104 refused the two together. A hierarchy read through one repository is where a delete that keeps
+  the row is wanted most - a party who left, a tag taken out of use - and the refusal said "not supported yet" (#117).
+- What: the field goes on the root, or on a plain `@abstract` frame the root extends; every subclass inherits it.
+  Hibernate deletes a row from each table a class maps to, each with that class's own `@SQLDelete`, so:
+  - `JOINED`: the column is in the root's table. The root's `@SQLDelete` writes the time there, by key and version.
+    Each subclass's leaves its own row as it is, by a statement that changes nothing and finds the one row Hibernate
+    counts on: `UPDATE ref_party SET left_at = left_at WHERE party_id = ?`. It works in whichever order the two run.
+    A root of another domain is named by that domain's `table.prefix` and `tableSchema`.
+  - `TABLE_PER_CLASS`: the root has no table and no `@SQLDelete`. Each subclass's table has the column, and its
+    `@SQLDelete` writes the time there.
+  - The root's repository, the one that reads the whole hierarchy, redeclares `findById`, `existsById`, `findAll`
+    (plain, sorted, paged) and `count` with `<field> IS NULL`, as a plain entity's does. The mapper's `toSpec` adds the
+    condition to the search. A collection of the root's type gets `@SQLRestriction`, and `removedWithIt` sees a
+    relation to the root as kept.
+  - The inherited key is read from the inherited fields (`SoftDelete.key`): `pkField()` sees only an entity's own
+    fields, so a subclass got "needs a key of one field" before.
+- Refused, with the reason:
+  - `@deleted` on a subclass only (`... is not supported - a read through Code would find kept and removed rows
+    alike; declare it on Code.`).
+  - A collection of a JOINED subclass (`List<Person>`): Hibernate tests a collection's restriction on the element's
+    own table, which has no column - tried on the pet store, it fails with `Column "P1_0.LEFT_AT" not found`. The
+    message says to hold `List<Party>`.
+  - A subclass file of the developer's (hexagonal and DDD split it) that has no `@SQLDelete` when the generator cannot
+    merge it in - no base in `.elasticore/cache`, or no ElastiCORE header: a delete would remove the row, for a JOINED
+    subclass its own table's row, leaving the root's kept and unreadable. Before, the first case was a note and the
+    second said nothing. With a base, the line is merged in beside the developer's code, as any change is.
+  - What holds for any entity holds here: a key the request gives needs a version, a composite key and `mapping: xml`
+    on Spring Boot 3 stop the build. MyBatis refuses an `@abstract(entity)` already.
+- Opt-in: nothing changes for a model without `@deleted` in such a hierarchy; before, the build stopped. Two changes
+  reach models with `@deleted` outside one, and only there: a `@deleted` parent of another domain (`@extend`) is now
+  found for the DTO's search condition and a collection's restriction, as the entity's own `@SQLDelete` already found
+  it; and the Kotlin service test of a `@deleted` entity matches the key with `(any(Long::class.javaObjectType) ?: 1L)`,
+  as the DDD port test does - the redeclared `findById(id: Long)` takes no null, and `any()` gave one ("any(...) must
+  not be null").
+- Limit: the JOINED subclass's statement needs the database to count the rows it matched, not only those it changed -
+  so does Hibernate's check of every update. MySQL and MariaDB with `useAffectedRows=true` count changed rows only.
+- Checked: `SoftDeleteRulesTest` and `SoftDeleteHierarchyTest` (the whole run, Java and Kotlin: JOINED with a version,
+  TABLE_PER_CLASS from a frame above the root, a collection of the root's type, a field on a subclass only, a
+  collection of a JOINED subclass, an owned subclass with and without a merge base), `AbstractEntityTest` (every output,
+  a frame above the root, a JOINED root of another domain with its own prefix). The pet store's `refdata` has `Party`
+  (JOINED, held by `CaseNote.parties`) and `Tag` (TABLE_PER_CLASS, `@deleted` from the frame `Retirable`, held by
+  `CaseNote.tags`): `SoftDeleteHierarchyTest` deletes a person and a tag over HTTP on H2, reads them through the root's
+  API, its repository and the note's collections (gone), and finds the rows with the time in the tables;
+  `SchemaValidateOnDatabase` runs the same on Oracle, PostgreSQL and SQL Server in CI. `elasticore-template-kt`
+  (Kotlin, Spring Boot 3.3, Hibernate 6) does the same through the repositories (`AbstractEntityTest`).
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ.
+- Files: `SoftDelete`, `JpaEntityAnnotationRules`, `JpaEntityBaseRules` (the collection), `ServiceTestBaseRules`,
+  `RulesGenRunner` (`failIfSoftDeleteMissing`), `EntitySpec` (`abstractEntityRoot`, `knownKeptBelowJoined`),
+  `SpecFactory` (`teachAbstractEntityRoot`, `modelOf`; `teachSoftDeletes` takes an `@abstract(entity)` root;
+  `deletedFieldOf` follows a parent of another domain), the annotation guide (en, ko), the pet store's guide page and
+  its and the Kotlin template's `refdata`.
+
+### Bug Fixes (project DDL - a sequence Hibernate names)
+
+#### The project DDL names an unnamed sequence after the root's table, as Hibernate does
+- Why: for `@GeneratedValue(strategy = SEQUENCE)` without a generator, the DDL wrote `{entity}_seq`, but Hibernate 6 and
+  7 name it `{table}_seq` (`implicit_name_base` is the root's table name, read from `IdentifierGeneratorUtil` 6.6 and
+  `GeneratorParameters` 7.2). With a table prefix or `@table` the two differ, and `ddl-auto=validate` failed:
+  `missing sequence [ref_tag_seq]` for the pet store's `Tag`, whose DDL said `tag_seq`. The first
+  `@sequence(SEQUENCE)` in a sample showed it.
+- What: `JpaSchemaReader.sequences` uses the root's own table name. A schema stays out of the sequence's name, as
+  before. A table named like its entity gets the same name as before. Any other got a sequence Hibernate did not use,
+  and now gets the one it does. A database made from the old DDL has the old sequence and not the new one: create
+  `{table}_seq` starting past the table's largest key (Hibernate could not have used the old one, so validate failed there).
+- Checked: `JpaSchemaReaderTest.anUnnamedSequenceIsTheTablesName` (a prefix, an `@table` name, a schema); the pet store
+  and the Kotlin template validate their schema with the sequence (`ref_tag_seq`, `ref_marker_seq`).
+- Files: `JpaSchemaReader`.
+
+### Bug Fixes (Ossie export - a JOINED subclass)
+
+#### A JOINED subclass's dataset holds the columns of its own table
+- Why: the dataset of a subclass listed every inherited field, as if its table had them. Under JOINED it has its own
+  and the key; the others are in the tables above it. The pet store's `SemanticModelTest` checks every column against
+  the table: `ref_person has no column name` (and `version`, `left_at`).
+- What: `OssieSemanticModelExporter.inItsTable` keeps, under a hierarchy whose topmost entity says `JOINED`, the key
+  and the fields of the entity and of the plain `@abstract` frames between it and the entity it extends. The root of
+  an `@abstract(entity)` has no dataset, as before.
+- Checked: the pet store's `SemanticModelTest` on `Person` and `Company`.
+- Files: `OssieSemanticModelExporter`.
+
+### Improvements (v3 JPA - what cannot compile or cannot be created is said when the code is generated)
+
+#### An exposed composite key that holds a relation stops the build
+- Why: `order: Ledger @id @ManyToOne` beside `itemSeq: int @id` in an entity with `@expose` wrote a controller that
+  takes each key field as a path variable - `@PathVariable("order") Ledger order` - which does not compile (the type is
+  not imported, and a path cannot carry an entity). It did so in every v3 bundle, in Kotlin and in the 2.x-compatible
+  output; the guides showed the form as a reserved-word example.
+- What: a v3 or Kotlin run over JPA stops (`ModelCheck`, exit 1) before writing such an entity:
+  `[elcore3] Probe.LedgerLine: its composite key holds the relation order: Ledger, and an exposed entity's controller
+  takes each key field in the path, which a relation cannot be - key it by the related key's value (ledgerId: long
+  @id), or do not expose it`. An entity that is not exposed, and a composite key of values, are generated as before.
+  The 2.x-compatible output is unchanged.
+
+#### A table or column named with an SQL reserved word is said on JPA, as on MyBatis
+- Why: an entity `Order` is the table `order`, and `group: string(10)` the column `group`. Hibernate quotes nothing by
+  default, so a database that reserves the word refuses to create them. MyBatis domains were warned
+  (`MyBatisSchemaRules.warnReserved`); JPA domains were not.
+- What: `EntityChecks.reservedNames` reads the table as `JpaEntityAnnotationRules` writes it (`@table`, or the prefix
+  and the snake-cased name) and each column of a value or an enum (`@column`, or the snake-cased name) against the
+  same word list, and a v3 or Kotlin JPA run warns once per entity:
+  `[Probe] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be
+  created there - name it otherwise with @table / @column.` A plain `@abstract` (no table) is checked for its columns
+  only; an `@embeddable`, a relation, a collection, Money, a formula and a transient field are not columns of the
+  table and are not checked. The generated code does not change.
+
+#### A type the DSL does not have says what to write instead
+- Why: `code: uuid` is written into the class as `private uuid code;`, which does not compile; the run warned
+  `unresolved type 'uuid'` without saying what the DSL has for it.
+- What: the warning (from the loader and from the run) ends with what to write for the words the guides list:
+  `- write string(36), or string @id @genid for a generated key instead` for `uuid`; `int` for `short` and `byte`;
+  `string(1)` for `char`; `timestamp` for `OffsetDateTime` and `ZonedDateTime` (`BaseFieldType.insteadOf`).
+
+- Checked: `EntityChecksTest` - the relation in a composite key is said with the sentence above, a composite key of
+  values or a single key is not; the table and the columns reserved (`@table(app.user)`, `@column(comment)`, an enum
+  column `level`) are said, in the plural and the singular; a relation, a collection, a formula, an unknown type,
+  Money and an `@embeddable` are not; each type word maps to what the guides say. `ModelChecksRunTest` runs the
+  generator: an exposed `LedgerLine` keyed by `order: Ledger @id` exits 1 with the sentence; unexposed (hexagonal) or
+  keyed by `ledgerId: long @id`, the run exits 0; `Order` with `group` and `code: uuid` is generated, with the
+  reserved names said once and the `uuid` warning ending in what to write.
+- Files: `EntityChecks.java` (new), `RulesGenRunner.java`, `BaseFieldType.java`, `ModelExtractor.java`,
+  `YamlFileMainModelLoader.java`, `EntityChecksTest.java`, `ModelChecksRunTest.java`, `elasticore-dsl-guide.md` 10.1,
+  10.3 and 10.5, `elasticore-annotation-guide.md` 8.2, 8.3 and 8.7 (en, ko)
+
+### Bug Fixes (MyBatis - database ports and the aggregate's delete)
+
+#### A database port's conditional blocks nest, under MyBatis and in the port runtime
+- Why: the first `/* if-end */` closed the outer block. The lines after an inner block were always kept, and an inline
+  `/* if:name */` inside a block was kept whatever its value. The guide listed nesting as not supported.
+- What: each `/* if-end */` closes the innermost open block; an inner block is read only when the outer one is kept,
+  and an inline condition inside a block is read as one outside it is. The generated mapper XML nests `<if>`, and the
+  runtime (`SqlPortGateway`, JPA and JDBC) reads the SQL the same way. A line kept by an inline condition is cut at the
+  condition, not one character before the first `/*`.
+- Checked: `MyBatisGenerationTest` (nested `<if>` in the XML), `MyBatisPortSqlTest`, `JdbcDbmsGatewayTest.blocksInsideBlocks`
+  (H2: four inputs, one of which the old reading answered wrong), `DomainOnDatabase.theDbmsPortsSql` in
+  `elasticore-template-ddd-mybatis` (H2 locally; Oracle, PostgreSQL and SQL Server in CI).
+
+#### A port method may take a `Pageable`, whose page and `Sort` are the call's
+- Why: the port interface did not import `Pageable`, so a method that took one did not compile; under MyBatis a
+  parameter named `pageable` clashed with the adapter's own variable. The runtime proxy read page 0 of 50 when the
+  `Pageable` came with other parameters, and neither read its `Sort`.
+- What: the v3 and Kotlin port interfaces import `Pageable` and `Sort` when a method takes one (the 2.x-compatible
+  output is unchanged). The MyBatis adapter's own names start with `port` (`portPage`, `portTotal`, `portRows`,
+  `portRow`). The page is the `Pageable` parameter's, in the runtime too. The order is the input's sort code, else the
+  `Sort` of a `Pageable` or `Sort` parameter - its properties are column names or labels, checked term by term as a sort
+  code is (`PortRows.orderBy`, `SqlPortGateway.sortOf`). The runtime appends it, as any sort, only to SQL with
+  conditional lines (port guide 3.6); a `Sort` property that is not a column or label now fails there where it was
+  ignored. `Pageable.unpaged()` reads every row (`PortRows.paged`).
+- Checked: `PortModelImportsTest` (Java and Kotlin import it, 2.x does not), `MyBatisGenerationTest`,
+  `DbmsPortInputTest.aPageableParameterIsThePage`, `JdbcDbmsGatewayTest.aPageablesSortOrdersTheRows` (an injected
+  property is refused), `DomainOnDatabase.theDbmsPortsSql` (`customersByPage` with `Sort.by(DESC, "firstName")`).
+
+#### Under MyBatis the call's sort goes before the SQL's own `ORDER BY`, and an `ORDER BY` inside `/* if: */` pages on SQL Server
+- Why: the mapper appended the call's sort only to SQL without an `ORDER BY`; the runtime puts it first and keeps the
+  SQL's terms as tie breakers. An `ORDER BY` inside an `/* if: */` line or block was taken as always there, so when its
+  condition was false a page reached SQL Server with no order, which it does not page. The guide said not to do it.
+- What: the sort goes first in the SQL's own `ORDER BY`, and becomes the `ORDER BY` where the SQL has none or its
+  conditions leave it out; there, SQL Server gets `ORDER BY (SELECT NULL)` when the call names no sort either.
+  Alternative orders - several `ORDER BY` lines, each kept by its own condition - each take the sort, and the tail is
+  for when none is kept; the count cuts them all. Every read of a port that carries a sort takes it.
+- Checked: `MyBatisGenerationTest` (the XML of an own and a conditional `ORDER BY`), `DomainOnDatabase.theDbmsPortsSql`
+  (`customersMaybeOrdered` with and without its condition).
+
+#### A port's `Map` row has every column under MyBatis, a NULL one as null
+- Why: MyBatis leaves a NULL column out of a map it reads, and answers a row whose columns are all NULL as null; the port
+  runtime has every column. A `List<Map<String,Object>>` method also did not compile (`Map.class` against
+  `Map<String,Object>`).
+- What: the port's statements answer `io.elasticore.springboot3.bean.PortRow`, and the runtime library's MyBatis
+  interceptor `PortRowColumns` (registered by `ElastiCoreMyBatisAutoConfiguration`, applied by the MyBatis Spring Boot
+  starter) reads the column labels as MyBatis opens the result set and puts the missing columns in, in the order the
+  SQL selects them. No other statement is touched. A method that answers a generic type reads it by its class
+  (`PortRows.listOf` / `firstOf`), a page of one too.
+- Checked: `PortRowColumnsTest` (H2, plain MyBatis, behind another plugin: a NULL column, a row of NULLs, a statement
+  left as MyBatis reads it), `DomainOnDatabase.theDbmsPortsSql` (`customerRows`).
+
+#### The aggregate's delete locks the row with a read, not an UPDATE
+- Why: `lockVersion` was `UPDATE t SET v = v WHERE id = ? AND v = ?`. MySQL and MariaDB with `useAffectedRows=true`
+  count changed rows, so they answer 0 and the adapter refused every delete of a current copy as stale (409).
+- What: `SELECT 1 FROM t WHERE id = ? AND v = ? FOR UPDATE` (`WITH (UPDLOCK, ROWLOCK)` on SQL Server); the mapper answers
+  `Integer`, null when the row has another version. On H2, Oracle, PostgreSQL and SQL Server the row stays locked to
+  the end of the transaction, as before (DB2 is not checked). SQL Server is told apart by MyBatis's database id, as the
+  generated paging already is: with `elasticore.mybatis.database-id=false` the lock is `FOR UPDATE`, which SQL Server
+  refuses.
+- Checked: `MyBatisGenerationTest`, `DomainOnDatabase.aStaleDeleteIsRefused` (H2 locally; Oracle, PostgreSQL and SQL
+  Server in CI).
+
+- Files: `MyBatisPortRules.java`, `MyBatisMapperRules.java`, `DddMyBatisPorts.java`, `PortBaseRules.java`,
+  `SqlPortGateway.java`, `DbmsServiceProxyFactory.java`, `PortRows.java`, `PortRow.java`, `PortRowColumns.java`,
+  `ElastiCoreMyBatisAutoConfiguration.java`, the tests above, `elasticore-template-ddd-mybatis` (`report_port.yml`,
+  `dto.yml`, `DomainOnDatabase.java`), `elasticore-dsl-port-guide.md` (3.4, 3.6, 3.11, 3.13) and
+  `elasticore-env-guide.md` (2.3), en and ko
+
+### New Features (DDL - the Oracle version the tables are for)
+
+#### `ddl { oracleVersion = 23 }`: a boolean is a `BOOLEAN` column on Oracle 23, as Hibernate maps it there
+- Why: the project DDL wrote a boolean as `NUMBER(1)` on Oracle, and Hibernate's `OracleDialect` maps it to `BOOLEAN`
+  from version 23, so `ddl-auto=validate` failed there on any entity with a boolean field: `wrong column type
+  encountered in column [terminal] in table [ref_status_code]; found [number (Types#NUMERIC)], but expecting [boolean
+  (Types#BOOLEAN)]` (#114). `BOOLEAN` is no column type below 23, so the DDL cannot simply write it.
+- What: a setting in `elasticore { ddl { } }`, beside `databases`, one value for the project (passed as
+  `elasticore.ddl.oracleVersion`). From 23, Oracle's DDL writes a boolean as `BOOLEAN` and says
+  `for Oracle 23 or later` in its header; below 23, and when it is not set - the default - it writes `NUMBER(1)`, as
+  before, so nothing changes for a project that does not say it. A version below 12, or anything but a number, stops
+  the run. Only the boolean changes, and only on Oracle; every other type is the same for 23 as before.
+- Migrations: the state (`schema-state.json`) records the version, only when it is set, so a state without it reads
+  as before. Setting it over Oracle tables already there is a migration of Oracle's alone; the other databases get
+  none. Oracle changes a column's type only while the column is empty (`ORA-01439: column to be modified must be empty
+  to change datatype`, tried on Oracle 23 Free with rows), so an `ALTER ... MODIFY` from `NUMBER(1)` to `BOOLEAN` would
+  fail on existing data. Instead each boolean column is added again with the new type, its values copied, the old
+  column dropped and the new one renamed to it; its `NOT NULL`, the indexes it is in and its comment are made again.
+  The values copy as they are: 1 is `TRUE`, 0 `FALSE`, an empty one stays empty. It runs on the rows already there, so
+  it waits for review (commented out, `REVIEW .../oracle/V...` in the log). Unsetting it again is the same change
+  back to `NUMBER(1)`.
+- MyBatis: `template-mybatis` and `template-ddd-mybatis` bind a boolean as `jdbcType=BOOLEAN`. Their Oracle tests
+  (`ShopApiOnOracleTest` 10, `DomainOnOracleTest` 14) pass on Oracle 23 Free with ojdbc11 23.7 against `NUMBER(1)`
+  columns, as now, and against `BOOLEAN` ones, with the setting on in a local run; nothing to fix. The templates keep
+  the default.
+- Checked: `OracleVersionTest` (both answers, every other type unchanged, the setting's values, the state, the
+  migration both ways, a copy name already taken, an index the model drops); `DdlMigrationTest` (a project turning it
+  on: the Oracle migration for review, none for H2, the state, nothing on the next build); `ElastiCorePluginTest`
+  (passed when said). The pet store sets `oracleVersion = 23` and its `StatusCode` has `terminal: boolean`:
+  `SchemaValidateOnDatabase` passes on Oracle 23 Free, where without the setting it fails with the error above, and
+  `AbstractEntityCheck` reads the boolean through Hibernate and binds it in a query on every database.
+  `MigrationRun.oracleBooleans` (run by the job on Oracle) makes the tables below 23 with rows, runs the change as
+  written and finds `BOOLEAN` columns with their values, nullability and index.
+- Files: `Database.java`, `DdlConfig.java`, `Schema.java`, `SchemaWriter.java`, `SchemaDiff.java`, `DdlRun.java`,
+  `DdlSpec.java`, `ElastiCorePlugin.java`, `OracleVersionTest.java`, `SchemaDiffTest.java`, `DdlMigrationTest.java`,
+  `ElastiCorePluginTest.java`, the pet store's `build.gradle`, `code.yml`, schemas, `semantic_model.yml` and
+  `AbstractEntityCheck.java`, `template-mybatis`'s `MigrationRun.java` and `MigrationTest.java`,
+  `elasticore-env-guide.md` 9-1 and the `@abstract(entity)` limits of `elasticore-annotation-guide.md` (en, ko),
+  `abstract-entity.md`.
+
+### Bug Fixes (project DDL - `mapping: xml`)
+
+#### Under `mapping: xml`, a `money` or `quantity` column is a decimal or an integer again, not text
+- Why: `META-INF/orm.xml` names a nested converter by its binary name, as Hibernate loads it:
+  `io.elasticore.springboot3.domain.Money$JpaConverter`. The schema reader knew the runtime's two converters as
+  `Money.JpaConverter` and `Quantity.JpaConverter`, and the classes it read from source by their dotted names, so the
+  `$` form matched neither. Each such column was written as text, with the warning `the converter ... was not read -
+  the column is text`, and `ddl-auto=validate` refused the schema (#116). That is the limit the 3.0.261106-rc11 entry
+  of #113 states; with the mapping on the classes, the default, nothing was wrong.
+- What: `JpaSchemaReader.converterColumn` reads a `$` in the converter's name as `.` before it looks the converter up.
+  The runtime's `Money` and `Quantity` converters, and a project's own converter nested in a class (`Outer$Inner`),
+  are then found as they are with the annotations. `StringArrayConverter` and `IntegerArrayConverter` are classes of
+  their own, named without a `$`, and were not affected. An enum's converter was not affected either, since
+  `mapping: xml` moves it out to a class of its own.
+- Checked: `JpaSchemaReaderTest.anOrmXmlNamesANestedConverterByItsBinaryName` reads an orm.xml with
+  `Money$JpaConverter`, `Quantity$JpaConverter`, a converter nested in an enum and an enum's converter moved out. It
+  expects `DECIMAL(14,2)`, `INTEGER`, `INTEGER` and a text column of length 10, with no warning. On `main` the first
+  three fail as text, with three warnings.
+  - The pet store, generated once with `mapping: xml` in its `petstore` env.yml:
+    - `SchemaValidateTest` passes.
+    - Its four `schema-*.sql` hold the same tables, columns and constraints as the committed ones, which the
+      annotations give; only their order differs.
+    - Without the change, the same run warns eight times, and `SchemaValidateTest` fails with `wrong column type
+      encountered in column [unit_cost] in table [ps_item]; found [character varying (Types#VARCHAR)], but expecting
+      [numeric(10,2) (Types#NUMERIC)]`.
+  - The sample was put back. Regenerated as it is, its schemas are unchanged.
+- Files: `JpaSchemaReader.java`, `JpaSchemaReaderTest.java`
+
+### Changes (Ossie export - core spec `0.3.0.dev0`)
+
+#### The Ossie export writes `version: 0.3.0.dev0`, the version Ossie's schema now requires
+- Why: apache/ossie#691 (merged on 9 November, `c1a3318`) moved the spec's in-development version from `0.2.0.dev0`
+  to `0.3.0.dev0`; there will be no 0.2.0 release. `ossie-schema.json` pins the version with `const`, so every
+  `semantic_model.yml` the export wrote stopped validating against Ossie's `main`:
+  `[Schema] version: '0.3.0.dev0' was expected` (#96).
+- What: `OssieSemanticModelExporter.SPEC_VERSION` is `0.3.0.dev0`, which sets the header comment and the `version:`
+  line. Nothing else in the document changes. The rule guide's Ossie section (en, ko) says the version, and that
+  3.0.261106-rc11 and earlier write `0.2.0.dev0`.
+- Upgrade: a project that names the `ossie-export` rule set gets a `semantic_model.yml` with a new `version:` line and
+  header the next time it generates. A consumer that checks the document against Ossie's schema needs this one: a
+  `0.2.0.dev0` document fails Ossie's `main` from `c1a3318` on, and a `0.3.0.dev0` document fails the schema before it.
+  ElastiCORE 3.0.261106-rc11 and earlier write `0.2.0.dev0`; the releases after it write `0.3.0.dev0`.
+- Checked: the three committed `semantic_model.yml` (pet store, `elasticore-template-ddd`,
+  `elasticore-template-ddd-mybatis`), regenerated, differ from `main` in those two lines only.
+  - Against apache/ossie `main` (`d700cde`), with sqlglot, `validation/validate.py` passes all three. Before the
+    change, each failed with the error above, and that error alone.
+  - Against the schema before #691 (`21d14d7`), the new pet store document fails with
+    `version: '0.2.0.dev0' was expected`.
+  - `OssieExportTest` and the three `SemanticModelTest` pass. The pet store's guide page (`static/dsl-guide.html`),
+    rebuilt with `guide/build_guide.py`, changes in that line alone.
+- Files: `OssieSemanticModelExporter.java`, `OssieExportTest.java`, the three `SemanticModelTest.java` and
+  `semantic_model.yml`, the rule guide (en, ko), the pet store's `build_guide.py` and `dsl-guide.html`
+
+### Changes (Ossie export - a metric over one entity is its dataset's)
+
+#### A metric over one entity is written in that dataset's `metrics`, where Layer 2 exposes it as a measure
+- Why: the export wrote every metric at the model root, on fields named with their dataset:
+  `SUM(CASE WHEN PurchaseOrder.status <> 'CAN' THEN PurchaseOrder.total END)`. In the core spec that is a model-scoped
+  metric, for aggregations that span datasets ("Metric Scoping"). The relational interface (Layer 2) does not expose a
+  model-scoped metric as a measure, so none of the exported metrics was one there. A DSL metric is an aggregate over one
+  entity or arithmetic over metrics declared before it, so it spans datasets only when it combines the metrics of two or
+  more entities (#97).
+- What: a metric whose aggregates all read one entity - also arithmetic over that entity's metrics
+  (`averageOrder: revenue / orderCount`) - is written in the dataset's `metrics`, after its fields, on its fields by their
+  own names: `SUM(CASE WHEN status <> 'CAN' THEN total END)`. Arithmetic over the metrics of two or more entities stays at
+  the model root as before, and a root name two domains use keeps the domain before it. A dataset's fields and metrics
+  share one set of names: a metric named like a field of its dataset, in any case, or like a metric another domain put
+  there, is left out with `[ossie] [domain] metric total: PurchaseOrder has a field total, and a dataset's fields and
+  metrics share one set of names - rename the metric; it is left out.` It is not renamed, and no domain goes before a
+  dataset's metric.
+- Upgrade: a project that names the `ossie-export` rule set and declares `metrics:` gets a new `semantic_model.yml` the next
+  time it generates. A consumer that names a metric of one entity changes: `revenue` is now `PurchaseOrder.revenue`.
+  ElastiCORE 3.0.261106-rc11 and earlier write every metric at the model root. A project with no `metrics:` generates the
+  same document.
+- Checked: `OssieMetricScopeTest` generates projects: a filtered and an unfiltered metric over one entity, a one-entity
+  composite, a two-entity composite at the root, names clashing with a field (`Total`, `status`, `name`), and two domains
+  with the same metric on one dataset and the same root metric.
+  - The pet store's `semantic_model.yml`, regenerated, has its 13 metrics in the `Customer` and `PurchaseOrder` datasets and
+    no root `metrics`; its `MetricsTest` runs each one on the database as `SELECT <sql> FROM <table>`, and each equals
+    what the test computes from the entities, and `SchemaValidateOnDatabase` runs each one the same way on Oracle,
+    PostgreSQL and SQL Server. The two templates declare no metrics and generate the same document.
+  - Against apache/ossie `ee89dbd`, with sqlglot, `validation/validate.py` passes the three documents, and a copy of
+    the pet store's with a two-entity composite at the root as well. A dataset's metric written with `PurchaseOrder.` fails
+    with `[Scope] ... uses qualified reference(s) 'PurchaseOrder'`, and one named `total` with `[Unique] Name 'total' in
+    dataset 'PurchaseOrder' is used by both a field and a dataset-scoped metric`.
+- Files: `OssieMetrics.java`, `OssieSemanticModelExporter.java`, `OssieMetricsTest.java`, `OssieExportTest.java`,
+  `OssieMetricScopeTest.java` (new), the pet store's `semantic_model.yml`, `MetricsTest.java`,
+  `SchemaValidateOnDatabase.java`, `build_guide.py` and
+  `dsl-guide.html`, the rule guide and the DSL guide (en, ko)
+
+### Changes (Ossie export - `ossie-export`)
+
+#### The ELASTICORE extensions are `nonportable_extensions`, with `data` an object (closes #130)
+- Why: apache/ossie#522 (`08d2ad3`, 11 November) changed `0.3.0.dev0` in place: `custom_extensions` is renamed
+  `nonportable_extensions`, the old name is not accepted, and `data` is an object, not a JSON-encoded string. The export
+  declared `0.3.0.dev0` and wrote the old form, so every document failed the schema that now defines that version - the
+  pet store 40 errors, `elasticore-template-ddd` 24, `elasticore-template-ddd-mybatis` 22, one per extension.
+- What: each ELASTICORE extension is written as `nonportable_extensions:` and its `data` as the JSON the export already
+  built, without the string around it - a YAML flow mapping. Every string in it stays double-quoted, as the spec asks
+  under `data`, so a code such as `NO`, `007` or `2026-01-01` is still a string. The model description says
+  "nonportable extensions". Nothing else in the document changes.
+- Upgrade: only a project that names the `ossie-export` rule set regenerates differently - two lines per extension and
+  the description line of its `semantic_model.yml`. A consumer that read `data` as a JSON string now gets an object.
+  3.0.261106-rc11 and earlier write `custom_extensions`. `0.3.0.dev0` may change again before `0.3.0-incubating`; the
+  export follows Ossie's `main` until that release, and the release after it.
+- Checked: the three committed `semantic_model.yml`, regenerated, validate against `ossie-schema.json` at `08d2ad3`
+  (the current `main`) with no error; at `ee89dbd`, before #522, they fail on the new name, as expected. `OssieExportTest`
+  reads `data` as an object and has no `custom_extensions`, and `dataIsAnObjectWhoseStringsStayStrings` reads back `NO`,
+  `yes`, `007`, `2026-01-01`, `a: b` and a quoted text as the strings they were. The 53 Ossie tests and the three samples'
+  tests pass.
+- Files: `OssieSemanticModelExporter.java`, `OssieExportTest.java`, `OssieFormulaDialectTest.java`,
+  `OssieMetricScopeTest.java`, `OssieUniqueKeysTest.java`, `elasticore-rule-guide.md` (en, ko), the pet store's
+  `guide/build_guide.py` and `static/dsl-guide.html`, the three `semantic_model.yml`
+
+### Bug Fixes (Ossie 내보내기 - 테이블의 schema)
+
+#### 데이터셋의 `source:` 에 `@schema`·`tableSchema` 의 schema 를 붙인다
+- 왜: `OssieSemanticModelExporter.table` 은 `@table` 과 `table.prefix` 만 읽고 DSL 의 schema 를 버렸다. 생성된 JPA 엔티티는
+  `@Table(name = "customer", schema = "schema_a")` 인데 내보낸 데이터셋은 `source: customer` 라, 의미 모델을 읽는 쪽은
+  기본 schema 의 다른 테이블(또는 없는 테이블)을 읽는다
+- 무엇: schema 는 생성된 `@Table(schema=...)` 과 같은 규칙으로 정한다 - 엔티티의 `@schema` 가 있으면 그것, 없으면 도메인
+  env.yml 의 `tableSchema`(`EntitySrcFilePublisher`, `SpecFactory` 와 같다). 있으면 `source: schema_a.customer` 처럼 점으로
+  잇는다. 점 문자열은 지금 Ossie 릴리스 스펙에서 유효하고, 아직 머지되지 않은 apache/ossie#704 의 문자열 표기로도 같게
+  읽힌다(그 PR 의 `kind: table` / `identifier:` 객체형은 쓰지 않는다)
+  - schema 나 테이블 이름에 `.` 이 있으면 전처럼 테이블 이름만 쓴다: 점 문자열은 점을 가진 부분을 나타낼 수 없다
+  - `@table` 을 쓴 엔티티는 전처럼 `table.prefix` 없이 그 이름에 schema 만 붙는다
+  - schema 가 없는 모델의 출력은 바이트 단위로 같다
+- 확인: `OssieExportTest` 6개 - `@schema`, `tableSchema`, `@schema` 우선, schema 없음(테이블 이름만, 손대지 않은 데이터셋은
+  같은 바이트), 점이 든 이름(`@schema(a.b)`, `tableSchema: a.b`, `@table(legacy.customer)`), `@table` 과 schema·`table.prefix`
+  조합. 고치기 전 코드에서는 앞의 셋과 마지막 하나가 실패한다. 펫스토어·`elasticore-template-ddd`·
+  `elasticore-template-ddd-mybatis` 를 다시 생성해 커밋된 `semantic_model.yml` 셋과 바이트가 같다(셋 다 schema 를 쓰지 않는다)
+- 파일: `OssieSemanticModelExporter.java`, `OssieExportTest.java`
+
+### Improvements (DDD reference by id - a DTO's `@ref` onto the key)
+
+#### A DTO field declaring a referenced root's key under a name of its own is said, not dropped in silence
+- Why: under the `ddd-reference` rules another root is referenced by its id (`category: Category` becomes
+  `categoryCatId`). A DTO field that also declares the key through the relation, `catId: long @ref(category.catId)`,
+  carries the same value, so the DTO keeps the identity and drops the declared field. When the declared name was
+  another than the identity's, nothing said so: the API had `categoryCatId`, a client written from the model sent
+  `catId`, it was ignored, and the row was saved without the reference (#103).
+- What: `DtoBaseRules.referenceOnce` warns once per field where the declared name differs from the identity's,
+  naming the DTO, the field, the identity that replaces it and what to do (name the field as the identity, or drop
+  it):
+  `[Forum] SfCommentKeyedDTO.parentKey @ref(parent.commentId) is the key the reference by id already holds, so the
+  DTO has it as parentCommentId and has no parentKey - a request that sends parentKey is not read. Name the field
+  parentCommentId, or drop it.`
+  The generated code does not change. A field named as the identity, and the relation's flattened key the DTO adds
+  for itself (`departmentDepartmentId`), say nothing. The identity is found by `SearchDtoBaseRules.identityOfReference`,
+  which `flattensAReferenceById` (the DTO, the search DTO and the mapper) now reads too, so the warning and the
+  removal cannot disagree. Only the DDD bundles write the identity (`@idof`), so the 2.x output is untouched.
+- Checked: `ReferenceOnceTest` runs the rule on a DTO: a key under a name of its own is left out and said once,
+  with the sentence above; under the identity's name, or as the relation's flattened key (`departmentDepartmentId`
+  beside `departmentId`), nothing is said; a `@ref` to another field, to the relation itself, two levels deep or to
+  a relation with no identity stays as declared.
+  `SelfReferenceByIdTest.aRefDeclaredUnderAnotherNameIsSaid` - over the hexagonal run, the warning is printed
+  once for `SfCommentKeyedDTO.parentKey`, and not for `SfCommentSameNameDTO.parentCommentId`, for `SfTopicDTO`
+  (`@objectref`, no identity) or for the DTOs the model does not declare. Without the change the run prints no
+  such line.
+- Files: `DtoBaseRules.java`, `SearchDtoBaseRules.java`, `ReferenceOnceTest.java`, `SelfReferenceByIdTest.java`, `elasticore-rule-guide.md`
+  "Refer to another aggregate by ID" (en, ko)
+
 ## 3.0.261106-rc11
 
 ### Documentation (where a DSL feature works)

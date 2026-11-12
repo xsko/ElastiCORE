@@ -717,7 +717,7 @@ AND name LIKE :name /* if:name */
 - Each `/* if-end */` closes the innermost open block: the inner block is read only when the outer one is kept, and
   so is the line after it (`phone` above is asked for only with a last name)
 - An inline condition inside a block is read as one outside it is
-- Before 3.0.261107 the first `/* if-end */` closed the outer block: the lines after it were always kept, and an inline
+- Before 3.0.261112-rc12 the first `/* if-end */` closed the outer block: the lines after it were always kept, and an inline
   condition inside a block was kept whatever its value
 
 #### JEXL expressions
@@ -755,7 +755,7 @@ The sort information is extracted from the input object automatically to build t
 1. The `sortCode` key of a Map
 2. The `getSortCode()` method of the object
 3. The `getSortColumn()` + `getSortAscending()` methods of the object
-4. The `Sort` of a `Pageable` (or a `Sort`) the method takes as a parameter (Since: 3.0.261107):
+4. The `Sort` of a `Pageable` (or a `Sort`) the method takes as a parameter (Since: 3.0.261112-rc12):
    `findPage(String name, Pageable pageable)` called with `PageRequest.of(0, 20, Sort.by(DESC, "createdDate"))` sorts by
    `createdDate DESC`. Its properties are the SQL's column names or labels, checked as a sort code is
 
@@ -852,7 +852,7 @@ port:
 **Map mapping** (when a `Map` return type is used, `List<Map<String,Object>>`):
 - `snake_case` column names are converted automatically to `camelCase` keys
 - Every column the SQL selects is a key, a NULL one with the value null. Under MyBatis (`mode: mybatis`) this needs the
-  MyBatis Spring Boot starter, which applies the runtime library's `PortRowColumns` (Since: 3.0.261107; before, a NULL
+  MyBatis Spring Boot starter, which applies the runtime library's `PortRowColumns` (Since: 3.0.261112-rc12; before, a NULL
   column was left out of the map there)
 
 **Date/time conversion**:
@@ -881,11 +881,11 @@ The paging information is detected from the input object automatically (in prior
 
 1. If the input object is an instance of `Pageable`, it is used directly
 2. If it has a `getPageable()` method, it is called
-3. Map: a `Pageable` among the parameters (`findPage(String name, Pageable pageable)`, Since: 3.0.261107), else the
+3. Map: a `Pageable` among the parameters (`findPage(String name, Pageable pageable)`, Since: 3.0.261112-rc12), else the
    keys `pageNumber`/`page` + `sizeVal`/`size`
 4. Object: fields with the same names
 
-The port interface imports `Pageable` (and `Sort`) when a method takes one (Since: 3.0.261107; v3 and Kotlin output -
+The port interface imports `Pageable` (and `Sort`) when a method takes one (Since: 3.0.261112-rc12; v3 and Kotlin output -
 the 2.x output writes the interface as before).
 
 **Defaults**: page=0, size=50

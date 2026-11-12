@@ -1609,7 +1609,7 @@ pluginManagement {
 
 ```gradle
 plugins {
-    id 'io.elasticore' version '3.0.261106-rc11'
+    id 'io.elasticore' version '3.0.261112-rc12'
 }
 
 elasticore {

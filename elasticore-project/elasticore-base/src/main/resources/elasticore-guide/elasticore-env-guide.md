@@ -205,7 +205,7 @@ else the `Sort` of a `Pageable` (or `Sort`) parameter, checked as a sort code - 
 breakers, or becomes the `ORDER BY` where the SQL has none or an `/* if: */` leaves it out. A page with no order at all is cut with
 `ORDER BY (SELECT NULL)` on SQL Server (it does not cut a page without an order) - also when the `ORDER BY` stands in an `/* if: */` line or
 block whose condition is false. Since: 3.0.261030-rc6 (blocks in blocks, the `Pageable` and its `Sort`, an `ORDER BY` inside `/* if: */`,
-a map's NULL column: 3.0.261107)
+a map's NULL column: 3.0.261112-rc12)
 
 In an app without JPA (an app that uses only MyBatis), a dbms port that remains a runtime proxy runs with JDBC (`JdbcDbmsGateway` - the runtime
 library registers it by itself). The JPQL of such a port is refused.

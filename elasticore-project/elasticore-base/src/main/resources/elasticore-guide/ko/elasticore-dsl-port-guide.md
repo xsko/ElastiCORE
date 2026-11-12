@@ -717,7 +717,7 @@ AND name LIKE :name /* if:name */
 - `/* if-end */`는 열린 블록 중 가장 안쪽 것을 닫습니다: 안쪽 블록은 바깥 블록이 남을 때만 읽고, 그 뒤의 줄도
   마찬가지입니다(위의 `phone`은 성이 있을 때만 조건이 됩니다)
 - 블록 안의 인라인 조건도 블록 밖에서와 똑같이 읽습니다
-- 3.0.261107 이전에는 첫 `/* if-end */`가 바깥 블록을 닫아, 그 뒤의 줄은 늘 남고 블록 안의 인라인 조건은 값과
+- 3.0.261112-rc12 이전에는 첫 `/* if-end */`가 바깥 블록을 닫아, 그 뒤의 줄은 늘 남고 블록 안의 인라인 조건은 값과
   상관없이 남았습니다
 
 #### JEXL 표현식
@@ -755,7 +755,7 @@ query: |
 1. Map의 `sortCode` 키
 2. 객체의 `getSortCode()` 메서드
 3. 객체의 `getSortColumn()` + `getSortAscending()` 메서드
-4. 메서드가 파라미터로 받는 `Pageable`(또는 `Sort`)의 `Sort` (Since: 3.0.261107):
+4. 메서드가 파라미터로 받는 `Pageable`(또는 `Sort`)의 `Sort` (Since: 3.0.261112-rc12):
    `findPage(String name, Pageable pageable)`를 `PageRequest.of(0, 20, Sort.by(DESC, "createdDate"))`로 부르면
    `createdDate DESC`로 정렬합니다. 속성은 SQL 의 컬럼명이나 별칭이고, sortCode 처럼 검사합니다
 
@@ -852,7 +852,7 @@ port:
 **Map 매핑** (`Map` 반환 타입 사용 시, `List<Map<String,Object>>`):
 - `snake_case` 컬럼명 → `camelCase` 키로 자동 변환
 - SQL 이 고른 컬럼은 모두 키가 되고, NULL 이면 값이 null 입니다. MyBatis(`mode: mybatis`)에서는 런타임 라이브러리의
-  `PortRowColumns`를 적용하는 MyBatis Spring Boot starter 가 있어야 합니다 (Since: 3.0.261107. 그 전에는 거기서 NULL
+  `PortRowColumns`를 적용하는 MyBatis Spring Boot starter 가 있어야 합니다 (Since: 3.0.261112-rc12. 그 전에는 거기서 NULL
   컬럼이 맵에서 빠졌습니다)
 
 **날짜/시간 변환**:
@@ -881,11 +881,11 @@ params:
 
 1. 입력 객체가 `Pageable` 인스턴스인 경우 직접 사용
 2. `getPageable()` 메서드가 있으면 호출
-3. Map: 파라미터 중의 `Pageable`(`findPage(String name, Pageable pageable)`, Since: 3.0.261107), 없으면
+3. Map: 파라미터 중의 `Pageable`(`findPage(String name, Pageable pageable)`, Since: 3.0.261112-rc12), 없으면
    `pageNumber`/`page` + `sizeVal`/`size` 키
 4. 객체: 동일 이름의 필드
 
-메서드가 `Pageable`(또는 `Sort`)을 받으면 포트 인터페이스가 그것을 import 합니다 (Since: 3.0.261107. v3·Kotlin 출력 -
+메서드가 `Pageable`(또는 `Sort`)을 받으면 포트 인터페이스가 그것을 import 합니다 (Since: 3.0.261112-rc12. v3·Kotlin 출력 -
 2.x 출력은 인터페이스를 전과 같이 씁니다).
 
 **기본값**: page=0, size=50
