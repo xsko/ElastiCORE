@@ -1,7 +1,7 @@
 ### New Features (v3 entity - a repository alone)
 
 #### `meta: entity @repository`: the repository and the helper's getter, no service and no API
-- Why: moving a 2.x project to 3.0 (elastide-server), 36 entities that code of its own reads and writes through
+- Why: moving a 2.x project to 3.0, 36 entities that code of its own reads and writes through
   `RepositoryHelper.getXxx()` had no repository: the 3.0 code writes one only for an entity with `@expose` or `@service`,
   where 2.x wrote one for every entity with a key - about 870 compile errors. `@expose` opens an API nobody wants,
   `@service` writes services nobody calls (up to 72 files).
@@ -20,7 +20,7 @@
 #### `output = 'v2'` on Spring Boot 4 compiles: the delete by search removes the rows it reads
 - Why: the 2.x `XxxCoreService.delete(SrchDTO)` calls `JpaSpecificationExecutor.delete(Specification)`, which Spring Data
   JPA 4 does not have (it takes a `PredicateSpecification`), so the 2.x-compatible output did not compile on Spring Boot
-  4.0.8 or 4.1.2 (15 files in elastide-server). README and the env guide said only enums differ on Boot 4.
+  4.0.8 or 4.1.2 (15 files in that project). README and the env guide said only enums differ on Boot 4.
 - What: with Spring Boot 4 the compatible service reads the rows (`findAll(specification)`) and removes them
   (`deleteAll`), answering their number - the 3.0 service deletes row by row too. JPA's remove runs for each, so
   `@PreRemove` and cascades run where the bulk delete skipped them. Spring Boot 3 output is unchanged, byte for byte;

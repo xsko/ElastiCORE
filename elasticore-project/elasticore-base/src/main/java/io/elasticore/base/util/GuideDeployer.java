@@ -149,7 +149,8 @@ public final class GuideDeployer {
                 all += text.length();
                 for (int i = 0; i < text.length(); i++) {
                     char c = text.charAt(i);
-                    if (c >= '가' && c <= '힣') hangul++;
+                    // Hangul syllables, U+AC00 to U+D7A3 - as numbers, so the source stays ASCII.
+                    if (c >= 0xAC00 && c <= 0xD7A3) hangul++;
                 }
             } catch (IOException e) {
                 // an unreadable copy tells nothing; it is replaced below
