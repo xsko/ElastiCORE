@@ -2630,6 +2630,9 @@ public final class RulesGenRunner {
         boolean exposed = entity.getMetaInfo().hasMetaAnnotation("expose");
         boolean serviced = exposed || entity.getMetaInfo().hasMetaAnnotation("service");
         boolean hasPk = spec.pkField() != null;
+        // @repository: the repository and the helper's getter, no service and no API -
+        // an entity code of the developer's reads and writes, as every keyed entity was in 2.x.
+        boolean repositoryOnly = !serviced && entity.getMetaInfo().hasMetaAnnotation("repository");
 
         System.out.println("  " + name);
 
@@ -2702,6 +2705,14 @@ public final class RulesGenRunner {
             emit(spec, "entity",
                     target(model.getNamespace("entity"), entityClassName(spec)),
                     "jpa-entity", "jpa-entity-annotations", "jpa-entity-file-kt");
+            if (repositoryOnly && hasPk) {
+                emit(
+                        spec,
+                        "repository",
+                        target(model.getNamespace("repository"), String.format("%sRepository", name)),
+                        "jpa-repository",
+                        "jpa-repository-file-v3");
+            }
             if (serviced && hasPk) {
                 emit(spec, "repository",
                         target(model.getNamespace("repository"),
@@ -2759,6 +2770,14 @@ public final class RulesGenRunner {
             emit(spec, "entity",
                     ArtifactTarget.java(model.getNamespace("entity"), entityClassName(spec)),
                     "jpa-entity", "mybatis-entity-file");
+            if (repositoryOnly) {
+                io.elasticore.base.util.ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format(
+                                "[%s] @repository is not written under mode: mybatis yet - no mapper is generated for it;"
+                                        + " give it @service, or write a mapper of your own",
+                                name));
+            }
             // A member of a bound aggregate is its root's to write (hasOwnService).
             serviced = serviced && io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.hasOwnService(name);
             exposed = exposed && serviced;
@@ -2790,6 +2809,14 @@ public final class RulesGenRunner {
                     "jpa-entity", "jpa-entity-file");
             emitIdentity(spec, model);
 
+            if (repositoryOnly && hasPk) {
+                emit(
+                        spec,
+                        "repository",
+                        ArtifactTarget.java(model.getNamespace("repository"), String.format("%sRepository", name)),
+                        "jpa-repository",
+                        "jpa-repository-file-v3");
+            }
             if (serviced && hasPk) {
                 coreOk = emitSucceeded(spec, "service",
                         ArtifactTarget.java(model.getNamespace("service"),

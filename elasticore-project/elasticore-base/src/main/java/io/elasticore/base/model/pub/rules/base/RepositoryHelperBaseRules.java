@@ -77,10 +77,15 @@ public class RepositoryHelperBaseRules implements CodeRules {
             if (e.pkField() == null && !hasInheritedKey(e)) continue;
             if (e.hasMeta("embeddable")) continue;
             // The v3 and Kotlin runs write a repository only for an entity
-            // with a service and a key of its own (RulesGenRunner); an @extend
-            // child or an entity without @expose/@service has none to inject,
-            // and naming it failed the compile.
-            if (!c.compatible() && (e.pkField() == null || !(e.hasMeta("expose") || e.hasMeta("service")))) continue;
+            // with a service, or @repository, and a key of its own
+            // (RulesGenRunner); an @extend child or an entity with none of
+            // them has none to inject, and naming it failed the compile.
+            // Over MyBatis @repository writes no mapper yet.
+            boolean repositoryOnly =
+                    e.hasMeta("repository") && !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d);
+            if (!c.compatible()
+                    && (e.pkField() == null || !(e.hasMeta("expose") || e.hasMeta("service") || repositoryOnly)))
+                continue;
             inject(c, e.getName());
         }
 

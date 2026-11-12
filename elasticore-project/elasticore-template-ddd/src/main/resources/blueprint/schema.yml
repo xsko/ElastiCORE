@@ -204,6 +204,14 @@ entities:
       name: string(50) @Column(name = "name", length = 50)
       phase: string(10) @Column(name = "phase", length = 10)
 
+  Supplier:
+    meta: entity @java(io.elasticore.sample.ddd.catalog.entity.Supplier)
+    table: cat_supplier
+    java: io.elasticore.sample.ddd.catalog.entity.Supplier
+    fields:
+      supplierId: string(10) @Column(name = "supplier_id", length = 10) @Id
+      name: string(50) @Column(name = "name", length = 50)
+
   VipProfile:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.VipProfile)
     table: shop_vip_profile

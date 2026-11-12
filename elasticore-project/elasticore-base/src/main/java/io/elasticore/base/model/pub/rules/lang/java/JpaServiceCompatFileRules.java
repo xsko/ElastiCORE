@@ -76,29 +76,34 @@ public class JpaServiceCompatFileRules implements CodeRules {
         boolean isSkipNull = !"false".equals(e.metaValue("dynamicupdate"));
 
         c.var("packageName", e.pkg("service"))
-         .var("entityPackageName", e.pkg("entity"))
-         .var("dtoPackageName", e.pkg("dto"))
-         .var("repositoryPackageName", e.pkg("repository"))
-         .var("j2eePkgName", "jakarta".equals(e.config("j2ee")) ? "jakarta" : "javax")
-         .var("className", "%sCoreService", orgEntityClassName)
-         .var("domainName", e.domainClassName())
-         .var("entityClassName", entityClassName)
-         .var("orgEntityClassName", orgEntityClassName)
-         .var("orgEntityConvert", orgEntityConvert)
-         .var("keyDtoClassName", "%sKeyDTO", orgEntityClassName)
-         .var("dtoClassName", dtoClassName)
-         .var("mappingCode", mappingCode)
-         .var("mapperName", "%sMapper", e.domainClassName())
-         .var("searchDTOClassName", searchDtoName(e))
-         .var("isListOutput", String.valueOf(isListOutput))
-         .var("isPageOutput", String.valueOf(isPageOutput))
-         .var("isExposeOutput", String.valueOf(isExposeOutput))
-         .var("isCustomPageOutput", "false")
-         .var("isCustomListOutput", "false")
-         .var("isSkipNull", String.valueOf(isSkipNull))
-         .var("searchResultDTOClassName", searchResultDto)
-         .var("selectColumnNmList", "")
-         .var("toSearchListMappingName", toSearchListMappingName);
+                .var("entityPackageName", e.pkg("entity"))
+                .var("dtoPackageName", e.pkg("dto"))
+                .var("repositoryPackageName", e.pkg("repository"))
+                .var("j2eePkgName", "jakarta".equals(e.config("j2ee")) ? "jakarta" : "javax")
+                .var("className", "%sCoreService", orgEntityClassName)
+                .var("domainName", e.domainClassName())
+                .var("entityClassName", entityClassName)
+                .var("orgEntityClassName", orgEntityClassName)
+                .var("orgEntityConvert", orgEntityConvert)
+                .var("keyDtoClassName", "%sKeyDTO", orgEntityClassName)
+                .var("dtoClassName", dtoClassName)
+                .var("mappingCode", mappingCode)
+                .var("mapperName", "%sMapper", e.domainClassName())
+                .var("searchDTOClassName", searchDtoName(e))
+                .var("isListOutput", String.valueOf(isListOutput))
+                .var("isPageOutput", String.valueOf(isPageOutput))
+                .var("isExposeOutput", String.valueOf(isExposeOutput))
+                .var("isCustomPageOutput", "false")
+                .var("isCustomListOutput", "false")
+                .var("isSkipNull", String.valueOf(isSkipNull))
+                // Spring Data JPA 4 (Spring Boot 4) has no delete(Specification): a delete by search
+                // reads the rows and removes them. Spring Boot 3 keeps 2.x's bulk delete, byte for byte.
+                .var(
+                        "rowByRowDelete",
+                        String.valueOf(io.elasticore.base.model.pub.rules.RulesConfig.springBootMajor() >= 4))
+                .var("searchResultDTOClassName", searchResultDto)
+                .var("selectColumnNmList", "")
+                .var("toSearchListMappingName", toSearchListMappingName);
 
         keyVars(c, e);
         joinFetchVars(c, e);

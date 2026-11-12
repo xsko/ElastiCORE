@@ -156,7 +156,7 @@ TypeScript 클라이언트는 `./gradlew elcore3ts`, 일부 규칙만 쓰려면 
 
 **3.0 은 정식 출시 전(pre-release)입니다** ([Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
 Gradle 플러그인을 쓰는 프로젝트는 2.x 의 코드를 유지한다고 하지 않는 한 3.0 코드를 받습니다. `elasticore { output = 'v2' }` 는 이력에 적은
-버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum 을 빼면 2.x 가 만들던 코드를 생성합니다. 2.x 가 생성한 코드를
+버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum, 행을 하나씩 지우는 검색 삭제(Spring Data JPA 4 에는 `delete(Specification)` 이 없음)를 빼면 2.x 가 만들던 코드를 생성합니다. 2.x 가 생성한 코드를
 가진 프로젝트가 아무것도 고르지 않으면, 무엇이든 다시 쓰기 전에 멈추고 고르라고 알립니다
 ([마이그레이션 가이드](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-migration-guide.md)).
 풀 리퀘스트마다 2.x 생성기가 만든 기준 프로젝트는 커밋된 그대로여야 하고, 규칙 엔진의 2.x 호환 번들은 그 출력과

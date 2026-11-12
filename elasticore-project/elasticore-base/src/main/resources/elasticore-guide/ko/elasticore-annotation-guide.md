@@ -41,6 +41,23 @@ InternalData:
   meta: entity @service(20)
 ```
 
+### @repository
+> **동작:** v3 (JPA), Kotlin · **안 됨:** MyBatis (mode: mybatis) (경고); 2.x 생성기와 2.x 호환 출력 (거기서는 키가 있는 엔티티마다 이미 리포지토리가 있음)
+
+Repository 와 도메인 helper 의 getter(`CatalogRepositoryHelper.getSupplier()`)만 만들고, Service·Controller·API 는 만들지
+않습니다. 직접 쓴 코드가 읽고 쓰는 테이블 - 코드 테이블, 로그 - 에 씁니다: `@expose` 는 API 를 열고, `@service` 는 아무도
+부르지 않는 서비스를 만듭니다. 3.0 코드는 `@expose`·`@service`·`@repository` 가 있는 엔티티에만 리포지토리를 만들고,
+2.x 는 키가 있는 엔티티마다 만들었습니다. Since: 3.0.261113
+```yaml
+Supplier:
+  meta: entity @repository
+  fields:
+    supplierId: string(10) @id
+    name: string(50)!
+```
+옆에 `@expose` 나 `@service` 가 있으면 전과 같이 그것이 정합니다. 키가 없는 엔티티는 아무것도 생기지 않습니다. `elasticore-template-ddd`
+에서 확인 (`CatalogApiTest`: helper 로 저장하고 읽음, `/supplier` 엔드포인트 없음).
+
 ### @readonly (엔티티)
 > **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음)
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x generator (생성 안 됨)

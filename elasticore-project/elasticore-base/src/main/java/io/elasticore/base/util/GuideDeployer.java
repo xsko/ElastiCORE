@@ -77,8 +77,26 @@ public final class GuideDeployer {
      * written in is a warning, not a failure, like every other problem here.
      */
     static String language() {
+        return language(null);
+    }
+
+    /**
+     * The language asked for; when none is, the language of the guides already
+     * in the blueprint root - Korean ones stay Korean - else English. Up to
+     * 3.0.261031-rc7 the guides were Korean, and a project that upgraded got
+     * English ones in their place on its next build with nothing said.
+     */
+    static String language(String blueprintRootPath) {
         String asked = System.getProperty(LANGUAGE_PROPERTY);
-        if (asked == null || asked.trim().isEmpty()) return LANGUAGES[0];
+        if (asked == null || asked.trim().isEmpty()) {
+            if (blueprintRootPath != null && isKorean(Paths.get(blueprintRootPath))) {
+                ConsoleLog.printInfo("The guides in " + blueprintRootPath + " are Korean and stay Korean;"
+                        + " elasticore { guides = 'en' } copies the English ones, guides = 'ko' keeps these"
+                        + " without this check.");
+                return "ko";
+            }
+            return LANGUAGES[0];
+        }
         String language = asked.trim().toLowerCase(java.util.Locale.ROOT);
         for (String known : LANGUAGES) {
             if (known.equals(language)) return known;
@@ -99,7 +117,7 @@ public final class GuideDeployer {
     public static void deployTo(String blueprintRootPath, String developmentRoot) {
         if (blueprintRootPath == null) return;
 
-        String language = language();
+        String language = language(blueprintRootPath);
         ConsoleLog.printInfo("Copying guide files (" + language + ") to blueprint root: " + blueprintRootPath);
         try {
             File source = developmentSource(developmentRoot);
@@ -112,6 +130,33 @@ public final class GuideDeployer {
             ConsoleLog.printWarn("Error copying guide files to blueprint root: " + e.getMessage());
         }
         writeIndex(blueprintRootPath);
+    }
+
+    /**
+     * Whether the guides already in the blueprint root are the Korean ones: at
+     * least 5% of their characters are Hangul. The Korean guides are a fifth
+     * Hangul and more; the English ones hold a little in their examples (26 of
+     * the DSL guide's 68,000 characters). No guide there is not Korean.
+     */
+    static boolean isKorean(Path blueprint) {
+        long hangul = 0;
+        long all = 0;
+        for (String guide : GUIDE_FILES) {
+            Path file = blueprint.resolve(guide);
+            if (!Files.isRegularFile(file)) continue;
+            try {
+                String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
+                all += text.length();
+                for (int i = 0; i < text.length(); i++) {
+                    char c = text.charAt(i);
+                    // Hangul syllables, U+AC00 to U+D7A3 - as numbers, so the source stays ASCII.
+                    if (c >= 0xAC00 && c <= 0xD7A3) hangul++;
+                }
+            } catch (IOException e) {
+                // an unreadable copy tells nothing; it is replaced below
+            }
+        }
+        return all > 0 && hangul * 20 >= all;
     }
 
     /**

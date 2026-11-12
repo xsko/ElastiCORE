@@ -60,6 +60,33 @@ class CatalogApiTest {
     }
 
     @Test
+    @DisplayName("@repository: code of its own reads and writes Supplier through the helper, and there is no API")
+    void aRepositoryWithoutAnApi() throws Exception {
+        io.elasticore.sample.ddd.catalog.repository.CatalogRepositoryHelper helper =
+                context.getBean(io.elasticore.sample.ddd.catalog.repository.CatalogRepositoryHelper.class);
+        io.elasticore.sample.ddd.catalog.entity.Supplier supplier = new io.elasticore.sample.ddd.catalog.entity.Supplier();
+        supplier.setSupplierId("SUP-1");
+        supplier.setName("Acme Paper");
+        helper.getSupplier().save(supplier);
+        assertThat(helper.getSupplier().findById("SUP-1")).get()
+                .extracting(io.elasticore.sample.ddd.catalog.entity.Supplier::getName).isEqualTo("Acme Paper");
+
+        assertThat(status(get("/api/v1/catalog/supplier/SUP-1"))).isEqualTo(404);
+        assertThat(context.getBeanNamesForType(io.elasticore.sample.ddd.catalog.repository.SupplierRepository.class)).hasSize(1);
+        assertThat(classExists("io.elasticore.sample.ddd.catalog.service.SupplierCoreService")).isFalse();
+        assertThat(classExists("io.elasticore.sample.ddd.catalog.controller.SupplierController")).isFalse();
+    }
+
+    private static boolean classExists(String name) {
+        try {
+            Class.forName(name);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    @Test
     @DisplayName("create, read, update and delete through the plain v3 service")
     void crud() throws Exception {
         long id = createBook("The Dispossessed");

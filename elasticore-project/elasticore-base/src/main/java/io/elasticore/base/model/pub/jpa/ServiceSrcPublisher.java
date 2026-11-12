@@ -325,20 +325,15 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
         }
 
         CodeTemplate.Parameters params = CodeTemplate.newParameters();
-        params
-                .set("className", className)
+        params.set("className", className)
                 .set("domainName", StringUtils.capitalize(domainName))
                 .set("entityClassName", entityClassName)
-
                 .set("orgEntityClassName", orgEntityClassName)
                 .set("orgEntityConvert", orgEntityConvert)
-                .set("importList",importList)
-
-
+                .set("importList", importList)
                 .set("keyDtoClassName", keyDtoClassName)
                 .set("dtoClassName", dtoClassName)
                 .set("mappingCode", mappingCode)
-
                 .set("mapperName", mapperName)
                 .set("searchDTOClassName", searchDTOClassName)
                 .set("pkType", pkType)
@@ -350,25 +345,19 @@ public class ServiceSrcPublisher extends SrcFilePublisher {
                 .set("pkDtoInfo", pkDtoInfo)
                 .set("pkDtoInfo2", pkDtoInfo2)
                 .set("pkDtoDefine", pkDtoDefine)
-
                 .set("childRefInfo", cb.toString())
-                .set("isListOutput",isListOutput)
-                .set("isPageOutput",isPageOutput)
-                .set("isExposeOutput",isExposeOutput)
-
-
-                .set("isCustomPageOutput",isCustomPageOutput)
-                .set("isCustomListOutput",isCustomListOutput)
-                .set("isSkipNull",isSkipNull)
-
-
-                .set("searchResultDTOClassName",searchResultDTOClassName)
-                .set("selectColumnNmList" ,selectColumnNmList)
+                .set("isListOutput", isListOutput)
+                .set("isPageOutput", isPageOutput)
+                .set("isExposeOutput", isExposeOutput)
+                .set("isCustomPageOutput", isCustomPageOutput)
+                .set("isCustomListOutput", isCustomListOutput)
+                .set("isSkipNull", isSkipNull)
+                // The 2.x generator keeps its bulk delete by search (Spring Boot 3).
+                .set("rowByRowDelete", false)
+                .set("searchResultDTOClassName", searchResultDTOClassName)
+                .set("selectColumnNmList", selectColumnNmList)
                 .set("toSearchListMappingName", toSearchListMappingName)
-
-
-
-                .set("j2eePkgName",getPersistentPackageName(domain))
+                .set("j2eePkgName", getPersistentPackageName(domain))
                 .set("entityPackageName", entityPackageName)
                 .set("dtoPackageName", dtoPackageName)
                 .set("repositoryPackageName", repoPackageName)

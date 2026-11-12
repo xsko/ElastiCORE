@@ -41,6 +41,23 @@ InternalData:
   meta: entity @service(20)
 ```
 
+### @repository
+> **Works in:** v3 (JPA), Kotlin · **Not in:** MyBatis (mode: mybatis) (warning); 2.x generator and 2.x-compatible output (every entity with a key has a repository there already)
+
+The Repository and the domain helper's getter (`CatalogRepositoryHelper.getSupplier()`), and nothing else: no Service, no
+Controller, no API. For a table that code of your own reads and writes - a lookup table, a log - where `@expose` would open an
+API and `@service` would write a service nobody calls. The 3.0 code writes a repository only for an entity with `@expose`,
+`@service` or `@repository`; 2.x wrote one for every entity with a key. Since: 3.0.261113
+```yaml
+Supplier:
+  meta: entity @repository
+  fields:
+    supplierId: string(10) @id
+    name: string(50)!
+```
+`@expose` or `@service` beside it decides as before. An entity without a key gets nothing. Checked in `elasticore-template-ddd`
+(`CatalogApiTest`: saved and read through the helper, and no `/supplier` endpoint).
+
 ### @readonly (entity)
 > **Since: 3.0** (3.0 rule engine. The 2.x generator does not read it)
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x generator (not generated)

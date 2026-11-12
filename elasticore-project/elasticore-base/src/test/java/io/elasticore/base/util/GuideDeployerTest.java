@@ -95,6 +95,50 @@ public class GuideDeployerTest {
         assertFalse(HANGUL.matcher(first).find(), first);
     }
 
+    /**
+     * A project that has the Korean guides - copied up to 3.0.261031-rc7 - and
+     * asks for no language keeps them, and is told so; one that asks for English
+     * gets English. The English guides already there stay English.
+     */
+    @Test
+    @DisplayName("unset: the Korean guides already in the blueprint stay Korean, and the build says so")
+    public void koreanGuidesAlreadyThereStayKorean(@TempDir Path root) throws IOException {
+        System.setProperty(GuideDeployer.LANGUAGE_PROPERTY, "ko");
+        GuideDeployer.deployTo(root.toString(), null);
+        assertTrue(GuideDeployer.isKorean(root));
+
+        System.clearProperty(GuideDeployer.LANGUAGE_PROPERTY);
+        final Path blueprint = root;
+        String printed = printedBy(new Runnable() {
+            @Override
+            public void run() {
+                GuideDeployer.deployTo(blueprint.toString(), null);
+            }
+        });
+        assertTrue(printed.contains("are Korean and stay Korean"), printed);
+        assertTrue(printed.contains("guides = 'en'"), printed);
+        for (String guide : GuideDeployer.GUIDE_FILES) {
+            String text = new String(Files.readAllBytes(root.resolve(guide)), StandardCharsets.UTF_8);
+            assertTrue(HANGUL.matcher(text).find(), guide + " was replaced by the English guide");
+        }
+
+        System.setProperty(GuideDeployer.LANGUAGE_PROPERTY, "en");
+        GuideDeployer.deployTo(root.toString(), null);
+        assertFalse(GuideDeployer.isKorean(root), "guides = 'en' copies the English guides");
+
+        // English guides - a little Hangul in their examples - stay English.
+        System.clearProperty(GuideDeployer.LANGUAGE_PROPERTY);
+        GuideDeployer.deployTo(root.toString(), null);
+        assertFalse(GuideDeployer.isKorean(root));
+        assertEquals("en", GuideDeployer.language(root.toString()));
+    }
+
+    @Test
+    @DisplayName("no guide in the blueprint yet is not Korean")
+    public void anEmptyBlueprintIsNotKorean(@TempDir Path root) {
+        assertFalse(GuideDeployer.isKorean(root));
+    }
+
     private static String printedBy(Runnable action) {
         PrintStream out = System.out;
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
