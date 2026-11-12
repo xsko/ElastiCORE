@@ -98,6 +98,21 @@ public class ElastiCorePlugin implements Plugin<Project> {
             task.systemProperty("elasticore.ddl.only", "true");
         });
 
+        // Before a project 2.x generated moves to the 3.0 code: the first 3.0
+        // build run with nothing written, and a report of what it would do -
+        // conflicts, imports a merge takes out, the files 2.x wrote that the
+        // 3.0 code does not and the code that uses them. Whatever output the
+        // build keeps; run only when asked for.
+        TaskProvider<JavaExec> elcoreMigrationCheck = project.getTasks()
+                .register("elcoreMigrationCheck", JavaExec.class, task -> {
+                    task.setGroup(GROUP);
+                    task.setDescription("Reports what the first 3.0 build of a project 2.x generated would do,"
+                            + " writing nothing (build/elasticore/migration-check.md)");
+                    task.setClasspath(tools);
+                    task.getMainClass().set(RULE_ENGINE);
+                    task.systemProperty("elasticore.migration.check", "true");
+                });
+
         // The arguments are settled here, while the build is being configured,
         // and not inside a task action. An action that reaches for the project
         // is the one thing the configuration cache refuses, so the lazier
@@ -118,6 +133,7 @@ public class ElastiCorePlugin implements Plugin<Project> {
             elcore3.configure(task -> arguments(task, evaluated, extension));
             elcore3ts.configure(task -> arguments(task, evaluated, extension));
             elcoreDdl.configure(task -> arguments(task, evaluated, extension));
+            elcoreMigrationCheck.configure(task -> arguments(task, evaluated, extension));
 
             boolean ddl = !extension
                     .getDdl()

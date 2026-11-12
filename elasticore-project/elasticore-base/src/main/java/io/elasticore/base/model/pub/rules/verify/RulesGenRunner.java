@@ -355,6 +355,11 @@ public final class RulesGenRunner {
                 merging = null;
             }
             io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(false);
+            // A migration check that ended on an exception: its output goes back, nothing was written.
+            if (preview != null) {
+                System.setOut(preview.shown());
+                preview = null;
+            }
             // What this run said of its applications is not the next caller's.
             SpecFactory.applicationSignIns(-1, null);
             // Nor what it said of the server a client talks to.
@@ -376,8 +381,10 @@ public final class RulesGenRunner {
         // The generation the build chose: -Pv3 / output = 'v3', or -Pv2 /
         // output = 'v2' for the code 2.x generates. Neither is the default -
         // the 3.0 code since 3.0.261028-rc3 - decided once the model is read.
-        boolean v3Asked = Boolean.getBoolean("elasticore.rules.v3");
-        boolean v2Asked = Boolean.getBoolean("elasticore.rules.v2");
+        // elcoreMigrationCheck: the 3.0 build as it would run, whatever the build keeps now.
+        boolean checking = Boolean.getBoolean(PROP_MIGRATION_CHECK);
+        boolean v3Asked = checking || Boolean.getBoolean("elasticore.rules.v3");
+        boolean v2Asked = !checking && Boolean.getBoolean("elasticore.rules.v2");
         if (v3Asked && v2Asked) {
             io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] both generations asked for (-Pv2 and -Pv3, or"
                     + " output and the other switch) - choose one");
@@ -422,6 +429,11 @@ public final class RulesGenRunner {
         // those modules the same way the 2.x extractor is told about them.
         String modulePaths = System.getProperty("elasticore.modules");
 
+        if (checking && (typescript || kotlin)) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the migration check reads a project 2.x generated,"
+                    + " which is Java - not " + (kotlin ? "Kotlin" : "the TypeScript client"));
+            return 1;
+        }
         if (typescript || kotlin) {
             System.out.println("[elcore3] mode      : " + (typescript ? "typescript" : "kotlin"));
         }
@@ -431,7 +443,7 @@ public final class RulesGenRunner {
         // A project on a bundle is the one meeting these documents for the
         // first time, and until now it was the only one that never received
         // them - both rule-engine sample modules had an empty blueprint root.
-        if (!Boolean.getBoolean("elasticore.rules.list") && captured == null) {
+        if (!Boolean.getBoolean("elasticore.rules.list") && captured == null && !checking) {
             io.elasticore.base.util.GuideDeployer.deployTo(
                     basePath + "/src/main/resources/blueprint", basePath);
         }
@@ -753,6 +765,16 @@ public final class RulesGenRunner {
             return io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty() && runner.succeeded() ? 0 : 1;
         }
 
+        java.io.PrintStream shown = System.out;
+        if (checking) {
+            if (domainFilter != null) {
+                io.elasticore.base.util.ConsoleLog.printWarn(
+                        "[elcore3] the migration check reads the whole project" + " - run it without -Pdomain");
+                return 1;
+            }
+            preview = new MigrationPreview();
+            System.setOut(preview.tee(shown));
+        }
         for (Map.Entry<String, ECoreModelContext> en : loader.contexts().entrySet()) {
             String domainDirName = loader.domainDirNameOf(en.getKey());
             if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
@@ -770,6 +792,7 @@ public final class RulesGenRunner {
         }
         // twoXBases wanted the files' texts only: nothing after this writes for it.
         if (captured != null) return runner.succeeded() ? 0 : 1;
+        if (checking) return finishMigrationCheck(runner, basePath, shown);
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
         if (Boolean.getBoolean("elasticore.rules.list")) return 0;
@@ -3966,6 +3989,10 @@ public final class RulesGenRunner {
 
     /** Writes content under a given first line (the ecd stamp it already had). */
     private boolean writeWithStamp(File file, String stamp, String content) {
+        if (preview != null) {
+            preview.wrote(canonical(file), content.replace("\r\n", "\n"));
+            return true;
+        }
         Writer w = null;
         try {
             w = FileBasedSourceFileAccessFactory.newPlatformLineWriter(file);
@@ -3990,6 +4017,10 @@ public final class RulesGenRunner {
             String text = content.replace("\r\n", "\n");
             if (!writeLf("  " + key, file, text)) return false;
             cache.put(key, text);
+            return true;
+        }
+        if (preview != null) {
+            preview.wrote(canonical(file), content.replace("\r\n", "\n"));
             return true;
         }
         Writer w = null;
@@ -4128,6 +4159,11 @@ public final class RulesGenRunner {
             } catch (IOException e) {
                 // unreadable: write it again
             }
+        }
+        if (preview != null) {
+            wrote++;
+            System.out.println(label + "  WROTE");
+            return;
         }
         File dir = file.getParentFile();
         if (dir != null && !dir.exists()) dir.mkdirs();
@@ -4331,6 +4367,11 @@ public final class RulesGenRunner {
                 keptInUse(label, user);
                 continue;
             }
+            if (preview != null) {
+                preview.removed(f, label);
+                System.out.println("  " + label + "  REMOVED(the DSL no longer produces it)");
+                continue;
+            }
             if (!f.delete()) continue;
             System.out.println("  " + label + "  REMOVED(the DSL no longer produces it)");
             if (merged) {
@@ -4402,6 +4443,88 @@ public final class RulesGenRunner {
         return byGiven;
     }
 
+    /**
+     * The end of a migration check: what the build would remove, the files 2.x
+     * wrote that it would leave - with the code of the developer's that uses
+     * them - and the report. Nothing of it is written but the report.
+     */
+    private static int finishMigrationCheck(RulesGenRunner runner, String basePath, java.io.PrintStream shown) {
+        boolean modelChecked =
+                io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        if (runner.succeeded() && modelChecked) {
+            runner.removeStale();
+            runner.removeStaleMerged();
+            runner.removeUnused();
+            runner.findLeftBehind();
+        } else {
+            preview.note("The generation failed or the model check did not pass: fix that first - the lists below"
+                    + " are of what was generated before it stopped.");
+        }
+        runner.printSummary();
+        io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
+                "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
+        System.setOut(shown);
+        MigrationPreview done = preview;
+        preview = null;
+        merging = null;
+        File report = new File(basePath, "build/elasticore/migration-check.md");
+        String text = done.report(basePath);
+        System.out.println("[elcore3] migration check (nothing was written):");
+        for (Map.Entry<String, Integer> en : done.counts().entrySet()) {
+            System.out.println("  " + en.getKey() + ": " + en.getValue());
+        }
+        System.out.println("  removed: " + done.removed().size()
+                + ", removed or no longer written and used by your code: " + done.usedLeftBehind()
+                + ", merged files losing an import: " + done.droppedImports().size());
+        if (MigrationPreview.write(report, text)) {
+            System.out.println("[elcore3] the report: " + report.getPath());
+        } else {
+            System.out.println(text);
+        }
+        return runner.succeeded() && modelChecked ? 0 : 1;
+    }
+
+    /**
+     * The sources 2.x stamped that this run does not produce: they stay, as
+     * removeStale leaves every stamp but its own generation's. A repository
+     * among them is also gone from the domain's helper, so code that calls
+     * helper.getXxx() for it breaks as well as code that names it.
+     */
+    private void findLeftBehind() {
+        Map<File, String> twoX = new java.util.LinkedHashMap<File, String>();
+        for (File dir : generatedDirs) {
+            if (!ownsDirectory(dir)) continue;
+            File[] files = FileOrder.list(dir);
+            if (files == null) continue;
+            for (File f : files) {
+                String name = f.getName();
+                if (!f.isFile() || !name.endsWith(".java")) continue;
+                File c = canonical(f);
+                if (produced.contains(c.getPath()) || produced.contains(f.getAbsolutePath())) continue;
+                HashUtils.Response st = readStatus(f);
+                if (st == null || st.getOldEcdLine() == null) continue;
+                String version;
+                try {
+                    version = HashUtils.getVersion(st.getOldEcdLine());
+                } catch (RuntimeException e) {
+                    continue;
+                }
+                if (version == null || version.trim().startsWith("3")) continue;
+                twoX.put(c, relative(f));
+            }
+        }
+        java.util.Set<File> going = new java.util.HashSet<File>(twoX.keySet());
+        for (File removed : preview.removedFiles()) going.add(canonical(removed));
+        Map<File, String> sources = projectSources();
+        for (Map.Entry<File, String> en : twoX.entrySet()) {
+            preview.leftBehind(en.getValue(), usersOf(en.getKey(), sources, going));
+        }
+        // And what the build would remove: code of the developer's that uses it breaks.
+        for (File removed : preview.removedFiles()) {
+            preview.removedUsers(relative(removed), usersOf(removed, sources, going));
+        }
+    }
+
     private void keptInUse(String rel, File user) {
         String message = "[elcore3] " + rel + " is no longer generated, but " + relative(user)
                 + " still uses it - kept; it goes on a later run once nothing uses it.";
@@ -4433,7 +4556,37 @@ public final class RulesGenRunner {
                 // what could be read is used; a source missed only lets a file go
             }
         }
+        // A migration check wrote nothing: a source is what the build would leave in it.
+        if (preview != null) {
+            for (Map.Entry<File, String> w : preview.written().entrySet()) {
+                if (sources.containsKey(w.getKey())) sources.put(w.getKey(), w.getValue());
+            }
+        }
         return sources;
+    }
+
+    /**
+     * The sources that use a class: name it, or - for a repository - call
+     * the domain helper's getter of it (helper.getCode()), which goes with it.
+     */
+    private java.util.List<String> usersOf(File file, Map<File, String> sources, java.util.Set<File> going) {
+        File f = canonical(file);
+        String cls = baseName(f);
+        java.util.regex.Pattern names =
+                java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(cls) + "\\b");
+        java.util.regex.Pattern getter = cls.endsWith("Repository")
+                ? java.util.regex.Pattern.compile(
+                        "\\.get" + java.util.regex.Pattern.quote(cls.substring(0, cls.length() - "Repository".length()))
+                                + "\\(\\)")
+                : null;
+        java.util.Set<String> users = new java.util.TreeSet<String>();
+        for (Map.Entry<File, String> src : sources.entrySet()) {
+            if (src.getKey().equals(f) || going.contains(src.getKey())) continue;
+            String t = src.getValue();
+            if (names.matcher(t).find() || (getter != null && getter.matcher(t).find()))
+                users.add(relative(src.getKey()));
+        }
+        return new ArrayList<String>(users);
     }
 
     private static String packageOf(String text) {
@@ -4508,6 +4661,16 @@ public final class RulesGenRunner {
 
     /** While twoXBases runs: what each file would be, by cache key, instead of writing it. */
     private static Map<String, String> captured;
+
+    /**
+     * elcoreMigrationCheck: the first 3.0 build of a project 2.x generated, run
+     * with nothing written - no source, no delete, no cache, no DDL - and a
+     * report of what it would do (build/elasticore/migration-check.md).
+     */
+    static final String PROP_MIGRATION_CHECK = "elasticore.migration.check";
+
+    /** While the migration check runs: what the run would do, gathered instead of done. */
+    private static MigrationPreview preview;
 
     /** For a project moving from the code 2.x generates: that code, by cache key - bases to confirm by hash. */
     private Map<String, String> upgradeBases;
@@ -4711,6 +4874,7 @@ public final class RulesGenRunner {
             disk = asOnDisk;
             blocks = null;
         }
+        if (preview != null && merged.conflicts() == 0) preview.merged(key, disk, merged.text());
         if (merged.conflicts() == 0) {
             if (!writeLf(label, file, withBlocks(merged.text(), blocks))) return true;
             cache.put(key, generated);
@@ -4958,7 +5122,8 @@ public final class RulesGenRunner {
     }
 
     private void saveCache() {
-        if (cache == null) return;
+        // elcoreMigrationCheck writes nothing: the cache would say the project has moved.
+        if (cache == null || preview != null) return;
         try {
             cache.save();
         } catch (IOException e) {
@@ -4980,6 +5145,11 @@ public final class RulesGenRunner {
 
     /** LF text written with the line ends a stamped file would get, in UTF-8. */
     private boolean writeLf(String label, File file, String text) {
+        // elcoreMigrationCheck: what would be written, held back.
+        if (preview != null) {
+            preview.wrote(canonical(file), text);
+            return true;
+        }
         File dir = file.getParentFile();
         if (dir != null && !dir.exists() && !dir.mkdirs()) {
             failed++;
@@ -5085,6 +5255,12 @@ public final class RulesGenRunner {
             }
         }
 
+        if (preview != null) {
+            preview.wrote(canonical(file), content.replace("\r\n", "\n"));
+            wrote++;
+            System.out.println(label + "  WROTE");
+            return;
+        }
         File dir = file.getParentFile();
         if (dir != null && !dir.exists() && !dir.mkdirs()) {
             failed++;

@@ -49,6 +49,8 @@ public class ElastiCorePluginTest {
         // TypeScript is a second output, not a language to choose, so its
         // task is registered always - running it stays opt-in.
         assertTrue(output.contains("elcore3ts "), output);
+        // And the check before a 2.x project moves, run only when asked.
+        assertTrue(output.contains("elcoreMigrationCheck - Reports what the first 3.0 build"), output);
     }
 
     @Test
