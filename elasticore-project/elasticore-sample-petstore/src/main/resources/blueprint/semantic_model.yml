@@ -5,7 +5,7 @@ version: 0.3.0.dev0
 name: petstore
 description: "Domain model of petstore, refdata, as its ElastiCORE DSL declares it"
 ai_context:
-  instructions: "Each dataset is a table the generated application owns. An enumeration column holds a code; the field's ai_context lists every code and its label. Amounts (money) are decimals with their scale; a quantity is a count that is never negative. Password and write-only columns are left out on purpose. Lifecycles, access rules and derived values are in the ELASTICORE custom extensions."
+  instructions: "Each dataset is a table the generated application owns. An enumeration column holds a code; the field's ai_context lists every code and its label. Amounts (money) are decimals with their scale; a quantity is a count that is never negative. Password and write-only columns are left out on purpose. Lifecycles, access rules and derived values are in the ELASTICORE nonportable extensions."
 datasets:
   - name: Category
     source: ps_category
@@ -24,9 +24,9 @@ datasets:
         expression:
           sql: "description"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Category\", \"domain\": \"petstore\", \"access\": {\"*\": \"admin\", \"read\": \"public\"}}"
+        data: {"entity": "Category", "domain": "petstore", "access": {"*": "admin", "read": "public"}}
   - name: Product
     source: ps_product
     primary_key: [product_id]
@@ -52,9 +52,9 @@ datasets:
         expression:
           sql: "category_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Product\", \"domain\": \"petstore\", \"access\": {\"*\": \"admin\", \"read\": \"public\"}}"
+        data: {"entity": "Product", "domain": "petstore", "access": {"*": "admin", "read": "public"}}
   - name: Item
     source: ps_item
     primary_key: [item_id]
@@ -84,16 +84,16 @@ datasets:
         datatype: Decimal
         ai_context:
           synonyms: ["price", "가격"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: product_id
         expression:
           sql: "product_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Item\", \"domain\": \"petstore\", \"access\": {\"*\": \"admin\", \"read\": \"public\"}}"
+        data: {"entity": "Item", "domain": "petstore", "access": {"*": "admin", "read": "public"}}
   - name: Country
     source: ps_country
     primary_key: [iso_code]
@@ -111,9 +111,9 @@ datasets:
         expression:
           sql: "printable_name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Country\", \"domain\": \"petstore\", \"access\": {\"*\": \"admin\", \"read\": \"public\"}}"
+        data: {"entity": "Country", "domain": "petstore", "access": {"*": "admin", "read": "public"}}
   - name: Customer
     source: ps_customer
     primary_key: [customer_id]
@@ -131,9 +131,9 @@ datasets:
         expression:
           sql: "login"
         datatype: String
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"login\": true}"
+            data: {"login": true}
       - name: first_name
         expression:
           sql: "first_name"
@@ -159,9 +159,9 @@ datasets:
           sql: "role"
         datatype: String
         ai_context: "Codes: U = User, A = Administrator"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"UserRole\"}"
+            data: {"enumeration": "UserRole"}
       - name: street1
         expression:
           sql: "street1"
@@ -200,12 +200,12 @@ datasets:
         datatype: Integer
         ai_context:
           synonyms: ["members", "회원 수"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(Customer) where role = USER @terms(members, 회원 수) -- 고객 수 (관리자 제외)\"}"
-    custom_extensions:
+            data: {"domain": "petstore", "declared": "count(Customer) where role = USER @terms(members, 회원 수) -- 고객 수 (관리자 제외)"}
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Customer\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"create\": \"public\", \"read\": \"owner\", \"update\": \"owner\"}, \"omitted_columns\": [\"password\"]}"
+        data: {"entity": "Customer", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "create": "public", "read": "owner", "update": "owner"}, "omitted_columns": ["password"]}
   - name: PurchaseOrder
     source: ps_purchase_order
     primary_key: [order_id]
@@ -226,9 +226,9 @@ datasets:
           sql: "status"
         datatype: String
         ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"lifecycle\": true, \"enumeration\": \"OrderStatus\"}"
+            data: {"lifecycle": true, "enumeration": "OrderStatus"}
       - name: street1
         expression:
           sql: "street1"
@@ -265,9 +265,9 @@ datasets:
         datatype: String
         description: "creditCard.creditCardType"
         ai_context: "Codes: VISA = Visa, MAST = Master Card, AMEX = American Express"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"CreditCardType\"}"
+            data: {"enumeration": "CreditCardType"}
       - name: credit_card_exp_date
         expression:
           sql: "credit_card_exp_date"
@@ -277,9 +277,9 @@ datasets:
         expression:
           sql: "total_without_vat"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"compute\": \"sum(lines.subTotal)\", \"value_type\": \"money\"}"
+            data: {"compute": "sum(lines.subTotal)", "value_type": "money"}
       - name: vat_rate
         expression:
           sql: "vat_rate"
@@ -288,9 +288,9 @@ datasets:
         expression:
           sql: "vat"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: discount_rate
         expression:
           sql: "discount_rate"
@@ -299,16 +299,16 @@ datasets:
         expression:
           sql: "discount"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: total
         expression:
           sql: "total"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: version
         expression:
           sql: "version"
@@ -325,9 +325,9 @@ datasets:
         datatype: Decimal
         ai_context:
           synonyms: ["sales", "매출액"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)\"}"
+            data: {"domain": "petstore", "declared": "sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)"}
       - name: orderCount
         expression:
           sql: "COUNT(CASE WHEN status <> 'CAN' THEN 1 END)"
@@ -335,9 +335,9 @@ datasets:
         datatype: Integer
         ai_context:
           synonyms: ["orders", "주문 건수"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status != CANCELLED @terms(orders, 주문 건수) -- 주문 수 (취소 제외)\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status != CANCELLED @terms(orders, 주문 건수) -- 주문 수 (취소 제외)"}
       - name: averageOrder
         expression:
           sql: "(SUM(CASE WHEN status <> 'CAN' THEN total END)) / NULLIF((COUNT(CASE WHEN status <> 'CAN' THEN 1 END)), 0)"
@@ -345,84 +345,84 @@ datasets:
         datatype: Decimal
         ai_context:
           synonyms: ["AOV", "객단가"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"revenue / orderCount @terms(AOV, 객단가) -- 주문 1건 평균 금액\"}"
+            data: {"domain": "petstore", "declared": "revenue / orderCount @terms(AOV, 객단가) -- 주문 1건 평균 금액"}
       - name: shippedOrders
         expression:
           sql: "COUNT(CASE WHEN status = 'SHP' THEN 1 END)"
         description: "배송된 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status = SHIPPED -- 배송된 주문 수"}
       - name: cancelledOrders
         expression:
           sql: "COUNT(CASE WHEN status = 'CAN' THEN 1 END)"
         description: "취소된 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = CANCELLED -- 취소된 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status = CANCELLED -- 취소된 주문 수"}
       - name: liveOrders
         expression:
           sql: "COUNT(CASE WHEN status IN ('PLC', 'SHP') THEN 1 END)"
         description: "취소되지 않은 주문 수 (상태 목록)"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 취소되지 않은 주문 수 (상태 목록)\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status in (PLACED, SHIPPED) -- 취소되지 않은 주문 수 (상태 목록)"}
       - name: otherOrders
         expression:
           sql: "COUNT(CASE WHEN status NOT IN ('CAN') THEN 1 END)"
         description: "취소 외 상태의 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status not in (CANCELLED) -- 취소 외 상태의 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status not in (CANCELLED) -- 취소 외 상태의 주문 수"}
       - name: finishedOrders
         expression:
           sql: "COUNT(CASE WHEN status = 'SHP' OR status = 'CAN' THEN 1 END)"
         description: "끝난 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where status = SHIPPED or status = CANCELLED -- 끝난 주문 수"}
       - name: paidFinished
         expression:
           sql: "COUNT(CASE WHEN (status = 'SHP' OR status = 'CAN') AND total > 0 THEN 1 END)"
         description: "금액이 있는 끝난 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 0 -- 금액이 있는 끝난 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where (status = SHIPPED or status = CANCELLED) and total > 0 -- 금액이 있는 끝난 주문 수"}
       - name: unfinished
         expression:
           sql: "COUNT(CASE WHEN NOT (status = 'SHP' OR status = 'CAN') THEN 1 END)"
         description: "끝나지 않은 주문 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수\"}"
+            data: {"domain": "petstore", "declared": "count(PurchaseOrder) where not (status = SHIPPED or status = CANCELLED) -- 끝나지 않은 주문 수"}
       - name: buyers
         expression:
           sql: "COUNT(DISTINCT customer_id)"
         description: "주문한 고객 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) -- 주문한 고객 수\"}"
+            data: {"domain": "petstore", "declared": "count(distinct PurchaseOrder.customerId) -- 주문한 고객 수"}
       - name: keptBuyers
         expression:
           sql: "COUNT(DISTINCT CASE WHEN status <> 'CAN' THEN customer_id END)"
         description: "취소되지 않은 주문이 있는 고객 수"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수\"}"
-    custom_extensions:
+            data: {"domain": "petstore", "declared": "count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수"}
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"PurchaseOrder\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"cancel\": \"owner\", \"create\": \"user\", \"read\": \"owner\"}, \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", \"cancel\": \"PLACED -> CANCELLED\", \"delete\": \"CANCELLED\"}}, \"events\": \"Placed(total), Shipped, Cancelled\", \"omitted_columns\": [\"credit_card_number\"]}"
+        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "read": "owner"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}
   - name: OrderLine
     source: ps_order_line
     primary_key: [line_id]
@@ -441,30 +441,30 @@ datasets:
         expression:
           sql: "quantity"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"quantity\"}"
+            data: {"value_type": "quantity"}
       - name: unit_cost
         expression:
           sql: "unit_cost"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"snapshot\": \"item.unitCost\", \"value_type\": \"money\"}"
+            data: {"snapshot": "item.unitCost", "value_type": "money"}
       - name: sub_total
         expression:
           sql: "sub_total"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"compute\": \"unitCost * quantity\", \"value_type\": \"money\"}"
+            data: {"compute": "unitCost * quantity", "value_type": "money"}
       - name: item_id
         expression:
           sql: "item_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"OrderLine\", \"domain\": \"petstore\"}"
+        data: {"entity": "OrderLine", "domain": "petstore"}
   - name: StatusCode
     source: ref_status_code
     primary_key: [code]
@@ -486,9 +486,9 @@ datasets:
         expression:
           sql: "name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"StatusCode\", \"domain\": \"refdata\"}"
+        data: {"entity": "StatusCode", "domain": "refdata"}
   - name: RegionCode
     source: ref_region_code
     primary_key: [code]
@@ -506,9 +506,9 @@ datasets:
         expression:
           sql: "name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"RegionCode\", \"domain\": \"refdata\"}"
+        data: {"entity": "RegionCode", "domain": "refdata"}
   - name: CaseNote
     source: ref_case_note
     primary_key: [note_id]
@@ -522,9 +522,9 @@ datasets:
         expression:
           sql: "title"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"CaseNote\", \"domain\": \"refdata\"}"
+        data: {"entity": "CaseNote", "domain": "refdata"}
   - name: Person
     source: ref_person
     primary_key: [party_id]
@@ -538,9 +538,9 @@ datasets:
         expression:
           sql: "party_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Person\", \"domain\": \"refdata\"}"
+        data: {"entity": "Person", "domain": "refdata"}
   - name: Company
     source: ref_company
     primary_key: [party_id]
@@ -554,9 +554,9 @@ datasets:
         expression:
           sql: "party_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Company\", \"domain\": \"refdata\"}"
+        data: {"entity": "Company", "domain": "refdata"}
   - name: ColorTag
     source: ref_color_tag
     primary_key: [tag_id]
@@ -583,9 +583,9 @@ datasets:
         expression:
           sql: "retired_at"
         datatype: DateTimeTz
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"ColorTag\", \"domain\": \"refdata\"}"
+        data: {"entity": "ColorTag", "domain": "refdata"}
   - name: SizeTag
     source: ref_size_tag
     primary_key: [tag_id]
@@ -612,9 +612,9 @@ datasets:
         expression:
           sql: "retired_at"
         datatype: DateTimeTz
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"SizeTag\", \"domain\": \"refdata\"}"
+        data: {"entity": "SizeTag", "domain": "refdata"}
 relationships:
   - name: Product_category
     from: Product
@@ -651,6 +651,6 @@ relationships:
     to: CaseNote
     from_columns: [note_note_id]
     to_columns: [note_id]
-custom_extensions:
+nonportable_extensions:
   - vendor_name: ELASTICORE
-    data: "{\"generator\": \"ElastiCORE\", \"domains\": [\"petstore\", \"refdata\"]}"
+    data: {"generator": "ElastiCORE", "domains": ["petstore", "refdata"]}

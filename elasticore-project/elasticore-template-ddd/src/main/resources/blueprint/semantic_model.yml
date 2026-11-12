@@ -5,7 +5,7 @@ version: 0.3.0.dev0
 name: billing_catalog_shop
 description: "Domain model of billing, catalog, shop, as its ElastiCORE DSL declares it"
 ai_context:
-  instructions: "Each dataset is a table the generated application owns. An enumeration column holds a code; the field's ai_context lists every code and its label. Amounts (money) are decimals with their scale; a quantity is a count that is never negative. Password and write-only columns are left out on purpose. Lifecycles, access rules and derived values are in the ELASTICORE custom extensions."
+  instructions: "Each dataset is a table the generated application owns. An enumeration column holds a code; the field's ai_context lists every code and its label. Amounts (money) are decimals with their scale; a quantity is a count that is never negative. Password and write-only columns are left out on purpose. Lifecycles, access rules and derived values are in the ELASTICORE nonportable extensions."
 datasets:
   - name: Receipt
     source: bill_receipt
@@ -27,9 +27,9 @@ datasets:
           sql: "amount"
         datatype: Decimal
         description: "청구 금액"
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Receipt\", \"domain\": \"billing\"}"
+        data: {"entity": "Receipt", "domain": "billing"}
   - name: StatusCode
     source: cat_status_code
     primary_key: [code]
@@ -47,9 +47,9 @@ datasets:
         expression:
           sql: "name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"StatusCode\", \"domain\": \"catalog\"}"
+        data: {"entity": "StatusCode", "domain": "catalog"}
   - name: RegionCode
     source: cat_region_code
     primary_key: [code]
@@ -67,9 +67,9 @@ datasets:
         expression:
           sql: "name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"RegionCode\", \"domain\": \"catalog\"}"
+        data: {"entity": "RegionCode", "domain": "catalog"}
   - name: Author
     source: cat_author
     primary_key: [author_id]
@@ -82,9 +82,9 @@ datasets:
         expression:
           sql: "name"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Author\", \"domain\": \"catalog\"}"
+        data: {"entity": "Author", "domain": "catalog"}
   - name: Book
     source: cat_book
     primary_key: [book_id]
@@ -122,9 +122,9 @@ datasets:
         expression:
           sql: "last_modified_by"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Book\", \"domain\": \"catalog\"}"
+        data: {"entity": "Book", "domain": "catalog"}
   - name: Reading
     source: cat_reading
     primary_key: [reading_id]
@@ -166,9 +166,9 @@ datasets:
         expression:
           sql: "units"
         datatype: Integer
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"quantity\"}"
+            data: {"value_type": "quantity"}
       - name: ratio
         expression:
           sql: "ratio"
@@ -181,9 +181,9 @@ datasets:
         expression:
           sql: "amount"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: score
         expression:
           sql: "score"
@@ -216,9 +216,9 @@ datasets:
         expression:
           sql: "image"
         datatype: Opaque
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Reading\", \"domain\": \"catalog\"}"
+        data: {"entity": "Reading", "domain": "catalog"}
   - name: Category
     source: shop_category
     primary_key: [cat_id]
@@ -263,9 +263,9 @@ datasets:
         expression:
           sql: "last_modified_date"
         datatype: DateTime
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Category\", \"domain\": \"shop\"}"
+        data: {"entity": "Category", "domain": "shop"}
   - name: Product
     source: shop_products
     primary_key: [product_id]
@@ -360,9 +360,9 @@ datasets:
         expression:
           sql: "last_modified_date"
         datatype: DateTime
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Product\", \"domain\": \"shop\"}"
+        data: {"entity": "Product", "domain": "shop"}
   - name: Customer
     source: shop_customer
     primary_key: [customer_id]
@@ -402,9 +402,9 @@ datasets:
           sql: "customer_type"
         datatype: String
         ai_context: "Codes: I = INDIVIDUAL, B = BUSINESS, W = WHOLESALE"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"CustomerType\"}"
+            data: {"enumeration": "CustomerType"}
       - name: street
         expression:
           sql: "street"
@@ -451,9 +451,9 @@ datasets:
         expression:
           sql: "last_modified_date"
         datatype: DateTime
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Customer\", \"domain\": \"shop\"}"
+        data: {"entity": "Customer", "domain": "shop"}
   - name: VipProfile
     source: shop_vip_profile
     primary_key: [profile_id]
@@ -474,9 +474,9 @@ datasets:
         expression:
           sql: "enroll_date"
         datatype: Date
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"VipProfile\", \"domain\": \"shop\"}"
+        data: {"entity": "VipProfile", "domain": "shop"}
   - name: Order
     source: shop_order
     primary_key: [order_id]
@@ -498,17 +498,17 @@ datasets:
           sql: "status"
         datatype: String
         ai_context: "Codes: PEN = Pending, CFM = Confirmed, PRC = Processing, SHP = Shipped, DLV = Delivered, CAN = Cancelled, RFD = Refunded"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"OrderStatus\"}"
+            data: {"enumeration": "OrderStatus"}
       - name: payment_method
         expression:
           sql: "payment_method"
         datatype: String
         ai_context: "Codes: CC = Credit Card, DC = Debit Card, BT = Bank Transfer, PP = PayPal, CA = Cash"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"PaymentMethod\"}"
+            data: {"enumeration": "PaymentMethod"}
       - name: street
         expression:
           sql: "street"
@@ -566,9 +566,9 @@ datasets:
         expression:
           sql: "last_modified_date"
         datatype: DateTime
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Order\", \"domain\": \"shop\", \"events\": \"Placed(totalAmount), Cancelled\"}"
+        data: {"entity": "Order", "domain": "shop", "events": "Placed(totalAmount), Cancelled"}
   - name: OrderItem
     source: shop_order_item
     primary_key: [order_item_id]
@@ -602,9 +602,9 @@ datasets:
         expression:
           sql: "product_product_id"
         datatype: String
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"OrderItem\", \"domain\": \"shop\"}"
+        data: {"entity": "OrderItem", "domain": "shop"}
   - name: Shipment
     source: shop_shipment
     primary_key: [shipment_id]
@@ -623,41 +623,41 @@ datasets:
           sql: "status"
         datatype: String
         ai_context: "Codes: RDY = Ready, SNT = Sent, CAN = Cancelled"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"lifecycle\": true, \"enumeration\": \"ShipmentStatus\"}"
+            data: {"lifecycle": true, "enumeration": "ShipmentStatus"}
       - name: fee
         expression:
           sql: "fee"
         datatype: String
         ai_context: "Codes: DUE = Due, PAD = Paid, REF = Refunded"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"lifecycle\": true, \"enumeration\": \"FeeStatus\"}"
+            data: {"lifecycle": true, "enumeration": "FeeStatus"}
       - name: sent_at
         expression:
           sql: "sent_at"
         datatype: DateTimeTz
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"stamp\": \"SENT\"}"
+            data: {"stamp": "SENT"}
       - name: cancelled_at
         expression:
           sql: "cancelled_at"
         datatype: DateTime
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"stamp\": \"CANCELLED\"}"
+            data: {"stamp": "CANCELLED"}
       - name: refunded_on
         expression:
           sql: "refunded_on"
         datatype: Date
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"stamp\": \"fee.REFUNDED\"}"
-    custom_extensions:
+            data: {"stamp": "fee.REFUNDED"}
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"Shipment\", \"domain\": \"shop\", \"states\": {\"status\": {\"initial\": \"READY\", \"send\": \"READY -> SENT\", \"cancel\": \"READY -> CANCELLED\"}, \"fee\": {\"initial\": \"DUE\", \"pay\": \"DUE -> PAID\", \"cancel\": \"PAID -> REFUNDED\"}}, \"events\": \"Sent, Cancelled, Refunded\"}"
+        data: {"entity": "Shipment", "domain": "shop", "states": {"status": {"initial": "READY", "send": "READY -> SENT", "cancel": "READY -> CANCELLED"}, "fee": {"initial": "DUE", "pay": "DUE -> PAID", "cancel": "PAID -> REFUNDED"}}, "events": "Sent, Cancelled, Refunded"}
 relationships:
   - name: Book_author
     from: Book
@@ -694,6 +694,6 @@ relationships:
     to: Product
     from_columns: [product_product_id]
     to_columns: [product_id]
-custom_extensions:
+nonportable_extensions:
   - vendor_name: ELASTICORE
-    data: "{\"generator\": \"ElastiCORE\", \"domains\": [\"billing\", \"catalog\", \"shop\"]}"
+    data: {"generator": "ElastiCORE", "domains": ["billing", "catalog", "shop"]}

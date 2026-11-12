@@ -139,7 +139,7 @@ public class OssieUniqueKeysTest {
     @Test
     public void aColumnWrittenByColumnKeepsItsCaseAndAKeyIsWrittenOnce() {
         // The Box dataset: from its name to its entity extension.
-        int end = yaml.indexOf("\\\"entity\\\": \\\"Box\\\"");
+        int end = yaml.indexOf("\"entity\": \"Box\"");
         assertTrue(end > 0, yaml);
         String box = yaml.substring(yaml.lastIndexOf("\n  - name: ", end), end);
         assertTrue(box.contains("      - name: BOX_ROW\n") && box.contains("      - name: BOX_NO\n"), box);

@@ -1711,7 +1711,7 @@ dependencies {
 dataset(테이블), field(컬럼), relationship(조인), metric(지표) - 를 교환하는 ASF 의 벤더 중립 표준입니다.
 ElastiCORE blueprint 는 dataset 쪽이 요구하는 것을 이미 다 말하고 있으므로, 같은 내용을 두 번 선언하지 않고
 내보냅니다. **core spec `0.3.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`) 기준입니다.
-ElastiCORE 3.0.261106-rc11 까지는 `0.2.0.dev0` 을 씁니다. Ossie 는 0.2.0 을 릴리스하지 않고 `0.3.0.dev0` 으로 넘어갔고 스키마는 자기 버전만 받으므로, 그 릴리스들이 쓴 문서는 더 이상 검증을 통과하지 않습니다. 이후 릴리스로 다시 생성하면 `0.3.0.dev0` 으로 써집니다.
+ElastiCORE 3.0.261106-rc11 까지는 `0.2.0.dev0` 을 씁니다. Ossie 는 0.2.0 을 릴리스하지 않고 `0.3.0.dev0` 으로 넘어갔고 스키마는 자기 버전만 받으므로, 그 릴리스들이 쓴 문서는 더 이상 검증을 통과하지 않습니다. 이후 릴리스로 다시 생성하면 `0.3.0.dev0` 으로 써집니다. Ossie 가 `0.3.0.dev0` 안에서 `custom_extensions` 를 `nonportable_extensions` 로 바꾸고 `data` 를 JSON 문자열이 아닌 객체로 바꿨으므로(apache/ossie#522), 그 뒤 릴리스는 `data` 를 객체로 씁니다 - `data` 를 JSON 문자열로 읽던 소비자는 이제 객체를 받습니다. 모든 문자열은 큰따옴표로 남아 `NO` 같은 코드도 문자열입니다. `0.3.0.dev0` 은 아직 바뀔 수 있는 버전이라, `0.3.0-incubating` 이 릴리스될 때까지 내보내기는 Ossie `main` 을 따릅니다.
 
 켜는 방법 (둘 중 하나):
 
@@ -1743,7 +1743,7 @@ elasticore {
 ```
 
 이름은 영문·숫자·`_` 로 씁니다. 다른 글자는 `_` 로 바뀌고 생성할 때 `[ossie] model name 'acme-erp' is written as
-acme_erp` 경고가 나옵니다. 바뀌는 것은 `name` 뿐이고 `description` 과 `custom_extensions` 의 `domains` 는 그대로
+acme_erp` 경고가 나옵니다. 바뀌는 것은 `name` 뿐이고 `description` 과 `nonportable_extensions` 의 `domains` 는 그대로
 도메인을 적습니다.
 
 Pet Store 의 일부:
@@ -1767,11 +1767,11 @@ datasets:
         datatype: Decimal
       - name: city                       # 임베디드 값(deliveryAddress)의 컬럼
         description: "deliveryAddress.city"
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"owner\": \"customerId\", \"access\": {\"read\": \"owner\", ...},
-                \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", ...}},
-                \"omitted_columns\": [\"credit_card_number\"]}"
+        data: {"owner": "customerId", "access": {"read": "owner", ...},
+               "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", ...}},
+               "omitted_columns": ["credit_card_number"]}
 relationships:
   - name: PurchaseOrder_customer
     from: PurchaseOrder
@@ -1795,9 +1795,9 @@ relationships:
 | enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | 테이블에는 코드만 있으므로 뜻을 함께 |
 | 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
-| `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
-| 엔티티의 행 필터: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | dataset `custom_extensions` 의 `row_filter`(적은 절 그대로) + `description` 끝의 `(rows only where: ...)` | Ossie 에는 dataset 의 행 필터가 없어 `source` 는 테이블 그대로. 엔티티 자신의 것만, `Where` 보다 `SQLRestriction`. `@abstract` 부모의 것은 경고하고 내보내지 않음: Hibernate 는 부모가 `@MappedSuperclass` 가 아니라 엔티티로 쓰였을 때만 자식에 적용한다. 그 dataset 의 지표는 `custom_extensions` 에 `dataset_row_filter: true` |
-| `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `custom_extensions` | 파생 규칙과 값 타입 |
+| `states:`, `@access`, `@owner`, `@event` | `nonportable_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
+| 엔티티의 행 필터: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | dataset `nonportable_extensions` 의 `row_filter`(적은 절 그대로) + `description` 끝의 `(rows only where: ...)` | Ossie 에는 dataset 의 행 필터가 없어 `source` 는 테이블 그대로. 엔티티 자신의 것만, `Where` 보다 `SQLRestriction`. `@abstract` 부모의 것은 경고하고 내보내지 않음: Hibernate 는 부모가 `@MappedSuperclass` 가 아니라 엔티티로 쓰였을 때만 자식에 적용한다. 그 dataset 의 지표는 `nonportable_extensions` 에 `dataset_row_filter: true` |
+| `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `nonportable_extensions` | 파생 규칙과 값 타입 |
 | `metrics:` 의 지표 | 엔티티 하나: 그 dataset 의 `metrics[]`. 두 엔티티 이상의 지표를 계산: 모델의 `metrics[]` (`expression.sql`, `datatype`, `description`) | 선언한 것만. 문법은 DSL 가이드 "업무 지표". 아래 "지표가 들어가는 곳" |
 | `@terms(…)` (엔티티·필드·지표) | `ai_context.synonyms` | 업무 용어 |
 
@@ -1822,7 +1822,7 @@ expression:
 
 서브쿼리는 그 언어로 쓸 수 없으므로(스펙 "Not Supported in Expressions": SELECT/FROM/JOIN, 서브쿼리, CTE) 최상위 `sql`
 없이 `ANSI_SQL` 항목 하나만 내보냅니다 - 읽는 쪽이 그 SQL 을 이해하면 쓰고, 아니면 건너뜁니다. `@formula` 필드는
-`custom_extensions` 에 `"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
+`nonportable_extensions` 에 `"formula": "database"` 가 붙어 데이터베이스가 계산하는 컬럼임을 알립니다.
 3.0.261027-rc2 까지는 모든 식을 `dialects` 목록으로 내보냈습니다(이식 가능한 식은 `dialect: OSSIE_SQL_2026`). Ossie 가 최상위
 `sql` 을 이식 가능한 형태로 정한 뒤(apache/ossie #617) 지금 형태로 바뀌었습니다 - 식의 내용은 같습니다.
 

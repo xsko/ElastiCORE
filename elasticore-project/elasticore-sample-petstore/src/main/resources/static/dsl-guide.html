@@ -738,9 +738,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
           sql: "status"
         datatype: String
         ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"lifecycle\": true, \"enumeration\": \"OrderStatus\"}"
+            data: {"lifecycle": true, "enumeration": "OrderStatus"}
       - name: street1
         expression:
           sql: "street1"
@@ -777,9 +777,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         datatype: String
         description: "creditCard.creditCardType"
         ai_context: "Codes: VISA = Visa, MAST = Master Card, AMEX = American Express"
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"enumeration\": \"CreditCardType\"}"
+            data: {"enumeration": "CreditCardType"}
       - name: credit_card_exp_date
         expression:
           sql: "credit_card_exp_date"
@@ -789,9 +789,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         expression:
           sql: "total_without_vat"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"compute\": \"sum(lines.subTotal)\", \"value_type\": \"money\"}"
+            data: {"compute": "sum(lines.subTotal)", "value_type": "money"}
       - name: vat_rate
         expression:
           sql: "vat_rate"
@@ -800,9 +800,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         expression:
           sql: "vat"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: discount_rate
         expression:
           sql: "discount_rate"
@@ -811,16 +811,16 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         expression:
           sql: "discount"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: total
         expression:
           sql: "total"
         datatype: Decimal
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"value_type\": \"money\"}"
+            data: {"value_type": "money"}
       - name: version
         expression:
           sql: "version"
@@ -829,9 +829,9 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         expression:
           sql: "customer_id"
         datatype: Integer
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"entity\": \"PurchaseOrder\", \"domain\": \"petstore\", \"owner\": \"customerId\", \"access\": {\"*\": \"admin\", \"cancel\": \"owner\", \"create\": \"user\", \"read\": \"owner\"}, \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", \"cancel\": \"PLACED -> CANCELLED\", \"delete\": \"CANCELLED\"}}, \"events\": \"Placed(total), Shipped, Cancelled\", \"omitted_columns\": [\"credit_card_number\"]}"</script>
+        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "read": "owner"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}</script>
   <script type="text/plain" id="src-metrics"># The shop's measures - what the business means by revenue, an order, the average order.
 # Exported to the Apache Ossie semantic model (blueprint/semantic_model.yml) as metrics,
 # so a BI or AI tool asks for "revenue" and gets this definition, not its own guess.
@@ -862,9 +862,9 @@ datasets:
         datatype: Decimal
         ai_context:
           synonyms: ["sales", "매출액"]
-        custom_extensions:
+        nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: "{\"domain\": \"petstore\", \"declared\": \"sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)\"}"</script>
+            data: {"domain": "petstore", "declared": "sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 (취소 제외, VAT 포함·할인 후 금액)"}</script>
   <script type="text/plain" id="src-env">elasticore:
   enable: true
   config:

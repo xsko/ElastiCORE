@@ -59,7 +59,7 @@ import java.util.regex.Pattern;
  * - an enumeration's codes and labels, as the field's ai_context, since the
  *   table holds the code and only the DSL says what PLC means;
  * - what Ossie has no word for (a lifecycle, who may read a row, a value the
- *   model derives) as an ELASTICORE custom extension;
+ *   model derives) as an ELASTICORE nonportable extension;
  * - the business's own words (@terms) as synonyms, and its measures
  *   (metrics:) as Ossie metrics, one over one entity in that entity's
  *   dataset - only those the DSL declares. A metric invented from entity
@@ -196,11 +196,13 @@ public final class OssieSemanticModelExporter {
         out.append("description: ").append(yaml("Domain model of " + join(domains, ", ")
                 + ", as its ElastiCORE DSL declares it")).append('\n');
         out.append("ai_context:\n");
-        out.append("  instructions: ").append(yaml("Each dataset is a table the generated application owns. "
-                + "An enumeration column holds a code; the field's ai_context lists every code and its label. "
-                + "Amounts (money) are decimals with their scale; a quantity is a count that is never negative. "
-                + "Password and write-only columns are left out on purpose. "
-                + "Lifecycles, access rules and derived values are in the ELASTICORE custom extensions.")).append('\n');
+        out.append("  instructions: ")
+                .append(yaml("Each dataset is a table the generated application owns. "
+                        + "An enumeration column holds a code; the field's ai_context lists every code and its label. "
+                        + "Amounts (money) are decimals with their scale; a quantity is a count that is never negative. "
+                        + "Password and write-only columns are left out on purpose. "
+                        + "Lifecycles, access rules and derived values are in the ELASTICORE nonportable extensions."))
+                .append('\n');
         out.append("datasets:\n");
         List<Written> written = new ArrayList<Written>();
         for (Unit u : units) {
@@ -1016,12 +1018,17 @@ public final class OssieSemanticModelExporter {
         return b.toString();
     }
 
-    /** custom_extensions with one ELASTICORE entry; data is a JSON string, as the spec says. */
+    /**
+     * nonportable_extensions with one ELASTICORE entry. data is an object, as
+     * the spec (0.3.0.dev0, since apache/ossie#522) says: the JSON of it, a
+     * YAML flow mapping whose every string is double-quoted - so a code such
+     * as NO stays a string, not a boolean.
+     */
     private static String extension(String indent, Map<String, Object> data) {
         StringBuilder b = new StringBuilder();
-        b.append(indent).append("custom_extensions:\n");
+        b.append(indent).append("nonportable_extensions:\n");
         b.append(indent).append("  - vendor_name: ").append(VENDOR).append('\n');
-        b.append(indent).append("    data: ").append(yaml(json(data))).append('\n');
+        b.append(indent).append("    data: ").append(json(data)).append('\n');
         return b.toString();
     }
 

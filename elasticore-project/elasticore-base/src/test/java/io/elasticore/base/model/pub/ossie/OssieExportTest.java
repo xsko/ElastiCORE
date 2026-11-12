@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -371,7 +372,7 @@ public class OssieExportTest {
                 "        finish: OPEN -> DONE",
                 "");
         String out = export(model)[0];
-        assertTrue(out.contains("data: \"{\\\"stamp\\\": \\\"DONE\\\"}\""), out);
+        assertTrue(out.contains("data: {\"stamp\": \"DONE\"}\n"), out);
         int opened = out.indexOf("name: opened_at");
         assertTrue(
                 opened > 0
@@ -492,11 +493,32 @@ public class OssieExportTest {
         throw new AssertionError(name + " is not in " + section + ":\n" + owner);
     }
 
+    /**
+     * data is written as the JSON of it, a YAML flow mapping: every string stays
+     * double-quoted, so a code YAML would read as a boolean, a number or a date
+     * (NO, 007, 2026-01-01) is still the string it was.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void dataIsAnObjectWhoseStringsStayStrings() throws IOException {
+        Map<String, Object> data = new java.util.LinkedHashMap<String, Object>();
+        data.put("codes", java.util.Arrays.asList("NO", "yes", "007", "2026-01-01", "a: b", "say \"hi\""));
+        data.put("count", 3);
+        Map<String, Object> read = new ObjectMapper(new YAMLFactory())
+                .readValue("data: " + OssieSemanticModelExporter.json(data) + "\n", Map.class);
+        Map<String, Object> back = (Map<String, Object>) read.get("data");
+        assertEquals(
+                java.util.Arrays.asList("NO", "yes", "007", "2026-01-01", "a: b", "say \"hi\""), back.get("codes"));
+        assertEquals(3, back.get("count"));
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extension(Map<String, Object> entry) throws IOException {
-        List<Map<String, Object>> extensions = (List<Map<String, Object>>) entry.get("custom_extensions");
+        // Ossie 0.3.0.dev0 since apache/ossie#522: nonportable_extensions, data an object.
+        assertNull(entry.get("custom_extensions"));
+        List<Map<String, Object>> extensions = (List<Map<String, Object>>) entry.get("nonportable_extensions");
         assertEquals(OssieSemanticModelExporter.VENDOR, extensions.get(0).get("vendor_name"));
-        return new ObjectMapper().readValue((String) extensions.get(0).get("data"), Map.class);
+        return (Map<String, Object>) extensions.get(0).get("data");
     }
 
     private static Map<String, Object> metricExtension(String yaml, String name) throws IOException {

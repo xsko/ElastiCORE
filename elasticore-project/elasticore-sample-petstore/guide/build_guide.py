@@ -92,7 +92,7 @@ def semantic_dataset(name):
     # Its metrics are shown with metrics:, not here.
     if '\n    metrics:\n' in d:
         m = d.index('\n    metrics:\n')
-        d = d[:m] + d[d.index('\n    custom_extensions:\n', m):]
+        d = d[:m] + d[d.index('\n    nonportable_extensions:\n', m):]
     return d
 
 

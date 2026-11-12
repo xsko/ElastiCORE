@@ -1711,7 +1711,7 @@ waiting for generation. For examples and how to test, see `elasticore-ddd-custom
 dataset (table), field (column), relationship (join), metric (measure).
 The ElastiCORE blueprint already says everything the dataset side requires, so it exports it
 without declaring the same content twice. It is based on **core spec `0.3.0.dev0`** (`core-spec/spec.md`, `ossie-schema.json`).
-ElastiCORE 3.0.261106-rc11 and earlier write `0.2.0.dev0`, which Ossie replaced with `0.3.0.dev0` (there is no 0.2.0 release). Its schema accepts only its own version, so a document one of those releases wrote no longer validates; generating again with a later release writes `0.3.0.dev0`.
+ElastiCORE 3.0.261106-rc11 and earlier write `0.2.0.dev0`, which Ossie replaced with `0.3.0.dev0` (there is no 0.2.0 release). Its schema accepts only its own version, so a document one of those releases wrote no longer validates; generating again with a later release writes `0.3.0.dev0`. Within `0.3.0.dev0` Ossie renamed `custom_extensions` to `nonportable_extensions` and made `data` an object rather than a JSON string (apache/ossie#522); later releases write `data` as an object, so a consumer that read `data` as a JSON string now gets an object. Every string in it stays double-quoted, so a code such as `NO` is still a string. `0.3.0.dev0` may still change; the export follows Ossie's `main` until `0.3.0-incubating` is released.
 
 How to turn it on (either one):
 
@@ -1743,7 +1743,7 @@ elasticore {
 ```
 
 Write the name with letters, digits and `_`. Other characters become `_`, and generation prints the warning `[ossie] model name 'acme-erp' is written as
-acme_erp`. Only `name` changes; `description` and the `domains` of `custom_extensions` still list the
+acme_erp`. Only `name` changes; `description` and the `domains` of `nonportable_extensions` still list the
 domains as they are.
 
 Part of the Pet Store:
@@ -1767,11 +1767,11 @@ datasets:
         datatype: Decimal
       - name: city                       # a column of the embedded value (deliveryAddress)
         description: "deliveryAddress.city"
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: "{\"owner\": \"customerId\", \"access\": {\"read\": \"owner\", ...},
-                \"states\": {\"status\": {\"initial\": \"PLACED\", \"ship\": \"PLACED -> SHIPPED\", ...}},
-                \"omitted_columns\": [\"credit_card_number\"]}"
+        data: {"owner": "customerId", "access": {"read": "owner", ...},
+               "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", ...}},
+               "omitted_columns": ["credit_card_number"]}
 relationships:
   - name: PurchaseOrder_customer
     from: PurchaseOrder
@@ -1795,9 +1795,9 @@ relationships:
 | enum field | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | The table holds only codes, so the meaning goes with them |
 | Reference to another entity | `relationships[]` + join column field | The actual join column (`customer_id` if `referenceColumn: short`) |
 | `@password`, `@writeonly` | **Not exported** | Values the application does not read back either. Recorded in `omitted_columns` |
-| `states:`, `@access`, `@owner`, `@event` | `custom_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |
-| A row filter on the entity: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | `row_filter` in the dataset's `custom_extensions` (the clause as written) + `(rows only where: ...)` at the end of `description` | Ossie has no row filter on a dataset, so `source` stays the table. Only the entity's own, `SQLRestriction` over `Where`. One on an `@abstract` parent is a warning and is not exported: Hibernate applies it to the child only when the parent is written as an entity, not as a `@MappedSuperclass`. A metric over that dataset gets `dataset_row_filter: true` in its `custom_extensions` |
-| `@compute`, `@snapshot`, `money`/`quantity` | `custom_extensions` of the field | Derived rules and value types |
+| `states:`, `@access`, `@owner`, `@event` | `nonportable_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |
+| A row filter on the entity: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | `row_filter` in the dataset's `nonportable_extensions` (the clause as written) + `(rows only where: ...)` at the end of `description` | Ossie has no row filter on a dataset, so `source` stays the table. Only the entity's own, `SQLRestriction` over `Where`. One on an `@abstract` parent is a warning and is not exported: Hibernate applies it to the child only when the parent is written as an entity, not as a `@MappedSuperclass`. A metric over that dataset gets `dataset_row_filter: true` in its `nonportable_extensions` |
+| `@compute`, `@snapshot`, `money`/`quantity` | `nonportable_extensions` of the field | Derived rules and value types |
 | A metric in `metrics:` | Over one entity: that dataset's `metrics[]`. Over the metrics of two or more entities: the model's `metrics[]` (`expression.sql`, `datatype`, `description`) | Only what you declare. The syntax is "Business metrics" in the DSL guide. See "Where a metric goes" below |
 | `@terms(…)` (entity, field, metric) | `ai_context.synonyms` | Business terms |
 
@@ -1822,7 +1822,7 @@ expression:
 
 A subquery cannot be written in that language (spec "Not Supported in Expressions": SELECT/FROM/JOIN, subqueries, CTE), so only one `ANSI_SQL` entry is exported,
 without a top-level `sql` - the reader uses that SQL if it understands it, and skips it if not. A `@formula` field
-carries `"formula": "database"` in `custom_extensions` to say that the database computes the column.
+carries `"formula": "database"` in `nonportable_extensions` to say that the database computes the column.
 Up to 3.0.261027-rc2, every expression was exported as a `dialects` list (a portable expression was `dialect: OSSIE_SQL_2026`). After Ossie fixed the top-level
 `sql` as the portable form (apache/ossie #617), it changed to the current form - the content of the expression is the same.
 

@@ -99,7 +99,7 @@ public class OssieMetricScopeTest {
         String order = out[0].substring(out[0].indexOf("  - name: PurchaseOrder\n"));
         assertTrue(
                 order.indexOf("    fields:") < order.indexOf("    metrics:")
-                        && order.indexOf("    metrics:") < order.indexOf("\n    custom_extensions:"),
+                        && order.indexOf("    metrics:") < order.indexOf("\n    nonportable_extensions:"),
                 order);
     }
 
@@ -247,9 +247,9 @@ public class OssieMetricScopeTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extension(Map<String, Object> entry) throws Exception {
-        List<Map<String, Object>> extensions = (List<Map<String, Object>>) entry.get("custom_extensions");
+        List<Map<String, Object>> extensions = (List<Map<String, Object>>) entry.get("nonportable_extensions");
         assertEquals(OssieSemanticModelExporter.VENDOR, extensions.get(0).get("vendor_name"));
-        return new ObjectMapper().readValue((String) extensions.get(0).get("data"), Map.class);
+        return (Map<String, Object>) extensions.get(0).get("data");
     }
 
     /**

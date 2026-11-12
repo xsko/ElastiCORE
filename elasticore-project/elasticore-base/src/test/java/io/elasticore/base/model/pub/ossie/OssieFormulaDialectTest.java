@@ -135,7 +135,9 @@ public class OssieFormulaDialectTest {
         assertEquals("ANSI_SQL", dialectOf(field), field);
         assertTrue(!field.contains(" sql: "), "a subquery claimed to be in the Ossie language:\n" + field);
         assertTrue(!field.contains("OSSIE_SQL_2026"), "a subquery claimed to be in the Ossie language:\n" + field);
-        assertTrue(field.contains("\\\"formula\\\": \\\"database\\\""), "the extension does not say the database computes it:\n" + field);
+        assertTrue(
+                field.contains("\"formula\": \"database\""),
+                "the extension does not say the database computes it:\n" + field);
     }
 
     @Test
@@ -143,7 +145,7 @@ public class OssieFormulaDialectTest {
         String field = field("line_total");
         assertTrue(field.contains("        expression:\n          sql: \"" + ARITHMETIC + "\"\n"), field);
         assertTrue(!field.contains("dialect"), "a portable formula named a dialect:\n" + field);
-        assertTrue(field.contains("\\\"formula\\\": \\\"database\\\""), field);
+        assertTrue(field.contains("\"formula\": \"database\""), field);
     }
 
     @Test
@@ -159,7 +161,7 @@ public class OssieFormulaDialectTest {
         int at = yaml.indexOf("      - name: " + column + "\n");
         assertTrue(at >= 0, "no field " + column + " in:\n" + yaml);
         int end = yaml.indexOf("\n      - name: ", at + 1);
-        int ext = yaml.indexOf("\n    custom_extensions:", at + 1);
+        int ext = yaml.indexOf("\n    nonportable_extensions:", at + 1);
         if (end < 0 || (ext >= 0 && ext < end)) end = ext;
         return yaml.substring(at, end < 0 ? yaml.length() : end);
     }
