@@ -817,6 +817,7 @@ public final class RulesGenRunner {
             runner.removeStaleMerged();
             runner.removeUnused();
         }
+        if (domainFilter == null) runner.checkAdviceOrder();
         // Whatever else happened: the files this run wrote are on disk, and
         // the next run merges against what it wrote into them.
         runner.saveCache();
@@ -4518,6 +4519,7 @@ public final class RulesGenRunner {
             runner.removeStaleMerged();
             runner.removeUnused();
             runner.findLeftBehind();
+            runner.checkAdviceOrder();
         } else {
             preview.note("The generation failed or the model check did not pass: fix that first - the lists below"
                     + " are of what was generated before it stopped.");
@@ -4537,7 +4539,7 @@ public final class RulesGenRunner {
         }
         System.out.println("  removed: " + done.removed().size()
                 + ", removed or no longer written and used by your code: " + done.usedLeftBehind()
-                + ", merged files losing an import: " + done.droppedImports().size());
+                + ", files losing an import: " + done.droppedImports().size());
         if (MigrationPreview.write(report, text)) {
             System.out.println("[elcore3] the report: " + report.getPath());
         } else {
@@ -4585,6 +4587,71 @@ public final class RulesGenRunner {
         for (File removed : preview.removedFiles()) {
             preview.removedUsers(relative(removed), usersOf(removed, sources, going));
         }
+    }
+
+    /**
+     * A generated XxxApiErrors and an advice of the application's that answers
+     * every exception (Throwable, Exception, RuntimeException), both last in
+     * line: Spring consults advice beans of the same order in no set order,
+     * and the first one with a handler that matches answers - so the
+     * application's catch-all could turn the generated controllers' 404 or 409
+     * into its own 500. Said, with the line that settles it.
+     */
+    private void checkAdviceOrder() {
+        Map<File, String> sources = projectSources();
+        Map<String, String> byPath = new java.util.TreeMap<String, String>();
+        for (Map.Entry<File, String> en : sources.entrySet()) byPath.put(relative(en.getKey()), en.getValue());
+        for (String message : adviceOrderClashes(byPath)) {
+            io.elasticore.base.util.ConsoleLog.printWarn(message);
+            notes.add(message);
+            if (preview != null) preview.note(message);
+        }
+    }
+
+    private static final java.util.regex.Pattern ADVICE =
+            java.util.regex.Pattern.compile("@(?:Rest)?ControllerAdvice\\b");
+    private static final java.util.regex.Pattern CATCH_ALL = java.util.regex.Pattern.compile(
+            "@ExceptionHandler\\s*\\([^)]*\\b(?:java\\.lang\\.)?(?:Throwable|Exception|RuntimeException)(?:\\.class|::class)");
+    private static final java.util.regex.Pattern ORDER = java.util.regex.Pattern.compile("@Order\\s*\\(([^)]*)\\)");
+
+    /** The messages for advice of the application's that tie with a generated one; by relative path. */
+    static java.util.List<String> adviceOrderClashes(Map<String, String> sources) {
+        java.util.List<String> generated = new ArrayList<String>();
+        java.util.List<String> catchAll = new ArrayList<String>();
+        for (Map.Entry<String, String> en : sources.entrySet()) {
+            String path = en.getKey();
+            String text = en.getValue();
+            if (!ADVICE.matcher(text).find() || !lastInLine(text)) continue;
+            String name = baseName(new File(path));
+            if (name.endsWith("ApiErrors") && text.contains("RequestShapeErrors")) {
+                generated.add(path);
+            } else if (CATCH_ALL.matcher(text).find()) {
+                catchAll.add(path);
+            }
+        }
+        java.util.List<String> out = new ArrayList<String>();
+        if (generated.isEmpty()) return out;
+        for (String c : catchAll) {
+            out.add("[elcore3] " + c + " answers every exception and is last in line, as "
+                    + String.join(", ", generated) + " is: Spring consults the two in no set order, so it may answer"
+                    + " the generated controllers' 404 / 409 / 400 with its own. Give each generated ApiErrors"
+                    + " @Order(Ordered.LOWEST_PRECEDENCE - 1), or this advice an @Order of its own after that"
+                    + " (elasticore-env-guide.md, API errors).");
+        }
+        return out;
+    }
+
+    /** No @Order on the class, or the lowest precedence: last in line. */
+    private static boolean lastInLine(String text) {
+        int cls = text.indexOf(" class ");
+        String head = cls < 0 ? text : text.substring(0, cls);
+        java.util.regex.Matcher m = ORDER.matcher(head);
+        String order = null;
+        while (m.find()) order = m.group(1).replace(" ", "");
+        if (order == null) return true;
+        return order.endsWith("LOWEST_PRECEDENCE")
+                || order.equals(String.valueOf(Integer.MAX_VALUE))
+                || order.equals("Integer.MAX_VALUE");
     }
 
     private void keptInUse(String rel, File user) {
@@ -4867,6 +4934,27 @@ public final class RulesGenRunner {
      * theirs has always had say what the DSL now wants - never conflict
      * marks in code that is the developer's own.
      */
+    /**
+     * A file whose code of the developer's is in preserved blocks, put back
+     * into the new text: the blocks keep their lines, not the imports above
+     * them. An import the file had that the new text has not, and that a
+     * block's line may need, is said - by the check in its report, by the
+     * build as a warning - with where it goes: the header's preserved block.
+     */
+    private void blockImports(String key, String base, String asOnDisk, String written) {
+        if (preview != null) {
+            preview.merged(key, base, asOnDisk, written);
+            return;
+        }
+        java.util.List<String> lost = MigrationPreview.dropped(base, asOnDisk, written);
+        if (lost.isEmpty()) return;
+        String message = "[elcore3] " + key + ": the code in its preserved blocks may need "
+                + String.join(", ", lost) + ", which the generated code no longer imports - put the import(s) in the"
+                + " header's preserved block (elasticore-migration-guide.md)";
+        io.elasticore.base.util.ConsoleLog.printWarn(message);
+        notes.add(message);
+    }
+
     private boolean writeMergedSource(String label, ArtifactTarget out, File file, String key, String content) {
         String generated = content.replace("\r\n", "\n");
         boolean skeleton = owned(generated);
@@ -4926,6 +5014,7 @@ public final class RulesGenRunner {
         if (disk.equals(base)) {
             // Nor did the DSL change it: the file as it was, its blocks where they stand.
             String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocks(generated, blocks);
+            if (asOnDisk != null) blockImports(key, base, asOnDisk, text);
             if ((stamped || !disk.equals(generated)) && !writeLf(label, file, text)) return true;
             cache.put(key, generated);
             if (disk.equals(generated) && !stamped) {
@@ -4959,7 +5048,11 @@ public final class RulesGenRunner {
             disk = asOnDisk;
             blocks = null;
         }
-        if (preview != null && merged.conflicts() == 0) preview.merged(key, base, disk, merged.text());
+        if (merged.conflicts() == 0 && blocks != null) {
+            blockImports(key, base, asOnDisk, withBlocks(merged.text(), blocks));
+        } else if (preview != null && merged.conflicts() == 0) {
+            preview.merged(key, base, disk, merged.text());
+        }
         if (merged.conflicts() == 0) {
             if (!writeLf(label, file, withBlocks(merged.text(), blocks))) return true;
             cache.put(key, generated);

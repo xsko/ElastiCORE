@@ -125,6 +125,19 @@ public class MigrationCheckTest {
         // and two generated files the developer wrote more into.
         appendMethod("src/main/java/" + PKG + "/service/PurchaseOrderCoreService.java");
         appendMethod("src/main/java/" + PKG + "/dto/PurchaseOrderDTO.java");
+        // A repository whose code of the developer's is in a preserved block: it relies on 2.x's java.util.*.
+        File repo = new File(project, "src/main/java/" + PKG + "/repository/PurchaseOrderRepository.java");
+        String text = new String(Files.readAllBytes(repo.toPath()), StandardCharsets.UTF_8);
+        int end = text.lastIndexOf('}');
+        Files.write(
+                repo.toPath(),
+                (text.substring(0, end)
+                                + "    // !---------- by hand\n"
+                                + "    default Optional<PurchaseOrder> firstOf(List<PurchaseOrder> all) {\n"
+                                + "        return all.stream().findFirst();\n"
+                                + "    }\n"
+                                + "    // ------------!\n}\n")
+                        .getBytes(StandardCharsets.UTF_8));
 
         return run(true);
     }
@@ -260,7 +273,13 @@ public class MigrationCheckTest {
         assertTrue(output.contains("removed or no longer written and used by your code: 1"), output);
         // The two edited files merge; the imports only the generated code used go with it, not listed.
         assertTrue(report.contains("- MERGED: 2"), report);
-        assertTrue(report.contains("- merged files that would lose an import: 0"), report);
+        assertFalse(report.contains("- `src/main/java/com/acme/shop/dto/PurchaseOrderDTO.java`: `import"), report);
+        // The repository's preserved block keeps its lines, not the java.util.* they relied on.
+        assertTrue(report.contains("- files that would lose an import your code may need: 1"), report);
+        assertTrue(
+                report.contains("- `src/main/java/com/acme/shop/repository/PurchaseOrderRepository.java`: ")
+                        && report.contains("`import java.util.*`"),
+                report);
     }
 
     /** Each file's status as the check printed it equals what the build then prints. */
@@ -271,6 +290,14 @@ public class MigrationCheckTest {
         Map<String, String> fromCheck = statuses(checked);
         Map<String, String> fromBuild = statuses(built);
         assertEquals(fromBuild, fromCheck, "check:\n" + checked + "\nbuild:\n" + built);
+        // The build says what the check said of the preserved block's import.
+        assertTrue(built.contains("PurchaseOrderRepository.java: the code in its preserved blocks may need"), built);
+        String repo = new String(
+                Files.readAllBytes(
+                        new File(project, "src/main/java/" + PKG + "/repository/PurchaseOrderRepository.java")
+                                .toPath()),
+                StandardCharsets.UTF_8);
+        assertTrue(repo.contains("firstOf(List<PurchaseOrder> all)") && !repo.contains("import java.util.*"), repo);
         // A file whose 2.x base the 3.0 build reproduces is merged with the developer's method,
         assertEquals("MERGED(your", fromCheck.get("src/main/java/com/acme/shop/dto/PurchaseOrderDTO.java"), checked);
         // and so is the service: nothing is left as the 2.x code.

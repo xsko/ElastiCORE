@@ -968,6 +968,11 @@ generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Sprin
 - **다르게 답하려면** 그 예외를 `ShopApiErrors` 에서 처리하세요 - 그 파일이 먼저 불립니다. 회사 공통
   `@RestControllerAdvice` 도 `RequestShapeErrors` 가 등록한 처리기(`RequestShapeAdvice`)보다 먼저입니다(그 처리기는 맨 뒤). 확실히 하려면 공통
   advice 에 `@Order` 를 붙이세요.
+- **모든 예외에 답하는 공통 advice** (`@ExceptionHandler(Throwable.class)`, `Exception`, `RuntimeException`)에 `@Order` 가 없을 때: Spring 은 advice 빈을
+  순서대로 묻고, 맞는 처리기가 있는 첫 advice 가 답합니다. `ShopApiErrors` 는 `@Order(Ordered.LOWEST_PRECEDENCE - 1)` 이라(3.0.261114 부터) 그런 advice 보다
+  먼저이고, 생성된 컨트롤러의 404·409 는 그대로 나갑니다. 그 전에 생성된 `XxxApiErrors` 는 `LOWEST_PRECEDENCE` 로 `@Order` 없는 advice 와 같아
+  순서가 정해지지 않고, catch-all 이 500 으로 답할 수 있습니다. `elcore3` 와 `elcoreMigrationCheck` 가 두 파일을 짚어 경고합니다. 그 줄을
+  `LOWEST_PRECEDENCE - 1` 로 바꾸거나(고친 적 없는 `XxxApiErrors` 는 그렇게 다시 생성됩니다) 공통 advice 에 `@Order` 를 붙이세요.
 - `spring.mvc.problemdetails.enabled=true` 는 켜지 마세요. Spring Boot 의 처리기가 맨 앞(`@Order(0)`)에 서서 필드 검증
   응답(`fieldErrors`)까지 가져갑니다.
 - 자동 구성이 아닙니다. `ShopApiErrors` 가 가져올 때만 생기므로, 같은 런타임 라이브러리를 쓰는 2.x 애플리케이션은 그대로입니다.

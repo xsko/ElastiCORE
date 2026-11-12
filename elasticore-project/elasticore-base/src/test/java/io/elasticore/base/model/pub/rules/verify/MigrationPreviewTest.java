@@ -51,7 +51,7 @@ public class MigrationPreviewTest {
         assertEquals(1, p.droppedImports().size());
         String report = p.report("/p");
         assertTrue(report.contains("- `src/main/java/a/FolderController.java`: `import a.dto.*`"), report);
-        assertTrue(report.contains("- merged files that would lose an import: 1"), report);
+        assertTrue(report.contains("- files that would lose an import your code may need: 1"), report);
     }
 
     @Test

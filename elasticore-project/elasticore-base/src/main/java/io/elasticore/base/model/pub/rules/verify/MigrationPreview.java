@@ -101,7 +101,13 @@ final class MigrationPreview {
      * import only the generated code used goes with it and is no loss.
      */
     void merged(String key, String base, String yours, String merged) {
-        Set<String> kept = imports(merged);
+        List<String> dropped = dropped(base, yours, merged);
+        if (!dropped.isEmpty()) droppedImports.put(key, dropped);
+    }
+
+    /** The imports of yours the written text does not keep and your lines may need (see merged). */
+    static List<String> dropped(String base, String yours, String written) {
+        Set<String> kept = imports(written);
         Set<String> theirs = imports(base);
         String added = addedLines(base, yours);
         List<String> dropped = new ArrayList<String>();
@@ -109,7 +115,7 @@ final class MigrationPreview {
             if (kept.contains(imp)) continue;
             if (!theirs.contains(imp) || namedIn(imp, added) || wildcardNeeded(imp, added, kept)) dropped.add(imp);
         }
-        if (!dropped.isEmpty()) droppedImports.put(key, dropped);
+        return dropped;
     }
 
     /** Classes everyone uses without an import. */
@@ -280,7 +286,7 @@ final class MigrationPreview {
         b.append("- removed or no longer written, and used by your code: ")
                 .append(usedLeftBehind())
                 .append('\n');
-        b.append("- merged files that would lose an import: ")
+        b.append("- files that would lose an import your code may need: ")
                 .append(droppedImports.size())
                 .append('\n');
 
@@ -330,13 +336,16 @@ final class MigrationPreview {
                         + " DSL), delete the file, and build again to get the 3.0 one.",
                 withStatus("SKIP(user-modified"));
 
-        b.append("\n## Imports a merge would take out of your files\n\n");
+        b.append("\n## Imports the build would take out of your files\n\n");
         if (droppedImports.isEmpty()) {
             b.append("None.\n");
         } else {
             b.append(
-                            "An import the generated code no longer needs goes; code of yours that used it does not compile.\n")
-                    .append("Add it back in the file after the build, or keep it in a preserved block.\n\n");
+                            "An import the generated code no longer needs goes - from a merged file, and from one whose code\n")
+                    .append(
+                            "of yours is in preserved blocks, which keep their lines and not the imports above them. Code\n")
+                    .append("of yours that used it does not compile: write the import in the preserved block under\n")
+                    .append("`package` (elasticore-dev-guide.md, preserved blocks).\n\n");
             for (Map.Entry<String, List<String>> en : droppedImports.entrySet()) {
                 b.append("- `").append(en.getKey()).append("`: ");
                 b.append(String.join(", ", backquoted(en.getValue()))).append('\n');
