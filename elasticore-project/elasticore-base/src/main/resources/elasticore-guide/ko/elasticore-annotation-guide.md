@@ -47,7 +47,7 @@ InternalData:
 Repository 와 도메인 helper 의 getter(`CatalogRepositoryHelper.getSupplier()`)만 만들고, Service·Controller·API 는 만들지
 않습니다. 직접 쓴 코드가 읽고 쓰는 테이블 - 코드 테이블, 로그 - 에 씁니다: `@expose` 는 API 를 열고, `@service` 는 아무도
 부르지 않는 서비스를 만듭니다. 3.0 코드는 `@expose`·`@service`·`@repository` 가 있는 엔티티에만 리포지토리를 만들고,
-2.x 는 키가 있는 엔티티마다 만들었습니다. Since: 3.0.261113
+2.x 는 키가 있는 엔티티마다 만들었습니다. Since: 3.0.261113-rc13
 ```yaml
 Supplier:
   meta: entity @repository

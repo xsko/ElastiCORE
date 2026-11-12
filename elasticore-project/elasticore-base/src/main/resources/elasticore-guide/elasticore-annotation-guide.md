@@ -47,7 +47,7 @@ InternalData:
 The Repository and the domain helper's getter (`CatalogRepositoryHelper.getSupplier()`), and nothing else: no Service, no
 Controller, no API. For a table that code of your own reads and writes - a lookup table, a log - where `@expose` would open an
 API and `@service` would write a service nobody calls. The 3.0 code writes a repository only for an entity with `@expose`,
-`@service` or `@repository`; 2.x wrote one for every entity with a key. Since: 3.0.261113
+`@service` or `@repository`; 2.x wrote one for every entity with a key. Since: 3.0.261113-rc13
 ```yaml
 Supplier:
   meta: entity @repository

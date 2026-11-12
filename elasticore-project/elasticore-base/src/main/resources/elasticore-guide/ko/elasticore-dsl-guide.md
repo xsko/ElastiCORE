@@ -108,7 +108,7 @@ entity:
 | `@extend(Parent)` | 부모 엔티티 상속 |
 | `@expose(n)` | REST Controller + Service + SearchDTO 생성. n = 페이지 크기 |
 | `@service(n)` | Service + SearchDTO 생성 (Controller 제외). n = 페이지 크기 |
-| `@repository` | Repository 와 도메인 helper 의 getter(`helper.getXxx()`)만 생성, Service·API 없음 - 직접 쓴 코드가 읽고 쓰는 테이블용 (3.0 JPA, 3.0.261113 부터) |
+| `@repository` | Repository 와 도메인 helper 의 getter(`helper.getXxx()`)만 생성, Service·API 없음 - 직접 쓴 코드가 읽고 쓰는 테이블용 (3.0 JPA, 3.0.261113-rc13 부터) |
 | `@pageable` | 페이징 지원 |
 | `@audited` | JPA Envers 감사 대상 |
 | `@dto` | DTO 생성 가능 표시 |

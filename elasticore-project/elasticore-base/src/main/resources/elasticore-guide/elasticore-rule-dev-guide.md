@@ -150,9 +150,9 @@ repositories {
 
 dependencies {
     // Use the same ElastiCORE version as id 'io.elasticore' version in the root build.gradle
-    compileOnly 'io.elasticore:elasticore-base:3.0.261112-rc12'
+    compileOnly 'io.elasticore:elasticore-base:3.0.261113-rc13'
 
-    testImplementation 'io.elasticore:elasticore-base:3.0.261112-rc12'
+    testImplementation 'io.elasticore:elasticore-base:3.0.261113-rc13'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }

@@ -381,7 +381,7 @@ dependencies {
 | 요청 본문에서 거절된 필드 (`RequestShapeAdvice`, API 오류의 `typeMismatch`) | Jackson 2 의 경로 | Jackson 3 의 경로 (`elasticore-springboot4`; 웹 계층을 Jackson 2 로 되돌린 앱은 Jackson 2 의 경로) - 응답은 같음 |
 | HTTP 포트 (선택: `httpPort: spring`) | ElastiCORE 런타임 | Spring이 구현하는 `@HttpExchange` 인터페이스 + `@ImportHttpServices` (`elasticore-dsl-port-guide.md` 2.7) |
 | 엔티티, 리포지터리, 서비스, 컨트롤러 | 그대로 | 그대로 (Hibernate 7·Spring Data 4에서 컴파일·실행 확인) |
-| 2.x 호환 출력(`output = 'v2'`)의 검색 조건 삭제 `delete(SrchDTO)` | `delete(Specification)` 한 번 | 행을 읽어 하나씩 삭제(`findAll` + `deleteAll`) - Spring Data JPA 4 에는 `delete(Specification)` 이 없음. 3.0.261113 부터, 그 전에는 컴파일 안 됨 |
+| 2.x 호환 출력(`output = 'v2'`)의 검색 조건 삭제 `delete(SrchDTO)` | `delete(Specification)` 한 번 | 행을 읽어 하나씩 삭제(`findAll` + `deleteAll`) - Spring Data JPA 4 에는 `delete(Specification)` 이 없음. 3.0.261113-rc13 부터, 그 전에는 컴파일 안 됨 |
 
 **왜 enum이 바뀌어야 하나**: Spring Boot 4의 웹 계층은 Jackson 3으로 JSON을 씁니다. Jackson 3은 Jackson 2의 `@JsonSerialize`/`@JsonDeserialize`를 보지 않으므로, 예전 enum은 **오류 없이** 코드(`"DRF"`) 대신 이름(`"DRAFT"`)으로 나갑니다. 컴파일도 되고 기동도 되어서 API 응답이 바뀐 것을 테스트로만 알 수 있습니다.
 
@@ -1321,7 +1321,7 @@ elasticore {
 
 3.0.261031-rc7 까지는 가이드가 한국어뿐이었습니다. 가이드가 없는 언어를 적으면 경고를 내고 영어 가이드를
 복사합니다. `guides` 가 없으면 blueprint 에 이미 있는 한국어 가이드(글자의 5% 이상이 한글)는 한국어로 남고, 빌드가 그렇게
-알립니다 (3.0.261113 부터. 그 전에는 업그레이드하면 알림 없이 영어판으로 바뀌었습니다).
+알립니다 (3.0.261113-rc13 부터. 그 전에는 업그레이드하면 알림 없이 영어판으로 바뀌었습니다).
 
 ---
 

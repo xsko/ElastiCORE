@@ -7,7 +7,7 @@
 
 ```gradle
 - implementation      'io.elasticore:elasticore-base:2.2.260703'
-+ implementation      'io.elasticore:elasticore-base:3.0.261112-rc12'
++ implementation      'io.elasticore:elasticore-base:3.0.261113-rc13'
 ```
 
 **생성되는 소스 코드는 바뀌지 않습니다** - 2.x 의 결함을 고친 몇 곳만 다르고, 그 목록은
@@ -153,7 +153,7 @@ elasticore:
 
 1. **지금 그대로 빌드.** `elasticore { output = 'v2' }`(또는 2.x 태스크)를 유지하고 `./gradlew build`: 출발점이
    컴파일되고 테스트가 통과합니다. 커밋해 둡니다 - 아래 단계는 이 상태와 비교합니다.
-2. **옮기기 전에 점검** (3.0.261113 부터): `./gradlew elcoreMigrationCheck` 는 첫 3.0 빌드를 아무것도 쓰지 않고
+2. **옮기기 전에 점검** (3.0.261113-rc13 부터): `./gradlew elcoreMigrationCheck` 는 첫 3.0 빌드를 아무것도 쓰지 않고
    돌립니다 - 소스도, 삭제도, `.elasticore/cache` 도 없이 - 그리고 `build/elasticore/migration-check.md` 를 씁니다:
    - 빌드가 지우거나 더 이상 쓰지 않을 생성 파일 중 직접 쓴 코드가 쓰는 것 (리포지토리의 `helper.getXxx()`
      포함) - 그 엔티티에 먼저 `@repository`(또는 `@service`·`@expose`)를 적습니다;
@@ -172,10 +172,10 @@ elasticore:
 
 | 무엇이 | 2.x 코드 | v3 코드 | 할 일 |
 |---|---|---|---|
-| 서비스·리포지토리가 생기는 엔티티 | 키가 있으면 `XxxRepository`, `@template`·`@searchable` DTO 가 있으면 `XxxCoreService`·`XxxService`·컨트롤러까지 (`@service`·`@expose` 없이도) | `@expose`(컨트롤러까지), `@service`(컨트롤러 없이), `@repository`(리포지토리와 `helper.getXxx()` 만, 3.0.261113 부터) 를 적은 엔티티만 | 그 엔티티의 줄에 `@expose` 를 적습니다(2.x 처럼 컨트롤러까지 - 고치지 않은 컨트롤러는 3.0 것으로 바뀝니다). 직접 쓴 코드가 `helper.getXxx()` 로만 읽고 쓰는 엔티티는 `@repository` - 서비스·API 없음. 아무것도 적지 않으면 그 엔티티의 2.x 서비스·리포지토리는 쓰는 곳이 없어질 때 지워집니다 |
+| 서비스·리포지토리가 생기는 엔티티 | 키가 있으면 `XxxRepository`, `@template`·`@searchable` DTO 가 있으면 `XxxCoreService`·`XxxService`·컨트롤러까지 (`@service`·`@expose` 없이도) | `@expose`(컨트롤러까지), `@service`(컨트롤러 없이), `@repository`(리포지토리와 `helper.getXxx()` 만, 3.0.261113-rc13 부터) 를 적은 엔티티만 | 그 엔티티의 줄에 `@expose` 를 적습니다(2.x 처럼 컨트롤러까지 - 고치지 않은 컨트롤러는 3.0 것으로 바뀝니다). 직접 쓴 코드가 `helper.getXxx()` 로만 읽고 쓰는 엔티티는 `@repository` - 서비스·API 없음. 아무것도 적지 않으면 그 엔티티의 2.x 서비스·리포지토리는 쓰는 곳이 없어질 때 지워집니다 |
 | 키를 받는 엔티티 생성자 | `new Order(id)` | 없음 (기본 생성자만) | 연관에 넣을 참조는 `repository.getReferenceById(id)`, 테스트 데이터는 기본 생성자와 setter 로 만듭니다 |
 | 키가 있는 `@abstract` 엔티티 | 추상 `@Entity` (키가 없을 때만 `@MappedSuperclass`). 서비스가 있으면 매퍼의 `new X()` 가 컴파일되지 않음 | `@MappedSuperclass`: 테이블이 없고, 그 리포지토리는 시작되지 않음 ("Not a managed type") | 다형성으로 읽는 루트라면 `@abstract(entity)` 로 적으세요. `@jpa:Inheritance` 가 유지되고 생성은 없습니다 |
-| 직접 더 써 넣은(병합되는) 파일의 코드가 2.x 와일드카드 import(`import ...dto.*;`)로 클래스를 쓰는 경우 | 와일드카드 | 생성 코드가 클래스를 하나씩 import | 3.0.261113 부터는 할 일 없음: 남겨 둔 2.x 와일드카드는 생성 코드가 그 패키지에서 import 하는 동안 병합이 남깁니다. 그 전에는 지워져 코드가 컴파일되지 않았습니다(`cannot find symbol`) - 그 import 를 직접 넣습니다. 남은 와일드카드 둘이 같은 이름의 클래스를 가지면 모호해지니 그 클래스를 이름으로 import 합니다 |
+| 직접 더 써 넣은(병합되는) 파일의 코드가 2.x 와일드카드 import(`import ...dto.*;`)로 클래스를 쓰는 경우 | 와일드카드 | 생성 코드가 클래스를 하나씩 import | 3.0.261113-rc13 부터는 할 일 없음: 남겨 둔 2.x 와일드카드는 생성 코드가 그 패키지에서 import 하는 동안 병합이 남깁니다. 그 전에는 지워져 코드가 컴파일되지 않았습니다(`cannot find symbol`) - 그 import 를 직접 넣습니다. 남은 와일드카드 둘이 같은 이름의 클래스를 가지면 모호해지니 그 클래스를 이름으로 import 합니다 |
 | 보호 블록(`// !----` ~ `// ----!`) 안 코드가 쓰는 import | `jakarta.persistence.*`·`java.util.*` 같은 `*` import 덕에 컴파일됨 | 생성 코드가 쓰는 것만 import | 블록이 쓰는 import 를 `package` 아래의 보호 블록에 적습니다 (`elasticore-dev-guide.md` 의 "사용자 코드 보존 블록") |
 | `@fetchjoin`·`table.autoJoin` | `withJoinFetches()` 로 페이지 검색에서 루트와 함께 가져옴 | 같음 - 3.0.261029-rc4 부터 (3.0.261028-rc3 까지의 v3 는 가져오지 않았음, 위) | 없음. rc3 까지의 v3 로 옮기며 `JoinSpec.fetchJoin()` 으로 대신 쓴 쿼리는 그대로 동작합니다 |
 | CoreService 의 `withJoinFetches()` | 모든 CoreService 에 - 가져올 연관이 없으면 아무 조건도 더하지 않는 빈 Specification | 가져올 연관(`@fetchjoin`·`table.autoJoin`)이 있는 엔티티에만 | 연관이 없는 엔티티의 확장 서비스가 부르면 컴파일되지 않습니다. 2.x 에서도 아무것도 하지 않던 호출이므로 `.and(withJoinFetches())` 를 지웁니다 |

@@ -381,7 +381,7 @@ The plugin reads the version of the Spring Boot Gradle plugin applied to the bui
 | Field rejected in a request body (`RequestShapeAdvice`, `typeMismatch` of the API error) | the path from Jackson 2 | the path from Jackson 3 (`elasticore-springboot4`; an app that put the web layer back to Jackson 2 gets the path from Jackson 2) - the response is the same |
 | HTTP port (optional: `httpPort: spring`) | ElastiCORE runtime | an `@HttpExchange` interface that Spring implements + `@ImportHttpServices` (`elasticore-dsl-port-guide.md` 2.7) |
 | entity, repository, service, controller | unchanged | unchanged (compiled and run on Hibernate 7 and Spring Data 4) |
-| delete by search `delete(SrchDTO)` of the 2.x-compatible output (`output = 'v2'`) | one `delete(Specification)` | the rows are read and removed one by one (`findAll` + `deleteAll`) - Spring Data JPA 4 has no `delete(Specification)`. From 3.0.261113; before, it did not compile |
+| delete by search `delete(SrchDTO)` of the 2.x-compatible output (`output = 'v2'`) | one `delete(Specification)` | the rows are read and removed one by one (`findAll` + `deleteAll`) - Spring Data JPA 4 has no `delete(Specification)`. From 3.0.261113-rc13; before, it did not compile |
 
 **Why the enum has to change**: the web layer of Spring Boot 4 writes JSON with Jackson 3. Jackson 3 does not see the `@JsonSerialize`/`@JsonDeserialize` of Jackson 2, so an old enum goes out as the name (`"DRAFT"`) instead of the code (`"DRF"`), **with no error**. It compiles and starts, so you can tell that the API response changed only by a test.
 
@@ -1321,7 +1321,7 @@ elasticore {
 
 Up to 3.0.261031-rc7 the guides were in Korean only. A language they are not written in gives a warning and the
 English guides. Without `guides`, Korean guides already in the blueprint
-(5% or more of their characters Hangul) stay Korean, and the build says so (from 3.0.261113; before, an upgrade replaced them with the English ones silently).
+(5% or more of their characters Hangul) stay Korean, and the build says so (from 3.0.261113-rc13; before, an upgrade replaced them with the English ones silently).
 
 ---
 

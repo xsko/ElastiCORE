@@ -108,7 +108,7 @@ entity:
 | `@extend(Parent)` | Inherits a parent entity |
 | `@expose(n)` | Generates REST Controller + Service + SearchDTO. n = page size |
 | `@service(n)` | Generates Service + SearchDTO (no Controller). n = page size |
-| `@repository` | Generates only the Repository and the domain helper's getter (`helper.getXxx()`), no Service and no API - for a table code of your own reads and writes (3.0 JPA, from 3.0.261113) |
+| `@repository` | Generates only the Repository and the domain helper's getter (`helper.getXxx()`), no Service and no API - for a table code of your own reads and writes (3.0 JPA, from 3.0.261113-rc13) |
 | `@pageable` | Paging support |
 | `@audited` | Subject to JPA Envers auditing |
 | `@dto` | Marks that a DTO can be generated |
