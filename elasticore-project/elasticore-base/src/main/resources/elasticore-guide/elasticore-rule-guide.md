@@ -968,6 +968,11 @@ The status codes are the same as before.
 - **To answer differently**, handle that exception in `ShopApiErrors` - that file is called first. A company-wide
   `@RestControllerAdvice` also comes before the handler that `RequestShapeErrors` registers (`RequestShapeAdvice`) (that handler is last). To be sure, put `@Order` on the common
   advice.
+- **A common advice that answers every exception** (`@ExceptionHandler(Throwable.class)`, `Exception`, `RuntimeException`) with no `@Order`: Spring asks the
+  advice beans in order, and the first one with a matching handler answers. `ShopApiErrors` is `@Order(Ordered.LOWEST_PRECEDENCE - 1)` (from 3.0.261114), so
+  it comes before such an advice and a generated controller's 404 / 409 stays one. An `XxxApiErrors` generated before is `LOWEST_PRECEDENCE`, the same
+  as an advice without `@Order` - their order is not set, and the catch-all may answer 500. `elcore3` and `elcoreMigrationCheck` warn and name both
+  files; change the line to `LOWEST_PRECEDENCE - 1` (an `XxxApiErrors` you never edited is regenerated with it) or give the common advice an `@Order`.
 - Do not turn on `spring.mvc.problemdetails.enabled=true`. Spring Boot's handler stands first (`@Order(0)`) and takes even the field validation
   response (`fieldErrors`).
 - It is not an auto-configuration. It exists only when `ShopApiErrors` imports it, so a 2.x application that uses the same runtime library is unchanged.
