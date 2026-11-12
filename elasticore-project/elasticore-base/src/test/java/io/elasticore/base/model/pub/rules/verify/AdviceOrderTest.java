@@ -74,8 +74,39 @@ public class AdviceOrderTest {
         // or one that does not answer every exception.
         assertTrue(clashes(GENERATED_LAST, CATCH_ALL.replace("Throwable.class", "IllegalStateException.class"))
                 .isEmpty());
+        // A comment that says "class" or "@Order (" before the annotations does not hide them.
+        String commented = GENERATED_LAST
+                .replace("LOWEST_PRECEDENCE)", "LOWEST_PRECEDENCE - 1)")
+                .replace("@Order(", "/** Handle one in this class. */\n// with no @Order (a catch-all)\n@Order(");
+        assertTrue(clashes(commented, CATCH_ALL).isEmpty());
         // A project without a generated advice has nothing to say.
         assertTrue(clashes(CATCH_ALL.replace("CustomGlobalExceptionHandler", "ShopApiErrors"), CATCH_ALL)
                 .isEmpty());
+    }
+
+    /** What is generated now, Java and Kotlin, is next to last: no warning, build after build. */
+    @Test
+    public void theGeneratedAdviceIsNotFlagged() throws Exception {
+        for (String tmpl : new String[] {"v3/apiErrors.tmpl", "kt/apiErrors.tmpl"}) {
+            java.io.InputStream in = AdviceOrderTest.class.getResourceAsStream("/elasticore-template/" + tmpl);
+            assertTrue(in != null, tmpl);
+            String text;
+            try {
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                for (int n; (n = in.read(buf)) > 0; ) bytes.write(buf, 0, n);
+                text = new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            } finally {
+                in.close();
+            }
+            String generated = text.replaceAll("\\$\\{className\\}", "ShopApiErrors")
+                    .replaceAll("\\$\\{[A-Za-z]+\\}", "x");
+            assertTrue(clashes(generated, CATCH_ALL).isEmpty(), tmpl);
+            // and the same file at the lowest precedence is still said.
+            assertEquals(
+                    1,
+                    clashes(generated.replace("LOWEST_PRECEDENCE - 1", "LOWEST_PRECEDENCE"), CATCH_ALL).size(),
+                    tmpl);
+        }
     }
 }

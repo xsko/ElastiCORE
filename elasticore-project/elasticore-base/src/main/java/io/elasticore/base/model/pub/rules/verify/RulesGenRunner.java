@@ -4620,7 +4620,7 @@ public final class RulesGenRunner {
         java.util.List<String> catchAll = new ArrayList<String>();
         for (Map.Entry<String, String> en : sources.entrySet()) {
             String path = en.getKey();
-            String text = en.getValue();
+            String text = withoutComments(en.getValue());
             if (!ADVICE.matcher(text).find() || !lastInLine(text)) continue;
             String name = baseName(new File(path));
             if (name.endsWith("ApiErrors") && text.contains("RequestShapeErrors")) {
@@ -4641,10 +4641,23 @@ public final class RulesGenRunner {
         return out;
     }
 
+    private static final java.util.regex.Pattern CLASS_DECLARATION =
+            java.util.regex.Pattern.compile("(?<![.:\\w])(?:class|object)\\s+[A-Za-z_$]");
+    private static final java.util.regex.Pattern COMMENT =
+            java.util.regex.Pattern.compile("/\\*.*?\\*/|//[^\\n]*", java.util.regex.Pattern.DOTALL);
+
+    /**
+     * The source without its comments, so a word in a comment - "in this
+     * class", "with no @Order (...)" - is not read as the declaration.
+     */
+    static String withoutComments(String text) {
+        return COMMENT.matcher(text).replaceAll(" ");
+    }
+
     /** No @Order on the class, or the lowest precedence: last in line. */
     private static boolean lastInLine(String text) {
-        int cls = text.indexOf(" class ");
-        String head = cls < 0 ? text : text.substring(0, cls);
+        java.util.regex.Matcher cls = CLASS_DECLARATION.matcher(text);
+        String head = cls.find() ? text.substring(0, cls.start()) : text;
         java.util.regex.Matcher m = ORDER.matcher(head);
         String order = null;
         while (m.find()) order = m.group(1).replace(" ", "");
