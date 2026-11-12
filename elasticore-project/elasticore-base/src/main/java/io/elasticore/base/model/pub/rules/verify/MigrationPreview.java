@@ -52,7 +52,8 @@ final class MigrationPreview {
             public void write(int b) {
                 to.write(b);
                 if (b == '\n') {
-                    line(new String(current.toByteArray(), StandardCharsets.UTF_8).replace("\r", ""));
+                    line(new String(current.toByteArray(), java.nio.charset.Charset.defaultCharset())
+                            .replace("\r", ""));
                     current.reset();
                 } else {
                     current.write(b);
@@ -65,7 +66,9 @@ final class MigrationPreview {
             }
         };
         try {
-            return new java.io.PrintStream(lines, true, "UTF-8");
+            // The console's own charset, as System.out encodes a normal run's output.
+            return new java.io.PrintStream(
+                    lines, true, java.nio.charset.Charset.defaultCharset().name());
         } catch (java.io.UnsupportedEncodingException e) {
             throw new IllegalStateException(e);
         }
@@ -91,14 +94,95 @@ final class MigrationPreview {
         if (m.find()) statuses.put(m.group(1).trim(), m.group(2).trim());
     }
 
-    /** A source the run would merge: the imports of the developer's file the merge does not keep. */
-    void merged(String key, String yours, String merged) {
+    /**
+     * A source the run would merge: the imports of the developer's file the
+     * merge does not keep and the developer's code may need - one they added,
+     * or one the generated code had whose class a line they wrote names. An
+     * import only the generated code used goes with it and is no loss.
+     */
+    void merged(String key, String base, String yours, String merged) {
         Set<String> kept = imports(merged);
+        Set<String> theirs = imports(base);
+        String added = addedLines(base, yours);
         List<String> dropped = new ArrayList<String>();
         for (String imp : imports(yours)) {
-            if (!kept.contains(imp)) dropped.add(imp);
+            if (kept.contains(imp)) continue;
+            if (!theirs.contains(imp) || namedIn(imp, added) || wildcardNeeded(imp, added, kept)) dropped.add(imp);
         }
         if (!dropped.isEmpty()) droppedImports.put(key, dropped);
+    }
+
+    /** Classes everyone uses without an import. */
+    private static final Set<String> JAVA_LANG = new java.util.HashSet<String>(java.util.Arrays.asList(
+            "String",
+            "Object",
+            "Integer",
+            "Long",
+            "Boolean",
+            "Double",
+            "Float",
+            "Short",
+            "Byte",
+            "Character",
+            "Override",
+            "Deprecated",
+            "SuppressWarnings",
+            "Exception",
+            "RuntimeException",
+            "Math",
+            "System",
+            "StringBuilder",
+            "Iterable",
+            "Void",
+            "Class",
+            "Thread",
+            "Number",
+            "Enum",
+            "Throwable",
+            "Error"));
+
+    /**
+     * Whether a dropped wildcard the generated code had may be what a line the
+     * developer wrote relies on: a class their lines name that no import the
+     * merge keeps names, and that is not java.lang's.
+     */
+    static boolean wildcardNeeded(String imp, String added, Set<String> kept) {
+        if (!imp.endsWith(".*")) return false;
+        Set<String> named = new java.util.HashSet<String>();
+        for (String k : kept) named.add(k.substring(k.lastIndexOf('.') + 1));
+        Matcher m = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\b").matcher(added);
+        while (m.find()) {
+            String c = m.group(1);
+            if (!named.contains(c) && !JAVA_LANG.contains(c) && !c.equals(c.toUpperCase(java.util.Locale.ROOT)))
+                return true;
+        }
+        return false;
+    }
+
+    /** The code lines of yours the base does not have: imports and comments left out. */
+    static String addedLines(String base, String yours) {
+        Set<String> had = new java.util.HashSet<String>();
+        for (String l : base.replace("\r\n", "\n").split("\n", -1)) had.add(l.trim());
+        StringBuilder b = new StringBuilder();
+        for (String l : yours.replace("\r\n", "\n").split("\n", -1)) {
+            String t = l.trim();
+            if (had.contains(t)
+                    || t.startsWith("import ")
+                    || t.startsWith("//")
+                    || t.startsWith("/*")
+                    || t.startsWith("*")) continue;
+            b.append(t).append('\n');
+        }
+        return b.toString();
+    }
+
+    /** Whether the class a single-type import names appears in the text; never for a wildcard. */
+    static boolean namedIn(String imp, String text) {
+        String name = imp.substring(imp.lastIndexOf('.') + 1);
+        if (name.equals("*")) return false;
+        return Pattern.compile("\\b" + Pattern.quote(name) + "\\b")
+                .matcher(text)
+                .find();
     }
 
     /** A generated file the run would delete: the DSL no longer produces it. */

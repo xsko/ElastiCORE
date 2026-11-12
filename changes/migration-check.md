@@ -13,15 +13,19 @@
     repository by the domain helper's getter (`helper.getCode()`) - with `@repository` / `@service` / `@expose` as the
     fix;
   - files that would conflict, be kept as the developer's, or be left as the 2.x code (edited, base not confirmed);
-  - the imports a merge would take out of a file the developer wrote more into;
+  - the imports a merge would take out of a file the developer wrote more into and their code may need (one they
+    added, one naming a class their lines use, or a wildcard their lines may rely on - not one only the generated code
+    used);
   - files an older generator stamped that the 3.0 code does not write, and the files it would remove.
   The console prints each file's status as the build would, and a summary. A Kotlin or TypeScript run and `-Pdomain` are
   refused with the reason: the check reads a whole project 2.x generated, which is Java.
-- Checked: `MigrationCheckTest` - a project the 2.x generator wrote, with a class of the developer's calling
-  `helper.getCode()` and an edited CoreService: the check changes no file (byte for byte) and writes no cache; its report
-  names `CodeRepository` as removed and used by `CodeReader`, and the CoreService as left the 2.x code; then the build
-  itself prints the same status for every file and removes `CodeRepository`. `MigrationPreviewTest` (statuses read off
-  the run's lines, an import a merge drops, the order of the report). `ElastiCorePluginTest.theTasksAppear`.
+- Checked: `MigrationCheckTest` - a project the 2.x generator wrote (stamped as 2.2 stamps), with a class of the
+  developer's calling `helper.getCode()`, one calling a `getCode()` of an entity, and an edited DTO and CoreService:
+  the check changes no file (byte for byte) and writes no cache; its report names `CodeRepository` (no longer written,
+  left on disk) as used by `CodeReader` and nothing else, and both edited files as merged; then the build itself prints
+  the same status for every file, merges the hand method in and rewrites the helper without `CodeRepository`.
+  `MigrationPreviewTest` (statuses read off the run's lines, which dropped imports are listed and which are not, the
+  order of the report). `ElastiCorePluginTest.theTasksAppear`.
 - Files: `RulesGenRunner.java` (the check: `PROP_MIGRATION_CHECK`, writes held back, `finishMigrationCheck`,
   `findLeftBehind`, `usersOf`), `MigrationPreview.java`, `ElastiCorePlugin.java`, the tests above,
   `elasticore-migration-guide.md` (en, ko: the move step by step)

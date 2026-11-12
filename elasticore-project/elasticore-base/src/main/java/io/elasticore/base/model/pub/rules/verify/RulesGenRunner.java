@@ -772,6 +772,11 @@ public final class RulesGenRunner {
                         "[elcore3] the migration check reads the whole project" + " - run it without -Pdomain");
                 return 1;
             }
+            if (Boolean.getBoolean("elasticore.rules.list")) {
+                io.elasticore.base.util.ConsoleLog.printWarn(
+                        "[elcore3] the migration check runs the build itself - run it without -PlistRules");
+                return 1;
+            }
             preview = new MigrationPreview();
             System.setOut(preview.tee(shown));
         }
@@ -4478,6 +4483,12 @@ public final class RulesGenRunner {
     private static int finishMigrationCheck(RulesGenRunner runner, String basePath, java.io.PrintStream shown) {
         boolean modelChecked =
                 io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        String databases = System.getProperty("elasticore.ddl.databases");
+        if ((databases != null && !databases.trim().isEmpty()) || runner.xmlMapping()) {
+            // The build writes these before it removes what is stale, and a failure there keeps the files.
+            preview.note("The check does not write the DDL or orm.xml. Should the build's DDL step fail its model"
+                    + " check, the build keeps the files listed as removed until that is fixed.");
+        }
         if (runner.succeeded() && modelChecked) {
             runner.removeStale();
             runner.removeStaleMerged();
@@ -4596,7 +4607,7 @@ public final class RulesGenRunner {
      * The sources that use a class: name it, or - for a repository - call
      * the domain helper's getter of it (helper.getCode()), which goes with it.
      */
-    private java.util.List<String> usersOf(File file, Map<File, String> sources, java.util.Set<File> going) {
+    java.util.List<String> usersOf(File file, Map<File, String> sources, java.util.Set<File> going) {
         File f = canonical(file);
         String cls = baseName(f);
         java.util.regex.Pattern names =
@@ -4606,12 +4617,23 @@ public final class RulesGenRunner {
                         "\\.get" + java.util.regex.Pattern.quote(cls.substring(0, cls.length() - "Repository".length()))
                                 + "\\(\\)")
                 : null;
+        String own = sources.get(f);
+        if (own == null) own = readLf(f);
+        String pkg = own == null ? "" : packageOf(own);
+        // helper.getCode() counts in a source that names a domain helper, not order.getCode() anywhere.
+        java.util.regex.Pattern helper = java.util.regex.Pattern.compile("\\w+RepositoryHelper\\b");
         java.util.Set<String> users = new java.util.TreeSet<String>();
         for (Map.Entry<File, String> src : sources.entrySet()) {
             if (src.getKey().equals(f) || going.contains(src.getKey())) continue;
             String t = src.getValue();
-            if (names.matcher(t).find() || (getter != null && getter.matcher(t).find()))
-                users.add(relative(src.getKey()));
+            // A name counts where the source can see the class, as stillUsed reads it.
+            boolean named = names.matcher(t).find()
+                    && (pkg.equals(packageOf(t))
+                            || (!pkg.isEmpty() && (t.contains(pkg + "." + cls) || t.contains("import " + pkg + ".*"))));
+            boolean called = getter != null
+                    && getter.matcher(t).find()
+                    && helper.matcher(t).find();
+            if (named || called) users.add(relative(src.getKey()));
         }
         return new ArrayList<String>(users);
     }
@@ -4709,9 +4731,21 @@ public final class RulesGenRunner {
      * code a 2.x project was generated with, before the developer edited it.
      */
     private static Map<String, String> twoXBases() {
-        String[] keys = {"elasticore.rules.v2", "elasticore.rules.v3", "elasticore.architecture", "elasticore.language",
-                "elasticore.merge", "elasticore.ddl.databases", "elasticore.ddl.migration", "elasticore.ddl.only",
-                "elasticore.rules.ts", "elasticore.rules.kt", "elasticore.rules.list"};
+        String[] keys = {
+            "elasticore.rules.v2",
+            "elasticore.rules.v3",
+            "elasticore.architecture",
+            "elasticore.language",
+            "elasticore.merge",
+            "elasticore.ddl.databases",
+            "elasticore.ddl.migration",
+            "elasticore.ddl.only",
+            "elasticore.rules.ts",
+            "elasticore.rules.kt",
+            "elasticore.rules.list",
+            // a migration check's: the bases are the 2.x code, generated as the 2.x code
+            PROP_MIGRATION_CHECK
+        };
         Map<String, String> saved = new java.util.HashMap<String, String>();
         for (String k : keys) saved.put(k, System.getProperty(k));
         Object logs = io.elasticore.base.util.ConsoleLog.snapshot();
@@ -4901,7 +4935,7 @@ public final class RulesGenRunner {
             disk = asOnDisk;
             blocks = null;
         }
-        if (preview != null && merged.conflicts() == 0) preview.merged(key, disk, merged.text());
+        if (preview != null && merged.conflicts() == 0) preview.merged(key, base, disk, merged.text());
         if (merged.conflicts() == 0) {
             if (!writeLf(label, file, withBlocks(merged.text(), blocks))) return true;
             cache.put(key, generated);

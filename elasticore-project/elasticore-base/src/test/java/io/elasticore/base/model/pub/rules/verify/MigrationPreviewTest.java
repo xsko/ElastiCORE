@@ -35,11 +35,16 @@ public class MigrationPreviewTest {
     @Test
     public void aMergeThatTakesAnImportOutIsListedWithIt() {
         MigrationPreview p = new MigrationPreview();
+        // The generated code had the wildcard; a line the developer wrote names a class only it imported.
+        String base = "package a;\nimport a.dto.*;\nimport java.util.List;\nclass FolderController {\n}\n";
         p.merged(
                 "src/main/java/a/FolderController.java",
-                "package a;\nimport a.dto.*;\nimport java.util.List;\nclass FolderController {}\n",
-                "package a;\nimport a.dto.FolderDTO;\nimport java.util.List;\nclass FolderController {}\n");
-        p.merged("src/main/java/a/Kept.java", "import a.B;\n", "import a.B;\n");
+                base,
+                "package a;\nimport a.dto.*;\nimport java.util.List;\nclass FolderController {\n"
+                        + "    // by hand\n    FolderSearchDTO search;\n}\n",
+                "package a;\nimport a.dto.FolderDTO;\nimport java.util.List;\nclass FolderController {\n"
+                        + "    FolderSearchDTO search;\n}\n");
+        p.merged("src/main/java/a/Kept.java", "import a.B;\n", "import a.B;\n", "import a.B;\n");
         assertEquals(
                 Collections.singletonList("import a.dto.*"),
                 p.droppedImports().get("src/main/java/a/FolderController.java"));
@@ -47,6 +52,42 @@ public class MigrationPreviewTest {
         String report = p.report("/p");
         assertTrue(report.contains("- `src/main/java/a/FolderController.java`: `import a.dto.*`"), report);
         assertTrue(report.contains("- merged files that would lose an import: 1"), report);
+    }
+
+    @Test
+    public void anImportOnlyTheGeneratedCodeUsedIsNoLoss() {
+        MigrationPreview p = new MigrationPreview();
+        String base = "package a;\nimport java.util.*;\nimport lombok.Data;\nclass Dto {\n}\n";
+        String yours = "package a;\nimport java.util.*;\nimport lombok.Data;\nclass Dto {\n"
+                + "    /** Written by hand. */\n    public String ping() { return \"OK\"; }\n}\n";
+        String merged =
+                "package a;\nimport java.util.List;\nclass Dto {\n    public String ping() { return \"OK\"; }\n}\n";
+        p.merged("Dto.java", base, yours, merged);
+        assertTrue(p.droppedImports().isEmpty(), p.droppedImports().toString());
+    }
+
+    @Test
+    public void anImportYouAddedOrAClassYouNameIsKeptInView() {
+        MigrationPreview p = new MigrationPreview();
+        String base = "package a;\nimport lombok.Data;\nimport java.time.LocalDate;\nclass Dto {\n}\n";
+        String yours = "package a;\nimport lombok.Data;\nimport java.time.LocalDate;\nimport x.Mine;\nclass Dto {\n"
+                + "    LocalDate day() { return null; }\n}\n";
+        p.merged("Dto.java", base, yours, "package a;\nclass Dto {\n    LocalDate day() { return null; }\n}\n");
+        assertEquals(
+                Arrays.asList("import java.time.LocalDate", "import x.Mine"),
+                p.droppedImports().get("Dto.java"));
+    }
+
+    @Test
+    public void aWildcardIsNeededOnlyForAClassNoKeptImportNames() {
+        java.util.Set<String> kept = new java.util.HashSet<String>(Arrays.asList("import a.dto.FolderDTO"));
+        assertTrue(MigrationPreview.wildcardNeeded("import a.dto.*", "FolderSearchDTO s;\n", kept));
+        assertTrue(!MigrationPreview.wildcardNeeded("import a.dto.*", "FolderDTO s; String t; MAX;\n", kept));
+        assertTrue(!MigrationPreview.wildcardNeeded("import a.dto.FolderDTO", "Other o;\n", kept));
+        assertTrue(!MigrationPreview.namedIn("import a.*", "a"));
+        assertTrue(MigrationPreview.namedIn("import a.B", "new B()"));
+        assertTrue(!MigrationPreview.namedIn("import a.B", "new BB()"));
+        assertEquals("x();\n", MigrationPreview.addedLines("a\n", "a\nimport q;\n// c\n/* d */\n * e\nx();\n"));
     }
 
     @Test
