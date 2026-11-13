@@ -4,6 +4,8 @@ dto:
     fields:
       categoryName: string @ref(category.name)
       categoryCatId: long @ref(category.catId)
+      relatedIds: List<Long> -- 함께 보는 상품의 키 (값 목록)
+      keywords: List<string> -- 검색어 (값 목록)
       lastModifiedDate: --
       createDate: --
       thumbnail: --
