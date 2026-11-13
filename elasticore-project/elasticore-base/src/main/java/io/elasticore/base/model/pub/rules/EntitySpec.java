@@ -985,7 +985,8 @@ public final class EntitySpec {
      */
     public String tableName() {
         String explicit = metaValue("table");
-        String name = explicit != null && !explicit.isEmpty() ? explicit
+        String name = explicit != null && !explicit.isEmpty()
+                ? explicit
                 : io.elasticore.base.util.StringUtils.camelToSnake(getName());
         return tablePrefix + name;
     }

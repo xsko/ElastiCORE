@@ -1487,7 +1487,7 @@ fields:
 |-----------|--------|-----|
 | UUID 키 | `string @id @genid` | `uuid` 는 타입이 아닙니다. 길이를 주면(`string(36)`) UUID 가 아니라 ElastiCORE ID 가 만들어집니다 (위 `@genid` 절) |
 | JSON 문서 | `json` | `String` + `columnDefinition = "json"` |
-| 큰 문자열 | `clob` | `String`, 행 안의 긴 문자열: PostgreSQL text, Oracle clob, SQL Server varchar(max) (3.0 규칙 엔진). 2.x(`build`/`elcore`)는 매핑하지 않으므로 `text` 를 씁니다 |
+| 큰 문자열 | `clob` | `String`, 행 안의 긴 문자열: PostgreSQL text, Oracle clob, SQL Server varchar(max) - 한글은 UTF-8 collation 으로 (3.0 규칙 엔진). 2.x(`build`/`elcore`)는 매핑하지 않으므로 `text` 를 씁니다 |
 | 바이너리 | `blob` | `byte[]`, 행 안의 긴 바이트: PostgreSQL bytea, Oracle blob. JSON 에서는 base64 (3.0 규칙 엔진 전용) |
 
 `json`·`blob`·`clob` 은 3.0.260925 부터 지원하는 타입입니다. 그 이전 버전에서는 `private json metadata;` 처럼

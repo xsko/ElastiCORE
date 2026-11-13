@@ -28,10 +28,12 @@ public class StringLobTest {
                 + "}\n";
         List<String> out = lobs("src/main/java/a/Workspace.java", java);
         assertEquals(1, out.size(), out.toString());
-        assertTrue(out.get(0).startsWith("[elcore3] src/main/java/a/Workspace.java: document, note - a String with @Lob"),
+        assertTrue(
+                out.get(0).startsWith("[elcore3] src/main/java/a/Workspace.java: document, note - a String with @Lob"),
                 out.get(0));
 
-        String kotlin = "class Workspace {\n    @Lob\n    @Column(name = \"doc\")\n    var document: String? = null\n}\n";
+        String kotlin =
+                "class Workspace {\n    @Lob\n    @Column(name = \"doc\")\n    var document: String? = null\n}\n";
         assertEquals(1, lobs("src/main/kotlin/a/Workspace.kt", kotlin).size());
     }
 

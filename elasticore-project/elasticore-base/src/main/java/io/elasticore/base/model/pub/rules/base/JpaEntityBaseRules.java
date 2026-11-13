@@ -415,8 +415,9 @@ public class JpaEntityBaseRules implements CodeRules {
         }
         if (f.dslValue("jdbctype") != null && !f.dslValue("jdbctype").isEmpty()) return;
         String code = f.isStringType() ? "LONG32VARCHAR" : "LONG32VARBINARY";
-        ctx(e).field(f).ensure(AnnoCode.of(HIB, "JdbcTypeCode")
-                .valueRaw(String.format("org.hibernate.type.SqlTypes.%s", code)));
+        ctx(e).field(f)
+                .ensure(AnnoCode.of(HIB, "JdbcTypeCode")
+                        .valueRaw(String.format("org.hibernate.type.SqlTypes.%s", code)));
     }
 
     /**

@@ -70,7 +70,10 @@ public enum Database {
                     default: return "VARCHAR(" + len + ")";
                 }
             case LONG_TEXT:
-                return this == POSTGRESQL ? "TEXT" : this == SQLSERVER ? "NVARCHAR(MAX)" : "CLOB";
+                // A JPA clob is VARCHAR(MAX) on SQL Server, as Hibernate maps it (ascii); MyBatis's is NVARCHAR(MAX).
+                return this == POSTGRESQL
+                        ? "TEXT"
+                        : this == SQLSERVER ? (c.ascii ? "VARCHAR(MAX)" : "NVARCHAR(MAX)") : "CLOB";
             case UNBOUNDED_TEXT:
                 return this == POSTGRESQL ? "TEXT" : this == SQLSERVER ? "NVARCHAR(MAX)" : this == ORACLE ? "CLOB"
                         : "CHARACTER VARYING";

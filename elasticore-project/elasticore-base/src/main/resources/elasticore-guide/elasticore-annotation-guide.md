@@ -1487,7 +1487,7 @@ The run warns of such a word, and for `uuid`, `short`, `byte`, `char`, `OffsetDa
 |-----------|--------|-----|
 | UUID key | `string @id @genid` | `uuid` is not a type. If you give a length (`string(36)`), an ElastiCORE ID is made, not a UUID (see the `@genid` section above) |
 | JSON document | `json` | `String` + `columnDefinition = "json"` |
-| Large string | `clob` | `String`, long text in the row: text on PostgreSQL, clob on Oracle, varchar(max) on SQL Server (3.0 rule engine). The 2.x (`build`/`elcore`) does not map it, so use `text` |
+| Large string | `clob` | `String`, long text in the row: text on PostgreSQL, clob on Oracle, varchar(max) on SQL Server - a UTF-8 collation there for any language (3.0 rule engine). The 2.x (`build`/`elcore`) does not map it, so use `text` |
 | Binary | `blob` | `byte[]`, long binary in the row: bytea on PostgreSQL, blob on Oracle; base64 in JSON (3.0 rule engine only) |
 
 `json`, `blob` and `clob` are supported from 3.0.260925. In earlier versions, `private json metadata;` was generated

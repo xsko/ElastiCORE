@@ -19,7 +19,10 @@ public final class Column {
     public final boolean nullable;
     /** A key the database numbers (an identity column). */
     public final boolean identity;
-    /** Text known to be ASCII - an enum's code - which SQL Server keeps in VARCHAR, not NVARCHAR. */
+    /**
+     * Text SQL Server keeps in VARCHAR, not NVARCHAR: an enum's code (ASCII), or a JPA long text, which
+     * Hibernate maps to varchar(max) there.
+     */
     public final boolean ascii;
     /**
      * What the column holds, in the model's words (its label, Hibernate's @Comment), or null. Set only

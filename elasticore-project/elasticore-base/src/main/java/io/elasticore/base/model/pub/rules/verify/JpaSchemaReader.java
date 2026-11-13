@@ -799,6 +799,16 @@ public final class JpaSchemaReader {
         return null;
     }
 
+    /**
+     * A long text Hibernate maps as a CLOB type: clob on Oracle, text on
+     * PostgreSQL, and varchar(max) on SQL Server - which it validates against
+     * no NVARCHAR(MAX), so the column is VARCHAR there (any language with a
+     * UTF-8 collation, SQL Server 2019+), as Oracle keeps it in a CLOB.
+     */
+    private static Column longText(String name) {
+        return Column.of(name, ColumnType.LONG_TEXT).ascii(true);
+    }
+
     /** A value column: the type Hibernate gives the Java type, its converter's column, @Lob, @JdbcTypeCode. */
     private Column basic(JClass owner, JField f, String name) {
         OrmMapping.Anno column = f.anno("Column");
@@ -821,7 +831,12 @@ public final class JpaSchemaReader {
             switch (code) {
                 case "JSON": return Column.of(name, ColumnType.JSON);
                 case "SQLXML": return Column.of(name, ColumnType.XML);
-                case "LONG32VARCHAR": case "LONGVARCHAR": case "LONG32NVARCHAR": case "CLOB": case "NCLOB":
+                case "LONG32VARCHAR":
+                case "LONGVARCHAR":
+                case "CLOB":
+                    return longText(name);
+                case "LONG32NVARCHAR":
+                case "NCLOB":
                     return Column.of(name, ColumnType.LONG_TEXT);
                 case "LONG32VARBINARY": case "BLOB": return Column.of(name, ColumnType.LONG_BINARY);
                 default: warnings.add(owner.simple + "." + f.name + ": @JdbcTypeCode(" + code + ") is read as its Java type");
@@ -839,7 +854,7 @@ public final class JpaSchemaReader {
                                     + " its schema makes the column a CLOB, which ddl-auto=validate refuses there; use clob or a length");
                 return Column.of(name, ColumnType.UNBOUNDED_TEXT);
             }
-            if (d.startsWith("CLOB")) return Column.of(name, ColumnType.LONG_TEXT);
+            if (d.startsWith("CLOB")) return longText(name);
             warnings.add(owner.simple + "." + f.name + ": columnDefinition \"" + definition + "\" is the database's own"
                     + " - the column is written for its Java type instead");
         }
@@ -862,7 +877,7 @@ public final class JpaSchemaReader {
 
         switch (type) {
             case "String": case "char[]": case "Character[]":
-                return lob ? Column.of(name, ColumnType.LONG_TEXT) : Column.of(name, ColumnType.TEXT).length(length > 0 ? length : 255);
+                return lob ? longText(name) : Column.of(name, ColumnType.TEXT).length(length > 0 ? length : 255);
             case "char": case "Character": return Column.of(name, ColumnType.TEXT).length(1);
             case "Long": case "long": return Column.of(name, ColumnType.BIGINT);
             case "Integer": case "int": return Column.of(name, ColumnType.INTEGER);

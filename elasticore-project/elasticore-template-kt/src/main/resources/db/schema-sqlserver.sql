@@ -442,7 +442,7 @@ CREATE TABLE shop_products (
     metadata_raw NVARCHAR(MAX),
     old_payload NVARCHAR(MAX),
     custom_xml XML,
-    force_long NVARCHAR(MAX),
+    force_long VARCHAR(MAX),
     tags NVARCHAR(255),
     category_cat_id BIGINT,
     PRIMARY KEY (product_id)
@@ -474,7 +474,7 @@ CREATE TABLE shop_products_aud (
     metadata_raw NVARCHAR(MAX),
     old_payload NVARCHAR(MAX),
     custom_xml XML,
-    force_long NVARCHAR(MAX),
+    force_long VARCHAR(MAX),
     tags NVARCHAR(255),
     category_cat_id BIGINT,
     PRIMARY KEY (product_id, rev)

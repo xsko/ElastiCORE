@@ -18,8 +18,12 @@
   object and the column holds only its number (oid): SQL cannot read it, and Hibernate 7's `ddl-auto: validate`
   refuses a `text` column (`found [text], but expecting [oid (Types#CLOB)]`). `blob` the same.
 - After: `@JdbcTypeCode(SqlTypes.LONG32VARCHAR)` / `LONG32VARBINARY` - text / bytea on PostgreSQL, clob / blob on
-  Oracle, varchar(max) / varbinary(max) on SQL Server, as the generated DDL already wrote. The 2.x-compatible output
-  keeps `@Lob`. The build and `elcoreMigrationCheck` warn about a `String` with `@Lob` in the project's code (one
+  Oracle, varchar(max) / varbinary(max) on SQL Server. The 2.x-compatible output keeps `@Lob`.
+- SQL Server: Hibernate maps a long text there to varchar(max) and refused the NVARCHAR(MAX) the DDL wrote, so a JPA
+  long text (`clob`, a `@Lob` String) is now `VARCHAR(MAX)` in the generated DDL - with a UTF-8 collation (SQL Server
+  2019+) it keeps any language, as Oracle keeps it in a CLOB of a UTF-8 database (an NCLOB was considered and left:
+  not what Korean databases use). MyBatis's clob stays NVARCHAR(MAX). The pet store's SQL Server test database is
+  UTF-8. The build and `elcoreMigrationCheck` warn about a `String` with `@Lob` in the project's code (one
   added by hand to a 2.x file), which does the same on PostgreSQL.
 - Checked: `TablePrefixAndLargeValueTest` (Java, Kotlin, MyBatis), `StringLobTest`, `OssieExportTest`; the pet store's
   `Category` has a `clob` and a `blob`, and `SchemaValidateOnDatabase.aLargeValueIsKeptInTheRow` writes them through

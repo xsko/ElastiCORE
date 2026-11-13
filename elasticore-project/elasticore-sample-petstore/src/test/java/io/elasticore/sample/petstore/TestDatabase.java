@@ -46,7 +46,8 @@ final class TestDatabase {
                     p.put("spring.datasource.password", password);
                     break;
                 case "sqlserver":
-                    s.execute("CREATE DATABASE " + name);
+                    // UTF-8, as a Korean shop sets it up: a clob is VARCHAR(MAX) there, as Hibernate maps it.
+                    s.execute("CREATE DATABASE " + name + " COLLATE Latin1_General_100_CI_AS_SC_UTF8");
                     p.put("spring.datasource.url", url + ";databaseName=" + name);
                     p.put("spring.datasource.username", user);
                     p.put("spring.datasource.password", password);

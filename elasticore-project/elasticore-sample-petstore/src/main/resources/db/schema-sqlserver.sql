@@ -8,7 +8,7 @@ CREATE TABLE ps_category (
     category_id BIGINT IDENTITY(1,1) NOT NULL,
     name NVARCHAR(30) NOT NULL,
     description NVARCHAR(3000) NOT NULL,
-    story NVARCHAR(MAX),
+    story VARCHAR(MAX),
     icon VARBINARY(MAX),
     PRIMARY KEY (category_id)
 );

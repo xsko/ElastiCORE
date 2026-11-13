@@ -105,7 +105,12 @@ public final class EntityChecks {
         return String.format(
                 "[%s] %s: @table(%s) with table.prefix %s maps to the table %s - the prefix comes before the @table"
                         + " name, as in 2.x. If the table is %s, write @table(%s).",
-                e.domainClassName(), e.getName(), explicit, prefix, e.tableName(), explicit,
+                e.domainClassName(),
+                e.getName(),
+                explicit,
+                prefix,
+                e.tableName(),
+                explicit,
                 explicit.substring(prefix.length()));
     }
 }

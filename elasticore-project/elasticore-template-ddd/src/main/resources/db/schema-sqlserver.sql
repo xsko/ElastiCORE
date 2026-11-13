@@ -33,7 +33,7 @@ CREATE TABLE cat_reading (
     reading_id BIGINT IDENTITY(1,1) NOT NULL,
     label NVARCHAR(40),
     note NVARCHAR(MAX),
-    raw_text NVARCHAR(MAX),
+    raw_text VARCHAR(MAX),
     payload NVARCHAR(MAX),
     read_count INT,
     total_count BIGINT,
