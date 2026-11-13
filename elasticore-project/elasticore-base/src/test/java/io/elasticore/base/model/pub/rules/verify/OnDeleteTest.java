@@ -27,7 +27,7 @@ public class OnDeleteTest {
             "\n",
             "entity:",
             "  OdPost:",
-            "    meta: entity @root @expose(20)",
+            "    meta: entity @root @expose(20) @access(read=public)",
             "    fields:",
             "      postId: long @id @sequence",
             "      title: string(200)!",
@@ -44,11 +44,13 @@ public class OnDeleteTest {
             "      reportId: long @id @sequence",
             "      post: OdPost @onDelete(restrict)",
             "      comment: OdComment @onDelete(restrict)",
+            "      deletedAt: timestamp @deleted",
             "  OdBookmark:",
             "    meta: entity @root @expose(20)",
             "    fields:",
             "      bookmarkId: long @id @sequence",
             "      post: OdPost @onDelete(setNull)",
+            "      version: long @jpa:Version",
             "");
 
     private static final List<File> projects = new ArrayList<File>();
@@ -66,17 +68,15 @@ public class OnDeleteTest {
     public void theDeletedRootsServiceCarriesItOut() throws Exception {
         File project = run("elcore-ondelete-hex", "hexagonal", "java", "jpa", MODEL, false, 0, new String[1]);
         String post = found(project, "OdPostCoreService.java");
-        // Before each delete, by its key and by a search.
+        // Before each delete: by its key, and each row a search deletes, as it deletes it.
         assertTrue(
                 post.contains("repository.findById(postId).ifPresent(row -> onDeleteOdPost(entityManager, row));"),
                 post);
-        assertTrue(
-                post.contains(
-                        "for (Object row : query.findAll(ForumMapper.toSpec(searchDTO))) onDeleteOdPost(entityManager, row);"),
-                post);
-        // restrict first, then setNull, then cascade - on the id the reference holds.
-        int restrict = post.indexOf("\"select 1 from OdReport x where x.postId = :id\"");
-        int setNull = post.indexOf("\"update OdBookmark x set x.postId = null where x.postId = :id\"");
+        assertTrue(post.contains("repository.delete(onDeleteOdPost(entityManager, each));"), post);
+        assertTrue(post.contains("public static OdPost onDeleteOdPost(EntityManager em, Object row) {"), post);
+        // restrict first, then setNull, then cascade - on the id the reference holds; a soft-deleted report is out.
+        int restrict = post.indexOf("\"select 1 from OdReport x where x.postId = :id and x.deletedAt is null\"");
+        int setNull = post.indexOf("\"update versioned OdBookmark x set x.postId = null where x.postId = :id\"");
         int cascade = post.indexOf("\"select x from OdComment x where x.postId = :id\"");
         assertTrue(restrict > 0 && setNull > restrict && cascade > setNull, post);
         assertTrue(
@@ -84,19 +84,26 @@ public class OnDeleteTest {
                         + " \"OdPost {0} is still pointed to by OdReport rows (OdReport.post @onDelete(restrict))\","
                         + " String.valueOf(id));"),
                 post);
-        // A cascaded comment takes its replies, and is refused while a report points to it.
+        // A cascaded comment takes its replies, each row once, and is refused while a report points to it.
         assertTrue(
-                post.contains("            if (!em.contains(each)) continue;\n"
-                        + "            onDeleteOdComment(em, each);\n            em.remove(each);"),
+                post.contains("            if (!em.contains(each)) continue;\n            if (!seen.add(each))\n"
+                        + "                throw new io.elasticore.springboot3.validation.ConflictException(\"cycle\","
+                        + " \"OdComment rows point to each other through OdComment.parent - @onDelete(cascade) does not"
+                        + " delete a cycle\");\n"
+                        + "            onDeleteOdComment(em, each, seen);\n            em.remove(each);"),
                 post);
-        assertTrue(post.contains("public static void onDeleteOdComment(EntityManager em, Object row) {"), post);
+        assertTrue(
+                post.contains(
+                        "private static void onDeleteOdComment(EntityManager em, Object row, java.util.Set<Object> seen) {"),
+                post);
         assertTrue(post.contains("Object id = ((OdPost) row).getPostId();"), post);
         assertTrue(post.contains("Object id = ((OdComment) row).getCommentId();"), post);
         assertTrue(post.contains("\"select x from OdComment x where x.parentCommentId = :id\""), post);
-        assertTrue(post.contains("\"select 1 from OdReport x where x.commentId = :id\""), post);
+        assertTrue(post.contains("\"select 1 from OdReport x where x.commentId = :id and x.deletedAt is null\""), post);
         // Nothing points to a report or a bookmark with @onDelete: their services are as before.
         assertFalse(found(project, "OdReportCoreService.java").contains("onDelete"));
         assertFalse(found(project, "OdBookmarkCoreService.java").contains("onDelete"));
+        assertTrue(found(project, "OdReportCoreService.java").contains("repository.delete(each);"));
     }
 
     @Test
@@ -105,12 +112,19 @@ public class OnDeleteTest {
         String post = found(project, "OdPostCoreService.kt");
         assertTrue(
                 post.contains("repository.findById(postId!!).ifPresent { onDeleteOdPost(entityManager, it) }"), post);
+        assertTrue(post.contains("for (each in found) repository.delete(onDeleteOdPost(entityManager, each))"), post);
+        // Members beside the @access companion object - a class has only one.
+        assertTrue(post.split("companion object", -1).length <= 2, post);
         assertTrue(
                 post.contains(
-                        "for (row in query.findAll(ForumMapper.toSpec(searchDTO))) onDeleteOdPost(entityManager, row)"),
+                        "protected fun onDeleteOdPost(em: jakarta.persistence.EntityManager, row: Any): OdPost {"),
                 post);
-        assertTrue(post.contains("companion object {"), post);
         assertTrue(post.contains("val id: Any? = (row as OdPost).postId"), post);
+        assertTrue(post.contains("throw io.elasticore.springboot3.validation.ConflictException(\"restricted\","), post);
+        assertTrue(
+                post.contains("if (each == null || !em.contains(each)) continue\n            if (!seen.add(each))"),
+                post);
+        assertTrue(post.contains("onDeleteOdComment(em, each, seen)"), post);
         // Its generated test hands the mocked entity manager a query that finds nothing.
         String test = found(project, "OdPostServiceTest.kt");
         assertTrue(
@@ -118,9 +132,6 @@ public class OnDeleteTest {
                         + ".thenReturn(onDeleteQuery)"),
                 test);
         assertFalse(found(project, "OdReportServiceTest.kt").contains("onDeleteQuery"));
-        assertTrue(post.contains("fun onDeleteOdPost(em: jakarta.persistence.EntityManager, row: Any) {"), post);
-        assertTrue(post.contains("throw io.elasticore.springboot3.validation.ConflictException(\"restricted\","), post);
-        assertTrue(post.contains("onDeleteOdComment(em, each!!)"), post);
     }
 
     @Test
@@ -129,7 +140,8 @@ public class OnDeleteTest {
         File project = run("elcore-ondelete-layered", "layered", "java", "jpa", model, false, 0, new String[1]);
         String post = found(project, "OdPostCoreService.java");
         assertTrue(post.contains("\"select x from OdComment x where x.post.postId = :id\""), post);
-        assertTrue(post.contains("\"update OdBookmark x set x.post = null where x.post.postId = :id\""), post);
+        assertTrue(
+                post.contains("\"update versioned OdBookmark x set x.post = null where x.post.postId = :id\""), post);
     }
 
     @Test
@@ -153,6 +165,50 @@ public class OnDeleteTest {
         assertTrue(log[0].contains("OdReport.post @onDelete(remove): say cascade, restrict or setNull"), log[0]);
         assertTrue(log[0].contains("OdComment.text @onDelete(cascade): it goes on a reference to one row"), log[0]);
         assertTrue(log[0].contains("OdComment.post @onDelete(setNull): the reference is required"), log[0]);
+    }
+
+    /** An aggregate's member is deleted by its root, and does not cascade on its own. */
+    @Test
+    public void aMemberOfAnAggregateIsRefused() throws Exception {
+        String[] log = new String[1];
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  OdOrder:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      orderId: long @id @sequence",
+                "      lines: List<OdLine> @OneToMany(mappedBy=\"order\") @cascade(ALL)",
+                "  OdLine:",
+                "    meta: entity @aggregate(OdOrder)",
+                "    fields:",
+                "      lineId: long @id @sequence",
+                "      order: OdOrder @ManyToOne",
+                "      item: OdItem @onDelete(cascade)",
+                "  OdItem:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      itemId: long @id @sequence",
+                "  OdReview:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      reviewId: long @id @sequence",
+                "      line: OdLine @onDelete(restrict)",
+                "");
+        run("elcore-ondelete-member", "hexagonal", "java", "jpa", model, false, 1, log);
+        assertTrue(log[0].contains("OdLine.item @onDelete(cascade): OdLine is a member of an aggregate"), log[0]);
+        assertTrue(log[0].contains("OdReview.line @onDelete(restrict): OdLine is a member of an aggregate"), log[0]);
+    }
+
+    /** A soft-deleting comment cascaded from a post deleted outright keeps its row and its foreign key: said. */
+    @Test
+    public void aSoftDeletedChildOfAHardDeletedTargetIsSaid() throws Exception {
+        String[] log = new String[1];
+        String model = MODEL.replace(
+                "      parent: OdComment @onDelete(cascade)",
+                "      parent: OdComment @onDelete(cascade)\n      deletedAt: timestamp @deleted");
+        run("elcore-ondelete-soft", "hexagonal", "java", "jpa", model, false, 0, log);
+        assertTrue(log[0].contains("OdComment.post @onDelete(cascade): OdComment is deleted softly"), log[0]);
     }
 
     private static File run(

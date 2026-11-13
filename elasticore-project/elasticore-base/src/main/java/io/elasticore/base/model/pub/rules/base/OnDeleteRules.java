@@ -21,12 +21,16 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * <p>Written on the side that points ({@code post: Post @onDelete(cascade)} on Comment) and carried out by the
  * CoreService of the side that is deleted, before each delete it makes, in the same transaction: every
  * restrict first - a 409 {@code restricted} naming what still points, rather than the foreign key's - then
- * setNull, then cascade. A cascaded row is removed through JPA, so its own soft delete and delete guards
- * apply, after what its own {@code @onDelete} references ask: a comment's replies go with it.
+ * setNull, then cascade. A row cleared by setNull is loaded and changed through JPA, so its version, its
+ * audit fields and its listeners apply. A cascaded row's own {@code @onDelete} references are carried out
+ * first, then it is removed through JPA (its soft delete and delete guards apply): a comment's replies go with
+ * it. Each row is visited once, so a cycle of references ends. Soft-deleted rows are left out of what restrict
+ * sees and cascade takes.
  *
- * <p>The work is a static method per entity on the cascade's way, in the deleted root's own CoreService, so no
- * service is handed another: {@code onDeletePost(em, row)}, {@code onDeleteComment(em, row)}. JPA (Java,
- * Kotlin) only; MyBatis and the 2.x-compatible output stop the build rather than delete without it.
+ * <p>The work is a method per entity on the cascade's way, in the deleted root's own CoreService, so no service
+ * is handed another: {@code onDeletePost(em, row)} (static in Java; a member in Kotlin, beside any companion
+ * object the class has). JPA (Java, Kotlin) only; MyBatis and the 2.x-compatible output stop the build rather
+ * than delete without it.
  */
 public class OnDeleteRules implements CodeRules {
 
@@ -46,30 +50,19 @@ public class OnDeleteRules implements CodeRules {
         boolean kt = c.syntax() == Syntax.KOTLIN;
         String em = orDefault(c.varValue("emRef"), "entityManager");
         String repo = orDefault(c.varValue("cmdRef"), "repository");
-        String query = orDefault(c.varValue("qryRef"), repo);
         String id = orDefault(
                 c.varValue("pkDtoInfo2"),
                 e.pkField() == null ? "id" : e.pkField().name());
-        String mapper = orDefault(c.varValue("mapperName"), e.domainClassName() + "Mapper");
-        String open = orDefault(c.varValue("accessSpecOpen"), "");
-        String close = orDefault(c.varValue("accessSpecClose"), "");
         String method = "onDelete" + e.getName();
 
-        // The two ways a row goes: by its key, and by a search.
+        // By its key: before the delete, after the access check. By a search: each row the delete removes,
+        // as it removes it - the same rows, read once.
         c.varLine(
                 "accessDelete",
                 kt
                         ? String.format("%s.findById(%s).ifPresent { %s(%s, it) }", repo, id, method, em)
                         : String.format("%s.findById(%s).ifPresent(row -> %s(%s, row));", repo, id, method, em));
-        c.varLine(
-                "accessDeleteBySearch",
-                kt
-                        ? String.format(
-                                "for (row in %s.findAll(%s%s.toSpec(searchDTO)%s)) %s(%s, row)",
-                                query, open, mapper, close, method, em)
-                        : String.format(
-                                "for (Object row : %s.findAll(%s%s.toSpec(searchDTO)%s)) %s(%s, row);",
-                                query, open, mapper, close, method, em));
+        c.var("deleteEachOpen", "%s(%s, ", method, em).var("deleteEachClose", ")");
 
         // The entities on the cascade's way, each once: a comment's replies are comments.
         Set<String> visit = new LinkedHashSet<String>();
@@ -82,95 +75,138 @@ public class OnDeleteRules implements CodeRules {
                 if ("cascade".equals(ref.mode)) todo.add(ref.entity);
             }
         }
+
+        String emType = kt ? j2ee(c) + ".persistence.EntityManager" : "EntityManager";
         List<String> lines = new ArrayList<String>();
-        if (kt) lines.add("companion object {");
-        String in = kt ? "    " : "";
+        lines.add("");
+        lines.add("/**");
+        lines.add(" * What the rows that point to a " + e.getName() + " ask when it is deleted (@onDelete), before");
+        lines.add(" * it is: restrict refuses, setNull clears, cascade deletes them - in this transaction.");
+        lines.add(" */");
+        if (kt) {
+            lines.add(String.format("protected fun %s(em: %s, row: Any): %s {", method, emType, e.getName()));
+            lines.add(String.format(
+                    "    %s(em, row, java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>()))",
+                    method));
+            lines.add(String.format("    return row as %s", e.getName()));
+        } else {
+            lines.add(String.format("public static %s %s(EntityManager em, Object row) {", e.getName(), method));
+            lines.add(String.format(
+                    "    %s(em, row, java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Object, Boolean>()));",
+                    method));
+            lines.add(String.format("    return (%s) row;", e.getName()));
+        }
+        lines.add("}");
         for (String entity : visit) {
             List<EntitySpec.OnDeleteRef> refs = e.onDeleteOf(entity);
             // A cascaded entity nothing points to with @onDelete is removed as it is: no method of its own.
             if (refs.isEmpty()) continue;
-            String key = refs.get(0).targetKey;
-            lines.add("");
-            lines.add(in + "/**");
-            lines.add(in + " * What the rows that point to a " + entity
-                    + " ask when it is deleted (@onDelete), before it");
-            lines.add(in + " * is: restrict refuses, setNull clears, cascade deletes them - in this transaction.");
-            lines.add(in + " */");
-            if (kt) {
-                lines.add(in + "@JvmStatic");
-                lines.add(in
-                        + String.format(
-                                "fun onDelete%s(em: %s.persistence.EntityManager, row: Any) {", entity, j2ee(c)));
-                lines.add(in + String.format("    val id: Any? = (row as %s).%s", entity, key));
-            } else {
-                lines.add(String.format("public static void onDelete%s(EntityManager em, Object row) {", entity));
-                lines.add(String.format(
-                        "    Object id = ((%s) row).get%s();",
-                        entity, Character.toUpperCase(key.charAt(0)) + key.substring(1)));
-            }
-            for (EntitySpec.OnDeleteRef ref : refs) {
-                if (!"restrict".equals(ref.mode)) continue;
-                String exists = String.format("\"select 1 from %s x where x.%s = :id\"", ref.entity, ref.where);
-                String refusal = String.format(
-                        "\"restricted\", \"%s {0} is still pointed to by %s rows (%s.%s"
-                                + " @onDelete(restrict))\", %s",
-                        entity, ref.entity, ref.entity, ref.field, kt ? "id.toString()" : "String.valueOf(id)");
-                if (kt) {
-                    lines.add(in
-                            + String.format(
-                                    "    if (em.createQuery(%s).setParameter(\"id\", id).setMaxResults(1)"
-                                            + ".resultList.isNotEmpty())",
-                                    exists));
-                    lines.add(in
-                            + String.format(
-                                    "        throw io.elasticore.springboot3.validation.ConflictException(%s)",
-                                    refusal));
-                } else {
-                    lines.add(String.format(
-                            "    if (!em.createQuery(%s).setParameter(\"id\", id).setMaxResults(1)"
-                                    + ".getResultList().isEmpty())",
-                            exists));
-                    lines.add(String.format(
-                            "        throw new io.elasticore.springboot3.validation.ConflictException(%s);", refusal));
-                }
-            }
-            for (EntitySpec.OnDeleteRef ref : refs) {
-                if (!"setNull".equals(ref.mode)) continue;
-                String update = String.format(
-                        "\"update %s x set x.%s = null where x.%s = :id\"", ref.entity, ref.set, ref.where);
-                lines.add(in
-                        + String.format(
-                                "    em.createQuery(%s).setParameter(\"id\", id).executeUpdate()%s",
-                                update, kt ? "" : ";"));
-            }
-            for (EntitySpec.OnDeleteRef ref : refs) {
-                if (!"cascade".equals(ref.mode)) continue;
-                String select = String.format("\"select x from %s x where x.%s = :id\"", ref.entity, ref.where);
-                boolean deeper = !e.onDeleteOf(ref.entity).isEmpty();
-                // A row an earlier one took with it (a reply of a comment of the same post) is gone already.
-                if (kt) {
-                    lines.add(in
-                            + String.format(
-                                    "    for (each in em.createQuery(%s).setParameter(\"id\", id).resultList) {",
-                                    select));
-                    lines.add(in + "        if (!em.contains(each)) continue");
-                    if (deeper) lines.add(in + String.format("        onDelete%s(em, each!!)", ref.entity));
-                    lines.add(in + "        em.remove(each)");
-                } else {
-                    lines.add(String.format(
-                            "    for (Object each : em.createQuery(%s).setParameter(\"id\", id)"
-                                    + ".getResultList()) {",
-                            select));
-                    lines.add("        if (!em.contains(each)) continue;");
-                    if (deeper) lines.add(String.format("        onDelete%s(em, each);", ref.entity));
-                    lines.add("        em.remove(each);");
-                }
-                lines.add(in + "    }");
-            }
-            lines.add(in + "}");
+            method(lines, kt, emType, entity, refs, e);
         }
-        if (kt) lines.add("}");
         for (String line : lines) c.varLine("joinFetchMethod", "%s", line);
+    }
+
+    /** One entity's work: its restricts, its setNulls, its cascades, each row once (seen). */
+    private static void method(
+            List<String> lines,
+            boolean kt,
+            String emType,
+            String entity,
+            List<EntitySpec.OnDeleteRef> refs,
+            EntitySpec e) {
+        String key = refs.get(0).targetKey;
+        lines.add("");
+        if (kt) {
+            lines.add(
+                    String.format("private fun onDelete%s(em: %s, row: Any, seen: MutableSet<Any>) {", entity, emType));
+            lines.add("    seen.add(row)");
+            lines.add(String.format("    val id: Any? = (row as %s).%s", entity, key));
+        } else {
+            lines.add(String.format(
+                    "private static void onDelete%s(EntityManager em, Object row, java.util.Set<Object> seen) {",
+                    entity));
+            lines.add("    seen.add(row);");
+            lines.add(String.format("    Object id = ((%s) row).get%s();", entity, capitalize(key)));
+        }
+        for (EntitySpec.OnDeleteRef ref : refs) {
+            if (!"restrict".equals(ref.mode)) continue;
+            String exists =
+                    String.format("\"select 1 from %s x where x.%s = :id%s\"", ref.entity, ref.where, live(ref));
+            String refusal = String.format(
+                    "\"restricted\", \"%s {0} is still pointed to by %s rows (%s.%s @onDelete(restrict))\", %s",
+                    entity, ref.entity, ref.entity, ref.field, kt ? "id.toString()" : "String.valueOf(id)");
+            if (kt) {
+                lines.add(String.format(
+                        "    if (em.createQuery(%s).setParameter(\"id\", id).setMaxResults(1).resultList.isNotEmpty())",
+                        exists));
+                lines.add(String.format(
+                        "        throw io.elasticore.springboot3.validation.ConflictException(%s)", refusal));
+            } else {
+                lines.add(String.format(
+                        "    if (!em.createQuery(%s).setParameter(\"id\", id).setMaxResults(1).getResultList().isEmpty())",
+                        exists));
+                lines.add(String.format(
+                        "        throw new io.elasticore.springboot3.validation.ConflictException(%s);", refusal));
+            }
+        }
+        for (EntitySpec.OnDeleteRef ref : refs) {
+            if (!"setNull".equals(ref.mode)) continue;
+            // Every row that holds it - a soft-deleted one too, which still holds its foreign key. One statement:
+            // a domain entity does not let its reference be set from outside. A @Version moves (Hibernate's
+            // "update versioned"), so a copy read before cannot write the reference back.
+            String update = String.format(
+                    "\"update %s%s x set x.%s = null where x.%s = :id\"",
+                    ref.versioned ? "versioned " : "", ref.entity, ref.set, ref.where);
+            lines.add(String.format(
+                    "    em.createQuery(%s).setParameter(\"id\", id).executeUpdate()%s", update, kt ? "" : ";"));
+        }
+        for (EntitySpec.OnDeleteRef ref : refs) {
+            if (!"cascade".equals(ref.mode)) continue;
+            String select =
+                    String.format("\"select x from %s x where x.%s = :id%s\"", ref.entity, ref.where, live(ref));
+            boolean deeper = !e.onDeleteOf(ref.entity).isEmpty();
+            // A row an earlier one took with it (a reply of a comment of the same post) is gone already,
+            // and one on the way already (a cycle) is not taken again.
+            if (kt) {
+                lines.add(String.format(
+                        "    for (each in em.createQuery(%s).setParameter(\"id\", id).resultList) {", select));
+                lines.add("        if (each == null || !em.contains(each)) continue");
+                lines.add("        if (!seen.add(each))");
+                lines.add(String.format(
+                        "            throw io.elasticore.springboot3.validation.ConflictException(%s)", cycle(ref)));
+                if (deeper) lines.add(String.format("        onDelete%s(em, each, seen)", ref.entity));
+                lines.add("        em.remove(each)");
+            } else {
+                lines.add(String.format(
+                        "    for (Object each : em.createQuery(%s).setParameter(\"id\", id).getResultList()) {",
+                        select));
+                lines.add("        if (!em.contains(each)) continue;");
+                lines.add("        if (!seen.add(each))");
+                lines.add(String.format(
+                        "            throw new io.elasticore.springboot3.validation.ConflictException(%s);",
+                        cycle(ref)));
+                if (deeper) lines.add(String.format("        onDelete%s(em, each, seen);", ref.entity));
+                lines.add("        em.remove(each);");
+            }
+            lines.add("    }");
+        }
+        lines.add("}");
+    }
+
+    /**
+     * A row met again on its own way down: rows that point to each other, each holding the other's key, are
+     * not deleted one by one - refused, rather than recursing without end or failing on the foreign key.
+     */
+    private static String cycle(EntitySpec.OnDeleteRef ref) {
+        return String.format(
+                "\"cycle\", \"%s rows point to each other through %s.%s - @onDelete(cascade) does not"
+                        + " delete a cycle\"",
+                ref.entity, ref.entity, ref.field);
+    }
+
+    /** The condition that leaves a soft-deleted row out, or nothing for an entity deleted outright. */
+    private static String live(EntitySpec.OnDeleteRef ref) {
+        return ref.deleted == null ? "" : " and x." + ref.deleted + " is null";
     }
 
     /**
@@ -203,6 +239,10 @@ public class OnDeleteRules implements CodeRules {
                 .append("\n        org.mockito.Mockito.lenient().`when`(entityManager.createQuery(")
                 .append("org.mockito.ArgumentMatchers.anyString())).thenReturn(onDeleteQuery)");
         c.var("mockSetUp", "%s", more.toString());
+    }
+
+    private static String capitalize(String name) {
+        return Character.toUpperCase(name.charAt(0)) + name.substring(1);
     }
 
     private static String j2ee(SourceCode c) {

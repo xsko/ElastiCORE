@@ -1788,14 +1788,10 @@ public final class SpecFactory {
     }
 
     /**
-     * Tells a spec which entities name rows of other aggregates by identity
-     * (an @idof field, written by the id-reference rewrite) - directly, or
-     * through a collection of members of their own aggregate that do.
-     */
-    /**
      * The domain's {@code @onDelete(cascade | restrict | setNull)} references, by the entity they point to
      * (issue 180). A misuse stops the build: the value, a field that is no single reference to an entity,
-     * setNull on a required reference.
+     * setNull on a required reference, the inverse side of a one-to-one, a target with no single key, a
+     * target that is a member of an aggregate (its root deletes it), a cascade from a member of an aggregate.
      */
     static java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>> onDeleteOf(
             ECoreModel model) {
@@ -1807,6 +1803,17 @@ public final class SpecFactory {
         for (int i = 0; i < all.size(); i++) {
             Entity entity = all.get(i);
             String name = entity.getIdentity().getName();
+            // Not a table of its own: the entities that extend it carry the reference, each for its rows.
+            if (entity.getMetaInfo().hasMetaAnnotation("abstract")
+                    || entity.getMetaInfo().hasMetaAnnotation("embeddable")
+                    || entity.getMetaInfo().hasMetaAnnotation("rollup")) continue;
+            // A soft-deleting entity's deleted rows are out of what restrict sees and cascade takes.
+            String deleted = null;
+            boolean versioned = false;
+            for (Field g : fieldsOf(entity)) {
+                if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) deleted = g.getName();
+                if (g.hasAnnotation("jpa:version") || g.hasAnnotation("version")) versioned = true;
+            }
             for (Field f : fieldsOf(entity)) {
                 String declared = f.getAnnotationValue("ondelete");
                 if (declared == null && !f.hasAnnotation("ondelete")) continue;
@@ -1824,6 +1831,26 @@ public final class SpecFactory {
                 if (target == null) {
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(
                             at + ": it goes on a reference to one row of" + " an entity of the domain, as post: Post");
+                    continue;
+                }
+                String mappedBy = f.getAnnotation("onetoone") == null
+                                || f.getAnnotation("onetoone").getProperties() == null
+                        ? null
+                        : f.getAnnotation("onetoone").getProperties().getProperty("mappedBy");
+                if (mappedBy != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": the other side holds this one-to-one" + " (mappedBy) - write @onDelete there");
+                    continue;
+                }
+                if (aggregateOf(target.getIdentity().getName(), model) != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": " + target.getIdentity().getName()
+                                    + " is a member of an aggregate, deleted by its root - point to the root");
+                    continue;
+                }
+                if ("cascade".equals(mode) && aggregateOf(name, model) != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + name + " is a member of an"
+                            + " aggregate - its root removes it, so a cascade cannot; say restrict or setNull");
                     continue;
                 }
                 if ("setNull".equals(mode) && f.hasAnnotation("notnull")) {
@@ -1853,17 +1880,36 @@ public final class SpecFactory {
                 String where = byId ? joinBy.trim() : f.getName() + "." + pk.getName();
                 String set = byId ? joinBy.trim() : f.getName();
                 String key = target.getIdentity().getName();
+                if ("cascade".equals(mode) && deleted != null && !deletesSoftly(target)) {
+                    // Its row stays, and so does its foreign key: the target's delete then meets it.
+                    io.elasticore.base.model.pub.rules.ModelCheck.warn(at + ": " + name + " is deleted softly, so its"
+                            + " rows and their " + f.getName() + " stay while " + key + " is deleted outright - where a"
+                            + " foreign key holds them, the delete is refused; say setNull, or delete " + key
+                            + " softly too");
+                }
                 if (!out.containsKey(key)) {
                     out.put(key, new java.util.ArrayList<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>());
                 }
                 out.get(key)
                         .add(new io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef(
-                                name, f.getName(), where, set, mode, pk.getName()));
+                                name, f.getName(), where, set, mode, pk.getName(), deleted, versioned));
             }
         }
         return out;
     }
 
+    private static boolean deletesSoftly(Entity entity) {
+        for (Field g : fieldsOf(entity)) {
+            if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Tells a spec which entities name rows of other aggregates by identity
+     * (an @idof field, written by the id-reference rewrite) - directly, or
+     * through a collection of members of their own aggregate that do.
+     */
     static void registerReferencing(EntitySpec spec, ECoreModel model) {
         for (String name : facts(model).referencing) spec.knownReferencing(name);
     }

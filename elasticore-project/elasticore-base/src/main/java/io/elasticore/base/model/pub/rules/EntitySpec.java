@@ -382,14 +382,28 @@ public final class EntitySpec {
         public final String mode;
         /** The key field of the entity pointed to, postId: what the row's id is read from. */
         public final String targetKey;
+        /** The pointing entity's @deleted field, or null when its rows are deleted outright. */
+        public final String deleted;
+        /** Whether the pointing entity has a @Version: setNull then moves it, as a write through JPA would. */
+        public final boolean versioned;
 
-        public OnDeleteRef(String entity, String field, String where, String set, String mode, String targetKey) {
+        public OnDeleteRef(
+                String entity,
+                String field,
+                String where,
+                String set,
+                String mode,
+                String targetKey,
+                String deleted,
+                boolean versioned) {
             this.entity = entity;
             this.field = field;
             this.where = where;
             this.set = set;
             this.mode = mode;
             this.targetKey = targetKey;
+            this.deleted = deleted;
+            this.versioned = versioned;
         }
     }
 

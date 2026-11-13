@@ -29,6 +29,7 @@ class BoardOnDeleteTest {
 
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper json;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private long create(String what, String body, String key) throws Exception {
         MockHttpServletResponse res = mvc.perform(post(BASE + what).contentType(MediaType.APPLICATION_JSON).content(body))
@@ -80,6 +81,27 @@ class BoardOnDeleteTest {
         assertThat(problem.path("detail").asText())
                 .isEqualTo("Post " + post + " is still pointed to by Report rows (Report.post @onDelete(restrict))");
         assertThat(read("post", post).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a cycle of replies is refused with 409 cycle, not recursed into without end")
+    void aCycleIsRefused() throws Exception {
+        long post = create("post", "{\"title\":\"cyclic\"}", "postId");
+        long first = create("comment", "{\"text\":\"a\",\"postId\":" + post + "}", "commentId");
+        long second = create("comment", "{\"text\":\"b\",\"postId\":" + post + ",\"parentCommentId\":" + first + "}",
+                "commentId");
+        // No request makes a reply the parent of its own parent; the database can hold it.
+        jdbc.update("UPDATE brd_comment SET parent_comment_id = ? WHERE comment_id = ?", second, first);
+
+        MockHttpServletResponse refused = remove("post", post);
+        assertThat(refused.getStatus()).as(refused.getContentAsString()).isEqualTo(409);
+        assertThat(json.readTree(refused.getContentAsString()).path("code").asText()).isEqualTo("cycle");
+        assertThat(read("post", post).getStatus()).isEqualTo(200);
+        assertThat(read("comment", first).getStatus()).isEqualTo(200);
+        assertThat(read("comment", second).getStatus()).isEqualTo(200);
+        // Broken by hand, it goes.
+        jdbc.update("UPDATE brd_comment SET parent_comment_id = NULL WHERE comment_id = ?", first);
+        assertThat(remove("post", post).getStatus()).isEqualTo(200);
     }
 
     @Test
