@@ -1899,8 +1899,8 @@ public final class SpecFactory {
     }
 
     /**
-     * The root of an aggregate a domain model declares the entity a member of - @aggregate on it, or held by a
-     * @root - or null. A layered model's @cascade relation makes no aggregate of it.
+     * The root of an aggregate a domain model declares the entity a member of - {@code @aggregate} on it, or held
+     * by a {@code @root} - or null. A layered model's {@code @cascade} relation makes no aggregate of it.
      */
     private static String declaredMember(String name, ECoreModel model) {
         String holder = aggregateOf(name, model);
