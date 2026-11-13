@@ -707,6 +707,27 @@ comment: Comment @col(parent_comment_id)
 comment: Comment! @col(parent_comment_id)
 ```
 
+#### @onDelete(cascade | restrict | setNull) - what becomes of the rows that point to a deleted row
+> **Works in:** v3, Kotlin (JPA), ddd, hexagonal, layered · **Not in:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - the build stops; 2.x generator (not generated)
+Written on the side that points; carried out by the CoreService of the deleted row, before each delete (by its key, a batch, a search), in the same transaction.
+```yaml
+Comment:
+  fields:
+    post: Post! @onDelete(cascade)        # deleting a post deletes its comments
+    parent: Comment @onDelete(cascade)    # and a comment its replies
+Report:
+  fields:
+    post: Post @onDelete(restrict)        # a reported post is not deleted: 409 "restricted"
+Bookmark:
+  fields:
+    post: Post @onDelete(setNull)         # the bookmark stays, without its post
+```
+- Order per row: its `restrict`s, its `setNull`s, its `cascade`s. A cascaded row's own `@onDelete` comes first (a reply goes with its comment), then it is removed through JPA: its soft delete and delete guards apply. Any refusal on the way undoes the whole delete - unless code of yours catches it inside the same transaction.
+- `restrict` answers 409 `"code": "restricted"`, `detail` `Post 7 is still pointed to by Report rows (Report.post @onDelete(restrict))`. Rows that point to each other (a reply made its parent's parent) answer 409 `"code": "cycle"`: each row is visited once.
+- `setNull` is one JPQL update (a domain entity does not let its reference be set from outside): a `@Version` moves (`update versioned`) - a row this delete then removes is read again first - audit fields and Envers revisions do not. A soft-deleted row is left out of `restrict` and `cascade`, but still holds its foreign key: deleting the target outright then meets it in the database (a cascade into a soft-deleting entity from one deleted outright is a build warning). A soft-deleting target keeps its row, while what pointed to it is already cleared or removed.
+- Generated in the deleted root's CoreService: `onDeletePost(em, row)` (static in Java; a member in Kotlin, beside the class's companion object), JPQL over the reference's id (`x.postId`) or through the relation in layered (`x.post.postId`). One query per reference per row: deleting thousands of rows is thousands of queries.
+- Misuse stops the build: another value; a field that is no single reference to an entity of the domain; `setNull` on a required (`!`) reference; the `mappedBy` side of a one-to-one; a target with a composite key; a target that is a member of an aggregate (point to its root), or a `cascade` from one. Not the cascaded rows' domain events, no `ON DELETE` in the DDL. A generated Kotlin service test you edited needs its entity manager's `createQuery` stubbed. `elasticore-template-ddd` `BoardOnDeleteTest` (HTTP), `CatalogApiTest` (layered, versioned setNull), `elasticore-template-kt` `OnDeleteTest`, `Ticket.agent` (`@access` target).
+
 #### Automatic DTO rendering of relationship fields (nested DTO + FK field)
 > **Since: 2.2.260703**
 

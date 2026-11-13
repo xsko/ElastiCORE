@@ -48,7 +48,8 @@ public class ServiceAccessRules implements CodeRules {
             "accessCreate", "accessUpdate", "accessDelete", "accessUpdateAll"};
 
     /** The template's inline slots around a search's specification, empty by default. */
-    public static final String[] INLINE = {"accessSpecOpen", "accessSpecClose"};
+    public static final List<String> INLINE = java.util.Collections.unmodifiableList(
+            java.util.Arrays.asList("accessSpecOpen", "accessSpecClose", "deleteEachOpen", "deleteEachClose"));
 
     private static final String RT = "io.elasticore.springboot3.security.";
     private static final java.util.regex.Pattern ENTRY =

@@ -348,6 +348,7 @@ public final class SpecFactory {
         registerDeriving(spec, model);
         registerReferencing(spec, model);
         registerOptionalEmbeddables(spec, model);
+        spec.knownOnDelete(onDeleteOf(model));
         spec.knownSignInEntities(signInsFor(model));
         spec.knownOtherLoginEntities(otherLoginsFor(model));
         registerReadLevels(spec, model);
@@ -1784,6 +1785,137 @@ public final class SpecFactory {
                 }
             }
         }
+    }
+
+    /**
+     * The domain's {@code @onDelete(cascade | restrict | setNull)} references, by the entity they point to
+     * (issue 180). A misuse stops the build: the value, a field that is no single reference to an entity,
+     * setNull on a required reference, the inverse side of a one-to-one, a target with no single key, a
+     * target that is a member of an aggregate (its root deletes it), a cascade from a member of an aggregate.
+     */
+    static java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>> onDeleteOf(
+            ECoreModel model) {
+        java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>> out =
+                new java.util.LinkedHashMap<
+                        String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>>();
+        if (model.getEntityModels() == null) return out;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity entity = all.get(i);
+            String name = entity.getIdentity().getName();
+            // Not a table of its own: the entities that extend it carry the reference, each for its rows.
+            if (entity.getMetaInfo().hasMetaAnnotation("abstract")
+                    || entity.getMetaInfo().hasMetaAnnotation("embeddable")
+                    || entity.getMetaInfo().hasMetaAnnotation("rollup")) continue;
+            // A soft-deleting entity's deleted rows are out of what restrict sees and cascade takes.
+            String deleted = null;
+            boolean versioned = false;
+            for (Field g : fieldsOf(entity)) {
+                if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) deleted = g.getName();
+                if (g.hasAnnotation("jpa:version") || g.hasAnnotation("version")) versioned = true;
+            }
+            for (Field f : fieldsOf(entity)) {
+                String declared = f.getAnnotationValue("ondelete");
+                if (declared == null && !f.hasAnnotation("ondelete")) continue;
+                String mode = declared == null ? "" : declared.trim();
+                String at = String.format(
+                        "[%s] %s.%s @onDelete(%s)", entity.getIdentity().getDomainId(), name, f.getName(), mode);
+                if ("setnull".equalsIgnoreCase(mode)) mode = "setNull";
+                if (!"cascade".equals(mode) && !"restrict".equals(mode) && !"setNull".equals(mode)) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": say cascade, restrict or setNull");
+                    continue;
+                }
+                Entity target = f.getTypeInfo().isList() || f.getTypeInfo().isBaseType()
+                        ? null
+                        : model.getEntityModels().findByName(f.getTypeInfo().getDefaultTypeName());
+                if (target == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": it goes on a reference to one row of" + " an entity of the domain, as post: Post");
+                    continue;
+                }
+                String mappedBy = f.getAnnotation("onetoone") == null
+                                || f.getAnnotation("onetoone").getProperties() == null
+                        ? null
+                        : f.getAnnotation("onetoone").getProperties().getProperty("mappedBy");
+                if (mappedBy != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": the other side holds this one-to-one" + " (mappedBy) - write @onDelete there");
+                    continue;
+                }
+                if (declaredMember(target.getIdentity().getName(), model) != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": " + target.getIdentity().getName()
+                                    + " is a member of an aggregate, deleted by its root - point to the root");
+                    continue;
+                }
+                if ("cascade".equals(mode) && declaredMember(name, model) != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + name + " is a member of an"
+                            + " aggregate - its root removes it, so a cascade cannot; say restrict or setNull");
+                    continue;
+                }
+                if ("setNull".equals(mode) && f.hasAnnotation("notnull")) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": the reference is required, so it"
+                            + " cannot be set to null - say cascade or restrict, or make it optional");
+                    continue;
+                }
+                Field pk = null;
+                for (Field g : fieldsOf(target)) {
+                    if (g.isPrimaryKey() || g.hasAnnotation("pk") || g.hasAnnotation("id")) {
+                        if (pk != null) {
+                            pk = null;
+                            break;
+                        }
+                        pk = g;
+                    }
+                }
+                String joinBy = f.getAnnotationValue("joinby");
+                if (pk == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": " + target.getIdentity().getName() + " has no single key to compare");
+                    continue;
+                }
+                // A reference by id (ddd, hexagonal) is compared and cleared on its identity field; an object
+                // relation (layered) through the relation.
+                boolean byId = joinBy != null && !joinBy.trim().isEmpty() && joinBy.indexOf(',') < 0;
+                String where = byId ? joinBy.trim() : f.getName() + "." + pk.getName();
+                String set = byId ? joinBy.trim() : f.getName();
+                String key = target.getIdentity().getName();
+                if ("cascade".equals(mode) && deleted != null && !deletesSoftly(target)) {
+                    // Its row stays, and so does its foreign key: the target's delete then meets it.
+                    io.elasticore.base.model.pub.rules.ModelCheck.warn(at + ": " + name + " is deleted softly, so its"
+                            + " rows and their " + f.getName() + " stay while " + key + " is deleted outright - where a"
+                            + " foreign key holds them, the delete is refused; say setNull, or delete " + key
+                            + " softly too");
+                }
+                if (!out.containsKey(key)) {
+                    out.put(key, new java.util.ArrayList<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>());
+                }
+                out.get(key)
+                        .add(new io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef(
+                                name, f.getName(), where, set, mode, pk.getName(), deleted, versioned));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The root of an aggregate a domain model declares the entity a member of - {@code @aggregate} on it, or held
+     * by a {@code @root} - or null. A layered model's {@code @cascade} relation makes no aggregate of it.
+     */
+    private static String declaredMember(String name, ECoreModel model) {
+        String holder = aggregateOf(name, model);
+        if (holder == null) return null;
+        Entity member = model.getEntityModels().findByName(name);
+        if (member != null && member.getMetaInfo().hasMetaAnnotation("aggregate")) return holder;
+        Entity root = model.getEntityModels().findByName(holder);
+        return root != null && root.getMetaInfo().hasMetaAnnotation("root") ? holder : null;
+    }
+
+    private static boolean deletesSoftly(Entity entity) {
+        for (Field g : fieldsOf(entity)) {
+            if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) return true;
+        }
+        return false;
     }
 
     /**

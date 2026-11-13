@@ -36,7 +36,7 @@ entity:
     meta: entity @root @expose(20) @owner(agentId) @access(read=owner, create=user, close=owner) @event(Closed) -- 작업
     fields:
       ticketId: string(36) @id @genid
-      agent:    Agent @ManyToOne
+      agent:    Agent @ManyToOne @onDelete(restrict)   # an agent with tickets is not deleted (a deleted ticket aside)
       subject:  string(100)!
       status:   TicketStatus
       billing:  BillingStatus

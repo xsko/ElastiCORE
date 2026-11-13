@@ -71,7 +71,7 @@ public class ${className} {
         Specification<${entityClassName}> specification = ${accessSpecOpen}${mapperName}.toSpec(searchDTO)${accessSpecClose};
         List<${entityClassName}> found = ${qryRef}.findAll(specification);
         for (${entityClassName} each : found) {
-            ${cmdRef}.delete(each);
+            ${cmdRef}.delete(${deleteEachOpen}each${deleteEachClose});
         }
         return found.size();
     }

@@ -183,4 +183,32 @@ class CatalogApiTest {
 
         assertThat(context.getBeansOfType(BookCoreService.class)).hasSize(1);
     }
+
+    @Test
+    @DisplayName("@onDelete(setNull) through the relation: deleting an author keeps the book, without its author")
+    void onDeleteSetNull() throws Exception {
+        long id = createBook("Orphaned");
+        long author = book(id).path("authorAuthorId").asLong();
+        assertThat(author).isPositive();
+
+        assertThat(status(delete(AUTHORS + "/" + author))).isEqualTo(200);
+        assertThat(status(get(AUTHORS + "/" + author))).isEqualTo(404);
+        assertThat(book(id).path("title").asText()).isEqualTo("Orphaned");
+        assertThat(book(id).path("authorAuthorId").asLong(0)).as(book(id).toString()).isZero();
+
+        // and by a search, the other way a row goes - an author of this test's own, by a name no other test uses
+        long secondAuthor = postJson(AUTHORS, "{\"name\":\"OnDelete Writer\"}").path("authorId").asLong();
+        long second = postJson(BOOKS, "{\"title\":\"Orphaned-2\",\"price\":10.00,\"authorAuthorId\":" + secondAuthor + "}")
+                .path("bookId").asLong();
+        long version = book(second).path("version").asLong();
+        io.elasticore.sample.ddd.catalog.service.AuthorCoreService authors =
+                context.getBean(io.elasticore.sample.ddd.catalog.service.AuthorService.class);
+        io.elasticore.sample.ddd.catalog.dto.AuthorSrchDTO byName = new io.elasticore.sample.ddd.catalog.dto.AuthorSrchDTO();
+        byName.setName("OnDelete Writer");
+        assertThat(authors.delete(byName)).isEqualTo(1);
+        assertThat(status(get(AUTHORS + "/" + secondAuthor))).isEqualTo(404);
+        assertThat(book(second).path("authorAuthorId").asLong(0)).as(book(second).toString()).isZero();
+        // cleared through JPA: the book's version moved, so a stale copy cannot write the author back
+        assertThat(book(second).path("version").asLong()).isEqualTo(version + 1);
+    }
 }

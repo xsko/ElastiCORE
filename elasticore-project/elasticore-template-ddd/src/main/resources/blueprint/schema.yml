@@ -37,6 +37,15 @@ entities:
       version: Long @Column(name = "version")
       lastModifiedBy: string(50) @Column(name = "last_modified_by", length = 50)
 
+  Bookmark:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Bookmark)
+    table: brd_bookmark
+    java: io.elasticore.sample.ddd.board.domain.model.Bookmark
+    fields:
+      bookmarkId: Long @Column(name = "bookmark_id") @Id @GeneratedValue
+      label: string(50) @Column(name = "label", length = 50)
+      post: Post @relation(mappedBy="bookmark_id") @foreignKey(post_post_id) -- Post entity relationship
+
   Category:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Category)
     table: shop_category
@@ -53,6 +62,16 @@ entities:
       active: Boolean @Column(name = "active")
       parentCategory: Category @relation(mappedBy="parent_category_id") @foreignKey(parent_category_cat_id) -- Category entity relationship
       subCategories: List<Category> @relation(mappedBy="sub_categories_id") @foreignKey(sub_categories_id) -- List<Category> entity relationship
+
+  Comment:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Comment)
+    table: brd_comment
+    java: io.elasticore.sample.ddd.board.domain.model.Comment
+    fields:
+      commentId: Long @Column(name = "comment_id") @Id @GeneratedValue
+      text: string(200) @Column(name = "text", length = 200)
+      post: Post @relation(mappedBy="comment_id") @foreignKey(post_post_id) -- Post entity relationship
+      parent: Comment @relation(mappedBy="parent_id") @foreignKey(parent_comment_id) -- Comment entity relationship
 
   Customer:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Customer)
@@ -108,6 +127,16 @@ entities:
       quantity: Integer @Column(name = "quantity")
       unitPrice: java.math.BigDecimal @relation(mappedBy="unit_price_id") @foreignKey(unit_price_id) -- java.math.BigDecimal entity relationship
       discount: java.math.BigDecimal @relation(mappedBy="discount_id") @foreignKey(discount_id) -- java.math.BigDecimal entity relationship
+
+  Post:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Post)
+    table: brd_post
+    java: io.elasticore.sample.ddd.board.domain.model.Post
+    fields:
+      postId: Long @Column(name = "post_id") @Id @GeneratedValue
+      title: string(100) @Column(name = "title", length = 100)
+      quoted: Post @relation(mappedBy="quoted_id") @foreignKey(quoted_post_id) -- Post entity relationship
+      version: Long @Column(name = "version")
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Product)
@@ -181,6 +210,16 @@ entities:
       code: string(10) @Column(name = "code", length = 10) @Id
       name: string(50) @Column(name = "name", length = 50)
       country: string(2) @Column(name = "country", length = 2)
+
+  Report:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Report)
+    table: brd_report
+    java: io.elasticore.sample.ddd.board.domain.model.Report
+    fields:
+      reportId: Long @Column(name = "report_id") @Id @GeneratedValue
+      reason: string(100) @Column(name = "reason", length = 100)
+      post: Post @relation(mappedBy="report_id") @foreignKey(post_post_id) -- Post entity relationship
+      comment: Comment @relation(mappedBy="report_id") @foreignKey(comment_comment_id) -- Comment entity relationship
 
   Shipment:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.Shipment) -- 배송

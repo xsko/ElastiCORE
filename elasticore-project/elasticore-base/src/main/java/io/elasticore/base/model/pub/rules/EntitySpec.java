@@ -365,6 +365,63 @@ public final class EntitySpec {
         return referencingEntities.contains(entityName);
     }
 
+    /**
+     * A reference that says what becomes of it when the row it points to is deleted:
+     * {@code post: Post @onDelete(cascade)} on Comment.
+     */
+    public static final class OnDeleteRef {
+        /** The entity that points, Comment. */
+        public final String entity;
+        /** Its field, post. */
+        public final String field;
+        /** The JPQL attribute the pointed-to key is compared with: postId, or post.postId. */
+        public final String where;
+        /** The JPQL attribute set to null: postId, or post. */
+        public final String set;
+        /** cascade, restrict or setNull. */
+        public final String mode;
+        /** The key field of the entity pointed to, postId: what the row's id is read from. */
+        public final String targetKey;
+        /** The pointing entity's @deleted field, or null when its rows are deleted outright. */
+        public final String deleted;
+        /** Whether the pointing entity has a @Version: setNull then moves it, as a write through JPA would. */
+        public final boolean versioned;
+
+        public OnDeleteRef(
+                String entity,
+                String field,
+                String where,
+                String set,
+                String mode,
+                String targetKey,
+                String deleted,
+                boolean versioned) {
+            this.entity = entity;
+            this.field = field;
+            this.where = where;
+            this.set = set;
+            this.mode = mode;
+            this.targetKey = targetKey;
+            this.deleted = deleted;
+            this.versioned = versioned;
+        }
+    }
+
+    private java.util.Map<String, java.util.List<OnDeleteRef>> onDelete = java.util.Collections.emptyMap();
+
+    /** The domain's @onDelete references, by the entity they point to. */
+    public EntitySpec knownOnDelete(java.util.Map<String, java.util.List<OnDeleteRef>> byTarget) {
+        this.onDelete =
+                byTarget == null ? java.util.Collections.<String, java.util.List<OnDeleteRef>>emptyMap() : byTarget;
+        return this;
+    }
+
+    /** The @onDelete references that point to that entity, in the order the model declares them. */
+    public java.util.List<OnDeleteRef> onDeleteOf(String entityName) {
+        java.util.List<OnDeleteRef> refs = onDelete.get(entityName);
+        return refs == null ? java.util.Collections.<OnDeleteRef>emptyList() : refs;
+    }
+
     private int signInEntities;
 
     /** How many entities of the application say @signin - the generated sign-in is written for one only. */

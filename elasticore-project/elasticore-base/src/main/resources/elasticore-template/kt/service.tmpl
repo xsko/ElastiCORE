@@ -60,7 +60,7 @@ open class ${className}(
         val specification = ${accessSpecOpen}${mapperName}.toSpec(searchDTO)${accessSpecClose}
         // Loaded and removed one by one, so members and write-time rules go with each.
         val found = ${qryRef}.findAll(specification)
-        for (each in found) ${cmdRef}.delete(each)
+        for (each in found) ${cmdRef}.delete(${deleteEachOpen}each${deleteEachClose})
         return found.size.toLong()
     }
 

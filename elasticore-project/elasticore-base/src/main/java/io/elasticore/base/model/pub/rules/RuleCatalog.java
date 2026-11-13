@@ -238,6 +238,13 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.base.ServiceAccessRules();
             }
         });
+        // @onDelete(cascade | restrict | setNull), carried out by the deleted row's CoreService.
+        c.register("jpa-on-delete", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.base.OnDeleteRules();
+            }
+        });
         c.register("jpa-value-object-boundary", new Factory() {
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.base.ValueObjectBoundaryRules();
@@ -507,14 +514,33 @@ public final class RuleCatalog {
             }
         });
 
-        c.bundle("jpa-springboot",
-                "jpa-entity", "jpa-entity-class", "jpa-entity-file-compat", "jpa-q",
-                "jpa-dto", "jpa-dto-file", "jpa-searchdto", "jpa-searchdto-file",
-                "jpa-enum", "jpa-views", "jpa-support-types",
-                "jpa-repository", "jpa-repository-helper",
-                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-spec", "jpa-mapper-spec-shell", "jpa-mapper-file",
-                "spring-service-extend", "spring-controller", "spring-service-test",
-                "port", "proto", "grpc-stub");
+        c.bundle(
+                "jpa-springboot",
+                "jpa-entity",
+                "jpa-entity-class",
+                "jpa-entity-file-compat",
+                "jpa-q",
+                "jpa-dto",
+                "jpa-dto-file",
+                "jpa-searchdto",
+                "jpa-searchdto-file",
+                "jpa-enum",
+                "jpa-views",
+                "jpa-support-types",
+                "jpa-repository",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble",
+                "jpa-mapper-spec",
+                "jpa-mapper-spec-shell",
+                "jpa-mapper-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-service-test",
+                "jpa-on-delete",
+                "port",
+                "proto",
+                "grpc-stub");
 
         // The clean-mode counterpart: field rules are mode-agnostic and stay
         // the same, but "jpa-entity-file-compat" (the 2.x-identical file
@@ -523,28 +549,71 @@ public final class RuleCatalog {
         // ${importList} slot by a different mechanism (a plain var vs a
         // paragraph), and a paragraph entry wins the substitution regardless
         // of which rule ran second, silently corrupting the plain var's text.
-        c.bundle("jpa-springboot-v3",
-                "jpa-entity", "jpa-entity-annotations", "jpa-entity-file", "jpa-q",
-                "jpa-dto", "jpa-dto-file-v3", "jpa-searchdto", "jpa-searchdto-file-v3",
-                "jpa-enum", "jpa-views", "jpa-support-types",
-                "jpa-repository", "jpa-repository-helper",
-                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-spec", "jpa-mapper-spec-shell", "jpa-mapper-file",
-                "spring-service-extend", "spring-controller", "spring-service-test", "spring-api-errors", "jpa-write-guard",
-                "jpa-value-object-boundary", "jpa-service-access",
-                "port", "proto", "grpc-stub");
+        c.bundle(
+                "jpa-springboot-v3",
+                "jpa-entity",
+                "jpa-entity-annotations",
+                "jpa-entity-file",
+                "jpa-q",
+                "jpa-dto",
+                "jpa-dto-file-v3",
+                "jpa-searchdto",
+                "jpa-searchdto-file-v3",
+                "jpa-enum",
+                "jpa-views",
+                "jpa-support-types",
+                "jpa-repository",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble",
+                "jpa-mapper-spec",
+                "jpa-mapper-spec-shell",
+                "jpa-mapper-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-service-test",
+                "spring-api-errors",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "jpa-on-delete",
+                "port",
+                "proto",
+                "grpc-stub");
         // The v3 layered bundle over MyBatis: the same DTOs, mapper, controller
         // and access checks, with the JPA entity shell, repository, Q and
         // Specification search given way to the MyBatis sets. No generated
         // service test: its skeleton is written against JPA.
-        c.bundle("mybatis-springboot",
-                "jpa-entity", "mybatis-entity-file",
-                "jpa-dto", "jpa-dto-file-v3", "jpa-searchdto", "jpa-searchdto-file-v3",
-                "jpa-enum", "jpa-views", "jpa-support-types",
-                "mybatis-mapper", "mybatis-search", "jpa-repository-helper",
-                "jpa-mapper", "jpa-mapper-assemble", "jpa-mapper-file", "mybatis-mapper-members",
-                "mybatis-service-file", "spring-service-extend", "spring-controller", "spring-api-errors",
-                "jpa-write-guard", "jpa-value-object-boundary", "jpa-service-access", "mybatis-schema",
-                "port", "proto", "grpc-stub");
+        c.bundle(
+                "mybatis-springboot",
+                "jpa-entity",
+                "mybatis-entity-file",
+                "jpa-dto",
+                "jpa-dto-file-v3",
+                "jpa-searchdto",
+                "jpa-searchdto-file-v3",
+                "jpa-enum",
+                "jpa-views",
+                "jpa-support-types",
+                "mybatis-mapper",
+                "mybatis-search",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble",
+                "jpa-mapper-file",
+                "mybatis-mapper-members",
+                "mybatis-service-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-api-errors",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "jpa-on-delete",
+                "mybatis-schema",
+                "port",
+                "proto",
+                "grpc-stub");
         // The domain-model reading of the same artifacts: everything the v3
         // bundle produces, minus what an aggregate boundary says should not
         // exist. The subtraction is the rules declining, not a mode.
@@ -588,17 +657,40 @@ public final class RuleCatalog {
         // same in both - and only the file shell is written per language.
         // Artifacts without a kt/ skeleton are absent from this bundle rather
         // than falling back to a Java one, which would emit Java silently.
-        c.bundle("jpa-springboot-kt",
-                "jpa-entity", "jpa-entity-annotations", "jpa-entity-file-kt",
-                "jpa-dto", "jpa-dto-file-kt",
-                "jpa-searchdto", "jpa-searchdto-file-kt",
-                "jpa-repository", "jpa-repository-file-v3", "jpa-repository-helper",
-                "port", "proto", "grpc-stub",
-                "jpa-enum-kt", "jpa-identity-kt", "jpa-q-kt",
-                "jpa-mapper", "jpa-mapper-assemble-kt", "jpa-mapper-spec", "jpa-mapper-spec-shell-kt", "jpa-mapper-file",
-                "jpa-service-file", "spring-service-extend", "spring-controller", "spring-service-test", "spring-api-errors", "jpa-write-guard",
-                "jpa-value-object-boundary", "jpa-service-access",
-                "jpa-views", "jpa-support-types");
+        c.bundle(
+                "jpa-springboot-kt",
+                "jpa-entity",
+                "jpa-entity-annotations",
+                "jpa-entity-file-kt",
+                "jpa-dto",
+                "jpa-dto-file-kt",
+                "jpa-searchdto",
+                "jpa-searchdto-file-kt",
+                "jpa-repository",
+                "jpa-repository-file-v3",
+                "jpa-repository-helper",
+                "port",
+                "proto",
+                "grpc-stub",
+                "jpa-enum-kt",
+                "jpa-identity-kt",
+                "jpa-q-kt",
+                "jpa-mapper",
+                "jpa-mapper-assemble-kt",
+                "jpa-mapper-spec",
+                "jpa-mapper-spec-shell-kt",
+                "jpa-mapper-file",
+                "jpa-service-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-service-test",
+                "spring-api-errors",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "jpa-on-delete",
+                "jpa-views",
+                "jpa-support-types");
 
         // The same two readings in Kotlin. They are separate bundles rather
         // than a language flag on one because the members differ: the value
