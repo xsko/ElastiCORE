@@ -1,3 +1,181 @@
+## 3.0.261117-rc17
+
+### Bug Fixes (DTO - lists of values and arrays)
+
+#### A DTO carries a list of values: `List<Long>`, `List<String>`
+- Why (issue 158): a DTO field `tagIds: List<Long>` or `tags: List<String>` was left out of the DTO without a word,
+  in Java and in the TypeScript client, though the DSL guide's table says `List<T>` is `List<T>`. The DTO keeps a
+  field whose type names a model component; a list's item, `Long` or `String`, names none, so the list was taken
+  for a relation whose counterpart has no DTO - in 2.x, and so in the 2.x-compatible output, the same. `long[]`
+  was an unresolved type, and dropped with a warning.
+- After (3.0 code - Java, Kotlin, TypeScript): a list or set of a value type is carried as that value's Java type,
+  `List<Long>`, also for the DSL's words (`List<long>`, `List<string>` are `List<Long>`, `List<String>`);
+  TypeScript reads `number[]`, `string[]`. `long[]`, `double[]` and `boolean[]` are arrays beside `int[]`, wrapped
+  as it is (`Long[]`), known to the rule engine only, as `Instant` and `byte[]` are. A list of a type nobody knows
+  (`List<Strng>`) is a DSL warning naming the field instead of a silent drop.
+- 2.x-compatible output: unchanged - the list is left out as 2.x leaves it, and the build now says so. 2.x
+  generator unchanged.
+- Checked: `ValueListDtoTest` (Java, Kotlin, TypeScript, 2.x-compatible); `ProductDTO` of `elasticore-template-ddd`
+  (Java hexagonal) and `elasticore-template-kt` carry `relatedIds: List<Long>` and `keywords: List<string>`,
+  generated, compiled and tested.
+- Files: `SpecFactory`, `BaseFieldType`, `RulesGenRunner`, `RulesVerifyRunner`, the DSL guide (en, ko).
+
+### Bug Fixes (`@expose` - page size and methods)
+
+#### `@expose(pageSize=50, methods="...")`: the page size is kept beside methods
+- Why (issue 160): `@expose(50, methods="create,search,update,delete")` generated `pageSize=20` in the search DTO, with
+  no warning; `methods` was applied. The loader turns `@expose` into `@expose @dto @searchable @pageable` and left the
+  brackets after the last of them, so `@pageable(50, methods="...")` was not a page size. `@expose(pageSize=50)`
+  was not read at all (a warning said `@expose` takes `methods` only).
+- After: `@expose(pageSize=N, methods="...")` - the written form, each value named - gives the search DTO page size
+  N and the controller the methods listed. `@expose(50)` (2.x) and `@expose(50, methods="...")` page by 50 too;
+  `@expose` without a size pages by 20 as before. `pageSize` is no longer warned about.
+- 2.x: a model whose `@expose` has no `=` in its brackets loads as before (`elcoreRulesCheck`, `elcoreTreeCheck`).
+- Checked: `ExposePageSizeTest` (hexagonal Java) - named, 2.x, positional beside methods, methods alone; it fails on
+  the loader before the change.
+- Files: `DataTransferModelLoader`, `ControllerBaseRules`, the annotation guide (en, ko).
+
+### Bug Fixes (2.x generator - `@forceupdate` on a relation)
+
+#### An entity's relation or list field with `@forceupdate` gives a mapper that compiles
+- Why (issue 166): the 2.x generator's entity-to-DTO line for a field read through a mapper method (a relation, a
+  list of DTOs) opened that call - `to.setCustomer(toDTO(from.getCustomer());` - and never closed it: the line that set
+  the closing bracket was commented out. The mapper did not compile. The rule engine's 2.x-compatible code wrote
+  `setVal(from.getCustomer(), to::setCustomer, isSkipNull, e->toDTO(e,c));` for the same model.
+- After: such a field goes through `setVal` in the 2.x generator too (both variants, with and without the
+  EntityManager), the line the 2.x-compatible code writes. A value field with `@forceupdate` is assigned straight
+  through as before. On the update side (DTO to entity), `@forceupdate` on a relation keeps what it did.
+- 2.x: only output that did not compile changes.
+- Checked: `ForceUpdateRelationTest` runs the 2.x generator and the 2.x-compatible rules on the same model: the lines
+  are the same and balanced; it fails on the generator before the change.
+
+### Bug Fixes (3.0 code - API errors)
+
+#### A CHECK violation is answered 400 `check`
+- Why (issue 167): the generated `XxxApiErrors` knew NOT NULL, UNIQUE and FOREIGN KEY. A row breaking a CHECK
+  constraint (one a migration or Hibernate wrote) was answered 409 `conflict` - "a unique value is already taken, or
+  the row is still referenced" - and on SQL Server 409 `referenced`, as its 547 is the code of a FOREIGN KEY and a
+  CHECK alike.
+- After: a kind of its own, answered 400 `check` ("A value is outside what the column allows."), as a value breaking
+  its constraint is: 23513 (H2), 23514 (PostgreSQL), 23000 with 2290 (Oracle), 3819 (MySQL), and 547 when SQL
+  Server's message names a CHECK (it does in every language); any other 547 stays `referenced`. The code is in
+  every domain's message bundle (`error.check`). Java and Kotlin.
+- `XxxApiErrors` is generated once: a file never edited is written again with it; an edited one keeps its own, and
+  takes the case over by hand.
+- Checked: the pet store makes each database raise a CHECK, a UNIQUE and a FOREIGN KEY violation and hands Spring's
+  exception to the generated `PetstoreApiErrors`: 400 `check`, 409 `unique`, 409 `referenced` - on H2 locally, and in
+  CI on Oracle, PostgreSQL and SQL Server (`IntegrityKindCheck`).
+- Files: `MapperSrcPublisher`, `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ErrorCatalog`, the rule guide (en, ko).
+
+### Documentation (dev guide - the third argument of a `Q` condition)
+
+#### The dev guide says what `chkEmpty` does, and where not to use it
+- Why: every generated `Q` (2.x, v3 and Kotlin) has `field(Op op, Object value, boolean chkEmpty)` beside the
+  two-argument form, and no guide named it. The `true` reads like "ignore case". A blank value then drops the condition
+  without a word, which on a condition that must always hold - the tenant a user belongs to - returns every row.
+- What: dev guide §5 (en, ko) shows the three-argument form as an optional search condition, says what counts as
+  empty (null, a blank string, an empty collection), that `IS_NULL` and `IS_NOT_NULL` always apply (#72), that the
+  two-argument form is `chkEmpty = false`, and not to use it for a condition that must hold.
+- Checked: `FieldInfo.where(Op, Object, boolean)`; `QBaseRules`, `KotlinQRules` and `EntitySrcFilePublisher` write the
+  three-argument method. `GuideTranslationTest`.
+- Files: `elasticore-dev-guide.md` (en, ko).
+
+### Bug Fixes (3.0 code - lifecycle commands, checks, search DTO, Ossie, @expose)
+
+#### A lifecycle command keeps a parameter named as a field; any other is said
+- Why (issue 170): `reject` with a `reason` the request had to send changed the state and dropped the value -
+  answered 200, kept nothing, and the build said nothing.
+- After: a command parameter named as a field of the entity, of the same type (`reject: rejectReason: string(500)!`
+  beside the field `rejectReason`), is stored by the generated move, after the move (a refused command stores
+  nothing). Any other parameter is a warning naming the command and the parameter, with the two ways out: name it
+  as the field it fills, or override the command. Java and Kotlin (a parameter that may be null does not fill a
+  required field in Kotlin, and is said instead).
+- Checked: `CommandParamKeptTest`.
+
+#### The reserved-word warning names the databases the domain writes for
+- Why (issue 168): it named Oracle, PostgreSQL and SQL Server whatever `ddl.databases` said, and `comment`, `level`
+  and `size` are refused by Oracle alone - a project on H2 and PostgreSQL heard it on every build.
+- After: each name with the databases that reserve it (each from that database's own list), of those
+  `ddl.databases` writes for; with no DDL, of all four. No new word is looked for. JPA and MyBatis.
+- Checked: `EntityChecksTest` (a domain on H2 and PostgreSQL hears nothing of `level`; every word maps to a
+  database), `MyBatisGenerationTest`.
+
+#### A search DTO's string field has the declared length as its @Size
+- Why (issue 169): the DTO checked `@Size(max=200)`, the search DTO took a string of any length.
+- After: `@Size(max=n)` on a string search field, from its declared length, in the 3.0 code (Java, Kotlin); the
+  search body is validated already. The 2.x-compatible output is unchanged.
+- Checked: `SearchSizeTest`.
+
+#### The Ossie export does not declare an integer division portable
+- Why (issue 157): `@formula("quantity / pack_size")` over two int columns was written as the portable `sql`, where
+  OSSIE_SQL_2026 makes `/` true division (apache/ossie#687): the document said 2.5 where the database computes 2.
+- After: a formula that divides and names an integer column keeps its SQL under the opaque `ANSI_SQL` dialect - what
+  the database runs. A division of decimals, and a formula without `/`, stay portable.
+- Checked: `OssieExportTest`.
+
+#### @expose(methods): one of each pair, GET /schema/info left out, no unused import
+- Why (issue 172): no list served `PUT /` without `PUT /batch` or `DELETE /{id}` without `POST /delete`, nothing left
+  out `GET /schema/info`, and a narrowed controller kept the imports of the methods it left out.
+- After: `updateOne`, `updateBatch`, `deleteOne`, `deleteBatch` beside `update` and `delete`; `schema=false` on
+  `@expose` leaves out `GET /schema/info`. The `@restExclude` deprecation now names the list that serves the same
+  endpoints. A narrowed 3.0 controller drops the imports nothing in it uses; other files are written as before.
+- Checked: `ExposeMethodsTest`, `ControllerMethodRulesTest`.
+- Files: `DddStateRules`, `ReservedWords` (new), `EntityChecks`, `MyBatisSchemaRules`, `RulesGenRunner`,
+  `SearchDtoBaseRules`, `OssieSemanticModelExporter`, `ControllerBaseRules`, `SourceCode`; the DSL and annotation
+  guides (en, ko).
+
+### Bug Fixes (`@search` - like)
+
+#### A contains, prefix or suffix search looks for the value as written
+- Why (issue 159): `@search(like)` and the prefix / suffix forms put the caller's value into the LIKE pattern as it
+  was, so its `%` and `_` were wildcards: `100%` found every row with `100` in it, `kim_t` found `kimat` too, and a
+  value of `%_%_%_%` was a pattern the database had to work through. The guide calls `like` a contains search.
+- After: in the 3.0 code (JPA, Java and Kotlin) and the MyBatis search, the value's own `%`, `_` and the escape
+  character are escaped with `!`, and the LIKE says `ESCAPE '!'` - every database reads that escape, and the MyBatis
+  repository queries (`Containing`, `StartingWith`) already did so (`Rows.like`). The JPA mapper gets a `likeText`
+  helper; the MyBatis search binds through `Rows.like`.
+- Unchanged: `auto` (a string `@search` without a condition) is a like only when the value holds a `%`, so there the
+  caller's `%` stays a pattern, as documented. The 2.x-compatible output and the 2.x generator are unchanged
+  (`elcoreRulesCheck`, `elcoreTreeCheck`).
+- Checked: the pet store's `Category.name @search(like)` finds `Like 100% wool` and not `Like 1000 wool`, and `a_b`
+  not `axb`, on H2 and - in CI - on Oracle, PostgreSQL and SQL Server (`LikeSearchCheck`); the MyBatis shop's like
+  and `_%` searches the same (`ShopApi.everySearchConditionOfTheModelNarrowsTheRows`, H2 and the three databases).
+- Files: `MapperSpecRules`, `MyBatisMapperRules`, `v3/mapper.tmpl`, `kt/mapper.tmpl`, the annotation guide (en, ko).
+
+### Bug Fixes (runtime - DBMS ports)
+
+#### A port method whose only parameter is a list of values binds it by name
+- Why (issue 164): `findByIds(ids: list<long>)` with `IN (:ids)` found nothing and `deleteByIds` deleted nothing.
+  With one parameter, the proxy bound it by name only when it was a single value; a `List` was taken for an object,
+  read by its getters (`getIds()` on an `ArrayList`), and `:ids` bound as null - with a stack trace and no error.
+  With a second parameter it worked.
+- After: a lone collection or array of simple values (`List<Long>`, `Set<String>`, `long[]`) is bound by its name, as
+  one value is. A list of DTOs or maps stays the input of a batch.
+- Checked: `DbmsPortInputTest` (through the proxy: a list, a `String[]`, a `long[]`; a delete by ids is one statement,
+  a list of rows still a batch); `JdbcDbmsGatewayTest` (`IN (:ids)` on H2 answers 1 and 3).
+
+#### An enum field of a port's result row is read as the enum
+- Why (issue 165): `SqlPortGateway.convertValue` knew numbers, booleans, dates and text, and threw for an enum, so a
+  result DTO with an enum field failed every call (`Failed to map tuple to DTO`), whether the column held the `@db`
+  code or the constant's name. The JPA, JDBC and MyBatis port paths all map rows through it.
+- After: a number is the ordinal; text is what the enum's `fromCode(String)` answers (the generated enums have it; a
+  Kotlin enum's companion too), otherwise the constant of that name; anything else is an error naming the value. A
+  port method answering `List<SomeEnum>` reads the first column as one value.
+- Checked: `JdbcDbmsGatewayTest` - an `@db` code, a name, an ordinal, a list of enum values, on H2.
+- Files: `DbmsServiceProxyFactory`, `SqlPortGateway`, the port guide (en, ko).
+
+### Bug Fixes (3.0 code - table names)
+
+#### The build no longer warns about an `@table` that starts with `table.prefix`
+- Why: rc16 warned on every build about `@table(el_mcp_server_def)` with `table.prefix: el_`, which maps to
+  `el_el_mcp_server_def` as in 2.x. A project 2.x generated has exactly that table in its database, so the warning
+  was wrong there and came back on every build.
+- Before: a warning per entity on every `elcore3`. After: the build says nothing; `elcoreMigrationCheck` lists each
+  such `@table` with the table it maps to, once, with what to write if the database has the name without the doubled
+  prefix.
+- Checked: `TablePrefixAndLargeValueTest` - nothing in the build's output, the line in the migration check report.
+- Files: `RulesGenRunner`, `EntityChecks`, the migration guide (en, ko).
+
 ## 3.0.261116-rc16
 
 ### Bug Fixes (3.0 code - table names and large values)

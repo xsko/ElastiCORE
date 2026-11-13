@@ -20,7 +20,7 @@ Product:
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
-`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
+`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117-rc17). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
 TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD 유스케이스(`XxxUseCase`)도 적은 쓰기만 약속합니다.
 Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 입니다.
 ```yaml
@@ -29,7 +29,7 @@ Country:
 Notice:
   meta: entity @root @expose(pageSize=20, methods="read,search,create")
 ```
-- 3.0.261116-rc16 까지는 `methods` 옆의 페이지 크기가 빠졌습니다(검색이 20 건씩). 3.0.261117 부터 `@expose(50, methods="...")` 도 50 건입니다.
+- 3.0.261116-rc16 까지는 `methods` 옆의 페이지 크기가 빠졌습니다(검색이 20 건씩). 3.0.261117-rc17 부터 `@expose(50, methods="...")` 도 50 건입니다.
 - 값은 `@Index(columnList="a,b")` 처럼 따옴표 안의 목록 하나입니다. 쉼표 뒤 공백은 괜찮고, 따옴표가 없으면 첫 이름만 읽힙니다.
 - 모르는 이름은 DSL 경고이고 아무것도 제공하지 않습니다(`methods="raed,search"` 는 search 만) - 오타는 엔드포인트를
   줄일 뿐 늘리지 않습니다. `methods=""` 는 다섯 가지 중 아무것도 제공하지 않습니다.
@@ -932,7 +932,7 @@ customName: string @search(like,comName)   # comName 필드에 like 검색
 - v3 모드에서 대소문자를 무시하는 조건(`like`, `%__%`, `%__`, `__%`)은 값의 앞뒤 공백을 지우고(`like` 처럼),
   값을 로캘과 무관하게 소문자로 바꿉니다 (Java `toLowerCase(Locale.ROOT)`, Kotlin `lowercase()` - Kotlin 2.x 에서
   `toLowerCase()` 는 컴파일 오류). 컬럼은 `lower(...)` 로 비교합니다.
-- v3 모드와 MyBatis 에서 포함·앞부분·뒷부분 검색의 값에 호출자가 넣은 `%`·`_` 는 와일드카드가 아니라 문자입니다 (`100%` 는 `100%` 를 찾음, 3.0.261117 부터, `!` 로 이스케이프). `auto` 는 패턴으로 둡니다(`{"label":"ab%"}`). 2.x 호환 출력은 그대로 와일드카드입니다.
+- v3 모드와 MyBatis 에서 포함·앞부분·뒷부분 검색의 값에 호출자가 넣은 `%`·`_` 는 와일드카드가 아니라 문자입니다 (`100%` 는 `100%` 를 찾음, 3.0.261117-rc17 부터, `!` 로 이스케이프). `auto` 는 패턴으로 둡니다(`{"label":"ab%"}`). 2.x 호환 출력은 그대로 와일드카드입니다.
 - 인덱스: 포함 검색(`%v%`)은 어느 DB 에서도 B-tree 범위를 쓰지 못하므로 `lower()` 가 비용을 더하지 않습니다. 접두사
   `__%`·정확 일치 `__=` 를 인덱스로 찾으려면 `lower(col)` 식 인덱스가 필요합니다. MySQL·SQL Server 의 기본 CI 콜레이션은
   원래 대소문자를 무시합니다.
