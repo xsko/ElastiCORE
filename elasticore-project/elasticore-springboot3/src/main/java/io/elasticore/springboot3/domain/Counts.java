@@ -95,7 +95,8 @@ public final class Counts {
         final String lock;
         final String count;
         final Set<Object> ids = new LinkedHashSet<Object>();
-        final Map<Object, Function<Object, Object>> rows = new IdentityHashMap<Object, Function<Object, Object>>();
+        final IdentityHashMap<Object, Function<Object, Object>> rows =
+                new IdentityHashMap<Object, Function<Object, Object>>();
 
         Work(EntityManager em, String lock, String count) {
             this.em = em;
@@ -110,7 +111,7 @@ public final class Counts {
 
     /** The counts a transaction touched, each row once, run just before it commits. */
     private static final class Pending implements TransactionSynchronization {
-        private final Map<EntityManager, Map<String, Work>> work =
+        private final IdentityHashMap<EntityManager, Map<String, Work>> work =
                 new IdentityHashMap<EntityManager, Map<String, Work>>();
         boolean done;
 
