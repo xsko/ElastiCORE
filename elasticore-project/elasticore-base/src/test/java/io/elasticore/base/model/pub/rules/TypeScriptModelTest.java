@@ -195,11 +195,12 @@ public class TypeScriptModelTest {
     public void everyEndpointBecomesATypedFunction() {
         String out = render(exposed(), "api");
 
-        assertTrue(out.contains("export async function create(input: ArticleDTO)"
+        assertTrue(out.contains("export async function create(input: ArticleDTO, init?: RequestInit)"
                 + ": Promise<ArticleDTO> {"), out);
-        assertTrue(out.contains("export async function update(input: ArticleDTO)"), out);
-        assertTrue(out.contains("export async function batchUpdate(inputs: ArticleDTO[])"), out);
-        assertTrue(out.contains("export async function deleteMany(keys: ArticleKeyDTO[])"), out);
+        assertTrue(out.contains("return request<ArticleDTO>('POST', BASE, input, init);"), out);
+        assertTrue(out.contains("export async function update(input: ArticleDTO, init?: RequestInit)"), out);
+        assertTrue(out.contains("export async function batchUpdate(inputs: ArticleDTO[], init?: RequestInit)"), out);
+        assertTrue(out.contains("export async function deleteMany(keys: ArticleKeyDTO[], init?: RequestInit)"), out);
     }
 
     /**
@@ -211,8 +212,9 @@ public class TypeScriptModelTest {
     public void findByIdAnswersNullRatherThanThrowing() {
         String out = render(exposed(), "api");
 
-        assertTrue(out.contains("findById(articleId: string): Promise<ArticleDTO | null>"), out);
-        assertTrue(out.contains("requestOrNull<ArticleDTO>('GET', BASE + '/' + seg(articleId))"), out);
+        assertTrue(out.contains("findById(articleId: string, init?: RequestInit): Promise<ArticleDTO | null>"), out);
+        assertTrue(out.contains("requestOrNull<ArticleDTO>('GET', BASE + '/' + seg(articleId), init)"), out);
+        assertTrue(out.contains("request<boolean>('DELETE', BASE + '/' + seg(articleId), undefined, init)"), out);
     }
 
     /**
