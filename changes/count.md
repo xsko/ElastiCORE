@@ -32,8 +32,10 @@
   table. `elasticore-template-kt` content - `Article.commentCount @count(Comment.article, approved is true)`; its DDL
   files gain the column.
 - Checked:
-  - `CountsTest` (runtime, H2 + Spring transactions): counted once at the commit; a `REQUIRES_NEW` transaction
-    inside one that touched a count; a row written by a before-commit handler; a row read at the commit.
+  - `CountsTest` (runtime, H2 + Spring transactions, on Hibernate 6 and 7 - springboot3 and springboot4): the
+    counting row selected `for update` before the count statement; counted once at the commit; a `REQUIRES_NEW` transaction
+    inside one that touched a count, and one in an after-commit handler; a row written by a before-commit handler; a
+    row read at the commit.
   - `CountTest` (generator): the JPQL (enum constant, boolean, soft delete), each hook in the Java CoreService
     (save, update, update by condition, delete by key, delete by search, the command), the Kotlin method and hooks,
     the layered key through the relation, the column `updatable = false` with `0L`, the DTO's read-only property,

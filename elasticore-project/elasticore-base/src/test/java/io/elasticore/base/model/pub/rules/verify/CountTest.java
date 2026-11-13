@@ -80,7 +80,7 @@ public class CountTest {
                 + " where x.postId = :id";
         assertTrue(
                 comment.contains(
-                        "io.elasticore.springboot3.domain.Counts.touch(em, \"select x.postId from CtPost x where x.postId = :id\", \""
+                        "io.elasticore.springboot3.domain.Counts.touch(em, \"select x from CtPost x where x.postId = :id\", \""
                                 + jpql + "\", row.getPostId());"),
                 comment);
         // Each way a row is written or goes: save/update (as written), update (as it was), by condition, by key,
@@ -124,7 +124,7 @@ public class CountTest {
                 comment);
         assertTrue(
                 comment.contains(
-                        "Counts.touch(em, \"select x.postId from CtPost x where x.postId = :id\", \"update CtPost x set x.commentCount"),
+                        "Counts.touch(em, \"select x from CtPost x where x.postId = :id\", \"update CtPost x set x.commentCount"),
                 comment);
         assertTrue(comment.contains(", row.postId)"), comment);
         assertTrue(comment.contains(", row) { r -> r.postId }"), comment);

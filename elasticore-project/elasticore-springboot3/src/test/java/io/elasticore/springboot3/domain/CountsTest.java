@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Counts: a count counted again before the commit")
 class CountsTest {
 
-    private static final String LOCK = "select x.id from CtrPost x where x.id = :id";
+    private static final String LOCK = "select x from CtrPost x where x.id = :id";
     private static final String COUNT =
             "update CtrPost x set x.items = (select count(c) from CtrItem c where c.postId = x.id) where x.id = :id";
 
@@ -43,7 +43,11 @@ class CountsTest {
         factory.setDataSource(dataSource);
         factory.setPersistenceProvider(new HibernatePersistenceProvider());
         factory.setPackagesToScan("io.elasticore.springboot3.domain.counts");
-        factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto", "create-drop"));
+        factory.setJpaPropertyMap(Map.of(
+                "hibernate.hbm2ddl.auto",
+                "create-drop",
+                "hibernate.session_factory.statement_inspector",
+                io.elasticore.springboot3.domain.counts.SqlSeen.class.getName()));
         factory.afterPropertiesSet();
         EntityManagerFactory emf = factory.getObject();
         em = SharedEntityManagerCreator.createSharedEntityManager(emf);
@@ -89,6 +93,44 @@ class CountsTest {
             item(post);
         });
         assertThat(items(post)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("the counting row is locked (for update) before it is counted, by a statement of its own")
+    void lockedThenCounted() {
+        long post = post();
+        io.elasticore.springboot3.domain.counts.SqlSeen.SQL.clear();
+        tx.executeWithoutResult(s -> item(post));
+        java.util.List<String> sql =
+                new java.util.ArrayList<String>(io.elasticore.springboot3.domain.counts.SqlSeen.SQL);
+        int lock = -1;
+        int count = -1;
+        for (int i = 0; i < sql.size(); i++) {
+            String each = sql.get(i).toLowerCase(java.util.Locale.ROOT);
+            if (lock < 0 && each.contains("ctrpost") && each.contains("for update")) lock = i;
+            if (count < 0 && each.startsWith("update ctrpost")) count = i;
+        }
+        assertThat(lock).as(sql.toString()).isGreaterThanOrEqualTo(0);
+        assertThat(count).as(sql.toString()).isGreaterThan(lock);
+        assertThat(items(post)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an after-commit handler that writes in a REQUIRES_NEW transaction counts what it wrote")
+    void afterCommitRequiresNew() {
+        long first = post();
+        long second = post();
+        tx.executeWithoutResult(s -> {
+            item(first);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    newTx.executeWithoutResult(s2 -> item(second));
+                }
+            });
+        });
+        assertThat(items(first)).isEqualTo(1);
+        assertThat(items(second)).isEqualTo(1);
     }
 
     @Test

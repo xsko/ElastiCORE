@@ -62,7 +62,9 @@ public final class Counts {
 
     /** The pending counts of this transaction, null outside one; a new one where the bound one is not this one's. */
     private static Pending pending() {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) return null;
+        // No transaction to wait for (none, or a NOT_SUPPORTED / SUPPORTS scope): counted at once.
+        if (!TransactionSynchronizationManager.isSynchronizationActive()
+                || !TransactionSynchronizationManager.isActualTransactionActive()) return null;
         Pending pending = (Pending) TransactionSynchronizationManager.getResource(Counts.class);
         if (pending != null && pending.done) {
             // Past the commit of the transaction it belongs to (an after-commit handler): count at once.

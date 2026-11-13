@@ -265,8 +265,7 @@ public class OnDeleteRules implements CodeRules {
             more.append(
                     "\n        org.mockito.Mockito.lenient().`when`(helper.entityManager).thenReturn(entityManager)");
         }
-        more.append(
-                        "\n        // @onDelete and @count run their JPQL beside a write: nothing points to, or counts, the row.")
+        more.append("\n        // @onDelete runs its JPQL before a delete: no row points to the one deleted.")
                 .append("\n        val onDeleteQuery = org.mockito.Mockito.mock(jakarta.persistence.Query::class.java,")
                 .append(" org.mockito.Answers.RETURNS_SELF)")
                 .append(

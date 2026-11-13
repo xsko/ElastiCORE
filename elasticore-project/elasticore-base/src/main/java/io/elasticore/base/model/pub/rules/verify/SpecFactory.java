@@ -2043,8 +2043,7 @@ public final class SpecFactory {
                 out.get(countedName)
                         .add(new io.elasticore.base.model.pub.rules.EntitySpec.CountRef(
                                 jpql,
-                                String.format(
-                                        "select x.%s from %s x where x.%s = :id", pk.getName(), name, pk.getName()),
+                                String.format("select x from %s x where x.%s = :id", name, pk.getName()),
                                 byId ? joinBy.trim() : null,
                                 ref.getName(),
                                 pk.getName(),
@@ -2119,16 +2118,30 @@ public final class SpecFactory {
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         for (int i = 0; i < all.size(); i++) {
             for (Field g : fieldsOf(all.get(i))) {
-                if (!g.getTypeInfo().isList() || !name.equals(g.getTypeInfo().getCoreItemType())) continue;
-                String orphans = g.getAnnotation("onetomany") == null
-                                || g.getAnnotation("onetomany").getProperties() == null
-                        ? null
-                        : g.getAnnotation("onetomany").getProperties().getProperty("orphanRemoval");
-                if (g.hasAnnotation("cascade") || "true".equalsIgnoreCase(orphans))
+                String item = g.getTypeInfo().isList()
+                        ? g.getTypeInfo().getCoreItemType()
+                        : g.getTypeInfo().getDefaultTypeName();
+                if (!name.equals(item)) continue;
+                // @cascade, or cascade / orphanRemoval on the relation itself, to one row or many.
+                String said = property(g, "onetomany", "cascade")
+                        + property(g, "onetoone", "cascade")
+                        + property(g, "manytoone", "cascade");
+                boolean orphans = "true".equalsIgnoreCase(property(g, "onetomany", "orphanRemoval"))
+                        || "true".equalsIgnoreCase(property(g, "onetoone", "orphanRemoval"));
+                if (g.hasAnnotation("cascade") || orphans || !said.trim().isEmpty()) {
                     return all.get(i).getIdentity().getName();
+                }
             }
         }
         return null;
+    }
+
+    private static String property(Field f, String annotation, String name) {
+        io.elasticore.base.model.core.Annotation a = f.getAnnotation(annotation);
+        String value = a == null || a.getProperties() == null
+                ? null
+                : a.getProperties().getProperty(name);
+        return value == null ? "" : value;
     }
 
     private static boolean deletesSoftly(Entity entity) {
