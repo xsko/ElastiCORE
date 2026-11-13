@@ -2670,9 +2670,12 @@ public final class RulesGenRunner {
         System.out.println("  " + name);
 
         if ((v3 || kotlin) && !typescript && spec.isAbstractEntity()) checkAbstractEntity(spec, name);
-        if ((v3 || kotlin) && !typescript) {
+        // An @table that starts with the prefix gets it twice, as 2.x named it - right for a 2.x
+        // database, a slip for one made to the name written. Only the database knows which, so the
+        // build says nothing; the migration check lists the table it maps to, once.
+        if ((v3 || kotlin) && !typescript && preview != null) {
             String twice = io.elasticore.base.model.pub.rules.base.EntityChecks.prefixTwice(spec);
-            if (twice != null) io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(twice);
+            if (twice != null) preview.note(twice);
         }
         if ((v3 || kotlin) && !typescript && persistence() == RulesConfig.Persistence.JPA) {
             if (exposed) {

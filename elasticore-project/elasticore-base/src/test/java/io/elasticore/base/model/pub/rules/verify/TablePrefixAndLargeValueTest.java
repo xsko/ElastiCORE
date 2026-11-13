@@ -71,13 +71,41 @@ public class TablePrefixAndLargeValueTest {
         assertTrue(note.contains("SqlTypes.LONG32VARCHAR"), note);
         assertTrue(note.contains("SqlTypes.LONG32VARBINARY"), note);
 
+        // A 2.x database has el_el_mcp_server_def: right, so the build says nothing about it.
         String out = new String(log.toByteArray(), StandardCharsets.UTF_8);
+        assertFalse(out.contains("with table.prefix"), out);
+    }
+
+    /** The migration check lists an @table that gets the prefix twice, with the table it maps to - once. */
+    @Test
+    public void theMigrationCheckListsAPrefixTwice() throws Exception {
+        File project = project("jpa");
+        String[] keys = {"elasticore.base.path", "elasticore.rules.v2", RulesGenRunner.PROP_MIGRATION_CHECK};
+        String[] saved = new String[keys.length];
+        for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
+        PrintStream out = System.out;
+        try {
+            System.setOut(new PrintStream(new ByteArrayOutputStream(), true, "UTF-8"));
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            System.setProperty("elasticore.rules.v2", "true");
+            System.setProperty(RulesGenRunner.PROP_MIGRATION_CHECK, "true");
+            assertEquals(0, RulesGenRunner.run(new String[0]));
+        } finally {
+            System.setOut(out);
+            for (int i = 0; i < keys.length; i++) {
+                if (saved[i] == null) System.clearProperty(keys[i]);
+                else System.setProperty(keys[i], saved[i]);
+            }
+        }
+        String report = new String(
+                Files.readAllBytes(new File(project, "build/elasticore/migration-check.md").toPath()),
+                StandardCharsets.UTF_8);
         assertTrue(
-                out.contains("TpServer: @table(el_mcp_server_def) with table.prefix el_ maps to the table"
-                        + " el_el_mcp_server_def"),
-                out);
-        assertTrue(out.contains("write @table(mcp_server_def)"), out);
-        assertFalse(out.contains("TpNote: @table(note) with"), out);
+                report.contains("TpServer: @table(el_mcp_server_def) with table.prefix el_ maps to the table"
+                        + " el_el_mcp_server_def, as in 2.x - nothing to do if the database has that table."
+                        + " If it has el_mcp_server_def instead, write @table(mcp_server_def)."),
+                report);
+        assertFalse(report.contains("TpNote: @table(note) with"), report);
     }
 
     @Test

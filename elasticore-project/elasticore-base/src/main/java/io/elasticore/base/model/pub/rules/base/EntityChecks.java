@@ -92,8 +92,9 @@ public final class EntityChecks {
 
     /**
      * An @table name that already starts with the table.prefix: the prefix is
-     * put before it all the same (as 2.x did), so the table is el_el_note.
-     * Said, with the line that names el_note.
+     * put before it all the same (as 2.x did), so the table is el_el_note -
+     * the table a 2.x database has, or a slip in a model written for el_note.
+     * For the migration check to list; the build says nothing.
      */
     public static String prefixTwice(EntitySpec e) {
         String explicit = e.metaValue("table");
@@ -103,8 +104,8 @@ public final class EntityChecks {
             return null;
         }
         return String.format(
-                "[%s] %s: @table(%s) with table.prefix %s maps to the table %s - the prefix comes before the @table"
-                        + " name, as in 2.x. If the table is %s, write @table(%s).",
+                "[%s] %s: @table(%s) with table.prefix %s maps to the table %s, as in 2.x - nothing to do if the"
+                        + " database has that table. If it has %s instead, write @table(%s).",
                 e.domainClassName(),
                 e.getName(),
                 explicit,
