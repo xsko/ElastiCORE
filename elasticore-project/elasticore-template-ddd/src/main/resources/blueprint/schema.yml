@@ -135,6 +135,8 @@ entities:
     fields:
       postId: Long @Column(name = "post_id") @Id @GeneratedValue
       title: string(100) @Column(name = "title", length = 100)
+      quoted: Post @relation(mappedBy="quoted_id") @foreignKey(quoted_post_id) -- Post entity relationship
+      version: Long @Column(name = "version")
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Product)

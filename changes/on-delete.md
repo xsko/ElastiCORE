@@ -11,13 +11,14 @@
   JPA (its soft delete and delete guards apply). Each row is visited once: rows that point to each other are refused
   with 409 `"code": "cycle"`. Any refusal undoes the whole delete.
 - `setNull` is one JPQL update - a domain entity does not let its reference be set from outside; a `@Version` moves
-  (`update versioned`), audit fields and Envers revisions do not. Soft-deleted rows are left out of `restrict` and
+  (`update versioned`; a row the same delete then removes is read again first), audit fields and Envers revisions do not. Soft-deleted rows are left out of `restrict` and
   `cascade`; they still hold their foreign key.
 - How: in the deleted root's CoreService, `onDeletePost(em, row)` and a method per entity on the cascade's way
   (static in Java; members in Kotlin, beside an `@access` companion object), JPQL over the reference's id
   (`x.postId`) or the relation in layered code (`x.post.postId`). No service is handed another: the constructors are
   unchanged. The templates' delete-by-search line takes an inline slot (`deleteEachOpen` / `deleteEachClose`), empty
-  unless `@onDelete` fills it.
+  unless `@onDelete` fills it. A project that keeps its own copy of `v3/service.tmpl` or `kt/service.tmpl` needs the
+  two slots in its delete-by-search line, or its delete by search runs no `@onDelete`.
 - Misuse stops the build: another value; a field that is no single reference to an entity of the domain; `setNull`
   on a required reference; the `mappedBy` side of a one-to-one; a composite-key target; a target that is a member of
   an aggregate, or a `cascade` from one; MyBatis and the 2.x-compatible output. A cascade into a soft-deleting entity
@@ -35,7 +36,8 @@
   - `OnDeleteTest` (generator): Java, Kotlin and layered output, the order, soft-delete conditions, `update
     versioned`, the cycle refusal, the Kotlin members beside the `@access` companion, the generated test's stub, the
     MyBatis and 2.x-compatible refusals, the misuses, the aggregate-member refusals, the soft-delete warning.
-  - `BoardOnDeleteTest` (template-ddd, HTTP on H2): comments and replies deleted and the bookmark cleared; a
+  - `BoardOnDeleteTest` (template-ddd, HTTP on H2): a search deleting a versioned post and the post quoting it;
+    comments and replies deleted and the bookmark cleared; a
     reported post refused with 409 `restricted`; a reported comment on the cascade's way refusing the post with
     nothing deleted; a cycle of replies refused with 409 `cycle`, deleted once broken.
   - `CatalogApiTest.onDeleteSetNull` (template-ddd, layered): an author deleted by key and by search, the books kept

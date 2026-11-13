@@ -4,7 +4,11 @@ entity:
     meta: entity @root @expose(20)
     fields:
       postId: long @id @sequence
-      title: string(100)!
+      title: string(100)! @search(like)
+      # A post may quote another; deleting the quoted one clears the quote. Versioned: the clearing moves
+      # the version of a quoting post the same delete then removes (a search for both).
+      quoted: Post @onDelete(setNull)
+      version: long @jpa:Version
 
   # Deleting a post deletes its comments, and a comment its replies.
   Comment:

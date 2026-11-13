@@ -21,10 +21,10 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * <p>Written on the side that points ({@code post: Post @onDelete(cascade)} on Comment) and carried out by the
  * CoreService of the side that is deleted, before each delete it makes, in the same transaction: every
  * restrict first - a 409 {@code restricted} naming what still points, rather than the foreign key's - then
- * setNull, then cascade. A row cleared by setNull is loaded and changed through JPA, so its version, its
- * audit fields and its listeners apply. A cascaded row's own {@code @onDelete} references are carried out
+ * setNull, then cascade. setNull is one JPQL update - a @Version moves ("update versioned"), audit fields and
+ * listeners do not; a row this delete then removes is refreshed first. A cascaded row's own {@code @onDelete} references are carried out
  * first, then it is removed through JPA (its soft delete and delete guards apply): a comment's replies go with
- * it. Each row is visited once, so a cycle of references ends. Soft-deleted rows are left out of what restrict
+ * it. Each row is visited once; rows that point to each other are refused (409 cycle). Soft-deleted rows are left out of what restrict
  * sees and cascade takes.
  *
  * <p>The work is a method per entity on the cascade's way, in the deleted root's own CoreService, so no service
@@ -76,6 +76,15 @@ public class OnDeleteRules implements CodeRules {
             }
         }
 
+        // Entities whose rows a versioned setNull of this plan moves: one this delete then removes is read again
+        // first, or its delete would not match the version it was loaded with.
+        Set<String> bumped = new LinkedHashSet<String>();
+        for (String entity : visit) {
+            for (EntitySpec.OnDeleteRef ref : e.onDeleteOf(entity)) {
+                if ("setNull".equals(ref.mode) && ref.versioned) bumped.add(ref.entity);
+            }
+        }
+
         String emType = kt ? j2ee(c) + ".persistence.EntityManager" : "EntityManager";
         List<String> lines = new ArrayList<String>();
         lines.add("");
@@ -85,15 +94,20 @@ public class OnDeleteRules implements CodeRules {
         lines.add(" */");
         if (kt) {
             lines.add(String.format("protected fun %s(em: %s, row: Any): %s {", method, emType, e.getName()));
+            // A row a cascade of this delete removed already (a reply found by the same search as its parent).
+            lines.add(String.format("    if (!em.contains(row)) return row as %s", e.getName()));
             lines.add(String.format(
                     "    %s(em, row, java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>()))",
                     method));
+            if (bumped.contains(e.getName())) lines.add("    em.refresh(row)");
             lines.add(String.format("    return row as %s", e.getName()));
         } else {
             lines.add(String.format("public static %s %s(EntityManager em, Object row) {", e.getName(), method));
+            lines.add(String.format("    if (!em.contains(row)) return (%s) row;", e.getName()));
             lines.add(String.format(
                     "    %s(em, row, java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Object, Boolean>()));",
                     method));
+            if (bumped.contains(e.getName())) lines.add("    em.refresh(row);");
             lines.add(String.format("    return (%s) row;", e.getName()));
         }
         lines.add("}");
@@ -101,7 +115,7 @@ public class OnDeleteRules implements CodeRules {
             List<EntitySpec.OnDeleteRef> refs = e.onDeleteOf(entity);
             // A cascaded entity nothing points to with @onDelete is removed as it is: no method of its own.
             if (refs.isEmpty()) continue;
-            method(lines, kt, emType, entity, refs, e);
+            method(lines, kt, emType, entity, refs, e, bumped);
         }
         for (String line : lines) c.varLine("joinFetchMethod", "%s", line);
     }
@@ -113,7 +127,8 @@ public class OnDeleteRules implements CodeRules {
             String emType,
             String entity,
             List<EntitySpec.OnDeleteRef> refs,
-            EntitySpec e) {
+            EntitySpec e,
+            Set<String> bumped) {
         String key = refs.get(0).targetKey;
         lines.add("");
         if (kt) {
@@ -175,6 +190,7 @@ public class OnDeleteRules implements CodeRules {
                 lines.add(String.format(
                         "            throw io.elasticore.springboot3.validation.ConflictException(%s)", cycle(ref)));
                 if (deeper) lines.add(String.format("        onDelete%s(em, each, seen)", ref.entity));
+                if (bumped.contains(ref.entity)) lines.add("        em.refresh(each)");
                 lines.add("        em.remove(each)");
             } else {
                 lines.add(String.format(
@@ -186,6 +202,7 @@ public class OnDeleteRules implements CodeRules {
                         "            throw new io.elasticore.springboot3.validation.ConflictException(%s);",
                         cycle(ref)));
                 if (deeper) lines.add(String.format("        onDelete%s(em, each, seen);", ref.entity));
+                if (bumped.contains(ref.entity)) lines.add("        em.refresh(each);");
                 lines.add("        em.remove(each);");
             }
             lines.add("    }");

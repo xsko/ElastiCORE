@@ -31,6 +31,8 @@ public class OnDeleteTest {
             "    fields:",
             "      postId: long @id @sequence",
             "      title: string(200)!",
+            "      quoted: OdPost @onDelete(setNull)",
+            "      version: long @jpa:Version",
             "  OdComment:",
             "    meta: entity @root @expose(20)",
             "    fields:",
@@ -74,6 +76,14 @@ public class OnDeleteTest {
                 post);
         assertTrue(post.contains("repository.delete(onDeleteOdPost(entityManager, each));"), post);
         assertTrue(post.contains("public static OdPost onDeleteOdPost(EntityManager em, Object row) {"), post);
+        // One a cascade of this delete removed already is passed over; a versioned setNull of its own kind moved
+        // rows this delete may remove next, so the row is read again before it is.
+        assertTrue(post.contains("if (!em.contains(row)) return (OdPost) row;"), post);
+        assertTrue(
+                post.contains("\"update versioned OdPost x set x.quotedPostId = null where x.quotedPostId = :id\""),
+                post);
+        assertTrue(post.contains("em.refresh(row);\n        return (OdPost) row;"), post);
+        assertFalse(post.contains("em.refresh(each)"), post);
         // restrict first, then setNull, then cascade - on the id the reference holds; a soft-deleted report is out.
         int restrict = post.indexOf("\"select 1 from OdReport x where x.postId = :id and x.deletedAt is null\"");
         int setNull = post.indexOf("\"update versioned OdBookmark x set x.postId = null where x.postId = :id\"");
@@ -209,6 +219,34 @@ public class OnDeleteTest {
                 "      parent: OdComment @onDelete(cascade)\n      deletedAt: timestamp @deleted");
         run("elcore-ondelete-soft", "hexagonal", "java", "jpa", model, false, 0, log);
         assertTrue(log[0].contains("OdComment.post @onDelete(cascade): OdComment is deleted softly"), log[0]);
+    }
+
+    /** A layered model's @cascade relation makes no aggregate: its "member" may be pointed to and cascade. */
+    @Test
+    public void aLayeredCascadeIsNoAggregate() throws Exception {
+        String[] log = new String[1];
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  OdArticle:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      articleId: long @id @sequence",
+                "      tags: List<OdTag> @ManyToMany @cascade(ALL)",
+                "  OdTag:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      tagId: long @id @sequence",
+                "      article: OdArticle @ManyToOne @onDelete(cascade)",
+                "  OdNote:",
+                "    meta: entity @expose(20)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      tag: OdTag @ManyToOne @onDelete(setNull)",
+                "");
+        File project = run("elcore-ondelete-layered-cascade", "layered", "java", "jpa", model, false, 0, log);
+        assertFalse(log[0].contains("member of an aggregate"), log[0]);
+        assertTrue(found(project, "OdArticleCoreService.java").contains("onDeleteOdTag(em, each, seen);"));
     }
 
     private static File run(

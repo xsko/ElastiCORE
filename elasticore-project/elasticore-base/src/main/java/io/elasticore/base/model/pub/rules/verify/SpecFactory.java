@@ -1842,13 +1842,13 @@ public final class SpecFactory {
                             at + ": the other side holds this one-to-one" + " (mappedBy) - write @onDelete there");
                     continue;
                 }
-                if (aggregateOf(target.getIdentity().getName(), model) != null) {
+                if (declaredMember(target.getIdentity().getName(), model) != null) {
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(
                             at + ": " + target.getIdentity().getName()
                                     + " is a member of an aggregate, deleted by its root - point to the root");
                     continue;
                 }
-                if ("cascade".equals(mode) && aggregateOf(name, model) != null) {
+                if ("cascade".equals(mode) && declaredMember(name, model) != null) {
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + name + " is a member of an"
                             + " aggregate - its root removes it, so a cascade cannot; say restrict or setNull");
                     continue;
@@ -1896,6 +1896,19 @@ public final class SpecFactory {
             }
         }
         return out;
+    }
+
+    /**
+     * The root of an aggregate a domain model declares the entity a member of - @aggregate on it, or held by a
+     * @root - or null. A layered model's @cascade relation makes no aggregate of it.
+     */
+    private static String declaredMember(String name, ECoreModel model) {
+        String holder = aggregateOf(name, model);
+        if (holder == null) return null;
+        Entity member = model.getEntityModels().findByName(name);
+        if (member != null && member.getMetaInfo().hasMetaAnnotation("aggregate")) return holder;
+        Entity root = model.getEntityModels().findByName(holder);
+        return root != null && root.getMetaInfo().hasMetaAnnotation("root") ? holder : null;
     }
 
     private static boolean deletesSoftly(Entity entity) {

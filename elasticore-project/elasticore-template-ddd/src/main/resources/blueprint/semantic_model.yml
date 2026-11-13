@@ -42,6 +42,14 @@ datasets:
         expression:
           sql: "title"
         datatype: String
+      - name: version
+        expression:
+          sql: "version"
+        datatype: Integer
+      - name: quoted_post_id
+        expression:
+          sql: "quoted_post_id"
+        datatype: Integer
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Post", "domain": "board"}
@@ -754,6 +762,11 @@ datasets:
       - vendor_name: ELASTICORE
         data: {"entity": "Shipment", "domain": "shop", "states": {"status": {"initial": "READY", "send": "READY -> SENT", "cancel": "READY -> CANCELLED"}, "fee": {"initial": "DUE", "pay": "DUE -> PAID", "cancel": "PAID -> REFUNDED"}}, "events": "Sent, Cancelled, Refunded"}
 relationships:
+  - name: Post_quoted
+    from: Post
+    to: Post
+    from_columns: [quoted_post_id]
+    to_columns: [post_id]
   - name: Comment_post
     from: Comment
     to: Post

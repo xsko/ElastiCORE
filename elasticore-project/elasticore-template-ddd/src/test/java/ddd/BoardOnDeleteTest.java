@@ -30,6 +30,7 @@ class BoardOnDeleteTest {
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper json;
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired private org.springframework.context.ApplicationContext context;
 
     private long create(String what, String body, String key) throws Exception {
         MockHttpServletResponse res = mvc.perform(post(BASE + what).contentType(MediaType.APPLICATION_JSON).content(body))
@@ -81,6 +82,23 @@ class BoardOnDeleteTest {
         assertThat(problem.path("detail").asText())
                 .isEqualTo("Post " + post + " is still pointed to by Report rows (Report.post @onDelete(restrict))");
         assertThat(read("post", post).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a search deletes a post and the post quoting it: the quote cleared (versioned) and both gone")
+    void aSearchDeletesAVersionedQuote() throws Exception {
+        long quoted = create("post", "{\"title\":\"quote-src\"}", "postId");
+        long quoting = create("post", "{\"title\":\"quote-reply\",\"quotedPostId\":" + quoted + "}", "postId");
+        create("comment", "{\"text\":\"on the reply\",\"postId\":" + quoting + "}", "commentId");
+
+        io.elasticore.sample.ddd.board.application.PostCoreService posts =
+                context.getBean(io.elasticore.sample.ddd.board.application.PostService.class);
+        io.elasticore.sample.ddd.board.application.dto.PostSrchDTO byTitle =
+                new io.elasticore.sample.ddd.board.application.dto.PostSrchDTO();
+        byTitle.setTitle("quote-");
+        assertThat(posts.delete(byTitle)).isEqualTo(2);
+        assertThat(read("post", quoted).getStatus()).isEqualTo(404);
+        assertThat(read("post", quoting).getStatus()).isEqualTo(404);
     }
 
     @Test
