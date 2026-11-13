@@ -2014,6 +2014,15 @@ public final class SpecFactory {
                     continue;
                 }
                 String countedName = counted.getIdentity().getName();
+                // Written by its root, or by a cascade of another row: not through its own service, so not counted.
+                String carrier = cascadedInto(model, countedName);
+                if (declaredMember(countedName, model) != null || carrier != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + countedName + " is written "
+                            + (carrier != null ? "by a cascade of " + carrier : "by its aggregate's root")
+                            + ", not by a service of its own - count it with @compute(sum(...)) on the row that holds"
+                            + " it, or point to it from a root");
+                    continue;
+                }
                 for (Field g : fieldsOf(counted)) {
                     // A deleted row (@deleted) is not counted.
                     if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) {
@@ -2034,6 +2043,8 @@ public final class SpecFactory {
                 out.get(countedName)
                         .add(new io.elasticore.base.model.pub.rules.EntitySpec.CountRef(
                                 jpql,
+                                String.format(
+                                        "select x.%s from %s x where x.%s = :id", pk.getName(), name, pk.getName()),
                                 byId ? joinBy.trim() : null,
                                 ref.getName(),
                                 pk.getName(),
@@ -2054,6 +2065,22 @@ public final class SpecFactory {
             Field g = (Field) counted.getAllFieldListMap().get(field);
             if (g == null) return counted.getIdentity().getName() + " has no field " + field;
             String type = g.getTypeInfo().getDefaultTypeName();
+            String kind = type == null ? "" : type.trim().toLowerCase(java.util.Locale.ROOT);
+            boolean isBoolean = kind.equals("boolean") || kind.equals("java.lang.boolean");
+            boolean isNumber = java.util.Arrays.asList(
+                            "int",
+                            "integer",
+                            "long",
+                            "short",
+                            "byte",
+                            "double",
+                            "float",
+                            "bigdecimal",
+                            "java.lang.integer",
+                            "java.lang.long",
+                            "java.math.bigdecimal")
+                    .contains(kind);
+            boolean isText = g.getTypeInfo().isStringType();
             String literal;
             io.elasticore.base.model.enums.EnumModel en =
                     model.getEnumModels() == null ? null : model.getEnumModels().findByName(type);
@@ -2065,14 +2092,41 @@ public final class SpecFactory {
                 String pkg = model.getNamespace("enumeration");
                 if (pkg == null || pkg.isEmpty()) pkg = model.getNamespace("entity");
                 literal = pkg + "." + type + "." + value;
-            } else if (value.equals("true") || value.equals("false") || value.matches("-?\\d+(\\.\\d+)?")) {
+            } else if (isBoolean && (value.equals("true") || value.equals("false"))) {
                 literal = value;
-            } else if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
+            } else if (isNumber && value.matches("-?\\d+(\\.\\d+)?")) {
+                literal = value;
+            } else if (isText
+                    && value.startsWith("'")
+                    && value.endsWith("'")
+                    && value.length() >= 2
+                    && value.indexOf('"') < 0
+                    && value.indexOf('\\') < 0) {
                 literal = value;
             } else {
-                return value + " is not a constant of " + type + ", true, false, a number or 'text'";
+                return value + " is not a value of " + field + " (" + type + "): "
+                        + (isBoolean
+                                ? "true or false"
+                                : isNumber ? "a number" : isText ? "'text'" : "no condition reads it");
             }
             where.append(" and c.").append(field).append(" = ").append(literal);
+        }
+        return null;
+    }
+
+    /** The entity whose collection of these rows cascades (writes them with itself), or null. */
+    private static String cascadedInto(ECoreModel model, String name) {
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            for (Field g : fieldsOf(all.get(i))) {
+                if (!g.getTypeInfo().isList() || !name.equals(g.getTypeInfo().getCoreItemType())) continue;
+                String orphans = g.getAnnotation("onetomany") == null
+                                || g.getAnnotation("onetomany").getProperties() == null
+                        ? null
+                        : g.getAnnotation("onetomany").getProperties().getProperty("orphanRemoval");
+                if (g.hasAnnotation("cascade") || "true".equalsIgnoreCase(orphans))
+                    return all.get(i).getIdentity().getName();
+            }
         }
         return null;
     }

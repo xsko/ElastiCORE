@@ -424,11 +424,13 @@ public final class EntitySpec {
 
     /**
      * A count kept on a row of the rows of another entity that point to it:
-     * {@code commentCount: long @count(Comment.post, status = PUBLISHED)} on Post.
+     * {@code commentCount: long @count(Comment.post, status is PUBLISHED)} on Post.
      */
     public static final class CountRef {
         /** The update that counts the row {@code :id} again. */
         public final String jpql;
+        /** The select that locks the row {@code :id} before it is counted. */
+        public final String lock;
         /** The counted entity's reference: its identity field (postId), or null for a relation. */
         public final String joinBy;
         /** The relation (post) and the key of the counting entity (postId), for an object relation. */
@@ -438,8 +440,9 @@ public final class EntitySpec {
         /** Post.commentCount, for what is said. */
         public final String counter;
 
-        public CountRef(String jpql, String joinBy, String relation, String key, String counter) {
+        public CountRef(String jpql, String lock, String joinBy, String relation, String key, String counter) {
             this.jpql = jpql;
+            this.lock = lock;
             this.joinBy = joinBy;
             this.relation = relation;
             this.key = key;

@@ -19,8 +19,8 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * (the row it pointed to before, and the one it points to now), a delete by key, by search, an update by
  * condition, a command that moves its state - says which row's count it touched, and the runtime's {@code
  * Counts} counts it again, once per row, just before the transaction commits: an update of the counting row
- * with a count of what points to it. Counting again, rather than adding one, keeps it right when two people
- * press at once, or a hide and a restore cross. A row an {@code @onDelete(cascade)} removes says so too.
+ * with a count of what points to it, after locking it. A row as written is read at the commit. A row an
+ * {@code @onDelete(cascade)} removes says so too.
  *
  * <p>The counting field is the model's: no request writes it, a save of its row does not write it back, and a
  * new row starts at 0 (SpecFactory.prepareCounts). JPA (Java, Kotlin) only.
@@ -65,7 +65,7 @@ public class CountRules implements CodeRules {
         String end = kt ? "" : ";";
 
         // The row as it is written (save, update, update by condition), as it was (update), and as it goes.
-        c.varLine("deriveBeforeSave", "%s(%s, entity)%s", method, em, end);
+        c.varLine("deriveBeforeSave", "%sWritten(%s, entity)%s", method, em, end);
         c.varLine("accessUpdate", "%s(%s, entity)%s", method, em, end);
         c.varLine(
                 "accessUpdateAll",
@@ -109,6 +109,23 @@ public class CountRules implements CodeRules {
             c.varLine("joinFetchMethod", "    %s%s", touch(ref, "row", kt), end);
         }
         c.varLine("joinFetchMethod", "}");
+        // As the row is written: the row it points to is read when the transaction commits.
+        c.varLine("joinFetchMethod", "");
+        if (kt) {
+            c.varLine("joinFetchMethod", "private fun %sWritten(em: %s, row: %s?) {", method, emType, e.getName());
+            c.varLine("joinFetchMethod", "    if (row == null) return");
+        } else {
+            c.varLine(
+                    "joinFetchMethod",
+                    "private static void %sWritten(EntityManager em, %s row) {",
+                    method,
+                    e.getName());
+            c.varLine("joinFetchMethod", "    if (row == null) return;");
+        }
+        for (EntitySpec.CountRef ref : refs) {
+            c.varLine("joinFetchMethod", "    %s%s", touchLater(ref, "row", kt), end);
+        }
+        c.varLine("joinFetchMethod", "}");
     }
 
     /**
@@ -126,7 +143,25 @@ public class CountRules implements CodeRules {
     /** Counts.touch for one count, of the row the expression is, as the language writes it. */
     public static String touch(EntitySpec.CountRef ref, String row, boolean kt) {
         return String.format(
-                "io.elasticore.springboot3.domain.Counts.touch(em, \"%s\", %s)", ref.jpql, ref.idOf(row, kt));
+                "io.elasticore.springboot3.domain.Counts.touch(em, \"%s\", \"%s\", %s)",
+                literal(ref.lock, kt), literal(ref.jpql, kt), ref.idOf(row, kt));
+    }
+
+    /** Counts.touchLater: the row's reference read when the transaction commits, after beforeSave and listeners. */
+    static String touchLater(EntitySpec.CountRef ref, String row, boolean kt) {
+        return kt
+                ? String.format(
+                        "io.elasticore.springboot3.domain.Counts.touchLater(em, \"%s\", \"%s\", %s) { r -> %s }",
+                        literal(ref.lock, true), literal(ref.jpql, true), row, ref.idOf("r", true))
+                : String.format(
+                        "io.elasticore.springboot3.domain.Counts.touchLater(em, \"%s\", \"%s\", %s, r -> %s)",
+                        literal(ref.lock, false), literal(ref.jpql, false), row, ref.idOf("r", false));
+    }
+
+    /** The text inside a string literal of the language: its quotes, backslashes and (Kotlin) dollars escaped. */
+    private static String literal(String text, boolean kt) {
+        String out = text.replace("\\", "\\\\").replace("\"", "\\\"");
+        return kt ? out.replace("$", "\\$") : out;
     }
 
     private static String method(EntitySpec e) {

@@ -30,6 +30,7 @@ class BoardCountTest {
 
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper json;
+    @Autowired private org.springframework.context.ApplicationContext context;
 
     private long create(String what, String body, String key) throws Exception {
         MockHttpServletResponse res = mvc.perform(post(BASE + what).contentType(MediaType.APPLICATION_JSON).content(body))
@@ -80,11 +81,23 @@ class BoardCountTest {
         long post = create("post", "{\"title\":\"not by hand\",\"commentCount\":99,\"likeCount\":7}", "postId");
         assertThat(postOf(post).path("commentCount").asLong()).isZero();
         assertThat(postOf(post).path("likeCount").asLong()).isZero();
-        JsonNode current = postOf(post);
-        int updated = status(put(BASE + "post").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"postId\":" + post + ",\"title\":\"still\",\"commentCount\":42,\"version\":"
-                        + current.path("version").asLong() + "}"));
-        assertThat(updated).isIn(200, 405);
+        assertThat(postOf(post).path("commentCount").asLong()).isZero();
+    }
+
+    @Test
+    @DisplayName("a delete by search leaves the count of each post it took rows from")
+    void aDeleteBySearchIsCounted() throws Exception {
+        long post = create("post", "{\"title\":\"searched\"}", "postId");
+        create("comment", "{\"text\":\"a\",\"postId\":" + post + "}", "commentId");
+        create("comment", "{\"text\":\"b\",\"postId\":" + post + "}", "commentId");
+        assertThat(postOf(post).path("commentCount").asLong()).isEqualTo(2);
+
+        io.elasticore.sample.ddd.board.application.CommentCoreService comments =
+                context.getBean(io.elasticore.sample.ddd.board.application.CommentService.class);
+        io.elasticore.sample.ddd.board.application.dto.CommentSrchDTO ofThePost =
+                new io.elasticore.sample.ddd.board.application.dto.CommentSrchDTO();
+        ofThePost.setPostId(post);
+        assertThat(comments.delete(ofThePost)).isEqualTo(2);
         assertThat(postOf(post).path("commentCount").asLong()).isZero();
     }
 }

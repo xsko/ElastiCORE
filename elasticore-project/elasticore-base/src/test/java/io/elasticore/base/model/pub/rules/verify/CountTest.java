@@ -80,13 +80,15 @@ public class CountTest {
                 + " where x.postId = :id";
         assertTrue(
                 comment.contains(
-                        "io.elasticore.springboot3.domain.Counts.touch(em, \"" + jpql + "\", row.getPostId());"),
+                        "io.elasticore.springboot3.domain.Counts.touch(em, \"select x.postId from CtPost x where x.postId = :id\", \""
+                                + jpql + "\", row.getPostId());"),
                 comment);
         // Each way a row is written or goes: save/update (as written), update (as it was), by condition, by key,
         // by search, and the command that moves its state.
         assertTrue(
                 comment.contains("private static void countsOfCtComment(EntityManager em, CtComment row) {"), comment);
-        assertTrue(count(comment, "countsOfCtComment(entityManager, entity);") >= 4, comment);
+        assertTrue(count(comment, "countsOfCtCommentWritten(entityManager, entity);") >= 3, comment);
+        assertTrue(count(comment, "countsOfCtComment(entityManager, entity);") >= 2, comment);
         assertTrue(
                 comment.contains("for (CtComment row : query.findAll(spec)) countsOfCtComment(entityManager, row);"),
                 comment);
@@ -120,8 +122,12 @@ public class CountTest {
                 comment.contains(
                         "private fun countsOfCtComment(em: jakarta.persistence.EntityManager, row: CtComment?) {"),
                 comment);
-        assertTrue(comment.contains("Counts.touch(em, \"update CtPost x set x.commentCount"), comment);
+        assertTrue(
+                comment.contains(
+                        "Counts.touch(em, \"select x.postId from CtPost x where x.postId = :id\", \"update CtPost x set x.commentCount"),
+                comment);
         assertTrue(comment.contains(", row.postId)"), comment);
+        assertTrue(comment.contains(", row) { r -> r.postId }"), comment);
         assertTrue(
                 comment.contains("repository.findById(commentId!!).ifPresent { countsOfCtComment(entityManager, it) }"),
                 comment);
@@ -165,6 +171,27 @@ public class CountTest {
                 log[0].contains("CtPost.hiddenCount @count(CtComment.post, status is GONE): CtStatus has no GONE"),
                 log[0]);
         assertTrue(log[0].contains("CtPost.title @count(CtLike.post): a count is a long or an int"), log[0]);
+    }
+
+    /** A literal of the wrong kind, and rows written by a cascade or a root, are refused at the build. */
+    @Test
+    public void whatCannotBeCountedIsRefused() throws Exception {
+        String[] log = new String[1];
+        String model = MODEL.replace("status is VISIBLE and pinned is false", "pinned is 1")
+                .replace(
+                        "      likeId: long @id @sequence",
+                        "      likeId: long @id @sequence\n      tags: List<CtTag> @OneToMany @cascade(ALL)")
+                .replace(
+                        "  CtLike:",
+                        "  CtTag:\n    meta: entity @expose(20)\n    fields:\n      tagId: long @id @sequence\n"
+                                + "      post: CtPost\n  CtLike:")
+                .replace(
+                        "likeCount: int @count(CtLike.post)",
+                        "likeCount: int @count(CtLike.post)\n" + "      tagCount: long @count(CtTag.post)");
+        run("elcore-count-refused", "hexagonal", "java", "jpa", model, false, 1, log);
+        assertTrue(log[0].contains("1 is not a value of pinned (Boolean): true or false"), log[0]);
+        assertTrue(
+                log[0].contains("CtPost.tagCount @count(CtTag.post): CtTag is written by a cascade of CtLike"), log[0]);
     }
 
     private static int count(String text, String part) {
