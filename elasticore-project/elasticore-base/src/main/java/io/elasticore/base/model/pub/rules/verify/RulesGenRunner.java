@@ -1200,6 +1200,7 @@ public final class RulesGenRunner {
                 if (model == null || model.getEntityModels() == null) continue;
                 currentModel = model;
                 if (shapes(io.elasticore.base.model.pub.rules.ReferencesById.class)) IdReferences.apply(model);
+                SpecFactory.prepareCounts(model);
             }
         } finally {
             currentModel = saved;

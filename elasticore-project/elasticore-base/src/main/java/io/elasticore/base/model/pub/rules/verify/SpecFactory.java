@@ -349,6 +349,7 @@ public final class SpecFactory {
         registerReferencing(spec, model);
         registerOptionalEmbeddables(spec, model);
         spec.knownOnDelete(onDeleteOf(model));
+        spec.knownCounts(countsOf(model));
         spec.knownSignInEntities(signInsFor(model));
         spec.knownOtherLoginEntities(otherLoginsFor(model));
         registerReadLevels(spec, model);
@@ -1909,6 +1910,171 @@ public final class SpecFactory {
         if (member != null && member.getMetaInfo().hasMetaAnnotation("aggregate")) return holder;
         Entity root = model.getEntityModels().findByName(holder);
         return root != null && root.getMetaInfo().hasMetaAnnotation("root") ? holder : null;
+    }
+
+    /**
+     * A {@code @count} field is the model's to write: no request sends it ({@code @readonly}), a save of its row
+     * never writes it back ({@code @updatable(false)}), and a new row starts at 0. Said once, before any spec is
+     * built, so every artifact sees the same field (issue 179).
+     */
+    static void prepareCounts(ECoreModel model) {
+        if (model.getEntityModels() == null) return;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            for (Field f : fieldsOf(all.get(i))) {
+                if (!f.hasAnnotation("count")) continue;
+                java.util.Map<String, io.elasticore.base.model.core.Annotation> map = f.getAnnotationMap();
+                if (!f.hasAnnotation("readonly"))
+                    map.put("readonly", io.elasticore.base.model.core.Annotation.create("readonly", ""));
+                if (!f.hasAnnotation("updatable")) {
+                    map.put("updatable", io.elasticore.base.model.core.Annotation.create("updatable", "false"));
+                }
+                if (!f.hasAnnotation("default"))
+                    map.put("default", io.elasticore.base.model.core.Annotation.create("default", "0"));
+            }
+        }
+    }
+
+    /**
+     * The domain's {@code @count(Comment.post[, status is PUBLISHED and ...])} fields, by the entity whose rows they
+     * count (issue 179). A misuse stops the build.
+     */
+    static java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.CountRef>> countsOf(
+            ECoreModel model) {
+        java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.CountRef>> out =
+                new java.util.LinkedHashMap<
+                        String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.CountRef>>();
+        if (model.getEntityModels() == null) return out;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity counter = all.get(i);
+            if (counter.getMetaInfo().hasMetaAnnotation("abstract")
+                    || counter.getMetaInfo().hasMetaAnnotation("embeddable")) continue;
+            String name = counter.getIdentity().getName();
+            for (Field f : fieldsOf(counter)) {
+                if (!f.hasAnnotation("count")) continue;
+                String declared = f.getAnnotationValue("count");
+                String at = String.format(
+                        "[%s] %s.%s @count(%s)",
+                        counter.getIdentity().getDomainId(), name, f.getName(), declared == null ? "" : declared);
+                if (declared == null || declared.trim().isEmpty()) {
+                    // A condition with "=" reads as key=value pairs and loses the rest: say "is".
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": say what it counts, as"
+                            + " @count(Comment.post) or @count(Comment.post, status is PUBLISHED) - a condition says"
+                            + " is, not =");
+                    continue;
+                }
+                String type = f.getTypeInfo().getDefaultTypeName();
+                if (f.getTypeInfo().isList()
+                        || type == null
+                        || !java.util.Arrays.asList(
+                                        "long", "Long", "int", "Integer", "java.lang.Long", "java.lang.Integer")
+                                .contains(type.trim())) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": a count is a long or an int");
+                    continue;
+                }
+                int comma = declared.indexOf(',');
+                String path = (comma < 0 ? declared : declared.substring(0, comma)).trim();
+                String condition =
+                        comma < 0 ? "" : declared.substring(comma + 1).trim();
+                int dot = path.indexOf('.');
+                Entity counted = dot < 0
+                        ? null
+                        : model.getEntityModels()
+                                .findByName(path.substring(0, dot).trim());
+                Field ref = counted == null
+                        ? null
+                        : (Field) counted.getAllFieldListMap()
+                                .get(path.substring(dot + 1).trim());
+                if (ref == null
+                        || ref.getTypeInfo().isList()
+                        || !name.equals(ref.getTypeInfo().getDefaultTypeName())) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + path + " is no reference of an"
+                            + " entity of the domain to " + name + " - name it as Comment.post");
+                    continue;
+                }
+                Field pk = null;
+                for (Field g : fieldsOf(counter)) {
+                    if (g.isPrimaryKey() || g.hasAnnotation("pk") || g.hasAnnotation("id")) {
+                        if (pk != null) {
+                            pk = null;
+                            break;
+                        }
+                        pk = g;
+                    }
+                }
+                if (pk == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + name + " has no single key");
+                    continue;
+                }
+                StringBuilder where = new StringBuilder();
+                String problem = countCondition(model, counted, condition, where);
+                if (problem != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + problem);
+                    continue;
+                }
+                String countedName = counted.getIdentity().getName();
+                for (Field g : fieldsOf(counted)) {
+                    // A deleted row (@deleted) is not counted.
+                    if (g.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) {
+                        where.append(" and c.").append(g.getName()).append(" is null");
+                    }
+                }
+                String joinBy = ref.getAnnotationValue("joinby");
+                boolean byId = joinBy != null && !joinBy.trim().isEmpty() && joinBy.indexOf(',') < 0;
+                String pointer = byId ? joinBy.trim() : ref.getName() + "." + pk.getName();
+                String jpql = String.format(
+                        "update %s x set x.%s = (select count(c) from %s c where c.%s = x.%s%s) where x.%s = :id",
+                        name, f.getName(), countedName, pointer, pk.getName(), where, pk.getName());
+                if (!out.containsKey(countedName)) {
+                    out.put(
+                            countedName,
+                            new java.util.ArrayList<io.elasticore.base.model.pub.rules.EntitySpec.CountRef>());
+                }
+                out.get(countedName)
+                        .add(new io.elasticore.base.model.pub.rules.EntitySpec.CountRef(
+                                jpql,
+                                byId ? joinBy.trim() : null,
+                                ref.getName(),
+                                pk.getName(),
+                                name + "." + f.getName()));
+            }
+        }
+        return out;
+    }
+
+    /** "status is PUBLISHED and hidden is false" as JPQL over c; null when it reads, else what is wrong. */
+    private static String countCondition(ECoreModel model, Entity counted, String condition, StringBuilder where) {
+        if (condition.isEmpty()) return null;
+        for (String part : condition.split("(?i)\\s+and\\s+", -1)) {
+            String[] sides = part.trim().split("(?i)\\s+is\\s+", -1);
+            if (sides.length != 2) return "\"" + part.trim() + "\" is not field is value";
+            String field = sides[0].trim();
+            String value = sides[1].trim();
+            Field g = (Field) counted.getAllFieldListMap().get(field);
+            if (g == null) return counted.getIdentity().getName() + " has no field " + field;
+            String type = g.getTypeInfo().getDefaultTypeName();
+            String literal;
+            io.elasticore.base.model.enums.EnumModel en =
+                    model.getEnumModels() == null ? null : model.getEnumModels().findByName(type);
+            if (en != null) {
+                if (en.getEnumConstantItems() == null
+                        || en.getEnumConstantItems().findByName(value) == null) {
+                    return type + " has no " + value;
+                }
+                String pkg = model.getNamespace("enumeration");
+                if (pkg == null || pkg.isEmpty()) pkg = model.getNamespace("entity");
+                literal = pkg + "." + type + "." + value;
+            } else if (value.equals("true") || value.equals("false") || value.matches("-?\\d+(\\.\\d+)?")) {
+                literal = value;
+            } else if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
+                literal = value;
+            } else {
+                return value + " is not a constant of " + type + ", true, false, a number or 'text'";
+            }
+            where.append(" and c.").append(field).append(" = ").append(literal);
+        }
+        return null;
     }
 
     private static boolean deletesSoftly(Entity entity) {

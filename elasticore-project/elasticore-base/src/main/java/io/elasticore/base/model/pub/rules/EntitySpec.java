@@ -422,6 +422,59 @@ public final class EntitySpec {
         return refs == null ? java.util.Collections.<OnDeleteRef>emptyList() : refs;
     }
 
+    /**
+     * A count kept on a row of the rows of another entity that point to it:
+     * {@code commentCount: long @count(Comment.post, status = PUBLISHED)} on Post.
+     */
+    public static final class CountRef {
+        /** The update that counts the row {@code :id} again. */
+        public final String jpql;
+        /** The counted entity's reference: its identity field (postId), or null for a relation. */
+        public final String joinBy;
+        /** The relation (post) and the key of the counting entity (postId), for an object relation. */
+        public final String relation;
+
+        public final String key;
+        /** Post.commentCount, for what is said. */
+        public final String counter;
+
+        public CountRef(String jpql, String joinBy, String relation, String key, String counter) {
+            this.jpql = jpql;
+            this.joinBy = joinBy;
+            this.relation = relation;
+            this.key = key;
+            this.counter = counter;
+        }
+
+        /** The key of the row a counted row points to, read off it as the language does; null when none. */
+        public String idOf(String row, boolean kotlin) {
+            if (joinBy != null) return kotlin ? row + "." + joinBy : row + ".get" + cap(joinBy) + "()";
+            return kotlin
+                    ? row + "." + relation + "?." + key
+                    : "(" + row + ".get" + cap(relation) + "() == null ? null : " + row + ".get" + cap(relation)
+                            + "().get" + cap(key) + "())";
+        }
+
+        private static String cap(String s) {
+            return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        }
+    }
+
+    private java.util.Map<String, java.util.List<CountRef>> counts = java.util.Collections.emptyMap();
+
+    /** The domain's @count fields, by the entity whose rows they count. */
+    public EntitySpec knownCounts(java.util.Map<String, java.util.List<CountRef>> byCounted) {
+        this.counts =
+                byCounted == null ? java.util.Collections.<String, java.util.List<CountRef>>emptyMap() : byCounted;
+        return this;
+    }
+
+    /** The @count fields that count rows of that entity. */
+    public java.util.List<CountRef> countsOf(String entityName) {
+        java.util.List<CountRef> refs = counts.get(entityName);
+        return refs == null ? java.util.Collections.<CountRef>emptyList() : refs;
+    }
+
     private int signInEntities;
 
     /** How many entities of the application say @signin - the generated sign-in is written for one only. */

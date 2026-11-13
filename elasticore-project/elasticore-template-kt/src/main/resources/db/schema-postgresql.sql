@@ -23,6 +23,7 @@ CREATE TABLE cms_article (
     category_category_id BIGINT,
     ratings VARCHAR(255),
     labels VARCHAR(255),
+    comment_count BIGINT,
     PRIMARY KEY (article_id)
 );
 
@@ -50,6 +51,7 @@ CREATE TABLE cms_article_aud (
     article_status VARCHAR(3),
     ratings VARCHAR(255),
     labels VARCHAR(255),
+    comment_count BIGINT,
     category_category_id BIGINT,
     PRIMARY KEY (article_id, rev)
 );

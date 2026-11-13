@@ -72,6 +72,7 @@ entities:
       text: string(200) @Column(name = "text", length = 200)
       post: Post @relation(mappedBy="comment_id") @foreignKey(post_post_id) -- Post entity relationship
       parent: Comment @relation(mappedBy="parent_id") @foreignKey(parent_comment_id) -- Comment entity relationship
+      status: string(3) @Column(name = "status", length = 3) -- 후보값( VIS=Visible, HID=Hidden)
 
   Customer:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Customer)
@@ -137,6 +138,16 @@ entities:
       title: string(100) @Column(name = "title", length = 100)
       quoted: Post @relation(mappedBy="quoted_id") @foreignKey(quoted_post_id) -- Post entity relationship
       version: Long @Column(name = "version")
+      commentCount: Long @Column(name = "comment_count")
+      likeCount: Long @Column(name = "like_count")
+
+  PostLike:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.PostLike)
+    table: brd_post_like
+    java: io.elasticore.sample.ddd.board.domain.model.PostLike
+    fields:
+      likeId: Long @Column(name = "like_id") @Id @GeneratedValue
+      post: Post @relation(mappedBy="post_like_id") @foreignKey(post_post_id) -- Post entity relationship
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Product)
@@ -264,6 +275,15 @@ entities:
 
 
 enumeration:
+
+  CommentStatus:
+    meta: enum
+    fields:
+      code: string(3) @Column(name = "code", length = 3)
+      label: string(20) @Column(name = "label", length = 20)
+    enum:
+      VISIBLE: VIS,Visible
+      HIDDEN: HID,Hidden
 
   CustomerType:
     meta: enum

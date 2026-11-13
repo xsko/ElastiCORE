@@ -23,6 +23,7 @@ CREATE TABLE brd_comment (
     text NVARCHAR(200) NOT NULL,
     post_post_id BIGINT NOT NULL,
     parent_comment_id BIGINT,
+    status NVARCHAR(3),
     PRIMARY KEY (comment_id)
 );
 
@@ -31,7 +32,15 @@ CREATE TABLE brd_post (
     title NVARCHAR(100) NOT NULL,
     quoted_post_id BIGINT,
     version BIGINT,
+    comment_count BIGINT,
+    like_count BIGINT,
     PRIMARY KEY (post_id)
+);
+
+CREATE TABLE brd_post_like (
+    like_id BIGINT IDENTITY(1,1) NOT NULL,
+    post_post_id BIGINT NOT NULL,
+    PRIMARY KEY (like_id)
 );
 
 CREATE TABLE brd_report (
@@ -295,6 +304,7 @@ ALTER TABLE brd_bookmark ADD CONSTRAINT fk_brd_bookmark_post FOREIGN KEY (post_p
 ALTER TABLE brd_comment ADD CONSTRAINT fk_brd_comment_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
 ALTER TABLE brd_comment ADD CONSTRAINT fk_brd_comment_parent FOREIGN KEY (parent_comment_id) REFERENCES brd_comment (comment_id);
 ALTER TABLE brd_post ADD CONSTRAINT fk_brd_post_quoted FOREIGN KEY (quoted_post_id) REFERENCES brd_post (post_id);
+ALTER TABLE brd_post_like ADD CONSTRAINT fk_brd_post_like_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
 ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
 ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_comment FOREIGN KEY (comment_comment_id) REFERENCES brd_comment (comment_id);
 ALTER TABLE cat_book ADD CONSTRAINT fk_cat_book_author FOREIGN KEY (author_author_id) REFERENCES cat_author (author_id);

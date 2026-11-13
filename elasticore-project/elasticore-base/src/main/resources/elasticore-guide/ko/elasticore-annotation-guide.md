@@ -728,6 +728,19 @@ Bookmark:
 - 지워지는 루트의 CoreService 에 생성됩니다: `onDeletePost(em, row)` (Java 는 static, Kotlin 은 클래스 멤버 - companion object 와 함께), 참조의 id 로 JPQL(`x.postId`), layered 는 관계를 통해(`x.post.postId`). 행마다 참조마다 쿼리 하나: 수천 행 삭제는 수천 번의 쿼리입니다.
 - 잘못 쓰면 빌드가 멈춥니다: 다른 값; 도메인 엔티티 한 행을 가리키는 참조가 아닌 필드; 필수(`!`) 참조의 `setNull`; 일대일의 `mappedBy` 쪽; 복합 키 대상; aggregate 멤버인 대상(루트를 가리키세요) 또는 멤버에서의 `cascade`. cascade 되는 행의 도메인 이벤트는 없고 DDL 의 `ON DELETE` 도 쓰지 않습니다. 고친 적 있는 Kotlin 생성 서비스 테스트는 entity manager 의 `createQuery` 스텁이 필요합니다. `elasticore-template-ddd` `BoardOnDeleteTest`(HTTP)·`CatalogApiTest`(layered, versioned setNull), `elasticore-template-kt` `OnDeleteTest`·`Ticket.agent`(`@access` 대상).
 
+#### @count(Entity.reference[, field is VALUE and ...]) - 이 행을 가리키는 행의 수
+> **동작:** v3, Kotlin (JPA), ddd, hexagonal, layered · **안 됨:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - 빌드 중단; 2.x generator (생성 안 됨)
+행에 저장해 두고, 세어지는 행이 쓰일 때마다 그 트랜잭션 안에서 다시 셉니다. 조건은 `is` 로 씁니다 - 어노테이션 안의 `=` 는 key=value 로 읽힙니다.
+```yaml
+Post:
+  fields:
+    commentCount: long @count(Comment.post, status is VISIBLE)   # 보이는 댓글
+    likeCount:    long @count(PostLike.post)
+```
+- 세어지는 엔티티(Comment)의 CoreService 가 쓸 때마다 카운트를 표시합니다 - 저장, 수정(전에 가리키던 행과 지금 행), 키로·검색으로 삭제, 조건 수정, 상태를 옮기는 명령 - 그리고 `@onDelete(cascade)` 로 지워지는 행도. 커밋 직전에 표시된 행마다 한 번 다시 셉니다: `update Post x set x.commentCount = (select count(c) from Comment c where c.postId = x.postId and c.status = ...VISIBLE) where x.postId = :id`. 하나 더하기가 아니라 다시 세기: 두 사람이 동시에 눌러도, 숨김과 복원이 엇갈려도 맞습니다.
+- 필드는 모델의 것입니다: `@readonly`(요청이 쓰지 않음), `@updatable(false)`(게시글 저장이 덮어쓰지 않음), `@default(0)`. 소프트 삭제(`@deleted`)된 행은 세지 않습니다. 조건은 필드를 enum 상수, `true`, `false`, 숫자, `'text'` 와 비교하고, 여럿이면 `and` 로 잇습니다.
+- 생성된 서비스를 거치지 않고 쓴 행(SQL, 직접 만든 리포지토리)은 그 서비스로 쓰는 일이 카운트를 표시할 때까지 세지 않습니다. 잘못 쓰면 빌드가 멈춥니다: `Entity.reference` 가 없음, 이 엔티티를 가리키지 않는 참조, 필드에 없는 값, `long`/`int` 가 아닌 카운트. `elasticore-template-ddd` `BoardCountTest`(HTTP), `elasticore-template-kt` `OnDeleteTest.anArticleCountsItsApprovedComments`.
+
 #### 관계 필드의 자동 DTO 렌더링 (중첩 DTO + FK 필드)
 > **Since: 2.2.260703**
 
