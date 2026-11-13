@@ -147,10 +147,37 @@ create Product", 가격 0 은 400 "price must be positive" 로 답합니다. `bu
 
 같은 모델을 설정 한 줄로 다르게 읽습니다: `language = 'kotlin'`, `architecture = 'ddd'`, Spring Boot 플러그인 버전,
 TypeScript 클라이언트는 `./gradlew elcore3ts`, 일부 규칙만 쓰려면 `env.yml` 에
-`publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]`. 데이터의 의미도
-[Apache Ossie](https://github.com/apache/ossie) 의미 모델로 내보내 BI 도구와 AI 에이전트가 읽게 합니다.
+`publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]`.
 
 **[둘러보기](docs/tour.ko.md)** 에서 하나하나를 생성된 코드, 실제 요청과 함께 자세히 봅니다.
+
+## 처음부터 BI 도구에 바로 연결 (Apache Ossie)
+
+ElastiCORE 로 만든 서비스는 나중에 별도의 데이터 모델링 프로젝트 없이 BI 도구로 분석할 수 있습니다. 빌드의
+`elasticore { }` 블록에 `rules = ['ossie-export']` 를 켜면 - 지금이든 몇 년 뒤든 - 빌드가 서비스 전체를
+[Apache Ossie](https://github.com/apache/ossie) 의미 모델로 씁니다: 테이블, 조인, 각 코드의 의미, 업무 지표.
+BI 도구는 Ossie 변환기(dbt, Snowflake, Databricks, Power BI 등)로 읽고, AI 에이전트는 그대로 읽습니다.
+
+애플리케이션이 실제로 돌아가는 규칙에서 나오므로 정확합니다. Pet Store 는 매출을 한 번만 선언합니다:
+
+```yaml
+revenue: sum(PurchaseOrder.total) where status != CANCELLED
+```
+
+내보내기는 모든 BI 도구에 같은 지표를, DB 가 실제로 저장하는 코드로 줍니다:
+
+```yaml
+- name: revenue
+  expression:
+    sql: "SUM(CASE WHEN status <> 'CAN' THEN total END)"
+```
+
+테이블만 보는 분석가는 `CAN` 이 취소라는 것을 모르고, 두 대시보드가 서로 다른 매출을 보일 수 있습니다. 여기서는
+주문을 쓰는 코드와 같은 모델이 지표를 정의하므로, 애플리케이션이 바뀌면 지표도 함께 바뀝니다.
+
+전체 예: Pet Store 의
+[semantic_model.yml](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/semantic_model.yml).
+Core spec `0.3.0.dev0`. 변환기는 아직 초기이고 도구마다 다르니, 먼저 샘플로 확인하세요.
 
 ## 현재 상태
 

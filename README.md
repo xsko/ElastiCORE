@@ -152,10 +152,39 @@ regeneration (the merge above); commit `.elasticore/cache` with the generated fi
 
 The same model, read differently by one setting: `language = 'kotlin'`, `architecture = 'ddd'`, the Spring Boot
 plugin's version, `./gradlew elcore3ts` for the TypeScript client, or only some rules —
-`publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]` in `env.yml`. The data's meaning goes out too, as an
-[Apache Ossie](https://github.com/apache/ossie) semantic model for BI tools and AI agents.
+`publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]` in `env.yml`.
 
 **[Take the tour](docs/tour.md)** for each of these at length, with the generated code and real requests.
+
+## Ready for BI tools from day one (Apache Ossie)
+
+A service built on ElastiCORE can be analyzed in BI tools later without a separate data modelling project. Turn on
+`rules = ['ossie-export']` in the build's `elasticore { }` block - now or years later - and the build writes the whole
+service as an [Apache Ossie](https://github.com/apache/ossie) semantic model: tables, joins, what each code means, and
+the business measures. BI tools read it through the Ossie converters (dbt, Snowflake, Databricks, Power BI and more),
+and AI agents can read it as it is.
+
+It is accurate because it comes from the rules the application itself runs on. The Pet Store declares revenue once:
+
+```yaml
+revenue: sum(PurchaseOrder.total) where status != CANCELLED
+```
+
+and the export gives every BI tool the same measure, with the code the database really stores:
+
+```yaml
+- name: revenue
+  expression:
+    sql: "SUM(CASE WHEN status <> 'CAN' THEN total END)"
+```
+
+An analyst who looks only at the tables does not know that `CAN` means cancelled, and two dashboards can show two
+revenues. Here the measure is defined by the same model as the code that writes the orders, so it changes when the
+application changes.
+
+Full example: the Pet Store's
+[semantic_model.yml](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/semantic_model.yml).
+Core spec `0.3.0.dev0`. The converters are young and differ by tool, so try yours on the sample first.
 
 ## Status
 
