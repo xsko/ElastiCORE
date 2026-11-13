@@ -198,6 +198,80 @@ class JdbcDbmsGatewayTest {
                 .isEqualByComparingTo("9.99");
     }
 
+    /** A list bound by name is the values of IN (:ids) (issue 164). */
+    @Test
+    void aListBoundByNameIsTheInClause() throws Exception {
+        Map<String, Object> input = new LinkedHashMap<String, Object>();
+        input.put("ids", java.util.Arrays.asList(1L, 3L));
+        assertThat(gateway.executeQuery(
+                        entry("SELECT id FROM port_item WHERE id IN (:ids) ORDER BY id", true),
+                        input,
+                        Integer.class,
+                        null))
+                .containsExactly(1, 3);
+    }
+
+    /** An enum as the generator writes one: a @db code, fromCode(String) to read it. */
+    public enum Status {
+        DRAFT("DRF"),
+        PUBLISHED("PUB");
+
+        private final String code;
+
+        Status(String code) {
+            this.code = code;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public static Status fromCode(String code) {
+            for (Status s : values()) {
+                if (s.code.equals(code)) return s;
+            }
+            return null;
+        }
+    }
+
+    /** An enum without fromCode: read by the constant's name. */
+    public enum Kind {
+        SMALL,
+        LARGE
+    }
+
+    /** The row of a port answering a DTO with enum fields. */
+    public static class Article {
+        private Integer id;
+        private Status status;
+        private Kind kind;
+    }
+
+    /**
+     * An enum column is read as the enum (issue 165): by fromCode where the enum
+     * has it, by the constant's name otherwise, by the ordinal from a number.
+     */
+    @Test
+    void anEnumColumnIsReadAsTheEnum() throws Exception {
+        String rows = "SELECT 1 AS id, 'PUB' AS status, 'LARGE' AS kind UNION ALL "
+                + "SELECT 2, 'DRAFT', 'SMALL' ORDER BY id";
+        List<Article> articles = gateway.executeQuery(entry(rows, true), Collections.emptyMap(), Article.class, null);
+        assertThat(articles.get(0).status).as("the @db code").isEqualTo(Status.PUBLISHED);
+        assertThat(articles.get(0).kind).isEqualTo(Kind.LARGE);
+        assertThat(articles.get(1).status).as("the constant's name").isEqualTo(Status.DRAFT);
+        assertThat(articles.get(1).kind).isEqualTo(Kind.SMALL);
+
+        // One enum value per row, and an ordinal.
+        assertThat(gateway.executeQuery(
+                        entry("SELECT 'PUB' UNION ALL SELECT 'DRF'", true), Collections.emptyMap(), Status.class, null))
+                .containsExactly(Status.PUBLISHED, Status.DRAFT);
+        assertThat(gateway.executeQuery(entry("SELECT 1", true), Collections.emptyMap(), Kind.class, null))
+                .containsExactly(Kind.LARGE);
+        assertThatThrownBy(() -> SqlPortGateway.convertValue("NONE", Kind.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NONE");
+    }
+
     @Test
     void jpqlIsRefusedWithoutJpa() {
         assertThatThrownBy(() -> gateway.executeQuery(entry("SELECT i FROM Item i", false), Collections.emptyMap(),
