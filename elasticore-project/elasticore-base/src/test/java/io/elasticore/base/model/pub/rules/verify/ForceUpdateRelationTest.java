@@ -96,6 +96,72 @@ public class ForceUpdateRelationTest {
         }
     }
 
+    /**
+     * The 2.x generator in this JVM, with @forceupdate on the DTO's relation and
+     * list fields as well - the DTO-to-entity lines, with and without the
+     * EntityManager, read through a mapper method too.
+     */
+    @Test
+    public void everyForcedLineOfTheTwoXGeneratorIsClosed() throws Exception {
+        String model = MODEL.replace("      customer: CustomerDTO\n", "      customer: CustomerDTO @forceupdate\n")
+                .replace("      lines: List<OrderLineDTO>\n", "      lines: List<OrderLineDTO> @forceupdate\n");
+        File project = project(model);
+        String basePath = System.getProperty("elasticore.base.path");
+        System.setProperty("elasticore.base.path", project.getAbsolutePath());
+        Object[] context = saveContext();
+        try {
+            new io.elasticore.base.extract.ModelExtractor(
+                            new File(project, "src/main/resources/blueprint").getAbsolutePath())
+                    .extract(new io.elasticore.base.extract.FileBasedSourceFileAccessFactory(
+                            new File(project, "src/main/java").getAbsolutePath()));
+        } finally {
+            restoreContext(context);
+            if (basePath == null) System.clearProperty("elasticore.base.path");
+            else System.setProperty("elasticore.base.path", basePath);
+        }
+        List<String> lines = setterLines(found(project, "SrdeskMapper.java"));
+        assertTrue(lines.size() >= 4, lines.toString());
+        for (String line : lines) {
+            assertEquals(count(line, "("), count(line, ")"), "unbalanced: " + line);
+            if (line.contains("getCustomer()") || line.contains("getLines()")) {
+                assertTrue(line.startsWith("setVal("), "a relation goes through setVal: " + line);
+            }
+        }
+        assertTrue(lines.contains("to.setNote(from.getNote());"), lines.toString());
+    }
+
+    private static final String[] CONTEXT = {"STATIC_DOMAIN_MAP", "context", "tmpCtx"};
+
+    private static Object[] saveContext() throws Exception {
+        Object[] saved = new Object[CONTEXT.length];
+        for (int i = 0; i < CONTEXT.length; i++) {
+            java.lang.reflect.Field f =
+                    io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField(CONTEXT[i]);
+            f.setAccessible(true);
+            Object value = f.get(null);
+            saved[i] = value instanceof java.util.Map
+                    ? new java.util.HashMap<Object, Object>((java.util.Map<?, ?>) value)
+                    : value;
+        }
+        return saved;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void restoreContext(Object[] saved) throws Exception {
+        for (int i = 0; i < CONTEXT.length; i++) {
+            java.lang.reflect.Field f =
+                    io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField(CONTEXT[i]);
+            f.setAccessible(true);
+            if (saved[i] instanceof java.util.Map) {
+                java.util.Map map = (java.util.Map) f.get(null);
+                map.clear();
+                map.putAll((java.util.Map) saved[i]);
+            } else {
+                f.set(null, saved[i]);
+            }
+        }
+    }
+
     /** The mapper's statement lines that set a customer, lines or note, trimmed. */
     private static List<String> setterLines(String mapper) {
         List<String> out = new ArrayList<String>();
