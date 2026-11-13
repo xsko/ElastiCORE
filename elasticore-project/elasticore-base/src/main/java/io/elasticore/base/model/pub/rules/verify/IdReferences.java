@@ -59,7 +59,8 @@ final class IdReferences {
         Parser parser = new Parser();
         // config: referenceColumn: short - customer_id rather than 2.x's
         // customer_customer_id. Opt-in: renaming a column is a migration.
-        String referenceColumn = String.valueOf(model.getConfig("referenceColumn")).trim();
+        String referenceColumn =
+                String.valueOf(model.getConfig("referenceColumn")).trim();
         boolean shortColumns = "short".equalsIgnoreCase(referenceColumn);
         // config: referenceColumn: field - the relation field's name + _id: author_id
         // for author: Member, and parent_id for a root's reference to its own kind.
