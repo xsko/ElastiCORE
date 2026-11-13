@@ -16,10 +16,33 @@ export interface Page<T> {
 }
 
 let baseUrl = '';
+let sender: typeof fetch | undefined;
+let defaults: RequestInit | (() => RequestInit | Promise<RequestInit>) | undefined;
 
 /** Where the API lives. Call once at startup; defaults to same-origin. */
 export function setApiBaseUrl(url: string): void {
     baseUrl = url.replace(/\/+$/, '');
+}
+
+/**
+ * What every request carries, and the fetch that sends it. Call once at startup.
+ *
+ * - baseUrl: as setApiBaseUrl.
+ * - fetch: the function that sends - a test's own, or a server framework's.
+ * - init: headers, credentials ('include' for an API on another origin) ... merged
+ *   into every request, its headers over Content-Type. A function is called for each
+ *   request: a server reads the incoming request's cookie there (from its request
+ *   context, such as AsyncLocalStorage - this setting is shared by every request a
+ *   server handles at once). For what belongs to one call only, pass init to that call.
+ */
+export function configureApi(options: {
+    baseUrl?: string;
+    fetch?: typeof fetch;
+    init?: RequestInit | (() => RequestInit | Promise<RequestInit>);
+}): void {
+    if (options.baseUrl !== undefined) setApiBaseUrl(options.baseUrl);
+    if (options.fetch !== undefined) sender = options.fetch;
+    if (options.init !== undefined) defaults = options.init;
 }
 
 /** What the server answers a refused request with (RFC 9457). */
@@ -82,10 +105,25 @@ export class ApiError extends Error {
     }
 }
 
-async function send(method: string, path: string, body?: unknown): Promise<Response> {
-    return fetch(baseUrl + path, {
+/** Content-Type, then the shared headers, then the call's: a later one wins, whatever its case. */
+function headersOf(shared?: RequestInit, init?: RequestInit): Record<string, string> {
+    const merged = new Headers({ 'Content-Type': 'application/json' });
+    for (const given of [shared?.headers, init?.headers]) {
+        if (given) new Headers(given).forEach((value, key) => merged.set(key, value));
+    }
+    const out: Record<string, string> = {};
+    merged.forEach((value, key) => { out[key] = value; });
+    return out;
+}
+
+async function send(method: string, path: string, body?: unknown, init?: RequestInit): Promise<Response> {
+    const shared = typeof defaults === 'function' ? await defaults() : defaults;
+    const doFetch = sender ?? fetch;
+    return doFetch(baseUrl + path, {
+        ...shared,
+        ...init,
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: headersOf(shared, init),
         body: body === undefined ? undefined : JSON.stringify(body),
     });
 }
@@ -100,8 +138,8 @@ async function bodyOf(res: Response): Promise<unknown> {
     return text === '' ? undefined : JSON.parse(text);
 }
 
-export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await send(method, path, body);
+export async function request<T>(method: string, path: string, body?: unknown, init?: RequestInit): Promise<T> {
+    const res = await send(method, path, body, init);
     if (!res.ok) {
         throw new ApiError(res.status, path, await res.text());
     }
@@ -109,8 +147,8 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 }
 
 /** The same, where the server has nothing to return: a 404, or no body. */
-export async function requestOrNull<T>(method: string, path: string): Promise<T | null> {
-    const res = await send(method, path);
+export async function requestOrNull<T>(method: string, path: string, init?: RequestInit): Promise<T | null> {
+    const res = await send(method, path, undefined, init);
     if (res.status === 404) {
         return null;
     }
