@@ -385,6 +385,50 @@ public class OssieExportTest {
                 out);
     }
 
+    @Test
+    @DisplayName("an enum field's stored values and their meanings are data beside the enum's name")
+    public void anEnumsCodesAreData() throws Exception {
+        String model = String.join(
+                "\n",
+                "enumeration:",
+                "  DatePart:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code: string(10) @code",
+                "      label: string(30)",
+                "    enum:",
+                "      NONE: NONE, Disabled",
+                "      YYYY: YYYY, YYYY",
+                "      EQ: EQ, a = b",
+                "  Size:",
+                "    meta: enum",
+                "    fields:",
+                "      label: string(30)",
+                "    enum:",
+                "      SMALL: Small",
+                "      LARGE: Large",
+                "",
+                "entity:",
+                "  Report:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      reportId: long @id @sequence",
+                "      datePart: DatePart",
+                "      size: Size",
+                "");
+        String out = export(model)[0];
+        assertTrue(
+                out.contains("data: {\"enumeration\": \"DatePart\", \"codes\": "
+                        + "{\"NONE\": \"Disabled\", \"YYYY\": \"YYYY\", \"EQ\": \"a = b\"}}\n"),
+                out);
+        assertTrue(
+                out.contains("data: {\"enumeration\": \"Size\", \"codes\": "
+                        + "{\"0\": \"SMALL (Small)\", \"1\": \"LARGE (Large)\"}}\n"),
+                out);
+        // The sentence for a reader stays.
+        assertTrue(out.contains("ai_context: \"Codes: NONE = Disabled, YYYY, EQ = a = b\"\n"), out);
+    }
+
     // ---- a schema: the source is the table it names, as @Table(schema=...) does ----
 
     /** Customer with those marks on its meta line; Tag with none. */
