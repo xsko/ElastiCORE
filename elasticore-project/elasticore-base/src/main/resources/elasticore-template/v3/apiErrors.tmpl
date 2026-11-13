@@ -136,6 +136,9 @@ public class ${className} {
             case "foreign-key":
                 return problem(HttpStatus.CONFLICT, "referenced", "Conflicts with stored data",
                         said("referenced", "The row is still referenced by another, or refers to one that does not exist."));
+            case "check":
+                return problem(HttpStatus.BAD_REQUEST, "check", "Invalid request",
+                        said("check", "A value is outside what the column allows."));
             default:
                 return problem(HttpStatus.CONFLICT, "conflict", "Conflicts with stored data",
                         said("conflict", "A unique value is already taken, or the row is still referenced by another."));
@@ -155,14 +158,22 @@ public class ${className} {
             if ("23502".equals(state)) return "not-null";
             if ("23505".equals(state)) return "unique";
             if ("23503".equals(state) || "23506".equals(state)) return "foreign-key";   // 23506: H2's missing parent
+            if ("23513".equals(state) || "23514".equals(state)) return "check";         // H2, PostgreSQL
+            if (sql.getErrorCode() == 3819) return "check";                               // MySQL (HY000)
             if ("23000".equals(state)) {
                 int code = sql.getErrorCode();
                 if (code == 1048 || code == 1400 || code == 515) return "not-null";        // MySQL, Oracle, SQL Server
                 if (code == 1062 || code == 1 || code == 2627 || code == 2601) return "unique";
+                if (code == 2290 || (code == 547 && isCheck(sql.getMessage()))) return "check";   // Oracle, SQL Server
                 if (code == 1451 || code == 1452 || code == 2291 || code == 2292 || code == 547) return "foreign-key";
             }
         }
         return "";
+    }
+
+    /** SQL Server says 547 for a FOREIGN KEY and a CHECK alike; its message names which (in any language). */
+    private static boolean isCheck(String message) {
+        return message != null && java.util.regex.Pattern.compile("(^|\\s)CHECK\\s").matcher(message).find();
     }
 
     /**

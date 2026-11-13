@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.sql.init.continue-on-error=false"})
 @AutoConfigureMockMvc
 @org.springframework.context.annotation.Import({
-    AbstractEntityCheck.class, SoftDeleteHierarchyCheck.class, LikeSearchCheck.class
+    AbstractEntityCheck.class, SoftDeleteHierarchyCheck.class, IntegrityKindCheck.class, LikeSearchCheck.class
 })
 abstract class SchemaValidateOnDatabase {
 
@@ -43,6 +43,7 @@ abstract class SchemaValidateOnDatabase {
     @Autowired AbstractEntityCheck codes;
     @Autowired SoftDeleteHierarchyCheck kept;
     @Autowired JdbcTemplate jdbc;
+    @Autowired IntegrityKindCheck integrity;
     @Autowired LikeSearchCheck like;
     @Autowired io.elasticore.sample.petstore.infrastructure.persistence.CategoryRepository categories;
 
@@ -102,6 +103,12 @@ abstract class SchemaValidateOnDatabase {
                 .isEqualTo(icon);
         assertThat(categories.findById(id).orElseThrow().getStory()).isEqualTo(story);
         categories.deleteById(id);
+    }
+
+    /** CHECK, UNIQUE and FOREIGN KEY each answered as their kind, from this database's own exception (issue 167). */
+    @Test
+    void eachIntegrityRuleIsAnsweredAsItsKind() {
+        integrity.eachRuleIsAnsweredAsItsKind();
     }
 
     /** A % or _ in a like search is a character, with the escape every database reads (issue 159). */

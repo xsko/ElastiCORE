@@ -1023,7 +1023,7 @@ spring:
 | 응답 | `title` | `detail` |
 |---|---|---|
 | 409 (생명주기), 404 (참조한 행 없음), 422 (불변식) | O | O (규칙의 코드로) |
-| 409·400 의 데이터베이스 거절 (`stale`, `required`, `unique`, `referenced`, `conflict`) | O | O (`error.<code>`) |
+| 409·400 의 데이터베이스 거절 (`stale`, `required`, `unique`, `referenced`, `check`, `conflict`) | O | O (`error.<code>`) |
 | 400 필드 검증 (`@Valid`, 서비스 측 검증 모두) | O | 필드 메시지 O (`<제약>.<필드>`, 예 `Size.lines`). 번역이 없는 기본 메시지는 요청 언어로 |
 | 컨트롤러 전의 거절 (`RequestShapeErrors`) | O | O (`error.unreadable`, `error.method-not-allowed` ..., 필드는 `typeMismatch.<필드>`) |
 | 손으로 쓴 거절에 메시지 코드를 준 것 | O | O (그 코드로) |
@@ -1054,7 +1054,7 @@ HTTP/1.1 409
 
 | 코드 | 언제 | 값 (`{0}`, `{1}`) |
 |---|---|---|
-| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
+| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `check`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
 | `state.<Entity>.<field>.<command>` | 생명주기: 시작 상태가 아닌데 명령이 옴 (`states:`) | 지금 상태, 가능한 상태 |
 | `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | - |
 | `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | - |

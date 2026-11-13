@@ -55,6 +55,7 @@ public final class ErrorCatalog {
         put(m, "unique", "Already exists", "A unique value is already taken.");
         put(m, "referenced", "Conflicts with stored data",
                 "The row is still referenced by another, or refers to one that does not exist.");
+        put(m, "check", "Invalid request", "A value is outside what the column allows.");
         put(m, "conflict", "Conflicts with stored data",
                 "A unique value is already taken, or the row is still referenced by another.");
         put(m, "invalid", "Invalid request", null);
