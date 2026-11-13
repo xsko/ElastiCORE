@@ -113,6 +113,24 @@ public class SelfReferenceByIdTest {
             "      manager: SfEmployee",
             "");
 
+    /** referenceColumn: field - references named for their role, to another root and to its own kind. */
+    private static final String FIELD_COLUMNS = String.join(
+            "\n",
+            "entity:",
+            "  SfMember:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      memberId: long @id @sequence",
+            "  SfPost:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      postId: long @id @sequence",
+            "      author: SfMember!",
+            "      editor: SfMember",
+            "      reviewer: SfMember @db(checked_by)",
+            "      parent: SfPost",
+            "");
+
     private static final List<File> projects = new ArrayList<File>();
 
     private static File hexagonal;
@@ -120,6 +138,7 @@ public class SelfReferenceByIdTest {
     private static File kotlin;
     private static File layered;
     private static File shortColumns;
+    private static File fieldColumns;
     /** What the hexagonal run printed. */
     private static String hexagonalLog;
 
@@ -139,6 +158,7 @@ public class SelfReferenceByIdTest {
         kotlin = run("elcore-selfref-kt", "hexagonal", "kotlin");
         layered = run("elcore-selfref-layered", "layered", "java");
         shortColumns = run("elcore-selfref-short", "hexagonal", "java", SHORT_COLUMNS, "    referenceColumn: short");
+        fieldColumns = run("elcore-selfref-field", "hexagonal", "java", FIELD_COLUMNS, "    referenceColumn: field");
     }
 
     @AfterAll
@@ -283,6 +303,24 @@ public class SelfReferenceByIdTest {
         String entity = entityOf(shortColumns, "SfEmployee", ".java");
         assertTrue(entity.contains("@Column(name = \"manager_emp_no\")"), entity);
         assertTrue(entity.contains("private Long managerEmpId;"), entity);
+    }
+
+    /** referenceColumn: field names each column for the field: author_id, parent_id; a @db of its own still wins. */
+    @Test
+    public void referenceColumnFieldNamesTheColumnForTheField() throws Exception {
+        String ddl = read(new File(fieldColumns, "src/main/resources/db/schema-postgresql.sql"));
+        assertTrue(ddl.contains("author_id BIGINT NOT NULL,"), ddl);
+        assertTrue(ddl.contains("FOREIGN KEY (author_id) REFERENCES sf_member (member_id)"), ddl);
+        assertTrue(ddl.contains("FOREIGN KEY (editor_id) REFERENCES sf_member (member_id)"), ddl);
+        assertTrue(ddl.contains("FOREIGN KEY (checked_by) REFERENCES sf_member (member_id)"), ddl);
+        assertTrue(ddl.contains("FOREIGN KEY (parent_id) REFERENCES sf_post (post_id)"), ddl);
+        assertFalse(ddl.contains("author_member_id") || ddl.contains("parent_post_id"), ddl);
+        String entity = entityOf(fieldColumns, "SfPost", ".java");
+        assertTrue(entity.contains("@Column(name = \"author_id\", nullable = false)"), entity);
+        assertTrue(entity.contains("@Column(name = \"parent_id\")"), entity);
+        // The id field keeps its name: the setting changes the table only.
+        assertTrue(entity.contains("private Long authorMemberId;"), entity);
+        assertTrue(entity.contains("private Long parentPostId;"), entity);
     }
 
     @Test

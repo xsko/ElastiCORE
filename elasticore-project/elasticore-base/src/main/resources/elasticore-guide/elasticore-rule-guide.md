@@ -1693,6 +1693,23 @@ version) in `build/elasticore/ts-client.model`, and `elcore3` says nothing if th
 script (`webBuild` and so on) calls `elcore3ts` is also quiet if nothing changed. If you delete the `build` folder,
 `elcore3` tells you every time until you run `elcore3ts` again.
 
+**Where it sends, and what every request carries (`configureApi`).** By default the client calls the same origin with
+`fetch` and `Content-Type: application/json` only. Set the rest once at startup in `apiSupport.ts`:
+
+```ts
+configureApi({
+    baseUrl: 'https://api.example.com',            // as setApiBaseUrl
+    init: { credentials: 'include' },              // the session cookie of an API on another origin
+    // init: async () => ({ headers: { Authorization: 'Bearer ' + await token() } }),  // read for each request
+    // fetch: myFetch,                             // a test's own, or a server framework's
+});
+await OrderApi.findById(7, { signal: controller.signal });   // every function takes one call's RequestInit last
+```
+
+The headers are merged: `Content-Type`, then `init`'s, then the call's - a later one wins. On a server (SSR) the
+setting is shared by every request the server handles at once: read the incoming request's cookie in the `init`
+function from its request context, or pass it to that call. A client that calls neither sends what it always did.
+
 `-PlistRules` does not generate; for each domain it shows the currently selected rules per file kind (target) in
 execution order (including the id used in `suppress`). It creates and deletes no files.
 
