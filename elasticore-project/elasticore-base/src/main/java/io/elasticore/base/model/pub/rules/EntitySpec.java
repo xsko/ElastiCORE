@@ -380,13 +380,16 @@ public final class EntitySpec {
         public final String set;
         /** cascade, restrict or setNull. */
         public final String mode;
+        /** The key field of the entity pointed to, postId: what the row's id is read from. */
+        public final String targetKey;
 
-        public OnDeleteRef(String entity, String field, String where, String set, String mode) {
+        public OnDeleteRef(String entity, String field, String where, String set, String mode, String targetKey) {
             this.entity = entity;
             this.field = field;
             this.where = where;
             this.set = set;
             this.mode = mode;
+            this.targetKey = targetKey;
         }
     }
 

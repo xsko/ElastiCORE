@@ -240,6 +240,7 @@ public final class RuleCatalog {
         });
         // @onDelete(cascade | restrict | setNull), carried out by the deleted row's CoreService.
         c.register("jpa-on-delete", new Factory() {
+            @Override
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.base.OnDeleteRules();
             }

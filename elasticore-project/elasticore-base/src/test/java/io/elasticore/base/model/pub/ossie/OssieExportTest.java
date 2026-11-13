@@ -105,7 +105,7 @@ public class OssieExportTest {
         // array of 0.1.x is no longer accepted.
         assertTrue(yaml.contains("\nversion: " + OssieSemanticModelExporter.SPEC_VERSION + "\n"), "no spec version");
         // No ossieName in the ddd sample: the model is named after its domains, as before the setting existed.
-        assertTrue(yaml.contains("\nname: billing_catalog_shop\n"), "the unnamed model's name moved");
+        assertTrue(yaml.contains("\nname: billing_board_catalog_shop\n"), "the unnamed model's name moved");
         assertTrue(yaml.contains("\ndatasets:\n"), "datasets are not at the root");
         assertTrue(!yaml.contains("semantic_model:"), "the 0.1 array shape");
         assertTrue(yaml.contains("primary_key: ["), "no primary keys exported");

@@ -1842,7 +1842,7 @@ public final class SpecFactory {
                     }
                 }
                 String joinBy = f.getAnnotationValue("joinby");
-                if (pk == null && (joinBy == null || joinBy.trim().isEmpty())) {
+                if (pk == null) {
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(
                             at + ": " + target.getIdentity().getName() + " has no single key to compare");
                     continue;
@@ -1858,7 +1858,7 @@ public final class SpecFactory {
                 }
                 out.get(key)
                         .add(new io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef(
-                                name, f.getName(), where, set, mode));
+                                name, f.getName(), where, set, mode, pk.getName()));
             }
         }
         return out;

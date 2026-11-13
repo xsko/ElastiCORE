@@ -87,6 +87,9 @@ public class OnDeleteRules implements CodeRules {
         String in = kt ? "    " : "";
         for (String entity : visit) {
             List<EntitySpec.OnDeleteRef> refs = e.onDeleteOf(entity);
+            // A cascaded entity nothing points to with @onDelete is removed as it is: no method of its own.
+            if (refs.isEmpty()) continue;
+            String key = refs.get(0).targetKey;
             lines.add("");
             lines.add(in + "/**");
             lines.add(in + " * What the rows that point to a " + entity
@@ -98,10 +101,12 @@ public class OnDeleteRules implements CodeRules {
                 lines.add(in
                         + String.format(
                                 "fun onDelete%s(em: %s.persistence.EntityManager, row: Any) {", entity, j2ee(c)));
-                lines.add(in + "    val id = em.entityManagerFactory.persistenceUnitUtil.getIdentifier(row)");
+                lines.add(in + String.format("    val id: Any? = (row as %s).%s", entity, key));
             } else {
                 lines.add(String.format("public static void onDelete%s(EntityManager em, Object row) {", entity));
-                lines.add("    Object id = em.getEntityManagerFactory().getPersistenceUnitUtil().getIdentifier(row);");
+                lines.add(String.format(
+                        "    Object id = ((%s) row).get%s();",
+                        entity, Character.toUpperCase(key.charAt(0)) + key.substring(1)));
             }
             for (EntitySpec.OnDeleteRef ref : refs) {
                 if (!"restrict".equals(ref.mode)) continue;
@@ -166,6 +171,38 @@ public class OnDeleteRules implements CodeRules {
         }
         if (kt) lines.add("}");
         for (String line : lines) c.varLine("joinFetchMethod", "%s", line);
+    }
+
+    /**
+     * The generated service test (Kotlin): its deletes now run the JPQL of onDelete through the mocked entity
+     * manager, which answers null for a query. It is handed one that answers itself, an empty list and 0 - and,
+     * where the test had no entity manager to mock, one, given by the mocked repository helper.
+     */
+    @Rule(value = "service-test-on-delete", target = "service_test", order = 90, phase = Rule.Phase.TAIL)
+    void onDeleteInTheServiceTest(EntitySpec e) {
+        if (e.onDeleteOf(e.getName()).isEmpty()) return;
+        SourceCode c = ctx(e);
+        if (c.syntax() != Syntax.KOTLIN) return;
+        String setUp = orDefault(c.varValue("mockSetUp"), "");
+        StringBuilder more = new StringBuilder(setUp);
+        if (!"true".equals(c.varValue("entityManagerMock"))) {
+            c.varLine("mockDeclarationList", "")
+                    .varLine("mockDeclarationList", "    @Mock")
+                    .varLine(
+                            "mockDeclarationList",
+                            "    private lateinit var entityManager: jakarta.persistence.EntityManager");
+            c.var("entityManagerMock", "true");
+            more.append(
+                    "\n        org.mockito.Mockito.lenient().`when`(helper.entityManager).thenReturn(entityManager)");
+        }
+        more.append("\n        // @onDelete runs its JPQL before a delete: no row points to the one deleted.")
+                .append("\n        val onDeleteQuery = org.mockito.Mockito.mock(jakarta.persistence.Query::class.java,")
+                .append(" org.mockito.Answers.RETURNS_SELF)")
+                .append(
+                        "\n        org.mockito.Mockito.lenient().`when`(onDeleteQuery.resultList).thenReturn(emptyList<Any>())")
+                .append("\n        org.mockito.Mockito.lenient().`when`(entityManager.createQuery(")
+                .append("org.mockito.ArgumentMatchers.anyString())).thenReturn(onDeleteQuery)");
+        c.var("mockSetUp", "%s", more.toString());
     }
 
     private static String j2ee(SourceCode c) {

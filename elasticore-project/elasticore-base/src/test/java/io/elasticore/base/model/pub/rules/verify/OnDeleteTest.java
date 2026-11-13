@@ -90,6 +90,8 @@ public class OnDeleteTest {
                         + "            onDeleteOdComment(em, each);\n            em.remove(each);"),
                 post);
         assertTrue(post.contains("public static void onDeleteOdComment(EntityManager em, Object row) {"), post);
+        assertTrue(post.contains("Object id = ((OdPost) row).getPostId();"), post);
+        assertTrue(post.contains("Object id = ((OdComment) row).getCommentId();"), post);
         assertTrue(post.contains("\"select x from OdComment x where x.parentCommentId = :id\""), post);
         assertTrue(post.contains("\"select 1 from OdReport x where x.commentId = :id\""), post);
         // Nothing points to a report or a bookmark with @onDelete: their services are as before.
@@ -108,6 +110,14 @@ public class OnDeleteTest {
                         "for (row in query.findAll(ForumMapper.toSpec(searchDTO))) onDeleteOdPost(entityManager, row)"),
                 post);
         assertTrue(post.contains("companion object {"), post);
+        assertTrue(post.contains("val id: Any? = (row as OdPost).postId"), post);
+        // Its generated test hands the mocked entity manager a query that finds nothing.
+        String test = found(project, "OdPostServiceTest.kt");
+        assertTrue(
+                test.contains("`when`(entityManager.createQuery(org.mockito.ArgumentMatchers.anyString()))"
+                        + ".thenReturn(onDeleteQuery)"),
+                test);
+        assertFalse(found(project, "OdReportServiceTest.kt").contains("onDeleteQuery"));
         assertTrue(post.contains("fun onDeleteOdPost(em: jakarta.persistence.EntityManager, row: Any) {"), post);
         assertTrue(post.contains("throw io.elasticore.springboot3.validation.ConflictException(\"restricted\","), post);
         assertTrue(post.contains("onDeleteOdComment(em, each!!)"), post);
@@ -170,6 +180,7 @@ public class OnDeleteTest {
                                 "    framework: springboot",
                                 "    mode: " + mode,
                                 "    j2ee: jakarta",
+                                "    testCode: \"true\"",
                                 "  namespace:",
                                 "    base: io.acme.forum",
                                 "    entity: io.acme.forum.entity",

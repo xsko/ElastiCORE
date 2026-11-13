@@ -11,6 +11,35 @@ CREATE TABLE bill_receipt (
     PRIMARY KEY (receipt_id)
 );
 
+CREATE TABLE brd_bookmark (
+    bookmark_id BIGINT IDENTITY(1,1) NOT NULL,
+    label NVARCHAR(50),
+    post_post_id BIGINT,
+    PRIMARY KEY (bookmark_id)
+);
+
+CREATE TABLE brd_comment (
+    comment_id BIGINT IDENTITY(1,1) NOT NULL,
+    text NVARCHAR(200) NOT NULL,
+    post_post_id BIGINT NOT NULL,
+    parent_comment_id BIGINT,
+    PRIMARY KEY (comment_id)
+);
+
+CREATE TABLE brd_post (
+    post_id BIGINT IDENTITY(1,1) NOT NULL,
+    title NVARCHAR(100) NOT NULL,
+    PRIMARY KEY (post_id)
+);
+
+CREATE TABLE brd_report (
+    report_id BIGINT IDENTITY(1,1) NOT NULL,
+    reason NVARCHAR(100),
+    post_post_id BIGINT,
+    comment_comment_id BIGINT,
+    PRIMARY KEY (report_id)
+);
+
 CREATE TABLE cat_author (
     author_id BIGINT IDENTITY(1,1) NOT NULL,
     name NVARCHAR(50) NOT NULL,
@@ -260,6 +289,11 @@ CREATE TABLE shop_outbox (
     PRIMARY KEY (id)
 );
 
+ALTER TABLE brd_bookmark ADD CONSTRAINT fk_brd_bookmark_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
+ALTER TABLE brd_comment ADD CONSTRAINT fk_brd_comment_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
+ALTER TABLE brd_comment ADD CONSTRAINT fk_brd_comment_parent FOREIGN KEY (parent_comment_id) REFERENCES brd_comment (comment_id);
+ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
+ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_comment FOREIGN KEY (comment_comment_id) REFERENCES brd_comment (comment_id);
 ALTER TABLE cat_book ADD CONSTRAINT fk_cat_book_author FOREIGN KEY (author_author_id) REFERENCES cat_author (author_id);
 ALTER TABLE shop_category ADD CONSTRAINT fk_shop_category_pare_6fb00ae1 FOREIGN KEY (parent_category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_products ADD CONSTRAINT fk_shop_products_category FOREIGN KEY (category_cat_id) REFERENCES shop_category (cat_id);
