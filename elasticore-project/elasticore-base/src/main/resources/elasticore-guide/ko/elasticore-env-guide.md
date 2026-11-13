@@ -632,6 +632,9 @@ config:
 - `referenceColumn: short` - DDD 번들의 식별자 참조(`customerId`)가 쓰는 컬럼 이름을 필드 이름 그대로
   (`customer_id`) 만듭니다. 루트가 자기 종류를 가리키는 참조는 관계의 컬럼을 유지합니다. **새 프로젝트용** 입니다: 이미 있는 DB 의 컬럼 이름이 바뀌므로 2.x 에서
   옮겨오는 프로젝트는 그대로 두거나 마이그레이션과 함께 켭니다.
+- `referenceColumn: field` - 식별자 참조마다 컬럼이 관계 필드 이름 + `_id` 입니다: `author: Member` ->
+  `author_id`, `editor: Member` -> `editor_id`, 루트가 자기 종류를 가리키는 참조도 (`parent: Post` -> `parent_id`).
+  필드에 직접 쓴 `@db(...)` 가 여전히 우선입니다. 바뀌는 것은 테이블뿐이고 id 필드 이름은 그대로(`authorMemberId`). 역시 새 프로젝트용입니다.
 - `adminRole` - `SessionCurrentUser.signIn(request, id, "ADMIN")` 처럼 로그인 때 넣은 역할 중 이 이름이
   있으면 관리자입니다. 엔티티 줄의 `@signin` 으로 생성되는 `signin` 은 그 엔티티의 `role` 필드(또는 `@role` 필드)가
   `@access(admin)` 인 enum·문자열일 때 그 값을 넣습니다.
