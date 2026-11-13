@@ -52,7 +52,7 @@ public class SearchDtoBaseRules implements CodeRules {
     /**
      * A search value is no longer than the column it is compared with: the
      * length declared (string(200), or the DTO field's own string(50)) is its
-     * @Size, as in the DTO; the search body is validated already (@Valid).
+     * {@code @Size}, as in the DTO; the search body is validated already (@Valid).
      * After every other rule - a project's own @Size (rule dev guide, a like
      * needs 2 or more characters) stays as it wrote it - and only on a field
      * still a String of its own. Clean output only (issue 169).
