@@ -373,10 +373,10 @@ public class DbmsServiceProxyFactory {
                 return item.isPrimitive() || isSimpleValueType(item);
             }
             if (!java.util.Collection.class.isAssignableFrom(type)) return false;
-            Type generic = parameter.getParameterizedType();
-            if (!(generic instanceof java.lang.reflect.ParameterizedType)) return false;
-            Type[] args = ((java.lang.reflect.ParameterizedType) generic).getActualTypeArguments();
-            return args.length == 1 && args[0] instanceof Class && isSimpleValueType((Class<?>) args[0]);
+            if (!(parameter.getParameterizedType() instanceof java.lang.reflect.ParameterizedType generic))
+                return false;
+            Type[] args = generic.getActualTypeArguments();
+            return args.length == 1 && args[0] instanceof Class<?> item && isSimpleValueType(item);
         }
 
         /**

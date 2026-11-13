@@ -267,6 +267,14 @@ class JdbcDbmsGatewayTest {
                 .containsExactly(Status.PUBLISHED, Status.DRAFT);
         assertThat(gateway.executeQuery(entry("SELECT 1", true), Collections.emptyMap(), Kind.class, null))
                 .containsExactly(Kind.LARGE);
+        // The last ordinal is the last constant; one past it, or below 0, is said.
+        assertThat(SqlPortGateway.convertValue(0, Kind.class)).isEqualTo(Kind.SMALL);
+        assertThatThrownBy(() -> SqlPortGateway.convertValue(2, Kind.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ordinal 2");
+        assertThatThrownBy(() -> SqlPortGateway.convertValue(-1, Kind.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ordinal -1");
         assertThatThrownBy(() -> SqlPortGateway.convertValue("NONE", Kind.class))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("NONE");
