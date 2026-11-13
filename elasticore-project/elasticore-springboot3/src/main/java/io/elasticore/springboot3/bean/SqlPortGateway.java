@@ -712,7 +712,8 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
                 || type == Boolean.class
                 || type == Character.class
                 || java.time.temporal.Temporal.class.isAssignableFrom(type)
-                || java.util.Date.class.isAssignableFrom(type);
+                || java.util.Date.class.isAssignableFrom(type)
+                || type.isEnum();
     }
 
     @SuppressWarnings("unchecked")
@@ -746,6 +747,45 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
         }
     }
 
+    /**
+     * A column read as an enum, the reverse of how a condition writes one: a
+     * number is the ordinal; text is what the enum's fromCode(String) answers
+     * (the @db code, as the generated enums have it - in Kotlin on the
+     * companion), and otherwise the constant of that name.
+     */
+    static Object toEnum(Object value, Class<?> enumType) {
+        Object[] constants = enumType.getEnumConstants();
+        if (value instanceof Number num) {
+            int ordinal = num.intValue();
+            if (ordinal >= 0 && ordinal < constants.length) return constants[ordinal];
+            throw new IllegalArgumentException("No " + enumType.getName() + " at ordinal " + ordinal);
+        }
+        String text = value.toString().trim();
+        Object byCode = fromCode(enumType, text);
+        if (byCode != null) return byCode;
+        for (Object constant : constants) {
+            if (((Enum<?>) constant).name().equals(text)) return constant;
+        }
+        throw new IllegalArgumentException("No " + enumType.getName() + " has the code or the name " + text);
+    }
+
+    /** What the enum's fromCode(String) answers for the text, or null when it has none or knows no such code. */
+    private static Object fromCode(Class<?> enumType, String text) {
+        try {
+            Method m = enumType.getMethod("fromCode", String.class);
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) return m.invoke(null, text);
+        } catch (NoSuchMethodException e) {
+            // A Kotlin enum keeps it on the companion.
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
+        try {
+            Object companion = enumType.getField("Companion").get(null);
+            return companion.getClass().getMethod("fromCode", String.class).invoke(companion, text);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
+    }
 
     static Object convertValue(Object value, Class<?> targetType) {
         if (value == null) return null;
@@ -804,6 +844,10 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
 
         if (targetType == String.class) {
             return value.toString();
+        }
+
+        if (targetType.isEnum()) {
+            return toEnum(value, targetType);
         }
 
         throw new IllegalArgumentException(

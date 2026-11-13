@@ -668,7 +668,7 @@ int affected = orderPortService.insertOrderBatch(items);  // 2 (total affected r
 - A null element in the List is skipped
 - A List of `Map` elements is supported as well as DTO elements
 - **A List of simple values is not a batch target**: a List of a simple type such as `list<long>` or `list<string>`
-  runs only once, as before, for IN clause binding (`WHERE id IN (:ids)`)
+  runs only once, as before, for IN clause binding (`WHERE id IN (:ids)`) - also as the method's only parameter (up to 3.0.261116 a lone list was bound as null). A result row's enum field is read from its `@db` code (`fromCode`), the constant's name, or an ordinal.
 
 ```yaml
 # A List of simple values is bound to the IN clause (not a batch)
