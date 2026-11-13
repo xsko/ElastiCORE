@@ -932,7 +932,7 @@ customName: string @search(like,comName)   # like search on the comName field
 - In v3 mode, the case-insensitive conditions (`like`, `%__%`, `%__`, `__%`) trim the leading and trailing spaces of the value (as `like` does)
   and lower-case it regardless of locale (Java `toLowerCase(Locale.ROOT)`, Kotlin `lowercase()` - in Kotlin 2.x
   `toLowerCase()` is a compile error). The column is compared with `lower(...)`.
-- A `%` or `_` that the caller puts in the value is still a wildcard (`{"name":"%Puppy%"}`).
+- In v3 mode and MyBatis, a `%` or `_` the caller puts in the value of a contains, prefix or suffix search is a character, not a wildcard (`100%` finds `100%`, from 3.0.261117; escaped with `!`). `auto` keeps it a pattern (`{"label":"ab%"}`); 2.x compatible output keeps it a wildcard.
 - Index: a contains search (`%v%`) cannot use a B-tree range on any DB, so `lower()` adds no cost. To find the prefix
   `__%` and the exact match `__=` through an index, you need a `lower(col)` expression index. The default CI collation of MySQL and SQL Server
   already ignores case.

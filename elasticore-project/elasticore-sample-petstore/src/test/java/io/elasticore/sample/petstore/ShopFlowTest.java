@@ -61,9 +61,13 @@ class ShopFlowTest {
         mvc.perform(json(post("/api/petstore/product/search"), "{\"categoryId\":1000,\"sortCode\":\"name-\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].name").value("Tiger Shark"));
-        mvc.perform(json(post("/api/petstore/item/search"), "{\"name\":\"%Puppy%\"}"))
+        mvc.perform(json(post("/api/petstore/item/search"), "{\"name\":\"Puppy\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].productName").exists());
+        // A % in the value is a character, not a wildcard: no item is named with one (issue 159).
+        mvc.perform(json(post("/api/petstore/item/search"), "{\"name\":\"%Puppy%\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
         // @search(like) is part of the name, whatever its case: "gold" finds Golden Retriever and Goldfish
         // (name order), "  BULL " the Bulldog.
         mvc.perform(json(post("/api/petstore/product/search"), "{\"name\":\"gold\"}"))

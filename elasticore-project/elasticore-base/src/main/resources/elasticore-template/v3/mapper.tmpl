@@ -93,6 +93,18 @@ public class ${className} {
         return val;
     }
 
+    /** A like search's value matched as written: its own %, _ and ! escaped with '!'. */
+    private static String likeText(String val) {
+        if (val == null) return null;
+        StringBuilder sb = new StringBuilder(val.length() + 4);
+        for (int i = 0; i < val.length(); i++) {
+            char ch = val.charAt(i);
+            if (ch == '!' || ch == '%' || ch == '_') sb.append('!');
+            sb.append(ch);
+        }
+        return sb.toString();
+    }
+
     private static boolean isSkip(String fromClassName, String refClassName) {
         return false;
     }

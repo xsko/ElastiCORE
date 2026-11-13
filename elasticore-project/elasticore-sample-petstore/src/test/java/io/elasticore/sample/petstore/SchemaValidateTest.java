@@ -27,9 +27,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.sql.init.schema-locations=classpath:db/schema-h2.sql",
         "spring.sql.init.data-locations=classpath:data.sql"})
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(LikeSearchCheck.class)
 class SchemaValidateTest {
 
     @Autowired MockMvc mvc;
+    @Autowired LikeSearchCheck like;
+
+    /** A % or _ in a like search is a character (issue 159). */
+    @Test
+    void aLikeSearchFindsTheValueAsWritten() throws Exception {
+        like.searchesTheValueAsWritten(mvc);
+    }
 
     @Test
     void hibernateValidatesTheGeneratedSchemaAndTheShopRunsOnIt() throws Exception {

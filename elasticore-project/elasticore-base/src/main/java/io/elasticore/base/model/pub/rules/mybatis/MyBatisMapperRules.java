@@ -909,25 +909,25 @@ public class MyBatisMapperRules implements CodeRules {
             case "lt": sb.append("AND ").append(column).append(" &lt; ").append(value); break;
             case "le": sb.append("AND ").append(column).append(" &lt;= ").append(value); break;
             case "like":
-                sb.append(bindLike(bind, "'%' + " + prop + ".trim() + '%'")).append("AND ").append(column).append(" LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "%", "%", false));
                 break;
             case "ilike":
-                sb.append(bindLike(bind, "'%' + " + prop + ".trim()." + lower + " + '%'")).append("AND LOWER(").append(column).append(") LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "%", "%", true));
                 break;
             case "ieq":
                 sb.append(bindLike(bind, prop + "." + lower)).append("AND LOWER(").append(column).append(") = #{").append(bind).append("}");
                 break;
             case "prefix":
-                sb.append(bindLike(bind, prop + ".trim() + '%'")).append("AND ").append(column).append(" LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "", "%", false));
                 break;
             case "iprefix":
-                sb.append(bindLike(bind, prop + ".trim()." + lower + " + '%'")).append("AND LOWER(").append(column).append(") LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "", "%", true));
                 break;
             case "suffix":
-                sb.append(bindLike(bind, "'%' + " + prop + ".trim()")).append("AND ").append(column).append(" LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "%", "", false));
                 break;
             case "isuffix":
-                sb.append(bindLike(bind, "'%' + " + prop + ".trim()." + lower)).append("AND LOWER(").append(column).append(") LIKE #{").append(bind).append("}");
+                sb.append(textLike(bind, column, prop, "%", "", true));
                 break;
             case "in": {
                 String item = searchParam(path, path.leaf != null ? path.leaf.typeName() : cond[3], "v");
@@ -952,6 +952,22 @@ public class MyBatisMapperRules implements CodeRules {
         }
         return sb.append("</if>\n").toString();
     }
+
+    /**
+     * A contains / prefix / suffix search: the value matched as written - its
+     * own %, _ and ! escaped by the runtime's Rows.like, as the repository's
+     * Containing queries do - between the wildcards the condition adds (issue 159).
+     */
+    private static String textLike(
+            String bind, String column, String prop, String before, String after, boolean lowerCase) {
+        String expr = "@io.elasticore.springboot3.mybatis.Rows@like(" + prop + ".trim(), '" + before + "', '" + after
+                + "', " + lowerCase + ", _databaseId)";
+        return bindLike(bind, expr) + "AND " + (lowerCase ? "LOWER(" + column + ")" : column) + " LIKE #{" + bind
+                + "} ESCAPE '" + LIKE_ESCAPE + "'";
+    }
+
+    /** The escape character of the runtime's Rows.like (Rows.LIKE_ESCAPE). */
+    private static final char LIKE_ESCAPE = '!';
 
     private static String bindLike(String name, String expression) {
         return "<bind name=\"" + name + "\" value=\"" + expression + "\"/>";
