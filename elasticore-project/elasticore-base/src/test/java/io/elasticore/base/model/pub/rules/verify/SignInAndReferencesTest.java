@@ -807,7 +807,10 @@ public class SignInAndReferencesTest {
     @Test
     public void theBrowserClientSignsInToo() throws Exception {
         String api = read(jproject, "src/main/ts/SrMemberApi.ts");
-        assertTrue(api.contains("export async function signIn(email: string, secret: string, init?: RequestInit): Promise<SrMemberDTO>"), api);
+        assertTrue(
+                api.contains(
+                        "export async function signIn(email: string, secret: string, init?: RequestInit): Promise<SrMemberDTO>"),
+                api);
         assertTrue(api.contains("request<SrMemberDTO>('POST', BASE + '/signin', { email, secret }, init)"), api);
         assertTrue(api.contains("export async function signOut(init?: RequestInit): Promise<void>"), api);
         assertTrue(api.contains("request<void>('POST', BASE + '/signout', undefined, init)"), api);

@@ -195,12 +195,42 @@ public class TypeScriptModelTest {
     public void everyEndpointBecomesATypedFunction() {
         String out = render(exposed(), "api");
 
-        assertTrue(out.contains("export async function create(input: ArticleDTO, init?: RequestInit)"
-                + ": Promise<ArticleDTO> {"), out);
+        assertTrue(
+                out.contains("export async function create(input: ArticleDTO, init?: RequestInit)"
+                        + ": Promise<ArticleDTO> {"),
+                out);
         assertTrue(out.contains("return request<ArticleDTO>('POST', BASE, input, init);"), out);
         assertTrue(out.contains("export async function update(input: ArticleDTO, init?: RequestInit)"), out);
         assertTrue(out.contains("export async function batchUpdate(inputs: ArticleDTO[], init?: RequestInit)"), out);
         assertTrue(out.contains("export async function deleteMany(keys: ArticleKeyDTO[], init?: RequestInit)"), out);
+    }
+
+    /** Signing in, out and asking who: each takes one call's RequestInit last and passes it on. */
+    @Test
+    public void theSignInFunctionsTakeACallsInit() {
+        EntitySpec member = new EntitySpec("Member")
+                .domain("content", "Content")
+                .meta("expose", "")
+                .meta("signin", "")
+                .meta("access", "update=admin")
+                .knownSignInEntities(1)
+                .apiPath("/api/v1")
+                .pkg("dto", "io.acme.content.dto")
+                .addField(loader.parse("memberId", "long @id @sequence"))
+                .addField(loader.parse("email", "string(100) @login"))
+                .addField(loader.parse("secret", "string(100) @password"));
+
+        String out = render(member, "api");
+
+        assertTrue(
+                out.contains("export async function signIn(email: string, secret: string, init?: RequestInit)"), out);
+        assertTrue(out.contains("return request<MemberDTO>('POST', BASE + '/signin', { email, secret }, init);"), out);
+        assertTrue(
+                out.contains("export async function signOut(init?: RequestInit): Promise<void> {\n"
+                        + "    return request<void>('POST', BASE + '/signout', undefined, init);"),
+                out);
+        assertTrue(out.contains("export async function me(init?: RequestInit): Promise<MemberDTO | null> {"), out);
+        assertTrue(out.contains("return await request<MemberDTO>('GET', BASE + '/me', undefined, init);"), out);
     }
 
     /**
