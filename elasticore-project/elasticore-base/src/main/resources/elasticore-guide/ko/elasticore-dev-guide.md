@@ -222,6 +222,21 @@ Sort.Order desc = field.getDescOrder();
 - 부모 FieldInfo 참조를 통한 다단계 경로 해석 (nested entity path)
 - `resolvePath()` -> 재귀적 parent 탐색으로 `rentDriver.driverName` 같은 중첩 경로 생성
 
+**값이 있을 때만 거는 조건** - 세 인자 형태 `where(op, value, true)`, 생성된 `Q` 에서는
+`Q.X.field(op, value, true)` 입니다 (2.x, v3, Kotlin 모두 같습니다):
+
+```java
+// keyword may be null or blank: then this condition is left out, and the others still apply
+Specification<RentCompany> spec = Q.RentCompany.comName(Op.ILIKE, keyword, true);
+```
+
+- 세 번째 인자는 `chkEmpty` 이며 "대소문자 무시" 가 아닙니다. `true` 이면 값이 null, 공백뿐인 문자열, 빈
+  컬렉션일 때 항상 참인 조건(`cb.conjunction()`)이 되어 아무것도 좁히지 않습니다. `IS_NULL` 과
+  `IS_NOT_NULL` 은 값을 받지 않으므로 언제나 적용됩니다.
+- 두 인자 형태는 `chkEmpty = false` 입니다: 조건은 언제나 적용되고, 값은 주어진 그대로 비교됩니다.
+- 선택 검색 조건에만 쓰십시오. 언제나 걸려야 하는 조건 - 사용자가 속한 테넌트 - 에 쓰면 값이 비었을 때
+  조건이 사라지고 모든 행이 나옵니다.
+
 ---
 
 ## 6. Op 열거형

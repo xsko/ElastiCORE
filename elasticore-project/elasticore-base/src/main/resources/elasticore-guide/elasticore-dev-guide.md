@@ -222,6 +222,21 @@ Sort.Order desc = field.getDescOrder();
 - Multi-level path resolution through the parent FieldInfo reference (nested entity path)
 - `resolvePath()` -> walks the parents recursively to build a nested path such as `rentDriver.driverName`
 
+**A condition that applies only when a value is given** - the three-argument form, `where(op, value, true)`, or
+`Q.X.field(op, value, true)` in the generated `Q` (2.x, v3 and Kotlin alike):
+
+```java
+// keyword may be null or blank: then this condition is left out, and the others still apply
+Specification<RentCompany> spec = Q.RentCompany.comName(Op.ILIKE, keyword, true);
+```
+
+- The third argument is `chkEmpty`, not "ignore case". With `true`, a value that is null, a blank string or an empty
+  collection gives a condition that is always true (`cb.conjunction()`), so it narrows nothing. `IS_NULL` and
+  `IS_NOT_NULL` take no value, and they always apply.
+- The two-argument form is `chkEmpty = false`: the condition always applies, with the value as given.
+- Keep it to optional search conditions. On a condition that must always hold - the tenant a user belongs to - an
+  empty value removes the condition, and every row comes back.
+
 ---
 
 ## 6. Op enum
