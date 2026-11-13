@@ -178,6 +178,9 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 }
                 m.append(String.format("        %s%n", call));
                 if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                // @count: a command that moves the state touches the counts it is counted in.
+                if (c.varValue("countsAfterCommand") != null)
+                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s)%n", mapper, open, repo, close))
                  .append("    }");
@@ -192,6 +195,9 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 }
                 m.append(String.format("        %s;%n", call));
                 if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                // @count: a command that moves the state touches the counts it is counted in.
+                if (c.varValue("countsAfterCommand") != null)
+                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s);%n", mapper, open, repo, close))
                  .append("    }");

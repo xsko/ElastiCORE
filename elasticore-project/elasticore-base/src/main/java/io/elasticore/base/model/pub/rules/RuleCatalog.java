@@ -239,6 +239,13 @@ public final class RuleCatalog {
             }
         });
         // @onDelete(cascade | restrict | setNull), carried out by the deleted row's CoreService.
+        // @count(Comment.post), kept by the counted row's CoreService.
+        c.register("jpa-count", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.base.CountRules();
+            }
+        });
         c.register("jpa-on-delete", new Factory() {
             @Override
             public CodeRules create() {
@@ -538,6 +545,7 @@ public final class RuleCatalog {
                 "spring-controller",
                 "spring-service-test",
                 "jpa-on-delete",
+                "jpa-count",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -577,6 +585,7 @@ public final class RuleCatalog {
                 "jpa-value-object-boundary",
                 "jpa-service-access",
                 "jpa-on-delete",
+                "jpa-count",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -610,6 +619,7 @@ public final class RuleCatalog {
                 "jpa-value-object-boundary",
                 "jpa-service-access",
                 "jpa-on-delete",
+                "jpa-count",
                 "mybatis-schema",
                 "port",
                 "proto",
@@ -689,6 +699,7 @@ public final class RuleCatalog {
                 "jpa-value-object-boundary",
                 "jpa-service-access",
                 "jpa-on-delete",
+                "jpa-count",
                 "jpa-views",
                 "jpa-support-types");
 

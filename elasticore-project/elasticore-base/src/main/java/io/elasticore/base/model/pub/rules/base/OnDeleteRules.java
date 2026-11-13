@@ -191,6 +191,9 @@ public class OnDeleteRules implements CodeRules {
                         "            throw io.elasticore.springboot3.validation.ConflictException(%s)", cycle(ref)));
                 if (deeper) lines.add(String.format("        onDelete%s(em, each, seen)", ref.entity));
                 if (bumped.contains(ref.entity)) lines.add("        em.refresh(each)");
+                for (EntitySpec.CountRef count : e.countsOf(ref.entity)) {
+                    lines.add("        " + CountRules.touch(count, "(each as " + ref.entity + ")", true));
+                }
                 lines.add("        em.remove(each)");
             } else {
                 lines.add(String.format(
@@ -203,6 +206,10 @@ public class OnDeleteRules implements CodeRules {
                         cycle(ref)));
                 if (deeper) lines.add(String.format("        onDelete%s(em, each, seen);", ref.entity));
                 if (bumped.contains(ref.entity)) lines.add("        em.refresh(each);");
+                // A removed row no longer counts where it was counted (@count).
+                for (EntitySpec.CountRef count : e.countsOf(ref.entity)) {
+                    lines.add("        " + CountRules.touch(count, "((" + ref.entity + ") each)", false) + ";");
+                }
                 lines.add("        em.remove(each);");
             }
             lines.add("    }");
@@ -236,6 +243,16 @@ public class OnDeleteRules implements CodeRules {
         if (e.onDeleteOf(e.getName()).isEmpty()) return;
         SourceCode c = ctx(e);
         if (c.syntax() != Syntax.KOTLIN) return;
+        stubQueries(c);
+    }
+
+    /**
+     * Hands the generated Kotlin service test's mocked entity manager a query that answers itself, an empty list
+     * and 0 - once, for @onDelete and @count alike - and an entity manager to mock where it had none.
+     */
+    static void stubQueries(SourceCode c) {
+        if ("true".equals(c.varValue("queryStub"))) return;
+        c.var("queryStub", "true");
         String setUp = orDefault(c.varValue("mockSetUp"), "");
         StringBuilder more = new StringBuilder(setUp);
         if (!"true".equals(c.varValue("entityManagerMock"))) {

@@ -46,6 +46,14 @@ datasets:
         expression:
           sql: "version"
         datatype: Integer
+      - name: comment_count
+        expression:
+          sql: "comment_count"
+        datatype: Integer
+      - name: like_count
+        expression:
+          sql: "like_count"
+        datatype: Integer
       - name: quoted_post_id
         expression:
           sql: "quoted_post_id"
@@ -65,6 +73,14 @@ datasets:
         expression:
           sql: "text"
         datatype: String
+      - name: status
+        expression:
+          sql: "status"
+        datatype: String
+        ai_context: "Codes: VIS = Visible, HID = Hidden"
+        nonportable_extensions:
+          - vendor_name: ELASTICORE
+            data: {"lifecycle": true, "enumeration": "CommentStatus", "codes": {"VIS": "Visible", "HID": "Hidden"}}
       - name: post_post_id
         expression:
           sql: "post_post_id"
@@ -75,7 +91,22 @@ datasets:
         datatype: Integer
     nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: {"entity": "Comment", "domain": "board"}
+        data: {"entity": "Comment", "domain": "board", "states": {"status": {"initial": "VISIBLE", "hide": "VISIBLE -> HIDDEN", "restore": "HIDDEN -> VISIBLE"}}}
+  - name: PostLike
+    source: brd_post_like
+    primary_key: [like_id]
+    fields:
+      - name: like_id
+        expression:
+          sql: "like_id"
+        datatype: Integer
+      - name: post_post_id
+        expression:
+          sql: "post_post_id"
+        datatype: Integer
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "PostLike", "domain": "board"}
   - name: Report
     source: brd_report
     primary_key: [report_id]
@@ -777,6 +808,11 @@ relationships:
     to: Comment
     from_columns: [parent_comment_id]
     to_columns: [comment_id]
+  - name: PostLike_post
+    from: PostLike
+    to: Post
+    from_columns: [post_post_id]
+    to_columns: [post_id]
   - name: Report_post
     from: Report
     to: Post

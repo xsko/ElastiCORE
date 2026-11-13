@@ -65,6 +65,22 @@ class OnDeleteTest {
         assertEquals(1, count("SELECT COUNT(*) FROM cms_bookmark WHERE bookmark_id = 903 AND article_article_id IS NULL"))
     }
 
+    /** @count(Comment.article, approved is true): counted again in the transaction of each write of a comment. */
+    @Test
+    fun anArticleCountsItsApprovedComments() {
+        jdbc.update("INSERT INTO cms_article (article_id, title, slug, comment_count) VALUES ('a-9', 'Counted', 'counted', 0)")
+        val kept = comments.save(io.elasticore.blueprint.domain.content.dto.CommentDTO().apply {
+            content = "yes"; authorName = "kim"; approved = true; articleId = "a-9"
+        })
+        comments.save(io.elasticore.blueprint.domain.content.dto.CommentDTO().apply {
+            content = "not yet"; authorName = "lee"; approved = false; articleId = "a-9"
+        })
+        assertEquals(1, count("SELECT comment_count FROM cms_article WHERE article_id = 'a-9'"))
+
+        assertTrue(comments.deleteById(kept!!.commentId!!))
+        assertEquals(0, count("SELECT comment_count FROM cms_article WHERE article_id = 'a-9'"))
+    }
+
     @Test
     fun deletingACommentTakesItsReplies() {
         jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name) VALUES (911, 'top', 'kim')")
