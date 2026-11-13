@@ -133,14 +133,59 @@ public class DataTransferModelLoader extends AbstractModelLoader implements Cons
                     annotations.append(" @pageable");
                 }
 
-                // Replace both @expose and @service patterns
-                meta = meta.replaceAll("@expose\\b", annotations.toString());
+                // @expose(pageSize=50, methods="...") - or 2.x's @expose(50): the page size goes to
+                // @pageable, methods stays on @expose. Without this, everything in the brackets went
+                // to the @pageable written last, and a page size beside methods= was lost (20).
+                java.util.regex.Matcher args = EXPOSE_ARGS.matcher(meta);
+                if (args.find() && args.group(1).contains("=")) {
+                    String pageSize = null;
+                    String methods = null;
+                    for (String arg : splitArgs(args.group(1))) {
+                        int eq = arg.indexOf('=');
+                        String key = eq < 0 ? "" : arg.substring(0, eq).trim();
+                        String value =
+                                eq < 0 ? arg.trim() : arg.substring(eq + 1).trim();
+                        if (eq < 0 || "pageSize".equalsIgnoreCase(key)) pageSize = value;
+                        else if ("methods".equalsIgnoreCase(key)) methods = value;
+                    }
+                    String expose = methods == null ? "@expose" : "@expose(methods=" + methods + ")";
+                    String rest = annotations.toString().substring("@expose".length());
+                    if (pageSize != null && rest.endsWith("@pageable")) rest = rest + "(" + pageSize + ")";
+                    meta = meta.substring(0, args.start()) + expose + rest + meta.substring(args.end());
+                } else {
+                    // Replace both @expose and @service patterns
+                    meta = meta.replaceAll("@expose\\b", annotations.toString());
+                }
                 meta = meta.replaceAll("@service\\b", annotations.toString());
                 entityMap.put("meta", meta);
             }
         }
     }
 
+    /** The brackets of @expose(...), quotes and all: methods="a,b" has no bracket of its own. */
+    private static final java.util.regex.Pattern EXPOSE_ARGS =
+            java.util.regex.Pattern.compile("@expose\\s*\\(([^)]*)\\)");
+
+    /** The arguments of an annotation, split at the commas outside quotes. */
+    static List<String> splitArgs(String text) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        char quote = 0;
+        for (char ch : text.toCharArray()) {
+            if (quote != 0) {
+                if (ch == quote) quote = 0;
+            } else if (ch == '"' || ch == '\'') {
+                quote = ch;
+            } else if (ch == ',') {
+                if (cur.toString().trim().length() > 0) out.add(cur.toString().trim());
+                cur.setLength(0);
+                continue;
+            }
+            cur.append(ch);
+        }
+        if (cur.toString().trim().length() > 0) out.add(cur.toString().trim());
+        return out;
+    }
 
     protected List<DataTransfer> loadDataTransfer(ModelLoaderContext ctx, String entityNm, Map<String, Object> entityMap) {
 
