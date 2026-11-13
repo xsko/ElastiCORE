@@ -698,7 +698,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
   (`TypeRoundTripTest`). In earlier versions, `timestamp`, `clob`, `json`, `blob` and `decimal` (without a size) were
   written into the entity as the DSL word itself (`private timestamp at;`) and did not compile - fixed in 3.0.260925.
 - The table is based on the 3.0 rule engine (`elcore3`). The output of the 2.x generator (`elcore`) has not changed
-  (`timestamp` is `Instant` in 2.x too). `clob` / `blob` are text / bytea on PostgreSQL, clob / blob on Oracle - in the row, not a `@Lob` (before 3.0.261116; PostgreSQL kept only its number).
+  (`timestamp` is `Instant` in 2.x too). `clob` / `blob` are text / bytea on PostgreSQL, clob / blob on Oracle - in the row, not a `@Lob` (before 3.0.261116-rc16; PostgreSQL kept only its number).
 
 ### Value types (Value) - 3.0
 

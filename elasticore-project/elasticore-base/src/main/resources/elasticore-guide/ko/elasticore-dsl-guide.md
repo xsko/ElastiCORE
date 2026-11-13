@@ -698,7 +698,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
   검증됩니다 (`TypeRoundTripTest`). 이전 버전에서는 `timestamp`, `clob`, `json`, `blob`, `decimal`(크기 없이)이
   엔티티에 DSL 단어 그대로 쓰여(`private timestamp at;`) 컴파일되지 않았습니다 - 3.0.260925 에서 고쳤습니다.
 - 표는 3.0 규칙 엔진(`elcore3`) 기준입니다. 2.x 생성기(`elcore`)의 출력은 바뀌지 않았습니다
-  (`timestamp` 는 2.x 에서도 `Instant`). `clob`·`blob` 은 PostgreSQL 에서 text·bytea, Oracle 에서 clob·blob 으로 행 안에 저장됩니다 - `@Lob` 이 아닙니다 (3.0.261116 전에는 `@Lob` 이라 PostgreSQL 에 번호만 남았음).
+  (`timestamp` 는 2.x 에서도 `Instant`). `clob`·`blob` 은 PostgreSQL 에서 text·bytea, Oracle 에서 clob·blob 으로 행 안에 저장됩니다 - `@Lob` 이 아닙니다 (3.0.261116-rc16 전에는 `@Lob` 이라 PostgreSQL 에 번호만 남았음).
 
 ### 값 타입 (Value) - 3.0
 
