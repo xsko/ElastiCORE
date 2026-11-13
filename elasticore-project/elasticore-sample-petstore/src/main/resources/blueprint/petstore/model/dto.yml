@@ -17,5 +17,5 @@ dto:
     fields:
       keyword: string(50) @search(words:name, description, category.name)   # 검색창 하나: 모든 단어가 상품 이름·설명·분류 이름 중 어디엔가
       productId: long @search(eq)
-      description: string @search
+      description: string(3000) @search
       categoryId: long @search(eq)

@@ -4,10 +4,15 @@ import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.From;
-import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
+import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.ManagedType;
+import jakarta.persistence.metamodel.PluralAttribute;
+import jakarta.persistence.metamodel.SingularAttribute;
+import jakarta.persistence.metamodel.Type;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -17,13 +22,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * One search box over several fields: {@code @search(words: title, body, author.nickname)}.
+ * One search box over several fields: {@code @search(words:title, body, author.nickname)}.
  *
  * <p>The text is split on white space. Every word has to be found, and each word may be in any of the
  * fields - an AND over the words of an OR over the fields. Each comparison is a contains, ignoring case,
  * with the word's own {@code %}, {@code _} and {@code !} escaped, as {@code @search(like)} compares one
- * field. A field reached through a relation ({@code author.nickname}) is joined with a LEFT JOIN, so a row
- * without an author is still found by its title.
+ * field. A field reached through a to-one relation ({@code author.nickname}) is joined LEFT, so a row
+ * without an author is still found by its title. A field reached through a collection ({@code
+ * posts.title}) is asked per word with EXISTS: each word may be in another member, and the row comes
+ * once without a DISTINCT.
  */
 public final class Words {
 
@@ -32,11 +39,11 @@ public final class Words {
 
     private Words() {}
 
-    /** The words of a text: split on white space, each once, the first {@link #MAX_WORDS}. */
+    /** The words of a text: split on white space (the ideographic space too), each once, the first five. */
     public static List<String> of(String text) {
         Set<String> words = new LinkedHashSet<String>();
         if (text != null) {
-            for (String word : text.trim().split("\\s+")) {
+            for (String word : text.trim().split("[\\s\\u3000]+", -1)) {
                 if (!word.isEmpty() && words.size() < MAX_WORDS) words.add(word);
             }
         }
@@ -54,8 +61,12 @@ public final class Words {
         if (words.isEmpty() || paths.length == 0) return cb.conjunction();
         Map<String, From<?, ?>> joins = new HashMap<String, From<?, ?>>();
         List<Expression<String>> fields = new ArrayList<Expression<String>>();
+        List<String[]> throughCollections = new ArrayList<String[]>();
         for (String path : paths) {
-            fields.add(cb.lower(field(root, query, joins, path)));
+            String[] parts = path.trim().split("\\.", -1);
+            // A delete by specification has no query to make a subquery of: it joins as a to-one would.
+            if (query != null && crossesACollection(root.getModel(), parts)) throughCollections.add(parts);
+            else fields.add(cb.lower(field(root, joins, parts)));
         }
         List<Predicate> all = new ArrayList<Predicate>();
         for (String word : words) {
@@ -64,15 +75,16 @@ public final class Words {
             for (Expression<String> field : fields) {
                 any.add(cb.like(field, pattern, '!'));
             }
+            for (String[] parts : throughCollections) {
+                any.add(cb.exists(member(root, query, cb, parts, pattern)));
+            }
             all.add(cb.or(any.toArray(new Predicate[0])));
         }
         return cb.and(all.toArray(new Predicate[0]));
     }
 
-    /** The field a path names, joining each relation on the way once. */
-    private static Expression<String> field(
-            Root<?> root, CriteriaQuery<?> query, Map<String, From<?, ?>> joins, String path) {
-        String[] parts = path.trim().split("\\.");
+    /** The field a path names, joining each relation on the way once, LEFT. */
+    private static Expression<String> field(Root<?> root, Map<String, From<?, ?>> joins, String[] parts) {
         From<?, ?> from = root;
         StringBuilder walked = new StringBuilder();
         for (int i = 0; i < parts.length - 1; i++) {
@@ -80,15 +92,39 @@ public final class Words {
             walked.append(parts[i]);
             From<?, ?> joined = joins.get(walked.toString());
             if (joined == null) {
-                Join<?, ?> join = from.join(parts[i], JoinType.LEFT);
-                // A collection on the way makes a row once per member that matches.
-                if (join.getAttribute() != null && join.getAttribute().isCollection()) query.distinct(true);
-                joins.put(walked.toString(), join);
-                joined = join;
+                joined = from.join(parts[i], JoinType.LEFT);
+                joins.put(walked.toString(), joined);
             }
             from = joined;
         }
         return from.<String>get(parts[parts.length - 1]);
+    }
+
+    /** EXISTS (a member on the path whose field has the word): the row is asked, not multiplied. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Subquery<Integer> member(
+            Root<?> root, CriteriaQuery<?> query, CriteriaBuilder cb, String[] parts, String pattern) {
+        Subquery<Integer> sq = query.subquery(Integer.class);
+        From<?, ?> from = sq.correlate((Root) root);
+        for (int i = 0; i < parts.length - 1; i++) {
+            from = from.join(parts[i]);
+        }
+        Expression<String> field = cb.lower(from.<String>get(parts[parts.length - 1]));
+        return sq.select(cb.literal(1)).where(cb.like(field, pattern, '!'));
+    }
+
+    /** Whether a relation on the path is a collection. */
+    static boolean crossesACollection(ManagedType<?> type, String[] parts) {
+        ManagedType<?> at = type;
+        for (int i = 0; i < parts.length - 1 && at != null; i++) {
+            Attribute<?, ?> a = at.getAttribute(parts[i]);
+            if (a.isCollection()) return true;
+            Type<?> next = a instanceof PluralAttribute
+                    ? ((PluralAttribute<?, ?, ?>) a).getElementType()
+                    : ((SingularAttribute<?, ?>) a).getType();
+            at = next instanceof ManagedType ? (ManagedType<?>) next : null;
+        }
+        return false;
     }
 
     /** The word matched as written: its own %, _ and the escape character ! escaped with !. */

@@ -2273,7 +2273,7 @@ public final class SpecFactory {
             if (!text.regionMatches(true, 0, "words:", 0, 6)) return;
             java.util.List<String> kept = new java.util.ArrayList<String>();
             boolean dropped = false;
-            for (String path : text.substring(6).split(",")) {
+            for (String path : text.substring(6).split(",", -1)) {
                 if (path.trim().isEmpty()) continue;
                 String why = wordsPathProblem(entity, path.trim(), model);
                 if (why == null) {
@@ -2284,6 +2284,14 @@ public final class SpecFactory {
                 io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                         "[%s] %s.%s @search(words: ...): %s - %s, so the search does not look there",
                         domainId, dtoName, f.getName(), path.trim(), why));
+            }
+            if (kept.isEmpty()) {
+                // Searching by nothing, the property would match every row - and a delete or an
+                // update by the search condition would act on every row.
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                        "[%s] %s.%s @search(words:...) names no text field of the entity to search - name one,"
+                                + " as @search(words:name, description)",
+                        domainId, dtoName, f.getName()));
             }
             if (dropped) {
                 f.getAnnotationMap()
@@ -2299,7 +2307,7 @@ public final class SpecFactory {
     /** Why a words path names no text field of the entity, or null when it does. */
     private static String wordsPathProblem(Entity entity, String path, ECoreModel model) {
         if (entity == null) return "the DTO names no entity";
-        String[] parts = path.split("\\.");
+        String[] parts = path.split("\\.", -1);
         Entity at = entity;
         for (int i = 0; i < parts.length; i++) {
             Field g = at.getAllFieldListMap() == null

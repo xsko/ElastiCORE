@@ -112,6 +112,11 @@ public class SearchDtoBaseRules implements CodeRules {
 
         // "@search(words: a, b)": the text of one search box, looked for in those fields.
         java.util.List<String> words = wordsOf(f);
+        if (words != null && ctx(e).compatible()) {
+            // Not searched there (the mapper says so): a property a client could send to no effect is left out.
+            ctx(e).removeField(f);
+            return;
+        }
         if (words != null) {
             ctx(e).field(f)
                     .ensure(AnnoCode.raw(
@@ -331,7 +336,7 @@ public class SearchDtoBaseRules implements CodeRules {
         String text = declared.trim();
         if (!text.regionMatches(true, 0, "words:", 0, 6)) return null;
         java.util.List<String> paths = new java.util.ArrayList<String>();
-        for (String path : text.substring(6).split(",")) {
+        for (String path : text.substring(6).split(",", -1)) {
             if (!path.trim().isEmpty()) paths.add(path.trim());
         }
         return paths;

@@ -47,6 +47,9 @@ class WordsTest {
         post(em, 2L, "Kotlin news", "spring and more", lee);
         post(em, 3L, "100% done", "no author here", null);
         post(em, 4L, "100 items", "snake_case", null);
+        WordsMember park = member(em, 3L, "Park", lee);
+        post(em, 5L, "Gamma alpha", "x", park);
+        post(em, 6L, "Delta beta", "y", park);
         em.getTransaction().commit();
         em.close();
     }
@@ -127,15 +130,48 @@ class WordsTest {
     @Test
     @DisplayName("a text without a word searches by nothing")
     void noWord() {
-        assertThat(posts("   ", "title")).containsExactly(1L, 2L, 3L, 4L);
-        assertThat(posts(null, "title")).containsExactly(1L, 2L, 3L, 4L);
+        assertThat(posts("   ", "title")).containsExactly(1L, 2L, 3L, 4L, 5L, 6L);
+        assertThat(posts(null, "title")).containsExactly(1L, 2L, 3L, 4L, 5L, 6L);
     }
 
     @Test
-    @DisplayName("a path through two relations joins each once; a collection gives each row once")
-    void deeperAndCollections() {
-        assertThat(members("kim", "mentor.nickname")).containsExactly(2L);
+    @DisplayName("a path through two relations: each joined once")
+    void twoRelations() {
+        assertThat(posts("kim", "author.mentor.nickname")).containsExactly(2L);
+        assertThat(posts("lee", "author.mentor.nickname", "author.nickname")).containsExactly(2L, 5L, 6L);
+    }
+
+    @Test
+    @DisplayName("through a collection: each word may be in another member, and the row comes once")
+    void throughACollection() {
         assertThat(members("spring", "posts.title", "posts.body")).containsExactly(1L, 2L);
+        // both of Park's posts have an a: Park once
+        assertThat(members("a", "posts.title")).containsExactly(3L);
+        // gamma in one post, delta in the other
+        assertThat(members("gamma delta", "posts.title")).containsExactly(3L);
+        assertThat(members("gamma delta", "posts.title", "nickname")).containsExactly(3L);
+        assertThat(members("park gamma", "posts.title", "nickname")).containsExactly(3L);
+        assertThat(members("gamma zzz", "posts.title")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("through a collection, sorted by a related field: no DISTINCT for the ORDER BY to fall out of")
+    void throughACollectionSortedByARelation() {
+        EntityManager em = emf.createEntityManager();
+        try {
+            CriteriaBuilder cb = em.getCriteriaBuilder();
+            CriteriaQuery<WordsMember> q = cb.createQuery(WordsMember.class);
+            Root<WordsMember> r = q.from(WordsMember.class);
+            q.where(Words.match(r, q, cb, "a", "posts.title", "posts.body"))
+                    .orderBy(cb.desc(r.join("mentor", jakarta.persistence.criteria.JoinType.LEFT)
+                            .get("nickname")));
+            List<Long> ids =
+                    em.createQuery(q).getResultList().stream().map(m -> m.id).collect(Collectors.toList());
+            // every member has an a in a post; Park's mentor Lee, Lee's Kim, Kim none (last)
+            assertThat(ids).containsExactly(3L, 2L, 1L);
+        } finally {
+            em.close();
+        }
     }
 
     @Test
@@ -143,6 +179,7 @@ class WordsTest {
     void theWords() {
         assertThat(Words.of(" a  b\ta c d e f g ")).containsExactly("a", "b", "c", "d", "e");
         assertThat(Words.of(null)).isEmpty();
+        assertThat(Words.of("단어" + (char) 0x3000 + "둘")).containsExactly("단어", "둘");
         assertThat(Words.escaped("a!b%c_d")).isEqualTo("a!!b!%c!_d");
     }
 }

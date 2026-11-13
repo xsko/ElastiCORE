@@ -1185,7 +1185,7 @@ If the request sends `sortCode`, that wins. `ShopFlowTest` checks that the Pet S
 - It is a 3.0 rule engine (`elcore3`) feature. The 2.x generator (`elcore`) does not read `@sort`.
 
 ### 4.2.2 @search(words:...) - one search box over several fields
-> **Works in:** v3, Kotlin (JPA) · **Not in:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - a warning, not searched; 2.x generator (not generated)
+> **Works in:** v3, Kotlin (JPA) · **Not in:** MyBatis (mode: mybatis) - a warning, not searched; 2.x-compatible output (output = 'v2') - a warning, the property is left out; 2.x generator (not generated)
 A field of a search DTO whose text is split on white space: every word has to be found, and each word may be in any of the fields.
 ```yaml
 dto:
@@ -1197,8 +1197,8 @@ dto:
 Write no space after `words:` - YAML reads `: ` as a key and the file does not load. Generated (Kotlin the same, `keyword!!`):
 `sp = sp.and((r,q,c) -> io.elasticore.springboot3.mapper.Words.match(r, q, c, keyword, "name", "description", "category.name"));`
 - Each word is a contains ignoring case, its `%` and `_` characters (as `@search(like)`). The first five words are searched; `(50)` bounds the text.
-- A relation path (`category.name`) is joined LEFT, so a product without a category is still found by its name. A collection on the way gives each row once.
-- A path that is not a text field of the entity (`x is not text`, `Product has no field x`) is said by a DSL warning and left out.
+- A relation path (`category.name`) is joined LEFT, so a product without a category is still found by its name. Through a collection (`products.name`) each word is asked with EXISTS: it may be in another member, and each row comes once.
+- A path that is not a text field of the entity (`x is not text`, `Product has no field x`) is said by a DSL warning and left out; when no path is left, the build stops (the field would match every row).
 - Declaring the search DTO replaces the one `@expose` derives: declare the other conditions the screen sends too. The runtime class is in `elasticore-springboot3`/`-4` of the same version. Pet Store `WordsSearchCheck`, on H2, PostgreSQL, Oracle and SQL Server.
 
 ### 4.3 @searchBypass

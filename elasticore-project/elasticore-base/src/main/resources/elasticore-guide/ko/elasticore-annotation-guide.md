@@ -1185,7 +1185,7 @@ entity:
 - 3.0 규칙 엔진(`elcore3`) 기능입니다. 2.x 생성기(`elcore`)는 `@sort` 를 읽지 않습니다.
 
 ### 4.2.2 @search(words:...) - 여러 필드를 찾는 검색창 하나
-> **동작:** v3, Kotlin (JPA) · **안 됨:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - 경고 후 검색 안 함; 2.x generator (생성 안 됨)
+> **동작:** v3, Kotlin (JPA) · **안 됨:** MyBatis (mode: mybatis) - 경고 후 검색 안 함; 2.x-compatible output (output = 'v2') - 경고 후 속성을 뺌; 2.x generator (생성 안 됨)
 검색 DTO 의 필드 하나에 들어온 글을 공백으로 나눕니다: 모든 단어가 찾아져야 하고, 각 단어는 적은 필드 중 어디에 있어도 됩니다.
 ```yaml
 dto:
@@ -1197,8 +1197,8 @@ dto:
 `words:` 뒤에 공백을 두지 마세요 - YAML 이 `: ` 를 키로 읽어 파일을 읽지 못합니다. 생성(Kotlin 도 같고 `keyword!!`):
 `sp = sp.and((r,q,c) -> io.elasticore.springboot3.mapper.Words.match(r, q, c, keyword, "name", "description", "category.name"));`
 - 단어마다 대소문자 무시 포함 검색이고 `%`·`_` 는 문자입니다 (`@search(like)` 와 같음). 앞의 다섯 단어를 찾고, `(50)` 이 글 길이를 막습니다.
-- 관계 경로(`category.name`)는 LEFT JOIN 이라 분류 없는 상품도 이름으로 찾아집니다. 중간에 컬렉션이 있으면 행은 한 번씩만 나옵니다.
-- 엔티티의 문자 필드가 아닌 경로(`x is not text`, `Product has no field x`)는 DSL 경고 후 빠집니다.
+- 관계 경로(`category.name`)는 LEFT JOIN 이라 분류 없는 상품도 이름으로 찾아집니다. 컬렉션을 지나는 경로(`products.name`)는 단어마다 EXISTS 로 묻습니다: 단어가 서로 다른 멤버에 있어도 되고, 행은 한 번씩만 나옵니다.
+- 엔티티의 문자 필드가 아닌 경로(`x is not text`, `Product has no field x`)는 DSL 경고 후 빠지고, 남는 경로가 없으면 빌드가 멈춥니다(모든 행에 맞게 되므로).
 - 검색 DTO 를 선언하면 `@expose` 가 만들던 것을 대신합니다: 화면이 보내는 다른 조건도 함께 적으세요. 런타임 클래스는 같은 버전의 `elasticore-springboot3`/`-4` 에 있습니다. Pet Store `WordsSearchCheck`, H2·PostgreSQL·Oracle·SQL Server 에서.
 
 ### 4.3 @searchBypass

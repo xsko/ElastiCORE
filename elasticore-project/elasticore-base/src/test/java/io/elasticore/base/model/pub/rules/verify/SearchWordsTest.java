@@ -104,7 +104,50 @@ public class SearchWordsTest {
         for (File xml : hits) assertFalse(read(xml).contains("keyword"), read(xml));
     }
 
+    /** A typo in the only path: searching by nothing would match every row, so the build stops. */
+    @Test
+    public void noFieldLeftStopsTheBuild() throws Exception {
+        String[] log = new String[1];
+        run(
+                "elcore-words-none",
+                "layered",
+                "java",
+                "jpa",
+                log,
+                MODEL.replace("words:title, body, author.nickname, author.age, subject, title.x", "words:titel"),
+                false,
+                1);
+        assertTrue(
+                log[0].contains(
+                        "WsPostSrchDTO.keyword @search(words:...) names no text field of the entity to" + " search"),
+                log[0]);
+    }
+
+    /** The 2.x-compatible output does not search by it, so the search DTO does not offer it either. */
+    @Test
+    public void theCompatibleOutputLeavesThePropertyOut() throws Exception {
+        String[] log = new String[1];
+        File project = run("elcore-words-v2", "layered", "java", "jpa", log, MODEL, true, 0);
+        assertTrue(log[0].contains("@search(words: ...) is not searched in the 2.x-compatible output"), log[0]);
+        String dto = found(project, "WsPostSrchDTO.java");
+        assertFalse(dto.contains("keyword"), dto);
+        assertTrue(dto.contains("private String title;"), dto);
+    }
+
     private static File run(String name, String architecture, String language, String mode, String[] log)
+            throws Exception {
+        return run(name, architecture, language, mode, log, MODEL, false, 0);
+    }
+
+    private static File run(
+            String name,
+            String architecture,
+            String language,
+            String mode,
+            String[] log,
+            String model,
+            boolean v2,
+            int exit)
             throws Exception {
         File project = Files.createTempDirectory(name).toFile();
         projects.add(project);
@@ -130,7 +173,7 @@ public class SearchWordsTest {
                                 "    control: io.acme.forum.controller",
                                 "")
                         .getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(dir, "model/model.yml").toPath(), MODEL.getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(dir, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
 
         String[] keys = {
             "elasticore.base.path",
@@ -153,9 +196,9 @@ public class SearchWordsTest {
             System.setProperty("elasticore.architecture", architecture);
             System.setProperty("elasticore.language", language);
             System.setProperty("elasticore.rules.force", "true");
-            System.setProperty("elasticore.rules.v3", "true");
+            System.setProperty(v2 ? "elasticore.rules.v2" : "elasticore.rules.v3", "true");
             System.setProperty(DdlConfig.DATABASES, "postgresql");
-            assertEquals(0, RulesGenRunner.run(new String[0]), "the run failed: " + project);
+            assertEquals(exit, RulesGenRunner.run(new String[0]), "the run's exit: " + project);
         } finally {
             System.setOut(out);
             for (int i = 0; i < keys.length; i++) {
@@ -175,7 +218,9 @@ public class SearchWordsTest {
         collectAll(new File(project, "src/main"), extension, all);
         for (File f : all) {
             String text = read(f);
-            if (text.contains("toSpec(") && text.contains("WsPostSrchDTO")) return text;
+            // The mapper's own: the service calls toSpec too, and the files come in no fixed order.
+            if (text.contains("Specification<WsPost> toSpec(WsPostSrchDTO")
+                    || text.contains("fun toSpec(searchDTO: WsPostSrchDTO")) return text;
         }
         throw new AssertionError("no toSpec for WsPostSrchDTO in " + all);
     }
