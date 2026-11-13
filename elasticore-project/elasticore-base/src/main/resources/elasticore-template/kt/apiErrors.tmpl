@@ -111,6 +111,8 @@ class ${className}(validator: ObjectProvider<jakarta.validation.Validator>,
                 said("unique", "A unique value is already taken."))
             "foreign-key" -> problem(HttpStatus.CONFLICT, "referenced", "Conflicts with stored data",
                 said("referenced", "The row is still referenced by another, or refers to one that does not exist."))
+            "check" -> problem(HttpStatus.BAD_REQUEST, "check", "Invalid request",
+                said("check", "A value is outside what the column allows."))
             else -> problem(HttpStatus.CONFLICT, "conflict", "Conflicts with stored data",
                 said("conflict", "A unique value is already taken, or the row is still referenced by another."))
         }
@@ -120,18 +122,26 @@ class ${className}(validator: ObjectProvider<jakarta.validation.Validator>,
      * (23502 not null, 23505 unique, 23503 foreign key; H2 23506) - or, where a
      * database says only 23000, from its own error code.
      */
+    private fun isCheck(message: String?): Boolean =
+        message != null && Regex("(^|\\s)CHECK\\s").containsMatchIn(message)
+
     private fun integrityKind(ex: Throwable): String {
         var t: Throwable? = ex
         while (t != null) {
             if (t is java.sql.SQLException) {
+                if (t.errorCode == 3819) return "check"                 // MySQL (HY000)
                 when (t.sqlState) {
                     "23502" -> return "not-null"
                     "23505" -> return "unique"
                     "23503", "23506" -> return "foreign-key"   // 23506: H2's missing parent
+                    "23513", "23514" -> return "check"         // H2, PostgreSQL
                     "23000" -> when (t.errorCode) {
                         1048, 1400, 515 -> return "not-null"               // MySQL, Oracle, SQL Server
                         1062, 1, 2627, 2601 -> return "unique"
-                        1451, 1452, 2291, 2292, 547 -> return "foreign-key"
+                        2290 -> return "check"                             // Oracle
+                        // SQL Server says 547 for a FOREIGN KEY and a CHECK alike; its message names which.
+                        547 -> return if (isCheck(t.message)) "check" else "foreign-key"
+                        1451, 1452, 2291, 2292 -> return "foreign-key"
                     }
                 }
             }

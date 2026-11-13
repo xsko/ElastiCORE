@@ -27,11 +27,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.sql.init.schema-locations=classpath:db/schema-h2.sql",
         "spring.sql.init.data-locations=classpath:data.sql"})
 @AutoConfigureMockMvc
-@org.springframework.context.annotation.Import(LikeSearchCheck.class)
+@org.springframework.context.annotation.Import({IntegrityKindCheck.class, LikeSearchCheck.class})
 class SchemaValidateTest {
 
     @Autowired MockMvc mvc;
+    @Autowired IntegrityKindCheck integrity;
     @Autowired LikeSearchCheck like;
+
+    /** CHECK, UNIQUE and FOREIGN KEY each answered as their kind (issue 167). */
+    @Test
+    void eachIntegrityRuleIsAnsweredAsItsKind() {
+        integrity.eachRuleIsAnsweredAsItsKind();
+    }
 
     /** A % or _ in a like search is a character (issue 159). */
     @Test

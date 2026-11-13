@@ -925,7 +925,11 @@ public class MapperSrcPublisher extends SrcFilePublisher {
 
 
                 cb.line("if(c==null || c.fd(%s).checkEnable())", StringUtils.quoteString(fieldName));
-                if(fromField.hasAnnotation("forceupdate")) {
+                // @forceupdate assigns straight through - a value, which needs no call. A field
+                // read through a mapper method (a relation, a list) opened that call and never
+                // closed it, so the mapper did not compile: it goes through setVal, as the rule
+                // engine's 2.x-compatible code writes it (issue 166).
+                if (fromField.hasAnnotation("forceupdate") && mappingfunc == null) {
                     cb.line("to.set%s(%sfrom.get%s()%s);", fldNm,prefix, fldNm ,postfix);
                 }else {
                     if(mappingfunc!=null)
@@ -1092,7 +1096,7 @@ public class MapperSrcPublisher extends SrcFilePublisher {
                     if (this.isDisableField(fromField)) continue;
 
                     cbEm.line("if(c==null || c.fd(%s).checkEnable())", StringUtils.quoteString(fieldName));
-                    if(fromField.hasAnnotation("forceupdate")) {
+                    if (fromField.hasAnnotation("forceupdate") && mappingfunc == null) {
                         cbEm.line("to.set%s(%sfrom.get%s()%s);", fldNm, prefix, fldNm, postfix);
                     }else {
                         if(mappingfunc!=null)

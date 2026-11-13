@@ -1023,7 +1023,7 @@ What is translated:
 | Response | `title` | `detail` |
 |---|---|---|
 | 409 (lifecycle), 404 (referenced row missing), 422 (invariant) | Yes | Yes (by the rule's code) |
-| Database refusals as 409/400 (`stale`, `required`, `unique`, `referenced`, `conflict`) | Yes | Yes (`error.<code>`) |
+| Database refusals as 409/400 (`stale`, `required`, `unique`, `referenced`, `check`, `conflict`) | Yes | Yes (`error.<code>`) |
 | 400 field validation (`@Valid`, and service-side validation) | Yes | Field message: yes (`<constraint>.<field>`, e.g. `Size.lines`). A default message with no translation goes in the request language |
 | Refusal before the controller (`RequestShapeErrors`) | Yes | Yes (`error.unreadable`, `error.method-not-allowed` ..., a field is `typeMismatch.<field>`) |
 | A hand-written refusal that was given a message code | Yes | Yes (by that code) |
@@ -1054,7 +1054,7 @@ With no `Accept-Language`, or a language with no translation, it is
 
 | Code | When | Values (`{0}`, `{1}`) |
 |---|---|---|
-| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | Common to all domains (title `error.<code>.title`, sentence `error.<code>`) | - |
+| `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `check`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | Common to all domains (title `error.<code>.title`, sentence `error.<code>`) | - |
 | `state.<Entity>.<field>.<command>` | Lifecycle: a command came when not in a start state (`states:`) | current state, allowed states |
 | `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | Field range invariant | - |
 | `invariant.<Entity>.<condition>` | `@invariant(condition, 'sentence')` - a name made from the condition expression (`items.size > 0` -> `items-size-gt-0`) | - |
