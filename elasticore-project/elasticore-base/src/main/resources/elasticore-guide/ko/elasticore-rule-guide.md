@@ -1814,7 +1814,7 @@ relationships:
 | `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `expression.sql`, 서브쿼리(SELECT)가 들어 있으면 `dialects` 의 `ANSI_SQL` 항목 하나 - 아래 "식의 형태" |
 | `@extend(Parent)` 의 필드 | 자식 dataset 의 `fields` | 상속된 컬럼도 그 테이블에 있으므로 |
 | `@Embedded` 값 객체 | 그 컬럼들 (`deliveryAddress.city`) | `@embedded(prefix)` 면 `prefix_city` |
-| enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | 테이블에는 코드만 있으므로 뜻을 함께 |
+| enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."`, 그리고 확장에 데이터로: `{"enumeration": "OrderStatus", "codes": {"PLC": "Placed", ...}}` | 테이블에는 코드만 있으므로 뜻을 함께 - 사람에게는 문장, 프로그램에게는 객체 |
 | 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
 | `states:`, `@access`, `@owner`, `@event` | `nonportable_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |

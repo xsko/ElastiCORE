@@ -1814,7 +1814,7 @@ relationships:
 | `@formula(sql)` | `expression` = that SQL | A computed column. An expression goes in `expression.sql`; if it contains a subquery (SELECT), one `ANSI_SQL` entry in `dialects` - see "Form of the expression" below |
 | Fields of `@extend(Parent)` | `fields` of the child dataset | Because the inherited columns are also in that table |
 | `@Embedded` value object | Its columns (`deliveryAddress.city`) | `prefix_city` if `@embedded(prefix)` |
-| enum field | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."` | The table holds only codes, so the meaning goes with them |
+| enum field | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."`, and as data in the extension: `{"enumeration": "OrderStatus", "codes": {"PLC": "Placed", ...}}` | The table holds only codes, so the meaning goes with them - a sentence for a reader, an object for a program |
 | Reference to another entity | `relationships[]` + join column field | The actual join column (`customer_id` if `referenceColumn: short`) |
 | `@password`, `@writeonly` | **Not exported** | Values the application does not read back either. Recorded in `omitted_columns` |
 | `states:`, `@access`, `@owner`, `@event` | `nonportable_extensions` (`ELASTICORE`) | Ossie has no vocabulary for them |

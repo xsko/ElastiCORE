@@ -419,7 +419,7 @@ datasets:
         ai_context: "Codes: I = INDIVIDUAL, B = BUSINESS, W = WHOLESALE"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "CustomerType"}
+            data: {"enumeration": "CustomerType", "codes": {"I": "INDIVIDUAL", "B": "BUSINESS", "W": "WHOLESALE"}}
       - name: street
         expression:
           sql: "street"
@@ -515,7 +515,7 @@ datasets:
         ai_context: "Codes: PEN = Pending, CFM = Confirmed, PRC = Processing, SHP = Shipped, DLV = Delivered, CAN = Cancelled, RFD = Refunded"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "OrderStatus"}
+            data: {"enumeration": "OrderStatus", "codes": {"PEN": "Pending", "CFM": "Confirmed", "PRC": "Processing", "SHP": "Shipped", "DLV": "Delivered", "CAN": "Cancelled", "RFD": "Refunded"}}
       - name: payment_method
         expression:
           sql: "payment_method"
@@ -523,7 +523,7 @@ datasets:
         ai_context: "Codes: CC = Credit Card, DC = Debit Card, BT = Bank Transfer, PP = PayPal, CA = Cash"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "PaymentMethod"}
+            data: {"enumeration": "PaymentMethod", "codes": {"CC": "Credit Card", "DC": "Debit Card", "BT": "Bank Transfer", "PP": "PayPal", "CA": "Cash"}}
       - name: street
         expression:
           sql: "street"
@@ -640,7 +640,7 @@ datasets:
         ai_context: "Codes: RDY = Ready, SNT = Sent, CAN = Cancelled"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"lifecycle": true, "enumeration": "ShipmentStatus"}
+            data: {"lifecycle": true, "enumeration": "ShipmentStatus", "codes": {"RDY": "Ready", "SNT": "Sent", "CAN": "Cancelled"}}
       - name: fee
         expression:
           sql: "fee"
@@ -648,7 +648,7 @@ datasets:
         ai_context: "Codes: DUE = Due, PAD = Paid, REF = Refunded"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"lifecycle": true, "enumeration": "FeeStatus"}
+            data: {"lifecycle": true, "enumeration": "FeeStatus", "codes": {"DUE": "Due", "PAD": "Paid", "REF": "Refunded"}}
       - name: sent_at
         expression:
           sql: "sent_at"
