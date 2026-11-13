@@ -149,16 +149,24 @@ public class MapperSpecTest {
     public void likeIgnoresCase_v3() {
         SourceCode.TemplateSet v3 = SourceCode.TemplateSet.V3;
         String like = renderIn(v3, "string(30) @search(like)");
-        assertTrue(like.contains("c.like(c.lower(r.get(\"f\")),\"%\" +trim(f).toLowerCase(java.util.Locale.ROOT)+ \"%\")"), like);
+        assertTrue(
+                like.contains(
+                        "c.like(c.lower(r.get(\"f\")),\"%\" +likeText(trim(f).toLowerCase(java.util.Locale.ROOT))+ \"%\",'!')"),
+                like);
         assertEquals(like, renderIn(v3, "string(30) @search(%__%)"));
         String keeps = renderIn(v3, "string(30) @search(%_%)");
-        assertTrue(keeps.contains("c.like(r.get(\"f\"),\"%\" +trim(f)+ \"%\")"), keeps);
+        assertTrue(keeps.contains("c.like(r.get(\"f\"),\"%\" +likeText(trim(f))+ \"%\",'!')"), keeps);
         String number = renderIn(v3, "long @search(like)");
-        assertTrue(number.contains("c.like(r.get(\"f\"),\"%\" +trim(f)+ \"%\")"), number);
+        assertTrue(number.contains("c.like(r.get(\"f\"),\"%\" +likeText(trim(f))+ \"%\",'!')"), number);
         String eq = renderIn(v3, "string(30) @search(__=)");
         assertTrue(eq.contains("c.equal(c.lower(r.get(\"f\")),f.toLowerCase(java.util.Locale.ROOT))"), eq);
         String prefix = renderIn(v3, "string(30) @search(__%)");
-        assertTrue(prefix.contains("c.like(c.lower(r.get(\"f\")),trim(f).toLowerCase(java.util.Locale.ROOT)+ \"%\")"), prefix);
+        assertTrue(
+                prefix.contains(
+                        "c.like(c.lower(r.get(\"f\")),likeText(trim(f).toLowerCase(java.util.Locale.ROOT))+ \"%\",'!')"),
+                prefix);
+        String startsWith = renderIn(v3, "string(30) @search(_%)");
+        assertTrue(startsWith.contains("c.like(r.get(\"f\"),likeText(trim(f))+ \"%\",'!')"), startsWith);
         String through = renderIn(v3, "string(30) @search(like) @ref(a.b)");
         assertTrue(through.contains("c.like(c.lower(r.get(\"a\").get(\"b\")),"), through);
     }
@@ -172,7 +180,7 @@ public class MapperSpecTest {
             assertTrue(!out.contains("toLowerCase"), op + ": " + out);
         }
         String like = renderIn(SourceCode.TemplateSet.KOTLIN, "string(30) @search(like)");
-        assertTrue(like.contains("\"%\" +trim(f)!!.lowercase()+ \"%\""), like);
+        assertTrue(like.contains("\"%\" +likeText(trim(f)!!.lowercase())+ \"%\",'!')"), like);
     }
 
     /** An operator nobody reads is an equality - said in the clean output, as the 2.x output always did it. */
@@ -237,7 +245,7 @@ public class MapperSpecTest {
         io.elasticore.base.util.ConsoleLog.clearKey("DSL_WARN");
         SourceCode.resetWarnings();
         String out = renderIn(SourceCode.TemplateSet.V3, "string(30) @search(%)");
-        assertTrue(out.contains("c.like(r.get(\"f\"),\"%\" +trim(f))"), out);
+        assertTrue(out.contains("c.like(r.get(\"f\"),\"%\" +likeText(trim(f)),'!')"), out);
         assertEquals(1, io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN"));
         java.io.PrintStream saved = System.out;
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
