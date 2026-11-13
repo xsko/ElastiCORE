@@ -90,6 +90,7 @@ public final class RulesVerifyRunner {
         // The compatible check never carries value objects in DTOs, whatever
         // ran before it in this JVM.
         SpecFactory.valueObjectsInDto(false);
+        SpecFactory.valueListsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.referenceRequiredByKey(false);
         String basePath = System.getProperty("elasticore.base.path");

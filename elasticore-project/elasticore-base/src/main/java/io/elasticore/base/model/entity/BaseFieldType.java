@@ -56,6 +56,13 @@ public enum BaseFieldType {
     INSTANT("Instant", null, "java.time.Instant", null, true),
     BYTES("byte[]", null, "byte[]", "bytes", true),
 
+    // Arrays beside int[] (3.0 rule engine): long[] was an unresolved type,
+    // and the field left out of the DTO. Wrapped, as int[] is: a value sent
+    // in JSON may be null.
+    LONGARRAY("long[]", null, "Long[]", null, true),
+    DOUBLEARRAY("double[]", null, "Double[]", null, true),
+    BOOLEANARRAY("boolean[]", null, "Boolean[]", null, true),
+
     UNKNOWN("unknown", null, null, null);
 
 
