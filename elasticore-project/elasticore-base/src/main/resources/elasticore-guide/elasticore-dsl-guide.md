@@ -147,7 +147,7 @@ YAML read each of them differently. The annotation guide explains the reasons in
 | `@GeneratedValue` | JPA generated value |
 | `@length(n)` | Maximum string length |
 | `@default(value)` | Default value |
-| `@search(like\|eq\|between\|in\|isnull)` | Search condition (see annotation-guide). `isnull` searches for empty values - search property `<field>Empty: Boolean` (v3 bundles) |
+| `@search(like\|eq\|between\|in\|isnull)` | Search condition (see annotation-guide). `isnull` searches for empty values - search property `<field>Empty: Boolean` (v3 bundles). `words:a, b.c` (no space after the colon) - one search box over several fields (annotation-guide 4.2.2) |
 | `@updatable(false)` | Field that cannot be updated |
 | `@readonly` / `@noinput` | Field decided by the server: it goes out in the response and is not accepted from the request. v3 bundles also do not write it from DTO -> entity in the mapper and drop `@NotNull`/`@NotBlank` from the DTO (annotation-guide §2.2) |
 | `@ref(path)` | Refers to another field |

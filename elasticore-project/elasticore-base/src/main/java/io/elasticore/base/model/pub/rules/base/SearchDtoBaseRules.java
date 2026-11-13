@@ -110,6 +110,19 @@ public class SearchDtoBaseRules implements CodeRules {
             return;
         }
 
+        // "@search(words: a, b)": the text of one search box, looked for in those fields.
+        java.util.List<String> words = wordsOf(f);
+        if (words != null) {
+            ctx(e).field(f)
+                    .ensure(AnnoCode.raw(
+                            "io.swagger.v3.oas.annotations.media.Schema",
+                            String.format(
+                                    "@Schema(description = %s  )",
+                                    RuleText.quote(conditionText(
+                                            f, "every word (the first five) in any of " + String.join(", ", words))))));
+            return;
+        }
+
         // "@search(like,alias)" renames the property it produces.
         String[] parts = splitCondition(f.searchValue());
         String name = parts.length == 2 ? parts[1] : f.name();
@@ -305,6 +318,23 @@ public class SearchDtoBaseRules implements CodeRules {
         f.raw().getAnnotationMap().put("search",
                 io.elasticore.base.model.core.Annotation.create("search", derived));
         return derived;
+    }
+
+    /**
+     * The fields {@code @search(words: title, body, author.nickname)} looks for each word in, or null when
+     * the field searches some other way (issue 182). Shared by the search DTO, the mapper and MyBatis's
+     * search, which must agree.
+     */
+    public static java.util.List<String> wordsOf(FieldSpec f) {
+        String declared = f.searchValue();
+        if (declared == null) return null;
+        String text = declared.trim();
+        if (!text.regionMatches(true, 0, "words:", 0, 6)) return null;
+        java.util.List<String> paths = new java.util.ArrayList<String>();
+        for (String path : text.substring(6).split(",")) {
+            if (!path.trim().isEmpty()) paths.add(path.trim());
+        }
+        return paths;
     }
 
     private static boolean isRange(String condition) {

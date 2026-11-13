@@ -727,6 +727,13 @@ public final class SpecFactory {
                         io.elasticore.base.model.dto.DataTransferAnnotation.META_SEARCHABLE_BYPASS)) {
                     continue;
                 }
+                if (searchable)
+                    wordsChecked(
+                            f,
+                            dto.getIdentity().getDomainId(),
+                            dto.getIdentity().getName(),
+                            entity,
+                            model);
                 spec.addField(f);
                 spec.addDtoField(f);
             }
@@ -2251,6 +2258,68 @@ public final class SpecFactory {
     }
 
     /** An entity by name anywhere in the loaded context, as 2.x resolves it. */
+    private static final String[] SEARCH_ALIASES = {"searchable", "search", "s", "srch", "filter"};
+
+    /**
+     * {@code @search(words: title, author.nickname)}: each path must name a text field of the entity, through
+     * relations. One that does not is said and left out, so the search does not fail at its first query
+     * (issue 182).
+     */
+    private static void wordsChecked(Field f, String domainId, String dtoName, Entity entity, ECoreModel model) {
+        for (String alias : SEARCH_ALIASES) {
+            String declared = f.getAnnotationValue(alias);
+            if (declared == null) continue;
+            String text = declared.trim();
+            if (!text.regionMatches(true, 0, "words:", 0, 6)) return;
+            java.util.List<String> kept = new java.util.ArrayList<String>();
+            boolean dropped = false;
+            for (String path : text.substring(6).split(",")) {
+                if (path.trim().isEmpty()) continue;
+                String why = wordsPathProblem(entity, path.trim(), model);
+                if (why == null) {
+                    kept.add(path.trim());
+                    continue;
+                }
+                dropped = true;
+                io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                        "[%s] %s.%s @search(words: ...): %s - %s, so the search does not look there",
+                        domainId, dtoName, f.getName(), path.trim(), why));
+            }
+            if (dropped) {
+                f.getAnnotationMap()
+                        .put(
+                                alias,
+                                io.elasticore.base.model.core.Annotation.create(
+                                        alias, "words: " + String.join(", ", kept)));
+            }
+            return;
+        }
+    }
+
+    /** Why a words path names no text field of the entity, or null when it does. */
+    private static String wordsPathProblem(Entity entity, String path, ECoreModel model) {
+        if (entity == null) return "the DTO names no entity";
+        String[] parts = path.split("\\.");
+        Entity at = entity;
+        for (int i = 0; i < parts.length; i++) {
+            Field g = at.getAllFieldListMap() == null
+                    ? null
+                    : (Field) at.getAllFieldListMap().get(parts[i]);
+            if (g == null) return at.getIdentity().getName() + " has no field " + parts[i];
+            if (i == parts.length - 1) {
+                return g.getTypeInfo().isStringType() ? null : parts[i] + " is not text";
+            }
+            if (!namesAnEntity(g, model)) return parts[i] + " is not a relation";
+            String type = g.getTypeInfo().isList()
+                    ? g.getTypeInfo().getCoreItemType()
+                    : g.getTypeInfo().getDefaultTypeName();
+            Entity next = model.getEntityModels().findByName(type);
+            at = next != null ? next : globalEntity(type);
+            if (at == null) return parts[i] + " is not a relation";
+        }
+        return null;
+    }
+
     private static Entity globalEntity(String typeName) {
         if (typeName == null) return null;
         try {

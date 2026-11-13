@@ -44,6 +44,13 @@ public class MyBatisSearchRules implements CodeRules {
                     + " - it is not a column of the table.", e.domainClassName(), e.getName(), f.name()));
             return;
         }
+        if (SearchDtoBaseRules.wordsOf(f) != null) {
+            SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s: @search(words: ...) is not searched under mode: mybatis"
+                            + " - the 3.0 JPA code (Java, Kotlin) searches by it.",
+                    e.domainClassName(), e.getName(), f.name()));
+            return;
+        }
 
         String raw = f.dslValueAny("searchable", "search", "s", "srch", "filter");
         String condition = "auto";

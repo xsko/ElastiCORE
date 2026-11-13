@@ -147,7 +147,7 @@ YAML 이 다르게 읽기 때문입니다. 자세한 이유는 annotation guide 
 | `@GeneratedValue` | JPA 자동 생성값 |
 | `@length(n)` | 문자열 최대 길이 |
 | `@default(value)` | 기본값 |
-| `@search(like\|eq\|between\|in\|isnull)` | 검색 조건 (annotation-guide 참조). `isnull` 은 비어 있는지 검색 - 검색 속성 `<필드>Empty: Boolean` (v3 번들) |
+| `@search(like\|eq\|between\|in\|isnull)` | 검색 조건 (annotation-guide 참조). `isnull` 은 비어 있는지 검색 - 검색 속성 `<필드>Empty: Boolean` (v3 번들). `words:a, b.c` (콜론 뒤 공백 없이) - 여러 필드를 찾는 검색창 하나 (annotation-guide 4.2.2) |
 | `@updatable(false)` | 수정 불가 필드 |
 | `@readonly` / `@noinput` | 서버가 정하는 필드: 응답에는 나가고 요청으로는 받지 않음. v3 번들은 매퍼도 DTO -> 엔티티로 쓰지 않고 DTO 의 `@NotNull`·`@NotBlank` 를 뺌 (annotation-guide §2.2) |
 | `@ref(path)` | 다른 필드 참조 |

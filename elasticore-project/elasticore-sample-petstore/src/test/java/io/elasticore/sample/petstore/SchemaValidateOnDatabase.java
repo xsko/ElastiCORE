@@ -35,7 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.sql.init.continue-on-error=false"})
 @AutoConfigureMockMvc
 @org.springframework.context.annotation.Import({
-    AbstractEntityCheck.class, SoftDeleteHierarchyCheck.class, IntegrityKindCheck.class, LikeSearchCheck.class
+    AbstractEntityCheck.class, SoftDeleteHierarchyCheck.class, IntegrityKindCheck.class, LikeSearchCheck.class,
+    WordsSearchCheck.class
 })
 abstract class SchemaValidateOnDatabase {
 
@@ -45,6 +46,7 @@ abstract class SchemaValidateOnDatabase {
     @Autowired JdbcTemplate jdbc;
     @Autowired IntegrityKindCheck integrity;
     @Autowired LikeSearchCheck like;
+    @Autowired WordsSearchCheck words;
     @Autowired io.elasticore.sample.petstore.infrastructure.persistence.CategoryRepository categories;
 
     /** What the export writes in the portable language runs here: each metric of a dataset, over its table. */
@@ -115,6 +117,12 @@ abstract class SchemaValidateOnDatabase {
     @Test
     void aLikeSearchFindsTheValueAsWritten() throws Exception {
         like.searchesTheValueAsWritten(mvc);
+    }
+
+    /** One search box over several fields, each database's lower() and like escape (issue 182). */
+    @Test
+    void aWordsSearchFindsEveryWordInAnyField() throws Exception {
+        words.findsEveryWordInAnyField(mvc);
     }
 
     /** An abstract entity's rows are in its subclasses' tables, and one repository reads them together. */

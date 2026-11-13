@@ -60,6 +60,12 @@ public class MapperSpecRules implements CodeRules {
         String type = f.typeName();
         String fieldNm = f.name();
 
+        java.util.List<String> words = SearchDtoBaseRules.wordsOf(f);
+        if (words != null) {
+            words(c, e, f, words);
+            return;
+        }
+
         String raw = f.dslValueAny("searchable", "search", "s", "srch", "filter");
         String condition;
         if (raw == null) {
@@ -143,6 +149,33 @@ public class MapperSpecRules implements CodeRules {
         if (!isBetween) {
             c.line(BLOCK, "%s}", I2);
         }
+    }
+
+    /**
+     * {@code @search(words: title, body, author.nickname)}: every word of the text, each in any of the
+     * fields - the runtime's Words, a contains ignoring case with the word escaped, a relation joined
+     * LEFT. Not in the 2.x-compatible output, whose mapper has no runtime to call (issue 182).
+     */
+    private void words(SourceCode c, EntitySpec e, FieldSpec f, java.util.List<String> paths) {
+        if (c.compatible()) {
+            SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s.%s: @search(words: ...) is not searched in the"
+                            + " 2.x-compatible output - the 3.0 code (output = 'v3') searches by it.",
+                    e.domainClassName(), e.getName(), f.name()));
+            return;
+        }
+        if (paths.isEmpty()) return;
+        StringBuilder quoted = new StringBuilder();
+        for (String path : paths) quoted.append(", ").append(RuleText.quote(path));
+        String name = f.name();
+        c.line(
+                        BLOCK,
+                        "%s%s",
+                        I2,
+                        c.syntax().localVar(f.typeName(), name, c.syntax().getter("searchDTO", name)))
+                .line(BLOCK, "%sif(hasValue(%s)){", I2, name);
+        and(c, e.getName(), "io.elasticore.springboot3.mapper.Words.match(r, q, c, %s%s)", nn(c, name), quoted);
+        c.line(BLOCK, "%s}", I2);
     }
 
     // ------------------------------------------------------------------
