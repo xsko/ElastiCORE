@@ -358,7 +358,7 @@ entity:
 
 #### 4. 이동에 일을 더 하고 싶을 때
 
-이동 자체는 생성 코드가 하고, 더 할 일(배송 번호 기록 등)은 행위 클래스에서 override 합니다. 엔티티의 필드와 같은 이름·같은 타입의 명령 파라미터(필드 `rejectReason` 옆의 `reject: rejectReason: string(500)!`)는 3.0.261117 부터 이동이 직접 저장하고, 그 밖의 파라미터는 이동이 저장하지 않는다고 빌드가 경고합니다:
+이동 자체는 생성 코드가 하고, 더 할 일(배송 번호 기록 등)은 행위 클래스에서 override 합니다. 엔티티의 필드와 같은 이름·같은 타입의 명령 파라미터(필드 `rejectReason` 옆의 `reject: rejectReason: string(500)!`)는 3.0.261117-rc17 부터 이동이 직접 저장하고, 그 밖의 파라미터는 이동이 저장하지 않는다고 빌드가 경고합니다:
 
 ```java
 public class PurchaseOrder extends PurchaseOrderBase {
@@ -741,9 +741,9 @@ stock.setOnHand(stock.getOnHand().minus(qty));   // 모자라면 422
 | `Set<T>` | `Set<T>` | Collection |
 | `Map<K,V>` | `Map<K,V>` | Map |
 | `HashMap` | `java.util.HashMap` | HashMap 직접 사용 |
-| `int[]` / `string[]` | Array | 배열 타입 (`Integer[]`, `String[]`). `long[]`·`double[]`·`boolean[]` 은 3.0.261117 부터 (3.0 규칙 엔진) |
+| `int[]` / `string[]` | Array | 배열 타입 (`Integer[]`, `String[]`). `long[]`·`double[]`·`boolean[]` 은 3.0.261117-rc17 부터 (3.0 규칙 엔진) |
 
-DTO 의 값 목록 필드 - `List<Long>`, `List<String>`, DSL 단어로 `List<long>`, `List<string>` - 는 3.0.261117 부터 3.0 코드에서 그 값 타입의 `List` 입니다 (Java, Kotlin. TypeScript 는 `number[]`, `string[]`). 2.x 와 2.x 호환 출력은 DTO 에서 빼고, 빌드가 그렇다고 알려 줍니다. 아무도 모르는 타입의 목록(`List<Strng>`)도 경고합니다.
+DTO 의 값 목록 필드 - `List<Long>`, `List<String>`, DSL 단어로 `List<long>`, `List<string>` - 는 3.0.261117-rc17 부터 3.0 코드에서 그 값 타입의 `List` 입니다 (Java, Kotlin. TypeScript 는 `number[]`, `string[]`). 2.x 와 2.x 호환 출력은 DTO 에서 빼고, 빌드가 그렇다고 알려 줍니다. 아무도 모르는 타입의 목록(`List<Strng>`)도 경고합니다.
 
 ### 참조/기타 타입
 > **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 JDBC 타입이 없는 `Object` (빌드 중단)

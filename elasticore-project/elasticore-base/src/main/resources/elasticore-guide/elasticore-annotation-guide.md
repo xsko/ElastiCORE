@@ -20,7 +20,7 @@ Product:
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (not generated)
 
 Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update` and
-`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
+`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117-rc17). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
 The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use case (`XxxUseCase`) promises only the writes listed.
 The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before.
 ```yaml
@@ -29,7 +29,7 @@ Country:
 Notice:
   meta: entity @root @expose(pageSize=20, methods="read,search,create")
 ```
-- Up to 3.0.261116-rc16 a page size beside `methods` was lost (the search paged by 20): `@expose(50, methods="...")` pages by 50 from 3.0.261117.
+- Up to 3.0.261116-rc16 a page size beside `methods` was lost (the search paged by 20): `@expose(50, methods="...")` pages by 50 from 3.0.261117-rc17.
 - The value is one quoted list, as in `@Index(columnList="a,b")`. Spaces after the commas are fine; unquoted, only the first name is read.
 - A name it does not know is a DSL warning and serves nothing (`methods="raed,search"` serves search only) - a typo gives fewer
   endpoints, never more. `methods=""` serves none of the five.
@@ -932,7 +932,7 @@ customName: string @search(like,comName)   # like search on the comName field
 - In v3 mode, the case-insensitive conditions (`like`, `%__%`, `%__`, `__%`) trim the leading and trailing spaces of the value (as `like` does)
   and lower-case it regardless of locale (Java `toLowerCase(Locale.ROOT)`, Kotlin `lowercase()` - in Kotlin 2.x
   `toLowerCase()` is a compile error). The column is compared with `lower(...)`.
-- In v3 mode and MyBatis, a `%` or `_` the caller puts in the value of a contains, prefix or suffix search is a character, not a wildcard (`100%` finds `100%`, from 3.0.261117; escaped with `!`). `auto` keeps it a pattern (`{"label":"ab%"}`); 2.x compatible output keeps it a wildcard.
+- In v3 mode and MyBatis, a `%` or `_` the caller puts in the value of a contains, prefix or suffix search is a character, not a wildcard (`100%` finds `100%`, from 3.0.261117-rc17; escaped with `!`). `auto` keeps it a pattern (`{"label":"ab%"}`); 2.x compatible output keeps it a wildcard.
 - Index: a contains search (`%v%`) cannot use a B-tree range on any DB, so `lower()` adds no cost. To find the prefix
   `__%` and the exact match `__=` through an index, you need a `lower(col)` expression index. The default CI collation of MySQL and SQL Server
   already ignores case.
