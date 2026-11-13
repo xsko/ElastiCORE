@@ -614,6 +614,9 @@ public final class OssieSemanticModelExporter {
         if (stamp != null) ext.put("stamp", stamp);
         if (f.hasAnnotation("login")) ext.put("login", true);
         if (en != null) ext.put("enumeration", en.getIdentity().getName());
+        // What each stored value means, as data: ai_context says it as a sentence a
+        // program would have to parse (issue 174).
+        if (stored != null && !stored.meaning.isEmpty()) ext.put("codes", stored.meaning);
         if (f.getTypeInfo().isMoney()) ext.put("value_type", "money");
         if (f.getTypeInfo().isQuantity()) ext.put("value_type", "quantity");
         if (!ext.isEmpty()) b.append(extension("        ", ext));

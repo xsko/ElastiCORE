@@ -171,7 +171,7 @@ datasets:
         ai_context: "Codes: U = User, A = Administrator"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "UserRole"}
+            data: {"enumeration": "UserRole", "codes": {"U": "User", "A": "Administrator"}}
       - name: street1
         expression:
           sql: "street1"
@@ -238,7 +238,7 @@ datasets:
         ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"lifecycle": true, "enumeration": "OrderStatus"}
+            data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}}
       - name: street1
         expression:
           sql: "street1"
@@ -277,7 +277,7 @@ datasets:
         ai_context: "Codes: VISA = Visa, MAST = Master Card, AMEX = American Express"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "CreditCardType"}
+            data: {"enumeration": "CreditCardType", "codes": {"VISA": "Visa", "MAST": "Master Card", "AMEX": "American Express"}}
       - name: credit_card_exp_date
         expression:
           sql: "credit_card_exp_date"
