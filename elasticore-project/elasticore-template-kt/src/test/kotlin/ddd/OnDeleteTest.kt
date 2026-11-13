@@ -1,0 +1,78 @@
+package ddd
+
+import io.elasticore.blueprint.domain.content.service.ArticleService
+import io.elasticore.blueprint.domain.content.service.CommentService
+import io.elasticore.springboot3.bean.ApplicationContextProvider
+import io.elasticore.springboot3.bean.DbTransactionGateway
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.autoconfigure.domain.EntityScan
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.Import
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.jdbc.core.JdbcTemplate
+
+/** The application of the content domain alone. */
+@SpringBootApplication(proxyBeanMethods = false)
+@Import(DbTransactionGateway::class, ApplicationContextProvider::class)
+@EnableJpaAuditing
+@ComponentScan("io.elasticore.blueprint.domain.content")
+@EntityScan("io.elasticore.blueprint.domain.content.entity")
+@EnableJpaRepositories("io.elasticore.blueprint.domain.content.repository")
+open class KotlinContentApp
+
+/**
+ * @onDelete in Kotlin, on the generated schema: deleting an article deletes its comments and their
+ * replies (cascade) and clears its bookmarks (setNull) - the companion's onDeleteArticle, run by the
+ * generated ArticleCoreService before its delete.
+ */
+@SpringBootTest(
+    classes = [KotlinContentApp::class],
+    properties = [
+        "spring.datasource.url=jdbc:h2:mem:kt-ondelete;DB_CLOSE_DELAY=-1",
+        "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.jpa.defer-datasource-initialization=false",
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:db/schema-h2.sql",
+        // Article is @audited; its revision table is not what this test is about.
+        "spring.jpa.properties.hibernate.integration.envers.enabled=false",
+    ],
+)
+class OnDeleteTest {
+
+    @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var articles: ArticleService
+    @Autowired lateinit var comments: CommentService
+
+    private fun count(sql: String, vararg args: Any): Int = jdbc.queryForObject(sql, Int::class.java, *args)!!
+
+    @Test
+    fun deletingAnArticleTakesItsCommentsAndClearsItsBookmarks() {
+        jdbc.update("INSERT INTO cms_article (article_id, title, slug) VALUES ('a-1', 'First', 'first')")
+        jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name, article_article_id) VALUES (901, 'hi', 'kim', 'a-1')")
+        jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name, article_article_id, test_id) VALUES (902, 're', 'lee', 'a-1', 901)")
+        jdbc.update("INSERT INTO cms_bookmark (bookmark_id, memo, article_article_id) VALUES (903, 'later', 'a-1')")
+
+        assertTrue(articles.deleteById("a-1"))
+
+        assertEquals(0, count("SELECT COUNT(*) FROM cms_article WHERE article_id = 'a-1'"))
+        assertEquals(0, count("SELECT COUNT(*) FROM cms_comment WHERE comment_id IN (901, 902)"))
+        assertEquals(1, count("SELECT COUNT(*) FROM cms_bookmark WHERE bookmark_id = 903 AND article_article_id IS NULL"))
+    }
+
+    @Test
+    fun deletingACommentTakesItsReplies() {
+        jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name) VALUES (911, 'top', 'kim')")
+        jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name, test_id) VALUES (912, 'reply', 'lee', 911)")
+        jdbc.update("INSERT INTO cms_comment (comment_id, content, author_name, test_id) VALUES (913, 'deeper', 'park', 912)")
+
+        assertTrue(comments.deleteById(911L))
+
+        assertEquals(0, count("SELECT COUNT(*) FROM cms_comment WHERE comment_id IN (911, 912, 913)"))
+    }
+}

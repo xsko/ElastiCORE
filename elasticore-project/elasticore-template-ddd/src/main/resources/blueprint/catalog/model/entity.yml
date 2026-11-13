@@ -16,7 +16,8 @@ entity:
       price: bigdecimal(10.2) @min(0)
       # A fraction on a double is a DecimalMin/DecimalMax: @Min takes a long.
       rating: double @min(0.5) @max(5.0)
-      author: Author @ManyToOne
+      # Deleting an author keeps the books, without their author (layered: through the relation).
+      author: Author @ManyToOne @onDelete(setNull)
       version: long @jpa:Version
       # Written by Spring Data auditing, never by a request - in the plain
       # v3 bundle too.

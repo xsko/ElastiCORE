@@ -707,6 +707,26 @@ comment: Comment @col(parent_comment_id)
 comment: Comment! @col(parent_comment_id)
 ```
 
+#### @onDelete(cascade | restrict | setNull) - 지워지는 행을 가리키는 행들은 어떻게 되는가
+> **동작:** v3, Kotlin (JPA), ddd, hexagonal, layered · **안 됨:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - 빌드 중단; 2.x generator (생성 안 됨)
+가리키는 쪽에 씁니다. 지워지는 행의 CoreService 가 삭제(키로, 일괄, 검색으로) 직전에 같은 트랜잭션에서 처리합니다.
+```yaml
+Comment:
+  fields:
+    post: Post! @onDelete(cascade)        # 게시글을 지우면 댓글도
+    parent: Comment @onDelete(cascade)    # 댓글을 지우면 대댓글도
+Report:
+  fields:
+    post: Post @onDelete(restrict)        # 신고된 게시글은 지우지 않음: 409 "restricted"
+Bookmark:
+  fields:
+    post: Post @onDelete(setNull)         # 북마크는 남고 게시글만 비움
+```
+- 순서: 모든 `restrict` 먼저, 그다음 `setNull`, 그다음 `cascade`. cascade 되는 행은 자기 `@onDelete` 를 먼저 처리한 뒤 JPA 로 지웁니다(그 행의 소프트 삭제·삭제 가드 적용) - 대댓글이 댓글과 함께 갑니다.
+- `restrict` 는 409, `"code": "restricted"`, `detail` `Post 7 is still pointed to by Report rows (Report.post @onDelete(restrict))` 로 답합니다. cascade 도중에 만나면(게시글의 신고된 댓글) 삭제 전체가 취소됩니다.
+- 지워지는 루트의 CoreService 에 정적 메서드로 생성됩니다(`onDeletePost(em, row)`, `onDeleteComment(em, row)`; Kotlin 은 `companion object`). 참조의 id 로 JPQL(`x.postId`), layered 는 관계를 통해(`x.post.postId`).
+- 잘못 쓰면 빌드가 멈춥니다: 다른 값, 도메인 엔티티 한 행을 가리키는 참조가 아닌 필드, 필수(`!`) 참조의 `setNull`. cascade 되는 행의 서비스 도메인 이벤트는 없고, DDL 의 `ON DELETE` 도 쓰지 않습니다. 소프트 삭제된 행도 외래 키는 그대로라 `restrict` 는 못 보고 DB 가 막습니다. `elasticore-template-ddd` `BoardOnDeleteTest`(HTTP)·`CatalogApiTest`(layered setNull), `elasticore-template-kt` `OnDeleteTest`.
+
 #### 관계 필드의 자동 DTO 렌더링 (중첩 DTO + FK 필드)
 > **Since: 2.2.260703**
 

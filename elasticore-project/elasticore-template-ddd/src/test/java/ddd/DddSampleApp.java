@@ -34,7 +34,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EnableJpaAuditing
 @ComponentScan("io.elasticore.sample.ddd")
 @EntityScan({"io.elasticore.sample.ddd.shop.domain.model", "io.elasticore.sample.ddd.catalog.entity",
-        "io.elasticore.sample.ddd.billing.domain.model",
+        "io.elasticore.sample.ddd.billing.domain.model", "io.elasticore.sample.ddd.board.domain.model",
         // the outbox table is an adapter concern and lives with them
         "io.elasticore.sample.ddd.shop.infrastructure.persistence"})
 // Spring Data scans infrastructure, not the domain. The domain package next
@@ -42,7 +42,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 // the scan at them would have Spring Data try to implement them.
 @EnableJpaRepositories({"io.elasticore.sample.ddd.shop.infrastructure.persistence",
         "io.elasticore.sample.ddd.catalog.repository",
-        "io.elasticore.sample.ddd.billing.infrastructure.persistence"})
+        "io.elasticore.sample.ddd.billing.infrastructure.persistence",
+        "io.elasticore.sample.ddd.board.infrastructure.persistence"})
 public class DddSampleApp {
 
     /**

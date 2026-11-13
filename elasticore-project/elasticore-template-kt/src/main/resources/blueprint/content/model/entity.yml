@@ -52,8 +52,8 @@ entity:
       authorName: string(100)! @search(like)
       authorEmail: string(100) @search(eq)
       approved: boolean @default(false) @search(eq)
-      article: Article @ManyToOne @fetchjoin
-      parentComment: Comment @ManyToOne @db(test_id)
+      article: Article @ManyToOne @fetchjoin @onDelete(cascade)
+      parentComment: Comment @ManyToOne @db(test_id) @onDelete(cascade)
       replies: List<Comment> @OneToMany(mappedBy="parentComment") @dtype(List<CommentDTO>)
 
   Attachment:
@@ -74,7 +74,7 @@ entity:
     fields:
       bookmarkId: long @id @sequence
       memo: string(200)
-      article: Article @ManyToOne
+      article: Article @ManyToOne @onDelete(setNull)
 
 enumeration:
   ArticleStatus:

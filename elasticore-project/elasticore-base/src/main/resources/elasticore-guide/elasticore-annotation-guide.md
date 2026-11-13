@@ -707,6 +707,26 @@ comment: Comment @col(parent_comment_id)
 comment: Comment! @col(parent_comment_id)
 ```
 
+#### @onDelete(cascade | restrict | setNull) - what becomes of the rows that point to a deleted row
+> **Works in:** v3, Kotlin (JPA), ddd, hexagonal, layered · **Not in:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - the build stops; 2.x generator (not generated)
+Written on the side that points; carried out by the CoreService of the deleted row, before each delete (by its key, a batch, a search), in the same transaction.
+```yaml
+Comment:
+  fields:
+    post: Post! @onDelete(cascade)        # deleting a post deletes its comments
+    parent: Comment @onDelete(cascade)    # and a comment its replies
+Report:
+  fields:
+    post: Post @onDelete(restrict)        # a reported post is not deleted: 409 "restricted"
+Bookmark:
+  fields:
+    post: Post @onDelete(setNull)         # the bookmark stays, without its post
+```
+- Order: every `restrict` first, then `setNull`, then `cascade`. A cascaded row is removed through JPA (its own soft delete and delete guards apply) after its own `@onDelete` references - a reply goes with its comment.
+- `restrict` answers 409 with `"code": "restricted"` and `detail` `Post 7 is still pointed to by Report rows (Report.post @onDelete(restrict))`. Met on the cascade's way (a reported comment of the post), it undoes the whole delete.
+- Generated as static methods in the deleted root's CoreService (`onDeletePost(em, row)`, `onDeleteComment(em, row)`; Kotlin in a `companion object`), JPQL over the reference's id (`x.postId`), or through the relation in layered (`x.post.postId`).
+- Misuse stops the build: another value, a field that is no single reference to an entity of the domain, `setNull` on a required (`!`) reference. Not the domain events of the cascaded rows' services, and no `ON DELETE` in the DDL. A soft-deleted row still holds its foreign key: `restrict` does not see it, the database does. `elasticore-template-ddd` `BoardOnDeleteTest` (HTTP) and `CatalogApiTest` (layered setNull), `elasticore-template-kt` `OnDeleteTest`.
+
 #### Automatic DTO rendering of relationship fields (nested DTO + FK field)
 > **Since: 2.2.260703**
 

@@ -348,6 +348,7 @@ public final class SpecFactory {
         registerDeriving(spec, model);
         registerReferencing(spec, model);
         registerOptionalEmbeddables(spec, model);
+        spec.knownOnDelete(onDeleteOf(model));
         spec.knownSignInEntities(signInsFor(model));
         spec.knownOtherLoginEntities(otherLoginsFor(model));
         registerReadLevels(spec, model);
@@ -1791,6 +1792,78 @@ public final class SpecFactory {
      * (an @idof field, written by the id-reference rewrite) - directly, or
      * through a collection of members of their own aggregate that do.
      */
+    /**
+     * The domain's {@code @onDelete(cascade | restrict | setNull)} references, by the entity they point to
+     * (issue 180). A misuse stops the build: the value, a field that is no single reference to an entity,
+     * setNull on a required reference.
+     */
+    static java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>> onDeleteOf(
+            ECoreModel model) {
+        java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>> out =
+                new java.util.LinkedHashMap<
+                        String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>>();
+        if (model.getEntityModels() == null) return out;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity entity = all.get(i);
+            String name = entity.getIdentity().getName();
+            for (Field f : fieldsOf(entity)) {
+                String declared = f.getAnnotationValue("ondelete");
+                if (declared == null && !f.hasAnnotation("ondelete")) continue;
+                String mode = declared == null ? "" : declared.trim();
+                String at = String.format(
+                        "[%s] %s.%s @onDelete(%s)", entity.getIdentity().getDomainId(), name, f.getName(), mode);
+                if ("setnull".equalsIgnoreCase(mode)) mode = "setNull";
+                if (!"cascade".equals(mode) && !"restrict".equals(mode) && !"setNull".equals(mode)) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": say cascade, restrict or setNull");
+                    continue;
+                }
+                Entity target = f.getTypeInfo().isList() || f.getTypeInfo().isBaseType()
+                        ? null
+                        : model.getEntityModels().findByName(f.getTypeInfo().getDefaultTypeName());
+                if (target == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": it goes on a reference to one row of" + " an entity of the domain, as post: Post");
+                    continue;
+                }
+                if ("setNull".equals(mode) && f.hasAnnotation("notnull")) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": the reference is required, so it"
+                            + " cannot be set to null - say cascade or restrict, or make it optional");
+                    continue;
+                }
+                Field pk = null;
+                for (Field g : fieldsOf(target)) {
+                    if (g.isPrimaryKey() || g.hasAnnotation("pk") || g.hasAnnotation("id")) {
+                        if (pk != null) {
+                            pk = null;
+                            break;
+                        }
+                        pk = g;
+                    }
+                }
+                String joinBy = f.getAnnotationValue("joinby");
+                if (pk == null && (joinBy == null || joinBy.trim().isEmpty())) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": " + target.getIdentity().getName() + " has no single key to compare");
+                    continue;
+                }
+                // A reference by id (ddd, hexagonal) is compared and cleared on its identity field; an object
+                // relation (layered) through the relation.
+                boolean byId = joinBy != null && !joinBy.trim().isEmpty() && joinBy.indexOf(',') < 0;
+                String where = byId ? joinBy.trim() : f.getName() + "." + pk.getName();
+                String set = byId ? joinBy.trim() : f.getName();
+                String key = target.getIdentity().getName();
+                if (!out.containsKey(key)) {
+                    out.put(key, new java.util.ArrayList<io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef>());
+                }
+                out.get(key)
+                        .add(new io.elasticore.base.model.pub.rules.EntitySpec.OnDeleteRef(
+                                name, f.getName(), where, set, mode));
+            }
+        }
+        return out;
+    }
+
     static void registerReferencing(EntitySpec spec, ECoreModel model) {
         for (String name : facts(model).referencing) spec.knownReferencing(name);
     }

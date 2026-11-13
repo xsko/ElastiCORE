@@ -183,4 +183,28 @@ class CatalogApiTest {
 
         assertThat(context.getBeansOfType(BookCoreService.class)).hasSize(1);
     }
+
+    @Test
+    @DisplayName("@onDelete(setNull) through the relation: deleting an author keeps the book, without its author")
+    void onDeleteSetNull() throws Exception {
+        long id = createBook("Orphaned");
+        long author = book(id).path("authorAuthorId").asLong();
+        assertThat(author).isPositive();
+
+        assertThat(status(delete(AUTHORS + "/" + author))).isEqualTo(200);
+        assertThat(status(get(AUTHORS + "/" + author))).isEqualTo(404);
+        assertThat(book(id).path("title").asText()).isEqualTo("Orphaned");
+        assertThat(book(id).path("authorAuthorId").asLong(0)).as(book(id).toString()).isZero();
+
+        // and by a search, the other way a row goes
+        long second = createBook("Orphaned-2");
+        long secondAuthor = book(second).path("authorAuthorId").asLong();
+        io.elasticore.sample.ddd.catalog.service.AuthorCoreService authors =
+                context.getBean(io.elasticore.sample.ddd.catalog.service.AuthorService.class);
+        io.elasticore.sample.ddd.catalog.dto.AuthorSrchDTO byName = new io.elasticore.sample.ddd.catalog.dto.AuthorSrchDTO();
+        byName.setName("Ursula");
+        assertThat(authors.delete(byName)).isPositive();
+        assertThat(status(get(AUTHORS + "/" + secondAuthor))).isEqualTo(404);
+        assertThat(book(second).path("authorAuthorId").asLong(0)).as(book(second).toString()).isZero();
+    }
 }

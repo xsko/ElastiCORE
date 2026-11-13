@@ -1,0 +1,33 @@
+entity:
+  # Roots of their own, each pointing to the post by its id.
+  Post:
+    meta: entity @root @expose(20)
+    fields:
+      postId: long @id @sequence
+      title: string(100)!
+
+  # Deleting a post deletes its comments, and a comment its replies.
+  Comment:
+    meta: entity @root @expose(20)
+    fields:
+      commentId: long @id @sequence
+      text: string(200)!
+      post: Post! @onDelete(cascade)
+      parent: Comment @onDelete(cascade)
+
+  # A post or a comment that is reported cannot be deleted.
+  Report:
+    meta: entity @root @expose(20)
+    fields:
+      reportId: long @id @sequence
+      reason: string(100)
+      post: Post @onDelete(restrict)
+      comment: Comment @onDelete(restrict)
+
+  # A bookmark outlives its post: the reference is cleared.
+  Bookmark:
+    meta: entity @root @expose(20)
+    fields:
+      bookmarkId: long @id @sequence
+      label: string(50)
+      post: Post @onDelete(setNull)
