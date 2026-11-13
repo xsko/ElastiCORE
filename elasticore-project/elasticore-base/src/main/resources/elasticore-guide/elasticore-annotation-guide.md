@@ -11,8 +11,9 @@ Annotations used in the entity declaration (`meta:`). They can be combined.
 Generates DTO, Repository, Service, Controller and SearchDTO automatically. By default, string fields use auto search (like if the value contains `%`, otherwise exact match) and datetime fields use between search.
 ```yaml
 Product:
-  meta: entity @expose(30)  # pageSize=30, generates full CRUD including the Controller
+  meta: entity @expose(pageSize=30)  # generates full CRUD including the Controller; a search page holds 30 (20 if left out)
 ```
+`@expose(30)` (2.x) is the same page size. With other values, name each: `@expose(pageSize=30, methods="...")`.
 
 #### @expose(methods="...") - the endpoints the Controller serves
 > **Since: 3.0** (3.0.261105-rc10. 3.0 rule engine. The 2.x generator does not read it)
@@ -24,10 +25,11 @@ The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use 
 The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before.
 ```yaml
 Country:
-  meta: entity @root @expose(300, methods="read,search")   # a lookup the application seeds: read and search only
+  meta: entity @root @expose(pageSize=300, methods="read,search")   # a lookup the application seeds: read and search only
 Notice:
-  meta: entity @root @expose(20, methods="read,search,create")
+  meta: entity @root @expose(pageSize=20, methods="read,search,create")
 ```
+- Up to 3.0.261116-rc16 a page size beside `methods` was lost (the search paged by 20): `@expose(50, methods="...")` pages by 50 from 3.0.261117.
 - The value is one quoted list, as in `@Index(columnList="a,b")`. Spaces after the commas are fine; unquoted, only the first name is read.
 - A name it does not know is a DSL warning and serves nothing (`methods="raed,search"` serves search only) - a typo gives fewer
   endpoints, never more. `methods=""` serves none of the five.

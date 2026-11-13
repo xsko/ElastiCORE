@@ -11,8 +11,9 @@
 DTO, Repository, Service, Controller, SearchDTO 자동 생성. 기본적으로 string 필드는 auto(값에 `%` 가 있으면 like, 아니면 정확 일치), datetime 필드는 between 검색 자동 적용.
 ```yaml
 Product:
-  meta: entity @expose(30)  # pageSize=30, Controller 포함 전체 CRUD 생성
+  meta: entity @expose(pageSize=30)  # Controller 포함 전체 CRUD 생성, 검색 한 페이지 30 건 (적지 않으면 20)
 ```
+`@expose(30)`(2.x)도 같은 페이지 크기입니다. 다른 값과 함께 쓸 때는 이름을 붙여 씁니다: `@expose(pageSize=30, methods="...")`.
 
 #### @expose(methods="...") - Controller 가 제공할 엔드포인트
 > **Since: 3.0** (3.0.261105-rc10. 3.0 규칙엔진. 2.x 생성기는 읽지 않음)
@@ -24,10 +25,11 @@ TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD
 Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 입니다.
 ```yaml
 Country:
-  meta: entity @root @expose(300, methods="read,search")   # 애플리케이션이 채우는 조회용: 조회·검색만
+  meta: entity @root @expose(pageSize=300, methods="read,search")   # 애플리케이션이 채우는 조회용: 조회·검색만
 Notice:
-  meta: entity @root @expose(20, methods="read,search,create")
+  meta: entity @root @expose(pageSize=20, methods="read,search,create")
 ```
+- 3.0.261116-rc16 까지는 `methods` 옆의 페이지 크기가 빠졌습니다(검색이 20 건씩). 3.0.261117 부터 `@expose(50, methods="...")` 도 50 건입니다.
 - 값은 `@Index(columnList="a,b")` 처럼 따옴표 안의 목록 하나입니다. 쉼표 뒤 공백은 괜찮고, 따옴표가 없으면 첫 이름만 읽힙니다.
 - 모르는 이름은 DSL 경고이고 아무것도 제공하지 않습니다(`methods="raed,search"` 는 search 만) - 오타는 엔드포인트를
   줄일 뿐 늘리지 않습니다. `methods=""` 는 다섯 가지 중 아무것도 제공하지 않습니다.
