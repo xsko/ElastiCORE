@@ -67,33 +67,68 @@ public class TypeScriptApiRules implements CodeRules {
 
         java.util.Set<String> gone = excluded(e);
 
-        if (!gone.contains("create")) method(c, "create", syntax.parameter(dto, "input"), dto,
-                String.format("request<%s>('POST', BASE, input)", dto),
-                "Registers a new " + e.getName() + ".");
+        if (!gone.contains("create"))
+            method(
+                    c,
+                    "create",
+                    syntax.parameter(dto, "input"),
+                    dto,
+                    String.format("request<%s>('POST', BASE, input, init)", dto),
+                    "Registers a new " + e.getName() + ".");
 
-        if (!gone.contains("read")) method(c, "findById", idParams, String.format("%s | null", dto),
-                String.format("requestOrNull<%s>('GET', BASE + %s)", dto, idPath),
-                "The " + e.getName() + " with this identifier, or null when there is none.");
+        if (!gone.contains("read"))
+            method(
+                    c,
+                    "findById",
+                    idParams,
+                    String.format("%s | null", dto),
+                    String.format("requestOrNull<%s>('GET', BASE + %s, init)", dto, idPath),
+                    "The " + e.getName() + " with this identifier, or null when there is none.");
 
-        if (!gone.contains("search")) method(c, "search", syntax.parameter(srchDto, "condition"), searchResult,
-                String.format("request<%s>('POST', BASE + '/search', condition)", searchResult),
-                "Every " + e.getName() + " matching the condition.");
+        if (!gone.contains("search"))
+            method(
+                    c,
+                    "search",
+                    syntax.parameter(srchDto, "condition"),
+                    searchResult,
+                    String.format("request<%s>('POST', BASE + '/search', condition, init)", searchResult),
+                    "Every " + e.getName() + " matching the condition.");
 
-        if (!gone.contains("update")) method(c, "update", syntax.parameter(dto, "input"), dto,
-                String.format("request<%s>('PUT', BASE, input)", dto),
-                "Updates an existing " + e.getName() + ".");
+        if (!gone.contains("update"))
+            method(
+                    c,
+                    "update",
+                    syntax.parameter(dto, "input"),
+                    dto,
+                    String.format("request<%s>('PUT', BASE, input, init)", dto),
+                    "Updates an existing " + e.getName() + ".");
 
-        if (!gone.contains("batchUpdate")) method(c, "batchUpdate", syntax.parameter(String.format("%s[]", dto), "inputs"), "void",
-                "request<void>('PUT', BASE + '/batch', inputs)",
-                "Updates several in one transaction; none are applied if any fails.");
+        if (!gone.contains("batchUpdate"))
+            method(
+                    c,
+                    "batchUpdate",
+                    syntax.parameter(String.format("%s[]", dto), "inputs"),
+                    "void",
+                    "request<void>('PUT', BASE + '/batch', inputs, init)",
+                    "Updates several in one transaction; none are applied if any fails.");
 
-        if (!gone.contains("deleteBatch")) method(c, "deleteMany", syntax.parameter(String.format("%s[]", keyDto), "keys"), "boolean[]",
-                "request<boolean[]>('POST', BASE + '/delete', keys)",
-                "Deletes each key, answering for each whether it was there.");
+        if (!gone.contains("deleteBatch"))
+            method(
+                    c,
+                    "deleteMany",
+                    syntax.parameter(String.format("%s[]", keyDto), "keys"),
+                    "boolean[]",
+                    "request<boolean[]>('POST', BASE + '/delete', keys, init)",
+                    "Deletes each key, answering for each whether it was there.");
 
-        if (!gone.contains("deleteById")) method(c, "deleteById", idParams, "boolean",
-                String.format("request<boolean>('DELETE', BASE + %s)", idPath),
-                "Deletes the " + e.getName() + " with this identifier.");
+        if (!gone.contains("deleteById"))
+            method(
+                    c,
+                    "deleteById",
+                    idParams,
+                    "boolean",
+                    String.format("request<boolean>('DELETE', BASE + %s, undefined, init)", idPath),
+                    "Deletes the " + e.getName() + " with this identifier.");
 
         // A lifecycle's commands, asked before they are given: which buttons a
         // screen shows. The same test the entity's canShip() makes.
@@ -161,14 +196,20 @@ public class TypeScriptApiRules implements CodeRules {
             for (EntitySpec.CommandSpec cmd : e.commands()) {
                 String path = cmd.name().replaceAll("([a-z0-9])([A-Z])", "$1-$2").toLowerCase();
                 String params = idParams;
-                String body = "";
+                String body = ", undefined";
                 if (cmd.dtoName() != null) {
                     params += ", " + syntax.parameter(cmd.dtoName(), "command");
                     body = ", command";
                 }
-                method(c, cmd.name(), params, dto,
-                        String.format("request<%s>('POST', BASE + %s + '/%s'%s)", dto, idPath, path, body),
-                        String.format("The %s command: %s decides, and answers with what it became.", cmd.name(), e.getName()));
+                method(
+                        c,
+                        cmd.name(),
+                        params,
+                        dto,
+                        String.format("request<%s>('POST', BASE + %s + '/%s'%s, init)", dto, idPath, path, body),
+                        String.format(
+                                "The %s command: %s decides, and answers with what it became.",
+                                cmd.name(), e.getName()));
             }
         }
 
@@ -179,22 +220,34 @@ public class TypeScriptApiRules implements CodeRules {
             for (FieldSpec f : e.fields()) {
                 if (f.hasDsl("password")) password = f.name();
             }
-            method(c, "signIn", syntax.parameter("string", login) + ", " + syntax.parameter("string", password), dto,
-                    String.format("request<%s>('POST', BASE + '/signin', { %s, %s })", dto, login, password),
-                    "Signs in: the session cookie is set (same origin) and the " + e.getName() + " answered; ApiError 401 when the "
-                            + login + " or the password is wrong.");
-            method(c, "signOut", "", "void", "request<void>('POST', BASE + '/signout')",
+            method(
+                    c,
+                    "signIn",
+                    syntax.parameter("string", login) + ", " + syntax.parameter("string", password),
+                    dto,
+                    String.format("request<%s>('POST', BASE + '/signin', { %s, %s }, init)", dto, login, password),
+                    "Signs in: the session cookie is set (same origin) and the " + e.getName()
+                            + " answered; ApiError 401 when the " + login + " or the password is wrong.");
+            method(
+                    c,
+                    "signOut",
+                    "",
+                    "void",
+                    "request<void>('POST', BASE + '/signout', undefined, init)",
                     "Signs out: the session ends.");
             c.varLine("methodList", "/** The %s signed in now, or null for a visitor. */", e.getName())
-             .varLine("methodList", "export async function me(): Promise<%s | null> {", dto)
-             .varLine("methodList", "    try {")
-             .varLine("methodList", "        return await request<%s>('GET', BASE + '/me');", dto)
-             .varLine("methodList", "    } catch (e) {")
-             .varLine("methodList", "        if (e instanceof ApiError && e.status === 401) return null;")
-             .varLine("methodList", "        throw e;")
-             .varLine("methodList", "    }")
-             .varLine("methodList", "}")
-             .varLine("methodList", "");
+                    .varLine("methodList", "export async function me(init?: RequestInit): Promise<%s | null> {", dto)
+                    .varLine("methodList", "    try {")
+                    .varLine(
+                            "methodList",
+                            "        return await request<%s>('GET', BASE + '/me', undefined, init);",
+                            dto)
+                    .varLine("methodList", "    } catch (e) {")
+                    .varLine("methodList", "        if (e instanceof ApiError && e.status === 401) return null;")
+                    .varLine("methodList", "        throw e;")
+                    .varLine("methodList", "    }")
+                    .varLine("methodList", "}")
+                    .varLine("methodList", "");
         }
 
         // What the functions above use, and only that: a client compiled with
@@ -280,10 +333,15 @@ public class TypeScriptApiRules implements CodeRules {
     private void method(SourceCode c, String name, String params,
                         String returns, String call, String description) {
         c.varLine("methodList", "/** %s */", description)
-         .varLine("methodList", "export async function %s(%s): Promise<%s> {", name, params, returns)
-         .varLine("methodList", "    return %s;", call)
-         .varLine("methodList", "}")
-         .varLine("methodList", "");
+                .varLine(
+                        "methodList",
+                        "export async function %s(%s): Promise<%s> {",
+                        name,
+                        params.isEmpty() ? "init?: RequestInit" : params + ", init?: RequestInit",
+                        returns)
+                .varLine("methodList", "    return %s;", call)
+                .varLine("methodList", "}")
+                .varLine("methodList", "");
     }
 
     /** The identifier as this client's caller passes it. */

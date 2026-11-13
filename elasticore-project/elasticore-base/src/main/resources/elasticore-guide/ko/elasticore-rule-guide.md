@@ -1693,6 +1693,23 @@ model change, or set typescriptClient = true in the elasticore { } block so the 
 스크립트의 다른 태스크(`webBuild` 등)가 `elcore3ts` 를 부르는 프로젝트도 바꾼 것이 없으면 조용합니다. `build` 폴더를
 지우면 `elcore3ts` 를 다시 돌릴 때까지 `elcore3` 가 매번 알려 줍니다.
 
+**어디로 보내고, 모든 요청에 무엇을 싣는가 (`configureApi`).** 기본은 같은 origin 에 `fetch` 로,
+`Content-Type: application/json` 만 실어 보냅니다. 나머지는 시작할 때 한 번 `apiSupport.ts` 의 함수로 정합니다:
+
+```ts
+configureApi({
+    baseUrl: 'https://api.example.com',            // setApiBaseUrl 과 같음
+    init: { credentials: 'include' },              // 다른 origin 에 있는 API 의 세션 쿠키
+    // init: async () => ({ headers: { Authorization: 'Bearer ' + await token() } }),  // 요청마다 읽음
+    // fetch: myFetch,                             // 테스트의 것, 또는 서버 프레임워크의 것
+});
+await OrderApi.findById(7, { signal: controller.signal });   // 모든 함수가 마지막에 그 호출의 RequestInit 를 받음
+```
+
+헤더는 합쳐집니다: `Content-Type`, 그다음 `init` 의 것, 그다음 호출의 것 - 뒤의 것이 이깁니다. 서버(SSR)에서는
+이 설정을 서버가 동시에 처리하는 모든 요청이 함께 씁니다: 들어온 요청의 쿠키는 `init` 함수 안에서 그 요청의
+컨텍스트로 읽거나, 그 호출에 넘기세요. 둘 다 부르지 않는 클라이언트는 지금까지와 똑같이 보냅니다.
+
 `-PlistRules` 는 생성하지 않고, 도메인마다 지금 선택된 규칙을 파일 종류(target)별로 실행 순서대로
 보여 줍니다(`suppress` 에 쓰는 id 포함). 파일을 만들거나 지우지 않습니다.
 
