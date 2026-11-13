@@ -165,6 +165,8 @@ public class MapperSpecTest {
                 prefix.contains(
                         "c.like(c.lower(r.get(\"f\")),likeText(trim(f).toLowerCase(java.util.Locale.ROOT))+ \"%\",'!')"),
                 prefix);
+        String startsWith = renderIn(v3, "string(30) @search(_%)");
+        assertTrue(startsWith.contains("c.like(r.get(\"f\"),likeText(trim(f))+ \"%\",'!')"), startsWith);
         String through = renderIn(v3, "string(30) @search(like) @ref(a.b)");
         assertTrue(through.contains("c.like(c.lower(r.get(\"a\").get(\"b\")),"), through);
     }

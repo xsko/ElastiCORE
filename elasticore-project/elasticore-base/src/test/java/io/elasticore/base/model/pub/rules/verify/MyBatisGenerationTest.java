@@ -373,6 +373,43 @@ public class MyBatisGenerationTest {
         assertTrue(xml.contains("LIKE"), xml);
     }
 
+    /**
+     * Every like condition of the search looks for the value as written: the
+     * runtime's Rows.like escapes its own % and _ with !, between the
+     * wildcards the condition adds (issue 159).
+     */
+    @Test
+    public void everyLikeOfTheSearchEscapesTheValue() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Tag:",
+                        "    meta: entity @expose(20) @access(*=public)",
+                        "    fields:",
+                        "      tagId: long @id @sequence",
+                        "      a: string(30) @search(%_%)",
+                        "      b: string(30) @search(%__%)",
+                        "      c: string(30) @search(_%)",
+                        "      d: string(30) @search(__%)",
+                        "      e: string(30) @search(%_)",
+                        "      f: string(30) @search(%__)",
+                        ""),
+                "mybatis");
+        run(project, 0);
+        String xml = new String(Files.readAllBytes(findResource(project, "TagRepository.xml")), StandardCharsets.UTF_8);
+        String rows = "@io.elasticore.springboot3.mybatis.Rows@like(";
+        assertTrue(xml.contains(rows + "s.a.trim(), '%', '%', false, _databaseId)"), xml);
+        assertTrue(xml.contains(rows + "s.b.trim(), '%', '%', true, _databaseId)"), xml);
+        assertTrue(xml.contains(rows + "s.c.trim(), '', '%', false, _databaseId)"), xml);
+        assertTrue(xml.contains(rows + "s.d.trim(), '', '%', true, _databaseId)"), xml);
+        assertTrue(xml.contains(rows + "s.e.trim(), '%', '', false, _databaseId)"), xml);
+        assertTrue(xml.contains(rows + "s.f.trim(), '%', '', true, _databaseId)"), xml);
+        assertTrue(xml.contains("AND LOWER(t.b) LIKE #{"), xml);
+        assertTrue(xml.contains("AND t.c LIKE #{"), xml);
+        assertTrue(xml.split("ESCAPE '!'", -1).length - 1 >= 6, xml);
+    }
+
     private static final String HOUSE = String.join("\n",
             "enumeration:",
             "  Kind:",
