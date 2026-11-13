@@ -275,9 +275,9 @@ public class ControllerBaseRules implements CodeRules {
         java.util.List<String> out = new java.util.ArrayList<String>();
         String names = String.join(", ", EXPOSE_METHODS.keySet());
         for (String key : e.metaProperties("expose").keySet()) {
-            if (!"methods".equalsIgnoreCase(key)) {
+            if (!"methods".equalsIgnoreCase(key) && !"pageSize".equalsIgnoreCase(key)) {
                 out.add(String.format(
-                        "[%s] @expose(%s=...): @expose takes methods=\"...\" only; %s is ignored.",
+                        "[%s] @expose(%s=...): @expose takes pageSize=N and methods=\"...\"; %s is ignored.",
                         e.getName(), key, key));
             }
         }

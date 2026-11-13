@@ -136,14 +136,17 @@ public class ControllerMethodRulesTest {
         EntitySpec e = order().meta("expose", "20")
                 .meta("readonly", null)
                 .metaProperty("expose", "methods", "read,serch,create")
-                .metaProperty("expose", "pagesize", "20");
+                .metaProperty("expose", "size", "20")
+                .metaProperty("expose", "pageSize", "20");
 
         java.util.List<String> said = ControllerBaseRules.exposeProblems(e);
 
         assertTrue(
                 said.contains(
-                        "[Order] @expose(pagesize=...): @expose takes methods=\"...\" only; pagesize is ignored."),
+                        "[Order] @expose(size=...): @expose takes pageSize=N and methods=\"...\"; size is ignored."),
                 said.toString());
+        // pageSize is one of its words.
+        assertTrue(said.stream().noneMatch(s -> s.contains("@expose(pageSize=")), said.toString());
         assertTrue(
                 said.contains(
                         "[Order] @expose(methods=\"read,serch,create\"): serch is not one of create, read, search,"
