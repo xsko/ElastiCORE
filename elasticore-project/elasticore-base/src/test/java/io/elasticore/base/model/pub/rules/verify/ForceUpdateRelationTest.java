@@ -119,7 +119,8 @@ public class ForceUpdateRelationTest {
             if (basePath == null) System.clearProperty("elasticore.base.path");
             else System.setProperty("elasticore.base.path", basePath);
         }
-        List<String> lines = setterLines(found(project, "SrdeskMapper.java"));
+        String mapperText = found(project, "SrdeskMapper.java");
+        List<String> lines = setterLines(mapperText);
         assertTrue(lines.size() >= 4, lines.toString());
         for (String line : lines) {
             assertEquals(count(line, "("), count(line, ")"), "unbalanced: " + line);
@@ -128,6 +129,13 @@ public class ForceUpdateRelationTest {
             }
         }
         assertTrue(lines.contains("to.setNote(from.getNote());"), lines.toString());
+        // Each direction, the one with the EntityManager too: a forced value straight
+        // through, every other value through setVal - in all three, and nowhere else.
+        assertEquals(3, count(mapperText, "to.setNote(from.getNote());"), mapperText);
+        assertEquals(0, count(mapperText, "setVal(from.getNote()"), mapperText);
+        assertEquals(3, count(mapperText, "setVal(from.getOrderId(), to::setOrderId, isSkipNull);"), mapperText);
+        assertEquals(0, count(mapperText, "to.setOrderId("), mapperText);
+        assertEquals(3, count(mapperText, "setVal(from.getQty(), to::setQty, isSkipNull);"), mapperText);
     }
 
     private static final String[] CONTEXT = {"STATIC_DOMAIN_MAP", "context", "tmpCtx"};
