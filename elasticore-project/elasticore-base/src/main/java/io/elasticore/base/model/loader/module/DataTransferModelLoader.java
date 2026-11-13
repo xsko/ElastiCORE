@@ -171,7 +171,8 @@ public class DataTransferModelLoader extends AbstractModelLoader implements Cons
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         char quote = 0;
-        for (char ch : text.toCharArray()) {
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
             if (quote != 0) {
                 if (ch == quote) quote = 0;
             } else if (ch == '"' || ch == '\'') {
