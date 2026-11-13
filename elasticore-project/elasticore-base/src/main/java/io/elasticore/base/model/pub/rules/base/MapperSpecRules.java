@@ -166,22 +166,40 @@ public class MapperSpecRules implements CodeRules {
             // Clean output only: 2.x read != as an equality.
             and(c, e.getName(), "c.notEqual(%s,%s)", path, nn(c, fieldNm));
         } else if ("like".equals(condition) || "%_%".equals(condition) || "%%".equals(condition)) {
-            and(c, e.getName(), "c.like(%s,\"%%\" +trim(%s)+ \"%%\")", path, fieldNm);
+            and(c, e.getName(), "c.like(%s,\"%%\" +%s+ \"%%\"%s)", path, text(c, "trim(" + fieldNm + ")"), esc(c));
         } else if ("%__%".equals(condition)) {
-            and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s+ \"%%\")", path, lowered(c, fieldNm, true));
+            and(
+                    c,
+                    e.getName(),
+                    "c.like(c.lower(%s),\"%%\" +%s+ \"%%\"%s)",
+                    path,
+                    text(c, lowered(c, fieldNm, true)),
+                    esc(c));
         } else if ("__=".equals(condition) || "=__".equals(condition)) {
             and(c, e.getName(), "c.equal(c.lower(%s),%s)", path, lowered(c, fieldNm, false));
         } else if (condition.startsWith("%")) {
             if (condition.endsWith("__")) {
-                and(c, e.getName(), "c.like(c.lower(%s),\"%%\" +%s)", path, lowered(c, fieldNm, true));
+                and(
+                        c,
+                        e.getName(),
+                        "c.like(c.lower(%s),\"%%\" +%s%s)",
+                        path,
+                        text(c, lowered(c, fieldNm, true)),
+                        esc(c));
             } else {
-                and(c, e.getName(), "c.like(%s,\"%%\" +trim(%s))", path, fieldNm);
+                and(c, e.getName(), "c.like(%s,\"%%\" +%s%s)", path, text(c, "trim(" + fieldNm + ")"), esc(c));
             }
         } else if (condition.endsWith("%")) {
             if (condition.startsWith("__")) {
-                and(c, e.getName(), "c.like(c.lower(%s),%s+ \"%%\")", path, lowered(c, fieldNm, true));
+                and(
+                        c,
+                        e.getName(),
+                        "c.like(c.lower(%s),%s+ \"%%\"%s)",
+                        path,
+                        text(c, lowered(c, fieldNm, true)),
+                        esc(c));
             } else {
-                and(c, e.getName(), "c.like(%s,trim(%s)+ \"%%\")", path, fieldNm);
+                and(c, e.getName(), "c.like(%s,%s+ \"%%\"%s)", path, text(c, "trim(" + fieldNm + ")"), esc(c));
             }
         } else if ("in".equals(condition)) {
             emitIn(c, e, f, entityFieldNm, childField, fieldNm, isListEntityField);
@@ -345,6 +363,22 @@ public class MapperSpecRules implements CodeRules {
     private static String lowered(SourceCode c, String value, boolean trim) {
         if (c.compatible()) return nn(c, value) + ".toLowerCase()";
         return c.syntax().lowerCase(nn(c, trim ? "trim(" + value + ")" : value));
+    }
+
+    /**
+     * The searched value of a like: matched as written - its own %, _ and the
+     * escape character escaped (the mapper's likeText) - so a contains search
+     * for "100%" finds "100%", not every row with 100 in it. 2.x's text as it
+     * was: the value as a pattern. auto keeps the value as a pattern too: it
+     * is a like only when the value holds a % (issue 159).
+     */
+    private static String text(SourceCode c, String value) {
+        return c.compatible() ? value : "likeText(" + value + ")";
+    }
+
+    /** The escape character the clean output's like passes with likeText's value; 2.x passes none. */
+    private static String esc(SourceCode c) {
+        return c.compatible() ? "" : ",'!'";
     }
 
     /** The conditions emitCondition reads; anything else falls through to an equality. */

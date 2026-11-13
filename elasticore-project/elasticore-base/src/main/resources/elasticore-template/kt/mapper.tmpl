@@ -67,6 +67,11 @@ object ${className} {
     @JvmStatic
     private fun trim(value: Any?): Any? = value
 
+    /** A like search's value matched as written: its own %, _ and ! escaped with '!'. */
+    @JvmStatic
+    private fun likeText(value: String?): String? =
+        value?.replace("!", "!!")?.replace("%", "!%")?.replace("_", "!_")
+
     @JvmStatic
     private fun isSkip(fromClassName: String, refClassName: String): Boolean = false
 

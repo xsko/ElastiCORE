@@ -148,6 +148,16 @@ public abstract class ShopApi {
         assertEquals(1, total("product", "{\"name\":\"" + name + "\",\"stock\":4}"));
         assertEquals(0, total("product", "{\"name\":\"" + name + "\",\"stock\":3}"));
 
+        // like and _% look for the value as written: a % or _ in it is a character (issue 159).
+        String mark = unique().substring(0, 8);
+        create("product", "{\"name\":\"" + mark + " 100% cotton\",\"price\":10}");
+        create("product", "{\"name\":\"" + mark + " 1000 cotton\",\"price\":10}");
+        assertEquals(2, total("product", "{\"name\":\"" + mark + " 100\"}"));
+        assertEquals(1, total("product", "{\"name\":\"" + mark + " 100%\"}"));
+        create("category", "{\"name\":\"Under\",\"slug\":\"" + mark + "_x\"}");
+        create("category", "{\"name\":\"Under\",\"slug\":\"" + mark + "yx\"}");
+        assertEquals(1, total("category", "{\"slug\":\"" + mark + "_\"}"));
+
         // @search with no condition on text: equal, or like when the value carries a %.
         String label = unique().substring(0, 10);
         create("product", "{\"name\":\"Labelled\",\"price\":10,\"label\":\"" + label + "\"}");
