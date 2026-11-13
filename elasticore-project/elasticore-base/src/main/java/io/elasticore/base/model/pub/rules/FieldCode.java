@@ -205,7 +205,13 @@ public final class FieldCode {
         this.removed = true;
     }
 
-    boolean isRemoved() {
+    /** The type a rule declared the field with instead of the model's, or null when it kept the model's. */
+    public String declaredType() {
+        return typeName;
+    }
+
+    /** Whether a rule took the field out of the file. */
+    public boolean isRemoved() {
         return removed;
     }
 

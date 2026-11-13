@@ -525,7 +525,7 @@ public class MyBatisGenerationTest {
                 "      level: int",
                 ""), "mybatis");
         String log = run(project, 0);
-        assertTrue(log.contains("the column level is reserved by Oracle, PostgreSQL or SQL Server"), log);
+        assertTrue(log.contains("the column level (Oracle) is a reserved word there"), log);
     }
 
     /** An aggregate with what JPA does for it by itself: members, a one-to-one member, events, a promise, a command. */

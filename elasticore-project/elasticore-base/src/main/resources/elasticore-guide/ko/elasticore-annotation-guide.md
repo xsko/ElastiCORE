@@ -20,7 +20,7 @@ Product:
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
-`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. `GET /schema/info` 는 남습니다.
+`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
 TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD 유스케이스(`XxxUseCase`)도 적은 쓰기만 약속합니다.
 Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 입니다.
 ```yaml
@@ -1510,11 +1510,11 @@ entity:
 
 Oracle, PostgreSQL, SQL Server 가 예약한 단어로 이름 붙은 테이블·컬럼은 그 DB 에서 만들 수 없습니다. Hibernate 는
 기본으로 이름을 따옴표로 감싸지 않기 때문입니다: `order`, `group`, `user`, `date`, `level`, `comment`, `size`,
-`number` 등. 엔티티 `Order` 는 테이블 `order` 가 됩니다. 3.0 코드는 생성할 때 엔티티마다 한 번 이것을 알리고 계속
+`number` 등. 엔티티 `Order` 는 테이블 `order` 가 됩니다. 3.0 코드는 생성할 때 엔티티마다 한 번, 이름마다 거절하는 DB 를 - `ddl.databases` 에 적은 DB 중에서 (`level`·`comment` 는 Oracle 만) - 짚어 알리고 계속
 진행합니다:
 
 ```
-[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
+[Shop] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group (Oracle, PostgreSQL, SQL Server and H2) are reserved words there and cannot be created unquoted - name it otherwise with @table / @column.
 ```
 
 DSL 에서 다른 이름을 주세요. Java 이름은 그대로입니다:

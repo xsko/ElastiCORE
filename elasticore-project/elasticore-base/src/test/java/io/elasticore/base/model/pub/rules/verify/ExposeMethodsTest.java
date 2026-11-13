@@ -9,6 +9,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -55,6 +56,12 @@ public class ExposeMethodsTest {
             "    fields:",
             "      noneId: long @id @sequence",
             "      label:  string(20)",
+            "",
+            "  EmOne:",
+            "    meta: entity @root @editable @expose(pageSize=20, methods=\"read,updateOne,deleteOne\", schema=false)",
+            "    fields:",
+            "      oneId: long @id @sequence",
+            "      label: string(20)",
             "",
             "  EmOld:",
             "    meta: entity @root @editable @expose(20) @restExclude(deleteById)",
@@ -239,12 +246,45 @@ public class ExposeMethodsTest {
     public void aNameItDoesNotKnowIsSaidAndServesNothing() throws Exception {
         assertTrue(
                 javaLog.contains("[EmTypo] @expose(methods=\"raed,search\"): raed is not one of create, read, search,"
-                        + " update, delete; it serves nothing."),
+                        + " update, delete, updateOne, updateBatch, deleteOne, deleteBatch; it serves nothing."),
                 javaLog);
         String control = found(java, "EmTypoController.java");
         assertTrue(control.contains("@PostMapping(\"/search\")"), control);
         assertFalse(control.contains("@GetMapping(\"/{typoId}\")"), control);
         assertTrue(javaLog.contains("[EmNone] @expose(methods=\"\") names none of"), javaLog);
+    }
+
+    /**
+     * One of each pair - PUT / without PUT /batch, DELETE /{id} without POST
+     * /delete - and GET /schema/info left out by schema=false (issue 172).
+     */
+    @Test
+    public void oneOfAPairAndNoSchema() throws Exception {
+        String control = found(java, "EmOneController.java");
+        assertTrue(control.contains("@GetMapping(\"/{oneId}\")"), control);
+        assertTrue(control.contains("@PutMapping\n") || control.contains("@PutMapping\r\n"), control);
+        assertFalse(control.contains("\"/batch\""), control);
+        assertTrue(control.contains("@DeleteMapping"), control);
+        assertFalse(control.contains("\"/delete\""), control);
+        assertFalse(control.contains("/schema/info"), control);
+        assertFalse(control.contains("\"/search\""), control);
+        assertFalse(javaLog.contains("[EmOne]"), javaLog);
+    }
+
+    /** A narrowed controller imports only what it still uses (issue 172). */
+    @Test
+    public void aNarrowedControllerImportsOnlyWhatItUses() throws Exception {
+        for (String name : new String[] {"EmCodeController.java", "EmOneController.java", "EmTagController.java"}) {
+            String control = found(java, name);
+            for (String line : control.split("\r?\n")) {
+                if (!line.startsWith("import ") || line.endsWith(".*;")) continue;
+                String simple = line.substring(line.lastIndexOf('.') + 1, line.length() - 1);
+                String rest = control.replace(line, "");
+                assertTrue(
+                        Pattern.compile("\\b" + simple + "\\b").matcher(rest).find(),
+                        name + ": " + line + " is not used\n" + control);
+            }
+        }
     }
 
     @Test
@@ -260,11 +300,10 @@ public class ExposeMethodsTest {
     }
 
     @Test
-    public void aRestExcludeNoListMatchesSaysWhatTheNearestChanges() throws Exception {
+    public void aRestExcludeOfOneOfAPairNamesTheOther() throws Exception {
         assertTrue(
-                javaLog.contains(
-                        "[EmSplit] @restExclude is deprecated, and no @expose(methods) list serves the same"
-                                + " endpoints: the nearest is @expose(methods=\"create,read,search\"), but it also drops PUT /."),
+                javaLog.contains("[EmSplit] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,updateOne\")."),
                 javaLog);
         String control = found(java, "EmSplitController.java");
         assertTrue(control.contains("@PutMapping\n") || control.contains("@PutMapping\r\n"), control);

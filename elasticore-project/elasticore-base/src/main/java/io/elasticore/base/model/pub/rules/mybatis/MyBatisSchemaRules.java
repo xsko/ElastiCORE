@@ -84,20 +84,21 @@ public class MyBatisSchemaRules implements CodeRules {
     static void warnReserved(EntitySpec e) {
         String table = MyBatisSql.table(e);
         String bare = table.indexOf('.') >= 0 ? table.substring(table.indexOf('.') + 1) : table;
-        List<String> found = new ArrayList<String>();
-        if (RESERVED.contains(bare)) found.add("the table " + bare);
+        List<String[]> found = new ArrayList<String[]>();
+        if (RESERVED.contains(bare)) found.add(new String[] {"table", bare});
         for (FieldSpec f : MyBatisSql.fields(e)) {
             if (MyBatisSql.isValue(e, f) && RESERVED.contains(MyBatisSql.column(f))) {
-                found.add("the column " + MyBatisSql.column(f));
+                found.add(new String[] {"column", MyBatisSql.column(f)});
             } else if (MyBatisSql.isEmbedded(e, f)) {
                 for (MyBatisSql.Part p : MyBatisSql.parts(e, f)) {
-                    if (RESERVED.contains(p.column)) found.add("the column " + p.column);
+                    if (RESERVED.contains(p.column)) found.add(new String[] {"column", p.column});
                 }
             }
         }
         if (found.isEmpty()) return;
-        SourceCode.dslWarnOnce(String.format("[%s] %s: %s %s reserved by Oracle, PostgreSQL or SQL Server and cannot be"
-                        + " created there - name it otherwise with @table / @column.", e.domainClassName(), e.getName(),
-                String.join(", ", found), found.size() > 1 ? "are" : "is"));
+        // Named with the databases that refuse each name, of those the domain writes for (issue 168).
+        String said = io.elasticore.base.model.pub.rules.schema.ReservedWords.warning(
+                e.domainClassName(), e.getName(), found);
+        if (said != null) SourceCode.dslWarnOnce(said);
     }
 }

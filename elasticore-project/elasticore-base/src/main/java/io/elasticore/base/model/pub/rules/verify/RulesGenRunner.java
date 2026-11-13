@@ -1257,6 +1257,8 @@ public final class RulesGenRunner {
             boolean shaped = v3 || kotlin || typescript;
             // Per domain, because the selection is.
             SpecFactory.valueObjectsInDto(dtoCarriesValueObjects(currentModel));
+            // A reserved word is said for the databases this domain writes its DDL for (issue 168).
+            io.elasticore.base.model.pub.rules.schema.ReservedWords.declared(declaredDatabases(currentModel));
             SpecFactory.valueListsInDto(v3 || kotlin || typescript);
             // And a root starts with a class for its behaviour where the
             // rule set that makes one - the one that names entity classes -
@@ -2067,6 +2069,16 @@ public final class RulesGenRunner {
     }
 
     /** A domain's DDL: the project's, with what its env.yml says instead. */
+    /** The databases a domain writes its DDL for; none when it writes none or says one wrongly (said elsewhere). */
+    private java.util.List<io.elasticore.base.model.pub.rules.schema.Database> declaredDatabases(ECoreModel model) {
+        try {
+            return io.elasticore.base.model.pub.rules.schema.DdlConfig.forDomain(projectDdl(), model::getConfig)
+                    .databases;
+        } catch (IllegalArgumentException e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
     private io.elasticore.base.model.pub.rules.schema.DdlConfig ddlOf(final ECoreModel model) {
         try {
             return io.elasticore.base.model.pub.rules.schema.DdlConfig.forDomain(projectDdl(), model::getConfig);

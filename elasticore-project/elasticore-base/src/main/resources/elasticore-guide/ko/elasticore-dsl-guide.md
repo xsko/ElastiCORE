@@ -358,7 +358,7 @@ entity:
 
 #### 4. 이동에 일을 더 하고 싶을 때
 
-이동 자체는 생성 코드가 하고, 더 할 일(배송 번호 기록 등)은 행위 클래스에서 override 합니다:
+이동 자체는 생성 코드가 하고, 더 할 일(배송 번호 기록 등)은 행위 클래스에서 override 합니다. 엔티티의 필드와 같은 이름·같은 타입의 명령 파라미터(필드 `rejectReason` 옆의 `reject: rejectReason: string(500)!`)는 3.0.261117 부터 이동이 직접 저장하고, 그 밖의 파라미터는 이동이 저장하지 않는다고 빌드가 경고합니다:
 
 ```java
 public class PurchaseOrder extends PurchaseOrderBase {
@@ -1209,11 +1209,11 @@ fields:
 
 Oracle, PostgreSQL, SQL Server 가 예약한 단어로 이름 붙은 테이블·컬럼은 그 DB 에서 만들 수 없습니다. Hibernate 는
 기본으로 이름을 따옴표로 감싸지 않기 때문입니다: `order`, `group`, `user`, `date`, `level`, `comment`, `size`,
-`number` 등. 엔티티 `Order` 는 테이블 `order` 가 됩니다. 3.0 코드는 생성할 때 엔티티마다 한 번 이것을 알리고 계속
+`number` 등. 엔티티 `Order` 는 테이블 `order` 가 됩니다. 3.0 코드는 생성할 때 엔티티마다 한 번, 이름마다 거절하는 DB 를 - `ddl.databases` 에 적은 DB 중에서 (`level`·`comment` 는 Oracle 만) - 짚어 알리고 계속
 진행합니다:
 
 ```
-[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
+[Shop] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group (Oracle, PostgreSQL, SQL Server and H2) are reserved words there and cannot be created unquoted - name it otherwise with @table / @column.
 ```
 
 DSL 에서 다른 이름을 주세요. Java 이름은 그대로입니다:

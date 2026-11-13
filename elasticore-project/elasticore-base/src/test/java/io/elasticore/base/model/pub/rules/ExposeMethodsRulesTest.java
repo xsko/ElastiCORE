@@ -157,14 +157,12 @@ public class ExposeMethodsRulesTest {
     // ---- the deprecation's nearest list -------------------------------------------
 
     @Test
-    public void takingTheBatchAloneLeavesPutWhichNoListSays() {
+    public void takingTheBatchAloneLeavesPutWhichUpdateOneSays() {
         EntitySpec e = ticket(null).meta("restexclude", "batchUpdate");
         assertTrue(
                 ControllerBaseRules.restExcludeDeprecation(e)
-                        .equals(
-                                "[Ticket] @restExclude is deprecated, and no"
-                                        + " @expose(methods) list serves the same endpoints: the nearest is"
-                                        + " @expose(methods=\"create,read,search,delete\"), but it also drops PUT /. It still applies."),
+                        .equals("[Ticket] @restExclude is deprecated: list what the controller serves instead,"
+                                + " @expose(methods=\"create,read,search,updateOne,delete\"). It still applies."),
                 ControllerBaseRules.restExcludeDeprecation(e));
     }
 }

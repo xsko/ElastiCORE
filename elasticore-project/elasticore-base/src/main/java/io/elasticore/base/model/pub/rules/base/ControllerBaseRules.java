@@ -218,7 +218,35 @@ public class ControllerBaseRules implements CodeRules {
         m.put("search", new String[] {"search"});
         m.put("update", new String[] {"update", "batchUpdate"});
         m.put("delete", new String[] {"deleteBatch", "deleteById"});
+        // One of the two each (issue 172): edited and deleted a row at a time, or in batches.
+        m.put("updateOne", new String[] {"update"});
+        m.put("updateBatch", new String[] {"batchUpdate"});
+        m.put("deleteOne", new String[] {"deleteById"});
+        m.put("deleteBatch", new String[] {"deleteBatch"});
         return java.util.Collections.unmodifiableMap(m);
+    }
+
+    /** The name as the map has it (updateOne for updateone), or null for one it does not know. */
+    private static String knownName(String name) {
+        for (String key : EXPOSE_METHODS.keySet()) {
+            if (key.equalsIgnoreCase(name)) return key;
+        }
+        return null;
+    }
+
+    /** Whether @expose says schema=false: GET /schema/info is not served. */
+    static boolean schemaLeftOut(EntitySpec e) {
+        if (!e.hasMeta("expose")) return false;
+        for (java.util.Map.Entry<String, String> en : e.metaProperties("expose").entrySet()) {
+            if ("schema".equalsIgnoreCase(en.getKey())) return "false".equalsIgnoreCase(unquoted(en.getValue()));
+        }
+        return false;
+    }
+
+    private static String unquoted(String value) {
+        String v = value == null ? "" : value.trim();
+        if (v.length() >= 2 && (v.startsWith("\"") || v.startsWith("'"))) v = v.substring(1, v.length() - 1);
+        return v.trim();
     }
 
     /** The method names @expose(methods="...") accepts, in the order the guides list them. */
@@ -255,11 +283,19 @@ public class ControllerBaseRules implements CodeRules {
      */
     public static java.util.Set<String> exposeOmitted(EntitySpec e) {
         java.util.Set<String> out = new java.util.LinkedHashSet<String>();
+        if (schemaLeftOut(e)) out.add("schemaInfo");
         String text = exposeMethodsText(e);
         if (text == null) return out;
-        java.util.Set<String> kept = new java.util.HashSet<String>(namesOf(text));
-        for (java.util.Map.Entry<String, String[]> en : EXPOSE_METHODS.entrySet()) {
-            if (!kept.contains(en.getKey())) out.addAll(java.util.Arrays.asList(en.getValue()));
+        // The section ids the listed names serve; every other one is left out.
+        java.util.Set<String> served = new java.util.HashSet<String>();
+        for (String name : namesOf(text)) {
+            String known = knownName(name);
+            if (known != null) served.addAll(java.util.Arrays.asList(EXPOSE_METHODS.get(known)));
+        }
+        for (String[] ids : EXPOSE_METHODS.values()) {
+            for (String id : ids) {
+                if (!served.contains(id)) out.add(id);
+            }
         }
         return out;
     }
@@ -274,10 +310,19 @@ public class ControllerBaseRules implements CodeRules {
         if (!e.hasMeta("expose")) return java.util.Collections.emptyList();
         java.util.List<String> out = new java.util.ArrayList<String>();
         String names = String.join(", ", EXPOSE_METHODS.keySet());
-        for (String key : e.metaProperties("expose").keySet()) {
-            if (!"methods".equalsIgnoreCase(key) && !"pageSize".equalsIgnoreCase(key)) {
+        for (java.util.Map.Entry<String, String> en : e.metaProperties("expose").entrySet()) {
+            String key = en.getKey();
+            if ("schema".equalsIgnoreCase(key)) {
+                String v = unquoted(en.getValue());
+                if (!"true".equalsIgnoreCase(v) && !"false".equalsIgnoreCase(v)) {
+                    out.add(String.format(
+                            "[%s] @expose(schema=%s): schema is true or false; GET /schema/info is served.",
+                            e.getName(), en.getValue()));
+                }
+            } else if (!"methods".equalsIgnoreCase(key) && !"pageSize".equalsIgnoreCase(key)) {
                 out.add(String.format(
-                        "[%s] @expose(%s=...): @expose takes pageSize=N and methods=\"...\"; %s is ignored.",
+                        "[%s] @expose(%s=...): @expose takes pageSize=N, methods=\"...\" and schema=false; %s is"
+                                + " ignored.",
                         e.getName(), key, key));
             }
         }
@@ -286,7 +331,7 @@ public class ControllerBaseRules implements CodeRules {
             boolean any = false;
             java.util.List<String> listed = namesOf(text);
             for (String name : listed) {
-                if (EXPOSE_METHODS.containsKey(name)) {
+                if (knownName(name) != null) {
                     any = true;
                 } else {
                     out.add(String.format(
@@ -300,7 +345,9 @@ public class ControllerBaseRules implements CodeRules {
                         e.getName(), text, names));
             }
             if (e.hasMeta("readonly")) {
-                for (String write : new String[] {"create", "update", "delete"}) {
+                for (String write : new String[] {
+                    "create", "update", "delete", "updateone", "updatebatch", "deleteone", "deletebatch"
+                }) {
                     if (listed.contains(write)) {
                         out.add(String.format(
                                 "[%s] @expose(methods=\"%s\") lists %s, which @readonly takes away;"
@@ -314,28 +361,6 @@ public class ControllerBaseRules implements CodeRules {
         return java.util.Collections.unmodifiableList(out);
     }
 
-    /** What each controller section id answers, as the guides name it. */
-    private static String endpointOf(String id) {
-        switch (id) {
-            case "create":
-                return "POST /";
-            case "read":
-                return "GET /{id}";
-            case "search":
-                return "POST /search";
-            case "update":
-                return "PUT /";
-            case "batchUpdate":
-                return "PUT /batch";
-            case "deleteBatch":
-                return "POST /delete";
-            case "deleteById":
-                return "DELETE /{id}";
-            default:
-                return "GET /schema/info";
-        }
-    }
-
     /**
      * The deprecation of an entity's @restExclude, with the methods list that
      * serves the same endpoints - or, where none does (it takes PUT /batch and
@@ -347,33 +372,36 @@ public class ControllerBaseRules implements CodeRules {
         if (e.hasMeta("readonly")) {
             gone.addAll(java.util.Arrays.asList("create", "update", "batchUpdate", "deleteBatch", "deleteById"));
         }
+        // Every combination has its list now (issue 172): a whole pair by its name,
+        // one of a pair by its own, and GET /schema/info left out by schema=false.
         java.util.List<String> kept = new java.util.ArrayList<String>();
-        java.util.List<String> alsoDropped = new java.util.ArrayList<String>();
-        for (java.util.Map.Entry<String, String[]> en : EXPOSE_METHODS.entrySet()) {
-            boolean all = true;
-            for (String id : en.getValue()) all &= !gone.contains(id);
-            if (all) {
-                kept.add(en.getKey());
-            } else {
-                for (String id : en.getValue()) {
-                    if (!gone.contains(id)) alsoDropped.add(endpointOf(id));
-                }
-            }
+        for (String name : new String[] {"create", "read", "search"}) {
+            if (!gone.contains(name)) kept.add(name);
         }
+        pair(kept, gone, "update", "update", "updateOne", "batchUpdate", "updateBatch");
+        pair(kept, gone, "delete", "deleteById", "deleteOne", "deleteBatch", "deleteBatch");
         String list = String.join(",", kept);
-        if (alsoDropped.isEmpty() && !gone.contains("schemaInfo")) {
-            return String.format(
-                    "[%s] @restExclude is deprecated: list what the controller serves instead,"
-                            + " @expose(methods=\"%s\"). It still applies.",
-                    e.getName(), list);
-        }
-        java.util.List<String> differs = new java.util.ArrayList<String>();
-        if (!alsoDropped.isEmpty()) differs.add("it also drops " + String.join(", ", alsoDropped));
-        if (gone.contains("schemaInfo")) differs.add("GET /schema/info stays");
+        String schema = gone.contains("schemaInfo") ? ", schema=false" : "";
         return String.format(
-                "[%s] @restExclude is deprecated, and no @expose(methods) list serves the same"
-                        + " endpoints: the nearest is @expose(methods=\"%s\"), but %s. It still applies.",
-                e.getName(), list, String.join(" and ", differs));
+                "[%s] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"%s\"%s). It still applies.",
+                e.getName(), list, schema);
+    }
+
+    /** The name for what is left of a pair: both, one of the two, or none. */
+    private static void pair(
+            java.util.List<String> kept,
+            java.util.Set<String> gone,
+            String both,
+            String firstId,
+            String firstName,
+            String secondId,
+            String secondName) {
+        boolean first = !gone.contains(firstId);
+        boolean second = !gone.contains(secondId);
+        if (first && second) kept.add(both);
+        else if (first) kept.add(firstName);
+        else if (second) kept.add(secondName);
     }
 
     /**

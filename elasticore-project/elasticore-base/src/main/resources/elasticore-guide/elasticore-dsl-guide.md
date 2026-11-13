@@ -358,7 +358,7 @@ entity:
 
 #### 4. When the move needs more work
 
-The generated code does the move itself; you override extra work (such as recording a shipping number) in the behavior class:
+The generated code does the move itself; you override extra work (such as recording a shipping number) in the behavior class. A command parameter named as a field of the entity, of the same type (`reject: rejectReason: string(500)!` beside the field `rejectReason`), is stored by the move itself, from 3.0.261117; for any other parameter the build warns that the move does not keep it:
 
 ```java
 public class PurchaseOrder extends PurchaseOrderBase {
@@ -1209,10 +1209,10 @@ whole bound there, or generate the 3.0 code.
 
 A table or a column named with a word Oracle, PostgreSQL or SQL Server reserves cannot be created there, since
 Hibernate quotes nothing by default: `order`, `group`, `user`, `date`, `level`, `comment`, `size`, `number` and so on.
-An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, and goes on:
+An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, naming the databases that refuse each name - of those `ddl.databases` writes for (`level` and `comment` are Oracle's alone) - and goes on:
 
 ```
-[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
+[Shop] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group (Oracle, PostgreSQL, SQL Server and H2) are reserved words there and cannot be created unquoted - name it otherwise with @table / @column.
 ```
 
 Name them otherwise in the DSL; the Java names stay as they are:

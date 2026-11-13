@@ -527,6 +527,38 @@ public final class SourceCode {
     private static final java.util.Set<String> LANGUAGE_NEUTRAL =
             new java.util.HashSet<String>(java.util.Arrays.asList("proto"));
 
+    /**
+     * The text without the single-type imports nothing else in it names. A
+     * wildcard, a static import and a Kotlin alias are kept as they are.
+     */
+    static String withoutUnusedImports(String text) {
+        String[] lines = text.split("\n", -1);
+        StringBuilder body = new StringBuilder();
+        for (String line : lines) {
+            if (!line.startsWith("import ")) body.append(line).append('\n');
+        }
+        String rest = body.toString();
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String t = line.trim();
+            boolean drop = false;
+            if (t.startsWith("import ") && !t.startsWith("import static ") && !t.contains(" as ")) {
+                String path = t.substring("import ".length()).replace(";", "").trim();
+                String simple = path.substring(path.lastIndexOf('.') + 1).replace("`", "");
+                drop = !simple.equals("*")
+                        && !java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(simple) + "\\b")
+                                .matcher(rest)
+                                .find();
+            }
+            if (!drop) {
+                out.append(line);
+                if (i < lines.length - 1) out.append('\n');
+            }
+        }
+        return out.toString();
+    }
+
     public String render() {
         String name = templateName == null ? target : templateName;
         String tmplName = String.format("%s%s.tmpl", templateSet.dir(), name);
@@ -591,6 +623,15 @@ public final class SourceCode {
                     .annotateType(classByText ? projectAddedStill() : java.util.Collections.<AnnoCode>emptyList())
                     .annotateMethods(methodAnnotations)
                     .text();
+        }
+        // A controller narrowed by @expose(methods) / @readonly keeps no import only a
+        // method it left out used (issue 172). The 3.0 code only, and only narrowed:
+        // every other file is written as before.
+        if (templateSet != TemplateSet.COMPATIBLE
+                && templateSet.syntax() != Syntax.TYPESCRIPT
+                && "control".equals(target)
+                && !excludedMethods.isEmpty()) {
+            rendered = withoutUnusedImports(rendered);
         }
         // A package segment Kotlin reserves - the "in" of adapter.in.web,
         // the hexagon's own naming - has to be quoted in Kotlin source, or

@@ -531,6 +531,46 @@ public class OssieExportTest {
      * diffMutation runs the tests again on each mutation in one JVM, and a kept
      * export would be the one generated before it.
      */
+    /**
+     * A @formula that divides an integer column: OSSIE_SQL_2026 makes / true
+     * division (apache/ossie#687), the database divides integers - so its SQL is
+     * kept under the opaque name, not declared portable. A division of decimals,
+     * and a formula without one, stay portable (issue 157).
+     */
+    @Test
+    @DisplayName("a formula dividing an integer column is not declared portable")
+    public void anIntegerDivisionIsNotPortable() throws Exception {
+        String yaml = export(String.join(
+                "\n",
+                "entity:",
+                "  Item:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      itemId: long @id @sequence",
+                "      quantity: int!",
+                "      packSize: int!",
+                "      price: decimal(10.2)",
+                "      rate: decimal(10.2)",
+                "      packs: int @readonly @formula(\"quantity / pack_size\") -- whole packs",
+                "      unit: decimal(10.2) @readonly @formula(\"price / rate\")",
+                "      total: int @readonly @formula(\"quantity * pack_size\")",
+                ""))[0];
+        String packs = fieldEntry(yaml, "packs");
+        assertTrue(packs.contains("dialect: ANSI_SQL"), packs);
+        assertTrue(packs.contains("expression: \"quantity / pack_size\""), packs);
+        assertFalse(packs.contains("sql: "), packs);
+        assertTrue(fieldEntry(yaml, "unit").contains("sql: \"price / rate\""), yaml);
+        assertTrue(fieldEntry(yaml, "total").contains("sql: \"quantity * pack_size\""), yaml);
+    }
+
+    /** A field's entry of a dataset, from its "- name:" line to the next one. */
+    private static String fieldEntry(String yaml, String name) {
+        int start = yaml.indexOf("      - name: " + name + "\n");
+        assertTrue(start >= 0, name + " is not in\n" + yaml);
+        int end = yaml.indexOf("      - name: ", start + 1);
+        return end < 0 ? yaml.substring(start) : yaml.substring(start, end);
+    }
+
     private static String[] export(String model, String... config) throws Exception {
         File project = Files.createTempDirectory("elcore-ossie-filter").toFile();
         File dir = new File(project, "src/main/resources/blueprint/desk");
