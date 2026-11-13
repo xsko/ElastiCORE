@@ -741,7 +741,9 @@ stock.setOnHand(stock.getOnHand().minus(qty));   // 422 if it runs short
 | `Set<T>` | `Set<T>` | Collection |
 | `Map<K,V>` | `Map<K,V>` | Map |
 | `HashMap` | `java.util.HashMap` | Use HashMap directly |
-| `int[]` / `string[]` | Array | Array type |
+| `int[]` / `string[]` | Array | Array type (`Integer[]`, `String[]`); `long[]`, `double[]`, `boolean[]` from 3.0.261117 (3.0 rule engine) |
+
+A DTO field that is a list of values - `List<Long>`, `List<String>`, or with the DSL's words `List<long>`, `List<string>` - is a `List` of the value's type in the 3.0 code (Java, Kotlin; `number[]`, `string[]` in TypeScript), from 3.0.261117. 2.x and the 2.x-compatible output leave it out of the DTO, and the build says so; a list of a type nobody knows (`List<Strng>`) is a warning too.
 
 ### Reference and other types
 > **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for `Object`, which has no JDBC type (stops the build)

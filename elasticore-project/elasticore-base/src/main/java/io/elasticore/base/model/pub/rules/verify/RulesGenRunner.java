@@ -109,6 +109,7 @@ public final class RulesGenRunner {
         this.kotlin = kotlin;
         this.typescript = typescript;
         SpecFactory.valueObjectsInDto(false);
+        SpecFactory.valueListsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
         SpecFactory.referenceRequiredByKey(false);
@@ -1256,6 +1257,7 @@ public final class RulesGenRunner {
             boolean shaped = v3 || kotlin || typescript;
             // Per domain, because the selection is.
             SpecFactory.valueObjectsInDto(dtoCarriesValueObjects(currentModel));
+            SpecFactory.valueListsInDto(v3 || kotlin || typescript);
             // And a root starts with a class for its behaviour where the
             // rule set that makes one - the one that names entity classes -
             // is selected.

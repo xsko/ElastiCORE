@@ -694,7 +694,35 @@ public final class SpecFactory {
                 // A named model type the context cannot serve is dropped, as
                 // isEnableInDTO drops it: a relation whose counterpart has no
                 // DTO travels only through its flattened id.
-                if (!enabledInDto(f)) continue;
+                if (!enabledInDto(f)) {
+                    // A list of values (List<Long>, List<string>) is no relation:
+                    // 2.x dropped it as one, without a word. The 3.0 code keeps
+                    // it; the 2.x-compatible output drops it as 2.x did, and says so.
+                    String item = valueListItem(f);
+                    if (item == null) {
+                        if (f.getTypeInfo().isList()) {
+                            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                                    "[%s] %s.%s: %s - no entity, DTO, enum or value type is named %s; the field is"
+                                            + " left out of the DTO",
+                                    dto.getIdentity().getDomainId(),
+                                    dto.getIdentity().getName(),
+                                    f.getName(),
+                                    f.getTypeInfo().getDefaultTypeName(),
+                                    f.getTypeInfo().getCoreItemType()));
+                        }
+                        continue;
+                    }
+                    if (!valueListsInDto) {
+                        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                                "[%s] %s.%s: a list of values is left out of the DTO in the 2.x-compatible output, as"
+                                        + " 2.x left it out; the 3.0 code (output = 'v3') carries it",
+                                dto.getIdentity().getDomainId(),
+                                dto.getIdentity().getName(),
+                                f.getName()));
+                        continue;
+                    }
+                    f = valueListCopy(f, dto, item);
+                }
                 if (searchable && f.hasAnnotation(
                         io.elasticore.base.model.dto.DataTransferAnnotation.META_SEARCHABLE_BYPASS)) {
                     continue;
@@ -2034,6 +2062,33 @@ public final class SpecFactory {
         return out.toString();
     }
 
+    /** Whether DTOs carry a list of values, List<Long> (v3, Kotlin, TypeScript; 2.x does not). */
+    private static volatile boolean valueListsInDto;
+
+    public static void valueListsInDto(boolean on) {
+        valueListsInDto = on;
+    }
+
+    /**
+     * The Java type of a list field's item when it is a value - Long for
+     * List<Long> and List<long>, String for List<string> - or null when the
+     * field is no list, or its item names no value type.
+     */
+    static String valueListItem(Field f) {
+        if (f.getTypeInfo() == null || !f.getTypeInfo().isList()) return null;
+        String item = f.getTypeInfo().getCoreItemType();
+        if (item == null || item.isEmpty()) return null;
+        io.elasticore.base.model.entity.BaseFieldType base =
+                io.elasticore.base.model.entity.BaseFieldType.findByName(item);
+        if (base == io.elasticore.base.model.entity.BaseFieldType.UNKNOWN
+                || base == io.elasticore.base.model.entity.BaseFieldType.LIST
+                || base == io.elasticore.base.model.entity.BaseFieldType.OBJECT
+                || base.getName().endsWith("[]")) {
+            return null;
+        }
+        return base.getWrapperClassName();
+    }
+
     /** Whether DTOs carry an entity's embedded value objects (v3 and Kotlin; 2.x does not). */
     private static volatile boolean valueObjectsInDto;
 
@@ -2124,6 +2179,23 @@ public final class SpecFactory {
                 .type(f.getTypeInfo().getInitTypeInfo())
                 .description(f.getDescription())
                 .annotationMap(anno)
+                .build();
+    }
+
+    /** The field as a list of the value's Java type: List<string> is List<String>, Set<long> is Set<Long>. */
+    private static Field valueListCopy(Field f, io.elasticore.base.model.dto.DataTransfer dto, String item) {
+        String declared = f.getTypeInfo().getInitTypeInfo();
+        int lt = declared.indexOf('<');
+        String outer = lt > 0 ? declared.substring(0, lt).trim() : "List";
+        if (item.startsWith("java.lang.")) item = item.substring("java.lang.".length());
+        String type = outer + "<" + item + ">";
+        if (type.equals(declared)) return f;
+        return Field.builder()
+                .name(f.getName())
+                .parentMetaInfo(f.getParentMetaInfo() != null ? f.getParentMetaInfo() : dto.getMetaInfo())
+                .type(type)
+                .description(f.getDescription())
+                .annotationMap(f.getAnnotationMap())
                 .build();
     }
 
