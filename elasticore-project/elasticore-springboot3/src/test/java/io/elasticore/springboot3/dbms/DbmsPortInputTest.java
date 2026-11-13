@@ -47,6 +47,47 @@ public class DbmsPortInputTest {
 
         org.springframework.data.domain.Page<String> page(
                 String code, org.springframework.data.domain.Pageable pageable);
+
+        String byIds(java.util.List<Long> ids);
+
+        String byCodes(String[] codes);
+
+        String byNumbers(long[] numbers);
+
+        int deleteByIds(java.util.List<Long> ids);
+
+        int insertRows(java.util.List<Search> rows);
+    }
+
+    /**
+     * A lone list or array of values is bound by its name - IN (:ids) - as one
+     * value is (issue 164). It was read by its getters, and :ids bound as null.
+     */
+    @Test
+    public void aListOfValuesAloneIsBoundByItsName() throws Exception {
+        java.util.List<Long> ids = java.util.Arrays.asList(1L, 3L);
+        port.byIds(ids);
+        assertEquals(ids, ((Map<?, ?>) inputOf("byIds")).get(parameterName("byIds", 0)));
+        String[] codes = {"A", "B"};
+        port.byCodes(codes);
+        assertSame(codes, ((Map<?, ?>) inputOf("byCodes")).get(parameterName("byCodes", 0)));
+        long[] numbers = {1L, 2L};
+        port.byNumbers(numbers);
+        assertSame(numbers, ((Map<?, ?>) inputOf("byNumbers")).get(parameterName("byNumbers", 0)));
+    }
+
+    /** A delete by a list of values is one statement with the list bound; a list of rows stays a batch. */
+    @Test
+    public void aDeleteByAListOfValuesIsOneStatement() throws Exception {
+        java.util.List<Long> ids = java.util.Arrays.asList(1L, 3L);
+        port.deleteByIds(ids);
+        ArgumentCaptor<Object> input = ArgumentCaptor.forClass(Object.class);
+        Mockito.verify(executor).executeUpdate(any(), eq("deleteByIds"), input.capture());
+        assertEquals(ids, ((Map<?, ?>) input.getValue()).get(parameterName("deleteByIds", 0)));
+
+        java.util.List<Search> rows = java.util.Arrays.asList(new Search(), new Search());
+        port.insertRows(rows);
+        Mockito.verify(executor).executeBatchUpdate(any(), eq("insertRows"), eq(rows));
     }
 
     /** A Pageable among a method's parameters is the page it asks for, not page 0 of 50. */

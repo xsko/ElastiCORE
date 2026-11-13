@@ -267,6 +267,11 @@ public class DbmsServiceProxyFactory {
                 if (BeanUtils.isSimpleValueType(firstParamType)) {
                     isSelfObj = false;
                 }
+                // So is a list or an array of values - ids: list<long> for IN (:ids). It was
+                // read by its getters (getIds() on an ArrayList), and :ids bound as null.
+                if (isValueCollection(parameters[0])) {
+                    isSelfObj = false;
+                }
             }
             else{
                 isSelfObj = false;
@@ -354,6 +359,24 @@ public class DbmsServiceProxyFactory {
                 return null;
 
             return list;
+        }
+
+        /**
+         * Whether a parameter is a collection or an array of simple values -
+         * List&lt;Long&gt;, Set&lt;String&gt;, long[] - bound by its name to an IN
+         * clause. A list of DTOs or maps is not: it stays the input of a batch.
+         */
+        static boolean isValueCollection(Parameter parameter) {
+            Class<?> type = parameter.getType();
+            if (type.isArray()) {
+                Class<?> item = type.getComponentType();
+                return item.isPrimitive() || isSimpleValueType(item);
+            }
+            if (!java.util.Collection.class.isAssignableFrom(type)) return false;
+            if (!(parameter.getParameterizedType() instanceof java.lang.reflect.ParameterizedType generic))
+                return false;
+            Type[] args = generic.getActualTypeArguments();
+            return args.length == 1 && args[0] instanceof Class<?> item && isSimpleValueType(item);
         }
 
         /**

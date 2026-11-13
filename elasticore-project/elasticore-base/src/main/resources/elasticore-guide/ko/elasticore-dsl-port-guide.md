@@ -668,7 +668,7 @@ int affected = orderPortService.insertOrderBatch(items);  // 2 (총 영향 행 �
 - List 요소 중 null은 건너뜀
 - DTO 요소뿐 아니라 `Map` 요소의 List도 지원
 - **단순 값 List는 배치 대상이 아님**: `list<long>`, `list<string>` 등 단순 타입 List는
-  기존처럼 IN 절 바인딩(`WHERE id IN (:ids)`) 용도로 한 번만 실행됩니다
+  기존처럼 IN 절 바인딩(`WHERE id IN (:ids)`) 용도로 한 번만 실행됩니다 - 메서드의 유일한 파라미터여도 같습니다 (3.0.261116 까지는 혼자 온 List 가 null 로 바인딩됨). 결과 행의 enum 필드는 `@db` 코드(`fromCode`), 상수 이름, 순번으로 읽습니다.
 
 ```yaml
 # 단순 값 List는 IN 절 바인딩 (배치 아님)
