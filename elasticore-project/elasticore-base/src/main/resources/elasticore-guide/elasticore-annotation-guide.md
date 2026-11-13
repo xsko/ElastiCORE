@@ -20,7 +20,7 @@ Product:
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (not generated)
 
 Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update` and
-`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`. `GET /schema/info` stays.
+`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
 The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use case (`XxxUseCase`) promises only the writes listed.
 The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before.
 ```yaml
@@ -1510,10 +1510,10 @@ entity:
 
 A table or a column named with a word Oracle, PostgreSQL or SQL Server reserves cannot be created there, since
 Hibernate quotes nothing by default: `order`, `group`, `user`, `date`, `level`, `comment`, `size`, `number` and so on.
-An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, and goes on:
+An entity `Order` is the table `order`. The 3.0 code says so when it generates, once per entity, naming the databases that refuse each name - of those `ddl.databases` writes for (`level` and `comment` are Oracle's alone) - and goes on:
 
 ```
-[Shop] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table / @column.
+[Shop] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group (Oracle, PostgreSQL, SQL Server and H2) are reserved words there and cannot be created unquoted - name it otherwise with @table / @column.
 ```
 
 Name them otherwise in the DSL; the Java names stay as they are:

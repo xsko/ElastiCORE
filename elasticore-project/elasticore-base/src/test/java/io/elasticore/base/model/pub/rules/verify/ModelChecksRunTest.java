@@ -99,8 +99,9 @@ public class ModelChecksRunTest {
                         "      code: uuid",
                         ""));
         assertEquals("0", run[0], run[1]);
-        String said = "[Probe] Order: the table order, the column group are reserved by Oracle, PostgreSQL or SQL"
-                + " Server and cannot be created there - name it otherwise with @table / @column.";
+        String said = "[Probe] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group"
+                + " (Oracle, PostgreSQL, SQL Server and H2) are reserved words there and cannot be created unquoted -"
+                + " name it otherwise with @table / @column.";
         assertTrue(run[1].contains(said), run[1]);
         assertEquals(run[1].indexOf(said), run[1].lastIndexOf(said), run[1]);
         assertTrue(

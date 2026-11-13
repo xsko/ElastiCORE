@@ -49,6 +49,28 @@ public class SearchDtoBaseRules implements CodeRules {
               .before("*/");
     }
 
+    /**
+     * A search value is no longer than the column it is compared with: the
+     * length declared (string(200), or the DTO field's own string(50)) is its
+     * @Size, as in the DTO; the search body is validated already (@Valid).
+     * After every other rule - a project's own @Size (rule dev guide, a like
+     * needs 2 or more characters) stays as it wrote it - and only on a field
+     * still a String of its own. Clean output only (issue 169).
+     */
+    @Rule(value = "srchdto-size", target = "srchdto", order = 1, phase = Rule.Phase.TAIL)
+    void size(EntitySpec e) {
+        if (ctx(e).compatible()) return;
+        for (FieldSpec f : e.fields()) {
+            if (!f.isStringType() || f.isList() || f.maxLength() <= 0) continue;
+            io.elasticore.base.model.pub.rules.FieldCode code = ctx(e).field(f);
+            if (code == null || code.isRemoved()) continue;
+            // A field another rule turned into something else - a yes or no for isnull, a list - is no text.
+            String declared = code.declaredType();
+            if (declared != null && !"String".equals(declared) && !"java.lang.String".equals(declared)) continue;
+            code.ensure(AnnoCode.raw("jakarta.validation.constraints.Size", "@Size(max=%d)", f.maxLength()));
+        }
+    }
+
     @Rule(value = "srchdto-field", target = "srchdto", order = 10)
     void field(EntitySpec e, FieldSpec f) {
         if (searchedByItsFlattenedId(f)) {

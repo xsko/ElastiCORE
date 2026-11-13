@@ -318,6 +318,7 @@ public final class OssieSemanticModelExporter {
         // The fields, keyed by column: a column is in a table once.
         Map<String, String> fields = new LinkedHashMap<String, String>();
         List<String> omitted = new ArrayList<String>();
+        integerColumns = integerColumnsOf(all);
         for (Field f : all) {
             if (f.getTypeInfo().isList() || f.hasAnnotation("transient")) continue;
             if (sensitive(f)) {
@@ -576,7 +577,12 @@ public final class OssieSemanticModelExporter {
         // ignore, rather than a claim it would read and get wrong.
         String formula = f.getAnnotationValue("formula");
         String expression = formula != null && !formula.isEmpty() ? formula : column;
-        b.append(expression("        ", expression));
+        // OSSIE_SQL_2026 makes / true division (5 / 2 is 2.5, apache/ossie#687); the
+        // database divides integer columns as integers (2). A formula that divides
+        // with an integer column means another thing in the portable language, so it
+        // keeps its SQL under the opaque name - what the database computes (issue 157).
+        boolean integerDivision = formula != null && dividesIntegers(formula, integerColumns);
+        b.append(integerDivision ? opaque("        ", expression) : expression("        ", expression));
 
         EnumStorage stored = en == null ? null : storage(f, en);
         String type = stored != null ? stored.datatype : ossieType(f);
@@ -1005,16 +1011,58 @@ public final class OssieSemanticModelExporter {
      * the opaque ANSI_SQL. The text of the expression is written as given.
      */
     private static String expression(String indent, String sql) {
+        if (!OssieSql.portable(sql)) return opaque(indent, sql);
         StringBuilder b = new StringBuilder();
         b.append(indent).append("expression:\n");
-        if (OssieSql.portable(sql)) {
-            b.append(indent).append("  sql: ").append(yaml(sql)).append('\n');
-        } else {
-            b.append(indent).append("  dialects:\n");
-            b.append(indent).append("    - dialect: ").append(OssieSql.OPAQUE).append('\n');
-            b.append(indent).append("      expression: ").append(yaml(sql)).append('\n');
-        }
+        b.append(indent).append("  sql: ").append(yaml(sql)).append('\n');
         return b.toString();
+    }
+
+    /** The SQL under the opaque dialect name: what the database runs, which a consumer may ignore. */
+    private static String opaque(String indent, String sql) {
+        StringBuilder b = new StringBuilder();
+        b.append(indent).append("expression:\n");
+        b.append(indent).append("  dialects:\n");
+        b.append(indent).append("    - dialect: ").append(OssieSql.OPAQUE).append('\n');
+        b.append(indent).append("      expression: ").append(yaml(sql)).append('\n');
+        return b.toString();
+    }
+
+    /** The columns of the entity being exported that hold an integer (int, long). */
+    private java.util.Set<String> integerColumns = java.util.Collections.emptySet();
+
+    private static java.util.Set<String> integerColumnsOf(List<Field> fields) {
+        java.util.Set<String> out = new java.util.HashSet<String>();
+        for (Field f : fields) {
+            if (f.getTypeInfo() == null || f.getTypeInfo().isList()) continue;
+            io.elasticore.base.model.entity.BaseFieldType t = f.getTypeInfo().getBaseFieldType();
+            if (t == null) continue;
+            switch (t) {
+                case P_INT:
+                case P_LONG:
+                case INTEGER:
+                case LONG:
+                case BIGINTEGER:
+                    out.add(columnOf(f).toLowerCase(java.util.Locale.ROOT));
+                    break;
+                default:
+                    break;
+            }
+        }
+        return out;
+    }
+
+    private static final java.util.regex.Pattern IDENTIFIER = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    /** Whether the formula divides (a / outside its literals) and names an integer column. */
+    static boolean dividesIntegers(String formula, java.util.Set<String> integerColumns) {
+        String bare = formula.replaceAll("'(?:[^']|'')*'", " ");
+        if (bare.indexOf('/') < 0) return false;
+        java.util.regex.Matcher m = IDENTIFIER.matcher(bare);
+        while (m.find()) {
+            if (integerColumns.contains(m.group().toLowerCase(java.util.Locale.ROOT))) return true;
+        }
+        return false;
     }
 
     /**

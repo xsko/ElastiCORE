@@ -145,12 +145,14 @@ public class DddStateRules implements CodeRules {
                     c.varLine("fieldList", "open fun %s(%s) {", move.command(), params)
                      .varLine("fieldList", "    %s(\"%s\", %s.%s, %s)", mover, move.command(), type, move.to(), join(from, ", "));
                     for (String line : stampLines(stamps, m, move.to(), kt)) c.varLine("fieldList", "%s", line);
+                    for (String line : kept(e, cmd, kt)) c.varLine("fieldList", "%s", line);
                     if (event != null) c.varLine("fieldList", "    raise%s()", event);
                     c.varLine("fieldList", "}");
                 } else {
                     c.varLine("fieldList", "public void %s(%s) {", move.command(), params)
                      .varLine("fieldList", "    %s(\"%s\", %s.%s, %s);", mover, move.command(), type, move.to(), join(from, ", "));
                     for (String line : stampLines(stamps, m, move.to(), kt)) c.varLine("fieldList", "%s", line);
+                    for (String line : kept(e, cmd, kt)) c.varLine("fieldList", "%s", line);
                     if (event != null) c.varLine("fieldList", "    raise%s();", event);
                     c.varLine("fieldList", "}");
                 }
@@ -204,6 +206,48 @@ public class DddStateRules implements CodeRules {
     }
 
     /**
+     * What a lifecycle command keeps of what it is given: a parameter named as
+     * a field of the entity, of the same type, is stored there once the move is
+     * made - reject(rejectReason) keeps the reason. Any other parameter is said:
+     * the generated move cannot know where it goes, the request has to send it,
+     * and it was dropped without a word (issue 170).
+     */
+    private static List<String> kept(EntitySpec e, EntitySpec.CommandSpec cmd, boolean kt) {
+        List<String> out = new ArrayList<String>();
+        if (cmd == null) return out;
+        List<String> unused = new ArrayList<String>();
+        for (FieldSpec p : cmd.params()) {
+            FieldSpec field = field(e, p.name());
+            // In Kotlin an optional parameter cannot fill a required field.
+            boolean fits = !kt || p.required() || field == null || !field.required();
+            if (field != null
+                    && fits
+                    && !field.isEntityRef()
+                    && !field.isList()
+                    && simple(field.typeName()).equals(simple(p.typeName()))) {
+                out.add(String.format("    this.%s = %s%s", field.name(), p.name(), kt ? "" : ";"));
+            } else {
+                unused.add(p.name());
+            }
+        }
+        if (!unused.isEmpty()) {
+            io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
+                    "[%s] %s.%s(%s): the generated move does not keep %s - name a parameter as the field it fills"
+                            + " (a field of %s of the same type is set by the move), or override %s in %s and keep it"
+                            + " there",
+                    e.domainClassName(),
+                    e.getName(),
+                    cmd.name(),
+                    String.join(", ", unused),
+                    String.join(", ", unused),
+                    e.getName(),
+                    cmd.name(),
+                    e.getName()));
+        }
+        return out;
+    }
+
+    /**
      * A command that moves several lifecycles: every one is checked before
      * any moves, so a refusal - in whichever lifecycle - changes nothing.
      */
@@ -247,6 +291,7 @@ public class DddStateRules implements CodeRules {
          .varLine("fieldList", kt ? "open fun %s(%s) {" : "public void %s(%s) {", command, params);
         for (String line : body) c.varLine("fieldList", "%s", line);
         for (String line : moves) c.varLine("fieldList", "%s", line);
+        for (String line : kept(e, cmd, kt)) c.varLine("fieldList", "%s", line);
         for (String event : events) c.varLine("fieldList", "    raise%s()%s", event, end);
         c.varLine("fieldList", "}");
 

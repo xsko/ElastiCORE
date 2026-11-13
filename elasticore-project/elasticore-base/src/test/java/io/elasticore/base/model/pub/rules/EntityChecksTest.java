@@ -7,6 +7,7 @@ import io.elasticore.base.model.pub.rules.base.EntityChecks;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
@@ -64,9 +65,9 @@ public class EntityChecksTest {
                 .addField(loader.parse("userName", "string(10)"))
                 .addField(loader.parse("note", "string(10) @column(comment)"));
         assertEquals(
-                "[Shop] Order: the table order, the column group, the column comment are reserved by Oracle,"
-                        + " PostgreSQL or SQL Server and cannot be created there - name it otherwise with @table /"
-                        + " @column.",
+                "[Shop] Order: the table order (Oracle, PostgreSQL, SQL Server and H2), the column group (Oracle,"
+                        + " PostgreSQL, SQL Server and H2), the column comment (Oracle) are reserved words there and"
+                        + " cannot be created unquoted - name it otherwise with @table / @column.",
                 EntityChecks.reservedNames(order));
     }
 
@@ -74,9 +75,49 @@ public class EntityChecksTest {
     public void oneReservedNameIsSaidInTheSingular() {
         EntitySpec user = spec("Account").meta("table", "app.user").addField(loader.parse("accountId", "long @id"));
         assertEquals(
-                "[Shop] Account: the table user is reserved by Oracle, PostgreSQL or SQL Server and cannot be created"
-                        + " there - name it otherwise with @table / @column.",
+                "[Shop] Account: the table user (Oracle, PostgreSQL, SQL Server and H2) is a reserved word there and"
+                        + " cannot be created unquoted - name it otherwise with @table / @column.",
                 EntityChecks.reservedNames(user));
+    }
+
+    /**
+     * Only the databases the domain writes its DDL for are named: comment, level
+     * and size are refused by Oracle alone, so a domain on H2 and PostgreSQL
+     * hears nothing of them (issue 168).
+     */
+    @Test
+    public void onlyTheDatabasesWrittenForAreNamed() {
+        EntitySpec comment = spec("Comment")
+                .addField(loader.parse("commentId", "long @id"))
+                .addField(loader.parse("level", "int"))
+                .addField(loader.parse("size", "int"))
+                .addField(loader.parse("group", "string(10)"));
+        io.elasticore.base.model.pub.rules.schema.ReservedWords.declared(java.util.Arrays.asList(
+                io.elasticore.base.model.pub.rules.schema.Database.H2,
+                io.elasticore.base.model.pub.rules.schema.Database.POSTGRESQL));
+        try {
+            assertEquals(
+                    "[Shop] Comment: the column group (PostgreSQL and H2) is a reserved word there and cannot be"
+                            + " created unquoted - name it otherwise with @table / @column.",
+                    EntityChecks.reservedNames(comment));
+            EntitySpec oracleOnly = spec("Comment")
+                    .addField(loader.parse("commentId", "long @id"))
+                    .addField(loader.parse("level", "int"));
+            assertNull(EntityChecks.reservedNames(oracleOnly));
+        } finally {
+            io.elasticore.base.model.pub.rules.schema.ReservedWords.declared(null);
+        }
+    }
+
+    /** Every word the checks look for is one some database of the four reserves. */
+    @Test
+    public void everyWordHasADatabase() {
+        for (String word : io.elasticore.base.model.pub.rules.mybatis.MyBatisSchemaRules.RESERVED) {
+            assertFalse(
+                    io.elasticore.base.model.pub.rules.schema.ReservedWords.refusing(word)
+                            .isEmpty(),
+                    word);
+        }
     }
 
     @Test
@@ -98,8 +139,8 @@ public class EntityChecksTest {
     public void aPlainAbstractHasNoTableButItsColumnsAreSaid() {
         EntitySpec frame = spec("Order").meta("abstract", null).addField(loader.parse("group", "string(10)"));
         assertEquals(
-                "[Shop] Order: the column group is reserved by Oracle, PostgreSQL or SQL Server and cannot be created"
-                        + " there - name it otherwise with @table / @column.",
+                "[Shop] Order: the column group (Oracle, PostgreSQL, SQL Server and H2) is a reserved word there and"
+                        + " cannot be created unquoted - name it otherwise with @table / @column.",
                 EntityChecks.reservedNames(frame));
     }
 
@@ -110,8 +151,8 @@ public class EntityChecksTest {
                 .addField(loader.parse("taskId", "long @id"))
                 .addField(loader.parse("level", "Level"));
         assertEquals(
-                "[Shop] Task: the column level is reserved by Oracle, PostgreSQL or SQL Server and cannot be created"
-                        + " there - name it otherwise with @table / @column.",
+                "[Shop] Task: the column level (Oracle) is a reserved word there and cannot be created unquoted -"
+                        + " name it otherwise with @table / @column.",
                 EntityChecks.reservedNames(e));
     }
 

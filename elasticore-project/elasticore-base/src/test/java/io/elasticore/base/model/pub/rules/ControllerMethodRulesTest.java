@@ -6,6 +6,7 @@ import io.elasticore.base.model.pub.rules.base.ControllerBaseRules;
 import org.junit.jupiter.api.Test;
 
 import static io.elasticore.base.model.pub.rules.Ctx.ctx;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -143,14 +144,15 @@ public class ControllerMethodRulesTest {
 
         assertTrue(
                 said.contains(
-                        "[Order] @expose(size=...): @expose takes pageSize=N and methods=\"...\"; size is ignored."),
+                        "[Order] @expose(size=...): @expose takes pageSize=N, methods=\"...\" and schema=false; size is"
+                                + " ignored."),
                 said.toString());
         // pageSize is one of its words.
         assertTrue(said.stream().noneMatch(s -> s.contains("@expose(pageSize=")), said.toString());
         assertTrue(
                 said.contains(
                         "[Order] @expose(methods=\"read,serch,create\"): serch is not one of create, read, search,"
-                                + " update, delete; it serves nothing."),
+                                + " update, delete, updateOne, updateBatch, deleteOne, deleteBatch; it serves nothing."),
                 said.toString());
         assertTrue(
                 said.contains("[Order] @expose(methods=\"read,serch,create\") lists create, which @readonly takes away;"
@@ -159,21 +161,30 @@ public class ControllerMethodRulesTest {
     }
 
     @Test
-    public void restExcludeDeprecation_namesTheSameListOrTheNearestAndWhatItChanges() {
-        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteById"))
-                .equals("[Order] @restExclude is deprecated: list what the controller serves instead,"
-                        + " @expose(methods=\"create,read,search,update\"). It still applies."));
-        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteBatch"))
-                .equals("[Order] @restExclude is deprecated, and no @expose(methods) list serves the same endpoints:"
-                        + " the nearest is @expose(methods=\"create,read,search,update\"), but it also drops"
-                        + " DELETE /{id}. It still applies."));
-        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "schemaInfo"))
-                .equals("[Order] @restExclude is deprecated, and no @expose(methods) list serves the same endpoints:"
-                        + " the nearest is @expose(methods=\"create,read,search,update,delete\"), but GET /schema/info"
-                        + " stays. It still applies."));
-        assertTrue(ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "update, read"))
-                .equals("[Order] @restExclude is deprecated: list what the controller serves instead,"
-                        + " @expose(methods=\"create,search,delete\"). It still applies."));
+    public void restExcludeDeprecation_namesTheListThatServesTheSame() {
+        // Every combination has its list now: one of a pair by its own name, schema=false for GET /schema/info.
+        // deleteBatch calls deleteById: leaving out the one leaves out both.
+        assertEquals(
+                "[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,update\"). It still applies.",
+                ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteById")));
+        assertEquals(
+                "[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,update,deleteOne\"). It still applies.",
+                ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteBatch")));
+        assertEquals(
+                "[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,update,delete\", schema=false). It still applies.",
+                ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "schemaInfo")));
+        assertEquals(
+                "[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,search,delete\"). It still applies.",
+                ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "update, read")));
+        // Both of a pair gone: neither name is listed.
+        assertEquals(
+                "[Order] @restExclude is deprecated: list what the controller serves instead,"
+                        + " @expose(methods=\"create,read,search,update\"). It still applies.",
+                ControllerBaseRules.restExcludeDeprecation(order().meta("restexclude", "deleteById, deleteBatch")));
         // With @readonly: only the reads are left either way.
         assertTrue(ControllerBaseRules.restExcludeDeprecation(
                         order().meta("readonly", null).meta("restexclude", "search"))

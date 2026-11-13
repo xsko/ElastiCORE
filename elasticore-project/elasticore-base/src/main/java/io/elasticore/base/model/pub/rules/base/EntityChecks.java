@@ -52,27 +52,25 @@ public final class EntityChecks {
      */
     public static String reservedNames(EntitySpec e) {
         if (e.hasMeta("embeddable")) return null;
-        List<String> found = new ArrayList<String>();
+        List<String[]> found = new ArrayList<String[]>();
         // A plain @abstract is a frame with no table of its own; @abstract(entity) has one.
         if (!e.hasMeta("abstract") || e.isAbstractEntity()) {
             String table = tableName(e);
             String bare = table.indexOf('.') >= 0 ? table.substring(table.lastIndexOf('.') + 1) : table;
             if (MyBatisSchemaRules.RESERVED.contains(bare.toLowerCase(java.util.Locale.ROOT))) {
-                found.add("the table " + bare);
+                found.add(new String[] {"table", bare});
             }
         }
         for (FieldSpec f : e.fields()) {
             if (!isOneColumn(e, f)) continue;
             String column = f.dbColumnName() != null ? f.dbColumnName() : StringUtils.camelToSnake(f.name());
             if (MyBatisSchemaRules.RESERVED.contains(column.toLowerCase(java.util.Locale.ROOT))) {
-                found.add("the column " + column);
+                found.add(new String[] {"column", column});
             }
         }
         if (found.isEmpty()) return null;
-        return String.format(
-                "[%s] %s: %s %s reserved by Oracle, PostgreSQL or SQL Server and cannot be created there - name it"
-                        + " otherwise with @table / @column.",
-                e.domainClassName(), e.getName(), String.join(", ", found), found.size() > 1 ? "are" : "is");
+        // Named with the databases that refuse each name, of those the domain writes for (issue 168).
+        return io.elasticore.base.model.pub.rules.schema.ReservedWords.warning(e.domainClassName(), e.getName(), found);
     }
 
     /**
