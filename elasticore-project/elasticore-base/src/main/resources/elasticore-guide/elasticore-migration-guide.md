@@ -7,7 +7,7 @@ as they are.
 
 ```gradle
 - implementation      'io.elasticore:elasticore-base:2.2.260703'
-+ implementation      'io.elasticore:elasticore-base:3.0.261117-rc17'
++ implementation      'io.elasticore:elasticore-base:3.0.261118-rc18'
 ```
 
 **The generated source code does not change** - only a few places where a 2.x defect was fixed differ, and the list is in

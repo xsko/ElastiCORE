@@ -1,3 +1,294 @@
+## 3.0.261118-rc18
+
+### Changes (conditions - `==`, `!=`, `>=`, `<=`)
+
+#### A condition compares with `==`, `!=`, `>=` and `<=`
+- Why: the annotation parser read any `=` in the arguments as the start of a key=value pair, so `@invariant(total >= 0, ...)`
+  lost its condition and `@count` had to say `status is VISIBLE`.
+- What: in `@count`, `@invariant` and `@specification` an `=` that is part of `==`, `>=`, `<=` or `!=` is a comparison,
+  and the arguments are one value. `@invariant` and `@specification` gain `>=`, `<=`, `==` and `!=` on numbers and on
+  `.size` (`@invariant(totalAmount >= 0, '...')`). Kotlin compares for equality with `compareTo` (`total!!.compareTo(7)
+  == 0`) except an `Int` against a whole number - `==` between a `Long` and an `Int` literal does not compile -
+  TypeScript with `===` / `!==`. `@count` (unreleased) says `status == VISIBLE and pinned == false` instead of `is`.
+- Takes effect: an `@invariant` or `@specification` written with `>=`, `<=`, `==` or `!=` was dropped without a word
+  (the guide said so); it is now generated - an invariant refuses a write that breaks it (422).
+- Unchanged: every other annotation is read as before (`@search(>=)` included); a single `=` is still a key=value pair.
+- Not done: a quote escaped inside a condition's message (`'can\'t'`) is not read as one; a `'text'` value of `@count`
+  that holds `==`.
+- Checked: `HasAssignmentTest` (the parser, `@search` unchanged), `ConditionComparisonTest` (`@invariant` and
+  `@specification` in Java, Kotlin - a `Long` and a `Double` with `compareTo`, an `Int` and a count as written - and
+  TypeScript), `CountTest`, the samples' `@count` (`BoardCountTest`, template-kt `OnDeleteTest`), the whole
+  `elasticore-base` suite, `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
+- Files: `AbstractModelLoader.java`, `DddCondition.java`, `SpecFactory.java`, `elasticore-annotation-guide.md`,
+  `elasticore-rule-guide.md`, `elasticore-dsl-guide.md` (en, ko), the samples' blueprints.
+
+### New Features (derived values - `@count`)
+
+#### `@count(Comment.post[, status == VISIBLE])`: a count kept on a row of the rows that point to it
+- Why (issue 179): a post's `commentCount` and `likeCount`, where a comment and a like are roots of their own, were
+  counted again by hand in the same transaction as every change of a comment or a like. `@compute` reaches only the
+  aggregate's own members.
+- What: on the counting entity, `commentCount: long @count(Comment.post, status == VISIBLE)`. The counted entity's
+  CoreService touches the count at each write of a row - a save, an update (the row it pointed to before and the one
+  it points to now), a delete by key and by search, an update by condition, a command that moves its state - and a
+  row an `@onDelete(cascade)` removes says so too. The runtime's new `io.elasticore.springboot3.domain.Counts`
+  counts each touched row again, once, just before the transaction commits:
+  after locking the counting row (a pessimistic select), with its own statement, rows in key order:
+  `update Post x set x.commentCount = (select count(c) from Comment c where c.postId = x.postId and ...) where
+  x.postId = :id`. A row as written is read at the commit, after `beforeSave` and listeners; a touch made while
+  counting (a before-commit handler) is counted too; a `REQUIRES_NEW` transaction counts its own. Concurrent
+  writes are handled by that design; it is not load-tested.
+- The field is the model's: `@readonly`, `@updatable(false)` and `@default(0)` are implied - no request writes it,
+  a save of the counting row does not write it back, a new row starts at 0. A soft-deleted row is not counted.
+- Form: the condition compares with `==` (`status == VISIBLE and pinned == false`) - see `condition-comparisons.md`.
+  A field is compared with an enum constant, `true`, `false`, a number or `'text'`.
+- Misuse stops the build: no `Entity.reference`, a reference that does not point to the counting entity, a value
+  of the wrong kind for the field, a count that is not a `long` or an `int`, a counting entity without a single key, a
+  counted entity written by its aggregate's root or by a cascading collection (count it with `@compute`); MyBatis
+  and the 2.x-compatible output.
+- Not done: a row written around the generated service is not counted until a write through it touches the count;
+  no backfill of existing rows (the guide gives the statement), no index on the counted column, no `DEFAULT 0` in the
+  DDL; the condition is equality only; the eventually consistent reading through a domain event, for later.
+- Unchanged: a model without `@count` generates the same.
+- Samples: `elasticore-template-ddd` board - `Post.commentCount` (visible comments: `Comment` gains a `status`
+  with `hide` / `restore`) and `Post.likeCount` (new root `PostLike`); its DDL files gain the columns and the
+  table. `elasticore-template-kt` content - `Article.commentCount @count(Comment.article, approved == true)`; its DDL
+  files gain the column.
+- Checked:
+  - `CountsTest` (runtime, H2 + Spring transactions, on Hibernate 6 and 7 - springboot3 and springboot4): the
+    counting row selected `for update` before the count statement; counted once at the commit; a `REQUIRES_NEW` transaction
+    inside one that touched a count, and one in an after-commit handler; a row written by a before-commit handler; a
+    row read at the commit.
+  - `CountTest` (generator): the JPQL (enum constant, boolean, soft delete), each hook in the Java CoreService
+    (save, update, update by condition, delete by key, delete by search, the command), the Kotlin method and hooks,
+    the layered key through the relation, the column `updatable = false` with `0L`, the DTO's read-only property,
+    the generated Kotlin test's query stub, the MyBatis and 2.x-compatible refusals, four misuses.
+  - `BoardCountTest` (template-ddd, HTTP on H2): three comments and a like counted; a hidden comment leaves the
+    count and a restored one comes back; a deleted comment takes its reply out of the count with it (`@onDelete`);
+    a like taken back; a delete by search; a request sending `commentCount` writes nothing.
+  - template-kt `OnDeleteTest.anArticleCountsItsApprovedComments` (Kotlin on the generated schema): an approved
+    comment counted and an unapproved one not; a deleted one leaves the count. The whole module's 180 tests pass.
+- Files: `Counts.java` (springboot3, shared with springboot4), `CountRules.java` (new), `EntitySpec.java`,
+  `SpecFactory.java` (`countsOf`, `prepareCounts`), `RulesGenRunner.java`, `RuleCatalog.java`,
+  `DddCommandRules.java` (the command's hook), `OnDeleteRules.java` (a cascaded row's counts, the shared test stub),
+  the tests above, the samples' blueprints and DDL files, `elasticore-annotation-guide.md` (en, ko).
+
+### Documentation (the pet store, README, tour, getting started)
+
+#### The pet store uses `@count` and `@onDelete`; the site guide, README and tour say what is new
+- Why: `@count`, `@onDelete`, `@search(words:...)` and `elcoreValidate` were in the guides only; the pet store's DSL
+  guide page still listed "a product with items cannot be deleted" as a rule the DSL could not say (the database's
+  foreign key) - since `@deleted` such a product is taken off the catalog - and "default order" as missing, which
+  `@sort(name+)` already does. Its numbers at the top were typed by hand and stale.
+- What: the pet store's `Category.productCount: long @count(Product.category)` (discontinued products not counted;
+  `data.sql` counts the seeded rows once) and `Product.category @onDelete(restrict)` (a category a product on sale
+  names answers 409 `restricted`; one whose products are all discontinued is still refused, by the foreign key - 409
+  `referenced`). `dsl-guide.html` (built by `guide/build_guide.py`): the one search box and the default order in
+  "1. 상품 둘러보기", the count and the restrict in "2. 상품 관리" (now all DSL), `@onDelete`/`@count` in "어디서
+  동작하나", the review's rows 7, 9 and 10; the numbers at the top are counted by the script (DSL lines, generated
+  and hand-written Java, the TypeScript client). README, tour and getting started: `@count`, `@onDelete`, the search
+  box, and `elcoreValidate` in CI; the DSL guide's annotation summary gains `@onDelete` and `@count` (en, ko).
+- Checked: `ShopFlowTest.anAdministratorKeepsTheCategoriesTidy` (Fish counts 4; a new category 0, a product 1,
+  discontinued 0; a request's `productCount` is not written; 409 `restricted` while a product is on sale, 409
+  `referenced` after), the pet store's tests, its DDL files written again (`product_count`).
+- Files: the pet store's `entity.yml`, `data.sql`, `db/schema-*.sql`, `ShopFlowTest.java`, `guide/build_guide.py`,
+  `static/dsl-guide.html`; `README.md`, `docs/tour.md`, `docs/getting-started.md`, `elasticore-dsl-guide.md` (en, ko).
+
+### New Features (build - `elcoreValidate`)
+
+#### `./gradlew elcoreValidate`: the DSL and the generated files checked for CI, nothing written
+- Why: 2.x had `elcore -Pmode=valid` for a CI step; a project on the 3.0 rule engine had no way to check that its DSL
+  passes and that the generated files in git are what the DSL generates now, short of generating and diffing.
+- What: a plugin task that runs the build as configured (architecture, language, modules, DDL, merge) with nothing
+  written but `build/elasticore/validate.md`. It fails (exit 1) on a model check failure or a failed generation, a
+  generated file whose text the DSL would change (the DDL schema, orm.xml and the messages bundle included), one the
+  DSL no longer produces, a Flyway migration the build would write, and a file with a conflict; `-Pstrict` fails on a
+  DSL warning too. A file the developer edited and the build leaves alone passes and is listed; so does a file the
+  build takes for the developer's (no header, no base in `.elasticore/cache`), as not checked. A file the build would
+  write that is not there fails only where the project keeps its generated sources in git (one the generator owns is
+  there - a generate-once skeleton does not count); a project that generates them in each build is checked for its DSL
+  and the generated files it commits. The DDL is read off the sources as the run would leave them (laid out in a
+  temporary directory). A build with `output = 'v2'` runs 2.x's `elcore -Pmode=valid`. Not checked: `schema.yml`, the
+  context map, the Ossie model.
+- Unchanged: `elcore3`, the build and `elcoreMigrationCheck`; the task runs only when asked for.
+- Checked: `ValidateTest` (an up-to-date project passes and nothing is written; a changed DSL fails and names the file;
+  an entity taken out fails on the files no longer produced; an edit of the developer's passes and is listed; a model
+  check failure; a warning with and without `-Pstrict`; a project without generated files; the DDL read off the
+  sources the run would leave, stale after a DSL change; a Flyway migration not written yet fails and neither it nor
+  the state is written; orm.xml and the messages bundle without merging; committed skeletons alone; a project without
+  its cache), `ElastiCorePluginTest` (`elcoreValidate` registered, not run by the build, the build's settings and
+  `-Pstrict` passed, the 2.x check for `output = 'v2'`), `elasticore-template-ddd` (passes; generated sources not in
+  git). The DDL and migration tests still pass.
+- Files: `RulesGenRunner.java` (`finishValidate`, the DDL overlay, orm.xml and messages in a check), `DdlRun.java` (a
+  dry run), `ElastiCorePlugin.java`, `elasticore-rule-guide.md`, `elasticore-dev-guide.md` (en, ko).
+
+### Bug Fixes (DDL - Envers' revision table)
+
+#### `revinfo.rev` numbered as Hibernate numbers it: an identity column on H2 and SQL Server
+- Why: an `@audited` entity's write failed on H2 with `NULL not allowed for column "REV"` - Hibernate inserted
+  `insert into revinfo (revtstmp,rev) values (?,default)`. Envers' revision number is Hibernate's native key, and
+  Hibernate's dialects (6.5, 6.6 and 7 alike) make it an identity column where the database has one - H2, SQL Server -
+  and a sequence on PostgreSQL and Oracle. The DDL wrote a plain column with `revinfo_seq` for every database.
+  `elasticore-template-kt`'s test turned Envers off around it.
+- What: the DDL writes `rev INTEGER GENERATED BY DEFAULT AS IDENTITY` on H2 and `rev INT IDENTITY(1,1)` on SQL Server,
+  without `revinfo_seq`; PostgreSQL and Oracle are unchanged (`rev` plus `revinfo_seq`, by 50). Hibernate 6.5 writes the
+  same for H2 itself (`rev integer generated by default as identity`). A Flyway history: a new one makes the sequence
+  for PostgreSQL and Oracle only; one built before is told, in its H2 and SQL Server migrations only, to review
+  `revinfo.rev is now generated by the database` - the table has to be made again by hand there (SQL Server cannot
+  alter a column into an identity). The state records the key's kind (`nativeKey`, `nativeOnly`), and a state without
+  it reads as before.
+- Unchanged: PostgreSQL and Oracle; a project without `@audited`.
+- Checked: `JpaSchemaReaderTest` (the four databases' DDL, the first migration's sequence on PostgreSQL and Oracle only,
+  the state's round trip, the review change for an older history), `elasticore-template-kt` with Envers on - deleting an
+  article writes its revision (`cms_article_aud`, `revinfo`) - and its 180 tests, `elasticore-template-ddd`'s tests,
+  the whole `elasticore-base` suite. The three samples' committed `schema-h2.sql` and `schema-sqlserver.sql` were
+  written again (`elasticore-template`'s SQL Server file also gains the `VARCHAR(MAX)` it was missing for a JPA long
+  text).
+- Files: `Column.java`, `Database.java`, `Schema.java`, `SchemaDiff.java`, `SchemaWriter.java`, `JpaSchemaReader.java`,
+  `elasticore-env-guide.md` (en, ko), the samples' DDL.
+
+### New Features (references - `@onDelete`)
+
+#### `@onDelete(cascade | restrict | setNull)`: what becomes of the rows that point to a deleted row
+- Why (issue 180): deleting a post that comments point to failed on the foreign key (409 `referenced`), or, without
+  one, left comments that point to nothing. The cascade - and a comment's replies - was written by hand in the
+  service, before the delete, in the same transaction.
+- What: written on the side that points (`post: Post @onDelete(cascade)` on Comment). The CoreService of the deleted
+  row carries it out before each delete it makes - by its key, a batch, and each row a search deletes, as it deletes
+  it - in the same transaction. Per row: its `restrict`s (409 `"code": "restricted"`, naming what still points),
+  its `setNull`s, its `cascade`s. A cascaded row's own `@onDelete` references come first, then it is removed through
+  JPA (its soft delete and delete guards apply). Each row is visited once: rows that point to each other are refused
+  with 409 `"code": "cycle"`. Any refusal undoes the whole delete.
+- `setNull` is one JPQL update - a domain entity does not let its reference be set from outside; a `@Version` moves
+  (`update versioned`; a row the same delete then removes is read again first), audit fields and Envers revisions do not. Soft-deleted rows are left out of `restrict` and
+  `cascade`; they still hold their foreign key.
+- How: in the deleted root's CoreService, `onDeletePost(em, row)` and a method per entity on the cascade's way
+  (static in Java; members in Kotlin, beside an `@access` companion object), JPQL over the reference's id
+  (`x.postId`) or the relation in layered code (`x.post.postId`). No service is handed another: the constructors are
+  unchanged. The templates' delete-by-search line takes an inline slot (`deleteEachOpen` / `deleteEachClose`), empty
+  unless `@onDelete` fills it. A project that keeps its own copy of `v3/service.tmpl` or `kt/service.tmpl` needs the
+  two slots in its delete-by-search line, or its delete by search runs no `@onDelete`.
+- Misuse stops the build: another value; a field that is no single reference to an entity of the domain; `setNull`
+  on a required reference; the `mappedBy` side of a one-to-one; a composite-key target; a target that is a member of
+  an aggregate, or a `cascade` from one; MyBatis and the 2.x-compatible output. A cascade into a soft-deleting entity
+  from a target deleted outright is a warning.
+- Generated Kotlin service tests: an entity that others point to with `@onDelete` gets its mocked entity manager's
+  `createQuery` stubbed with a query that finds nothing. A test you edited keeps your version and needs that stub.
+- Not done: the cascaded rows' domain events; `ON DELETE` in the DDL.
+- Unchanged: a model without `@onDelete` generates the same.
+- Samples: `elasticore-template-ddd` has a `board` domain (Post, Comment, Report, Bookmark - hexagonal; its DDL
+  files gain the `brd_` tables, and the Ossie model's name becomes `billing_board_catalog_shop`), and its catalog's
+  `Book.author` says `@onDelete(setNull)`. `elasticore-template-kt`: the content domain cascades an article's
+  comments and their replies and clears its bookmarks; `Ticket.agent` says `@onDelete(restrict)` on the `@access`
+  entity Agent.
+- Checked:
+  - `OnDeleteTest` (generator): Java, Kotlin and layered output, the order, soft-delete conditions, `update
+    versioned`, the cycle refusal, the Kotlin members beside the `@access` companion, the generated test's stub, the
+    MyBatis and 2.x-compatible refusals, the misuses, the aggregate-member refusals, the soft-delete warning.
+  - `BoardOnDeleteTest` (template-ddd, HTTP on H2): a search deleting a versioned post and the post quoting it;
+    comments and replies deleted and the bookmark cleared; a
+    reported post refused with 409 `restricted`; a reported comment on the cascade's way refusing the post with
+    nothing deleted; a cycle of replies refused with 409 `cycle`, deleted once broken.
+  - `CatalogApiTest.onDeleteSetNull` (template-ddd, layered): an author deleted by key and by search, the books kept
+    without it, the book's version moved.
+  - template-kt (Kotlin on the generated H2 schema): `OnDeleteTest` - an article's comments, their replies and its
+    bookmark; replies two deep; the whole module's 179 tests, the generated service tests among them.
+- Files: `OnDeleteRules.java` (new), `EntitySpec.java`, `SpecFactory.java`, `RuleCatalog.java`,
+  `ServiceAccessRules.java` (the inline slots), `v3/service.tmpl`, `kt/service.tmpl`, the tests above, the samples'
+  blueprints, `DddSampleApp.java`, the template-ddd DDL files, `OssieExportTest.java`,
+  `elasticore-annotation-guide.md` (en, ko).
+
+### Changes (Ossie export - enum codes)
+
+#### An enum field's stored values and their meanings are data in the export
+- Why (issue 174): the codes of an enum column were only a sentence in `ai_context`
+  (`"Codes: NONE = Disabled, YYYY, ..."`). A program had to parse it: a code whose label is the same is written alone,
+  and a label holding `, ` or ` = ` cannot be read back.
+- What: the field's ELASTICORE extension carries them beside the enum's name:
+  `data: {"enumeration": "DatePart", "codes": {"NONE": "Disabled", "YYYY": "YYYY"}}`. The keys are what is stored -
+  the `@db` code, the name under `@jpa:Enumerated(STRING)`, or the ordinal (`"0": "SMALL (Small)"`). `ai_context`
+  stays as it was.
+- Changes the output: every exported enum field gets the `codes` key, so `semantic_model.yml` changes wherever there
+  is an enum. The samples' committed models are regenerated with it (pet store, `elasticore-template-ddd`,
+  `elasticore-template-ddd-mybatis`); nothing else in them moves. Not the 2.x-compatible output: the export is
+  `ossie-export` only.
+- Checked: `OssieExportTest.anEnumsCodesAreData` - a code enum with a label equal to its code and one holding ` = `,
+  and an ordinal enum; the `ai_context` sentence unchanged.
+- Files: `OssieSemanticModelExporter.java`, `OssieExportTest.java`, the three `semantic_model.yml`,
+  `elasticore-rule-guide.md` (en, ko).
+
+### New Features (DDD references - `referenceColumn: field`)
+
+#### `referenceColumn: field` names a reference's column for the field: `author: Member` -> `author_id`
+- Why (issue 171): a reference named for its role (`author: Member`, `editor: Member`) got `author_member_id` under
+  `referenceColumn: short`, and a root's reference to its own kind kept `parent_post_id`. A hand-written schema
+  usually says `author_id`, `parent_id`; the only way there was a `@db(...)` on each field of each entity.
+- What: a third value of `config: referenceColumn`. Each reference by id (ddd, hexagonal) is stored in the column
+  `<field>_id`, a root's reference to its own kind included. A field's own `@db` / `@column` still wins. The id field
+  keeps its name (`authorMemberId`): only the table changes.
+- Unchanged: the default and `short` mean what they meant; a project that does not write `field` generates the same.
+- Checked: `SelfReferenceByIdTest.referenceColumnFieldNamesTheColumnForTheField` generates a hexagonal project with
+  `author` (required), `editor`, `reviewer @db(checked_by)` and `parent` and reads the PostgreSQL DDL and the entity:
+  `author_id BIGINT NOT NULL`, the foreign keys on `author_id`, `editor_id`, `checked_by` and `parent_id`, no
+  `author_member_id`, and the id fields `authorMemberId` / `parentPostId`.
+- Files: `IdReferences.java`, `SelfReferenceByIdTest.java`, `elasticore-env-guide.md` (en, ko).
+
+### New Features (search - `@search(words:...)`)
+
+#### One search box over several fields: `keyword: string(50) @search(words:title, body, author.nickname)`
+- Why (issue 182): a search box that looks in the title, the body and the author's name had to be a hand-written
+  `Specification`: split the words, an OR over the fields per word with a LEFT JOIN for the author, an AND over the
+  words, the like escaped.
+- What: a search DTO field with `@search(words:a, b, c.d)`. Its text is split on white space (the ideographic
+  space too); every word has to be found, each in any of the fields - a contains ignoring case, `%` and `_` as
+  characters (as `@search(like)`). The first five words are searched. A to-one relation path is joined LEFT, each
+  once. A path through a collection is asked per word with EXISTS: each word may be in another member, and the row
+  comes once without a DISTINCT. The 3.0 JPA mapper (Java, Kotlin) calls the runtime's new
+  `io.elasticore.springboot3.mapper.Words.match`.
+- Misuse: a path that is not a text field of the entity is said by a DSL warning and left out; when no path is left
+  the build stops - the property would match every row, and a delete or update by the condition would act on all.
+- Not in: MyBatis (`mode: mybatis`) says so in a warning and does not search by it. The 2.x-compatible output says
+  so and leaves the property out of the search DTO.
+- Form: no space after `words:` - YAML reads `: ` as a key (the form the issue sketched does not load).
+- Unchanged: a model without the form generates the same.
+- Pet store: `ProductSrchDTO` is now declared, with `keyword` beside the conditions `@expose` derived before
+  (`productId`, `name`, `description`, `categoryId`) - the same properties, so the web client's `categoryId` search
+  stays; their order changed, and with it the order of the Lombok all-args constructor's parameters.
+- Checked:
+  - `WordsTest` (runtime, H2 + Hibernate): any field, every word, escaping, the ideographic space, LEFT JOIN, a
+    two-hop path (`author.mentor.nickname`), a collection path - two matching members give one row, two words in
+    two members match - and a collection path sorted by a related field (no DISTINCT to break the ORDER BY).
+  - `SearchWordsTest` (generator): the Java and Kotlin mapper lines, the DTO's `@Size(max=50)` and description, the
+    three kinds of wrong path, the build stopping when none is left, the MyBatis warning, the 2.x-compatible output
+    leaving the property out.
+  - Pet store `ProductSrchDTO.keyword` is generated, compiled and searched over HTTP by `WordsSearchCheck` (to-one
+    paths) - on H2 in `SchemaValidateTest`, and on PostgreSQL, Oracle and SQL Server in the databases job. The
+    collection path is checked on H2 only.
+- Files: `Words.java` (springboot3, shared with springboot4), `MapperSpecRules.java`, `SearchDtoBaseRules.java`,
+  `MyBatisSearchRules.java`, `SpecFactory.java`, the tests above, pet store `dto.yml`, `SchemaValidateTest.java`,
+  `SchemaValidateOnDatabase.java`, `elasticore-annotation-guide.md` and `elasticore-dsl-guide.md` (en, ko).
+
+### New Features (TypeScript client)
+
+#### `configureApi` and a per-call `RequestInit` in the generated TypeScript client
+- Why (issue 176): the client could set only a base URL. An API on another origin needs `credentials: 'include'`
+  for its session cookie, a token needs an `Authorization` header, a test or a server (SSR) needs its own `fetch`,
+  and one call may need an `AbortSignal` - none of these could be passed without editing `apiSupport.ts`.
+- What: `apiSupport.ts` gains `configureApi({ baseUrl?, fetch?, init? })`. `init` is a `RequestInit`, or a function
+  called for each request (sync or async). Every generated function (`create`, `findById`, `search`, ... the
+  lifecycle commands, `signIn`, `signOut`, `me`) takes an optional `init?: RequestInit` last; `request` and
+  `requestOrNull` take it too. Headers merge `Content-Type`, then the configured ones, then the call's - the later
+  one wins, whatever its case. `setApiBaseUrl` stays.
+- Unchanged: a client that calls neither sends the same request as before (method, `Content-Type`, body) to the
+  same URL with the global `fetch`. Existing callers compile unchanged: the new parameter is optional and last.
+- Checked: `check/apiSupport.test.ts` in `elasticore-template-kt` runs the generated `apiSupport.ts` in node - the
+  request without configuration, and a configured base URL, fetch, function `init` read for each request, and a
+  per-call `Headers` and `cache` over it (15 tests pass). `elcore3tsVerify -Pstrict` compiles the generated
+  clients; the pet store's `webBuild` (`noUnusedLocals`) builds. `TypeScriptModelTest` and
+  `SignInAndReferencesTest` assert the generated signatures and calls.
+- Files: `ts/apiSupport.tmpl`, `TypeScriptApiRules.java`, `TypeScriptModelTest.java`, `SignInAndReferencesTest.java`,
+  `elasticore-template-kt/src/main/ts/check/apiSupport.test.ts`, `elasticore-rule-guide.md` (en, ko).
+
 ## 3.0.261117-rc17
 
 ### Bug Fixes (DTO - lists of values and arrays)
