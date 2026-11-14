@@ -10,6 +10,7 @@ CREATE TABLE ps_category (
     description NVARCHAR(3000) NOT NULL,
     story VARCHAR(MAX),
     icon VARBINARY(MAX),
+    product_count BIGINT,
     PRIMARY KEY (category_id)
 );
 

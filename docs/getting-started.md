@@ -61,6 +61,11 @@ without signing in answers 401 "Sign in to create Product", and a price of 0 ans
 From here on a change starts in the model: `./gradlew build` and `bootRun` run `elcore3` before compiling, so the code
 never lags behind the model.
 
+In CI, put `./gradlew elcoreValidate -Pstrict` before `build`: it fails when the DSL does not pass or a generated file
+you commit is not what the DSL generates now, and writes nothing but `build/elasticore/validate.md`. Commit
+`.elasticore/cache` with the generated files; a project that generates them in each build is checked for its DSL and
+for what it commits, such as the DDL ("Check in CI" in the rule guide).
+
 ## Building ElastiCORE from source
 
 Run `./gradlew publishToMavenLocal` in a clone of this repository — on a JDK 17 to 22; the build downloads the JDK 8

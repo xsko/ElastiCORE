@@ -38,7 +38,7 @@ git clone https://github.com/xsko/ElastiCORE.git && cd ElastiCORE
 ```
 
 <http://localhost:8080> 을 열면 로그인(`user`/`user`, `admin`/`admin`), 장바구니, 주문이 있는 pet store 가 뜹니다.
-서버는 [YAML 162줄](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/petstore/model/)에서
+서버는 [YAML 164줄](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/petstore/model/)에서
 생성되고, 손으로 쓴 것은 주문 접수(부가세, 할인, 주문일), 회원 가입, 데모 계정입니다 - 7개 클래스, 주석 포함 269줄.
 `/dsl-guide.html` 은 업무마다 DSL 한 줄과 그 줄이 만든 코드를 나란히 보여 줍니다.
 
@@ -139,7 +139,9 @@ create Product", 가격 0 은 400 "price must be positive" 로 답합니다. `bu
 | 권한·소유 | `@access(read=owner, create=user)`, `@owner(customerId)` |
 | 로그인·비밀번호 | `@signin`, `@login`, `@password` (PBKDF2 해시, 응답·검색에서 제외) |
 | 생명주기 | `states:` - `ship: PLACED -> SHIPPED`, 지울 수 있는 상태, 화면용 `canShip(dto)` |
-| 파생 값 | `@snapshot(item.unitCost)`, `@compute(unitCost * quantity)` |
+| 파생 값 | `@snapshot(item.unitCost)`, `@compute(unitCost * quantity)`, `@count(Product.category)` - 행에 유지되는 개수 |
+| 가리키는 행이 있는 삭제 | `@onDelete(restrict)` - 상품이 남은 분류의 삭제는 409; `cascade`, `setNull` |
+| 검색 | `@search(like)`, 검색창 하나로 여러 필드: `@search(words:name, description, category.name)` |
 | 업무 지표·용어 | `metrics:` - `revenue: sum(PurchaseOrder.total) where status != CANCELLED`, `@terms` |
 | 도메인 경계 | `context: uses / publishes` - 아무도 열지 않은 경계를 넘는 참조는 빌드가 거절 |
 | 외부 연결 | `port:` - HTTP·SQL·gRPC 를 인터페이스로 선언 |
@@ -148,6 +150,8 @@ create Product", 가격 0 은 400 "price must be positive" 로 답합니다. `bu
 같은 모델을 설정 한 줄로 다르게 읽습니다: `language = 'kotlin'`, `architecture = 'ddd'`, Spring Boot 플러그인 버전,
 TypeScript 클라이언트는 `./gradlew elcore3ts`, 일부 규칙만 쓰려면 `env.yml` 에
 `publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]`.
+CI 에서는 `./gradlew elcoreValidate -Pstrict` 가 DSL 이 통과하지 않거나 커밋된 생성 파일이 지금 DSL 이 만드는 것과 다르면
+실패합니다 - 보고서 말고는 아무것도 쓰지 않습니다.
 
 **[둘러보기](docs/tour.ko.md)** 에서 하나하나를 생성된 코드, 실제 요청과 함께 자세히 봅니다.
 

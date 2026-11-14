@@ -226,7 +226,9 @@ OrderLine:
 | 권한·소유 | `@access(read=owner, create=user)`, `@owner(customerId)` |
 | 로그인·비밀번호 | `@login`, `@password` (PBKDF2 해시, 응답·검색에서 제외) |
 | 생명주기 | `states:` - 상태 확인·이동·이벤트, 지울 수 있는 상태(`delete:`), 화면용 `canShip(dto)`·`canDelete(dto)` |
-| 파생 값 | `@snapshot`, `@compute` |
+| 파생 값 | `@snapshot`, `@compute`, `@count` - 이 행을 가리키는 행의 수, 그쪽 서비스가 유지 |
+| 가리키는 행이 있는 삭제 | `@onDelete(cascade\|restrict\|setNull)` - 상품이 남은 분류: 409 `restricted` |
+| 검색창 하나 | `@search(words:name, description, category.name)` - 모든 단어가 필드 중 어디엔가 |
 | 검증 | `!`, `@min(0.01, '...')`, `@email`, `@past` - 서버 400 과 같은 문구의 TS 검증 |
 | 업무 지표·용어 | `metrics:` (매출 = 취소 제외 합계), `@terms` |
 | 기본 정렬 | `@sort(name+)` - 요청이 정렬을 말하지 않을 때 |
@@ -276,6 +278,9 @@ processManager:                              config:
   2 ACCEPTED`, 엔티티는 필드 부분), 그리고 기준 프로젝트에서 2.x 가 만드는 239개 파일 전부(`0 differ / 0 missing /
   0 extra`: 2.x 버그 수정으로 달라지는 4개는 이름을 정해 허용, 1개는 import 순서만 다름). 이 두 비교는 각 파일의 첫
   줄(내용 해시·시각), 한 번만 생성되는 파일 표시 주석의 표기, 줄바꿈 문자, 끝 공백을 보지 않습니다.
+- **우리 CI 에서도**: `./gradlew elcoreValidate -Pstrict` 는 설정된 빌드를 그대로 돌리되 `build/elasticore/validate.md`
+  말고는 아무것도 쓰지 않고, DSL 이 통과하지 않거나 DSL 이 바꿀 생성 파일(DDL, Flyway 마이그레이션 포함)이 있으면,
+  `-Pstrict` 면 DSL 경고에도 실패합니다.
 - **동작으로 확인**: 권한 응답은 HTTP로, 업무 지표의 SQL은 실제 DB로, 시맨틱 모델의 모든 컬럼은 DB 메타데이터로 대조.
 - **측정**: 검색 필드 하나를 더하면 DSL 은 1줄, 생성 코드는 9개 파일에서 39줄이 바뀌고, 같은 DSL 로 두 번 생성하면
   130개 파일 중 달라지는 파일이 없습니다(각 파일 첫 줄의 해시·시각 제외) - [변경 증폭 벤치마크](benchmarks/change-amplification.ko.md).

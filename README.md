@@ -42,7 +42,7 @@ git clone https://github.com/xsko/ElastiCORE.git && cd ElastiCORE
 ```
 
 Then open <http://localhost:8080> — a pet store with sign-in (`user`/`user`, `admin`/`admin`), a cart and orders.
-Its server is generated from [162 lines of YAML](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/petstore/model/);
+Its server is generated from [164 lines of YAML](elasticore-project/elasticore-sample-petstore/src/main/resources/blueprint/petstore/model/);
 by hand are placing an order (VAT, discount, date), signing up and the demo accounts — 7 classes, 269 lines with
 their comments.
 `/dsl-guide.html` shows, business area by business area, each DSL line next to the code it generated.
@@ -144,7 +144,9 @@ regeneration (the merge above); commit `.elasticore/cache` with the generated fi
 | Access and ownership | `@access(read=owner, create=user)`, `@owner(customerId)` |
 | Sign-in and passwords | `@signin`, `@login`, `@password` (PBKDF2 hash; never in a response or a search) |
 | Lifecycle | `states:` — `ship: PLACED -> SHIPPED`, which states may be deleted, `canShip(dto)` for screens |
-| Derived values | `@snapshot(item.unitCost)`, `@compute(unitCost * quantity)` |
+| Derived values | `@snapshot(item.unitCost)`, `@compute(unitCost * quantity)`, `@count(Product.category)` — a count kept on the row |
+| Deleting what others point to | `@onDelete(restrict)` — a category that products still name answers 409; `cascade`, `setNull` |
+| Search | `@search(like)`, one search box over several fields: `@search(words:name, description, category.name)` |
 | Business measures and terms | `metrics:` — `revenue: sum(PurchaseOrder.total) where status != CANCELLED`, `@terms` |
 | Domain boundaries | `context: uses / publishes` — the build refuses a reference across a boundary nobody opened |
 | Calls outside | `port:` — HTTP, SQL, gRPC declared as interfaces |
@@ -153,6 +155,8 @@ regeneration (the merge above); commit `.elasticore/cache` with the generated fi
 The same model, read differently by one setting: `language = 'kotlin'`, `architecture = 'ddd'`, the Spring Boot
 plugin's version, `./gradlew elcore3ts` for the TypeScript client, or only some rules —
 `publisher: rules: [jpa-springboot-kt, ddd-aggregate, …]` in `env.yml`.
+In CI, `./gradlew elcoreValidate -Pstrict` fails when the DSL does not pass or a committed generated file is not what
+the DSL generates now — writing nothing but a report.
 
 **[Take the tour](docs/tour.md)** for each of these at length, with the generated code and real requests.
 

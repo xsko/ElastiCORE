@@ -653,6 +653,8 @@ Item:
 | 필드 | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | 저장할 때마다 계산 |
 | 필드 | `@stamp(SHIPPED)` | 생명주기가 그 상태에 마지막으로 들어간 시각 (`states:` 의 "상태에 들어간 시각") |
 | 필드 | `@deleted` | 삭제가 행을 남기고 여기에 시각을 씀. 어떤 조회도 다시 찾지 않음 (`elasticore-annotation-guide.md` 의 "@deleted") |
+| 참조 | `@onDelete(cascade\|restrict\|setNull)` | 서비스로 행을 지울 때 그 행을 가리키는 행들: 함께 지움, 삭제 거절(409 `restricted`), 참조를 비움 (`elasticore-annotation-guide.md` 의 "@onDelete") |
+| 필드 | `@count(Comment.post[, status == VISIBLE])` | 이 행을 가리키는 다른 엔티티 행의 수. 그 엔티티의 서비스가 쓸 때마다 유지 (`elasticore-annotation-guide.md` 의 "@count") |
 
 상세: `elasticore-annotation-guide.md` 의 "@access / @owner", "@password / @login", "@snapshot / @compute".
 

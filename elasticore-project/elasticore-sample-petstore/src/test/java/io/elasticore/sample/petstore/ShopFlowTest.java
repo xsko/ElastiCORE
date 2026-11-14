@@ -81,6 +81,57 @@ class ShopFlowTest {
                 .andExpect(jsonPath("$.unitCost").value(10.00));
     }
 
+    /**
+     * Category.productCount @count(Product.category): kept by the product service, discontinued products
+     * not counted; Product.category @onDelete(restrict): a category a product still names is not deleted.
+     */
+    @Test
+    void anAdministratorKeepsTheCategoriesTidy() throws Exception {
+        // The seeded Fish: four products, counted once by data.sql.
+        mvc.perform(get("/api/petstore/category/1000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productCount").value(4));
+        MockHttpSession admin = signIn("admin", "admin");
+        String created = mvc.perform(json(post("/api/petstore/category"), "{\"name\":\"Insects\",\"description\":\"six legs\"}")
+                        .session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productCount").value(0))
+                .andReturn().getResponse().getContentAsString();
+        long category = ((Number) com.jayway.jsonpath.JsonPath.read(created, "$.categoryId")).longValue();
+        // A request cannot write the count.
+        mvc.perform(json(put("/api/petstore/category"), "{\"categoryId\":" + category
+                        + ",\"name\":\"Insects\",\"description\":\"six legs\",\"productCount\":99}").session(admin))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/petstore/category/" + category))
+                .andExpect(jsonPath("$.productCount").value(0));
+        String product = mvc.perform(json(post("/api/petstore/product"),
+                        "{\"name\":\"Stick Insect\",\"description\":\"looks like a twig\",\"categoryId\":" + category + "}")
+                        .session(admin))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long productId = ((Number) com.jayway.jsonpath.JsonPath.read(product, "$.productId")).longValue();
+        mvc.perform(get("/api/petstore/category/" + category))
+                .andExpect(jsonPath("$.productCount").value(1));
+
+        // The product still names it: the category stays.
+        String refused = mvc.perform(delete("/api/petstore/category/" + category).session(admin))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("restricted"))
+                .andReturn().getResponse().getContentAsString();
+        System.out.println("RESTRICTED " + refused);
+        mvc.perform(get("/api/petstore/category/" + category)).andExpect(status().isOk());
+
+        // Discontinued: no longer counted.
+        mvc.perform(delete("/api/petstore/product/" + productId).session(admin)).andExpect(status().isOk());
+        mvc.perform(get("/api/petstore/category/" + category))
+                .andExpect(jsonPath("$.productCount").value(0));
+        // restrict looks at products on sale; the discontinued row is kept and still names the category, so
+        // the database's foreign key refuses the delete in its turn.
+        mvc.perform(delete("/api/petstore/category/" + category).session(admin))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("referenced"));
+    }
+
     @Test
     void aVisitorCannotChangeTheCatalogNorOrder() throws Exception {
         mvc.perform(json(post("/api/petstore/category"), "{\"name\":\"Fake\",\"description\":\"x\"}"))

@@ -61,6 +61,11 @@ Spring Web, Spring Data JPA, Validation, Lombok, H2 를 고릅니다(기본값�
 모델에서 시작합니다: `./gradlew build` 와 `bootRun` 은 컴파일 전에 `elcore3` 를 먼저 돌리므로 코드가 모델보다
 뒤처지지 않습니다.
 
+CI 에서는 `build` 앞에 `./gradlew elcoreValidate -Pstrict` 를 둡니다: DSL 이 통과하지 않거나 커밋한 생성 파일이 지금 DSL 이
+만드는 것과 다르면 실패하고, `build/elasticore/validate.md` 말고는 아무것도 쓰지 않습니다. `.elasticore/cache` 는 생성 파일과
+함께 커밋합니다. 빌드할 때마다 생성하는 프로젝트는 DSL 과, DDL 처럼 커밋하는 것을
+점검합니다(rule guide 의 "CI 에서 점검").
+
 ## ElastiCORE 를 소스에서 빌드하기
 
 이 저장소를 받아 `./gradlew publishToMavenLocal` 을 실행하고(JDK 17~22, 컴파일에 쓰는 JDK 8·17 툴체인이 없으면
