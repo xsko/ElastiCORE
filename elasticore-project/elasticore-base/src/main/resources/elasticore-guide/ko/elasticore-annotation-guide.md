@@ -728,18 +728,18 @@ Bookmark:
 - 지워지는 루트의 CoreService 에 생성됩니다: `onDeletePost(em, row)` (Java 는 static, Kotlin 은 클래스 멤버 - companion object 와 함께), 참조의 id 로 JPQL(`x.postId`), layered 는 관계를 통해(`x.post.postId`). 행마다 참조마다 쿼리 하나: 수천 행 삭제는 수천 번의 쿼리입니다.
 - 잘못 쓰면 빌드가 멈춥니다: 다른 값; 도메인 엔티티 한 행을 가리키는 참조가 아닌 필드; 필수(`!`) 참조의 `setNull`; 일대일의 `mappedBy` 쪽; 복합 키 대상; aggregate 멤버인 대상(루트를 가리키세요) 또는 멤버에서의 `cascade`. cascade 되는 행의 도메인 이벤트는 없고 DDL 의 `ON DELETE` 도 쓰지 않습니다. 고친 적 있는 Kotlin 생성 서비스 테스트는 entity manager 의 `createQuery` 스텁이 필요합니다. `elasticore-template-ddd` `BoardOnDeleteTest`(HTTP)·`CatalogApiTest`(layered, versioned setNull), `elasticore-template-kt` `OnDeleteTest`·`Ticket.agent`(`@access` 대상).
 
-#### @count(Entity.reference[, field is VALUE and ...]) - 이 행을 가리키는 행의 수
+#### @count(Entity.reference[, field == VALUE and ...]) - 이 행을 가리키는 행의 수
 > **동작:** v3, Kotlin (JPA), ddd, hexagonal, layered · **안 됨:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - 빌드 중단; 2.x generator (생성 안 됨)
-행에 저장해 두고, 세어지는 행이 쓰일 때마다 그 트랜잭션 안에서 다시 셉니다. 조건은 `is` 로 씁니다 - 어노테이션 안의 `=` 는 key=value 로 읽힙니다.
+행에 저장해 두고, 세어지는 행이 쓰일 때마다 그 트랜잭션 안에서 다시 셉니다. 조건은 `==` 로 비교합니다 - 어노테이션 안의 `=` 하나는 key=value 로 읽힙니다.
 ```yaml
 Post:
   fields:
-    commentCount: long @count(Comment.post, status is VISIBLE)   # 보이는 댓글
+    commentCount: long @count(Comment.post, status == VISIBLE)   # 보이는 댓글
     likeCount:    long @count(PostLike.post)
 ```
 - 세어지는 엔티티(Comment)의 CoreService 가 쓸 때마다 카운트를 표시합니다 - 저장, 수정(전에 가리키던 행과 지금 행), 키로·검색으로 삭제, 조건 수정, 상태를 옮기는 명령 - 그리고 `@onDelete(cascade)` 로 지워지는 행도. 커밋 직전에 표시된 행마다 한 번 다시 셉니다: `update Post x set x.commentCount = (select count(c) from Comment c where c.postId = x.postId and c.status = ...VISIBLE) where x.postId = :id`. 세는 행을 먼저 잠그고(비관적 select) 별도 문장으로 세며, 행은 키 순서로 처리합니다 - 다른 트랜잭션의 잠금을 기다린 카운트는 그 뒤에 시작하는 문장으로 셉니다(부하 시험은 하지 않음).
 - 필드는 모델의 것입니다: `@readonly`(요청이 쓰지 않음), `@updatable(false)`(게시글 저장이 덮어쓰지 않음), `@default(0)`. 소프트 삭제(`@deleted`)된 행은 세지 않습니다. 조건은 필드를 enum 상수, `true`, `false`, 숫자, `'text'` 와 비교하고, 여럿이면 `and` 로 잇습니다.
-- 생성된 서비스를 거치지 않고 쓴 행(SQL, 직접 만든 리포지토리)은 그 서비스로 쓰는 일이 카운트를 표시할 때까지 세지 않습니다. 세어지는 참조 컬럼(`comment.post_id`)에 인덱스를 두세요: 다시 셀 때마다 그 컬럼으로 셉니다. 이미 있는 테이블에 `@count` 를 붙이면 한 번 채우세요(실제 테이블·컬럼 이름으로) - `update post p set comment_count = (select count(*) from comment c where c.post_id = p.post_id and ...)`. 같은 트랜잭션 안에서 게시글을 읽으면 아직 옛 값입니다(커밋 때 정해짐); 먼저 읽은 DTO 를 게시글에 다시 쓰면 ddd/hexagonal 은 거절(422, `@updatable(false)`), layered 는 무시됩니다; Envers 리비전에는 남지 않습니다. 조건은 같음 비교뿐입니다(`is`, `and` 로 잇기). 잘못 쓰면 빌드가 멈춥니다: `Entity.reference` 가 없음, 이 엔티티를 가리키지 않는 참조, 필드에 없는 값, `long`/`int` 가 아닌 카운트. `elasticore-template-ddd` `BoardCountTest`(HTTP), `elasticore-template-kt` `OnDeleteTest.anArticleCountsItsApprovedComments`.
+- 생성된 서비스를 거치지 않고 쓴 행(SQL, 직접 만든 리포지토리)은 그 서비스로 쓰는 일이 카운트를 표시할 때까지 세지 않습니다. 세어지는 참조 컬럼(`comment.post_id`)에 인덱스를 두세요: 다시 셀 때마다 그 컬럼으로 셉니다. 이미 있는 테이블에 `@count` 를 붙이면 한 번 채우세요(실제 테이블·컬럼 이름으로) - `update post p set comment_count = (select count(*) from comment c where c.post_id = p.post_id and ...)`. 같은 트랜잭션 안에서 게시글을 읽으면 아직 옛 값입니다(커밋 때 정해짐); 먼저 읽은 DTO 를 게시글에 다시 쓰면 ddd/hexagonal 은 거절(422, `@updatable(false)`), layered 는 무시됩니다; Envers 리비전에는 남지 않습니다. 조건은 같음 비교뿐입니다(`==`, `and` 로 잇기). 잘못 쓰면 빌드가 멈춥니다: `Entity.reference` 가 없음, 이 엔티티를 가리키지 않는 참조, 필드에 없는 값, `long`/`int` 가 아닌 카운트. `elasticore-template-ddd` `BoardCountTest`(HTTP), `elasticore-template-kt` `OnDeleteTest.anArticleCountsItsApprovedComments`.
 
 #### 관계 필드의 자동 DTO 렌더링 (중첩 DTO + FK 필드)
 > **Since: 2.2.260703**
@@ -2006,14 +2006,14 @@ false 입니다. TS 타입 선언은 기본 직렬화에 맞춰 `number` 입니�
 | 형태 | 뜻 | 예 |
 |---|---|---|
 | `필드.size > n` | to-many 멤버 수 | `items.size > 0` |
-| `필드 > n` / `필드 < n` | 숫자 비교 (`Integer`/`Long`/`Double`/`BigDecimal` 등) | `totalAmount > 100` |
+| `필드 > n` / `<` / `>=` / `<=` / `==` | 숫자 비교 (`Integer`/`Long`/`Double`/`BigDecimal` 등, `.size` 도) | `totalAmount >= 100` |
 | `필드 notNull` | 설정되어 있음 | `notes notNull` |
 | `필드 notEmpty` | to-many 가 비어있지 않음 | `items notEmpty` |
 
 필드·비교·리터럴만 받습니다. 임의 표현식 파서를 만들지 않는 것이 의도입니다.
 
-> **`>=`, `<=`, `==` 는 쓸 수 없습니다.** DSL 애노테이션 파서가 인자 안의 `=` 를
-> 키/값 목록의 시작으로 읽습니다. `:` 도 쓸 수 없습니다 — meta 줄은 YAML 스칼라라
+> **`=` 하나는 쓸 수 없습니다** - 같음은 `==` 입니다. `=` 하나는 키/값의 시작으로 읽힙니다(`@count` 도 같음).
+> `:` 도 쓸 수 없습니다 — meta 줄은 YAML 스칼라라
 > `이름: ` 이 매핑 시작으로 해석되어 파일 로드가 실패합니다.
 
 읽지 못하는 조건은 **조용히 빠집니다**(빌드는 계속). 오타 하나가 도메인 전체의

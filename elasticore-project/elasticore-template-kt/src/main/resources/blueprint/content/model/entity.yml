@@ -43,7 +43,7 @@ entity:
       attachments: List<Attachment> @OneToMany(mappedBy="article") @cascade(ALL) @dtype(List<AttachmentDTO>) @notaudited
       ratings: int[] @env:integerarray
       labels: string[] @env:stringarray
-      commentCount: long @count(Comment.article, approved is true)   # approved comments, kept on the article
+      commentCount: long @count(Comment.article, approved == true)   # approved comments, kept on the article
 
   Comment:
     meta: entity @expose(30) @extend(ContentBase)

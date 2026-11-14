@@ -20,7 +20,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
-/** {@code @count(Comment.post[, status is VISIBLE])}: the counted row's CoreService keeps it (issue 179). */
+/** {@code @count(Comment.post[, status == VISIBLE])}: the counted row's CoreService keeps it (issue 179). */
 public class CountTest {
 
     private static final String MODEL = String.join(
@@ -39,7 +39,7 @@ public class CountTest {
             "    meta: entity @root @expose(20)",
             "    fields:",
             "      postId: long @id @sequence",
-            "      commentCount: long @count(CtComment.post, status is VISIBLE and pinned is false)",
+            "      commentCount: long @count(CtComment.post, status == VISIBLE and pinned == false)",
             "      likeCount: int @count(CtLike.post)",
             "  CtComment:",
             "    meta: entity @root @expose(20)",
@@ -157,18 +157,18 @@ public class CountTest {
     public void aMisuseStopsTheBuild() throws Exception {
         String[] log = new String[1];
         String model = MODEL.replace(
-                        "@count(CtComment.post, status is VISIBLE and pinned is false)",
+                        "@count(CtComment.post, status == VISIBLE and pinned == false)",
                         "@count(CtComment.post, status = VISIBLE)")
                 .replace(
                         "likeCount: int @count(CtLike.post)",
                         "likeCount: int @count(CtLike.liker)\n"
-                                + "      hiddenCount: long @count(CtComment.post, status is GONE)\n"
+                                + "      hiddenCount: long @count(CtComment.post, status == GONE)\n"
                                 + "      title: string(20) @count(CtLike.post)");
         run("elcore-count-misuse", "hexagonal", "java", "jpa", model, false, 1, log);
         assertTrue(log[0].contains("CtPost.commentCount @count(): say what it counts"), log[0]);
         assertTrue(log[0].contains("CtLike.liker is no reference of an entity of the domain to CtPost"), log[0]);
         assertTrue(
-                log[0].contains("CtPost.hiddenCount @count(CtComment.post, status is GONE): CtStatus has no GONE"),
+                log[0].contains("CtPost.hiddenCount @count(CtComment.post, status == GONE): CtStatus has no GONE"),
                 log[0]);
         assertTrue(log[0].contains("CtPost.title @count(CtLike.post): a count is a long or an int"), log[0]);
     }
@@ -177,7 +177,7 @@ public class CountTest {
     @Test
     public void whatCannotBeCountedIsRefused() throws Exception {
         String[] log = new String[1];
-        String model = MODEL.replace("status is VISIBLE and pinned is false", "pinned is 1")
+        String model = MODEL.replace("status == VISIBLE and pinned == false", "pinned == 1")
                 .replace(
                         "      likeId: long @id @sequence",
                         "      likeId: long @id @sequence\n      tags: List<CtTag> @OneToMany @cascade(ALL)")

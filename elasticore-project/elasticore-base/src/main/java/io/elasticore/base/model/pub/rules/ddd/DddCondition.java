@@ -27,11 +27,10 @@ import io.elasticore.base.model.pub.rules.Syntax;
  * that is obviously limited: the DSL would start looking like a place to put
  * logic, which is the one thing it is not.
  *
- * The two-character comparisons are absent for a reason worth stating, since
- * their absence otherwise reads as an oversight: the DSL's annotation parser
- * treats an '=' anywhere in the arguments as the start of a key/value list,
- * so {@code >=} cannot be written there at all. The word forms are what is
- * offered instead.
+ * The comparisons are {@code > < >= <= ==}. The annotation parser reads an
+ * '=' in the arguments as the start of a key/value list, except in the
+ * condition annotations, where one that is part of {@code == >= <=} is a
+ * comparison (AbstractModelLoader.hasAssignment).
  *
  * <h3>One grammar, three spellings</h3>
  *
@@ -91,14 +90,14 @@ final class DddCondition {
         if (parts.length != 3) return null;
 
         String operator = parts[1];
-        if (!">".equals(operator) && !"<".equals(operator)) return null;
+        String comparison = comparison(operator, negated);
+        if (comparison == null) return null;
 
         String bound = parts[2];
         if (!isNumber(bound)) return null;
-
-        String comparison = negated
-                ? (">".equals(operator) ? "<=" : ">=")
-                : operator;
+        boolean equality = "==".equals(comparison) || "!=".equals(comparison);
+        // TypeScript compares strictly; == would convert.
+        if (equality && syntax == Syntax.TYPESCRIPT) comparison = comparison + "=";
 
         String term = parts[0];
         boolean size = term.endsWith(".size");
@@ -135,8 +134,22 @@ final class DddCondition {
         }
         if (!isComparableNumber(f)) return null;
 
+        String simple = f.typeName().substring(f.typeName().lastIndexOf('.') + 1);
+        if (equality && syntax == Syntax.KOTLIN && ("Double".equals(simple) || "Float".equals(simple))) {
+            // Kotlin has no == between a Double and an Int literal; compareTo has.
+            return guard + String.format("%s.compareTo(%s) %s 0", read(var, f, syntax, true), bound, comparison);
+        }
         return guard + String.format("%s %s %s",
                 read(var, f, syntax, true), comparison, bound);
+    }
+
+    /** The operator as written, or the one that holds exactly when it does not; null when not one. */
+    static String comparison(String operator, boolean negated) {
+        String[] pairs = {">", "<=", "<", ">=", ">=", "<", "<=", ">", "==", "!="};
+        for (int i = 0; i < pairs.length; i += 2) {
+            if (pairs[i].equals(operator)) return negated ? pairs[i + 1] : operator;
+        }
+        return null;
     }
 
     /** The null test in front of every comparison, in the direction asked for. */

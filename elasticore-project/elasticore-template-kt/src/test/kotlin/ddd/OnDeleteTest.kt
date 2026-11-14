@@ -65,7 +65,7 @@ class OnDeleteTest {
         assertEquals(1, count("SELECT COUNT(*) FROM cms_bookmark WHERE bookmark_id = 903 AND article_article_id IS NULL"))
     }
 
-    /** @count(Comment.article, approved is true): counted again in the transaction of each write of a comment. */
+    /** @count(Comment.article, approved == true): counted again in the transaction of each write of a comment. */
     @Test
     fun anArticleCountsItsApprovedComments() {
         jdbc.update("INSERT INTO cms_article (article_id, title, slug, comment_count) VALUES ('a-9', 'Counted', 'counted', 0)")

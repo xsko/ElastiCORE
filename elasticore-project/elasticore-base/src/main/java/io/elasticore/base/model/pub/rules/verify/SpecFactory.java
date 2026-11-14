@@ -1936,7 +1936,7 @@ public final class SpecFactory {
     }
 
     /**
-     * The domain's {@code @count(Comment.post[, status is PUBLISHED and ...])} fields, by the entity whose rows they
+     * The domain's {@code @count(Comment.post[, status == PUBLISHED and ...])} fields, by the entity whose rows they
      * count (issue 179). A misuse stops the build.
      */
     static java.util.Map<String, java.util.List<io.elasticore.base.model.pub.rules.EntitySpec.CountRef>> countsOf(
@@ -1958,10 +1958,10 @@ public final class SpecFactory {
                         "[%s] %s.%s @count(%s)",
                         counter.getIdentity().getDomainId(), name, f.getName(), declared == null ? "" : declared);
                 if (declared == null || declared.trim().isEmpty()) {
-                    // A condition with "=" reads as key=value pairs and loses the rest: say "is".
+                    // A condition with a single "=" reads as key=value pairs and loses the rest: say "==".
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": say what it counts, as"
-                            + " @count(Comment.post) or @count(Comment.post, status is PUBLISHED) - a condition says"
-                            + " is, not =");
+                            + " @count(Comment.post) or @count(Comment.post, status == PUBLISHED) - a condition"
+                            + " compares with ==, not =");
                     continue;
                 }
                 String type = f.getTypeInfo().getDefaultTypeName();
@@ -2053,12 +2053,12 @@ public final class SpecFactory {
         return out;
     }
 
-    /** "status is PUBLISHED and hidden is false" as JPQL over c; null when it reads, else what is wrong. */
+    /** "status == PUBLISHED and hidden == false" as JPQL over c; null when it reads, else what is wrong. */
     private static String countCondition(ECoreModel model, Entity counted, String condition, StringBuilder where) {
         if (condition.isEmpty()) return null;
         for (String part : condition.split("(?i)\\s+and\\s+", -1)) {
-            String[] sides = part.trim().split("(?i)\\s+is\\s+", -1);
-            if (sides.length != 2) return "\"" + part.trim() + "\" is not field is value";
+            String[] sides = part.trim().split("\\s*==\\s*", -1);
+            if (sides.length != 2) return "\"" + part.trim() + "\" is not field == value";
             String field = sides[0].trim();
             String value = sides[1].trim();
             Field g = (Field) counted.getAllFieldListMap().get(field);
