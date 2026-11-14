@@ -384,6 +384,14 @@ public final class RulesGenRunner {
         // the 3.0 code since 3.0.261028-rc3 - decided once the model is read.
         // elcoreMigrationCheck: the 3.0 build as it would run, whatever the build keeps now.
         boolean checking = Boolean.getBoolean(PROP_MIGRATION_CHECK);
+        // elcoreValidate: the build as it is configured, nothing written, and whether the project is up to date.
+        boolean validating = Boolean.getBoolean(PROP_VALIDATE);
+        if (checking && validating) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] run the migration check and the validation apart");
+            return 1;
+        }
+        // A report of an earlier validation must not stand for a run that stops before it writes its own.
+        if (validating) new File(basePath, "build/elasticore/validate.md").delete();
         boolean v3Asked = checking || Boolean.getBoolean("elasticore.rules.v3");
         boolean v2Asked = !checking && Boolean.getBoolean("elasticore.rules.v2");
         if (v3Asked && v2Asked) {
@@ -444,7 +452,7 @@ public final class RulesGenRunner {
         // A project on a bundle is the one meeting these documents for the
         // first time, and until now it was the only one that never received
         // them - both rule-engine sample modules had an empty blueprint root.
-        if (!Boolean.getBoolean("elasticore.rules.list") && captured == null && !checking) {
+        if (!Boolean.getBoolean("elasticore.rules.list") && captured == null && !checking && !validating) {
             io.elasticore.base.util.GuideDeployer.deployTo(
                     basePath + "/src/main/resources/blueprint", basePath);
         }
@@ -767,15 +775,16 @@ public final class RulesGenRunner {
         }
 
         java.io.PrintStream shown = System.out;
-        if (checking) {
+        if (checking || validating) {
+            String what = checking ? "the migration check" : "the validation";
             if (domainFilter != null) {
                 io.elasticore.base.util.ConsoleLog.printWarn(
-                        "[elcore3] the migration check reads the whole project" + " - run it without -Pdomain");
+                        "[elcore3] " + what + " reads the whole project" + " - run it without -Pdomain");
                 return 1;
             }
             if (Boolean.getBoolean("elasticore.rules.list")) {
                 io.elasticore.base.util.ConsoleLog.printWarn(
-                        "[elcore3] the migration check runs the build itself - run it without -PlistRules");
+                        "[elcore3] " + what + " runs the build itself - run it without -PlistRules");
                 return 1;
             }
             preview = new MigrationPreview();
@@ -799,6 +808,7 @@ public final class RulesGenRunner {
         // twoXBases wanted the files' texts only: nothing after this writes for it.
         if (captured != null) return runner.succeeded() ? 0 : 1;
         if (checking) return finishMigrationCheck(runner, basePath, shown);
+        if (validating) return finishValidate(runner, basePath, shown);
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
         if (Boolean.getBoolean("elasticore.rules.list")) return 0;
@@ -2114,7 +2124,21 @@ public final class RulesGenRunner {
         for (DdlRun.Part p : ddlParts) sources.add(p.root);
         final Map<String, String> savedModules = packageModuleMap;
         final String savedRoot = domainRoot;
-        DdlRun run = new DdlRun(ddlParts, projectRoot, new ArrayList<String>(sources), (root, dir, name, ext, content) -> {
+        // elcoreValidate wrote no source: the tables are read off the sources as the run would leave them.
+        List<String> read = new ArrayList<String>(sources);
+        java.nio.file.Path overlay = null;
+        if (preview != null) {
+            try {
+                overlay = java.nio.file.Files.createTempDirectory("elcore-validate");
+                read = overlaySources(read, overlay.toFile());
+            } catch (IOException e) {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                        "[elcore3] ddl: the sources to read the tables off cannot be laid out - " + e.getMessage());
+                deleteTree(overlay);
+                return;
+            }
+        }
+        DdlRun run = new DdlRun(ddlParts, projectRoot, read, (root, dir, name, ext, content) -> {
             // Under the root the domain is written to, whatever module the last one was.
             packageModuleMap = null;
             domainRoot = root;
@@ -2123,6 +2147,14 @@ public final class RulesGenRunner {
             if (d != null) generatedDirs.add(d);
             write(String.format("    %-12s %s", "ddl", out.relativePath()), out, content);
         });
+        if (preview != null) {
+            // A migration is written once, and only by a build: one this run would write is the DSL changed
+            // without one. The state is a file like any other.
+            run.dry((file, text) -> {
+                preview.wrote(canonical(file), text.replace("\r\n", "\n"));
+                if (!file.getName().equals("schema-state.json")) wouldMigrate.add(relative(file));
+            });
+        }
         try {
             run.run(projectDdl());
         } catch (IOException e) {
@@ -2130,9 +2162,90 @@ public final class RulesGenRunner {
         } finally {
             packageModuleMap = savedModules;
             domainRoot = savedRoot;
+            deleteTree(overlay);
         }
         for (String m : run.messages()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", m);
         for (String p : run.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail(p);
+    }
+
+    /** The migrations elcoreValidate found the build would write. */
+    private final List<String> wouldMigrate = new ArrayList<String>();
+
+    /**
+     * Each source root's src/main as the run would leave it, under a directory
+     * of its own in {@code into}: the files on disk, with what the run would
+     * write in place and what it would remove taken out. The roots returned
+     * are in the order given.
+     */
+    private List<String> overlaySources(List<String> roots, File into) throws IOException {
+        List<String> out = new ArrayList<String>();
+        for (int i = 0; i < roots.size(); i++) {
+            File from = canonical(new File(roots.get(i), "src/main"));
+            File to = new File(into, "r" + i + "/src/main");
+            copyTree(from, to);
+            String prefix = from.getPath() + File.separator;
+            for (Map.Entry<File, String> w : preview.written().entrySet()) {
+                String path = w.getKey().getPath();
+                if (!path.startsWith(prefix)) continue;
+                File target = new File(to, path.substring(prefix.length()));
+                File dir = target.getParentFile();
+                if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("cannot create " + dir);
+                java.nio.file.Files.write(target.toPath(), w.getValue().getBytes(StandardCharsets.UTF_8));
+            }
+            for (File gone : preview.removedFiles()) {
+                String path = canonical(gone).getPath();
+                if (!path.startsWith(prefix)) continue;
+                java.nio.file.Files.deleteIfExists(new File(to, path.substring(prefix.length())).toPath());
+            }
+            out.add(new File(into, "r" + i).getPath());
+        }
+        return out;
+    }
+
+    private static void copyTree(File from, final File to) throws IOException {
+        if (!from.isDirectory()) return;
+        final java.nio.file.Path source = from.toPath();
+        java.nio.file.Files.walkFileTree(source, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(
+                    java.nio.file.Path dir, java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
+                java.nio.file.Files.createDirectories(
+                        to.toPath().resolve(source.relativize(dir).toString()));
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(
+                    java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
+                java.nio.file.Files.copy(
+                        file, to.toPath().resolve(source.relativize(file).toString()));
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /** A directory made by createTempDirectory, and all in it; null is nothing. */
+    private static void deleteTree(java.nio.file.Path dir) {
+        if (dir == null || !java.nio.file.Files.isDirectory(dir)) return;
+        try {
+            java.nio.file.Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                @Override
+                public java.nio.file.FileVisitResult visitFile(
+                        java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
+                    java.nio.file.Files.delete(file);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult postVisitDirectory(java.nio.file.Path d, IOException e)
+                        throws IOException {
+                    java.nio.file.Files.delete(d);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException e) {
+            // A temporary directory left behind is the system's to clear.
+        }
     }
 
     /** Specs ownModelSpec built, per model and entity name. */
@@ -4243,6 +4356,7 @@ public final class RulesGenRunner {
             }
         }
         if (preview != null) {
+            preview.wrote(canonical(file), text.replace("\r\n", "\n"));
             wrote++;
             System.out.println(label + "  WROTE");
             return;
@@ -4313,6 +4427,12 @@ public final class RulesGenRunner {
                         continue;
                     }
                 }
+            }
+            if (preview != null) {
+                preview.wrote(canonical(file), xml.replace("\r\n", "\n"));
+                wrote++;
+                System.out.println("  " + relative(file) + "  WROTE");
+                continue;
             }
             File dir = file.getParentFile();
             if (dir != null && !dir.exists()) dir.mkdirs();
@@ -4572,6 +4692,160 @@ public final class RulesGenRunner {
             System.out.println(text);
         }
         return runner.succeeded() && modelChecked ? 0 : 1;
+    }
+
+    /**
+     * The end of elcoreValidate: what the build would remove too, then the
+     * verdict. It fails when the generation or the model check fails, when a
+     * generated file is not what the DSL generates now (one it would write,
+     * merge, regenerate or remove), on a conflict - and, with -Pstrict, on a DSL
+     * warning. A file the developer edited and the run leaves alone passes, and
+     * is listed. A project that keeps no generated file in its tree (generated
+     * by each build) is checked for its DSL only. Nothing is written but the report.
+     */
+    private static int finishValidate(RulesGenRunner runner, String basePath, java.io.PrintStream shown) {
+        boolean generated = runner.succeeded();
+        boolean modelChecked =
+                io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        if (generated && modelChecked) {
+            runner.writeOrmXml();
+            runner.writeDdl();
+            modelChecked =
+                    io.elasticore.base.model.pub.rules.ModelCheck.failures().isEmpty();
+        }
+        if (runner.succeeded() && modelChecked) {
+            runner.removeStale();
+            runner.removeStaleMerged();
+            runner.removeUnused();
+        }
+        generated = runner.succeeded();
+        runner.printSummary();
+        int warnings = io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN");
+        io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
+                "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
+        System.setOut(shown);
+        MigrationPreview done = preview;
+        preview = null;
+        merging = null;
+
+        boolean strict = Boolean.getBoolean(PROP_VALIDATE_STRICT);
+        List<String> conflicts = new ArrayList<String>(done.withStatus("CONFLICT"));
+        conflicts.addAll(done.withStatus("ERROR"));
+        List<String> removed = done.removed();
+        List<String> edited = new ArrayList<String>(done.withStatus("SKIP(user-modified"));
+        edited.addAll(done.withStatus("UNCHANGED(your edits kept)"));
+        edited.addAll(done.withStatus("KEPT"));
+        List<String> unchanged = done.withStatus("UNCHANGED");
+        int upToDate =
+                unchanged.size() - done.withStatus("UNCHANGED(your edits kept)").size();
+        // What the run would write: a file there whose text would change, or one not there.
+        List<String> changed = new ArrayList<String>();
+        List<String> missing = new ArrayList<String>();
+        for (Map.Entry<File, String> w : done.written().entrySet()) {
+            File f = w.getKey();
+            if (!f.isFile()) {
+                // A migration is counted on its own, whatever the project keeps.
+                if (!runner.wouldMigrate.contains(runner.relative(f))) missing.add(runner.relative(f));
+                continue;
+            }
+            String disk = readLf(f);
+            if (disk == null || !withoutStamp(disk).equals(withoutStamp(w.getValue()))) {
+                changed.add(runner.relative(f));
+            } else {
+                upToDate++;
+            }
+        }
+        // A file not there is stale where the project keeps its generated sources in the tree - one of the
+        // sources the generator owns (not a generate-once skeleton, which is committed either way) is there;
+        // one whose build generates them gets them from that build.
+        boolean keepsSources = false;
+        for (String path : runner.produced) {
+            if (keepsSources) break;
+            if (!path.endsWith(".java") && !path.endsWith(".kt") && !path.endsWith(".ts")) continue;
+            File f = new File(path);
+            String text = f.isFile() ? readLf(f) : null;
+            keepsSources = text != null && !owned(text);
+        }
+        boolean inTree = keepsSources;
+        if (keepsSources) changed.addAll(missing);
+        java.util.Collections.sort(changed);
+        List<String> failures = io.elasticore.base.model.pub.rules.ModelCheck.failures();
+
+        List<String> reasons = new ArrayList<String>();
+        if (!generated) reasons.add("the generation failed");
+        if (!failures.isEmpty()) reasons.add(failures.size() + " model check failure(s)");
+        if (!changed.isEmpty()) reasons.add(changed.size() + " generated file(s) not up to date");
+        if (!removed.isEmpty()) reasons.add(removed.size() + " generated file(s) the DSL no longer produces");
+        if (!runner.wouldMigrate.isEmpty()) reasons.add(runner.wouldMigrate.size() + " migration(s) not written yet");
+        if (!conflicts.isEmpty()) reasons.add(conflicts.size() + " file(s) with a conflict or an error");
+        if (strict && warnings > 0) reasons.add(warnings + " DSL warning(s) (-Pstrict)");
+
+        StringBuilder b = new StringBuilder("# elcoreValidate\n\n");
+        b.append(reasons.isEmpty() ? "**Passed.**" : "**Failed:** " + String.join(", ", reasons) + ".")
+                .append(" Nothing was written but this report.\n\n");
+        if (!inTree && !missing.isEmpty()) {
+            b.append("The project keeps no generated source in its tree (each build generates them): ")
+                    .append(missing.size())
+                    .append(" file(s) the run would write are not there and were not counted; the DSL, the"
+                            + " generation and the generated files that are there were checked.\n\n");
+        }
+        if (!failures.isEmpty()) {
+            b.append("## Model check failures\n\n");
+            for (String f : failures)
+                b.append("- ").append(f.replace("\n", " ")).append('\n');
+            b.append('\n');
+        }
+        validateSection(b, "Not up to date - run ./gradlew elcore3 and commit", changed);
+        validateSection(b, "No longer produced by the DSL - run ./gradlew elcore3 and commit", removed);
+        validateSection(b, "Migrations the build would write - run ./gradlew elcore3 and commit", runner.wouldMigrate);
+        validateSection(b, "Conflicts and errors", conflicts);
+        validateSection(b, "Edited by you and left as they are (not a failure)", edited);
+        // Neither a header nor a base in .elasticore/cache: the build leaves them alone, and so this check -
+        // a project whose cache is not committed meets every generated file here.
+        List<String> unchecked = new ArrayList<String>(done.withStatus("SKIP(no ElastiCORE header"));
+        unchecked.addAll(done.withStatus("SKIP(not in the cache"));
+        validateSection(
+                b,
+                "Not checked - no ElastiCORE header and no base in .elasticore/cache, so yours"
+                        + " (commit .elasticore/cache with the generated files)",
+                unchecked);
+        if (!runner.notes.isEmpty()) {
+            b.append("## Notes of the run\n\n");
+            for (String n : runner.notes)
+                b.append("- ").append(n.replace("\n", " ")).append('\n');
+            b.append('\n');
+        }
+        b.append("Up to date: ")
+                .append(Math.max(upToDate, 0))
+                .append(" file(s). DSL warnings: ")
+                .append(warnings)
+                .append(strict ? " (fail with -Pstrict).\n" : " (they fail only with -Pstrict).\n");
+
+        File report = new File(basePath, "build/elasticore/validate.md");
+        String text = b.toString();
+        System.out.println("[elcore3] validate (nothing was written): " + (reasons.isEmpty() ? "PASSED" : "FAILED"));
+        for (String r : reasons) System.out.println("  - " + r);
+        for (String f : changed) System.out.println("  stale: " + f);
+        for (String f : removed) System.out.println("  no longer produced: " + f);
+        for (String f : conflicts) System.out.println("  conflict or error: " + f);
+        if (MigrationPreview.write(report, text)) {
+            System.out.println("[elcore3] the report: " + report.getPath());
+        } else {
+            System.out.println(text);
+        }
+        return reasons.isEmpty() ? 0 : 1;
+    }
+
+    /** A text without the //ecd: stamp line a 2.x-style file starts with. */
+    static String withoutStamp(String text) {
+        return text.startsWith("//ecd:") && text.indexOf('\n') >= 0 ? text.substring(text.indexOf('\n') + 1) : text;
+    }
+
+    private static void validateSection(StringBuilder b, String title, List<String> files) {
+        if (files.isEmpty()) return;
+        b.append("## ").append(title).append("\n\n");
+        for (String f : files) b.append("- `").append(f).append("`\n");
+        b.append('\n');
     }
 
     /**
@@ -4893,6 +5167,16 @@ public final class RulesGenRunner {
      */
     static final String PROP_MIGRATION_CHECK = "elasticore.migration.check";
 
+    /**
+     * elcoreValidate: the build as configured, run with nothing written, failing
+     * when the DSL does not pass or the project's generated files are not what
+     * the DSL generates now (build/elasticore/validate.md). For a CI step.
+     */
+    static final String PROP_VALIDATE = "elasticore.validate";
+
+    /** With elcoreValidate: a DSL warning fails it too (-Pstrict). */
+    static final String PROP_VALIDATE_STRICT = "elasticore.validate.strict";
+
     /** While the migration check runs: what the run would do, gathered instead of done. */
     private static MigrationPreview preview;
 
@@ -4919,7 +5203,9 @@ public final class RulesGenRunner {
             "elasticore.rules.kt",
             "elasticore.rules.list",
             // a migration check's: the bases are the 2.x code, generated as the 2.x code
-            PROP_MIGRATION_CHECK
+            PROP_MIGRATION_CHECK,
+            PROP_VALIDATE,
+            PROP_VALIDATE_STRICT
         };
         Map<String, String> saved = new java.util.HashMap<String, String>();
         for (String k : keys) saved.put(k, System.getProperty(k));

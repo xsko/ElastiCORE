@@ -1941,6 +1941,33 @@ task elcore3(type: JavaExec) {
 > `elasticore-template`의 생성 소스는 **골든 파일**입니다. 이 모듈은 `output = 'v2'` 라
 > `elcore3` 도 호환 모드로 씁니다. `-Pv3`/`-Pforce`로 덮어썼다면 되돌리세요.
 
+### CI 에서 점검 (`elcoreValidate`)
+
+`./gradlew elcoreValidate` 는 설정된 빌드를 그대로 돌리되 `build/elasticore/validate.md` 말고는 **아무것도 쓰지 않습니다**
+(2.x 의 `elcore -Pmode=valid` 에 해당하는 3.0 규칙 엔진의 점검). CI 에서 `build` 앞에 둡니다:
+
+```bash
+./gradlew elcoreValidate          # 아래 경우에 실패 (exit 1)
+./gradlew elcoreValidate -Pstrict # DSL 경고도 실패
+```
+
+| 발견 | 결과 |
+|---|---|
+| 모델 점검 실패, 생성 실패, 아직 쓰지 않은 Flyway 마이그레이션 | 실패 |
+| DSL 이 내용을 바꿀 생성 파일, 바뀔 DDL 스키마 | 실패 - `elcore3` 를 돌리고 커밋 |
+| DSL 이 더는 만들지 않는 생성 파일 | 실패 - `elcore3` 를 돌리고 커밋 |
+| 충돌 표시가 남은 파일 (`<<<<<<< yours`) | 실패 |
+| 직접 고쳤고 빌드가 그대로 두는 파일 | 통과, 목록에 표시 |
+| DSL 경고 | 통과, 개수 표시 (`-Pstrict` 면 실패) |
+| 헤더도 없고 `.elasticore/cache` 에 기준도 없는 파일 | 통과, 점검하지 못한 파일로 표시 |
+
+- 빌드가 쓸 파일이 없을 때는 생성 소스를 git 에 두는 프로젝트(그중 하나라도 있는 프로젝트)에서만 실패합니다.
+  빌드할 때 생성하는 프로젝트(`.gitignore`)는 DSL 과, DDL 처럼 커밋하는 생성 파일을
+  점검합니다.
+- `.elasticore/cache` 는 생성 파일과 함께 커밋합니다: 없으면 빌드가 그 파일들을 사용자 것으로 보고, 이 점검도 그렇습니다.
+- TypeScript 클라이언트는 `-Pts` 로 점검합니다. `-Pdomain` 은 거절합니다: 프로젝트 전체를 읽습니다. 빌드가 쓸 마이그레이션(`ddl.migration`)이 있으면 실패하고, 쓰지는 않습니다.
+- 점검하지 않는 것: `schema.yml`, 컨텍스트 맵, Ossie 모델. `output = 'v2'` 면 2.x 자체 점검(`elcore -Pmode=valid`)을 돌립니다.
+
 ---
 
 ## 10. 체크리스트

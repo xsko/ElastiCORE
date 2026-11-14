@@ -51,6 +51,8 @@ public class ElastiCorePluginTest {
         assertTrue(output.contains("elcore3ts "), output);
         // And the check before a 2.x project moves, run only when asked.
         assertTrue(output.contains("elcoreMigrationCheck - Reports what the first 3.0 build"), output);
+        // And the check for CI.
+        assertTrue(output.contains("elcoreValidate - Checks the DSL"), output);
     }
 
     @Test
@@ -488,7 +490,43 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("elcoreValidate runs the build's own configuration as a check, and never with the build")
+    public void theValidationIsTheBuildsOwnCheck() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { architecture = 'hexagonal'; language = 'java' }",
+                "tasks.register('reportValidate') {\n"
+                        + "    doLast {\n"
+                        + "        def t = tasks.getByName('elcoreValidate')\n"
+                        + "        println '<<<' + t.systemProperties.collect { k, v -> k + '=' + v }.join(';') + '>>>'\n"
+                        + "    }\n"
+                        + "}");
+        String build = run("compileJava", "--dry-run").getOutput();
+        assertTrue(!build.contains(":elcoreValidate"), build);
+        String plain = reportOf(run("reportValidate"));
+        assertTrue(plain.contains("elasticore.validate=true"), plain);
+        assertTrue(plain.contains("elasticore.architecture=hexagonal"), plain);
+        assertTrue(!plain.contains("elasticore.validate.strict"), plain);
+        assertTrue(reportOf(run("reportValidate", "-Pstrict")).contains("elasticore.validate.strict=true"));
 
+        // A build that keeps 2.x's code: the 2.x generator's own check.
+        writeBuild(
+                "plugins { id 'io.elasticore'; id 'java' }",
+                "elasticore { output = 'v2' }",
+                "tasks.register('reportValidate') {\n"
+                        + "    doLast {\n"
+                        + "        def t = tasks.getByName('elcoreValidate')\n"
+                        + "        println '<<<' + t.mainClass.get() + ';' + t.systemProperties.collect { k, v -> k + '=' + v }"
+                        + ".join(';') + '>>>'\n"
+                        + "    }\n"
+                        + "}");
+        String twoX = reportOf(run("reportValidate"));
+        assertTrue(twoX.startsWith("io.elasticore.base.extract.ModelExtractor;"), twoX);
+        assertTrue(twoX.contains("mode=valid"), twoX);
+    }
+
+    @Test
     @DisplayName("turning the ordering off leaves compilation alone")
     public void theOrderingCanBeDeclined() throws IOException {
         writeSettings("single");

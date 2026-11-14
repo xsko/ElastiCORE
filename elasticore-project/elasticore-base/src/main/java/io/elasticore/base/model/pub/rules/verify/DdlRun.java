@@ -89,6 +89,14 @@ final class DdlRun {
         return messages;
     }
 
+    /** Set: the migrations and the state are handed here instead of being written (elcoreValidate). */
+    private java.util.function.BiConsumer<File, String> dry;
+
+    DdlRun dry(java.util.function.BiConsumer<File, String> instead) {
+        this.dry = instead;
+        return this;
+    }
+
     /** A group of domains in one database: the project's, or one separate domain's. */
     private static final class Group {
         final String name;
@@ -461,7 +469,8 @@ final class DdlRun {
         }
         if (planned.isEmpty() && state.databases().equals(idSet(g.databases))) return;
         // Flyway takes one migration of a version: a file of this second already there, whatever it says, is refused.
-        for (File f : planned.keySet()) {
+        // Writing nothing, a check has no version to clash with.
+        for (File f : dry != null ? new ArrayList<File>() : new ArrayList<File>(planned.keySet())) {
             String[] names = f.getParentFile().list();
             if (names == null) continue;
             for (String n : names) {
@@ -474,6 +483,15 @@ final class DdlRun {
         }
         // Every migration, then the state: a run that stops between leaves no migration the state does not follow.
         List<File> written = new ArrayList<File>();
+        if (dry != null) {
+            for (Map.Entry<File, String> en : planned.entrySet()) {
+                dry.accept(en.getKey(), en.getValue());
+                System.out.println("    migration    " + relative(en.getKey()) + "  WROTE");
+            }
+            schema.keepTakenOver(state);
+            writeState(stateFile, schema, g);
+            return;
+        }
         try {
             for (Map.Entry<File, String> en : planned.entrySet()) {
                 Files.createDirectories(en.getKey().getParentFile().toPath());
@@ -511,6 +529,11 @@ final class DdlRun {
     private void writeState(File stateFile, Schema schema, Group g) throws IOException {
         schema.databases().clear();
         for (Database db : g.databases) schema.databases().add(db.id);
+        if (dry != null) {
+            dry.accept(stateFile, schema.toJson());
+            System.out.println("    migration    " + relative(stateFile) + "  WROTE");
+            return;
+        }
         Files.createDirectories(stateFile.getParentFile().toPath());
         File tmp = new File(stateFile.getParentFile(), stateFile.getName() + ".tmp");
         Files.write(tmp.toPath(), schema.toJson().getBytes(StandardCharsets.UTF_8));
