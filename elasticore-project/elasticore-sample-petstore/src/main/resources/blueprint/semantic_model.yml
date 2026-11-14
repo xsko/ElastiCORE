@@ -34,6 +34,11 @@ datasets:
           sql: "icon"
         datatype: Opaque
         description: "아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)"
+      - name: product_count
+        expression:
+          sql: "product_count"
+        datatype: Integer
+        description: "판매 중인 상품 수 (단종된 상품은 세지 않음)"
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Category", "domain": "petstore", "access": {"*": "admin", "read": "public"}}
