@@ -20,6 +20,12 @@ public final class Column {
     /** A key the database numbers (an identity column). */
     public final boolean identity;
     /**
+     * A key Hibernate's native generator numbers: an identity column on a database whose dialect
+     * prefers one ({@link Database#nativeIdentity()}), and a sequence beside it on the others - Envers'
+     * revision number.
+     */
+    public final boolean nativeKey;
+    /**
      * Text SQL Server keeps in VARCHAR, not NVARCHAR: an enum's code (ASCII), or a JPA long text, which
      * Hibernate maps to varchar(max) there.
      */
@@ -45,6 +51,20 @@ public final class Column {
             boolean identity,
             boolean ascii,
             String comment) {
+        this(name, type, length, precision, scale, nullable, identity, false, ascii, comment);
+    }
+
+    public Column(
+            String name,
+            ColumnType type,
+            int length,
+            int precision,
+            int scale,
+            boolean nullable,
+            boolean identity,
+            boolean nativeKey,
+            boolean ascii,
+            String comment) {
         this.comment = comment;
         this.name = name;
         this.type = type;
@@ -53,6 +73,7 @@ public final class Column {
         this.scale = scale;
         this.nullable = nullable;
         this.identity = identity;
+        this.nativeKey = nativeKey;
         this.ascii = ascii;
     }
 
@@ -61,28 +82,33 @@ public final class Column {
     }
 
     public Column length(int length) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     public Column decimal(int precision, int scale) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     public Column nullable(boolean nullable) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     public Column identity(boolean identity) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
+    }
+
+    /** The same column, numbered by Hibernate's native generator. */
+    public Column nativeKey(boolean nativeKey) {
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     public Column ascii(boolean ascii) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     /** The same column, said to hold this; null for nothing said. */
     public Column comment(String comment) {
-        return new Column(name, type, length, precision, scale, nullable, identity, ascii, comment);
+        return new Column(name, type, length, precision, scale, nullable, identity, nativeKey, ascii, comment);
     }
 
     /** A column of another name holding the same - a foreign key holding a key. What the key says is the key's. */
@@ -100,18 +126,22 @@ public final class Column {
     public boolean equals(Object o) {
         if (!(o instanceof Column)) return false;
         Column c = (Column) o;
-        return name.equals(c.name) && sameStorage(c) && nullable == c.nullable && identity == c.identity;
+        return name.equals(c.name)
+                && sameStorage(c)
+                && nullable == c.nullable
+                && identity == c.identity
+                && nativeKey == c.nativeKey;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, type, length, precision, scale, nullable, identity, ascii);
+        return Objects.hash(name, type, length, precision, scale, nullable, identity, nativeKey, ascii);
     }
 
     @Override
     public String toString() {
         return name + " " + type + (length > 0 ? "(" + length + ")" : "")
                 + (precision > 0 ? "(" + precision + "," + scale + ")" : "") + (nullable ? "" : " NOT NULL")
-                + (identity ? " IDENTITY" : "");
+                + (identity ? " IDENTITY" : "") + (nativeKey ? " NATIVE" : "");
     }
 }

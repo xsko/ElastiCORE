@@ -118,9 +118,18 @@ public enum Database {
     /** The column as a CREATE TABLE or ADD COLUMN declares it, for the Oracle version the DDL is for. */
     public String declare(Column c, int oracleVersion) {
         StringBuilder sb = new StringBuilder(c.name).append(' ').append(type(c, oracleVersion));
-        if (c.identity) sb.append(identity());
+        if (c.identity || (c.nativeKey && nativeIdentity())) sb.append(identity());
         if (!c.nullable) sb.append(" NOT NULL");
         return sb.toString();
+    }
+
+    /**
+     * Whether Hibernate's native generator numbers a key with an identity column here (H2, SQL
+     * Server) rather than a sequence (PostgreSQL, Oracle) - its dialects' choice in 6.5 to 7: an
+     * identity where the database has one, but for PostgreSQL and Oracle, which prefer sequences.
+     */
+    public boolean nativeIdentity() {
+        return this == H2 || this == SQLSERVER;
     }
 
     /** How a key the database generates is declared. */

@@ -20,7 +20,9 @@ public final class SchemaWriter {
             String statement = db.createSchema(s);
             sb.append(statement).append(statement.startsWith("--") ? "\n" : ";\n");
         }
-        for (Schema.Sequence s : schema.sequences()) sb.append(db.createSequence(s)).append(";\n");
+        for (Schema.Sequence s : schema.sequences()) {
+            if (s.on(db)) sb.append(db.createSequence(s)).append(";\n");
+        }
         for (Table t : schema.tables()) {
             if (sb.length() > 0) sb.append("\n");
             sb.append(createTable(t, db, schema.oracleVersion()));
