@@ -39,8 +39,6 @@ open class KotlinContentApp
         "spring.jpa.defer-datasource-initialization=false",
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:db/schema-h2.sql",
-        // Article is @audited; its revision table is not what this test is about.
-        "spring.jpa.properties.hibernate.integration.envers.enabled=false",
     ],
 )
 class OnDeleteTest {
@@ -63,6 +61,9 @@ class OnDeleteTest {
         assertEquals(0, count("SELECT COUNT(*) FROM cms_article WHERE article_id = 'a-1'"))
         assertEquals(0, count("SELECT COUNT(*) FROM cms_comment WHERE comment_id IN (901, 902)"))
         assertEquals(1, count("SELECT COUNT(*) FROM cms_bookmark WHERE bookmark_id = 903 AND article_article_id IS NULL"))
+        // Article is @audited: its delete is a revision, numbered by revinfo's identity column on H2.
+        assertEquals(1, count("SELECT COUNT(*) FROM cms_article_aud WHERE article_id = 'a-1' AND revtype = 2"))
+        assertTrue(count("SELECT COUNT(*) FROM revinfo WHERE rev IS NOT NULL") >= 1)
     }
 
     /** @count(Comment.article, approved == true): counted again in the transaction of each write of a comment. */

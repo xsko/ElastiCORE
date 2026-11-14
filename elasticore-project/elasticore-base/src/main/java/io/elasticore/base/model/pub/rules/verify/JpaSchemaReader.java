@@ -1211,13 +1211,17 @@ public final class JpaSchemaReader {
         return schema + physical(auditPrefix + table.substring(dot + 1) + auditSuffix);
     }
 
-    /** Envers' revision table and the sequence its key is taken from (Hibernate 6). */
+    /**
+     * Envers' revision table. Its key is Hibernate's native one (Hibernate 6.5 to 7): an identity column on
+     * H2 and SQL Server, revinfo_seq on PostgreSQL and Oracle - a plain column with the sequence everywhere
+     * left H2 and SQL Server inserting no number ("NULL not allowed for column REV").
+     */
     private static void revisionTable(Schema s) {
         Table r = s.table(new Table("revinfo", "Envers"));
-        r.column(Column.of("rev", ColumnType.INTEGER).nullable(false));
+        r.column(Column.of("rev", ColumnType.INTEGER).nullable(false).nativeKey(true));
         r.column(Column.of("revtstmp", ColumnType.BIGINT).nullable(false));
         r.primaryKey("rev");
-        s.sequence(new Schema.Sequence("revinfo_seq", 1, 50));
+        s.sequence(new Schema.Sequence("revinfo_seq", 1, 50, true));
     }
 
     // ---- names and lookups ----------------------------------------------------------

@@ -1070,7 +1070,7 @@ config:
 **JPA 도메인의 테이블** 은 생성된 엔티티 소스(와 `mapping: xml` 의 `orm.xml`)에서 읽습니다 - Hibernate 가 읽는 그대로라
 개발자가 고친 엔티티·직접 쓴 엔티티(outbox 등)도 들어갑니다. 이름은 Spring Boot 의 규칙(snake case, 관계 컬럼
 `필드_대상키`, 조인 테이블 `소유테이블_속성`), 타입은 Hibernate 의 선택, 길이·NOT NULL 은 `@Size`·`@NotNull` 까지
-반영합니다. Envers(`@Audited`) 의 감사 테이블·`revinfo`·`revinfo_seq` 도 쓰며, `application.yml` 의
+반영합니다. Envers(`@Audited`) 의 감사 테이블과 `revinfo` 도 쓰며(`rev` 는 Hibernate 처럼 H2·SQL Server 에서 identity 컬럼, PostgreSQL·Oracle 에서 `revinfo_seq`), `application.yml` 의
 `audit_table_suffix` 같은 설정을 읽습니다. 2.x 코드를 지키는 프로젝트(`output = 'v2'`)는 `elcoreDdl` 작업이 `elcore` 뒤에 쓰고, 빌드가 컴파일 전에 생성할 때(`generateBeforeCompile`, 기본 켬)만 `processResources` 전에도 씁니다.
 테이블을 생성된 소스에서 읽으므로, 코드를 생성하기 전에 `elcoreDdl` 을 돌리면(생성 소스를 git 에서 빼 둔 새 체크아웃) 빌드가
 멈추고 소스가 없거나 컬럼을 읽지 못한 엔티티를 알려 줍니다 - `elcore3`(또는 `elcore`)을 먼저 돌리십시오.

@@ -132,17 +132,32 @@ public final class Schema {
         public final String name;
         public final long start;
         public final int increment;
+        /** The sequence of a native key ({@link Column#nativeKey}): not made where the key is an identity column. */
+        public final boolean nativeOnly;
 
         public Sequence(String name, long start, int increment) {
+            this(name, start, increment, false);
+        }
+
+        public Sequence(String name, long start, int increment, boolean nativeOnly) {
             this.name = name;
             this.start = start;
             this.increment = increment;
+            this.nativeOnly = nativeOnly;
+        }
+
+        /** Whether the database has this sequence. */
+        public boolean on(Database db) {
+            return !(nativeOnly && db.nativeIdentity());
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof Sequence && ((Sequence) o).name.equals(name) && ((Sequence) o).start == start
-                    && ((Sequence) o).increment == increment;
+            return o instanceof Sequence
+                    && ((Sequence) o).name.equals(name)
+                    && ((Sequence) o).start == start
+                    && ((Sequence) o).increment == increment
+                    && ((Sequence) o).nativeOnly == nativeOnly;
         }
 
         @Override
@@ -189,6 +204,7 @@ public final class Schema {
                 }
                 if (!c.nullable) cn.put("nullable", false);
                 if (c.identity) cn.put("identity", true);
+                if (c.nativeKey) cn.put("nativeKey", true);
                 if (c.ascii) cn.put("ascii", true);
                 // Only with ddl comments on: a state of a history without them reads as it did.
                 if (c.comment != null) cn.put("comment", c.comment);
@@ -220,6 +236,7 @@ public final class Schema {
             sn.put("name", s.name);
             sn.put("start", s.start);
             sn.put("increment", s.increment);
+            if (s.nativeOnly) sn.put("nativeOnly", true);
         }
         try {
             return JSON.writeValueAsString(root) + "\n";
@@ -251,6 +268,7 @@ public final class Schema {
                         cn.path("scale").asInt(0),
                         cn.path("nullable").asBoolean(true),
                         cn.path("identity").asBoolean(false),
+                        cn.path("nativeKey").asBoolean(false),
                         cn.path("ascii").asBoolean(false),
                         cn.hasNonNull("comment") ? cn.get("comment").asText() : null));
             }
@@ -267,7 +285,11 @@ public final class Schema {
             s.tables.put(t.name, t);
         }
         for (JsonNode sn : root.path("sequences")) {
-            s.sequence(new Sequence(sn.path("name").asText(), sn.path("start").asLong(1), sn.path("increment").asInt(1)));
+            s.sequence(new Sequence(
+                    sn.path("name").asText(),
+                    sn.path("start").asLong(1),
+                    sn.path("increment").asInt(1),
+                    sn.path("nativeOnly").asBoolean(false)));
         }
         return s;
     }
