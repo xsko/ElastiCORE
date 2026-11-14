@@ -28,7 +28,8 @@ public class ConditionComparisonTest {
             "  CcOrder:",
             "    meta: entity @root @expose(20) @invariant(total >= 0, 'never below zero')"
                     + " @invariant(quantity <= 10, 'ten at most') @invariant(rate == 1, 'one = one')"
-                    + " @invariant(lines.size >= 1, 'a line') @specification(exactlyThree, quantity == 3)",
+                    + " @invariant(lines.size >= 1, 'a line') @specification(exactlyThree, quantity == 3)"
+                    + " @invariant(total != 7, 'not seven') @specification(oneLine, lines.size == 1)",
             "    fields:",
             "      orderId: long @id @sequence",
             "      total: Long",
@@ -64,6 +65,7 @@ public class ConditionComparisonTest {
         assertTrue(invariants.contains("ccOrder.getLines().size() < 1"), invariants);
         assertTrue(invariants.contains("one = one"), invariants);
         assertTrue(invariants.contains("invariant.CcOrder.total-ge-0"), invariants);
+        assertTrue(invariants.contains("ccOrder.getTotal() == null || ccOrder.getTotal() == 7"), invariants);
         String specs = found(project, "CcOrderSpecifications.java");
         assertTrue(specs.contains("ccOrder.getQuantity() != null && ccOrder.getQuantity() == 3"), specs);
     }
@@ -94,6 +96,12 @@ public class ConditionComparisonTest {
         String invariants = found(project, "CcOrderInvariants.kt");
         assertTrue(invariants.contains("ccOrder.rate == null || ccOrder.rate!!.compareTo(1) != 0"), invariants);
         assertTrue(invariants.contains("ccOrder.quantity == null || ccOrder.quantity!! > 10"), invariants);
+        // A Long against the Int literal: compareTo, as == would not compile; != turned around is ==.
+        assertTrue(invariants.contains("ccOrder.total == null || ccOrder.total!!.compareTo(7) == 0"), invariants);
+        // An Int against a whole number, and a count, as written.
+        String specs = found(project, "CcOrderSpecifications.kt");
+        assertTrue(specs.contains("ccOrder.quantity!! == 3"), specs);
+        assertTrue(specs.contains("ccOrder.lines!!.size == 1"), specs);
     }
 
     private static File run(String name, String language) throws Exception {

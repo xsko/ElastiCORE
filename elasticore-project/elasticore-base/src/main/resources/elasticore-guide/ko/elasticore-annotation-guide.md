@@ -2006,7 +2006,7 @@ false 입니다. TS 타입 선언은 기본 직렬화에 맞춰 `number` 입니�
 | 형태 | 뜻 | 예 |
 |---|---|---|
 | `필드.size > n` | to-many 멤버 수 | `items.size > 0` |
-| `필드 > n` / `<` / `>=` / `<=` / `==` | 숫자 비교 (`Integer`/`Long`/`Double`/`BigDecimal` 등, `.size` 도) | `totalAmount >= 100` |
+| `필드 > n` / `<` / `>=` / `<=` / `==` / `!=` | 숫자 비교 (`Integer`/`Long`/`Double`/`BigDecimal` 등, `.size` 도) | `totalAmount >= 100` |
 | `필드 notNull` | 설정되어 있음 | `notes notNull` |
 | `필드 notEmpty` | to-many 가 비어있지 않음 | `items notEmpty` |
 

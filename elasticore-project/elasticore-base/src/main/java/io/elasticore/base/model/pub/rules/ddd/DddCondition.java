@@ -109,8 +109,16 @@ final class DddCondition {
         // candidate a specification about them should select.
         String guard = guard(var, f, syntax, negated);
 
+        // Kotlin has no == between two kinds of number (a Long and the Int literal 0, an Int and 1.5);
+        // compareTo has. Only an Int against a whole number is compared as written.
+        boolean whole = bound.indexOf('.') < 0;
+        boolean kotlinEquality = equality && syntax == Syntax.KOTLIN;
+
         if (size) {
             if (!f.isList()) return null;
+            if (kotlinEquality && !whole) {
+                return guard + String.format("%s.compareTo(%s) %s 0", count(var, f, syntax), bound, comparison);
+            }
             return guard + String.format("%s %s %s",
                     count(var, f, syntax), comparison, bound);
         }
@@ -130,13 +138,17 @@ final class DddCondition {
             if (syntax == Syntax.TYPESCRIPT) {
                 return guard + String.format("%s %s %s", read(var, f, syntax, true), comparison, bound);
             }
+            if (kotlinEquality) {
+                return guard
+                        + String.format("%s.value().compareTo(%s) %s 0", read(var, f, syntax, true), bound, comparison);
+            }
             return guard + String.format("%s.value() %s %s", read(var, f, syntax, true), comparison, bound);
         }
         if (!isComparableNumber(f)) return null;
 
         String simple = f.typeName().substring(f.typeName().lastIndexOf('.') + 1);
-        if (equality && syntax == Syntax.KOTLIN && ("Double".equals(simple) || "Float".equals(simple))) {
-            // Kotlin has no == between a Double and an Int literal; compareTo has.
+        boolean anInt = "Int".equals(simple) || "Integer".equals(simple);
+        if (kotlinEquality && !(anInt && whole)) {
             return guard + String.format("%s.compareTo(%s) %s 0", read(var, f, syntax, true), bound, comparison);
         }
         return guard + String.format("%s %s %s",
@@ -145,7 +157,7 @@ final class DddCondition {
 
     /** The operator as written, or the one that holds exactly when it does not; null when not one. */
     static String comparison(String operator, boolean negated) {
-        String[] pairs = {">", "<=", "<", ">=", ">=", "<", "<=", ">", "==", "!="};
+        String[] pairs = {">", "<=", "<", ">=", ">=", "<", "<=", ">", "==", "!=", "!=", "=="};
         for (int i = 0; i < pairs.length; i += 2) {
             if (pairs[i].equals(operator)) return negated ? pairs[i + 1] : operator;
         }

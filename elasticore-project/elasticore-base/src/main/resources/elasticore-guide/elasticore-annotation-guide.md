@@ -2006,7 +2006,7 @@ The TS type declaration is `number`, to match the default serialization.
 | Form | Meaning | Example |
 |---|---|---|
 | `field.size > n` | Number of to-many members | `items.size > 0` |
-| `field > n` / `<` / `>=` / `<=` / `==` | Number comparison (`Integer`/`Long`/`Double`/`BigDecimal` and so on, `.size` too) | `totalAmount >= 100` |
+| `field > n` / `<` / `>=` / `<=` / `==` / `!=` | Number comparison (`Integer`/`Long`/`Double`/`BigDecimal` and so on, `.size` too) | `totalAmount >= 100` |
 | `field notNull` | Is set | `notes notNull` |
 | `field notEmpty` | A to-many is not empty | `items notEmpty` |
 
