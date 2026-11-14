@@ -26,6 +26,7 @@
 
 - 원격 리소스(HTTP) 다운로드를 스킵하고 로컬 캐시만 사용
 - CI/CD 파이프라인에서 `./gradlew elcore -Pmode=valid` 를 빌드 전 단계로 활용 가능
+- 3.0 규칙 엔진(`elcore3`, 기본값) 프로젝트: `./gradlew elcoreValidate` (`elasticore-rule-guide.md` 의 "CI 에서 점검")
 
 ### 멀티 모듈 통합 생성
 

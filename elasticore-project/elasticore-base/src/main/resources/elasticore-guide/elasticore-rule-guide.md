@@ -1941,6 +1941,33 @@ when you choose an architecture other than layered.
 > The generated sources of `elasticore-template` are **golden files**. This module has `output = 'v2'`, so
 > `elcore3` also writes in compatibility mode. If you overwrote them with `-Pv3`/`-Pforce`, revert them.
 
+### Check in CI (`elcoreValidate`)
+
+`./gradlew elcoreValidate` runs the build as configured with **nothing written** but `build/elasticore/validate.md`
+(the 3.0 rule engine's counterpart of 2.x's `elcore -Pmode=valid`). Put it in CI before `build`:
+
+```bash
+./gradlew elcoreValidate          # fails (exit 1) on the cases below
+./gradlew elcoreValidate -Pstrict # a DSL warning fails it too
+```
+
+| Found | Result |
+|---|---|
+| A model check failure, a generation that fails, a Flyway migration not written yet | Fails |
+| A generated file whose text the DSL would change; a DDL schema that would change | Fails - run `elcore3` and commit |
+| A generated file the DSL no longer produces | Fails - run `elcore3` and commit |
+| A conflict left in a file (`<<<<<<< yours`) | Fails |
+| A file you edited that the build leaves as it is | Passes, listed |
+| A DSL warning | Passes, counted (fails with `-Pstrict`) |
+| A file without a header and without a base in `.elasticore/cache` | Passes, listed as not checked |
+
+- A file the build would write that is not there fails only in a project that keeps its generated sources in git (one
+  of them is there). A project whose build generates them (`.gitignore`d) is checked for its DSL and for the generated
+  files it does commit, such as the DDL.
+- Commit `.elasticore/cache` with the generated files: without it the build takes them for yours, and so does this check.
+- The TypeScript client is checked with `-Pts`. `-Pdomain` is refused: the check reads the whole project. A migration the build would write (`ddl.migration`) fails it, and none is written.
+- Not checked: `schema.yml`, the context map, the Ossie model. With `output = 'v2'` the task runs 2.x's own check (`elcore -Pmode=valid`).
+
 ---
 
 ## 10. Checklist

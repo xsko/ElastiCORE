@@ -26,6 +26,7 @@ Checks that the generated code is consistent before the build. It writes no file
 
 - Skips downloading remote (HTTP) resources and uses the local cache only
 - In a CI/CD pipeline, you can use `./gradlew elcore -Pmode=valid` as a step before the build
+- A project on the 3.0 rule engine (`elcore3`, the default): `./gradlew elcoreValidate` (`elasticore-rule-guide.md`, "Check in CI")
 
 ### Multi-module generation
 
