@@ -179,6 +179,39 @@ public class AbstractModelLoader implements ConstantParam {
         return s.charAt(s.length() - 1) == q && s.indexOf(q, 1) == s.length() - 1;
     }
 
+    /** The annotations that hold a condition, where ==, &gt;= and &lt;= are comparisons. */
+    private static final java.util.Set<String> CONDITIONS = java.util.Collections.unmodifiableSet(
+            new java.util.HashSet<String>(java.util.Arrays.asList("count", "invariant", "specification")));
+
+    /**
+     * Whether an '=' outside quotes assigns (key=value) rather than compares:
+     * one that is part of ==, &gt;=, &lt;= or != does not.
+     */
+    static boolean hasAssignment(String parameters) {
+        char quote = 0;
+        for (int i = 0; i < parameters.length(); i++) {
+            char ch = parameters.charAt(i);
+            if (quote != 0) {
+                if (ch == quote) quote = 0;
+                continue;
+            }
+            if (ch == '"' || ch == '\'') {
+                quote = ch;
+                continue;
+            }
+            if (ch != '=') continue;
+            char before = i > 0 ? parameters.charAt(i - 1) : ' ';
+            char after = i + 1 < parameters.length() ? parameters.charAt(i + 1) : ' ';
+            if (after == '=') {
+                i++;
+                continue;
+            }
+            if (before == '<' || before == '>' || before == '!') continue;
+            return true;
+        }
+        return false;
+    }
+
     /** key=value, key="value" or a single value - the 2.x reading of annotation parameters. */
     private static final Pattern KV =
             Pattern.compile("(\\w+)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
@@ -200,6 +233,10 @@ public class AbstractModelLoader implements ConstantParam {
         Properties properties = new Properties();
 
         if(parameters.indexOf("=")<0) {
+            singleValue = parameters;
+        } else if (CONDITIONS.contains(annotationName) && !hasAssignment(parameters)) {
+            // A condition annotation whose only '=' are comparisons (==, >=, <=)
+            // is one value: @count(Comment.post, status == PUBLISHED).
             singleValue = parameters;
         }else if(isOneQuotedValue(parameters)) {
             // One quoted string is one value, whatever it contains: an SQL

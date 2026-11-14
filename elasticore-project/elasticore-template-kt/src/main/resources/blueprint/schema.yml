@@ -69,6 +69,7 @@ entities:
       attachments: List<Attachment> @relation(mappedBy="attachments_id") @foreignKey(attachments_id) -- List<Attachment> entity relationship @Cascade
       ratings: Integer[] @Column(name = "ratings")
       labels: string @Column(name = "labels")
+      commentCount: Long @Column(name = "comment_count")
 
   Attachment:
     meta: entity @java(io.elasticore.blueprint.domain.content.entity.Attachment)

@@ -12,7 +12,7 @@ import java.util.List;
 import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 
 /**
- * {@code @count(Comment.post[, status is PUBLISHED])}: a count kept on a row of the rows of another entity that
+ * {@code @count(Comment.post[, status == PUBLISHED])}: a count kept on a row of the rows of another entity that
  * point to it - a post's {@code commentCount} (issue 179).
  *
  * <p>Carried out by the CoreService of the counted entity (Comment): each write of a row - a save, an update

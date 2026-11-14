@@ -424,7 +424,7 @@ public final class EntitySpec {
 
     /**
      * A count kept on a row of the rows of another entity that point to it:
-     * {@code commentCount: long @count(Comment.post, status is PUBLISHED)} on Post.
+     * {@code commentCount: long @count(Comment.post, status == PUBLISHED)} on Post.
      */
     public static final class CountRef {
         /** The update that counts the row {@code :id} again. */

@@ -1,10 +1,10 @@
 ### New Features (derived values - `@count`)
 
-#### `@count(Comment.post[, status is VISIBLE])`: a count kept on a row of the rows that point to it
+#### `@count(Comment.post[, status == VISIBLE])`: a count kept on a row of the rows that point to it
 - Why (issue 179): a post's `commentCount` and `likeCount`, where a comment and a like are roots of their own, were
   counted again by hand in the same transaction as every change of a comment or a like. `@compute` reaches only the
   aggregate's own members.
-- What: on the counting entity, `commentCount: long @count(Comment.post, status is VISIBLE)`. The counted entity's
+- What: on the counting entity, `commentCount: long @count(Comment.post, status == VISIBLE)`. The counted entity's
   CoreService touches the count at each write of a row - a save, an update (the row it pointed to before and the one
   it points to now), a delete by key and by search, an update by condition, a command that moves its state - and a
   row an `@onDelete(cascade)` removes says so too. The runtime's new `io.elasticore.springboot3.domain.Counts`
@@ -16,9 +16,8 @@
   writes are handled by that design; it is not load-tested.
 - The field is the model's: `@readonly`, `@updatable(false)` and `@default(0)` are implied - no request writes it,
   a save of the counting row does not write it back, a new row starts at 0. A soft-deleted row is not counted.
-- Form: the condition says `is` (`status is VISIBLE and pinned is false`) - an `=` in an annotation reads as a
-  key=value pair and drops the rest. A field is compared with an enum constant, `true`, `false`, a number or
-  `'text'`.
+- Form: the condition compares with `==` (`status == VISIBLE and pinned == false`) - see `condition-comparisons.md`.
+  A field is compared with an enum constant, `true`, `false`, a number or `'text'`.
 - Misuse stops the build: no `Entity.reference`, a reference that does not point to the counting entity, a value
   of the wrong kind for the field, a count that is not a `long` or an `int`, a counting entity without a single key, a
   counted entity written by its aggregate's root or by a cascading collection (count it with `@compute`); MyBatis
@@ -29,7 +28,7 @@
 - Unchanged: a model without `@count` generates the same.
 - Samples: `elasticore-template-ddd` board - `Post.commentCount` (visible comments: `Comment` gains a `status`
   with `hide` / `restore`) and `Post.likeCount` (new root `PostLike`); its DDL files gain the columns and the
-  table. `elasticore-template-kt` content - `Article.commentCount @count(Comment.article, approved is true)`; its DDL
+  table. `elasticore-template-kt` content - `Article.commentCount @count(Comment.article, approved == true)`; its DDL
   files gain the column.
 - Checked:
   - `CountsTest` (runtime, H2 + Spring transactions, on Hibernate 6 and 7 - springboot3 and springboot4): the

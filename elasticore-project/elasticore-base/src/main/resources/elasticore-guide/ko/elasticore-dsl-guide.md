@@ -135,7 +135,7 @@ entity:
 
 `@invariant` 와 `@specification` 의 조건 문법은 **필드·비교·리터럴**로 제한됩니다
 (`items.size > 0`, `totalAmount > 100`, `notes notNull`, `items notEmpty`).
-`>=` 와 `:` 는 쓸 수 없습니다 — 빠뜨린 것이 아니라 각각 DSL 애노테이션 파서와
+`>=`·`<=`·`==`·`!=` 로 비교합니다. `=` 하나와 `:` 는 쓸 수 없습니다 — 각각 DSL 애노테이션 파서와
 YAML 이 다르게 읽기 때문입니다. 자세한 이유는 annotation guide 에 있습니다.
 
 ### 필드 어노테이션

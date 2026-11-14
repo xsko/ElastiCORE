@@ -251,7 +251,7 @@ The two patterns only write the same sentence differently, so they share a synta
 | Form | Meaning |
 |---|---|
 | `items.size > 0` | The number of members of a to-many is greater than the value |
-| `totalAmount > 100` | The number is greater than the value (`<` also works) |
+| `totalAmount > 100` | The number is greater than the value (`<`, `>=`, `<=`, `==`, `!=` also work) |
 | `notes notNull` | The field is set |
 | `items notEmpty` | The to-many holds something |
 
@@ -259,9 +259,9 @@ A field, a comparison and a literal, nothing more. Accepting an arbitrary expres
 **an almost-right parser is worse than an obviously limited form** - the DSL starts to
 look like a place to put logic, and it is not only that.
 
-> You **cannot use** `>=` and `<=`. The DSL annotation parser reads an `=` inside an argument
-> as the start of a key/value list. This is not an omission but a limit, and
-> you use word forms such as `notNull` / `notEmpty` instead. For the same reason `:` is not used
+> A single `=` **cannot be used** - equality is `==`. The DSL annotation parser reads a single `=`
+> inside an argument as the start of a key/value list (in `@invariant`, `@specification` and `@count`,
+> one that is part of `==`, `>=`, `<=`, `!=` is a comparison). For a similar reason `:` is not used
 > either - the meta line is a YAML scalar, so `name: ` is read as the start of a mapping and the file does not
 > load at all.
 

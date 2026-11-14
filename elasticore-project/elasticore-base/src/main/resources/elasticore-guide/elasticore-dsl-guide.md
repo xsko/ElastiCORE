@@ -135,7 +135,7 @@ For parameters and examples of generated output, see `elasticore-annotation-guid
 
 The condition syntax of `@invariant` and `@specification` is limited to **fields, comparisons and literals**
 (`items.size > 0`, `totalAmount > 100`, `notes notNull`, `items notEmpty`).
-You cannot use `>=` and `:` - this is not an omission, because the DSL annotation parser and
+`>=`, `<=`, `==` and `!=` compare; a single `=` and `:` cannot be used - the DSL annotation parser and
 YAML read each of them differently. The annotation guide explains the reasons in detail.
 
 ### Field annotations

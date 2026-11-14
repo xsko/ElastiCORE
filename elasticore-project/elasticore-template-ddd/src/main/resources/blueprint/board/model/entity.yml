@@ -20,7 +20,7 @@ entity:
       quoted: Post @onDelete(setNull)
       version: long @jpa:Version
       # Kept on the post, counted again whenever what is counted changes (@count).
-      commentCount: long @count(Comment.post, status is VISIBLE)
+      commentCount: long @count(Comment.post, status == VISIBLE)
       likeCount: long @count(PostLike.post)
 
   # Deleting a post deletes its comments, and a comment its replies.

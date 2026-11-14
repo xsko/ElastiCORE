@@ -728,18 +728,18 @@ Bookmark:
 - Generated in the deleted root's CoreService: `onDeletePost(em, row)` (static in Java; a member in Kotlin, beside the class's companion object), JPQL over the reference's id (`x.postId`) or through the relation in layered (`x.post.postId`). One query per reference per row: deleting thousands of rows is thousands of queries.
 - Misuse stops the build: another value; a field that is no single reference to an entity of the domain; `setNull` on a required (`!`) reference; the `mappedBy` side of a one-to-one; a target with a composite key; a target that is a member of an aggregate (point to its root), or a `cascade` from one. Not the cascaded rows' domain events, no `ON DELETE` in the DDL. A generated Kotlin service test you edited needs its entity manager's `createQuery` stubbed. `elasticore-template-ddd` `BoardOnDeleteTest` (HTTP), `CatalogApiTest` (layered, versioned setNull), `elasticore-template-kt` `OnDeleteTest`, `Ticket.agent` (`@access` target).
 
-#### @count(Entity.reference[, field is VALUE and ...]) - a count of the rows that point to this one
+#### @count(Entity.reference[, field == VALUE and ...]) - a count of the rows that point to this one
 > **Works in:** v3, Kotlin (JPA), ddd, hexagonal, layered · **Not in:** MyBatis (mode: mybatis), 2.x-compatible output (output = 'v2') - the build stops; 2.x generator (not generated)
-Kept on the row, counted again in the transaction of every write of a counted row. Write the condition with `is` - an `=` in an annotation reads as a key=value pair.
+Kept on the row, counted again in the transaction of every write of a counted row. The condition compares with `==` - a single `=` in an annotation reads as a key=value pair.
 ```yaml
 Post:
   fields:
-    commentCount: long @count(Comment.post, status is VISIBLE)   # the visible comments
+    commentCount: long @count(Comment.post, status == VISIBLE)   # the visible comments
     likeCount:    long @count(PostLike.post)
 ```
 - The counted entity's CoreService (Comment) touches the counts at each write - a save, an update (the row it pointed to before and now), a delete by key, by search, an update by condition, a command that moves its state - and a row an `@onDelete(cascade)` removes. Just before the commit, each touched row is counted again once: `update Post x set x.commentCount = (select count(c) from Comment c where c.postId = x.postId and c.status = ...VISIBLE) where x.postId = :id`. The counting row is locked first (a pessimistic select) and then counted by a statement of its own, rows in key order - so a count waiting for another transaction's lock counts in a statement that starts after it (not load-tested).
 - The field is the model's: `@readonly` (no request writes it), `@updatable(false)` (a save of the post does not write it back), `@default(0)`. A soft-deleted (`@deleted`) row is not counted. A condition compares a field with an enum constant, `true`, `false`, a number or `'text'`, several joined by `and`.
-- A row written around the generated service (SQL, a repository of your own) is not counted until a write through it touches the count. Index the counted reference column (`comment.post_id`): each recount is a count over it. Adding `@count` to an existing table: fill the column once (with your table and column names) - `update post p set comment_count = (select count(*) from comment c where c.post_id = p.post_id and ...)`. In the same transaction a read of the post still shows the old count (it is set at the commit); a DTO read earlier and written back onto the post is refused in ddd/hexagonal (422, `@updatable(false)`) and ignored in layered; Envers revisions do not see it. The condition is equality only (`is`, joined by `and`). Misuse stops the build: no `Entity.reference`, a reference that does not point to this entity, a value the field has not, a count that is no `long`/`int`. `elasticore-template-ddd` `BoardCountTest` (HTTP), `elasticore-template-kt` `OnDeleteTest.anArticleCountsItsApprovedComments`.
+- A row written around the generated service (SQL, a repository of your own) is not counted until a write through it touches the count. Index the counted reference column (`comment.post_id`): each recount is a count over it. Adding `@count` to an existing table: fill the column once (with your table and column names) - `update post p set comment_count = (select count(*) from comment c where c.post_id = p.post_id and ...)`. In the same transaction a read of the post still shows the old count (it is set at the commit); a DTO read earlier and written back onto the post is refused in ddd/hexagonal (422, `@updatable(false)`) and ignored in layered; Envers revisions do not see it. The condition is equality only (`==`, joined by `and`). Misuse stops the build: no `Entity.reference`, a reference that does not point to this entity, a value the field has not, a count that is no `long`/`int`. `elasticore-template-ddd` `BoardCountTest` (HTTP), `elasticore-template-kt` `OnDeleteTest.anArticleCountsItsApprovedComments`.
 
 #### Automatic DTO rendering of relationship fields (nested DTO + FK field)
 > **Since: 2.2.260703**
@@ -2006,14 +2006,14 @@ The TS type declaration is `number`, to match the default serialization.
 | Form | Meaning | Example |
 |---|---|---|
 | `field.size > n` | Number of to-many members | `items.size > 0` |
-| `field > n` / `field < n` | Number comparison (`Integer`/`Long`/`Double`/`BigDecimal` and so on) | `totalAmount > 100` |
+| `field > n` / `<` / `>=` / `<=` / `==` / `!=` | Number comparison (`Integer`/`Long`/`Double`/`BigDecimal` and so on, `.size` too) | `totalAmount >= 100` |
 | `field notNull` | Is set | `notes notNull` |
 | `field notEmpty` | A to-many is not empty | `items notEmpty` |
 
 It accepts only fields, comparisons and literals. The intent is not to build an arbitrary expression parser.
 
-> **`>=`, `<=` and `==` are not available.** The DSL annotation parser reads an `=` inside an argument
-> as the start of a key/value list. `:` is not available either - the meta line is a YAML scalar, so
+> **A single `=` is not available** - equality is `==`. A single `=` reads as the start of a key/value pair (in `@count` too).
+> `:` is not available either - the meta line is a YAML scalar, so
 > `name: ` is read as the start of a mapping and the file fails to load.
 
 A condition that cannot be read is **dropped silently** (the build continues). This is so that
