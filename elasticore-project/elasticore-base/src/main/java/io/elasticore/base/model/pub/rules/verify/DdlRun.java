@@ -92,9 +92,8 @@ final class DdlRun {
     /** Set: the migrations and the state are handed here instead of being written (elcoreValidate). */
     private java.util.function.BiConsumer<File, String> dry;
 
-    DdlRun dry(java.util.function.BiConsumer<File, String> instead) {
+    void dry(java.util.function.BiConsumer<File, String> instead) {
         this.dry = instead;
-        return this;
     }
 
     /** A group of domains in one database: the project's, or one separate domain's. */

@@ -67,6 +67,19 @@ public class ValidateTest {
         assertTrue(report.contains("**Failed:**") && report.contains("generated file(s) not up to date"), report);
         assertTrue(report.contains("VdItem.java"), report);
         assertTrue(log[0].contains("[elcore3] validate (nothing was written): FAILED"), log[0]);
+        assertTrue(log[0].contains("  stale: src/main/java/io/acme/shop/entity/VdItem.java"), log[0]);
+        assertTrue(log[0].contains("=== elcore3:"), "the run's summary: " + log[0]);
+        assertTrue(log[0].contains("[elcore3] the report: "), log[0]);
+        assertTrue(report.contains("## Not up to date - run ./gradlew elcore3 and commit"), report);
+        assertTrue(report.contains("(they fail only with -Pstrict)"), report);
+        // The stale files in order, on the console as in the report.
+        List<String> stale = new ArrayList<String>();
+        for (String line : log[0].replace("\r", "").split("\n", -1)) {
+            if (line.startsWith("  stale: ")) stale.add(line);
+        }
+        List<String> sorted = new ArrayList<String>(stale);
+        java.util.Collections.sort(sorted);
+        assertTrue(stale.size() > 1 && stale.equals(sorted), stale.toString());
         Map<String, String> after = tree(project);
         after.remove("src/main/resources/blueprint/shop/model/model.yml");
         before.remove("src/main/resources/blueprint/shop/model/model.yml");
@@ -78,6 +91,9 @@ public class ValidateTest {
         model(project, MODEL.replace("  VdItem:", "  VdOther:").replace("itemId", "otherId"));
         assertEquals(1, run(project, true, false, log), log[0]);
         assertTrue(report(project).contains("no longer produces"), report(project));
+        assertTrue(report(project).contains("## No longer produced by the DSL"), report(project));
+        assertTrue(log[0].contains("  no longer produced: "), log[0]);
+        assertTrue(log[0].contains("  - "), log[0]);
     }
 
     @Test
@@ -103,8 +119,10 @@ public class ValidateTest {
         String[] log = new String[1];
         ddl = true;
         try {
-            // No source on disk yet: the tables are read off what the run would write.
+            // No source on disk yet: the tables are read off what the run would write - laid out and taken away.
+            List<String> overlays = overlays();
             assertEquals(0, run(project, true, false, log), log[0]);
+            assertEquals(overlays, overlays(), "the sources laid out for the DDL are gone");
             assertTrue(report(project).contains("**Passed.**"), report(project));
             assertTrue(find(project, "schema-postgresql.sql") == null, "nothing written");
 
@@ -126,6 +144,17 @@ public class ValidateTest {
     }
 
     private static boolean ddl;
+
+    /** The temporary directories a validation lays its sources out in, as there now. */
+    private static List<String> overlays() {
+        List<String> out = new ArrayList<String>();
+        String[] names = new File(System.getProperty("java.io.tmpdir")).list();
+        if (names != null) {
+            for (String n : names) if (n.matches("elcore-validate\\d+")) out.add(n);
+        }
+        java.util.Collections.sort(out);
+        return out;
+    }
 
     @Test
     public void anEditOfTheDevelopersPassesAndIsListed() throws Exception {
@@ -162,6 +191,7 @@ public class ValidateTest {
         assertTrue(report(project).contains("DSL warnings: 1"), report(project));
         assertEquals(1, run(project, true, true, log), log[0]);
         assertTrue(report(project).contains("DSL warning(s) (-Pstrict)"), report(project));
+        assertTrue(report(project).contains("(fail with -Pstrict)"), report(project));
     }
 
     @Test
@@ -204,6 +234,10 @@ public class ValidateTest {
             assertTrue(report.contains("1 migration(s) not written yet"), report);
             assertTrue(report.contains("## Migrations the build would write"), report);
             assertTrue(report.contains("schema-state.json"), report);
+            assertTrue(
+                    log[0].contains("    migration    src/main/resources/db/migration/schema-state.json  WROTE"),
+                    log[0]);
+            assertTrue(log[0].contains("    migration    src/main/resources/db/migration/postgresql/V"), log[0]);
             assertEquals(before, tree(project), "no migration and no state written");
         } finally {
             ddl = false;
