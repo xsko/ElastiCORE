@@ -10,6 +10,7 @@ CREATE TABLE ps_category (
     description VARCHAR2(3000 CHAR) NOT NULL,
     story CLOB,
     icon BLOB,
+    product_count NUMBER(19),
     PRIMARY KEY (category_id)
 );
 

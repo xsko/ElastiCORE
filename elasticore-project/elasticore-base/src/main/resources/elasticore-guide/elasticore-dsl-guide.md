@@ -653,6 +653,8 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Field | `@compute(unitCost * quantity)`, `@compute(sum(lines.subTotal))` | Calculated on every save |
 | Field | `@stamp(SHIPPED)` | The time the lifecycle last entered that state ("When a state was entered" under `states:`) |
 | Field | `@deleted` | A delete keeps the row and writes the time here; no read finds it again ("@deleted" in `elasticore-annotation-guide.md`) |
+| Reference | `@onDelete(cascade\|restrict\|setNull)` | What becomes of the rows that point to a row when it is deleted through its service: deleted with it, the delete refused (409 `restricted`), the reference cleared ("@onDelete" in `elasticore-annotation-guide.md`) |
+| Field | `@count(Comment.post[, status == VISIBLE])` | A count of the rows of another entity that point to this one, kept by their service at each write ("@count" in `elasticore-annotation-guide.md`) |
 
 Details: "@access / @owner", "@password / @login" and "@snapshot / @compute" in `elasticore-annotation-guide.md`.
 

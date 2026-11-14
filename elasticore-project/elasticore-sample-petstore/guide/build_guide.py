@@ -152,6 +152,44 @@ G_SIGNIN = method(JAVA + 'adapter/in/web/CustomerController.java', 'public Custo
     method(JAVA + 'adapter/in/web/CustomerController.java', 'public CustomerDTO me(')
 
 ORDER_BLOCK = block(ENTITY, 'PurchaseOrder')
+
+
+# ---- the numbers at the top, counted rather than typed: lines that are not blank -------------
+def nonblank(path):
+    return sum(1 for l in read(path).split('\n') if l.strip())
+
+
+def files(root, ext):
+    out = []
+    for d, _, names in os.walk(root):
+        out += [os.path.join(d, n) for n in names if n.endswith(ext)]
+    return sorted(out)
+
+
+MODEL_FILES = [RES + 'blueprint/petstore/model/%s.yml' % n for n in ('enum', 'entity', 'dto', 'metrics')]
+DSL_LINES = sum(nonblank(p) for p in MODEL_FILES)
+# The files the "손으로 쓴 것" table names; every other Java source is generated.
+HAND_JAVA = {'PurchaseOrder.java', 'PurchaseOrderService.java', 'AccountController.java', 'DemoAccounts.java',
+             'OrderLine.java', 'CustomerService.java', 'PetstoreApplication.java'}
+ALL_JAVA = files(ROOT + 'src/main/java', '.java')
+HAND = [p for p in ALL_JAVA if os.path.basename(p) in HAND_JAVA]
+GEN = [p for p in ALL_JAVA if os.path.basename(p) not in HAND_JAVA]
+assert len(HAND) == len(HAND_JAVA), sorted(os.path.basename(p) for p in HAND)
+TS = files(ROOT + 'src/main/ts', '.ts')
+assert TS, 'no TypeScript client in src/main/ts - run elcore3ts before this script'
+
+
+def stat(n, label, lines=None):
+    shown = '{:,}'.format(n) if lines is None else '%d · %s' % (n, '{:,}'.format(lines))
+    return '<div class="stat"><b>%s</b><span>%s</span></div>' % (shown, label)
+
+
+STATS = '\n        '.join([
+    stat(DSL_LINES, 'DSL 줄 (%d개 파일)' % len(MODEL_FILES)),
+    stat(len(GEN), '생성된 Java 파일 · 줄', sum(nonblank(p) for p in GEN)),
+    stat(len(TS), '생성된 TypeScript 파일 · 줄', sum(nonblank(p) for p in TS)),
+    stat(len(HAND), '손으로 쓴 Java 파일 · 줄', sum(nonblank(p) for p in HAND)),
+])
 SECTIONS = []
 
 # ---- page ------------------------------------------------------------------------
@@ -230,11 +268,8 @@ page.append('''<!doctype html>
         그리고 <b>DSL 로 아직 표현할 수 없는 것</b>까지 적습니다. "확인한 결과" 열은 실행 중인 애플리케이션에 HTTP 로 요청해서 본 응답입니다.
         DSL 과 생성 코드 발췌는 빌드 결과물에서 그대로 읽어 왔습니다.</p>
       <div class="stats">
-        <div class="stat"><b>149</b><span>DSL 줄 (4개 파일)</span></div>
-        <div class="stat"><b>89 · 8,316</b><span>생성된 Java 파일 · 줄</span></div>
-        <div class="stat"><b>34 · 1,144</b><span>생성된 TypeScript 파일 · 줄</span></div>
-        <div class="stat"><b>7 · 256</b><span>손으로 쓴 Java 파일 · 줄</span></div>
-        <!-- line counts leave out blank lines; the screens (web/src, 540 lines) are hand-written too -->
+        ''' + STATS + '''
+        <!-- counted by build_guide.py; line counts leave out blank lines; the screens (web/src) are hand-written too -->
       </div>
 
       <h2 id="people">사람과 권한</h2>
@@ -270,7 +305,7 @@ page.append('''<!doctype html>
         <thead><tr><th>업무</th><th>누가</th><th>DSL 로 표현</th><th>손으로 쓴 것 / DSL 밖</th></tr></thead>
         <tbody>
           <tr><td><a href="#browse">1. 상품 둘러보기</a></td><td>누구나</td><td>''' + cov('all') + '''</td><td>-</td></tr>
-          <tr><td><a href="#catalog-admin">2. 상품 관리</a></td><td>관리자</td><td>''' + cov('most') + '''</td><td>"품목이 있는 상품은 못 지움" 은 DB 외래 키로만. 관리 화면 없음</td></tr>
+          <tr><td><a href="#catalog-admin">2. 상품 관리</a></td><td>관리자</td><td>''' + cov('all') + '''</td><td>관리 화면 없음 (API 로)</td></tr>
           <tr><td><a href="#signup">3. 회원 가입</a></td><td>방문자</td><td>''' + cov('most') + '''</td><td>가입 후 바로 로그인(세션) · 비밀번호 최소 길이는 넣지 않음 (데모 계정)</td></tr>
           <tr><td><a href="#signin">4. 로그인·로그아웃</a></td><td>누구나</td><td>''' + cov('hand') + '''</td><td>로그인 API 3개(세션)는 손으로. 비밀번호 확인은 생성</td></tr>
           <tr><td><a href="#profile">5. 내 정보</a></td><td>고객</td><td>''' + cov('all') + '''</td><td>(현재 비밀번호 확인 없이 비밀번호 변경)</td></tr>
@@ -294,6 +329,7 @@ page.append('''<!doctype html>
           <tr><td><code>states:</code> <code>@compute</code> <code>@snapshot</code></td><td>경고 - 생성 안 됨</td><td>동작</td><td>경고 - 생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
           <tr><td><code>@root</code> <code>@behavior</code> <code>@editable</code> <code>@event</code></td><td>생성 안 됨</td><td>동작</td><td>생성 안 됨</td><td>MyBatis ddd · hexagonal 도 동작</td></tr>
           <tr><td><code>referenceColumn: short</code></td><td>바뀌는 것 없음</td><td>동작</td><td>바뀌는 것 없음</td><td>다른 애그리거트를 id 로 참조할 때의 컬럼 이름</td></tr>
+          <tr><td><code>@onDelete</code> <code>@count</code></td><td>동작</td><td>동작</td><td>빌드 중단</td><td>Kotlin(JPA) 도 동작 · MyBatis 는 빌드 중단</td></tr>
         </tbody>
       </table>
 ''')
@@ -305,7 +341,9 @@ page.append('''
 ''' + rules([
     ('누구나 본다', '<code>@access(read=public)</code>', '방문자 검색·조회 200'),
     ('분류 → 상품 → 품목', '<code>category: Category @ManyToOne</code><br><code>product: Product @ManyToOne</code>', '<code>{"categoryId":1001}</code> 로 개(Dogs) 상품만'),
-    ('이름 일부로 찾기', '<code>name: string(30)! @search(like)</code>', '<code>{"name":"%Puppy%"}</code> → 2건 (화면이 <code>%</code> 를 붙여 보냄)'),
+    ('이름 일부로 찾기', '<code>name: string(30)! @search(like)</code>', '<code>{"name":"gold"}</code> → Golden Retriever, Goldfish (대소문자 무시) · <code>%</code> 는 글자 그대로: <code>{"name":"%Puppy%"}</code> → 0건'),
+    ('검색창 하나로 찾기', 'ProductSrchDTO <code>keyword: string(50) @search(words:name, description, category.name)</code>', '단어마다 상품 이름·설명·분류 이름 중 어디엔가 (모든 단어, 대소문자 무시) - 4종 DB 에서 확인 (<code>WordsSearchCheck</code>)'),
+    ('기본은 이름순', 'Product <code>@sort(name+)</code>', '정렬을 정하지 않은 검색: Angelfish, Goldfish, Koi, Tiger Shark · 요청이 정하면 그것대로'),
     ('품목에 상품 이름도', 'dto.yml <code>productName: string @ref(product.name)</code>', '응답에 <code>productName</code>'),
     ('가격은 금액', '<code>unitCost: money(10.2)!</code>', 'JSON 숫자 10.00, Java <code>Money</code>'),
     ('배송 국가 목록', '<code>Country … @access(read=public) @expose(300)</code>', '결제 화면의 국가 선택'),
@@ -319,17 +357,27 @@ SECTIONS.append(src('catalog', '\n\n'.join([block(ENTITY, n) for n in ('Category
 
 # ---- 2 catalog admin -------------------------------------------------------------------------
 page.append('''
-      <h2 id="catalog-admin">2. 상품 관리 ''' + cov('most') + '''</h2>
-      <p class="biz">관리자가 분류·상품·품목·국가를 등록·수정·삭제하고 가격을 바꿉니다.</p>
+      <h2 id="catalog-admin">2. 상품 관리 ''' + cov('all') + '''</h2>
+      <p class="biz">관리자가 분류·상품·품목·국가를 등록·수정·삭제하고 가격을 바꿉니다. 분류마다 판매 중인 상품 수를 봅니다.</p>
 ''' + rules([
     ('관리자만 바꾼다', '<code>@access(read=public)</code> 에 create·update·delete 를 <b>적지 않음</b>', '방문자 401, 고객 403, 관리자 200'),
     ('가격은 0 보다 크다', '<code>@min(0.01, \'price must be positive\')</code>', '0 → 400 "unitCost: price must be positive" (화면 검증 함수에도 같은 문구)'),
     ('값을 바꿔도 지난 주문은 그대로', '주문 줄 <code>unitCost … @snapshot(item.unitCost)</code>', '10.00 → 11.50 으로 바꾼 뒤에도 기존 주문 줄은 10.00'),
-    ('품목이 있는 상품은 못 지운다', '<b>DSL 에 규칙 없음</b> - DB 외래 키', '409 "The row is still referenced by another…"'),
+    ('상품을 지우면 단종 - 품목·주문은 그대로', '<code>discontinuedAt: timestamp @deleted</code>', '품목이 있는 상품도 200 - 행은 남고 목록·조회에서 빠짐, 품목은 그 상품을 계속 가리킴'),
+    ('상품이 남은 분류는 못 지운다', '<code>category: Category @ManyToOne @onDelete(restrict)</code>', '409 "Category 2000 is still pointed to by Product rows (Product.category @onDelete(restrict))"'),
+    ('분류마다 판매 중인 상품 수', 'Category <code>productCount: long @count(Product.category)</code>', 'Fish 4 · 새 분류 0 → 상품 등록 1 → 단종 0 · 요청이 보낸 <code>productCount</code> 는 쓰지 않음'),
 ]) + '''
-      <div class="gap"><b>DSL 밖:</b> "품목이 남아 있으면 삭제할 수 없다" 는 업무 규칙이지만 DSL 에 쓸 곳이 없어서 DB 외래 키 오류(409)로만 지켜집니다.
-        관리 화면은 만들지 않았습니다 - <a href="/swagger-ui.html">Swagger</a> 에서 관리자로 로그인한 세션으로 API 를 부릅니다.</div>
+      ''' + code('catalog-admin') + '''
+      <p>개수는 상품 서비스가 상품을 쓸 때마다(등록·수정·삭제) 그 트랜잭션의 커밋 직전에 다시 셉니다. 단종된(<code>@deleted</code>) 상품은 세지 않고,
+        필드는 요청이 쓰지 못합니다(<code>@readonly</code>·<code>@updatable(false)</code> 가 자동). 서비스를 거치지 않고 넣은 행(<code>data.sql</code>)은
+        세지 않으므로, 시드 데이터 끝에서 한 번 채웁니다.
+        <code>restrict</code> 는 판매 중인 상품만 봅니다. 단종된 상품만 남은 분류는 그 행이 분류를 계속 가리키므로 DB 외래 키가 막습니다
+        (409 <code>"code":"referenced"</code>).</p>
+      <div class="gap"><b>화면 없음:</b> 관리 화면은 만들지 않았습니다 - <a href="/swagger-ui.html">Swagger</a> 에서 관리자로 로그인한 세션으로 API 를 부릅니다.</div>
 ''')
+SECTIONS.append(src('catalog-admin', '\n'.join(l for l in block(ENTITY, 'Category').split('\n') if 'productCount' in l or 'Category:' in l or 'meta:' in l or 'fields:' in l)
+                    + '\n  ...\n' + '\n'.join(l for l in block(ENTITY, 'Product').split('\n') if 'category:' in l or 'Product:' in l)
+                    + '\n\n-- data.sql: 시드 행은 한 번 센다\n' + [l for l in read(RES + 'data.sql').split('\n') if l.startswith('UPDATE ps_category')][0]))
 
 # ---- 3 sign up -------------------------------------------------------------------------------
 page.append('''
@@ -586,9 +634,10 @@ page.append('''
           <tr><td>4</td><td>기본값 규칙 - 배송지 = 집 주소, 주문일 = 오늘</td><td>손으로</td><td><code>@default(customer.homeAddress)</code>, <code>@default(today)</code></td></tr>
           <tr><td>5</td><td>로그인 API</td><td><b>완료</b> - <a href="#signin"><code>@login</code> + <code>@password</code></a></td><td>signin·signout·me 와 TS 클라이언트 생성. 가입 후 자동 로그인은 손으로</td></tr>
           <tr><td>6</td><td>비밀번호 최소 길이</td><td><b>된다</b> - <code>@length(min=8)</code> 이 해시 전에 검사됨 (이 샘플은 데모 계정 때문에 넣지 않음)</td><td>-</td></tr>
-          <tr><td>7</td><td>삭제 조건 - 품목이 있는 상품은 못 지움</td><td>DB 외래 키 409</td><td><code>@deleteWhen(items empty)</code> 같은 규칙 → 409 와 업무 문구</td></tr>
+          <tr><td>7</td><td>삭제 조건 - 상품이 남은 분류는 못 지움</td><td><b>완료</b> - <a href="#catalog-admin"><code>@onDelete(restrict)</code></a></td><td>409 와 업무 문구. 상품 자체는 <code>@deleted</code> 로 단종(품목이 있어도)</td></tr>
           <tr><td>8</td><td>기준·데모 데이터</td><td><code>data.sql</code>, <code>DemoAccounts</code></td><td><code>data:</code> 블록 (가입과 같은 규칙 - 해시 등 - 을 거쳐 넣음)</td></tr>
-          <tr><td>9</td><td>기본 정렬</td><td>화면이 지정</td><td><code>@expose(20, sort=orderDate desc)</code></td></tr>
+          <tr><td>9</td><td>기본 정렬</td><td><b>완료</b> - <a href="#browse"><code>@sort(name+)</code></a></td><td>요청이 정하지 않은 검색의 순서</td></tr>
+          <tr><td>10</td><td>다른 애그리거트의 개수 - 분류의 상품 수</td><td><b>완료</b> - <a href="#catalog-admin"><code>@count</code></a></td><td>조건은 같음 비교(<code>status == VISIBLE</code>)만</td></tr>
         </tbody>
       </table>
       <p>나머지 - 누가 무엇을 하는지, 주문의 생명주기, 가격 스냅샷, 합계, 필수·형식 검증, 비밀번호 저장, 민감 정보 숨김, 참조, 이벤트 - 는 DSL 에 있고,

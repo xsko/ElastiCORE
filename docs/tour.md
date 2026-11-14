@@ -223,7 +223,9 @@ someone else's order                       → 404
 | Access and ownership | `@access(read=owner, create=user)`, `@owner(customerId)` |
 | Sign-in and passwords | `@login`, `@password` (PBKDF2 hash; never in a response or a search) |
 | Lifecycle | `states:` — state checks, moves, events, which states may be deleted (`delete:`), `canShip(dto)` / `canDelete(dto)` for screens |
-| Derived values | `@snapshot`, `@compute` |
+| Derived values | `@snapshot`, `@compute`, `@count` — a count of the rows that point here, kept by their service |
+| Deleting what others point to | `@onDelete(cascade\|restrict\|setNull)` — a category with products: 409 `restricted` |
+| One search box | `@search(words:name, description, category.name)` — every word, each in any of the fields |
 | Validation | `!`, `@min(0.01, '...')`, `@email`, `@past` — TS validation with the same words as the server's 400 |
 | Business measures and terms | `metrics:` (revenue = total excluding cancelled), `@terms` |
 | Default order | `@sort(name+)` — when a request names none |
@@ -274,6 +276,9 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
   the reference project (`0 differ / 0 missing / 0 extra`: the four files a 2.x bug fix changes are accepted by name,
   one more differs only in import order). These two comparisons leave out each file's first line (its content hash
   and time), the wording of the generated-once marker, line endings and trailing blanks.
+- **In your CI too**: `./gradlew elcoreValidate -Pstrict` runs the build as configured, writes nothing but
+  `build/elasticore/validate.md`, and fails on a DSL that does not pass, a generated file (or DDL, or Flyway
+  migration) the DSL would change, and with `-Pstrict` on a DSL warning.
 - **Checked by running**: access answers over HTTP, the SQL of business measures against a real database, every column
   of the semantic model against database metadata.
 - **Measured**: adding a searchable field is one DSL line and 39 changed lines of generated code in 9 files; generated

@@ -281,6 +281,9 @@ INSERT INTO ps_country(iso_code, name, printable_name) VALUES ('YE', 'YEMEN', 'Y
 INSERT INTO ps_country(iso_code, name, printable_name) VALUES ('ZM', 'ZAMBIA', 'Zambia');
 INSERT INTO ps_country(iso_code, name, printable_name) VALUES ('ZW', 'ZIMBABWE', 'Zimbabwe');
 
+-- Category.productCount (@count) is kept by the product service; rows seeded around it are counted once here.
+UPDATE ps_category c SET product_count = (SELECT COUNT(*) FROM ps_product p WHERE p.category_id = c.category_id AND p.discontinued_at IS NULL);
+
 -- New rows are numbered after the seeded ones.
 ALTER TABLE ps_category ALTER COLUMN category_id RESTART WITH 2000;
 ALTER TABLE ps_product ALTER COLUMN product_id RESTART WITH 2000;

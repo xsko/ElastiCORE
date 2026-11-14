@@ -10,6 +10,7 @@ entity:
       description: string(3000)!
       story:       clob -- 긴 소개 글 (행 안의 긴 문자열 - PostgreSQL text, Oracle clob)
       icon:        blob -- 아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)
+      productCount: long @count(Product.category) -- 판매 중인 상품 수 (단종된 상품은 세지 않음)
 
   Product:
     meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
@@ -17,7 +18,7 @@ entity:
       productId:   long @id @sequence
       name:        string(30)! @search(like)
       description: string(3000)!
-      category:    Category @ManyToOne         # -> categoryId
+      category:    Category @ManyToOne @onDelete(restrict)   # -> categoryId; 상품이 남은 분류는 지울 수 없음
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
