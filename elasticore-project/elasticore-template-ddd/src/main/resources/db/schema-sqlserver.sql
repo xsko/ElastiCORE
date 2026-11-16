@@ -28,10 +28,13 @@ CREATE TABLE brd_comment (
 CREATE TABLE brd_post (
     post_id BIGINT IDENTITY(1,1) NOT NULL,
     title NVARCHAR(100) NOT NULL,
+    content NVARCHAR(MAX),
+    content_text NVARCHAR(MAX),
     quoted_post_id BIGINT,
     version BIGINT,
     comment_count BIGINT,
     like_count BIGINT,
+    status NVARCHAR(3),
     PRIMARY KEY (post_id)
 );
 

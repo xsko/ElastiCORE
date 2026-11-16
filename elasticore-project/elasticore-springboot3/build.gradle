@@ -66,6 +66,10 @@ dependencies {
     compileOnly 'org.springframework.data:spring-data-mongodb'
     testImplementation 'org.springframework.data:spring-data-mongodb'
     testImplementation 'org.mongodb:mongodb-driver-sync'
+    // Only compiled against: an html field is cleaned with jsoup's Safelist, which the
+    // generated code names - an application with such a field adds jsoup itself.
+    compileOnly 'org.jsoup:jsoup:1.23.2'
+    testImplementation 'org.jsoup:jsoup:1.23.2'
     // Only compiled against: BeanValidation checks for a provider at run time
     // and does nothing where the application has none.
     compileOnly 'jakarta.validation:jakarta.validation-api'

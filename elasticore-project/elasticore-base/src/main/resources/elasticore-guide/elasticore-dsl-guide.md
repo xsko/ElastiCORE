@@ -648,6 +648,8 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Entity meta | `@signin(refresh=request)` | The session follows the row: before each signed-in request the row is read again through `me()` - gone (or `@deleted`) ends the session, a changed role is the session's |
 | Field | `@access(admin)` | A field only administrators use |
 | Field | `@password` | Stored only as a hash, absent from responses and search |
+| Field | `@safe(basic)` / `@safe(relaxed)` | On an `html` field: the jsoup safelist it is kept to before every write (basic when unsaid) |
+| Field | `@plain(contentText)` | On an `html` field: the long text field that keeps its text without tags; no request writes it |
 | Field | `@login` | With `@password`, generates `authenticate(login, password)`. Must be unique (automatic with `@signin`, otherwise `@unique` - a DSL warning if missing) |
 | Field | `@role` | The role that the sign-in of `@signin` puts in the session (the `role` field if absent). Only an enum or string with `@access(admin)` - otherwise it signs in without a role and gives a DSL warning |
 | Field | `@snapshot(item.unitCost)` | Copies the value of the referenced row once |
@@ -674,6 +676,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
 | `string` / `string(n)` | `String` | `"text"` | `string` | `String` | n = maximum length, `!` = NOT NULL |
 | `text` / `longtext` | `String` | `"text"` | `string` | `String` | `columnDefinition = "TEXT"` / `"LONGTEXT"` |
 | `clob` | `String` | `"text"` | `string` | `String` | long text in the row (`@JdbcTypeCode(LONG32VARCHAR)`) |
+| `html` | `String` | `"<p>text</p>"` | `string` | `String` | 3.0: a long text (as `text`) kept to an allow-list before every write, `@safe`, `@plain` (annotation guide). TypeScript metadata `html: true` |
 | `json` | `String` | `"{...}"` (string) | `string` | `Opaque` | `columnDefinition = "json"` + `@JdbcTypeCode(SqlTypes.JSON)` |
 | `int` / `Integer` | `Integer` | `42` | `number` | `Integer` | |
 | `long` / `Long` | `Long` | `42` | `number` | `Integer` | |
@@ -698,7 +701,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
 - **Do not use types that are not in the table.** A type in the table already says the same thing: `short` and `byte` are `int`, `char` is `string(1)`,
   `OffsetDateTime` and `ZonedDateTime` are `timestamp`, and a UUID key is `string @id @genid` (without a length it is `UUID.randomUUID()`).
 - Every type in the table above is verified by generation, storage and an HTTP round trip in `catalog/model/reading.yml` of `elasticore-template-ddd`
-  (`TypeRoundTripTest`). In earlier versions, `timestamp`, `clob`, `json`, `blob` and `decimal` (without a size) were
+  (`TypeRoundTripTest`; `html`, which a write cleans, by `board`'s `BoardHtmlTest`). In earlier versions, `timestamp`, `clob`, `json`, `blob` and `decimal` (without a size) were
   written into the entity as the DSL word itself (`private timestamp at;`) and did not compile - fixed in 3.0.260925.
 - The table is based on the 3.0 rule engine (`elcore3`). The output of the 2.x generator (`elcore`) has not changed
   (`timestamp` is `Instant` in 2.x too). `clob` / `blob` are text / bytea on PostgreSQL, clob / blob on Oracle - in the row, not a `@Lob` (before 3.0.261116-rc16; PostgreSQL kept only its number).

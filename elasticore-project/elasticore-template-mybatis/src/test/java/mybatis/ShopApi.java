@@ -312,6 +312,28 @@ public abstract class ShopApi {
                 java.time.Instant.parse(renamed.get("stampedAt").asText()), renamed.toString());
     }
 
+    /**
+     * An html column (issue 183): kept to the relaxed safelist on a create and on an update - an image by https
+     * stays, a script and a handler go - and its text without tags written beside it, whatever the request sent.
+     */
+    @Test
+    public void anHtmlColumnIsCleanedAndItsTextKept() throws Exception {
+        String sent = "{\"name\":\"Markup\",\"pageText\":\"sent by the request\",\"page\":\"<h2>Specs</h2>"
+                + "<table><tbody><tr><td>size</td></tr></tbody></table>"
+                + "<img src=\\\"https://example.com/g.png\\\" onerror=\\\"steal()\\\"><script>steal()</script>\"}";
+        long id = id(create("gadget", sent), "gadgetId");
+        JsonNode read = body(perform(get(API + "/gadget/" + id), 200));
+        assertEquals("<h2>Specs</h2><table><tbody><tr><td>size</td></tr></tbody></table>"
+                + "<img src=\"https://example.com/g.png\">", read.get("page").asText(), read.toString());
+        assertEquals("Specs size", read.get("pageText").asText(), read.toString());
+
+        JsonNode changed = body(perform(put(API + "/gadget").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"gadgetId\":" + id + ",\"name\":\"Markup\",\"page\":\"<p onclick=\\\"steal()\\\">new</p>\"}"),
+                200));
+        assertEquals("<p>new</p>", changed.get("page").asText(), changed.toString());
+        assertEquals("new", changed.get("pageText").asText(), changed.toString());
+    }
+
     // ---- helpers ------------------------------------------------------------------
 
     private static String order(long customer, String product, String status, int amount, String memo) {

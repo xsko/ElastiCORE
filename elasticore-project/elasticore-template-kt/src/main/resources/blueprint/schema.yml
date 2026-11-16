@@ -154,6 +154,7 @@ entities:
       lastModifiedDate: Date @Column(name = "last_modified_date")
       commentId: Long @Column(name = "comment_id") @Id @GeneratedValue
       content: string @Column(name = "content")
+      contentText: string @Column(name = "content_text")
       authorName: string(100) @Column(name = "author_name", length = 100)
       authorEmail: string(100) @Column(name = "author_email", length = 100)
       approved: Boolean @Column(name = "approved")

@@ -8,6 +8,15 @@ enumeration:
       VISIBLE: VIS, Visible
       HIDDEN:  HID, Hidden
 
+  PostStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      DRAFT:     DRF, Draft
+      PUBLISHED: PUB, Published
+
 entity:
   # Roots of their own, each pointing to the post by its id.
   Post:
@@ -15,6 +24,10 @@ entity:
     fields:
       postId: long @id @sequence
       title: string(100)! @search(like)
+      # From a rich-text editor: kept to an allow-list before it is saved (html, @safe(basic) unsaid), and its
+      # text without tags kept beside it for the search (@plain) - no request writes that one.
+      content: html @plain(contentText)
+      contentText: text @search(like)
       # A post may quote another; deleting the quoted one clears the quote. Versioned: the clearing moves
       # the version of a quoting post the same delete then removes (a search for both).
       quoted: Post @onDelete(setNull)
@@ -22,6 +35,15 @@ entity:
       # Kept on the post, counted again whenever what is counted changes (@count).
       commentCount: long @count(Comment.post, status == VISIBLE)
       likeCount: long @count(PostLike.post)
+      status: PostStatus
+    # Published with its final content: the command's parameter is kept by the move, and cleaned like a save.
+    states:
+      status:
+        initial: DRAFT
+        publish: DRAFT -> PUBLISHED
+    commands:
+      publish:
+        content: html
 
   # Deleting a post deletes its comments, and a comment its replies.
   Comment:

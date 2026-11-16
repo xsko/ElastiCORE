@@ -2407,6 +2407,37 @@ PurchaseOrder:
 - `@compute` is recalculated on every save. If one of the operands is null, the result is null too.
 - **It is different from `@formula`**: `@formula("...")` is a Hibernate SQL expression that the database calculates.
 
+## html / @safe / @plain - markup kept to an allow-list (v3)
+> **Works in:** v3, Kotlin, MyBatis (mode: mybatis), MongoDB (mode: mongo), TypeScript client (`html: true`) · **Not in:** 2.x-compatible output (output = 'v2') (build stops); 2.x generator (build stops)
+
+```yaml
+Post:
+  meta: entity @root @expose(20)
+  fields:
+    content:     html! @safe(basic) @plain(contentText)   # from a rich-text editor
+    contentText: text @search(like)                       # its text without tags, for the search
+```
+
+- `html` is a long text, as `text` is (the same column), marked as HTML. The entity gets `cleanHtml()`, which keeps each html field to a
+  jsoup safelist and writes its text without tags into the `@plain` field. The CoreService calls it on every write - a save, an update,
+  an update by condition, and after a lifecycle command whose parameter sets the field - before the row is written and before
+  `beforeSave`. What is kept is not reformatted.
+- `@safe(basic)`, the default, keeps text markup (paragraphs, emphasis, lists, quotes, code) and links (http, https, ftp, mailto) with
+  `rel="nofollow"`, and no images. `@safe(relaxed)` also keeps headings, tables and images (http, https), and adds no `rel`. A script and
+  its text, `on...` handlers, `javascript:` links and every other tag and attribute are removed: jsoup's `Safelist.basic()` / `relaxed()`.
+- `@plain(field)` names a long text field of the same entity (`text`, `longtext` or `clob`). The text without tags - entities read,
+  white space collapsed - is written there on every write, and no request writes it (read-only in the DTO and in TypeScript). Put
+  `@search` on that field: a search then reads the words, not the markup and not a removed script's text.
+- The application adds jsoup: `implementation 'org.jsoup:jsoup:1.23.2'`. ElastiCORE's runtime is only compiled against it, and the
+  generated line names `org.jsoup.safety.Safelist`, so without jsoup the build stops at that line.
+- In TypeScript the field's metadata says `html: true`, so a screen knows it may show the value as HTML.
+- The build stops on `@safe` with another value; `@plain` naming no field, a field that is not a long text, or the html field itself;
+  `@safe` or `@plain` on a field that is not html; an html field on a member of an aggregate or on a value object (`@embeddable`) -
+  the root's service saves those and would not clean them; the 2.x-compatible output; and the 2.x generator (`elcore`), which would
+  store what a request sends.
+- A value set after the service has cleaned the row (in `beforeSave`, or through the repository) is not cleaned: call
+  `entity.cleanHtml()` after setting one.
+
 ## @deleted - a delete keeps the row (v3)
 > **Works in:** v3 (JPA, MyBatis), Kotlin · **Not in:** 2.x-compatible output (output = 'v2') - a delete removes the row (warning); 2.x generator (not generated); mapping: xml on Spring Boot 3 (stops the build)
 

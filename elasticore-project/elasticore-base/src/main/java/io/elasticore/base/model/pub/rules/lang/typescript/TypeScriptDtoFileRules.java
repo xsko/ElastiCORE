@@ -220,6 +220,8 @@ public class TypeScriptDtoFileRules implements CodeRules {
         for (FieldSpec f : shown) {
             StringBuilder m = new StringBuilder();
             m.append("label: ").append(RuleText.quote(labelOf(f)));
+            // Markup the server cleaned before saving: a screen may render it as HTML.
+            if (f.hasDsl(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)) m.append(", html: true");
             if (!writable(f)) {
                 m.append(", readOnly: true");
             } else {

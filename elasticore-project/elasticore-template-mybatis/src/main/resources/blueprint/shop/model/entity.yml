@@ -57,6 +57,9 @@ entity:
       count: quantity
       notes: text
       body: clob
+      # Markup, kept to jsoup's relaxed safelist before it is saved; its text without tags beside it (@plain).
+      page: html @safe(relaxed) @plain(pageText)
+      pageText: text
       image: blob
       madeOn: date
       madeAt: datetime @search(between)

@@ -42,6 +42,14 @@ datasets:
         expression:
           sql: "title"
         datatype: String
+      - name: content
+        expression:
+          sql: "content"
+        datatype: String
+      - name: content_text
+        expression:
+          sql: "content_text"
+        datatype: String
       - name: version
         expression:
           sql: "version"
@@ -54,13 +62,21 @@ datasets:
         expression:
           sql: "like_count"
         datatype: Integer
+      - name: status
+        expression:
+          sql: "status"
+        datatype: String
+        ai_context: "Codes: DRF = Draft, PUB = Published"
+        nonportable_extensions:
+          - vendor_name: ELASTICORE
+            data: {"lifecycle": true, "enumeration": "PostStatus", "codes": {"DRF": "Draft", "PUB": "Published"}}
       - name: quoted_post_id
         expression:
           sql: "quoted_post_id"
         datatype: Integer
     nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: {"entity": "Post", "domain": "board"}
+        data: {"entity": "Post", "domain": "board", "states": {"status": {"initial": "DRAFT", "publish": "DRAFT -> PUBLISHED"}}}
   - name: Comment
     source: brd_comment
     primary_key: [comment_id]

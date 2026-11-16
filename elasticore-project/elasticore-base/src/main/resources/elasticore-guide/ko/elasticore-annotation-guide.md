@@ -2407,6 +2407,37 @@ PurchaseOrder:
 - `@compute` 는 저장할 때마다 다시 계산합니다. 피연산자 중 하나가 null 이면 결과도 null.
 - **`@formula` 와 다릅니다**: `@formula("...")` 는 DB 가 계산하는 Hibernate SQL 식입니다.
 
+## html / @safe / @plain — 허용 목록으로 거른 마크업 (v3)
+> **동작:** v3, Kotlin, MyBatis (mode: mybatis), MongoDB (mode: mongo), TypeScript 클라이언트 (`html: true`) · **미동작:** 2.x 호환 출력 (output = 'v2') (빌드 중단); 2.x 생성기 (빌드 중단)
+
+```yaml
+Post:
+  meta: entity @root @expose(20)
+  fields:
+    content:     html! @safe(basic) @plain(contentText)   # from a rich-text editor
+    contentText: text @search(like)                       # its text without tags, for the search
+```
+
+- `html` 은 `text` 와 같은 긴 문자열(같은 컬럼)이고, HTML 이라고 표시됩니다. 엔티티에 `cleanHtml()` 이 생기는데, html 필드를 각각
+  jsoup 허용 목록으로 거르고 태그를 뺀 텍스트를 `@plain` 필드에 씁니다. CoreService 가 모든 쓰기에서 부릅니다 - 저장, 수정,
+  조건 수정, 그리고 파라미터로 그 필드를 바꾸는 라이프사이클 command 뒤 - 행을 쓰기 전, `beforeSave` 보다 먼저.
+  남긴 것은 다시 서식을 바꾸지 않습니다.
+- 기본값 `@safe(basic)` 은 글 서식(문단, 강조, 목록, 인용, 코드)과 링크(http, https, ftp, mailto)를 `rel="nofollow"` 와 함께 남기고,
+  이미지는 남기지 않습니다. `@safe(relaxed)` 는 제목, 표, 이미지(http, https)도 남기고 `rel` 은 붙이지 않습니다. 스크립트와 그 내용,
+  `on...` 핸들러, `javascript:` 링크, 그 밖의 태그·속성은 모두 지웁니다: jsoup 의 `Safelist.basic()` / `relaxed()`.
+- `@plain(field)` 은 같은 엔티티의 긴 문자열 필드(`text`, `longtext`, `clob`)를 가리킵니다. 태그를 뺀 텍스트 - 엔티티를 풀고
+  공백을 줄인 것 - 가 모든 쓰기마다 거기에 쓰이고, 요청은 쓰지 못합니다 (DTO 와 TypeScript 에서 읽기 전용). 그 필드에
+  `@search` 를 붙이면 검색은 마크업도, 지워진 스크립트의 내용도 아닌 글의 낱말을 읽습니다.
+- 애플리케이션이 jsoup 을 추가합니다: `implementation 'org.jsoup:jsoup:1.23.2'`. ElastiCORE 런타임은 jsoup 으로 컴파일만 하고,
+  생성된 줄이 `org.jsoup.safety.Safelist` 를 이름으로 쓰므로 jsoup 이 없으면 빌드가 그 줄에서 멈춥니다.
+- TypeScript 에서는 필드 메타데이터에 `html: true` 가 붙어, 화면이 그 값을 HTML 로 보여도 된다는 것을 압니다.
+- 빌드가 멈추는 경우: `@safe` 에 다른 값; `@plain` 이 없는 필드, 긴 문자열이 아닌 필드, html 필드 자신을 가리킴;
+  html 이 아닌 필드의 `@safe`·`@plain`; 애그리거트의 멤버나 값 객체(`@embeddable`)의 html 필드 -
+  그것은 루트의 서비스가 저장하고 거르지 않습니다; 2.x 호환 출력; 그리고 요청이 보낸 것을 그대로 저장할
+  2.x 생성기(`elcore`).
+- 서비스가 행을 거른 뒤에 넣은 값(`beforeSave` 안이나 리포지터리를 통해)은 걸러지지 않습니다: 값을 넣은 뒤에
+  `entity.cleanHtml()` 을 부릅니다.
+
 ## @deleted — 삭제해도 행을 남김 (v3)
 > **동작:** v3 (JPA, MyBatis), Kotlin · **안 됨:** 2.x-compatible output (output = 'v2') - 삭제가 행을 지움 (경고); 2.x generator (생성 안 됨); mapping: xml + Spring Boot 3 (빌드 중단)
 

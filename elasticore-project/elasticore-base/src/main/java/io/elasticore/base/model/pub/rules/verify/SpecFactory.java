@@ -1936,6 +1936,82 @@ public final class SpecFactory {
     }
 
     /**
+     * An {@code html} field (issue 183): {@code @safe} names the jsoup safelist that cleans it before it is saved -
+     * basic, the default, or relaxed - and {@code @plain(field)} a long text field of the same entity that keeps its
+     * text without tags. That field is the model's to write: no request sends it ({@code @readonly}). The field is a
+     * root's: a member is written through its root and a value object has no service, so neither would be cleaned. A
+     * misuse stops the build. Said once, before any spec is built, so every artifact sees the same fields.
+     */
+    static void prepareHtml(ECoreModel model) {
+        if (model.getEntityModels() == null) return;
+        ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+        for (int i = 0; i < all.size(); i++) {
+            Entity entity = all.get(i);
+            java.util.Map<String, Field> byName = new java.util.LinkedHashMap<String, Field>();
+            for (Field f : fieldsOf(entity)) byName.put(f.getName(), f);
+            for (Field f : byName.values()) {
+                String at = String.format(
+                        "[%s] %s.%s",
+                        entity.getIdentity().getDomainId(), entity.getIdentity().getName(), f.getName());
+                if (!f.hasAnnotation(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)) {
+                    for (String only : new String[] {"safe", "plain"}) {
+                        if (f.hasAnnotation(only)) {
+                            io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": @" + only
+                                    + " is for an html field (content: html @safe(basic) @plain(contentText))");
+                        }
+                    }
+                    continue;
+                }
+                String name = entity.getIdentity().getName();
+                if (entity.getMetaInfo().hasMetaAnnotation("embeddable")) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": an html field is cleaned by the service"
+                            + " that saves its entity, and a value object has none - put the field on the entity");
+                    continue;
+                }
+                String root = aggregateOf(name, model);
+                if (root != null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": an html field is cleaned by the service"
+                            + " that saves its entity, and " + name + " is saved through " + root
+                            + " - put the field on a root");
+                    continue;
+                }
+                String safe = f.getAnnotationValue("safe");
+                if (safe != null
+                        && !safe.trim().isEmpty()
+                        && io.elasticore.base.model.pub.rules.base.HtmlRules.safelist(safe) == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                            at + ": @safe(" + safe.trim() + ") - the safelist is basic or relaxed");
+                }
+                if (!f.hasAnnotation("plain")) continue;
+                String plain = f.getAnnotationValue("plain");
+                Field target = plain == null ? null : byName.get(plain.trim());
+                if (target == null) {
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": @plain("
+                            + (plain == null ? "" : plain.trim())
+                            + ") names no field of " + entity.getIdentity().getName()
+                            + " - name the text field that keeps the text without tags");
+                } else if (target.hasAnnotation(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)
+                        || !longText(target)) {
+                    // The html field itself among them: it is html.
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": @plain(" + target.getName() + ") - "
+                            + target.getName() + " is not a text field; the text without tags goes in one"
+                            + " (" + target.getName() + ": text)");
+                } else if (!target.hasAnnotation("readonly")) {
+                    target.getAnnotationMap()
+                            .put("readonly", io.elasticore.base.model.core.Annotation.create("readonly", ""));
+                }
+            }
+        }
+    }
+
+    /** A string field kept as a long text: text, longtext or clob. */
+    private static boolean longText(Field f) {
+        return f.getTypeInfo() != null
+                && f.getTypeInfo().getBaseFieldType() == io.elasticore.base.model.entity.BaseFieldType.STRING
+                && (f.hasAnnotation("text") || f.hasAnnotation("longtext") || f.hasAnnotation("lob"));
+    }
+
+    /**
      * The domain's {@code @count(Comment.post[, status == PUBLISHED and ...])} fields, by the entity whose rows they
      * count (issue 179). A misuse stops the build.
      */

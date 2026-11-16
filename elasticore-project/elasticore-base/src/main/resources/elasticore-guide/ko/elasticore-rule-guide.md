@@ -128,6 +128,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
 | `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
 | `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` -> 로그인한 행을 요청마다 다시 읽는 필터 `XxxSessionRefresh` (v3 번들 전부) |
+| `jpa-html` | O | O | - | `html` 필드: 엔티티의 `cleanHtml()` (jsoup 허용 목록, `@plain` 복사본) 을 CoreService 가 모든 쓰기 전과 command 뒤에 부름; 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
 | 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |

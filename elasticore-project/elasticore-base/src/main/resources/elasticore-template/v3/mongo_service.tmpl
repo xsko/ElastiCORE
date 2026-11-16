@@ -166,6 +166,7 @@ public class ${className} {
         if (${pkPresent} && ${cmdRef}.existsById(${pkDtoInfo}))
             throw new DuplicateKeyException("${entityClassName} " + ${pkDtoInfo} + " already exists; update it instead");
         ${entityClassName} entity = ${mapperName}.toEntity(dto);${createVersionReset}${createIdReset}
+        ${deriveBeforeSave}
         beforeSave(entity, dto);${stampCreate}
         prepareMembers(entity);
         return ${mapperName}.toDTO(${cmdRef}.insert(entity));
@@ -218,6 +219,7 @@ public class ${className} {
         if (entity == null)
             throw new NotFoundException("Invalid ${dtoClassName} ID");${versionCheck}
         ${mapperName}.mapping(dto, entity, ${isSkipNull});
+        ${deriveBeforeSave}
         beforeSave(entity, dto);
         return ${mapperName}.toDTO(write(entity));
     }
@@ -279,6 +281,7 @@ public class ${className} {
         List<${entityClassName}> targets = mongo.find(query(srchDTO, null), ${entityClassName}.class);
         for (${entityClassName} entity : targets) {
             ${mapperName}.mapping(dto, entity, true);
+            ${deriveBeforeSave}
             beforeSave(entity, dto);
             write(entity);
         }
