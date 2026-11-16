@@ -79,6 +79,7 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
 | `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.3) |
 | `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + 인바운드 포트 — `architecture = 'hexagonal'` + `mode: mybatis` |
+| `mongo-springboot` | 레이어드 Java 를 MongoDB 로 — `mode: mongo` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 Spring Data 문서·`MongoRepository`·`Criteria` 검색; env 가이드 2.4). MongoDB 위의 ddd·hexagonal·Kotlin 은 아직 거부 |
 
 `mode: mybatis` 인 도메인이 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot`·`jpa-springboot-v3` 를
 적으면 각각의 MyBatis 번들로 읽습니다 — mode 는 저장 방식을, 번들은 아키텍처를 말합니다.
