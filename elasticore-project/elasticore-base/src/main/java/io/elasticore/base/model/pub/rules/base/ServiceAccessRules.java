@@ -387,8 +387,9 @@ public class ServiceAccessRules implements CodeRules {
          .varLine("accessCreate", stmt(kt, "accessCreate(dto)"))
          .varLine("accessUpdate", stmt(kt, "accessUpdate(entity, dto)"))
          .varLine("accessUpdateAll", stmt(kt, "accessUpdateAll(dto)"));
-        // A MyBatis service hands the owner to the mapper, whose XML compares it.
-        boolean mybatis = "mybatis".equals(c.varValue("persistence"));
+        // A MyBatis service hands the owner to the mapper, whose XML compares it;
+        // a MongoDB one to the repository's Criteria.
+        boolean mybatis = "mybatis".equals(c.varValue("persistence")) || "mongo".equals(c.varValue("persistence"));
         if (mybatis) c.var("ownerArg", "ownedOnly()");
         else c.var("accessSpecOpen", "ownedOnly(").var("accessSpecClose", ")");
         String repo = orDefault(c.varValue("cmdRef"), "repository");
@@ -489,7 +490,9 @@ public class ServiceAccessRules implements CodeRules {
              .add("        throw EntityNotFoundException(\"%s not found\")", entity);
         } else {
             m.add("    if (!ACCESS.owns(currentUser, operation, %s))", ownerRead)
-             .add("        throw new EntityNotFoundException(\"%s not found\");", entity);
+                    .add(
+                            "        throw new %s(\"%s not found\");",
+                            orDefault(c.varValue("notFoundException"), "EntityNotFoundException"), entity);
         }
         m.end();
 
@@ -662,7 +665,7 @@ public class ServiceAccessRules implements CodeRules {
             m.append("    public Optional<").append(dto).append("> authenticate(String ").append(loginName).append(", String password) {\n")
              .append("        if (").append(loginName).append(" == null || password == null) return Optional.empty();\n")
              .append("        List<").append(entity).append("> found = ").append(query);
-            if ("mybatis".equals(c.varValue("persistence"))) {
+            if ("mybatis".equals(c.varValue("persistence")) || "mongo".equals(c.varValue("persistence"))) {
                 m.append(".findAllByLogin(").append(loginName).append(");\n");
             } else {
                 String byLogin = "cb.equal(r.get(\"" + loginName + "\"), " + loginName + ")";

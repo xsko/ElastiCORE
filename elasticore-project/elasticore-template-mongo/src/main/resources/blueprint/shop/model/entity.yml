@@ -1,0 +1,67 @@
+enumeration:
+  OrderStatus:
+    meta: enum @db(code) @json(code) -- order status
+    fields:
+      code: string(1) @code
+      name: string(20)
+    enum:
+      NEW: N,New
+      PAID: P,Paid
+      SHIPPED: S,Shipped
+
+entity:
+  # A value kept inside the document that holds it.
+  Address:
+    meta: entity @embeddable -- postal address
+    fields:
+      city: string(40)
+      zip: string(10)
+
+  Customer:
+    meta: entity @expose(20) @access(*=public) -- customer
+    fields:
+      customerId: long @id @sequence
+      name: string(50)! @search(like)
+      email: string(100) @unique @search(eq)
+      grade: int @default(1) @search(>=)
+      address: Address
+      joinedAt: datetime @jpa:CreatedDate
+      retiredAt: datetime @deleted   # a delete keeps the document: orders still name the customer
+
+  # A key the service makes (@genid), not a sequence.
+  Product:
+    meta: entity @expose(20) @access(*=public) -- product
+    fields:
+      productCode: string(12) @id @genid
+      name: string(100)! @search(like)
+      price: long! @search(between)
+      stock: int
+
+  PurchaseOrder:
+    meta: entity @expose(20) @access(*=public) -- order
+    fields:
+      orderId: long @id @sequence
+      orderNo: string(20)! @search(eq)
+      status: OrderStatus! @search(eq)
+      amount: long! @search(between)
+      total: decimal(12.2)
+      orderedAt: datetime @search(between)
+      customer: Customer! @ManyToOne @search(eq)
+      product: Product @ManyToOne
+      memo: string(200) @search(like)
+      deliveredAt: datetime @search(isnull)
+      lines: List<OrderLine> @OneToMany(mappedBy="order") @dtype(List<OrderLineDTO>)
+      version: long @jpa:Version
+
+  # A member of its order: no service of its own, kept inside the order's document.
+  OrderLine:
+    meta: entity -- order line
+    fields:
+      lineId: long @id @sequence
+      order: PurchaseOrder @ManyToOne
+      sku: string(20)!
+      qty: int
+
+dto:
+  OrderLineDTO:
+    meta: dto @template(OrderLine)

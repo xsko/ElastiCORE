@@ -120,7 +120,8 @@ public class MapperAssembleRules implements CodeRules {
             .line(rev, SEP).line(rev, SEP);
         // The EntityManager overloads attach a JPA reference for a relation's
         // key; a MyBatis row holds the key itself, which the plain ones set.
-        boolean em = !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e);
+        boolean em = !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)
+                && !io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(e);
         if (em) {
         code.line(rev, "    public static void mapping(%s from, %s to, EntityManager em){", dto, en)
             .line(rev, "        mapping(from,to,false,null,em);")

@@ -79,11 +79,11 @@ config:
 
 쉼표로 구분하여 여러 모드를 동시 실행한다. 각 모드의 산출물이 모두 생성된다.
 
-> **3.0 규칙 엔진(`elcore3` - 플러그인의 기본값)은 `jpa` 와 `mybatis` 코드를 씁니다.** 둘 다 없는 도메인
-> (`mode: mongo` 등)은 `elcore3` 가 아무 소스도 쓰지 않고 거절하므로, 그런 프로젝트는
-> `elasticore { output = 'v2' }` 로 2.x 생성기를 씁니다(빌드가 `elcore` 를 부름). 함께 적은 `uml`·`dsl` 은
-> `elcore3` 가 쓰지 않고 경고만 냅니다 - 그 산출물은 `./gradlew elcore` 로 만듭니다. `jpa` 와 `mybatis` 를 함께 적으면
-> JPA 코드를 씁니다(한 도메인은 한 저장 방식).
+> **3.0 규칙 엔진(`elcore3` - 플러그인의 기본값)은 `jpa`, `mybatis`, `mongo` 코드를 씁니다**(`mongo` 는 레이어드
+> Java 만 - 2.4 절). 셋 다 없는 도메인(`mode: uml` 단독 등)은 `elcore3` 가 아무 소스도 쓰지 않고 거절하므로, 그런
+> 프로젝트는 `elasticore { output = 'v2' }` 로 2.x 생성기를 씁니다(빌드가 `elcore` 를 부름). 함께 적은 `uml`·`dsl` 은
+> `elcore3` 가 쓰지 않고 경고만 냅니다 - 그 산출물은 `./gradlew elcore` 로 만듭니다. 저장 방식을 여럿 적으면(`jpa,mongo`)
+> jpa, mybatis, mongo 순으로 앞의 것 하나를 씁니다(한 도메인은 한 저장 방식).
 
 ### 2.3 MyBatis 모드 (3.0)
 > **동작:** v3, Java (layered, ddd, hexagonal) · **안 됨:** Kotlin, 2.x-compatible output (output = 'v2') (빌드 중단)
@@ -300,14 +300,47 @@ Oracle·PostgreSQL·SQL Server).
 `@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
 ### 2.4 MongoDB 모드
-> **동작:** 2.x generator · **안 됨:** v3 (빌드 중단)
+> **동작:** v3 레이어드 Java (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** v3 Kotlin, ddd, hexagonal (빌드 중단)
+
+MongoDB 에 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0 (미출시)
 
 ```yaml
 config:
   mode: mongo
 ```
 
-**생성 항목:** MongoDB Document 엔티티, Spring Data MongoDB Repository, 서비스 클래스
+**생성되는 것** - DTO, 검색 DTO, 컨트롤러, 접근 검사, `@deleted`, API 오류 응답, 매퍼는 JPA 와 같습니다. 저장 쪽만
+다르고, 프로젝트는 JPA 대신 `spring-boot-starter-data-mongodb` 를 선언합니다.
+
+| 파일 | 내용 |
+|---|---|
+| `<Entity>.java` | `@Document(collection = "<테이블 이름>")`, `@Id`, `@Version`, `@CreatedDate`..., `@unique` 는 `@Indexed(unique = true, sparse = true)`, `@index` 는 `@CompoundIndex`, `@Field` 는 이름을 준 `@column` 에만 |
+| `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>` 와 검색: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (`SORT_FIELDS` 만) |
+| `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 저장소와 `MongoTemplate` 위에서 동작(검색은 Criteria 의 `Query`, 페이지) |
+
+**모델이 저장되는 모양**
+
+| DSL | 문서 안 |
+|---|---|
+| `@expose` / `@service` / `@repository` 가 있는 엔티티 | 자기 컬렉션 |
+| `customer: Customer @ManyToOne` (Customer 는 자기 컬렉션) | 고객의 id, 읽을 때 지연 로딩 (`@DocumentReference(lazy = true)`) |
+| `lines: List<OrderLine> @OneToMany(mappedBy=...)` (OrderLine 은 서비스 없음) | 주문 문서 안의 라인; 되돌아가는 관계(`order`)는 저장 안 함 (`@Transient`) |
+| 관계의 반대쪽(자기 컬렉션으로의 `mappedBy`), `@joinBy`, `@formula` | 저장 안 함 (`@Transient`) |
+| `@embeddable` 값 | 중첩 문서 |
+| `@db(code)` enum, `money`, `quantity` | JPA 변환기가 쓰는 값 (`AttributeValueConverter`) - `NEW` 가 아니라 코드 `"N"` |
+| `decimal` | `Decimal128` - 숫자로 비교·정렬 |
+| `long @sequence` | `elasticore_sequences` 컬렉션의 번호(`MongoSequences`, `$inc`), 1 부터 - 멤버도 |
+
+검색 조건: `eq`, `!=`, `>` `>=` `<` `<=`, `between`, `in`, `isnull`, 텍스트(`like`, 접두, 접미, 대소문자 무시)는 값의
+문자를 이스케이프한 정규식. 검색 경로는 문서의 값, 임베디드 값의 값, 참조의 id(`customer.customerId`)까지이고 그보다
+먼 것(`customer.name`)은 빌드를 멈춥니다.
+
+인덱스는 `spring.data.mongodb.auto-index-creation=true` 일 때만 만들어집니다(Spring Data 기본값은 off).
+쓰기는 문서 하나 단위이고 여러 문서를 묶는 트랜잭션은 없습니다(일괄 수정은 문서를 하나씩).
+
+**아직 안 됨** (빌드 중단, 또는 적은 대로): Kotlin, ddd, hexagonal; 복합 키; `@abstract(entity)` 계층;
+`@ManyToMany`; `mappedBy` 없는 다른 컬렉션 문서의 컬렉션; `@count`, `@onDelete`; DDL (쓰지 않음).
+`elasticore-template-mongo` 가 상점을 생성·컴파일하고 실제 MongoDB(Testcontainers)에서 API 를 돌립니다.
 
 ### 2.5 UML 모드
 > **동작:** 2.x generator · **안 됨:** v3 에서 `jpa`·`mybatis` 와 함께 (경고); v3 에서 단독 (빌드 중단)
@@ -729,6 +762,7 @@ elasticore:
 | `ts-model` | 브라우저용 DTO, enum, 타입 있는 REST 클라이언트 |
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | 도메인 모델·헥사고날을 MyBatis 로 (`architecture` 가 ddd·hexagonal 이고 `mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
+| `mongo-springboot` | 레이어드 Java 를 Spring Data MongoDB 로 (`mode: mongo` 인 도메인이 저절로 받음 - 2.4 절) |
 
 번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
 

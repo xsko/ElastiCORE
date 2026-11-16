@@ -30,6 +30,8 @@ public class RepositoryHelperBaseRules implements CodeRules {
         // Over MyBatis the helper holds the mappers and nothing of JPA's.
         if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
             ctx(d).template("mybatis_repositoryHelper");
+        } else if (io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(d)) {
+            ctx(d).template("mongo_repositoryHelper");
         }
         ctx(d).var("packageName", d.pkg("repository"))
               .var("entityPackageName", d.pkg("entity"))

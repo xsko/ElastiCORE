@@ -74,17 +74,42 @@ public final class RulesConfig {
      * (config.mode, "jpa" when unsaid) - the key 2.x already reads for jpa and
      * mongo - so that one word, not two, names it.
      *
-     * The rule engine writes JPA and MyBatis code. MongoDB is known so that a
-     * domain naming it is told it is the 2.x generator's, rather than refused
-     * as an unknown word.
+     * The rule engine writes JPA, MyBatis and MongoDB code - MongoDB as layered
+     * Java only (mongoRefusal says what else is asked of it).
      */
     public enum Persistence {
         JPA, MYBATIS, MONGO;
 
-        /** Whether the rule engine writes code for it. */
+        /** Whether the rule engine writes code for it: every one it names now. */
         public boolean generated() {
-            return this != MONGO;
+            return true;
         }
+    }
+
+    /** The MongoDB bundle: layered Java, the JPA bundle's DTOs and API over Spring Data MongoDB. */
+    public static final String MONGO_BUNDLE = "mongo-springboot";
+
+    /** Whether a domain whose env.yml mode is this one is generated as MongoDB code. */
+    public static boolean mongo(String mode) {
+        return persistenceOfMode(mode) == Persistence.MONGO;
+    }
+
+    /**
+     * Why an architecture and language cannot be generated as MongoDB code, or
+     * null when they can. MongoDB code is layered Java so far; the client
+     * (TypeScript) is shaped as for any server.
+     */
+    public static String mongoRefusal(Architecture architecture, Language language) {
+        if (language == Language.TYPESCRIPT) return null;
+        if (language == Language.KOTLIN) {
+            return "MongoDB code is written in Java, layered; language = 'kotlin' is generated for JPA only";
+        }
+        if (architecture == Architecture.DOMAIN_MODEL || architecture == Architecture.HEXAGONAL) {
+            return "MongoDB code is written layered (architecture = 'layered'); architecture = '"
+                    + (architecture == Architecture.HEXAGONAL ? "hexagonal" : "ddd")
+                    + "' is generated for JPA and MyBatis";
+        }
+        return null;
     }
 
     /** The MyBatis bundle: layered Java, the JPA bundle's DTOs and API over MyBatis mappers. */
@@ -127,6 +152,16 @@ public final class RulesConfig {
             case "jpa-springboot-v3": return MYBATIS_BUNDLE;
             default: return null;
         }
+    }
+
+    /**
+     * The MongoDB bundle of a JPA one a domain names (publisher.rules), as
+     * mybatisBundleOf: only the layered one has one. Null for any other name.
+     */
+    public static String mongoBundleOf(String bundle) {
+        if (bundle == null) return null;
+        String name = bundle.trim();
+        return DEFAULT_BUNDLE_V3.equals(name) || MONGO_BUNDLE.equals(name) ? MONGO_BUNDLE : null;
     }
 
     /**
@@ -177,8 +212,9 @@ public final class RulesConfig {
             if (architecture == Architecture.HEXAGONAL) return MYBATIS_HEXAGONAL_BUNDLE;
             return MYBATIS_BUNDLE;
         }
-        throw new IllegalArgumentException("No rule bundle writes " + persistence.name().toLowerCase()
-                + " code; the 2.x generator does.");
+        String refusal = mongoRefusal(architecture, language);
+        if (refusal != null) throw new IllegalArgumentException(refusal + ".");
+        return MONGO_BUNDLE;
     }
 
     /**

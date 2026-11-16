@@ -65,6 +65,10 @@ dependencies {
     // Only compiled against: the generated MyBatis mappers' enum handler and database id.
     compileOnly 'org.mybatis:mybatis:3.5.19'
     testImplementation 'org.mybatis:mybatis:3.5.19'
+    // Only compiled against: the generated MongoDB code's sequences and value converter.
+    compileOnly 'org.springframework.data:spring-data-mongodb'
+    testImplementation 'org.springframework.data:spring-data-mongodb'
+    testImplementation 'org.mongodb:mongodb-driver-sync'
     compileOnly 'jakarta.validation:jakarta.validation-api'
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.

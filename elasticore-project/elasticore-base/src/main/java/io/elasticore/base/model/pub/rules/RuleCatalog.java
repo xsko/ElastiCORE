@@ -516,6 +516,26 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.mybatis.MyBatisDddRules();
             }
         });
+        // MongoDB (env.yml mode: mongo): the entity mapped by Spring Data
+        // MongoDB, its repository with the search, and the service over them.
+        c.register("mongo-entity-file", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mongo.MongoEntityFileRules();
+            }
+        });
+        c.register("mongo-repository", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules();
+            }
+        });
+        c.register("mongo-service-file", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.mongo.MongoServiceFileRules();
+            }
+        });
 
         // Everything a JPA Spring Boot project got from the 2.x pipeline.
         // Not a generator: the set is the opt-in for the Apache Ossie
@@ -631,6 +651,41 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "mybatis-schema",
+                "port",
+                "proto",
+                "grpc-stub");
+        // The v3 layered bundle over MongoDB: the same DTOs, mapper, controller
+        // and access checks, with the entity mapped by Spring Data MongoDB, a
+        // MongoRepository and a search of Criteria. The search DTO's conditions
+        // are read as for MyBatis (mybatis-search), and the members an entity
+        // embeds are mapped with it as MyBatis writes them with their root.
+        c.bundle(
+                "mongo-springboot",
+                "jpa-entity",
+                "mongo-entity-file",
+                "jpa-dto",
+                "jpa-dto-file-v3",
+                "jpa-searchdto",
+                "jpa-searchdto-file-v3",
+                "jpa-enum",
+                "jpa-views",
+                "jpa-support-types",
+                "mongo-repository",
+                "mybatis-search",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble",
+                "jpa-mapper-file",
+                "mybatis-mapper-members",
+                "mongo-service-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-api-errors",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "jpa-on-delete",
+                "jpa-count",
                 "port",
                 "proto",
                 "grpc-stub");

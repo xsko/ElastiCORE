@@ -27,6 +27,8 @@ public class MapperFileRules implements CodeRules {
         // Specification: its relations are keys and its search is the XML's.
         if (io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(d)) {
             ctx(d).template("mybatis_mapper");
+        } else if (io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(d)) {
+            ctx(d).template("mongo_mapper");
         }
         ctx(d).var("packageName", d.pkg("dto"))
               .var("entityPackageName", d.pkg("entity"))

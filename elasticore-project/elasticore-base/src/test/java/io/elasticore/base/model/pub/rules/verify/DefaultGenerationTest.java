@@ -261,13 +261,56 @@ public class DefaultGenerationTest {
     }
 
     @Test
-    public void aMongoDomainIsRefusedNotWrittenAsJpa() throws Exception {
-        // mode: mongo is MongoDB code, which only the 2.x generator writes. The
-        // rule engine read no mode at all: the 3.0 default wrote JPA entities,
-        // repositories and services for a MongoDB domain without a word.
+    public void aMongoDomainIsWrittenAsMongoDbCodeNotJpa() throws Exception {
+        // mode: mongo is MongoDB code: layered Java over Spring Data MongoDB
+        // since 3.0 writes it; before, the rule engine refused it, and before
+        // that wrote JPA entities for it without a word.
+        File project = project(null, "mongo");
+        run(project);
+        String note = new String(Files.readAllBytes(find(project, "Note.java")), StandardCharsets.UTF_8);
+        assertTrue(note.contains("@Document(collection = \"note\")"), note);
+        assertFalse(note.contains("jakarta.persistence"), note);
+        assertNotNull(find(project, "NoteRepository.java"));
+    }
+
+    @Test
+    public void aMongoDomainInKotlinOrDddIsRefused() throws Exception {
+        // MongoDB code is layered Java: another language or architecture is
+        // refused with what is supported, not written as JPA.
+        String[][] asks = {
+            {"elasticore.language", "kotlin", "MongoDB code is written in Java, layered"},
+            {"elasticore.architecture", "ddd", "architecture = 'ddd'"},
+            {"elasticore.architecture", "hexagonal", "architecture = 'hexagonal'"}
+        };
+        for (String[] ask : asks) {
+            File project = project(null, "mongo");
+            System.setProperty("elasticore.base.path", project.getAbsolutePath());
+            System.setProperty("elasticore.rules.force", "true");
+            System.setProperty(ask[0], ask[1]);
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            PrintStream out = System.out;
+            System.setOut(new PrintStream(bytes, true, "UTF-8"));
+            int code;
+            try {
+                code = RulesGenRunner.run(new String[0]);
+            } finally {
+                System.setOut(out);
+                System.clearProperty(ask[0]);
+            }
+            String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+            assertEquals(1, code, log);
+            assertTrue(log.contains("is mode: mongo, but") && log.contains(ask[2]), log);
+            assertNull(find(project, "Note.java"), "code was written for a refused domain: " + log);
+            assertNull(find(project, "Note.kt"), "code was written for a refused domain: " + log);
+        }
+    }
+
+    @Test
+    public void aMongoDomainUnderTheTwoXSwitchIsRefused() throws Exception {
         File project = project(null, "mongo");
         System.setProperty("elasticore.base.path", project.getAbsolutePath());
         System.setProperty("elasticore.rules.force", "true");
+        System.setProperty("elasticore.rules.v2", "true");
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = System.out;
         System.setOut(new PrintStream(bytes, true, "UTF-8"));
@@ -279,8 +322,8 @@ public class DefaultGenerationTest {
         }
         String log = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         assertEquals(1, code, log);
-        assertTrue(log.contains("mode: mongo"), log);
-        assertNull(find(project, "Note.java"), "JPA code was written for a MongoDB domain: " + log);
+        assertTrue(log.contains("is mode: mongo, but the code 2.x generates"), log);
+        assertNull(find(project, "Note.java"), "code was written for a refused domain: " + log);
     }
 
     @Test

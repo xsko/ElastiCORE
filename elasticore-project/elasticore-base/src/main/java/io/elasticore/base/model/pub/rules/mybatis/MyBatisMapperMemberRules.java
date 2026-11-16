@@ -26,10 +26,18 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  */
 public class MyBatisMapperMemberRules implements CodeRules {
 
+    /**
+     * A domain whose service writes the members with their root: MyBatis, and
+     * MongoDB, whose document embeds them.
+     */
+    static boolean applies(EntitySpec e) {
+        return MyBatisSql.applies(e) || io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(e);
+    }
+
     /** Says, before the rules at 10 ask, which relations the root writes its members through. */
     @Rule(value = "mybatis-mapper-member-marks", target = "mapper", order = 5)
     void marks(EntitySpec e) {
-        if (!MyBatisSql.applies(e) || domainRulesWriteMembers(e)) return;
+        if (!applies(e) || domainRulesWriteMembers(e)) return;
         for (FieldSpec f : e.fields()) {
             if (f.isList() && member(e, f) != null) ctx(e).writtenByRoot(f.name());
         }
@@ -51,6 +59,13 @@ public class MyBatisMapperMemberRules implements CodeRules {
      * one the service stores.
      */
     static String[] member(EntitySpec e, FieldSpec f) {
+        // A MongoDB document embeds what has no collection of its own (MongoDocs).
+        if (io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(e)) {
+            String[] listed = DddMapperRules.listedEntity(e, f);
+            return listed == null || io.elasticore.base.model.pub.rules.mongo.MongoDocs.ownCollection(listed[1])
+                    ? null
+                    : listed;
+        }
         String[] member = DddMapperRules.listMember(e, f);
         if (member == null || !e.getName().equals(e.aggregateOf(member[1])) || MyBatisSql.hasOwnService(member[1])) {
             return null;
@@ -60,7 +75,7 @@ public class MyBatisMapperMemberRules implements CodeRules {
 
     @Rule(value = "mybatis-mapper-members", target = "mapper", order = 30)
     void members(EntitySpec e) {
-        if (!MyBatisSql.applies(e) || domainRulesWriteMembers(e)) return;
+        if (!applies(e) || domainRulesWriteMembers(e)) return;
         SourceCode c = ctx(e);
         if (c.syntax() != Syntax.JAVA) return;
         java.util.Set<String> written = new java.util.HashSet<String>();
@@ -90,7 +105,7 @@ public class MyBatisMapperMemberRules implements CodeRules {
     /** What arrives with the root is validated with it: a line's @min(1) quantity is the request's to meet. */
     @Rule(value = "mybatis-dto-members-valid", target = "dto", order = 22)
     void valid(EntitySpec e, FieldSpec f) {
-        if (!MyBatisSql.applies(e) || !f.isList() || domainRulesWriteMembers(e)) return;
+        if (!applies(e) || !f.isList() || domainRulesWriteMembers(e)) return;
         if (member(e, f) == null) return;
         ctx(e).field(f).ensure(io.elasticore.base.model.pub.rules.AnnoCode.of("jakarta.validation.Valid"));
     }

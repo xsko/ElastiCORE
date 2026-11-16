@@ -305,7 +305,7 @@ public class MyBatisServiceFileRules implements CodeRules {
     }
 
     /** Who writes, for @CreatedBy / @LastModifiedBy: the application's AuditorAware, as JPA auditing asks it. */
-    static final String AUDITOR_MEMBERS = "\n\n"
+    public static final String AUDITOR_MEMBERS = "\n\n"
             + "    /** Who is writing: the application's AuditorAware, when it has one. */\n"
             + "    private org.springframework.data.domain.AuditorAware<?> auditorAware;\n"
             + "\n"

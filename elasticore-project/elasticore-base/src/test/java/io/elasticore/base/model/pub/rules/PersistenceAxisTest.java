@@ -9,8 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The persistence a domain's mode names, the third choice a bundle is made of.
- * Only JPA is generated; the axis exists so the next one has a place to go
- * without changing what JPA gets.
+ * JPA, MyBatis and MongoDB are generated; a new one takes its place on the
+ * axis without changing what JPA gets.
  */
 public class PersistenceAxisTest {
 
@@ -36,10 +36,56 @@ public class PersistenceAxisTest {
     }
 
     @Test
-    public void jpaAndMyBatisAreGeneratedMongoIsTheTwoXGenerators() {
+    public void everyPersistenceIsGenerated() {
         assertTrue(RulesConfig.Persistence.JPA.generated());
         assertTrue(RulesConfig.Persistence.MYBATIS.generated());
-        assertTrue(!RulesConfig.Persistence.MONGO.generated());
+        assertTrue(RulesConfig.Persistence.MONGO.generated());
+        assertTrue(RulesConfig.mongo("mongo"));
+        assertTrue(RulesConfig.mongo("dsl,mongodb"));
+        assertTrue(!RulesConfig.mongo("jpa,mongo"));
+        assertTrue(!RulesConfig.mongo(null));
+    }
+
+    @Test
+    public void mongoIsLayeredJava() {
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE,
+                RulesConfig.bundleFor(
+                        RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA, RulesConfig.Persistence.MONGO));
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE,
+                RulesConfig.bundleFor(null, RulesConfig.Language.JAVA, RulesConfig.Persistence.MONGO));
+        // The client is the same whatever the server stores it in.
+        assertEquals(
+                "ts-model",
+                RulesConfig.bundleFor(
+                        RulesConfig.Architecture.HEXAGONAL,
+                        RulesConfig.Language.TYPESCRIPT,
+                        RulesConfig.Persistence.MONGO));
+        IllegalArgumentException kt = assertThrows(
+                IllegalArgumentException.class,
+                () -> RulesConfig.bundleFor(
+                        RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MONGO));
+        assertTrue(kt.getMessage().contains("MongoDB code is written in Java, layered"), kt.getMessage());
+        IllegalArgumentException ddd = assertThrows(
+                IllegalArgumentException.class,
+                () -> RulesConfig.bundleFor(
+                        RulesConfig.Architecture.DOMAIN_MODEL,
+                        RulesConfig.Language.JAVA,
+                        RulesConfig.Persistence.MONGO));
+        assertTrue(ddd.getMessage().contains("architecture = 'ddd'"), ddd.getMessage());
+        IllegalArgumentException hex = assertThrows(
+                IllegalArgumentException.class,
+                () -> RulesConfig.bundleFor(
+                        RulesConfig.Architecture.HEXAGONAL, RulesConfig.Language.JAVA, RulesConfig.Persistence.MONGO));
+        assertTrue(hex.getMessage().contains("architecture = 'hexagonal'"), hex.getMessage());
+        assertNull(RulesConfig.mongoRefusal(RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA));
+        assertNull(RulesConfig.mongoRefusal(RulesConfig.Architecture.DOMAIN_MODEL, RulesConfig.Language.TYPESCRIPT));
+        // A domain naming the layered bundle gets the MongoDB one; nothing else has one.
+        assertEquals(RulesConfig.MONGO_BUNDLE, RulesConfig.mongoBundleOf("jpa-springboot-v3"));
+        assertEquals(RulesConfig.MONGO_BUNDLE, RulesConfig.mongoBundleOf(" mongo-springboot "));
+        assertNull(RulesConfig.mongoBundleOf("ddd-springboot"));
+        assertNull(RulesConfig.mongoBundleOf(null));
     }
 
     @Test
@@ -68,8 +114,6 @@ public class PersistenceAxisTest {
                 RulesConfig.Architecture.HEXAGONAL, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MYBATIS));
         assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MYBATIS));
-        assertThrows(IllegalArgumentException.class, () -> RulesConfig.bundleFor(
-                RulesConfig.Architecture.LAYERED, RulesConfig.Language.JAVA, RulesConfig.Persistence.MONGO));
         // The browser's model is the same whatever the server stores it in.
         assertEquals("ts-model", RulesConfig.bundleFor(
                 RulesConfig.Architecture.LAYERED, RulesConfig.Language.TYPESCRIPT, RulesConfig.Persistence.MYBATIS));

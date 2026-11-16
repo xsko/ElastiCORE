@@ -1,0 +1,97 @@
+// The MongoDB reading of the pipeline, kept where it can be compiled and run.
+//
+// A domain whose env.yml says mode: mongo is generated as layered Java over
+// Spring Data MongoDB: the same DTOs, controller and access checks as over
+// JPA, with the entity mapped as a document, a MongoRepository and a search
+// of Criteria in place of the JPA mapping, repository and Specification. This
+// module generates such a domain, compiles it, and drives its API over HTTP
+// against a real MongoDB, which Testcontainers starts - the tests are skipped
+// where Docker is not running, or run against the server
+// ELASTICORE_IT_MONGODB_URI names.
+//
+//   ./gradlew :elasticore-project:elasticore-template-mongo:test
+
+plugins {
+	id 'java'
+	id 'io.spring.dependency-management' version '1.1.6'
+	id 'io.elasticore'
+}
+
+elasticore {
+	architecture = 'layered'
+	language = 'java'
+}
+
+dependencies {
+	elasticore project(':elasticore-project:elasticore-base')
+}
+
+group = 'elasticore-template-mongo'
+version = '1.0.0-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencyManagement {
+	imports {
+		mavenBom 'org.springframework.boot:spring-boot-dependencies:3.5.16'
+	}
+}
+
+dependencies {
+	// What a MongoDB project declares: Spring Data MongoDB, and no JPA - the
+	// runtime library must not bring Hibernate either.
+	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+
+	implementation 'org.projectlombok:lombok:1.18.36'
+	annotationProcessor 'org.projectlombok:lombok:1.18.36'
+
+	implementation project(':elasticore-project:elasticore-base')
+	implementation project(':elasticore-project:elasticore-springboot3')
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:mongodb'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def generated = 'src/main/java'
+
+sourceSets {
+	main.java.srcDirs += [generated]
+}
+
+test {
+	useJUnitPlatform()
+	testLogging { events 'passed', 'skipped', 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}
+
+// A run that reads a stale file checks nothing: the generated tree is
+// cleared first, files rather than directories (a handle on Windows).
+task elcore3clean(type: Delete) {
+	group = 'elasticore'
+	description = 'Removes previously generated sources'
+	delete fileTree(generated)
+}
+
+tasks.named('elcore3') {
+	systemProperty 'elasticore.rules.force', 'true'
+	dependsOn elcore3clean
+}

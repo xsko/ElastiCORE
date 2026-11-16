@@ -27,12 +27,18 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  */
 public class CountRules implements CodeRules {
 
+    /** A service over MyBatis or MongoDB, which keeps no counts yet. */
+    static boolean notJpa(SourceCode c) {
+        String p = c.varValue("persistence");
+        return "mybatis".equals(p) || "mongo".equals(p);
+    }
+
     /** Before the commands are written (30): a command that moves the state touches the counts too. */
     @Rule(value = "service-count-commands", target = "service", order = 25)
     void commands(EntitySpec e) {
         if (e.countsOf(e.getName()).isEmpty()) return;
         SourceCode c = ctx(e);
-        if (c.compatible() || "mybatis".equals(c.varValue("persistence"))) return;
+        if (c.compatible() || notJpa(c)) return;
         boolean kt = c.syntax() == Syntax.KOTLIN;
         c.var("countsAfterCommand", "%s(%s, entity)%s", method(e), em(c), kt ? "" : ";");
     }
@@ -42,13 +48,13 @@ public class CountRules implements CodeRules {
         List<EntitySpec.CountRef> refs = e.countsOf(e.getName());
         if (refs.isEmpty()) return;
         SourceCode c = ctx(e);
-        if (c.compatible() || "mybatis".equals(c.varValue("persistence"))) {
+        if (c.compatible() || notJpa(c)) {
             ModelCheck.fail(String.format(
                     "[%s] @count of %s rows (%s) is not kept %s yet - keep the domain on JPA (output v3)",
                     e.domainClassName(),
                     e.getName(),
                     refs.get(0).counter,
-                    c.compatible() ? "in the 2.x-compatible output" : "under mode: mybatis"));
+                    c.compatible() ? "in the 2.x-compatible output" : "under mode: " + c.varValue("persistence")));
             return;
         }
         boolean kt = c.syntax() == Syntax.KOTLIN;

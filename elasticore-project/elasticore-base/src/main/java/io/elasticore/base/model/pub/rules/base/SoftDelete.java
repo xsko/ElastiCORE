@@ -158,7 +158,10 @@ public final class SoftDelete {
         for (FieldSpec v : e.allFields()) {
             if (v.isVersion()) versioned = true;
         }
-        if (!MyBatisSql.applies(e) && !versioned && !ServiceAccessRules.keyGenerated(key)) {
+        if (!MyBatisSql.applies(e)
+                && !io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(e)
+                && !versioned
+                && !ServiceAccessRules.keyGenerated(key)) {
             return " @deleted with a key the request gives (" + key.name()
                     + ") needs a version (@jpa:Version) - a create"
                     + " of a deleted row's key would otherwise be written into that row, which stays deleted";

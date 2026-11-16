@@ -132,6 +132,16 @@ public class DddMapperRules implements CodeRules {
      * members, which membersArriveWithTheirRoot writes; null for any other.
      */
     public static String[] listMember(EntitySpec e, FieldSpec f) {
+        String[] member = listedEntity(e, f);
+        if (member == null || !e.sameAggregate(member[1])) return null;
+        return member;
+    }
+
+    /**
+     * {member DTO, member entity} of a collection of entity-backed DTOs,
+     * whatever aggregate the entity is in; null for any other field.
+     */
+    public static String[] listedEntity(EntitySpec e, FieldSpec f) {
         // This spec views a DTO, so the collection names a DTO type. The
         // aggregate is a fact about entities, so the type is resolved back
         // to the one it stands for before the boundary is asked about it.
@@ -149,7 +159,6 @@ public class DddMapperRules implements CodeRules {
             }
         }
         if (memberEntity == null || memberEntity.isEmpty()) return null;
-        if (!e.sameAggregate(memberEntity)) return null;
         return new String[]{memberDto, memberEntity};
     }
 

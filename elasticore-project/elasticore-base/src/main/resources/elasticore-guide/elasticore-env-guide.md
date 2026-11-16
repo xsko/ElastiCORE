@@ -79,11 +79,11 @@ config:
 
 Separate modes with commas to run several at once. The output of every mode is generated.
 
-> **The 3.0 rule engine (`elcore3` - the plugin default) writes `jpa` and `mybatis` code.** For a domain with neither
-> (`mode: mongo` and so on), `elcore3` refuses and writes no source, so such a project uses the 2.x generator with
-> `elasticore { output = 'v2' }` (the build calls `elcore`). `uml` and `dsl` listed with them are not written by
-> `elcore3`; it only prints a warning - build that output with `./gradlew elcore`. If you list `jpa` and `mybatis` together,
-> it writes JPA code (one domain has one storage).
+> **The 3.0 rule engine (`elcore3` - the plugin default) writes `jpa`, `mybatis` and `mongo` code** (`mongo`: layered
+> Java only - section 2.4). For a domain with none of them (`mode: uml` alone and so on), `elcore3` refuses and writes no
+> source; such a project uses the 2.x generator with `elasticore { output = 'v2' }` (the build calls `elcore`). `uml` and
+> `dsl` listed with them are not written by `elcore3`; it only prints a warning - build that output with `./gradlew elcore`.
+> If you list several storages (`jpa,mongo`), it writes the first of jpa, mybatis, mongo (one domain has one storage).
 
 ### 2.3 MyBatis mode (3.0)
 > **Works in:** v3, Java (layered, ddd, hexagonal) · **Not in:** Kotlin, 2.x-compatible output (output = 'v2') (stops the build)
@@ -300,14 +300,47 @@ Oracle, PostgreSQL and SQL Server).
 A `@formula` field stays in the entity, but MyBatis does not read it, so its value is null, and it is left out of the search conditions (warning).
 
 ### 2.4 MongoDB mode
-> **Works in:** 2.x generator · **Not in:** v3 (stops the build)
+> **Works in:** v3 layered Java (run on Spring Boot 3), 2.x generator · **Not in:** v3 Kotlin, ddd, hexagonal (stops the build)
+
+A domain kept in MongoDB. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0 (unreleased)
 
 ```yaml
 config:
   mode: mongo
 ```
 
-**Generated:** MongoDB Document entities, Spring Data MongoDB Repository, service classes
+**What is generated** - DTOs, search DTOs, controllers, access checks, `@deleted`, the API errors and the mapper are the same
+as in JPA. Only the storage side differs; the project declares `spring-boot-starter-data-mongodb` instead of JPA.
+
+| File | Content |
+|---|---|
+| `<Entity>.java` | `@Document(collection = "<table name>")`, `@Id`, `@Version`, `@CreatedDate`..., `@Indexed(unique = true, sparse = true)` for `@unique`, `@CompoundIndex` for `@index`, `@Field` only for a named `@column` |
+| `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>`, and the search: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (only `SORT_FIELDS`) |
+| `<Entity>CoreService.java` | The **same method names and signatures** as the JPA version, over the repository and `MongoTemplate` (a search is a `Query` of the Criteria, paged) |
+
+**How the model is stored**
+
+| DSL | In the document |
+|---|---|
+| an entity with `@expose` / `@service` / `@repository` | a collection of its own |
+| `customer: Customer @ManyToOne` (Customer has its own collection) | the customer's id, read back lazily (`@DocumentReference(lazy = true)`) |
+| `lines: List<OrderLine> @OneToMany(mappedBy=...)` (OrderLine has no service) | the lines inside the order's document; their way back (`order`) is not stored (`@Transient`) |
+| the other side of a relation (`mappedBy` to a collection of its own), `@joinBy`, `@formula` | not stored (`@Transient`) |
+| an `@embeddable` value | a nested document |
+| an enum with `@db(code)`, `money`, `quantity` | the value its JPA converter writes (`AttributeValueConverter`) - the code `"N"`, not `NEW` |
+| `decimal` | `Decimal128`, so it compares and sorts as a number |
+| `long @sequence` | a number from the `elasticore_sequences` collection (`MongoSequences`, `$inc`), starting at 1 - members too |
+
+Search conditions: `eq`, `!=`, `>` `>=` `<` `<=`, `between`, `in`, `isnull`, text (`like`, prefix, suffix, ignoring case) as
+a regular expression with the value's own characters escaped. A search path is a value of the document, of an embedded
+value, or a reference's id (`customer.customerId`); one further (`customer.name`) stops the build.
+
+Indexes are created only with `spring.data.mongodb.auto-index-creation=true` (Spring Data's default is off).
+A write is one document - there is no transaction around several (a batch update is its documents one by one).
+
+**Not yet** (stops the build, or as said): Kotlin, ddd and hexagonal; a composite key; an `@abstract(entity)` hierarchy;
+`@ManyToMany`; a collection of another collection's documents without `mappedBy`; `@count`, `@onDelete`; DDL (none is
+written). `elasticore-template-mongo` generates a shop, compiles it and runs its API on a real MongoDB (Testcontainers).
 
 ### 2.5 UML mode
 > **Works in:** 2.x generator · **Not in:** v3 beside `jpa` or `mybatis` (warning); v3 alone (stops the build)
@@ -729,6 +762,7 @@ elasticore:
 | `ts-model` | Browser DTOs, enums, a typed REST client |
 | `mybatis-springboot` | Layered Java on MyBatis (a domain with `mode: mybatis` gets it automatically - section 2.3) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | The domain model / hexagonal on MyBatis (a domain whose `architecture` is ddd or hexagonal and which has `mode: mybatis` gets it automatically - section 2.3) |
+| `mongo-springboot` | Layered Java on Spring Data MongoDB (a domain with `mode: mongo` gets it automatically - section 2.4) |
 
 A bundle is a list of names of individual rule sets, so you can also combine them yourself:
 

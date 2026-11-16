@@ -213,7 +213,9 @@ public final class RulesGenRunner {
         boolean access = selectsNamed("ServiceAccessRules");
         boolean states = selectsNamed("DddStateRules");
         boolean derive = selectsNamed("DddDeriveRules");
-        boolean keeps = selectsNamed("JpaEntityAnnotationRules") || selectsNamed("MyBatisMapperRules");
+        boolean keeps = selectsNamed("JpaEntityAnnotationRules")
+                || selectsNamed("MyBatisMapperRules")
+                || selectsNamed("MongoServiceFileRules");
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         for (int i = 0; i < all.size(); i++) {
             Entity entity = all.get(i);
@@ -505,6 +507,7 @@ public final class RulesGenRunner {
         // The persistence is one word of that mode (RulesConfig.persistenceOfMode):
         // jpa, or mybatis, which the rule engine writes in Java, in every architecture.
         String mybatisDomain = null;
+        String mongoDomain = null;
         for (ECoreModel model : loader.allModels()) {
             String mode = String.valueOf(model.getConfig("mode", "jpa"));
             java.util.List<String> modes = new ArrayList<String>();
@@ -513,11 +516,44 @@ public final class RulesGenRunner {
             }
             RulesConfig.Persistence persistence = RulesConfig.persistenceOfMode(mode);
             if (persistence == null || !persistence.generated()) {
-                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
-                        + "' is mode: " + String.join(",", modes) + ". The rule engine writes JPA and MyBatis code; "
-                        + (modes.contains("mongo") ? "MongoDB code" : "this mode") + " comes from the 2.x generator -"
-                        + " elasticore { output = 'v2' }, whose build runs it, or ./gradlew elcore. No source was written.");
+                io.elasticore.base.util.ConsoleLog.printWarn(
+                        "[elcore3] domain '" + model.getInternalDomainName()
+                                + "' is mode: " + String.join(",", modes)
+                                + ". The rule engine writes JPA, MyBatis and MongoDB"
+                                + " code; this mode comes from the 2.x generator -"
+                                + " elasticore { output = 'v2' }, whose build runs it, or ./gradlew elcore. No source was written.");
                 return 1;
+            }
+            if (persistence == RulesConfig.Persistence.MONGO) {
+                String refusal = v2Asked
+                        ? "the code 2.x generates (-Pv2 / output = 'v2') for mode: mongo is the 2.x generator's"
+                                + " (./gradlew elcore)"
+                        : RulesConfig.mongoRefusal(
+                                declaredArchitecture,
+                                typescript
+                                        ? RulesConfig.Language.TYPESCRIPT
+                                        : kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
+                if (refusal == null) {
+                    java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+                    for (String rule : named == null ? java.util.Collections.<String>emptyList() : named) {
+                        if (RulesConfig.mongoBundleOf(rule) != null) continue;
+                        if (rule.endsWith("-kt")
+                                || rule.startsWith("jpa-springboot")
+                                || rule.contains("mybatis")
+                                || rule.startsWith("ddd-")
+                                || rule.startsWith("hex")) {
+                            refusal = "its publisher.rules names " + rule + ", which is not written for MongoDB"
+                                    + " - name mongo-springboot, or leave publisher.rules out";
+                            break;
+                        }
+                    }
+                }
+                if (refusal != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + model.getInternalDomainName()
+                            + "' is mode: mongo, but " + refusal + ". No source was written.");
+                    return 1;
+                }
+                if (mongoDomain == null) mongoDomain = model.getInternalDomainName();
             }
             if (persistence == RulesConfig.Persistence.MYBATIS) {
                 String refusal = v2Asked
@@ -563,12 +599,19 @@ public final class RulesGenRunner {
             }
             for (String m : modes) {
                 if (RulesConfig.persistenceNamed(m) == persistence) continue;
-                io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", "[" + model.getInternalDomainName()
-                        + "] mode " + m + " is not written by elcore3 - only the "
-                        + (persistence == RulesConfig.Persistence.MYBATIS ? "MyBatis" : "JPA") + " code is. "
-                        + (RulesConfig.persistenceNamed(m) != null && RulesConfig.persistenceNamed(m).generated()
-                                ? "A domain is generated for one persistence."
-                                : "The 2.x generator (./gradlew elcore) writes the " + m + " output."));
+                io.elasticore.base.util.ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        "[" + model.getInternalDomainName()
+                                + "] mode " + m + " is not written by elcore3 - only the "
+                                + (persistence == RulesConfig.Persistence.MYBATIS
+                                        ? "MyBatis"
+                                        : persistence == RulesConfig.Persistence.MONGO ? "MongoDB" : "JPA")
+                                + " code is. "
+                                + (RulesConfig.persistenceNamed(m) != null
+                                                && RulesConfig.persistenceNamed(m)
+                                                        .generated()
+                                        ? "A domain is generated for one persistence."
+                                        : "The 2.x generator (./gradlew elcore) writes the " + m + " output."));
             }
         }
 
@@ -576,6 +619,13 @@ public final class RulesGenRunner {
         // to an @Entity, and the JPA mapper attaches the target as a reference.
         // The other way round - MyBatis holding a JPA entity - reads its key.
         String crossing = jpaReachingMyBatis(loader.allModels());
+        String mongoCrossing = crossingMongo(loader.allModels());
+        if (mongoCrossing != null) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + mongoCrossing + ". A relation reaches"
+                    + " only entities kept in the same store - hold the key as a value (customerId: long), or keep"
+                    + " both domains on one persistence. No source was written.");
+            return 1;
+        }
         if (crossing != null) {
             io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + crossing + ". A JPA entity can point only at"
                     + " JPA entities - hold the key as a value (customerId: long), or keep both domains on one"
@@ -644,6 +694,14 @@ public final class RulesGenRunner {
                     + " which is 3.0 code, but " + (why != null ? why : "the project keeps the code 2.x generates")
                     + " - set elasticore { output = 'v3' } to move the project, or keep the MyBatis domain in a"
                     + " project of its own. No source was written.");
+            return 1;
+        }
+        if (mongoDomain != null && !v3 && !kotlin && !typescript) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] domain '" + mongoDomain + "' is mode: mongo,"
+                    + " which elcore3 writes as 3.0 code, but "
+                    + (why != null ? why : "the project keeps the code 2.x" + " generates")
+                    + " - set elasticore { output = 'v3' } to move the project, or run the 2.x"
+                    + " generator (./gradlew elcore) for it. No source was written.");
             return 1;
         }
         if (!kotlin) {
@@ -1244,7 +1302,8 @@ public final class RulesGenRunner {
             currentModel = model;
             return (v3 || kotlin || typescript)
                     && (shapes(io.elasticore.base.model.pub.rules.ImmutableValueObjects.class)
-                            || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS));
+                            || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS)
+                            || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MONGO));
         } finally {
             currentModel = saved;
         }
@@ -1391,6 +1450,12 @@ public final class RulesGenRunner {
 
     /** A MyBatis domain's search conditions, by search DTO name (MyBatisSearchRules). */
     private final Map<String, String> mybatisSearch = new java.util.HashMap<String, String>();
+
+    /** A MongoDB domain's search conditions, by search DTO name (MyBatisSearchRules). */
+    private final Map<String, String> mongoSearch = new java.util.HashMap<String, String>();
+
+    /** The entities of a MongoDB domain whose repository is written with the domain's artifacts. */
+    private final List<EntitySpec> mongoStored = new ArrayList<EntitySpec>();
 
     /** The entities of a MyBatis domain whose mapper is written with the domain's artifacts. */
     private final List<EntitySpec> mybatisMapped = new ArrayList<EntitySpec>();
@@ -1605,6 +1670,20 @@ public final class RulesGenRunner {
                         .run(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.TARGET);
                 mybatisSearch.put(dto.getIdentity().getName(), String.join("\n",
                         conditions.blockLines(io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.BLOCK)));
+                return;
+            }
+            if (searchable && persistence() == RulesConfig.Persistence.MONGO) {
+                // Over MongoDB a search is the repository's Criteria, read off
+                // the same conditions MyBatis reads; the mapper gets no toSpec.
+                if (!searchDtoWritten) return;
+                SourceCode conditions = sectionEngine("mybatis-search")
+                        .run(spec, io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.TARGET);
+                mongoSearch.put(
+                        dto.getIdentity().getName(),
+                        String.join(
+                                "\n",
+                                conditions.blockLines(
+                                        io.elasticore.base.model.pub.rules.mybatis.MyBatisSearchRules.BLOCK)));
                 return;
             }
             if (searchable) {
@@ -1874,7 +1953,8 @@ public final class RulesGenRunner {
             if (dir != null && dir.isDirectory()) generatedDirs.add(dir);
         }
         // Q is the JPA Criteria's metadata; a MyBatis domain has none.
-        if (!mybatis) emitDomain(domain, "Q", ArtifactTarget.java(queryPackage(model), "Q"), "jpa-q");
+        if (persistence() == RulesConfig.Persistence.MONGO) emitMongoRepositories(specs);
+        else if (!mybatis) emitDomain(domain, "Q", ArtifactTarget.java(queryPackage(model), "Q"), "jpa-q");
         else emitMyBatisMappers(domain, model, specs);
 
         // The domain's mapper, in 2.x emission order: the forward mappings
@@ -1890,6 +1970,29 @@ public final class RulesGenRunner {
         emitContributedDomain(domain, model);
         generateSupportTypes(domainDirName, model, specs);
         emitArchitectureTest(domain, model);
+    }
+
+    /**
+     * A MongoDB domain's repositories, written after the DTOs, whose search
+     * DTO says which conditions the Criteria holds. Q, the JPA Criteria's
+     * metadata, is not written.
+     */
+    private void emitMongoRepositories(List<EntitySpec> specs) {
+        for (EntitySpec spec : specs) {
+            relateMyBatis(spec, specs);
+        }
+        for (EntitySpec spec : mongoStored) {
+            spec.config(
+                    io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.SEARCH_CONFIG,
+                    mongoSearch.get(spec.searchDtoClassName()));
+            emit(
+                    spec,
+                    io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.TARGET,
+                    ArtifactTarget.java(currentModel.getNamespace("repository"), spec.getName() + "Repository"),
+                    "mongo-repository");
+        }
+        mongoStored.clear();
+        mongoSearch.clear();
     }
 
     /**
@@ -2119,6 +2222,16 @@ public final class RulesGenRunner {
     private void recordDdl(String domainDirName, ECoreModel model, List<EntitySpec> specs) {
         // Every domain, the ones the DDL leaves out too: their entities are theirs, not "outside every domain".
         io.elasticore.base.model.pub.rules.schema.DdlConfig ddl = ddlOf(model);
+        if (RulesConfig.mongo(model.getConfig("mode"))) {
+            // A collection has no DDL; its indexes are the entity's annotations.
+            if (ddl.enabled()) {
+                io.elasticore.base.util.ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        "[" + domainDirName
+                                + "] is mode: mongo - no DDL is written for it; its indexes are declared on the entities");
+            }
+            ddl = io.elasticore.base.model.pub.rules.schema.DdlConfig.OFF;
+        }
         boolean mybatis = RulesConfig.mybatis(model.getConfig("mode"));
         String root = domainRoot != null ? domainRoot : projectRoot;
         List<String> entities = new ArrayList<String>();
@@ -2314,6 +2427,46 @@ public final class RulesGenRunner {
                         return "domain " + m.getInternalDomainName() + ": " + entity.getIdentity().getName() + "."
                                 + f.getName() + " is " + target + " of the MyBatis domain " + domain;
                     }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * "domain crm: Lead.customer is Customer of the MongoDB domain shop" for
+     * the first relation that crosses between a MongoDB domain and one that
+     * is not, either way; null when none does. A document is not an @Entity
+     * or a row, and a row is not a document a reference can point at.
+     */
+    static String crossingMongo(List<ECoreModel> models) {
+        if (models == null) return null;
+        Map<String, ECoreModel> owner = new java.util.HashMap<String, ECoreModel>();
+        boolean any = false;
+        for (ECoreModel m : models) {
+            if (m.getEntityModels() == null) continue;
+            any |= RulesConfig.mongo(m.getConfig("mode"));
+            ModelComponentItems<Entity> items = m.getEntityModels().getItems();
+            for (int i = 0; i < items.size(); i++)
+                owner.put(items.get(i).getIdentity().getName(), m);
+        }
+        if (!any) return null;
+        for (ECoreModel m : models) {
+            if (m.getEntityModels() == null) continue;
+            boolean mongo = RulesConfig.mongo(m.getConfig("mode"));
+            ModelComponentItems<Entity> items = m.getEntityModels().getItems();
+            for (int i = 0; i < items.size(); i++) {
+                Entity entity = items.get(i);
+                ModelComponentItems<io.elasticore.base.model.entity.Field> fields = entity.getItems();
+                for (int j = 0; j < fields.size(); j++) {
+                    io.elasticore.base.model.entity.Field f = fields.get(j);
+                    if (f.getTypeInfo() == null || f.getTypeInfo().isBaseType()) continue;
+                    ECoreModel other = owner.get(f.getTypeInfo().getCoreItemType());
+                    if (other == null || RulesConfig.mongo(other.getConfig("mode")) == mongo) continue;
+                    return "domain " + m.getInternalDomainName() + ": "
+                            + entity.getIdentity().getName() + "."
+                            + f.getName() + " is " + f.getTypeInfo().getCoreItemType() + " of the "
+                            + (mongo ? "" : "MongoDB ") + "domain " + other.getInternalDomainName();
                 }
             }
         }
@@ -2770,6 +2923,14 @@ public final class RulesGenRunner {
             }
             return out;
         }
+        if (named != null && "publisher.rules".equals(key) && persistence() == RulesConfig.Persistence.MONGO) {
+            java.util.List<String> out = new ArrayList<String>();
+            for (String rule : named) {
+                String mongo = RulesConfig.mongoBundleOf(rule);
+                out.add(mongo != null ? mongo : rule);
+            }
+            return out;
+        }
         return named;
     }
 
@@ -2851,7 +3012,11 @@ public final class RulesGenRunner {
 
         // Over MyBatis the artifacts a rule set contributes - the repository
         // adapter writing the aggregate's members - read the related entities.
-        if (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS) {
+        if (v3
+                && !kotlin
+                && !typescript
+                && (persistence() == RulesConfig.Persistence.MYBATIS
+                        || persistence() == RulesConfig.Persistence.MONGO)) {
             relateMyBatisEarly(spec);
         }
 
@@ -2933,6 +3098,54 @@ public final class RulesGenRunner {
                         target(model.getNamespace("entity"),
                                 String.format("%sIdentity", name)),
                         "jpa-entity", "jpa-identity-kt");
+            }
+            return;
+        }
+
+        if (v3 && persistence() == RulesConfig.Persistence.MONGO) {
+            // What the MongoDB code does not write yet is refused, not written
+            // so that it loses data quietly.
+            java.util.List<String> unsupported = io.elasticore.base.model.pub.rules.mongo.MongoDocs.unsupported(spec);
+            if (!unsupported.isEmpty() && !spec.hasMeta("embeddable") && !spec.isMappedSuperclass()) {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                        "[elcore3] %s.%s: mode: mongo does not write %s yet - model it otherwise,"
+                                + " or keep this domain on JPA",
+                        spec.domainClassName(), name, String.join("; ", unsupported)));
+                return;
+            }
+            emit(
+                    spec,
+                    "entity",
+                    ArtifactTarget.java(model.getNamespace("entity"), entityClassName(spec)),
+                    "jpa-entity",
+                    "mongo-entity-file");
+            if ((serviced || repositoryOnly) && hasPk) {
+                // The repository waits for the search DTO's conditions, which
+                // the DTO pass reads: it is written with the domain.
+                spec.config(
+                        io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.SERVICED_CONFIG,
+                        String.valueOf(serviced));
+                mongoStored.add(spec);
+            }
+            if (serviced && hasPk) {
+                coreOk = emitSucceeded(
+                        spec,
+                        "service",
+                        ArtifactTarget.java(model.getNamespace("service"), String.format("%sCoreService", name)),
+                        "mongo-service-file");
+                if (coreOk)
+                    emit(
+                            spec,
+                            "service_extend",
+                            ArtifactTarget.java(model.getNamespace("service"), String.format("%sService", name)),
+                            "spring-service-extend");
+            }
+            if (exposed && hasPk && coreOk) {
+                emit(
+                        spec,
+                        "control",
+                        ArtifactTarget.java(model.getNamespace("control"), String.format("%sController", name)),
+                        "spring-controller");
             }
             return;
         }

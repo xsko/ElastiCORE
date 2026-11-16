@@ -34,17 +34,22 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  */
 public class OnDeleteRules implements CodeRules {
 
+    /** A service over MyBatis or MongoDB, which carries out no @onDelete yet. */
+    private static boolean notJpa(SourceCode c) {
+        return CountRules.notJpa(c);
+    }
+
     @Rule(value = "service-on-delete", target = "service", order = 90, phase = Rule.Phase.TAIL)
     void onDelete(EntitySpec e) {
         if (e.onDeleteOf(e.getName()).isEmpty()) return;
         SourceCode c = ctx(e);
-        if (c.compatible() || "mybatis".equals(c.varValue("persistence"))) {
+        if (c.compatible() || notJpa(c)) {
             ModelCheck.fail(String.format(
                     "[%s] @onDelete on references to %s is not carried out %s yet - keep the"
                             + " domain on JPA (output v3), or delete the rows that point to it yourself",
                     e.domainClassName(),
                     e.getName(),
-                    c.compatible() ? "in the 2.x-compatible output" : "under mode: mybatis"));
+                    c.compatible() ? "in the 2.x-compatible output" : "under mode: " + c.varValue("persistence")));
             return;
         }
         boolean kt = c.syntax() == Syntax.KOTLIN;
