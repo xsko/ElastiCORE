@@ -49,7 +49,10 @@ entity:
     meta: entity @expose(30) @extend(ContentBase)
     fields:
       commentId: long @id @sequence
-      content: text!
+      # What a reader writes, from a rich-text box: kept to an allow-list before it is saved (html), and its
+      # text without tags beside it for the search (@plain) - no request writes that one.
+      content: html! @plain(contentText)
+      contentText: text @search(like)
       authorName: string(100)! @search(like)
       authorEmail: string(100) @search(eq)
       approved: boolean @default(false) @search(eq)

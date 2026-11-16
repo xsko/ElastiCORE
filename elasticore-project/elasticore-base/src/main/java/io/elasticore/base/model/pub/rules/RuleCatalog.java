@@ -253,6 +253,13 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.base.CountRules();
             }
         });
+        // html fields cleaned by the CoreService before the row is written (jsoup's Safelist), @plain copies.
+        c.register("jpa-html", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.base.HtmlRules();
+            }
+        });
         c.register("jpa-on-delete", new Factory() {
             @Override
             public CodeRules create() {
@@ -581,6 +588,7 @@ public final class RuleCatalog {
                 "spring-service-test",
                 "jpa-on-delete",
                 "jpa-count",
+                "jpa-html",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -623,6 +631,7 @@ public final class RuleCatalog {
                 "spring-signin-refresh",
                 "jpa-on-delete",
                 "jpa-count",
+                "jpa-html",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -659,6 +668,7 @@ public final class RuleCatalog {
                 "spring-signin-refresh",
                 "jpa-on-delete",
                 "jpa-count",
+                "jpa-html",
                 "mybatis-schema",
                 "port",
                 "proto",
@@ -697,6 +707,7 @@ public final class RuleCatalog {
                 "spring-signin-refresh",
                 "jpa-on-delete",
                 "jpa-count",
+                "jpa-html",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -778,6 +789,7 @@ public final class RuleCatalog {
                 "spring-signin-refresh",
                 "jpa-on-delete",
                 "jpa-count",
+                "jpa-html",
                 "jpa-views",
                 "jpa-support-types");
 

@@ -69,6 +69,9 @@ dependencies {
     compileOnly 'org.springframework.data:spring-data-mongodb'
     testImplementation 'org.springframework.data:spring-data-mongodb'
     testImplementation 'org.mongodb:mongodb-driver-sync'
+    // Only compiled against: the html field's cleaning (jsoup), where the application has it.
+    compileOnly 'org.jsoup:jsoup:1.23.2'
+    testImplementation 'org.jsoup:jsoup:1.23.2'
     compileOnly 'jakarta.validation:jakarta.validation-api'
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.

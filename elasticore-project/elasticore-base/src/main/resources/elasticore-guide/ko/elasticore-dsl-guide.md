@@ -648,6 +648,8 @@ Item:
 | 엔티티 meta | `@signin(refresh=request)` | 세션이 행을 따라감: 로그인한 요청마다 먼저 `me()` 로 행을 다시 읽어, 없으면(또는 `@deleted`) 세션을 끝내고 바뀐 역할은 세션에 넣음 |
 | 필드 | `@access(admin)` | 관리자만 쓰는 필드 |
 | 필드 | `@password` | 해시로만 저장, 응답·검색에 없음 |
+| 필드 | `@safe(basic)` / `@safe(relaxed)` | `html` 필드에: 쓸 때마다 거르는 jsoup 허용 목록 (없으면 basic) |
+| 필드 | `@plain(contentText)` | `html` 필드에: 태그를 뺀 텍스트를 담는 긴 문자열 필드, 요청은 쓰지 못함 |
 | 필드 | `@login` | `@password` 와 함께 `authenticate(login, password)` 생성. 유일해야 함 (`@signin` 이면 자동, 아니면 `@unique` - 없으면 DSL 경고) |
 | 필드 | `@role` | `@signin` 의 로그인이 세션에 넣는 역할 (없으면 `role` 필드). `@access(admin)` 인 enum·문자열만 - 아니면 역할 없이 로그인하고 DSL 경고 |
 | 필드 | `@snapshot(item.unitCost)` | 참조한 행의 값을 한 번 복사 |
@@ -674,6 +676,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
 | `string` / `string(n)` | `String` | `"text"` | `string` | `String` | n = 최대 길이, `!` = NOT NULL |
 | `text` / `longtext` | `String` | `"text"` | `string` | `String` | `columnDefinition = "TEXT"` / `"LONGTEXT"` |
 | `clob` | `String` | `"text"` | `string` | `String` | 행 안의 긴 문자열 (`@JdbcTypeCode(LONG32VARCHAR)`) |
+| `html` | `String` | `"<p>text</p>"` | `string` | `String` | 3.0: 쓸 때마다 허용 목록으로 거르는 긴 문자열(`text` 와 같음), `@safe`, `@plain` (annotation guide). TypeScript 메타데이터 `html: true` |
 | `json` | `String` | `"{...}"` (문자열) | `string` | `Opaque` | `columnDefinition = "json"` + `@JdbcTypeCode(SqlTypes.JSON)` |
 | `int` / `Integer` | `Integer` | `42` | `number` | `Integer` | |
 | `long` / `Long` | `Long` | `42` | `number` | `Integer` | |
@@ -698,7 +701,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
 - **표에 없는 타입은 쓰지 않습니다.** 같은 뜻을 이미 표의 타입이 말합니다: `short`·`byte` 는 `int`, `char` 는 `string(1)`,
   `OffsetDateTime`·`ZonedDateTime` 은 `timestamp`, UUID 키는 `string @id @genid` (길이를 주지 않으면 `UUID.randomUUID()`).
 - 위 표의 모든 타입은 `elasticore-template-ddd` 의 `catalog/model/reading.yml` 에서 생성·저장·HTTP 왕복으로
-  검증됩니다 (`TypeRoundTripTest`). 이전 버전에서는 `timestamp`, `clob`, `json`, `blob`, `decimal`(크기 없이)이
+  검증됩니다 (`TypeRoundTripTest`; 쓸 때 걸러지는 `html` 은 `board` 의 `BoardHtmlTest`). 이전 버전에서는 `timestamp`, `clob`, `json`, `blob`, `decimal`(크기 없이)이
   엔티티에 DSL 단어 그대로 쓰여(`private timestamp at;`) 컴파일되지 않았습니다 - 3.0.260925 에서 고쳤습니다.
 - 표는 3.0 규칙 엔진(`elcore3`) 기준입니다. 2.x 생성기(`elcore`)의 출력은 바뀌지 않았습니다
   (`timestamp` 는 2.x 에서도 `Instant`). `clob`·`blob` 은 PostgreSQL 에서 text·bytea, Oracle 에서 clob·blob 으로 행 안에 저장됩니다 - `@Lob` 이 아닙니다 (3.0.261116-rc16 전에는 `@Lob` 이라 PostgreSQL 에 번호만 남았음).

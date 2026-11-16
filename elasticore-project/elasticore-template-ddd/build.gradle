@@ -81,6 +81,8 @@ dependencies {
 
 	implementation project(':elasticore-project:elasticore-base')
 	implementation project(':elasticore-project:elasticore-springboot3')
+	// board: Post.content is an html field, cleaned with jsoup's Safelist before it is saved
+	implementation 'org.jsoup:jsoup:1.23.2'
 
 	// shop and billing: graphql.enable - the generated GraphQL controllers
 	implementation 'org.springframework.boot:spring-boot-starter-graphql'

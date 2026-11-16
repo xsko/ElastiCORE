@@ -126,6 +126,18 @@ public class AbstractModelLoader implements ConstantParam {
             }
         }
 
+        // An html field is cleaned before it is saved by the 3.0 code only. The
+        // 2.x generator would store what a request sends - a script among it -
+        // so it stops there: it fails the build on any DSL warning.
+        if (!io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes() && f.hasAnnotation("html")) {
+            ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "%s.%s: an html field is cleaned before it is saved by the 3.0 code only (elcore3);"
+                                    + " the 2.x generator would store what a request sends. Generate it with elcore3, or declare it text.",
+                            entityName, fieldNm));
+        }
+
         // Check for relationship annotations used with primitive types
         if (f.getTypeInfo() != null && f.getTypeInfo().isBaseType()) {
             String[] relationAnnotations = {"onetomany", "manytoone", "onetoone", "manytomany"};
@@ -573,8 +585,14 @@ public class AbstractModelLoader implements ConstantParam {
             type="string";
             fieldLine = "@text "+fieldLine;
         }
+        // Markup from a rich-text editor: a long text, cleaned before it is
+        // saved (@safe) - the 3.0 code's HtmlRules (issue 183).
+        else if ("html".equals(type)) {
+            type = "string";
+            fieldLine = "@text @html " + fieldLine;
+        }
         // Large objects and JSON: a string or bytes, with what the column is.
-        else if("clob".equals(type)) {
+        else if ("clob".equals(type)) {
             type="string";
             fieldLine = "@lob "+fieldLine;
         }

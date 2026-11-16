@@ -36,6 +36,8 @@ public class MyBatisServiceFileRules implements CodeRules {
         Syntax syntax = c.syntax();
 
         for (String slot : ServiceAccessRules.SLOTS) c.slot(slot);
+        // Filled where the row is cleaned before it is written (an html field); empty otherwise.
+        c.slot("deriveBeforeSave");
         for (String inline : ServiceAccessRules.INLINE) c.var(inline, "");
 
         String searchResultDto = e.searchResultDtoName();

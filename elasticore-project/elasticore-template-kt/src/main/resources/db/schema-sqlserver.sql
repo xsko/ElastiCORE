@@ -79,6 +79,7 @@ CREATE TABLE cms_comment (
     last_modified_date DATETIME2(6),
     comment_id BIGINT IDENTITY(1,1) NOT NULL,
     content NVARCHAR(MAX) NOT NULL,
+    content_text NVARCHAR(MAX),
     author_name NVARCHAR(100) NOT NULL,
     author_email NVARCHAR(100),
     approved BIT,
