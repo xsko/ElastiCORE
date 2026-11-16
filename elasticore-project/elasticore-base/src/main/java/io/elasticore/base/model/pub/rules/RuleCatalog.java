@@ -681,6 +681,7 @@ public final class RuleCatalog {
                 "spring-service-extend",
                 "spring-controller",
                 "spring-api-errors",
+                "spring-graphql",
                 "jpa-write-guard",
                 "jpa-value-object-boundary",
                 "jpa-service-access",

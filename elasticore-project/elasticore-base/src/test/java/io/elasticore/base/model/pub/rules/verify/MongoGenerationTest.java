@@ -421,6 +421,19 @@ public class MongoGenerationTest {
         assertTrue(log.contains("is mode: mongo, but its publisher.rules names ddd-springboot"), log);
     }
 
+    @Test
+    public void graphQlIsServedOverTheMongoService() throws Exception {
+        File project = project(MODEL, "mongo");
+        File env = new File(project, "src/main/resources/blueprint/dgshop/env.yml");
+        String text = new String(Files.readAllBytes(env.toPath()), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    graphql:\n      enable: true\n");
+        Files.write(env.toPath(), text.getBytes(StandardCharsets.UTF_8));
+        run(project, 0);
+        String controller = read(project, "PurchaseOrderGraphQlController.java");
+        assertTrue(controller.contains("@GraphQlDomain(\"dgshop\")"), controller);
+        assertTrue(controller.contains("return service.findBySearch(search);"), controller);
+    }
+
     // ---- helpers -----------------------------------------------------------------------
 
     private String run(File project, int expected) throws Exception {
