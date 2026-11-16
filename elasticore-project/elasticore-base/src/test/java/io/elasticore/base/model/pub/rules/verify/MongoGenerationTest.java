@@ -434,6 +434,37 @@ public class MongoGenerationTest {
         assertTrue(controller.contains("return service.findBySearch(search);"), controller);
     }
 
+    /** @signin(refresh=request) over MongoDB: the filter reads the member again through me(), as over JPA. */
+    @Test
+    public void aSessionFollowsItsDocumentWhenAsked() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "enumeration:",
+                        "  Grade:",
+                        "    meta: enum @db(code) @json(code)",
+                        "    fields:",
+                        "      code: string(1) @code",
+                        "    enum:",
+                        "      USER:  U",
+                        "      ADMIN: A",
+                        "entity:",
+                        "  Member:",
+                        "    meta: entity @expose(20) @signin(refresh=request) @owner(memberId) @access(read=owner, create=public, update=owner)",
+                        "    fields:",
+                        "      memberId: long @id @sequence",
+                        "      email: string(100)! @login @unique",
+                        "      secret: string(255)! @password",
+                        "      grade: Grade @default(Grade.USER) @access(admin)",
+                        ""),
+                "mongo");
+        run(project, 0);
+        String filter = read(project, "MemberSessionRefresh.java");
+        assertTrue(filter.contains("extends SessionRefreshFilter"), filter);
+        assertTrue(filter.contains("service.me().map("), filter);
+        assertTrue(read(project, "MemberCoreService.java").contains(" me()"), read(project, "MemberCoreService.java"));
+    }
+
     // ---- helpers -----------------------------------------------------------------------
 
     private String run(File project, int expected) throws Exception {
