@@ -31,9 +31,9 @@ entities:
       bookId: Long @Column(name = "book_id") @Id @GeneratedValue
       title: string(100) @Column(name = "title", length = 100)
       isbn: string(13) @Column(name = "isbn", length = 13)
-      price: java.math.BigDecimal @relation(mappedBy="price_id") @foreignKey(price_id) -- java.math.BigDecimal entity relationship
+      price: BigDecimal @Column(name = "price")
       rating: Double @Column(name = "rating")
-      author: Author @relation(mappedBy="book_id") @foreignKey(author_author_id) -- Author entity relationship
+      author: Author @foreignKey(author_author_id) -- Author entity relationship
       version: Long @Column(name = "version")
       lastModifiedBy: string(50) @Column(name = "last_modified_by", length = 50)
 
@@ -44,7 +44,7 @@ entities:
     fields:
       bookmarkId: Long @Column(name = "bookmark_id") @Id @GeneratedValue
       label: string(50) @Column(name = "label", length = 50)
-      post: Post @relation(mappedBy="bookmark_id") @foreignKey(post_post_id) -- Post entity relationship
+      post: Post @foreignKey(post_post_id) -- Post entity relationship
 
   Category:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Category)
@@ -60,8 +60,8 @@ entities:
       description: string @Column(name = "description")
       sortOrder: Integer @Column(name = "sort_order")
       active: Boolean @Column(name = "active")
-      parentCategory: Category @relation(mappedBy="parent_category_id") @foreignKey(parent_category_cat_id) -- Category entity relationship
-      subCategories: List<Category> @relation(mappedBy="sub_categories_id") @foreignKey(sub_categories_id) -- List<Category> entity relationship
+      parentCategory: Category @foreignKey(parent_category_cat_id) -- Category entity relationship
+      subCategories: List<Category> @relation(mappedBy="parentCategory") -- List<Category> entity relationship
 
   Comment:
     meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Comment)
@@ -70,8 +70,8 @@ entities:
     fields:
       commentId: Long @Column(name = "comment_id") @Id @GeneratedValue
       text: string(200) @Column(name = "text", length = 200)
-      post: Post @relation(mappedBy="comment_id") @foreignKey(post_post_id) -- Post entity relationship
-      parent: Comment @relation(mappedBy="parent_id") @foreignKey(parent_comment_id) -- Comment entity relationship
+      post: Post @foreignKey(post_post_id) -- Post entity relationship
+      parent: Comment @foreignKey(parent_comment_id) -- Comment entity relationship
       status: string(3) @Column(name = "status", length = 3) -- 후보값( VIS=Visible, HID=Hidden)
 
   Customer:
@@ -91,9 +91,9 @@ entities:
       dateOfBirth: Date @Column(name = "date_of_birth")
       loyaltyPoints: Long @Column(name = "loyalty_points")
       customerType: string(1) @Column(name = "customer_type", length = 1) -- 후보값( I=Individual, B=Business, W=Wholesale)
-      billingAddress: Address @relation(mappedBy="customer_id") @foreignKey(billing_address_id) -- Address entity relationship @Embedded
-      vipProfile: VipProfile @relation(mappedBy="customer_id") @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
-      orders: List<Order> @relation(mappedBy="orders_id") @foreignKey(orders_id) -- List<Order> entity relationship
+      billingAddress: Address @Embedded
+      vipProfile: VipProfile @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
+      orders: List<Order> @relation(mappedBy="customer") -- List<Order> entity relationship
 
   Order:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Order)
@@ -106,12 +106,12 @@ entities:
       lastModifiedDate: Date @Column(name = "last_modified_date")
       orderId: string(36) @Column(name = "order_id", length = 36) @Id
       orderDate: Date @Column(name = "order_date")
-      totalAmount: java.math.BigDecimal @relation(mappedBy="total_amount_id") @foreignKey(total_amount_id) -- java.math.BigDecimal entity relationship
+      totalAmount: BigDecimal @Column(name = "total_amount")
       status: string(3) @Column(name = "status", length = 3) -- 후보값( PEN=Pending, CFM=Confirmed, PRC=Processing, SHP=Shipped, DLV=Delivered, CAN=Cancelled, RFD=Refunded)
       paymentMethod: string(2) @Column(name = "payment_method", length = 2) -- 후보값( CC=Credit Card, DC=Debit Card, BT=Bank Transfer, PP=PayPal, CA=Cash)
-      customer: Customer @relation(mappedBy="order_id") @foreignKey(customer_customer_id) -- Customer entity relationship
-      items: List<OrderItem> @relation(mappedBy="items_id") @foreignKey(items_id) -- List<OrderItem> entity relationship
-      shippingAddress: Address @relation(mappedBy="order_id") @foreignKey(shipping_address_id) -- Address entity relationship @Embedded
+      customer: Customer @foreignKey(customer_customer_id) -- Customer entity relationship
+      items: List<OrderItem> @relation(mappedBy="order") -- List<OrderItem> entity relationship
+      shippingAddress: Address @Embedded
       notes: string @Column(name = "notes")
       trackingNumber: string(50) @Column(name = "tracking_number", length = 50)
       version: Long @Column(name = "version")
@@ -122,12 +122,12 @@ entities:
     java: io.elasticore.sample.ddd.shop.domain.model.OrderItem
     fields:
       orderItemId: string(36) @Column(name = "order_item_id", length = 36) @Id
-      order: Order @relation(mappedBy="order_item_id") @foreignKey(order_order_id) -- Order entity relationship
+      order: Order @foreignKey(order_order_id) -- Order entity relationship
       itemSeq: Integer @Column(name = "item_seq")
-      product: Product @relation(mappedBy="order_item_id") @foreignKey(product_product_id) -- Product entity relationship
+      product: Product @foreignKey(product_product_id) -- Product entity relationship
       quantity: Integer @Column(name = "quantity")
-      unitPrice: java.math.BigDecimal @relation(mappedBy="unit_price_id") @foreignKey(unit_price_id) -- java.math.BigDecimal entity relationship
-      discount: java.math.BigDecimal @relation(mappedBy="discount_id") @foreignKey(discount_id) -- java.math.BigDecimal entity relationship
+      unitPrice: BigDecimal @Column(name = "unit_price")
+      discount: BigDecimal @Column(name = "discount")
 
   Post:
     meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Post)
@@ -136,7 +136,7 @@ entities:
     fields:
       postId: Long @Column(name = "post_id") @Id @GeneratedValue
       title: string(100) @Column(name = "title", length = 100)
-      quoted: Post @relation(mappedBy="quoted_id") @foreignKey(quoted_post_id) -- Post entity relationship
+      quoted: Post @foreignKey(quoted_post_id) -- Post entity relationship
       version: Long @Column(name = "version")
       commentCount: Long @Column(name = "comment_count")
       likeCount: Long @Column(name = "like_count")
@@ -147,7 +147,7 @@ entities:
     java: io.elasticore.sample.ddd.board.domain.model.PostLike
     fields:
       likeId: Long @Column(name = "like_id") @Id @GeneratedValue
-      post: Post @relation(mappedBy="post_like_id") @foreignKey(post_post_id) -- Post entity relationship
+      post: Post @foreignKey(post_post_id) -- Post entity relationship
 
   Product:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Product)
@@ -162,8 +162,8 @@ entities:
       name: string(200) @Column(name = "name", length = 200)
       sku: string(50) @Column(name = "sku", length = 50)
       description: string @Column(name = "description")
-      price: java.math.BigDecimal @relation(mappedBy="price_id") @foreignKey(price_id) -- java.math.BigDecimal entity relationship
-      costPrice: java.math.BigDecimal @relation(mappedBy="cost_price_id") @foreignKey(cost_price_id) -- java.math.BigDecimal entity relationship
+      price: BigDecimal @Column(name = "price")
+      costPrice: BigDecimal @Column(name = "cost_price")
       stockQuantity: Integer @Column(name = "stock_quantity")
       weight: Float @Column(name = "weight")
       rating: Double @Column(name = "rating")
@@ -175,8 +175,8 @@ entities:
       thumbnail: string(500) @Column(name = "thumbnail", length = 500)
       manualContent: string @Column(name = "manual_content")
       tags: string @Column(name = "tags")
-      category: Category @relation(mappedBy="product_id") @foreignKey(category_cat_id) -- Category entity relationship
-      orderItems: List<OrderItem> @relation(mappedBy="order_items_id") @foreignKey(order_items_id) -- List<OrderItem> entity relationship
+      category: Category @foreignKey(category_cat_id) -- Category entity relationship
+      orderItems: List<OrderItem> @relation(mappedBy="product") -- List<OrderItem> entity relationship
 
   Reading:
     meta: entity @java(io.elasticore.sample.ddd.catalog.entity.Reading) -- 측정값 (모든 값 타입)
@@ -191,18 +191,18 @@ entities:
       readCount: Integer @Column(name = "read_count")
       totalCount: Long @Column(name = "total_count")
       bigCount: java.math.BigInteger @Column(name = "big_count")
-      units: io.elasticore.springboot3.domain.Quantity @relation(mappedBy="units_id") @foreignKey(units_id) -- io.elasticore.springboot3.domain.Quantity entity relationship
-      ratio: java.math.BigDecimal @relation(mappedBy="ratio_id") @foreignKey(ratio_id) -- java.math.BigDecimal entity relationship
-      exactValue: java.math.BigDecimal @relation(mappedBy="exact_value_id") @foreignKey(exact_value_id) -- java.math.BigDecimal entity relationship
-      amount: io.elasticore.springboot3.domain.Money @relation(mappedBy="amount_id") @foreignKey(amount_id) -- io.elasticore.springboot3.domain.Money entity relationship
+      units: io.elasticore.springboot3.domain.Quantity @Column(name = "units")
+      ratio: BigDecimal @Column(name = "ratio")
+      exactValue: BigDecimal @Column(name = "exact_value")
+      amount: io.elasticore.springboot3.domain.Money @Column(name = "amount")
       score: Double @Column(name = "score")
       weight: Float @Column(name = "weight")
       active: Boolean @Column(name = "active")
       readDate: Date @Column(name = "read_date")
-      readTime: java.time.LocalTime @relation(mappedBy="read_time_id") @foreignKey(read_time_id) -- java.time.LocalTime entity relationship
+      readTime: java.time.LocalTime @Column(name = "read_time")
       localAt: Date @Column(name = "local_at")
-      measuredAt: java.time.Instant @relation(mappedBy="measured_at_id") @foreignKey(measured_at_id) -- java.time.Instant entity relationship
-      image: byte[] @relation(mappedBy="image_id") @foreignKey(image_id) -- byte[] entity relationship
+      measuredAt: java.time.Instant @Column(name = "measured_at")
+      image: byte[] @Column(name = "image")
 
   Receipt:
     meta: entity @java(io.elasticore.sample.ddd.billing.domain.model.Receipt) -- 영수증
@@ -211,7 +211,7 @@ entities:
     fields:
       receiptId: Long @Column(name = "receipt_id") @Id @GeneratedValue -- 영수증 번호
       orderId: string(36) @Column(name = "order_id", length = 36) -- 주문 ID (shop 의 주문)
-      amount: java.math.BigDecimal @relation(mappedBy="amount_id") @foreignKey(amount_id) -- java.math.BigDecimal entity relationship -- 청구 금액
+      amount: BigDecimal @Column(name = "amount") -- 청구 금액
 
   RegionCode:
     meta: entity @extend(Code) @java(io.elasticore.sample.ddd.catalog.entity.RegionCode) -- A region a case can be in
@@ -229,8 +229,8 @@ entities:
     fields:
       reportId: Long @Column(name = "report_id") @Id @GeneratedValue
       reason: string(100) @Column(name = "reason", length = 100)
-      post: Post @relation(mappedBy="report_id") @foreignKey(post_post_id) -- Post entity relationship
-      comment: Comment @relation(mappedBy="report_id") @foreignKey(comment_comment_id) -- Comment entity relationship
+      post: Post @foreignKey(post_post_id) -- Post entity relationship
+      comment: Comment @foreignKey(comment_comment_id) -- Comment entity relationship
 
   Shipment:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.Shipment) -- 배송
@@ -241,7 +241,7 @@ entities:
       carrier: string(30) @Column(name = "carrier", length = 30)
       status: string(3) @Column(name = "status", length = 3) -- 후보값( RDY=Ready, SNT=Sent, CAN=Cancelled)
       fee: string(3) @Column(name = "fee", length = 3) -- 후보값( DUE=Due, PAD=Paid, REF=Refunded)
-      sentAt: java.time.Instant @relation(mappedBy="sent_at_id") @foreignKey(sent_at_id) -- java.time.Instant entity relationship
+      sentAt: java.time.Instant @Column(name = "sent_at")
       cancelledAt: Date @Column(name = "cancelled_at")
       refundedOn: Date @Column(name = "refunded_on")
 
@@ -271,7 +271,7 @@ entities:
       tier: string(20) @Column(name = "tier", length = 20)
       discountRate: Double @Column(name = "discount_rate")
       enrollDate: Date @Column(name = "enroll_date")
-      customer: Customer @relation(mappedBy="vip_profile_id") @foreignKey(customer_customer_id) -- Customer entity relationship
+      customer: Customer @relation(mappedBy="vipProfile") -- Customer entity relationship
 
 
 enumeration:

@@ -12,7 +12,7 @@ entities:
       categoryId: Long @Column(name = "category_id") @Id @GeneratedValue
       name: string(50) @Column(name = "name", length = 50)
       slug: string(30) @Column(name = "slug", length = 30)
-      parent: Category @relation(mappedBy="parent_id") @foreignKey(parent_category_id) -- Category entity relationship
+      parent: Category @foreignKey(parent_category_id) -- Category entity relationship
       retiredAt: Date @Column(name = "retired_at")
 
   Customer:
@@ -37,16 +37,16 @@ entities:
       active: Boolean @Column(name = "active")
       weight: Double @Column(name = "weight")
       ratio: Float @Column(name = "ratio")
-      amount: java.math.BigDecimal @relation(mappedBy="amount_id") @foreignKey(amount_id) -- java.math.BigDecimal entity relationship
-      price: io.elasticore.springboot3.domain.Money @relation(mappedBy="price_id") @foreignKey(price_id) -- io.elasticore.springboot3.domain.Money entity relationship
-      count: io.elasticore.springboot3.domain.Quantity @relation(mappedBy="count_id") @foreignKey(count_id) -- io.elasticore.springboot3.domain.Quantity entity relationship
+      amount: BigDecimal @Column(name = "amount")
+      price: io.elasticore.springboot3.domain.Money @Column(name = "price")
+      count: io.elasticore.springboot3.domain.Quantity @Column(name = "count")
       notes: string @Column(name = "notes")
       body: string @Column(name = "body")
-      image: byte[] @relation(mappedBy="image_id") @foreignKey(image_id) -- byte[] entity relationship
+      image: byte[] @Column(name = "image")
       madeOn: Date @Column(name = "made_on")
       madeAt: Date @Column(name = "made_at")
-      opensAt: java.time.LocalTime @relation(mappedBy="opens_at_id") @foreignKey(opens_at_id) -- java.time.LocalTime entity relationship
-      stampedAt: java.time.Instant @relation(mappedBy="stamped_at_id") @foreignKey(stamped_at_id) -- java.time.Instant entity relationship
+      opensAt: java.time.LocalTime @Column(name = "opens_at")
+      stampedAt: java.time.Instant @Column(name = "stamped_at")
 
   Product:
     meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.Product) -- product
@@ -60,7 +60,7 @@ entities:
       label: string(20) @Column(name = "label", length = 20)
       origin: string(20) @Column(name = "origin", length = 20)
       rating: Integer @Formula
-      category: Category @relation(mappedBy="product_id") @foreignKey(category_category_id) -- Category entity relationship
+      category: Category @foreignKey(category_category_id) -- Category entity relationship
 
   PurchaseOrder:
     meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.PurchaseOrder) -- order
@@ -72,8 +72,8 @@ entities:
       status: string(1) @Column(name = "status", length = 1) -- 후보값( N=New, P=Paid, S=Shipped)
       amount: Long @Column(name = "amount")
       orderedAt: Date @Column(name = "ordered_at")
-      customer: Customer @relation(mappedBy="purchase_order_id") @foreignKey(customer_customer_id) -- Customer entity relationship
-      product: Product @relation(mappedBy="purchase_order_id") @foreignKey(product_product_code) -- Product entity relationship
+      customer: Customer @foreignKey(customer_customer_id) -- Customer entity relationship
+      product: Product @foreignKey(product_product_code) -- Product entity relationship
       memo: string(200) @Column(name = "memo", length = 200)
       deliveredAt: Date @Column(name = "delivered_at")
       version: Long @Column(name = "version")

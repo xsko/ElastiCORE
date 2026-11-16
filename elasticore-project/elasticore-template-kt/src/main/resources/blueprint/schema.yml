@@ -64,9 +64,9 @@ entities:
       viewCount: Long @Column(name = "view_count")
       featured: Boolean @Column(name = "featured")
       articleStatus: string(3) @Column(name = "article_status", length = 3) -- 후보값( DRF=Draft, REV=Review, PUB=Published, ARC=Archived)
-      category: ContentCategory @relation(mappedBy="article_id") @foreignKey(category_category_id) -- ContentCategory entity relationship
-      tags: List<Tag> @relation(mappedBy="tags_id") @foreignKey(tags_id) -- List<Tag> entity relationship @Cascade
-      attachments: List<Attachment> @relation(mappedBy="attachments_id") @foreignKey(attachments_id) -- List<Attachment> entity relationship @Cascade
+      category: ContentCategory @foreignKey(category_category_id) -- ContentCategory entity relationship
+      tags: List<Tag> -- List<Tag> entity relationship @Cascade
+      attachments: List<Attachment> @relation(mappedBy="article") -- List<Attachment> entity relationship @Cascade
       ratings: Integer[] @Column(name = "ratings")
       labels: string @Column(name = "labels")
       commentCount: Long @Column(name = "comment_count")
@@ -81,7 +81,7 @@ entities:
       fileSize: Long @Column(name = "file_size")
       contentType: string(100) @Column(name = "content_type", length = 100)
       storageKey: string(500) @Column(name = "storage_key", length = 500)
-      article: Article @relation(mappedBy="attachment_id") @foreignKey(article_article_id) -- Article entity relationship
+      article: Article @foreignKey(article_article_id) -- Article entity relationship
 
   BlogPost:
     meta: entity @java(io.elasticore.blueprint.domain.jsonview_demo.entity.BlogPost)
@@ -105,7 +105,7 @@ entities:
     fields:
       bookmarkId: Long @Column(name = "bookmark_id") @Id @GeneratedValue
       memo: string(200) @Column(name = "memo", length = 200)
-      article: Article @relation(mappedBy="bookmark_id") @foreignKey(article_article_id) -- Article entity relationship
+      article: Article @foreignKey(article_article_id) -- Article entity relationship
 
   CaseNote:
     meta: entity @java(io.elasticore.blueprint.domain.refdata.entity.CaseNote) -- A note on a case, in a status of any kind of code
@@ -114,7 +114,7 @@ entities:
     fields:
       noteId: Long @Column(name = "note_id") @Id @GeneratedValue
       title: string(50) @Column(name = "title", length = 50)
-      status: Code @relation(mappedBy="case_note_id") @foreignKey(status_code) -- Code entity relationship
+      status: Code @foreignKey(status_code) -- Code entity relationship
 
   Category:
     meta: entity @extend(AuditEntity) @java(io.elasticore.blueprint.domain.shop.entity.Category)
@@ -130,8 +130,8 @@ entities:
       description: string @Column(name = "description")
       sortOrder: Integer @Column(name = "sort_order")
       active: Boolean @Column(name = "active")
-      parentCategory: Category @relation(mappedBy="parent_category_id") @foreignKey(parent_category_cat_id) -- Category entity relationship
-      subCategories: List<Category> @relation(mappedBy="sub_categories_id") @foreignKey(sub_categories_id) -- List<Category> entity relationship
+      parentCategory: Category @foreignKey(parent_category_cat_id) -- Category entity relationship
+      subCategories: List<Category> @relation(mappedBy="parentCategory") -- List<Category> entity relationship
 
   ColorMarker:
     meta: entity @extend(Marker) @java(io.elasticore.blueprint.domain.refdata.entity.ColorMarker) -- A marker of a colour
@@ -140,7 +140,7 @@ entities:
     fields:
       markerId: Long @Column(name = "marker_id") @Id @GeneratedValue
       label: string(30) @Column(name = "label", length = 30)
-      retiredAt: java.time.Instant @relation(mappedBy="retired_at_id") @foreignKey(retired_at_id) -- java.time.Instant entity relationship
+      retiredAt: java.time.Instant @Column(name = "retired_at")
       rgb: string(6) @Column(name = "rgb", length = 6)
 
   Comment:
@@ -157,9 +157,9 @@ entities:
       authorName: string(100) @Column(name = "author_name", length = 100)
       authorEmail: string(100) @Column(name = "author_email", length = 100)
       approved: Boolean @Column(name = "approved")
-      article: Article @relation(mappedBy="comment_id") @foreignKey(article_article_id) -- Article entity relationship
-      parentComment: Comment @relation(mappedBy="parent_comment_id") @foreignKey(parent_comment_comment_id) -- Comment entity relationship
-      replies: List<Comment> @relation(mappedBy="replies_id") @foreignKey(replies_id) -- List<Comment> entity relationship
+      article: Article @foreignKey(article_article_id) -- Article entity relationship
+      parentComment: Comment @foreignKey(test_id) -- Comment entity relationship
+      replies: List<Comment> @relation(mappedBy="parentComment") -- List<Comment> entity relationship
 
   ContentCategory:
     meta: entity @extend(ContentBase) @java(io.elasticore.blueprint.domain.content.entity.ContentCategory)
@@ -175,8 +175,8 @@ entities:
       slug: string(100) @Column(name = "slug", length = 100)
       description: string @Column(name = "description")
       sortOrder: Integer @Column(name = "sort_order")
-      parent: ContentCategory @relation(mappedBy="parent_id") @foreignKey(parent_category_id) -- ContentCategory entity relationship
-      children: List<ContentCategory> @relation(mappedBy="children_id") @foreignKey(children_id) -- List<ContentCategory> entity relationship
+      parent: ContentCategory @foreignKey(parent_category_id) -- ContentCategory entity relationship
+      children: List<ContentCategory> @relation(mappedBy="parent") -- List<ContentCategory> entity relationship
 
   Customer:
     meta: entity @extend(AuditEntity) @java(io.elasticore.blueprint.domain.shop.entity.Customer)
@@ -195,9 +195,9 @@ entities:
       dateOfBirth: Date @Column(name = "date_of_birth")
       loyaltyPoints: Long @Column(name = "loyalty_points")
       customerType: string(1) @Column(name = "customer_type", length = 1) -- 후보값( I=Individual, B=Business, W=Wholesale)
-      billingAddress: Address @relation(mappedBy="customer_id") @foreignKey(billing_address_id) -- Address entity relationship @Embedded
-      vipProfile: VipProfile @relation(mappedBy="customer_id") @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
-      orders: List<Order> @relation(mappedBy="orders_id") @foreignKey(orders_id) -- List<Order> entity relationship
+      billingAddress: Address @Embedded
+      vipProfile: VipProfile @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
+      orders: List<Order> @relation(mappedBy="customer") -- List<Order> entity relationship
 
   Department:
     meta: entity @extend(HrAuditEntity) @java(io.elasticore.blueprint.domain.hr.entity.Department)
@@ -214,11 +214,11 @@ entities:
       name: string(100) @Column(name = "name", length = 100)
       nameInsensitive: string(100) @Column(name = "name_insensitive", length = 100)
       description: string @Column(name = "description")
-      budget: java.math.BigDecimal @relation(mappedBy="budget_id") @foreignKey(budget_id) -- java.math.BigDecimal entity relationship
+      budget: BigDecimal @Column(name = "budget")
       headCount: Integer @Column(name = "head_count")
       maxCapacity: Integer @Column(name = "max_capacity")
       floorNumber: Integer @Column(name = "floor_number")
-      minSalary: java.math.BigDecimal @relation(mappedBy="min_salary_id") @foreignKey(min_salary_id) -- java.math.BigDecimal entity relationship
+      minSalary: BigDecimal @Column(name = "min_salary")
       status: string(1) @Column(name = "status", length = 1) -- 후보값( A=Active, I=Inactive, M=Merged)
       namePrefix: string(50) @Column(name = "name_prefix", length = 50)
       nameSuffix: string(50) @Column(name = "name_suffix", length = 50)
@@ -246,13 +246,13 @@ entities:
       email: string(100) @Column(name = "email", length = 100)
       phone: string(20) @Column(name = "phone", length = 20)
       hireDate: Date @Column(name = "hire_date")
-      salary: java.math.BigDecimal @relation(mappedBy="salary_id") @foreignKey(salary_id) -- java.math.BigDecimal entity relationship
+      salary: BigDecimal @Column(name = "salary")
       bonusRate: Double @Column(name = "bonus_rate")
       active: Boolean @Column(name = "active")
-      department: Department @relation(mappedBy="employee_id") @foreignKey(department_dept_id) -- Department entity relationship
-      skills: List<Skill> @relation(mappedBy="skills_id") @foreignKey(skills_id) -- List<Skill> entity relationship @Cascade
-      manager: Employee @relation(mappedBy="manager_id") @foreignKey(manager_emp_id) -- Employee entity relationship
-      directReports: List<Employee> @relation(mappedBy="direct_reports_id") @foreignKey(direct_reports_id) -- List<Employee> entity relationship
+      department: Department @foreignKey(department_dept_id) -- Department entity relationship
+      skills: List<Skill> -- List<Skill> entity relationship @Cascade
+      manager: Employee @foreignKey(manager_emp_id) -- Employee entity relationship
+      directReports: List<Employee> @relation(mappedBy="manager") -- List<Employee> entity relationship
 
   Member:
     meta: entity @java(io.elasticore.blueprint.domain.jsonview_demo.entity.Member)
@@ -281,12 +281,12 @@ entities:
       lastModifiedDate: Date @Column(name = "last_modified_date")
       orderId: string(36) @Column(name = "order_id", length = 36) @Id
       orderDate: Date @Column(name = "order_date")
-      totalAmount: java.math.BigDecimal @relation(mappedBy="total_amount_id") @foreignKey(total_amount_id) -- java.math.BigDecimal entity relationship
+      totalAmount: BigDecimal @Column(name = "total_amount")
       status: string(3) @Column(name = "status", length = 3) -- 후보값( PEN=Pending, CFM=Confirmed, PRC=Processing, SHP=Shipped, DLV=Delivered, CAN=Cancelled, RFD=Refunded)
       paymentMethod: string(2) @Column(name = "payment_method", length = 2) -- 후보값( CC=Credit Card, DC=Debit Card, BT=Bank Transfer, PP=PayPal, CA=Cash)
-      customer: Customer @relation(mappedBy="order_id") @foreignKey(customer_customer_id) -- Customer entity relationship
-      items: List<OrderItem> @relation(mappedBy="items_id") @foreignKey(items_id) -- List<OrderItem> entity relationship @Cascade
-      shippingAddress: Address @relation(mappedBy="order_id") @foreignKey(shipping_address_id) -- Address entity relationship @Embedded
+      customer: Customer @foreignKey(customer_customer_id) -- Customer entity relationship
+      items: List<OrderItem> @relation(mappedBy="order") -- List<OrderItem> entity relationship @Cascade
+      shippingAddress: Address @Embedded
       notes: string @Column(name = "notes")
       trackingNumber: string(50) @Column(name = "tracking_number", length = 50)
       version: Long @Column(name = "version")
@@ -297,12 +297,12 @@ entities:
     java: io.elasticore.blueprint.domain.shop.entity.OrderItem
     fields:
       orderItemId: string(36) @Column(name = "order_item_id", length = 36) @Id
-      order: Order @relation(mappedBy="order_item_id") @foreignKey(order_order_id) -- Order entity relationship
+      order: Order @foreignKey(order_order_id) -- Order entity relationship
       itemSeq: Integer @Column(name = "item_seq")
-      product: Product @relation(mappedBy="order_item_id") @foreignKey(product_product_id) -- Product entity relationship
+      product: Product @foreignKey(product_product_id) -- Product entity relationship
       quantity: Integer @Column(name = "quantity")
-      unitPrice: java.math.BigDecimal @relation(mappedBy="unit_price_id") @foreignKey(unit_price_id) -- java.math.BigDecimal entity relationship
-      discount: java.math.BigDecimal @relation(mappedBy="discount_id") @foreignKey(discount_id) -- java.math.BigDecimal entity relationship
+      unitPrice: BigDecimal @Column(name = "unit_price")
+      discount: BigDecimal @Column(name = "discount")
 
   Person:
     meta: entity @extend(Party) @java(io.elasticore.blueprint.domain.refdata.entity.Person) -- A person a case is about
@@ -312,7 +312,7 @@ entities:
       partyId: Long @Column(name = "party_id") @Id @GeneratedValue
       name: string(50) @Column(name = "name", length = 50)
       version: Long @Column(name = "version")
-      leftAt: java.time.Instant @relation(mappedBy="left_at_id") @foreignKey(left_at_id) -- java.time.Instant entity relationship
+      leftAt: java.time.Instant @Column(name = "left_at")
       birthYear: Integer @Column(name = "birth_year")
 
   Product:
@@ -328,8 +328,8 @@ entities:
       name: string(200) @Column(name = "name", length = 200)
       sku: string(50) @Column(name = "sku", length = 50)
       description: string @Column(name = "description")
-      price: java.math.BigDecimal @relation(mappedBy="price_id") @foreignKey(price_id) -- java.math.BigDecimal entity relationship
-      costPrice: java.math.BigDecimal @relation(mappedBy="cost_price_id") @foreignKey(cost_price_id) -- java.math.BigDecimal entity relationship
+      price: BigDecimal @Column(name = "price")
+      costPrice: BigDecimal @Column(name = "cost_price")
       stockQuantity: Integer @Column(name = "stock_quantity")
       weight: Float @Column(name = "weight")
       rating: Double @Column(name = "rating")
@@ -345,8 +345,8 @@ entities:
       customXml: string @Column(name = "custom_xml")
       forceLong: string @Column(name = "force_long")
       tags: string @Column(name = "tags")
-      category: Category @relation(mappedBy="product_id") @foreignKey(category_cat_id) -- Category entity relationship
-      orderItems: List<OrderItem> @relation(mappedBy="order_items_id") @foreignKey(order_items_id) -- List<OrderItem> entity relationship
+      category: Category @foreignKey(category_cat_id) -- Category entity relationship
+      orderItems: List<OrderItem> @relation(mappedBy="product") -- List<OrderItem> entity relationship
 
   Project:
     meta: entity @java(io.elasticore.blueprint.domain.hr.entity.Project)
@@ -357,7 +357,7 @@ entities:
       name: string(100) @Column(name = "name", length = 100)
       startDate: Date @Column(name = "start_date")
       endDate: Date @Column(name = "end_date")
-      budget: java.math.BigDecimal @relation(mappedBy="budget_id") @foreignKey(budget_id) -- java.math.BigDecimal entity relationship
+      budget: BigDecimal @Column(name = "budget")
       status: string(3) @Column(name = "status", length = 3) -- 후보값( PLN=Planned, ACT=Active, HLD=On Hold, CMP=Completed, CXL=Cancelled)
 
   ProjectAssignment:
@@ -429,14 +429,14 @@ entities:
     java: io.elasticore.blueprint.domain.shop.entity.Ticket
     fields:
       ticketId: string(36) @Column(name = "ticket_id", length = 36) @Id
-      agent: Agent @relation(mappedBy="ticket_id") @foreignKey(agent_agent_id) -- Agent entity relationship
+      agent: Agent @foreignKey(agent_agent_id) -- Agent entity relationship
       subject: string(100) @Column(name = "subject", length = 100)
       status: string(3) @Column(name = "status", length = 3) -- 후보값( OPN=Open, CLS=Closed)
       billing: string(3) @Column(name = "billing", length = 3) -- 후보값( UNB=Unbilled, BIL=Billed, VOD=Void)
-      closedAt: java.time.Instant @relation(mappedBy="closed_at_id") @foreignKey(closed_at_id) -- java.time.Instant entity relationship
-      deletedAt: java.time.Instant @relation(mappedBy="deleted_at_id") @foreignKey(deleted_at_id) -- java.time.Instant entity relationship
-      total: java.math.BigDecimal @relation(mappedBy="total_id") @foreignKey(total_id) -- java.math.BigDecimal entity relationship
-      entries: List<TicketEntry> @relation(mappedBy="entries_id") @foreignKey(entries_id) -- List<TicketEntry> entity relationship
+      closedAt: java.time.Instant @Column(name = "closed_at")
+      deletedAt: java.time.Instant @Column(name = "deleted_at")
+      total: BigDecimal @Column(name = "total")
+      entries: List<TicketEntry> @relation(mappedBy="ticket") -- List<TicketEntry> entity relationship
 
   TicketEntry:
     meta: entity @java(io.elasticore.blueprint.domain.shop.entity.TicketEntry) -- 작업 항목
@@ -444,12 +444,12 @@ entities:
     java: io.elasticore.blueprint.domain.shop.entity.TicketEntry
     fields:
       entryId: string(36) @Column(name = "entry_id", length = 36) @Id
-      ticket: Ticket @relation(mappedBy="ticket_entry_id") @foreignKey(ticket_ticket_id) -- Ticket entity relationship
-      product: Product @relation(mappedBy="ticket_entry_id") @foreignKey(product_product_id) -- Product entity relationship
-      hours: io.elasticore.springboot3.domain.Quantity @relation(mappedBy="hours_id") @foreignKey(hours_id) -- io.elasticore.springboot3.domain.Quantity entity relationship
-      rate: java.math.BigDecimal @relation(mappedBy="rate_id") @foreignKey(rate_id) -- java.math.BigDecimal entity relationship
-      amount: java.math.BigDecimal @relation(mappedBy="amount_id") @foreignKey(amount_id) -- java.math.BigDecimal entity relationship
-      deletedAt: java.time.Instant @relation(mappedBy="deleted_at_id") @foreignKey(deleted_at_id) -- java.time.Instant entity relationship
+      ticket: Ticket @foreignKey(ticket_ticket_id) -- Ticket entity relationship
+      product: Product @foreignKey(product_product_id) -- Product entity relationship
+      hours: io.elasticore.springboot3.domain.Quantity @Column(name = "hours")
+      rate: BigDecimal @Column(name = "rate")
+      amount: BigDecimal @Column(name = "amount")
+      deletedAt: java.time.Instant @Column(name = "deleted_at")
 
   VipProfile:
     meta: entity @java(io.elasticore.blueprint.domain.shop.entity.VipProfile)
@@ -460,7 +460,7 @@ entities:
       tier: string(20) @Column(name = "tier", length = 20)
       discountRate: Double @Column(name = "discount_rate")
       enrollDate: Date @Column(name = "enroll_date")
-      customer: Customer @relation(mappedBy="vip_profile_id") @foreignKey(customer_customer_id) -- Customer entity relationship
+      customer: Customer @relation(mappedBy="vipProfile") -- Customer entity relationship
 
 
 enumeration:

@@ -197,34 +197,48 @@ public class SchemaCodePublisher implements CodePublisher {
         // Check if field is enum type
         EnumModel enumModel = findEnumModel(originalType);
         boolean isEnumType = enumModel != null;
-        
+
+        // Only a type that names an entity of the model is a relation. A value type
+        // the field resolves to - java.math.BigDecimal, java.time.Instant, Money,
+        // byte[] - is a column of this table, like a string.
+        boolean isList = typeInfo.isList();
+        Entity target = (entity == null || isEnumType) ? null : findReferencedEntity(field);
+        boolean embeddedValue = target != null
+                && (field.hasAnnotation("embedded") || isEmbeddableEntity(target));
+        boolean relation = target != null && !embeddedValue;
+        // A list of enum codes or of an embeddable value is an element collection:
+        // rows of a table of its own, no column of this one.
+        boolean elementCollection = entity != null && isList
+                && (embeddedValue || findEnumModel(typeInfo.getCoreItemType()) != null);
+
         // Set field type and handle enum types
         if (isEnumType) {
             // For enum types, use the enum's code field type and length
             info.type = getEnumCodeType(enumModel);
-        } else if (isPrimitiveOrEnumType(originalType, false)) {
+        } else if (elementCollection) {
+            info.type = originalType;
+        } else if (relation && isList) {
+            info.type = originalType + " " + generateCollectionAnnotation(field, originalType);
+        } else if (relation) {
+            info.type = originalType + " " + generateReferenceAnnotation(field, entity, target);
+        } else if (embeddedValue) {
+            info.type = originalType;
+        } else {
             // Map Java types to schema types
             info.type = mapJavaTypeToSchemaType(originalType, field.getLength());
-        } else {
-            // Handle object types with @relation annotation
-            info.type = originalType;
-            // Add @relation mappedBy annotation for object types (only if entity is not null)
-            if (entity != null) {
-                String relationAnnotation = generateRelationAnnotation(field, entity, originalType);
-                if (relationAnnotation != null) {
-                    info.type += " " + relationAnnotation;
-                }
-            }
         }
-        
+
         // Build field annotations (only for primitive types or enum types)
         List<String> annotations = new ArrayList<>();
-        
-        // Only add @Column annotation for primitive types or enum types.
-        // A formula is computed on read and has no column in the table.
+
+        // @Column for every field stored in a column of this table: not a relation,
+        // not an embedded value (its own columns), not an element collection, and not
+        // a formula, which is computed on read and has no column in the table.
         if (field.hasAnnotation("formula")) {
             annotations.add("@Formula");
-        } else if (isPrimitiveOrEnumType(originalType, isEnumType)) {
+        } else if (elementCollection) {
+            annotations.add("@ElementCollection");
+        } else if (isEnumType || (target == null && !field.hasAnnotation("embedded"))) {
             StringBuilder columnAnnotation = new StringBuilder("@Column(name = \"" + info.columnName + "\"");
             
             Integer length = field.getLength();
@@ -238,6 +252,8 @@ public class SchemaCodePublisher implements CodePublisher {
             }
             columnAnnotation.append(")");
             annotations.add(columnAnnotation.toString());
+        } else if (embeddedValue) {
+            annotations.add("@Embedded");
         }
         
         // Add other annotations
@@ -260,7 +276,7 @@ public class SchemaCodePublisher implements CodePublisher {
                 if ("sequence".equals(annName) || "generated".equals(annName)) {
                     annotations.add("@GeneratedValue");
                 } else if ("embedded".equals(annName)) {
-                    annotations.add("@Embedded");
+                    if (!elementCollection && !annotations.contains("@Embedded")) annotations.add("@Embedded");
                 } else if ("cascade".equals(annName)) {
                     annotations.add("@Cascade");
                 } else if ("fk".equals(annName) || "foreignkey".equals(annName)) {
@@ -676,60 +692,108 @@ public class SchemaCodePublisher implements CodePublisher {
         }
     }
     
-    /**
-     * Generate @relation annotation with mappedBy for object type fields
-     * Now also includes @foreignKey annotation for better LLM recognition
-     */
-    private String generateRelationAnnotation(Field field, Entity entity, String targetType) {
-        if (ctx == null) return null;
-        
-        // Find the target entity
-        Entity targetEntity = ctx.findModelComponent(targetType, Entity.class);
-        String foreignKeyColumn = calculateForeignKeyColumnName(field, targetEntity);
-        
-        if (targetEntity == null) {
-            String relationAnno = "@relation(mappedBy=\"" + camelToSnakeCase(field.getName()) + "_id\")";
-            String foreignKeyAnno = "@foreignKey(" + foreignKeyColumn + ")";
-            return relationAnno + " " + foreignKeyAnno + " -- " + targetType + " entity relationship";
-        }
-        
-        // Look for reverse relationship field in target entity
-        String reverseMappedBy = findReverseMappedBy(entity, targetEntity);
-        String relationAnno;
-        if (reverseMappedBy != null) {
-            relationAnno = "@relation(mappedBy=\"" + reverseMappedBy + "\")";
-        } else {
-            relationAnno = "@relation(mappedBy=\"" + camelToSnakeCase(field.getName()) + "_id\")";
-        }
-        
-        String foreignKeyAnno = "@foreignKey(" + foreignKeyColumn + ")";
-        return relationAnno + " " + foreignKeyAnno + " -- " + targetType + " entity relationship";
+    /** The entity of the model a field refers to, by its type or its list's item type; null for a value type. */
+    private Entity findReferencedEntity(Field field) {
+        if (ctx == null || field.getTypeInfo() == null) return null;
+        String type = field.getTypeInfo().getCoreItemType();
+        if (type == null || type.isEmpty()) return null;
+        return ctx.findModelComponent(type, Entity.class);
     }
-    
-    /**
-     * Calculate foreign key column name following JPA naming convention
-     * Format: {fieldName}_{targetEntityPrimaryKeyField}
-     * For example: customer field referencing Customer.customerId -> customer_customer_id
-     */
-    private String calculateForeignKeyColumnName(Field field, Entity targetEntity) {
-        String fieldName = camelToSnakeCase(field.getName());
-        
-        if (targetEntity == null) {
-            // Fallback: assume primary key is "id"
-            return fieldName + "_id";
-        }
-        
-        // Find primary key field in target entity
-        String primaryKeyField = findPrimaryKeyField(targetEntity);
-        if (primaryKeyField == null) {
-            // Fallback: assume primary key is "id" 
-            return fieldName + "_id";
-        }
-        
-        String primaryKeyColumnName = camelToSnakeCase(primaryKeyField);
-        return fieldName + "_" + primaryKeyColumnName;
+
+    private static boolean isEmbeddableEntity(Entity entity) {
+        MetaInfo meta = entity.getMetaInfo();
+        return meta != null && meta.hasMetaAnnotation("embeddable");
     }
-    
+
+    /**
+     * A to-one reference. It owns a column of this table, the one the entity's
+     * {@code @JoinColumn} names, which {@code @foreignKey} gives. It has no other
+     * side to name with {@code mappedBy} - except a one-to-one written
+     * {@code @OneToOne(mappedBy=...)}, which is that other side and has no column.
+     */
+    private String generateReferenceAnnotation(Field field, Entity entity, Entity target) {
+        Annotation oneToOne = field.getAnnotation("onetoone");
+        String mappedBy = oneToOne == null || oneToOne.getProperties() == null ? null
+                : oneToOne.getProperties().getProperty("mappedBy");
+        String targetName = field.getTypeInfo().getDefaultTypeName();
+        if (mappedBy != null && !mappedBy.isEmpty()) {
+            return "@relation(mappedBy=\"" + mappedBy + "\") -- " + targetName + " entity relationship";
+        }
+        return "@foreignKey(" + joinColumnName(field, entity, target) + ") -- " + targetName + " entity relationship";
+    }
+
+    /**
+     * The column the generated entity joins on, by the rules its {@code @JoinColumn} follows:
+     * the column of the field {@code @joinBy} names (a reference by id, with any
+     * {@code referenceColumn} setting), else {@code @column}, else JPA's default -
+     * the field's name and the target key's column: {@code customer_customer_id}.
+     */
+    private String joinColumnName(Field field, Entity entity, Entity target) {
+        // A native @jpa:JoinColumn(name=...) is the one the entity carries.
+        Annotation nativeJoin = field.getAnnotation("jpa:joincolumn");
+        if (nativeJoin != null && nativeJoin.getProperties() != null) {
+            String name = nativeJoin.getProperties().getProperty("name");
+            if (name != null && !name.trim().isEmpty()) return name.trim().replace("\"", "");
+        }
+        String joinBy = field.getAnnotationValue("joinby", "joinfield");
+        if (joinBy != null && !joinBy.isEmpty()) {
+            Field idField = (Field) entity.getAllFieldListMap().get(joinBy);
+            if (idField != null) {
+                String column = idField.getDbColumnName();
+                if (column != null && !column.isEmpty() && !"null".equals(column)) return column;
+            }
+        }
+        String column = field.getAnnotationValue("column", "col", "db");
+        if (column != null && !column.isEmpty()) return column;
+
+        Field pk = findPrimaryKey(target);
+        if (pk == null) return physicalName(field.getName() + "_id");
+        String pkColumn = pk.getAnnotationValue("column", "col", "db");
+        if (pkColumn == null || pkColumn.isEmpty()) pkColumn = pk.getName();
+        return physicalName(field.getName() + "_" + pkColumn);
+    }
+
+    /**
+     * A collection of entities has no column in this table. With
+     * {@code @OneToMany(mappedBy=...)} the other side's field holds the key, and
+     * {@code mappedBy} names that field.
+     */
+    private static String generateCollectionAnnotation(Field field, String targetType) {
+        String mappedBy = null;
+        for (String kind : new String[] {"onetomany", "manytomany"}) {
+            Annotation a = field.getAnnotation(kind);
+            if (a != null && a.getProperties() != null && a.getProperties().getProperty("mappedBy") != null) {
+                mappedBy = a.getProperties().getProperty("mappedBy").trim().replace("\"", "");
+            }
+        }
+        String comment = "-- " + targetType + " entity relationship";
+        return mappedBy == null || mappedBy.isEmpty() ? comment : "@relation(mappedBy=\"" + mappedBy + "\") " + comment;
+    }
+
+    /**
+     * The physical name Spring Boot's naming strategy gives a logical one: an
+     * underscore between a lower-case letter and an upper-case one followed by a
+     * lower-case one, then all lower case - what the DDL of the entity holds.
+     */
+    private static String physicalName(String name) {
+        StringBuilder sb = new StringBuilder(name.replace('.', '_'));
+        for (int i = 1; i < sb.length() - 1; i++) {
+            if (Character.isLowerCase(sb.charAt(i - 1)) && Character.isUpperCase(sb.charAt(i))
+                    && Character.isLowerCase(sb.charAt(i + 1))) {
+                sb.insert(i++, '_');
+            }
+        }
+        return sb.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private Field findPrimaryKey(Entity entity) {
+        String name = findPrimaryKeyField(entity);
+        if (name == null) return null;
+        Map<String, Field> fields = getAllInheritedFields(entity);
+        Field pk = fields.get(name);
+        return pk != null ? pk : (Field) entity.getAllFieldListMap().get(name);
+    }
+
     /**
      * Find primary key field name in entity
      */
@@ -753,26 +817,6 @@ public class SchemaCodePublisher implements CodePublisher {
         }
         
         return null; // No primary key found
-    }
-    
-    /**
-     * Find reverse relationship field name for mappedBy
-     */
-    private String findReverseMappedBy(Entity sourceEntity, Entity targetEntity) {
-        // Check if target entity has a field that references source entity
-        ModelComponentItems<Field> targetFieldItems = targetEntity.getItems();
-        for (int i = 0; i < targetFieldItems.size(); i++) {
-            Field targetField = targetFieldItems.get(i);
-            TypeInfo targetTypeInfo = targetField.getTypeInfo();
-            String targetTypeName = targetTypeInfo.getDefaultTypeName();
-            
-            if (sourceEntity.getIdentity().getName().equals(targetTypeName)) {
-                return camelToSnakeCase(targetField.getName()) + "_id";
-            }
-        }
-        
-        // Default to source entity name + _id
-        return camelToSnakeCase(sourceEntity.getIdentity().getName()) + "_id";
     }
     
     /**
