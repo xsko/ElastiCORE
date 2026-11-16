@@ -603,6 +603,40 @@ config:
     `publishes` 한 줄에 남음
   - 팀/조직 경계와 컨텍스트를 맞추고, `context-map.md` 로 의존 관계를 문서화
 
+### 6.1.5 GraphQL API (`graphql:`, 3.0)
+> **동작:** v3 (JPA와 MyBatis, Java와 Kotlin, Spring Boot 3과 4) · **미지원:** 2.x 생성기
+
+```yaml
+config:
+  graphql:
+    enable: true          # REST 컨트롤러마다 GraphQL 컨트롤러를 하나씩 (기본값: false)
+    mutations: true       # false: 조회만
+    path: /graphql        # spring.graphql.path. 이 값을 쓰는 도메인은 모두 같은 값을 써야 합니다
+```
+
+- REST API가 제공하는 엔티티마다 `control` 패키지에 `<Entity>GraphQlController`를 생성합니다. 대상은 키가 있는 `@expose` 엔티티이고,
+  ddd·hexagonal 번들에서는 각 루트입니다. 같은 서비스(헥사곤에서는 유스케이스)를 호출하므로
+  접근 권한, 검증, 불변식, `@deleted`, lifecycle이 REST와 똑같이 적용됩니다.
+- 연산 이름은 엔티티 이름을 따릅니다: `member(memberId)`, `members(search)`(검색 DTO가 페이징하면 페이지),
+  `createMember(input)`, `updateMember(input)`, `deleteMember(memberId)`, 그리고 커맨드마다 mutation 하나(`shipOrder(orderId, command)`).
+  `@readonly`, `@expose(methods=...)`, `@restExclude`는 REST에서와 같은 연산을 뺍니다.
+- **스키마는 빌드가 컴파일된 클래스에서 씁니다**: 컴파일이 끝나면 `elcoreGraphQl`이 컨트롤러와, 컨트롤러가 받고 돌려주는 DTO를
+  읽어 `src/main/resources/graphql/<domain>.graphqls`(그 도메인의 `extend type Query/Mutation`과 그 도메인만 쓰는 타입)와
+  `elasticore.graphqls`(루트 타입, 스칼라, 여러 도메인이 함께 쓰는 타입)를 씁니다. 필드는 클래스에 있기 때문에 스키마에 들어갑니다.
+  그래서 setter 없는 값 객체, `@JsonProperty(access = WRITE_ONLY)` 비밀번호(보내기만 하고 응답에는 없음),
+  `Long`·`BigDecimal`·`Date`·`DateTime`·`Money` 같은 스칼라가 모두 클래스를 따릅니다. 이어서 `graphql/` 아래의 모든 `.graphqls`를
+  (직접 쓴 파일 포함) 하나의 스키마로 빌드해 보고, 빌드되지 않으면 파일과 이유를 출력하고 빌드를 멈춥니다.
+- 거부는 GraphQL 오류가 되고, `extensions`에 REST와 같은 상태와 코드를 담습니다: `NOT_FOUND` 404, `FORBIDDEN` 403, `BAD_REQUEST` 400,
+  `CONFLICT` 409(중복, 오래된 버전, 커맨드를 허용하지 않는 상태), `UNPROCESSABLE` 422.
+- 여러 도메인이 스키마 하나와 엔드포인트 하나를 함께 씁니다. `path`가 서로 다르거나, 그런 두 도메인이 같은 이름의 엔티티를
+  제공하면 빌드(`elcore3`)가 두 도메인을 밝히고 멈춥니다. 직접 쓰는 `.graphqls`에는 `type Query`가 아니라 `extend type Query`를 씁니다.
+- 의존성: `implementation 'org.springframework.boot:spring-boot-starter-graphql'`
+  (테스트: `testImplementation 'org.springframework.graphql:spring-graphql-test'`).
+- 아직 없음: subscription, 커서(Connection) 페이지, GraphQL용 TypeScript 클라이언트.
+- 활용 예: 주문 한 페이지를 주문 라인까지 한 번에 가져오고 싶은 화면, 같은 REST API 옆에서 GraphQL을 선호하는 파트너,
+  스키마를 읽고 쿼리를 쓰는 AI·BI 도구.
+- 예제: `elasticore-template-ddd`의 `shop`과 `billing`(`GraphQlApiTest`), `elasticore-template-kt`의 `shop`(`ShopGraphQlTest`).
+
 ### 6.2 테스트 코드 생성
 > **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨)
 

@@ -74,6 +74,11 @@ dependencies {
     compileOnly 'org.springframework:spring-webmvc'
     // RunAsSystemExtension, for the generated service tests; a project has JUnit on its test path.
     compileOnly 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    // Only compiled against: the GraphQL scalars, errors and schema writer (graphql/) are used where
+    // the application turned GraphQL on - and declares spring-boot-starter-graphql itself.
+    compileOnly 'org.springframework.graphql:spring-graphql'
+    testImplementation 'org.springframework.graphql:spring-graphql'
+    testImplementation 'org.springframework.graphql:spring-graphql-test'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'org.springframework:spring-webmvc'
     testImplementation 'jakarta.validation:jakarta.validation-api'

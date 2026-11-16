@@ -74,6 +74,10 @@ dependencies {
     compileOnly 'org.springframework:spring-webmvc'
     // RunAsSystemExtension, for the generated service tests; a project has JUnit on its test path.
     compileOnly 'org.junit.jupiter:junit-jupiter-api'
+    // Only compiled against; see elasticore-springboot3.
+    compileOnly 'org.springframework.graphql:spring-graphql'
+    testImplementation 'org.springframework.graphql:spring-graphql'
+    testImplementation 'org.springframework.graphql:spring-graphql-test'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'org.springframework:spring-webmvc'
     testImplementation 'jakarta.validation:jakarta.validation-api'

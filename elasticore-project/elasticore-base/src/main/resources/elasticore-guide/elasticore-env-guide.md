@@ -603,6 +603,40 @@ config:
     left in the one `publishes` line
   - Match contexts to team or organization boundaries, and document the dependencies with `context-map.md`
 
+### 6.1.5 GraphQL API (`graphql:`, 3.0)
+> **Works in:** v3 (JPA and MyBatis; Java and Kotlin; Spring Boot 3 and 4) · **Not in:** 2.x generator
+
+```yaml
+config:
+  graphql:
+    enable: true          # a GraphQL controller beside each REST one (default: false)
+    mutations: true       # false: queries only
+    path: /graphql        # spring.graphql.path; every domain that names one names the same
+```
+
+- For each entity the REST API serves (`@expose` with a key; under the ddd and hexagonal bundles, each root) it generates
+  `<Entity>GraphQlController` in the `control` package. It calls the same service (the use case, in the hexagon), so access,
+  validation, invariants, `@deleted` and the lifecycle hold as they do for REST.
+- Operations are named after the entity: `member(memberId)`, `members(search)` (a page when the search DTO pages),
+  `createMember(input)`, `updateMember(input)`, `deleteMember(memberId)`, and one mutation per command (`shipOrder(orderId, command)`).
+  `@readonly`, `@expose(methods=...)` and `@restExclude` take away the same operations as on REST.
+- **The schema is written by the build, from the compiled classes**: after compiling, `elcoreGraphQl` reads the controllers and the
+  DTOs they take and answer, and writes `src/main/resources/graphql/<domain>.graphqls` (the domain's `extend type Query/Mutation`
+  and the types only it uses) and `elasticore.graphqls` (root types, scalars, types several domains use). A field is in the schema
+  because the class has it: a value object without setters, a `@JsonProperty(access = WRITE_ONLY)` password (sent, never answered) and
+  the scalars `Long`, `BigDecimal`, `Date`, `DateTime`, `Money` and so on follow the class. Then every `.graphqls` under `graphql/` -
+  your own files too - is built into one schema; if it does not build, the build stops with the file and the reason.
+- Refusals are GraphQL errors with the REST status and code in `extensions`: `NOT_FOUND` 404, `FORBIDDEN` 403, `BAD_REQUEST` 400,
+  `CONFLICT` 409 (a duplicate, a stale version, a state that does not allow the command), `UNPROCESSABLE` 422.
+- Several domains share one schema and one endpoint: different `path` values, or an entity of the same name served by two such
+  domains, stop the build (`elcore3`) naming both domains. In your own `.graphqls`, write `extend type Query`, not `type Query`.
+- Dependencies: `implementation 'org.springframework.boot:spring-boot-starter-graphql'`
+  (tests: `testImplementation 'org.springframework.graphql:spring-graphql-test'`).
+- Not yet: subscriptions, the cursor (Connection) page, a TypeScript client for GraphQL.
+- Use cases: a screen that wants one round trip for a page of orders with their lines; a partner who prefers GraphQL beside the same REST
+  API; an AI or BI tool that reads the schema to write its queries.
+- Example: `shop` and `billing` of `elasticore-template-ddd` (`GraphQlApiTest`), `shop` of `elasticore-template-kt` (`ShopGraphQlTest`).
+
 ### 6.2 Test code generation
 > **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated)
 

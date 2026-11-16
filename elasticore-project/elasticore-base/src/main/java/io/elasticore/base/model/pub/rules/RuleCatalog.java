@@ -262,6 +262,13 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.base.ApiErrorRules();
             }
         });
+        // GraphQL controllers, where a domain's env.yml turns graphql.enable on;
+        // nothing otherwise, so every v3 bundle can carry it.
+        c.register("spring-graphql", new Factory() {
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.graphql.GraphQlRules();
+            }
+        });
         c.register("ddd-domain-service", new Factory() {
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.ddd.DddDomainServiceRules();
@@ -581,6 +588,7 @@ public final class RuleCatalog {
                 "spring-controller",
                 "spring-service-test",
                 "spring-api-errors",
+                "spring-graphql",
                 "jpa-write-guard",
                 "jpa-value-object-boundary",
                 "jpa-service-access",
@@ -615,6 +623,7 @@ public final class RuleCatalog {
                 "spring-service-extend",
                 "spring-controller",
                 "spring-api-errors",
+                "spring-graphql",
                 "jpa-write-guard",
                 "jpa-value-object-boundary",
                 "jpa-service-access",
@@ -695,6 +704,7 @@ public final class RuleCatalog {
                 "spring-controller",
                 "spring-service-test",
                 "spring-api-errors",
+                "spring-graphql",
                 "jpa-write-guard",
                 "jpa-value-object-boundary",
                 "jpa-service-access",

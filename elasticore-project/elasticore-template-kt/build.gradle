@@ -79,6 +79,9 @@ dependencies {
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
 	implementation 'io.swagger.core.v3:swagger-annotations:2.2.15'
 	implementation 'org.hibernate:hibernate-envers:6.6.13.Final'
+	// shop: graphql.enable - the generated GraphQL controllers (ShopGraphQlTest)
+	implementation 'org.springframework.boot:spring-boot-starter-graphql'
+	testImplementation 'org.springframework.graphql:spring-graphql-test'
 
 	implementation project(':elasticore-project:elasticore-base')
 	implementation project(':elasticore-project:elasticore-springboot3')

@@ -241,6 +241,49 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         }
     }
 
+    /**
+     * One GraphQL mutation per command, named for the command and the entity -
+     * shipOrder(id, command) - calling what the REST endpoint calls. The
+     * GraphQL file rule (order 90) places them after the entity's own.
+     */
+    @Rule(value = "ddd-command-graphql", target = "graphql", order = 30)
+    void graphql(EntitySpec e) {
+        if (!applies(e)) return;
+        SourceCode c = ctx(e);
+        boolean kotlin = c.syntax() == Syntax.KOTLIN;
+        FieldSpec pk = e.pkFields().get(0);
+        String dto = String.format("%sDTO", e.getName());
+        String pkType = kotlin ? c.syntax().typeName(pk.typeName()) : pk.typeName();
+        StringBuilder all = new StringBuilder();
+        for (CommandSpec cmd : e.commands()) {
+            String op = cmd.name() + e.getName();
+            boolean body = cmd.dtoName() != null;
+            if (body) c.addImport("%s.%s", e.pkg("dto"), cmd.dtoName());
+            if (all.length() > 0) all.append("\n\n");
+            all.append(String.format("    @MutationMapping(\"%s\")%n", op));
+            if (kotlin) {
+                String params = String.format("@Argument(\"%s\") @NotNull %s: %s", pk.name(), pk.name(), pkType);
+                if (body)
+                    params += String.format(", @Argument(\"command\") @Valid @NotNull command: %s", cmd.dtoName());
+                all.append(String.format(
+                        "    fun %s(%s): %s? = service.%s(%s%s)",
+                        op, params, dto, cmd.name(), pk.name(), body ? ", command" : ""));
+            } else {
+                String params = String.format("@Argument(\"%s\") @NotNull %s %s", pk.name(), pkType, pk.name());
+                if (body) params += String.format(", @Argument(\"command\") @Valid @NotNull %s command", cmd.dtoName());
+                all.append(String.format(
+                        "    public %s %s(%s) {%n        return service.%s(%s%s);%n    }",
+                        dto, op, params, cmd.name(), pk.name(), body ? ", command" : ""));
+            }
+        }
+        if (all.length() > 0) c.var("graphqlCommands", all.toString().replace("\r\n", "\n"));
+    }
+
+    @Rule(value = "ddd-command-no-update-graphql", target = "graphql", order = 21)
+    void noUpdateGraphQl(EntitySpec e) {
+        if (nothingEditable(e)) ctx(e).excludeMethod("update");
+    }
+
     // ---- a root with nothing a request may edit ---------------------------
 
     /**

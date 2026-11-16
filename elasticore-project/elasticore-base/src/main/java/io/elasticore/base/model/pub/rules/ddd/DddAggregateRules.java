@@ -51,6 +51,12 @@ public class DddAggregateRules implements CodeRules {
         declineUnlessRoot(e);
     }
 
+    /** Nor GraphQL operations of its own: its root's answer carries it. */
+    @Rule(value = "ddd-graphql", target = "graphql", order = 1)
+    void graphql(EntitySpec e) {
+        declineUnlessRoot(e);
+    }
+
     @Rule(value = "ddd-service-test", target = "service_test", order = 1)
     void serviceTest(EntitySpec e) {
         declineUnlessRoot(e);

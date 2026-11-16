@@ -738,6 +738,10 @@ public final class RulesGenRunner {
         for (String w : contextMap.warnings()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", w);
         for (String p : contextMap.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] context: " + p);
         runner.contextMap = contextMap;
+        // The domains that turn GraphQL on share one schema and one endpoint.
+        for (String p : io.elasticore.base.model.pub.rules.graphql.GraphQlSettings.problems(allModels)) {
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(p);
+        }
         // After the context map, which reads the model as the DSL wrote it.
         runner.shapeReferences(allModels);
         io.elasticore.base.extract.ModelExtractor.validateListedNames(
@@ -854,6 +858,18 @@ public final class RulesGenRunner {
         // told it: -Pv3 given to elcore3 alone.
         if (!typescript && runner.succeeded()) {
             for (String root : roots) writeText(serverMode(root), v3 || kotlin ? "clean" : "compatible");
+            // GraphQL: the endpoint path the domains named (the schema is the build's
+            // elcoreGraphQl step, after compiling).
+            for (String root : roots) {
+                try {
+                    io.elasticore.base.model.pub.rules.graphql.GraphQlSettings.writeProperties(
+                            new File(root), allModels);
+                } catch (IOException e) {
+                    io.elasticore.base.util.ConsoleLog.printWarn(
+                            "[elcore3] graphql settings not written in " + root + ": " + e.getMessage());
+                    return 1;
+                }
+            }
         }
         if (!typescript && !Boolean.getBoolean("elasticore.rules.list")
                 && !Boolean.getBoolean("elasticore.rules.tsWithBuild")) {
