@@ -704,6 +704,7 @@ public final class RuleCatalog {
                 "jpa-write-guard",
                 "jpa-value-object-boundary",
                 "jpa-service-access",
+                "spring-signin-refresh",
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
