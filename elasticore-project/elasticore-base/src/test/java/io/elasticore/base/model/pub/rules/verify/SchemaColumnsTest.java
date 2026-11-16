@@ -1,14 +1,14 @@
-package io.elasticore.base.model.pub.schema;
+package io.elasticore.base.model.pub.rules.verify;
 
-import io.elasticore.base.model.pub.rules.verify.RulesGenRunner;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,8 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class SchemaColumnsTest {
 
-    private static final String MODEL =
-            "entity:\n"
+    private static final String MODEL = "entity:\n"
             + "  Member:\n"
             + "    meta: entity @root @expose(20)\n"
             + "    fields:\n"
@@ -74,6 +73,17 @@ public class SchemaColumnsTest {
     @TempDir
     Path dir;
 
+    private static final String[] KEYS = {"elasticore.base.path", "elasticore.rules.force"};
+    private final String[] saved = {System.getProperty(KEYS[0]), System.getProperty(KEYS[1])};
+
+    @AfterEach
+    void restore() {
+        for (int i = 0; i < KEYS.length; i++) {
+            if (saved[i] == null) System.clearProperty(KEYS[i]);
+            else System.setProperty(KEYS[i], saved[i]);
+        }
+    }
+
     @Test
     public void hexagonalWithReferenceColumnField() throws Exception {
         String schema = generate("hexagonal-springboot", "    referenceColumn: field\n");
@@ -84,8 +94,11 @@ public class SchemaColumnsTest {
         assertValueColumns(schema);
         // The columns the entity itself maps.
         String entity = read(find("PostBase.java", "Post.java"));
-        assertTrue(entity.contains("\"author_id\"") && entity.contains("\"last_editor_id\"")
-                && entity.contains("\"parent_id\""), entity);
+        assertTrue(
+                entity.contains("\"author_id\"")
+                        && entity.contains("\"last_editor_id\"")
+                        && entity.contains("\"parent_id\""),
+                entity);
     }
 
     @Test
@@ -93,7 +106,8 @@ public class SchemaColumnsTest {
         String schema = generate(null, "");
 
         // No @JoinColumn name: JPA's default, the field and the target key's column.
-        assertTrue(schema.contains("author: Member @foreignKey(author_member_id) -- Member entity relationship"), schema);
+        assertTrue(
+                schema.contains("author: Member @foreignKey(author_member_id) -- Member entity relationship"), schema);
         assertTrue(schema.contains("editor: Member @foreignKey(last_editor_id) -- Member entity relationship"), schema);
         assertTrue(schema.contains("parent: Post @foreignKey(parent_post_id) -- Post entity relationship"), schema);
         // The target key's own column, as JPA joins on it.
@@ -108,12 +122,16 @@ public class SchemaColumnsTest {
         assertTrue(schema.contains("rate: BigDecimal @Column(name = \"rate\")"), schema);
         assertTrue(schema.contains("deletedAt: java.time.Instant @Column(name = \"deleted_at\")"), schema);
         assertFalse(schema.contains("mappedBy=\"post_id\""), schema);
-        assertFalse(schema.contains("price_id") || schema.contains("rate_id") || schema.contains("deleted_at_id"), schema);
+        assertFalse(
+                schema.contains("price_id") || schema.contains("rate_id") || schema.contains("deleted_at_id"), schema);
         // A list of enum codes is a table of its own; an embedded value's columns are the value's.
         assertTrue(schema.contains("tags: List<Tag> @ElementCollection"), schema);
-        assertTrue(schema.contains("place: Place @Embedded\n") || schema.contains("place: Place @Embedded\r\n"), schema);
+        assertTrue(
+                schema.contains("place: Place @Embedded\n") || schema.contains("place: Place @Embedded\r\n"), schema);
         // A collection names the other side's field, and holds no column here.
-        assertTrue(schema.contains("comments: List<Reply> @relation(mappedBy=\"post\") -- List<Reply> entity relationship"),
+        assertTrue(
+                schema.contains(
+                        "comments: List<Reply> @relation(mappedBy=\"post\") -- List<Reply> entity relationship"),
                 schema);
         assertFalse(schema.contains("comments_id"), schema);
     }
@@ -135,27 +153,21 @@ public class SchemaColumnsTest {
         Files.write(domain.resolve("env.yml"), env.getBytes(StandardCharsets.UTF_8));
         Files.write(domain.resolve("model/entity.yml"), MODEL.getBytes(StandardCharsets.UTF_8));
 
-        // A JVM of its own, as the plugin runs it: the loaded model is static state.
-        Path log = dir.resolve("gen.log");
-        Process p = new ProcessBuilder(
-                Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Xmx384m",
-                "-Dfile.encoding=UTF-8",
-                "-Delasticore.base.path=" + dir,
-                "-Delasticore.rules.force=true",
-                "-cp", System.getProperty("java.class.path"),
-                RulesGenRunner.class.getName())
-                .directory(dir.toFile())
-                .redirectErrorStream(true)
-                .redirectOutput(log.toFile())
-                .start();
+        // In this JVM, as DefaultGenerationTest runs the rule engine, so a mutation
+        // test sees what this test covers.
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream out = System.out;
+        System.setOut(new PrintStream(bytes, true, "UTF-8"));
+        int code;
         try {
-            assertTrue(p.waitFor(180, TimeUnit.SECONDS), "generation did not finish");
+            System.setProperty("elasticore.base.path", dir.toString());
+            System.setProperty("elasticore.rules.force", "true");
+            code = RulesGenRunner.run(new String[0]);
         } finally {
-            p.destroyForcibly();
+            System.setOut(out);
         }
-        String genLog = read(log);
-        assertEquals(0, p.exitValue(), genLog);
+        String genLog = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        assertEquals(0, code, genLog);
         Path schema = domain.getParent().resolve("schema.yml");
         assertTrue(Files.exists(schema), "no schema.yml\n" + genLog);
         return read(schema);

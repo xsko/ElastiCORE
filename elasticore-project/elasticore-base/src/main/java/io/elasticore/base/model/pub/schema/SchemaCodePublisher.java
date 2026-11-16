@@ -203,13 +203,12 @@ public class SchemaCodePublisher implements CodePublisher {
         // byte[] - is a column of this table, like a string.
         boolean isList = typeInfo.isList();
         Entity target = (entity == null || isEnumType) ? null : findReferencedEntity(field);
-        boolean embeddedValue = target != null
-                && (field.hasAnnotation("embedded") || isEmbeddableEntity(target));
+        boolean embeddedValue = target != null && (field.hasAnnotation("embedded") || isEmbeddableEntity(target));
         boolean relation = target != null && !embeddedValue;
         // A list of enum codes or of an embeddable value is an element collection:
         // rows of a table of its own, no column of this one.
-        boolean elementCollection = entity != null && isList
-                && (embeddedValue || findEnumModel(typeInfo.getCoreItemType()) != null);
+        boolean elementCollection =
+                entity != null && isList && (embeddedValue || findEnumModel(typeInfo.getCoreItemType()) != null);
 
         // Set field type and handle enum types
         if (isEnumType) {
@@ -691,7 +690,7 @@ public class SchemaCodePublisher implements CodePublisher {
             }
         }
     }
-    
+
     /** The entity of the model a field refers to, by its type or its list's item type; null for a value type. */
     private Entity findReferencedEntity(Field field) {
         if (ctx == null || field.getTypeInfo() == null) return null;
@@ -713,7 +712,8 @@ public class SchemaCodePublisher implements CodePublisher {
      */
     private String generateReferenceAnnotation(Field field, Entity entity, Entity target) {
         Annotation oneToOne = field.getAnnotation("onetoone");
-        String mappedBy = oneToOne == null || oneToOne.getProperties() == null ? null
+        String mappedBy = oneToOne == null || oneToOne.getProperties() == null
+                ? null
                 : oneToOne.getProperties().getProperty("mappedBy");
         String targetName = field.getTypeInfo().getDefaultTypeName();
         if (mappedBy != null && !mappedBy.isEmpty()) {
@@ -778,7 +778,8 @@ public class SchemaCodePublisher implements CodePublisher {
     private static String physicalName(String name) {
         StringBuilder sb = new StringBuilder(name.replace('.', '_'));
         for (int i = 1; i < sb.length() - 1; i++) {
-            if (Character.isLowerCase(sb.charAt(i - 1)) && Character.isUpperCase(sb.charAt(i))
+            if (Character.isLowerCase(sb.charAt(i - 1))
+                    && Character.isUpperCase(sb.charAt(i))
                     && Character.isLowerCase(sb.charAt(i + 1))) {
                 sb.insert(i++, '_');
             }
