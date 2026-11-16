@@ -72,6 +72,10 @@ dependencies {
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
+    // Only compiled against: SpringSecurityCurrentUser, the CurrentUser an application
+    // on Spring Security registers as a bean - and brings spring-security-core itself.
+    compileOnly 'org.springframework.security:spring-security-core'
+    testImplementation 'org.springframework.security:spring-security-core'
     // Only compiled against: the API error answers (RequestShapeErrors) and the
     // request's language (ErrorMessages) name Spring MVC's exceptions and its
     // locale resolver. A servlet application has it; a WebFlux one never loads them.

@@ -2169,8 +2169,8 @@ SessionCurrentUser.signIn(request, customer.getCustomerId(), customer.getRole().
 SessionCurrentUser.signOut(request);
 ```
 
-Spring Security 를 쓰면 `io.elasticore.springboot3.security.CurrentUser` 빈을 등록하고 `@signin` 은 쓰지 않습니다
-(`authenticate` 는 남음).
+Spring Security 를 쓰면 `@signin` 은 쓰지 않고 `SpringSecurityCurrentUser` 빈을 등록합니다 (`authenticate` 는 남음) —
+아래 "@signin 대신 Spring Security" 를 봅니다.
 
 ### 생성된 로그인 곁에서 — 내 코드에서 로그인시키기, 메일로 비밀번호 재설정
 
@@ -2293,6 +2293,78 @@ public CustomerDTO confirm(@RequestBody Map<String, String> body, HttpServletReq
 이전 것은 쓸모없음, 이전 비밀번호는 실패하고 새 비밀번호로 로그인됨, 같은 링크 두 번, 고객이 직접 비밀번호를 바꾼 뒤의
 링크, 변조된 링크, 만료된 링크는 거절, 없는 로그인도 같은 202 에 메일 없음, 1분 안의 두 번째 요청은 아무것도
 보내지 않음.
+
+### @signin 대신 Spring Security
+> **동작:** v3 Java 와 Kotlin, Spring Boot 3 과 4 (`elasticore-springboot3` / `elasticore-springboot4`) · **안 됨:** 2.x generator
+
+애플리케이션이 이미 Spring Security 로 로그인시키고 있으면 — 자체 로그인 폼, JWT 리소스 서버, OAuth2 나
+OIDC 로그인 — `@signin` 은 빼고 누가 묻는지는 Spring Security 가 말하게 합니다. 생성된 `@access` / `@owner` 검사는
+그대로입니다: 검사는 `CurrentUser` 에 묻고, `io.elasticore.springboot3.security.SpringSecurityCurrentUser` 가
+보안 컨텍스트에서 답합니다. 저절로 등록되지 않습니다 — 빈으로 선언하면 생성된 서비스가 세션의 것 대신 그것을
+씁니다. Spring Security 는 애플리케이션이 가져옵니다 (`spring-boot-starter-security`); 라이브러리는 컴파일만 합니다.
+
+- **방문자**는 인증이 없거나, 익명 인증이거나, 아래 매핑이 `null` 을 답하는 인증입니다. `@access` 가 로그인한
+  사람을 요구하는 곳에서 방문자는 세션 때와 같이 401 을 받습니다.
+- **역할**은 authority 입니다: `hasRole("ADMIN")` 은 `ROLE_ADMIN` (Spring 의 `roles("ADMIN")` 이 주는 것) 에도,
+  `ADMIN` 그 자체에도 참이므로 `adminRole` 은 `ADMIN` 그대로입니다. 다른 접두사의 authority 면: `.withRolePrefix("SCOPE_")`.
+- **신원**은 애플리케이션이 매핑합니다: 로그인한 사람의 `@owner` 키, 키의 타입 그대로.
+
+**로그인 폼이나 HTTP Basic, 세션과 함께.** 사용자 이름이 `@login` 이므로 키를 찾습니다. pet store 에서 실제로 돕니다
+(`elasticore-sample-petstore/src/test/java/io/elasticore/sample/guide/security`, `SpringSecurityGuideTest`):
+
+```java
+@Bean
+CurrentUser currentUser(CustomerQueryPort customers) {
+    return SpringSecurityCurrentUser.of(auth -> customerIdOf(customers, auth.getName()));
+}
+
+static Long customerIdOf(CustomerQueryPort customers, String login) {
+    Specification<Customer> byLogin = (r, q, cb) -> cb.equal(r.get("login"), login);
+    List<Customer> found = customers.findAll(byLogin);
+    return found.size() == 1 ? found.get(0).getCustomerId() : null;
+}
+```
+
+서비스가 아니라 생성된 query port 로 찾습니다: 서비스는 스스로 `CurrentUser` 에 묻기 때문입니다. 찾기는 검사마다
+돕니다; 그게 문제가 되면 직접 만든 `UserDetails` 가 키를 들게 하고 `auth -> ((ShopUser) auth.getPrincipal()).customerId()` 로 매핑합니다.
+
+**JWT 리소스 서버.** 토큰이 claim 에 키를 담고 있습니다:
+
+```java
+@Bean
+CurrentUser currentUser() {
+    return SpringSecurityCurrentUser.of(SpringSecurityCurrentUser.claim("customer_id", Long::valueOf));
+}
+```
+
+`claim` 은 principal 의 `getClaim(name)` 을 읽고 — Spring 의 `Jwt` 와 `OidcUser` 에 있습니다 — 그 텍스트를 주어진
+함수로 바꿉니다; 그 claim 이 없는 토큰은 방문자입니다.
+
+**OAuth2 / OIDC 로그인.** 제공자가 토큰에 키를 넣어 주면 위와 같이 `claim`. 아니면 애플리케이션이 제공자의
+subject 와 고객을 잇는 테이블을 두고 그것으로 매핑합니다:
+
+```java
+@Bean
+CurrentUser currentUser(AccountLinks links) {
+    return SpringSecurityCurrentUser.of(auth -> links.customerIdOf(auth.getName()));
+}
+```
+
+함정:
+
+- **신원은 `@owner` 키의 타입이어야 합니다.** 검사는 행의 owner 와 텍스트로 비교하지만, 검색은 그것으로 좁히고
+  새 행의 owner 필드에 그것을 넣습니다: 키가 `Long` 인데 사용자 이름을 주면 어느 행도 소유하지 못하고, 검색이나
+  생성은 실패합니다. `new SpringSecurityCurrentUser()` (이름이 곧 신원) 는 사용자 이름을 담는 문자열 키일 때만
+  맞습니다.
+- **`ROLE_` 접두사.** `roles("ADMIN")` 은 `ROLE_ADMIN` 을 주고 `hasRole("ADMIN")` 이 그것을 읽습니다; `authorities("ADMIN")` 도
+  읽습니다. JWT 의 scope 는 `SCOPE_...` 로 옵니다: `withRolePrefix("SCOPE_")` 나 `JwtGrantedAuthoritiesConverter` 로 매핑합니다.
+- **행이 없는 로그인 사용자** (고객 행이 없는 관리자) 는 방문자입니다: 그 사람도 키에 매핑합니다.
+
+`CurrentUser.runAsSystem(...)` 은 전과 같습니다 — 그 안에서는 누가 로그인했든 모든 검사를 통과합니다. 필터 체인은
+판단을 `@access` 에 맡기거나 (`anyRequest().permitAll()`, pet store 의 것처럼) 더 조일 수 있고, 둘 다 적용됩니다.
+`SpringSecurityGuideTest` 가 HTTP 로 확인합니다: 고객은 자기 행만 읽고 검색하며 남의 행은 404; 주문은 로그인한
+고객의 것으로 생성됨 (`Long` 키); 관리자는 모든 행을 보고 주문을 배송함; 방문자는 401 이고 틀린 비밀번호는
+Spring Security 가 거절함.
 
 ## @password / @login — 자격 증명 (v3)
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2') (경고); 2.x generator (생성 안 됨)

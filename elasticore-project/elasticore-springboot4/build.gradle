@@ -73,6 +73,9 @@ dependencies {
     // Only compiled against: the session-based CurrentUser signs in through the
     // request, and an application without a servlet container never calls it.
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
+    // Only compiled against: SpringSecurityCurrentUser; see elasticore-springboot3.
+    compileOnly 'org.springframework.security:spring-security-core'
+    testImplementation 'org.springframework.security:spring-security-core'
     // Only compiled against, as in elasticore-springboot3: Spring MVC's
     // exceptions and locale resolver, which a servlet application brings.
     compileOnly 'org.springframework:spring-webmvc'

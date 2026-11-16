@@ -2169,8 +2169,8 @@ SessionCurrentUser.signIn(request, customer.getCustomerId(), customer.getRole().
 SessionCurrentUser.signOut(request);
 ```
 
-If you use Spring Security, register an `io.elasticore.springboot3.security.CurrentUser` bean and do not use `@signin`
-(`authenticate` stays).
+If you use Spring Security, do not use `@signin` and register a `SpringSecurityCurrentUser` bean (`authenticate` stays) -
+see "Spring Security instead of @signin" below.
 
 ### Around the generated sign-in: signing in from your own code, and a password reset by mail
 
@@ -2293,6 +2293,78 @@ Sessions open elsewhere stay signed in after a reset; ending them takes a sessio
 old password fails and the new one signs in; the same link twice, a link after the customer changed the password themselves,
 an altered link and an expired one are refused; an unknown login gets the same 202 and no mail; a second ask within a minute
 sends nothing.
+
+### Spring Security instead of @signin
+> **Works in:** v3 Java and Kotlin, Spring Boot 3 and 4 (`elasticore-springboot3` / `elasticore-springboot4`) · **Not in:** 2.x generator
+
+When the application already signs people in with Spring Security - its own login form, a JWT resource server, an OAuth2 or
+OIDC login - leave `@signin` out and let Spring Security say who is asking. The generated `@access` / `@owner` checks stay as
+they are: they ask a `CurrentUser`, and `io.elasticore.springboot3.security.SpringSecurityCurrentUser` answers from the
+security context. It is not registered by itself - declare it as a bean, and the generated services take it in place of the
+session's. The application brings Spring Security (`spring-boot-starter-security`); the library only compiles against it.
+
+- **A visitor** is no authentication, an anonymous one, or one the mapping below answers `null` for. Where `@access` asks for
+  someone signed in, a visitor gets 401, as with the session.
+- **Roles** are the authorities: `hasRole("ADMIN")` holds for `ROLE_ADMIN` (what Spring's `roles("ADMIN")` grants) and for
+  `ADMIN` itself, so `adminRole` stays `ADMIN`. For authorities under another prefix: `.withRolePrefix("SCOPE_")`.
+- **The identity** is the application's to map: the `@owner` key of the person signed in, of the key's type.
+
+**A login form or HTTP Basic, with a session.** The username is the `@login`; look the key up. The pet store runs this
+(`elasticore-sample-petstore/src/test/java/io/elasticore/sample/guide/security`, `SpringSecurityGuideTest`):
+
+```java
+@Bean
+CurrentUser currentUser(CustomerQueryPort customers) {
+    return SpringSecurityCurrentUser.of(auth -> customerIdOf(customers, auth.getName()));
+}
+
+static Long customerIdOf(CustomerQueryPort customers, String login) {
+    Specification<Customer> byLogin = (r, q, cb) -> cb.equal(r.get("login"), login);
+    List<Customer> found = customers.findAll(byLogin);
+    return found.size() == 1 ? found.get(0).getCustomerId() : null;
+}
+```
+
+Look it up through the generated query port, not the service: the service asks `CurrentUser` itself. The lookup runs on each
+check; if that shows, let your own `UserDetails` carry the key and map `auth -> ((ShopUser) auth.getPrincipal()).customerId()`.
+
+**A JWT resource server.** The token carries the key in a claim:
+
+```java
+@Bean
+CurrentUser currentUser() {
+    return SpringSecurityCurrentUser.of(SpringSecurityCurrentUser.claim("customer_id", Long::valueOf));
+}
+```
+
+`claim` reads the principal's `getClaim(name)` - Spring's `Jwt` and `OidcUser` have it - and converts its text with the
+function given; a token without the claim is a visitor.
+
+**An OAuth2 / OIDC login.** If your provider puts the key in the token, `claim` as above. Otherwise the application keeps a
+table linking the provider's subject to a customer, and maps through it:
+
+```java
+@Bean
+CurrentUser currentUser(AccountLinks links) {
+    return SpringSecurityCurrentUser.of(auth -> links.customerIdOf(auth.getName()));
+}
+```
+
+Pitfalls:
+
+- **The identity must be of the `@owner` key's type.** The checks compare it with a row's owner as text, but a search is
+  narrowed by it and a new row's owner field is set to it: a username where the key is a `Long` owns no row, and a search or a
+  create with it fails. `new SpringSecurityCurrentUser()` (the name as the identity) is right only for a string key
+  that holds the username.
+- **The `ROLE_` prefix.** `roles("ADMIN")` grants `ROLE_ADMIN`, which `hasRole("ADMIN")` reads; `authorities("ADMIN")` is read
+  too. A JWT's scopes arrive as `SCOPE_...`: map them with `withRolePrefix("SCOPE_")` or a `JwtGrantedAuthoritiesConverter`.
+- **Someone signed in without a row** (an administrator with no customer row) is a visitor: map them to a key as well.
+
+`CurrentUser.runAsSystem(...)` works as before - inside it every check passes, whoever is signed in. The filter chain can
+leave the decisions to `@access` (`anyRequest().permitAll()`, as the pet store's does) or tighten them; both apply.
+`SpringSecurityGuideTest` checks it over HTTP: a customer reads and searches only their own rows and someone else's is 404; an
+order is created for the customer signed in (the `Long` key); the administrator sees every row and ships the order; a visitor
+gets 401 and a wrong password is refused by Spring Security.
 
 ## @password / @login - credentials (v3)
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2') (warning); 2.x generator (not generated)

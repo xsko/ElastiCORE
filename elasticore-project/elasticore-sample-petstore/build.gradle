@@ -79,6 +79,11 @@ dependencies {
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	// The annotation guide's Spring Security sign-in (src/test/java/io/elasticore/sample/guide/security):
+	// Spring Security itself, not the starter, so nothing secures the other tests' application -
+	// only the test that imports the guide's configuration has a filter chain.
+	testImplementation 'org.springframework.security:spring-security-config'
+	testImplementation 'org.springframework.security:spring-security-web'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	// The databases dbTest validates the generated schema on.
 	testRuntimeOnly 'org.postgresql:postgresql'
