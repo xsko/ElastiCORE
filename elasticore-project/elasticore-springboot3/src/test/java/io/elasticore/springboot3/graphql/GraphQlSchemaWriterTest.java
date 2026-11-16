@@ -78,6 +78,57 @@ class GraphQlSchemaWriterTest {
     }
 
     @Test
+    void saysEveryTypeItCannotWrite() {
+        assertThatThrownBy(() -> GraphQlSchemaWriter.schemas(Arrays.asList(Fixtures.OddController.class)))
+                .isInstanceOf(GraphQlSchemaWriter.Problem.class)
+                .hasMessageContaining("OddController.shape: " + Fixtures.Shape.class.getName() + " cannot be written")
+                .hasMessageContaining(Fixtures.Empty.class.getName() + " has no property a GraphQL type")
+                .hasMessageContaining("OddController.grades(page): a page is an answer, not something sent")
+                .hasMessageContaining("java.lang.Thread cannot be written");
+    }
+
+    @Test
+    void runFindsTheControllersAmongTheCompiledClasses(@TempDir File resources) throws Exception {
+        File classes = new File(io.elasticore.springboot3.graphql.fixture.run.ReportGraphQlController.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+        ClassLoader loader = getClass().getClassLoader();
+
+        assertThat(GraphQlSchemaWriter.run(new String[] {resources.getPath()}, loader))
+                .isEqualTo(2);
+        assertThat(GraphQlSchemaWriter.run(new String[] {resources.getPath(), classes.getPath()}, loader))
+                .isZero();
+
+        String report = new String(
+                Files.readAllBytes(new File(resources, "graphql/report.graphqls").toPath()), StandardCharsets.UTF_8);
+        // Optional is the value or null; an array is a list; a map is JSON.
+        assertThat(report).contains("report(year: Int!): Line").contains("reportExtras(keys: [String]): JSON");
+        assertThat(new String(
+                        Files.readAllBytes(new File(resources, "graphql/elasticore.graphqls").toPath()),
+                        StandardCharsets.UTF_8))
+                .contains("scalar JSON")
+                .doesNotContain("type Mutation");
+
+        // A schema that does not build is the run's answer.
+        Files.write(
+                new File(resources, "graphql/mine.graphqls").toPath(),
+                "type Query { mine: String }\n".getBytes(StandardCharsets.UTF_8));
+        assertThat(GraphQlSchemaWriter.run(new String[] {resources.getPath(), classes.getPath()}, loader))
+                .isEqualTo(1);
+        // And one that does not parse.
+        Files.write(new File(resources, "graphql/mine.graphqls").toPath(), "type {\n".getBytes(StandardCharsets.UTF_8));
+        assertThat(GraphQlSchemaWriter.check(new File(resources, "graphql")))
+                .anyMatch(p -> p.startsWith("mine.graphqls"));
+        // A run that finds problems in the classes writes nothing.
+        assertThat(GraphQlSchemaWriter.write(resources, Arrays.asList(Fixtures.OddController.class)))
+                .isNotEmpty();
+        // An empty folder has nothing to check.
+        assertThat(GraphQlSchemaWriter.check(new File(resources, "none"))).isEmpty();
+    }
+
+    @Test
     void refusesTwoClassesTakingOneTypeName() {
         assertThatThrownBy(() -> GraphQlSchemaWriter.schemas(
                         Arrays.asList(Fixtures.MemberGraphQlController.class, Fixtures.Other.BillingController.class)))

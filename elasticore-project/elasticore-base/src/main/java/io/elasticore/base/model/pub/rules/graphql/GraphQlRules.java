@@ -36,8 +36,8 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * members(search) - and mutations - createMember, updateMember,
  * deleteMember, and one per command (shipOrder). Each calls the service the
  * REST controller calls, so access, validation, invariants, soft deletion and
- * the lifecycle hold the same way, and @readonly, @expose(methods=...) and
- * @restExclude take the same operations away.
+ * the lifecycle hold the same way, and the DSL's readonly, expose(methods=...)
+ * and restExclude take the same operations away.
  *
  * The schema is not written here: the build writes graphql/*.graphqls from
  * the compiled controllers and the classes they take and answer (the

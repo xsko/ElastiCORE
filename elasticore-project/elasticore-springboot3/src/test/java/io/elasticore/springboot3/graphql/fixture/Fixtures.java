@@ -253,6 +253,37 @@ public final class Fixtures {
         }
     }
 
+    /** Types a GraphQL schema cannot be made of. */
+    public interface Shape {
+        String getName();
+    }
+
+    public static class Empty {}
+
+    @Controller
+    @GraphQlDomain("odd")
+    public static class OddController {
+        @QueryMapping
+        public Shape shape(@Argument("id") Long id) {
+            return null;
+        }
+
+        @QueryMapping
+        public Empty empty() {
+            return null;
+        }
+
+        @QueryMapping
+        public java.util.List<Grade> grades(@Argument("page") Page<MemberDTO> page) {
+            return null;
+        }
+
+        @QueryMapping
+        public Thread thread() {
+            return null;
+        }
+    }
+
     /** Another class with the simple name of the shop's MemberDTO. */
     public static final class Other {
         private Other() {}

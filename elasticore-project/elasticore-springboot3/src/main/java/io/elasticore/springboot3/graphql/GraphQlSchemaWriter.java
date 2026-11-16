@@ -390,29 +390,28 @@ public final class GraphQlSchemaWriter {
         }
 
         List<TypeDef> defs = new ArrayList<>(types.values());
-        defs.sort(Comparator.comparing((TypeDef d) -> d.kind.ordinal()).thenComparing(d -> d.name));
+        // Enums, inputs, types, pages - each group by name.
+        defs.sort(Comparator.comparing((TypeDef d) -> d.kind).thenComparing(d -> d.name));
         for (TypeDef def : defs) {
             Set<String> domains = reachedBy.getOrDefault(def.name, new LinkedHashSet<>());
             StringBuilder b = domains.size() == 1 ? files.get(domains.iterator().next()) : common;
             b.append("\n");
-            switch (def.kind) {
-                case ENUM:
-                    b.append("enum ").append(def.name).append(" {\n");
-                    for (String c : def.constants) b.append("  ").append(c).append("\n");
-                    b.append("}\n");
-                    break;
-                default:
-                    b.append(def.kind == Kind.INPUT ? "input " : "type ")
-                            .append(def.name)
-                            .append(" {\n");
-                    for (Map.Entry<String, String> f : def.fields.entrySet()) {
-                        b.append("  ")
-                                .append(f.getKey())
-                                .append(": ")
-                                .append(f.getValue())
-                                .append("\n");
-                    }
-                    b.append("}\n");
+            if (def.kind == Kind.ENUM) {
+                b.append("enum ").append(def.name).append(" {\n");
+                for (String c : def.constants) b.append("  ").append(c).append("\n");
+                b.append("}\n");
+            } else {
+                b.append(def.kind == Kind.INPUT ? "input " : "type ")
+                        .append(def.name)
+                        .append(" {\n");
+                for (Map.Entry<String, String> f : def.fields.entrySet()) {
+                    b.append("  ")
+                            .append(f.getKey())
+                            .append(": ")
+                            .append(f.getValue())
+                            .append("\n");
+                }
+                b.append("}\n");
             }
         }
 
@@ -464,7 +463,7 @@ public final class GraphQlSchemaWriter {
         try {
             schemas = schemas(controllers);
         } catch (Problem p) {
-            for (String line : p.getMessage().split("\n")) problems.add(line);
+            problems.addAll(java.util.Arrays.asList(p.getMessage().split("\n", -1)));
             return problems;
         }
         Set<String> written = new TreeSet<>();
@@ -538,11 +537,16 @@ public final class GraphQlSchemaWriter {
      * classpath this runs on - the application's own.
      */
     public static void main(String[] args) throws IOException {
+        int code = run(args, Thread.currentThread().getContextClassLoader());
+        if (code != 0) System.exit(code);
+    }
+
+    /** What main does, without leaving the JVM: 0 written and checked, 1 problems, 2 a wrong call. */
+    static int run(String[] args, ClassLoader loader) throws IOException {
         if (args.length < 2) {
             System.err.println("usage: GraphQlSchemaWriter <resources dir> <classes dir>...");
-            System.exit(2);
+            return 2;
         }
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
         List<Class<?>> controllers = new ArrayList<>();
         for (int i = 1; i < args.length; i++) {
             File root = new File(args[i]);
@@ -552,11 +556,12 @@ public final class GraphQlSchemaWriter {
         if (!problems.isEmpty()) {
             System.err.println("[elcoreGraphQl] the GraphQL schema cannot be written:");
             for (String p : problems) System.err.println("  " + p);
-            System.exit(1);
+            return 1;
         }
         if (!controllers.isEmpty()) {
             System.out.println("[elcoreGraphQl] " + controllers.size() + " controller(s), schema checked");
         }
+        return 0;
     }
 
     private static void find(File root, File dir, ClassLoader loader, List<Class<?>> out) {
@@ -621,14 +626,14 @@ public final class GraphQlSchemaWriter {
     }
 
     private static Class<?> rawClass(Type type) {
-        if (type instanceof Class) return (Class<?>) type;
-        if (type instanceof ParameterizedType) return rawClass(((ParameterizedType) type).getRawType());
-        if (type instanceof WildcardType) {
-            Type[] upper = ((WildcardType) type).getUpperBounds();
+        if (type instanceof Class<?> c) return c;
+        if (type instanceof ParameterizedType p) return rawClass(p.getRawType());
+        if (type instanceof WildcardType w) {
+            Type[] upper = w.getUpperBounds();
             return upper.length == 0 ? Object.class : rawClass(upper[0]);
         }
-        if (type instanceof GenericArrayType) {
-            Class<?> component = rawClass(((GenericArrayType) type).getGenericComponentType());
+        if (type instanceof GenericArrayType g) {
+            Class<?> component = rawClass(g.getGenericComponentType());
             return component == null
                     ? null
                     : java.lang.reflect.Array.newInstance(component, 0).getClass();
@@ -637,15 +642,15 @@ public final class GraphQlSchemaWriter {
     }
 
     private static Type typeArgument(Type type, int index) {
-        if (type instanceof ParameterizedType) {
-            Type[] args = ((ParameterizedType) type).getActualTypeArguments();
+        if (type instanceof ParameterizedType p) {
+            Type[] args = p.getActualTypeArguments();
             if (index < args.length) return args[index];
         }
         return Object.class;
     }
 
     private static Type componentType(Type type) {
-        if (type instanceof GenericArrayType) return ((GenericArrayType) type).getGenericComponentType();
+        if (type instanceof GenericArrayType g) return g.getGenericComponentType();
         return ((Class<?>) type).getComponentType();
     }
 }

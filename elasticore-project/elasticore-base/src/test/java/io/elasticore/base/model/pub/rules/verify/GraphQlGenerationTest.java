@@ -155,6 +155,94 @@ public class GraphQlGenerationTest {
     }
 
     @Test
+    public void kotlinHexagonalCommandsAreMutations() throws Exception {
+        System.setProperty("elasticore.rules.kt", "true");
+        generate("forum", "hexagonal-springboot-kt", "    graphql:\n      enable: true\n", 0);
+
+        String ticket = read(find("TicketGraphQlController.kt"));
+        assertTrue(ticket.contains("private val service: TicketUseCase"), ticket);
+        assertTrue(ticket.contains("@MutationMapping(\"closeTicket\")"), ticket);
+        assertTrue(
+                ticket.contains("fun closeTicket(@Argument(\"ticketId\") @NotNull ticketId: Long,"
+                        + " @Argument(\"command\") @Valid @NotNull command: "),
+                ticket);
+        assertTrue(ticket.contains("= service.close(ticketId, command)"), ticket);
+        assertTrue(
+                ticket.contains(
+                        "fun reopenTicket(@Argument(\"ticketId\") @NotNull ticketId: Long): TicketDTO? = service.reopen(ticketId)"),
+                ticket);
+    }
+
+    @Test
+    public void exposedMethodsAndCompositeKeys() throws Exception {
+        String model = "entity:\n"
+                + "  Note:\n"
+                + "    meta: entity @expose(20, methods=\"read,search\")\n"
+                + "    fields:\n"
+                + "      noteId: long @id @sequence\n"
+                + "      body: string(100)\n"
+                + "  Box:\n"
+                + "    meta: entity @expose(20) @restExclude(deleteById)\n"
+                + "    fields:\n"
+                + "      boxId: long @id @sequence\n"
+                + "      label: string(20)\n"
+                + "  Category:\n"
+                + "    meta: entity @expose(20)\n"
+                + "    fields:\n"
+                + "      shelf: string(5) @id\n"
+                + "      slot: string(5) @id\n"
+                + "      name: string(20)\n";
+        writeDomain("forum", null, "    graphql:\n      enable: true\n", model);
+        run(0);
+
+        String note = read(find("NoteGraphQlController.java"));
+        assertTrue(note.contains("@QueryMapping(\"notes\")"), note);
+        assertFalse(note.contains("@MutationMapping"), note);
+
+        String box = read(find("BoxGraphQlController.java"));
+        assertTrue(box.contains("@QueryMapping(\"boxes\")"), box);
+        assertTrue(box.contains("@MutationMapping(\"createBox\")"), box);
+        assertFalse(box.contains("deleteBox"), box);
+
+        String category = read(find("CategoryGraphQlController.java"));
+        assertTrue(category.contains("@QueryMapping(\"categories\")"), category);
+        assertTrue(
+                category.contains(
+                        "category(@Argument(\"shelf\") @NotNull String shelf, @Argument(\"slot\") @NotNull String slot)"),
+                category);
+        assertTrue(category.contains("service.findById(shelf, slot)"), category);
+    }
+
+    @Test
+    public void thePathFileGoesWhenNoDomainNamesAPath() throws Exception {
+        generate("forum", null, "    graphql:\n      enable: yes\n      path: /gql\n", 0);
+        Path props = dir.resolve("src/main/resources/graphql/elasticore-graphql.properties");
+        assertTrue(Files.exists(props));
+        // Unchanged: left as it is.
+        generate("forum", null, "    graphql:\n      enable: on\n      path: /gql\n", 0);
+        assertTrue(read(props).contains("spring.graphql.path=/gql"));
+
+        generate("forum", null, "    graphql:\n      enable: true\n", 0);
+        assertFalse(Files.exists(props));
+    }
+
+    @Test
+    public void namingAndSwitches() {
+        assertEquals("members", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("member"));
+        assertEquals("categories", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("category"));
+        assertEquals("days", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("day"));
+        assertEquals("boxes", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("box"));
+        assertEquals("buses", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("bus"));
+        assertEquals("batches", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("batch"));
+        assertEquals("wishes", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("wish"));
+        assertEquals("quizes", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("quiz"));
+        assertEquals("ys", io.elasticore.base.model.pub.rules.graphql.GraphQlRules.plural("y"));
+        assertTrue(io.elasticore.base.model.pub.rules.graphql.GraphQlRules.enabled(" On "));
+        assertFalse(io.elasticore.base.model.pub.rules.graphql.GraphQlRules.enabled(null));
+        assertFalse(io.elasticore.base.model.pub.rules.graphql.GraphQlRules.enabled("false"));
+    }
+
+    @Test
     public void nothingWithoutTheSwitch() throws Exception {
         String log = generate("forum", null, "", 0);
 
@@ -173,6 +261,10 @@ public class GraphQlGenerationTest {
 
     private String generate(String domainName, String rules, String extraConfig, int expected) throws Exception {
         writeDomain(domainName, rules, extraConfig);
+        return run(expected);
+    }
+
+    private String run(int expected) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = System.out;
         PrintStream err = System.err;
@@ -194,6 +286,10 @@ public class GraphQlGenerationTest {
     }
 
     private void writeDomain(String domainName, String rules, String extraConfig) throws Exception {
+        writeDomain(domainName, rules, extraConfig, MODEL);
+    }
+
+    private void writeDomain(String domainName, String rules, String extraConfig, String model) throws Exception {
         Path domain = dir.resolve("src/main/resources/blueprint/" + domainName);
         Files.createDirectories(domain.resolve("model"));
         String env = "elasticore:\n"
@@ -208,7 +304,7 @@ public class GraphQlGenerationTest {
                 + "  namespace:\n"
                 + "    base: com.acme." + domainName + "\n";
         Files.write(domain.resolve("env.yml"), env.getBytes(StandardCharsets.UTF_8));
-        Files.write(domain.resolve("model/entity.yml"), MODEL.getBytes(StandardCharsets.UTF_8));
+        Files.write(domain.resolve("model/entity.yml"), model.getBytes(StandardCharsets.UTF_8));
     }
 
     private List<Path> all() throws Exception {

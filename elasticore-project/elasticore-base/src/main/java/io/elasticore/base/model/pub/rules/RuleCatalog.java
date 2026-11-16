@@ -265,6 +265,7 @@ public final class RuleCatalog {
         // GraphQL controllers, where a domain's env.yml turns graphql.enable on;
         // nothing otherwise, so every v3 bundle can carry it.
         c.register("spring-graphql", new Factory() {
+            @Override
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.graphql.GraphQlRules();
             }

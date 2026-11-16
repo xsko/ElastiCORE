@@ -55,7 +55,7 @@ public final class GraphQlScalars {
     /** Every scalar {@link GraphQlTypes#customScalars()} declares, ready to wire. */
     public static List<GraphQLScalarType> all() {
         List<GraphQLScalarType> all = new ArrayList<>();
-        all.add(number("Long", v -> v.longValueExact(), Long.class));
+        all.add(number("Long", BigDecimal::longValueExact, Long.class));
         all.add(number("BigDecimal", v -> v, BigDecimal.class));
         all.add(number("BigInteger", BigDecimal::toBigIntegerExact, BigInteger.class));
         all.add(text("Date", LocalDate::parse, LocalDate.class));
@@ -81,139 +81,142 @@ public final class GraphQlScalars {
 
     /** A number read from a JSON number or a string, and written as a number. */
     private static GraphQLScalarType number(String name, Function<BigDecimal, Object> convert, Class<?> type) {
-        return scalar(name, new Coercing<Object, Object>() {
-            @Override
-            public Object serialize(Object value, GraphQLContext context, Locale locale) {
-                if (type.isInstance(value)) return value;
-                if (value instanceof Number || value instanceof String) {
-                    try {
-                        return convert.apply(new BigDecimal(value.toString().trim()));
-                    } catch (RuntimeException e) {
-                        throw new CoercingSerializeException(name + " cannot hold " + value, e);
-                    }
-                }
-                throw new CoercingSerializeException(
-                        name + " cannot hold a " + value.getClass().getName());
-            }
+        return scalar(name, new NumberCoercing(name, convert, type));
+    }
 
-            @Override
-            public Object parseValue(Object input, GraphQLContext context, Locale locale) {
-                return parse(input, CoercingParseValueException::new);
-            }
+    private static final class NumberCoercing implements Coercing<Object, Object> {
+        private final String name;
+        private final Function<BigDecimal, Object> convert;
+        private final Class<?> type;
 
-            @Override
-            public Object parseLiteral(
-                    Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
-                if (input instanceof IntValue)
-                    return parse(((IntValue) input).getValue(), CoercingParseLiteralException::new);
-                if (input instanceof FloatValue)
-                    return parse(((FloatValue) input).getValue(), CoercingParseLiteralException::new);
-                if (input instanceof StringValue)
-                    return parse(((StringValue) input).getValue(), CoercingParseLiteralException::new);
-                throw new CoercingParseLiteralException(name + " is written as a number or a string, not " + input);
-            }
+        NumberCoercing(String name, Function<BigDecimal, Object> convert, Class<?> type) {
+            this.name = name;
+            this.convert = convert;
+            this.type = type;
+        }
 
-            @Override
-            public Value<?> valueToLiteral(Object input, GraphQLContext context, Locale locale) {
-                // A decimal as text, which every one of these reads back exactly.
-                Object value = parseValue(input, context, locale);
-                return value instanceof BigDecimal
-                        ? StringValue.of(((BigDecimal) value).toPlainString())
-                        : new IntValue(new BigInteger(String.valueOf(value)));
+        @Override
+        public Object serialize(Object value, GraphQLContext context, Locale locale) {
+            if (type.isInstance(value)) return value;
+            if (value instanceof Number || value instanceof String) {
+                return read(value, CoercingSerializeException::new);
             }
+            throw new CoercingSerializeException(
+                    name + " cannot hold a " + value.getClass().getName());
+        }
 
-            private Object parse(Object input, Function<String, RuntimeException> failure) {
-                if (!(input instanceof Number) && !(input instanceof String)) {
-                    throw failure.apply(name + " is a number or a string, not " + input);
-                }
-                try {
-                    return convert.apply(new BigDecimal(input.toString().trim()));
-                } catch (RuntimeException e) {
-                    throw failure.apply(name + " cannot hold " + input);
-                }
+        @Override
+        public Object parseValue(Object input, GraphQLContext context, Locale locale) {
+            return read(input, CoercingParseValueException::new);
+        }
+
+        @Override
+        public Object parseLiteral(Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
+            if (input instanceof IntValue i) return read(i.getValue(), CoercingParseLiteralException::new);
+            if (input instanceof FloatValue f) return read(f.getValue(), CoercingParseLiteralException::new);
+            if (input instanceof StringValue s) return read(s.getValue(), CoercingParseLiteralException::new);
+            throw new CoercingParseLiteralException(name + " is written as a number or a string, not " + input);
+        }
+
+        @Override
+        public Value<?> valueToLiteral(Object input, GraphQLContext context, Locale locale) {
+            // A decimal as text, which every one of these reads back exactly.
+            Object value = parseValue(input, context, locale);
+            return value instanceof BigDecimal d
+                    ? StringValue.of(d.toPlainString())
+                    : new IntValue(new BigInteger(String.valueOf(value)));
+        }
+
+        private Object read(Object input, Function<String, RuntimeException> failure) {
+            if (!(input instanceof Number) && !(input instanceof String)) {
+                throw failure.apply(name + " is a number or a string, not " + input);
             }
-        });
+            try {
+                return convert.apply(new BigDecimal(input.toString().trim()));
+            } catch (RuntimeException e) {
+                throw failure.apply(name + " cannot hold " + input);
+            }
+        }
     }
 
     /** A value written as ISO-8601 (or its own) text. */
     private static GraphQLScalarType text(String name, Function<String, Object> parse, Class<?>... types) {
-        return scalar(name, new Coercing<Object, String>() {
-            @Override
-            public String serialize(Object value, GraphQLContext context, Locale locale) {
-                for (Class<?> type : types) {
-                    if (type.isInstance(value)) {
-                        if (value instanceof ZonedDateTime)
-                            return ((ZonedDateTime) value).toOffsetDateTime().toString();
-                        return value.toString();
-                    }
-                }
-                if (value instanceof String) return value.toString();
-                throw new CoercingSerializeException(
-                        name + " cannot hold a " + value.getClass().getName());
-            }
+        return scalar(name, new TextCoercing(name, parse, types));
+    }
 
-            @Override
-            public Object parseValue(Object input, GraphQLContext context, Locale locale) {
-                return parse(input, CoercingParseValueException::new);
-            }
+    private static final class TextCoercing implements Coercing<Object, String> {
+        private final String name;
+        private final Function<String, Object> parse;
+        private final Class<?>[] types;
 
-            @Override
-            public Object parseLiteral(
-                    Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
-                if (!(input instanceof StringValue)) {
-                    throw new CoercingParseLiteralException(name + " is written as a string, not " + input);
-                }
-                return parse(((StringValue) input).getValue(), CoercingParseLiteralException::new);
-            }
+        TextCoercing(String name, Function<String, Object> parse, Class<?>... types) {
+            this.name = name;
+            this.parse = parse;
+            this.types = types;
+        }
 
-            @Override
-            public Value<?> valueToLiteral(Object input, GraphQLContext context, Locale locale) {
-                return StringValue.of(serialize(parseValue(input, context, locale), context, locale));
-            }
+        @Override
+        public String serialize(Object value, GraphQLContext context, Locale locale) {
+            if (value instanceof ZonedDateTime z) return z.toOffsetDateTime().toString();
+            if (value instanceof String || held(value)) return value.toString();
+            throw new CoercingSerializeException(
+                    name + " cannot hold a " + value.getClass().getName());
+        }
 
-            private Object parse(Object input, Function<String, RuntimeException> failure) {
-                for (Class<?> type : types) {
-                    if (type.isInstance(input)) return input;
-                }
-                if (!(input instanceof String)) throw failure.apply(name + " is a string, not " + input);
-                try {
-                    return parse.apply(((String) input).trim());
-                } catch (DateTimeParseException | IllegalArgumentException e) {
-                    throw failure.apply(name + " cannot read '" + input + "': " + e.getMessage());
-                }
+        @Override
+        public Object parseValue(Object input, GraphQLContext context, Locale locale) {
+            return read(input, CoercingParseValueException::new);
+        }
+
+        @Override
+        public Object parseLiteral(Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
+            if (input instanceof StringValue s) return read(s.getValue(), CoercingParseLiteralException::new);
+            throw new CoercingParseLiteralException(name + " is written as a string, not " + input);
+        }
+
+        @Override
+        public Value<?> valueToLiteral(Object input, GraphQLContext context, Locale locale) {
+            return StringValue.of(serialize(parseValue(input, context, locale), context, locale));
+        }
+
+        private boolean held(Object value) {
+            for (Class<?> type : types) {
+                if (type.isInstance(value)) return true;
             }
-        });
+            return false;
+        }
+
+        private Object read(Object input, Function<String, RuntimeException> failure) {
+            if (held(input)) return input;
+            if (!(input instanceof String s)) throw failure.apply(name + " is a string, not " + input);
+            try {
+                return parse.apply(s.trim());
+            } catch (DateTimeParseException | IllegalArgumentException e) {
+                throw failure.apply(name + " cannot read '" + input + "': " + e.getMessage());
+            }
+        }
     }
 
     private static GraphQLScalarType base64() {
         return scalar("Base64", new Coercing<byte[], String>() {
             @Override
             public String serialize(Object value, GraphQLContext context, Locale locale) {
-                if (value instanceof byte[]) return Base64.getEncoder().encodeToString((byte[]) value);
+                if (value instanceof byte[] bytes) return Base64.getEncoder().encodeToString(bytes);
                 throw new CoercingSerializeException(
                         "Base64 cannot hold a " + value.getClass().getName());
             }
 
             @Override
             public byte[] parseValue(Object input, GraphQLContext context, Locale locale) {
-                if (input instanceof byte[]) return (byte[]) input;
-                try {
-                    return Base64.getDecoder().decode(String.valueOf(input));
-                } catch (IllegalArgumentException e) {
-                    throw new CoercingParseValueException("Base64 cannot read the value: " + e.getMessage());
-                }
+                if (input instanceof byte[] bytes) return bytes;
+                return decode(String.valueOf(input), CoercingParseValueException::new);
             }
 
             @Override
             public byte[] parseLiteral(
                     Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
-                if (!(input instanceof StringValue))
-                    throw new CoercingParseLiteralException("Base64 is written as a string");
-                try {
-                    return Base64.getDecoder().decode(((StringValue) input).getValue());
-                } catch (IllegalArgumentException e) {
-                    throw new CoercingParseLiteralException("Base64 cannot read the value: " + e.getMessage());
-                }
+                if (input instanceof StringValue s) return decode(s.getValue(), CoercingParseLiteralException::new);
+                throw new CoercingParseLiteralException("Base64 is written as a string");
             }
 
             @Override
@@ -223,20 +226,26 @@ public final class GraphQlScalars {
         });
     }
 
+    private static byte[] decode(String text, Function<String, RuntimeException> failure) {
+        try {
+            return Base64.getDecoder().decode(text);
+        } catch (IllegalArgumentException e) {
+            throw failure.apply("Base64 cannot read the value: " + e.getMessage());
+        }
+    }
+
     private static GraphQLScalarType money() {
-        GraphQLScalarType decimal = number("BigDecimal", v -> v, BigDecimal.class);
-        @SuppressWarnings("unchecked")
-        Coercing<Object, Object> amount = (Coercing<Object, Object>) decimal.getCoercing();
+        NumberCoercing amount = new NumberCoercing("Money", v -> v, BigDecimal.class);
         return scalar("Money", new Coercing<Money, Object>() {
             @Override
             public Object serialize(Object value, GraphQLContext context, Locale locale) {
-                if (value instanceof Money) return ((Money) value).toBigDecimal();
+                if (value instanceof Money m) return m.toBigDecimal();
                 return amount.serialize(value, context, locale);
             }
 
             @Override
             public Money parseValue(Object input, GraphQLContext context, Locale locale) {
-                if (input instanceof Money) return (Money) input;
+                if (input instanceof Money m) return m;
                 return Money.of((BigDecimal) amount.parseValue(input, context, locale));
             }
 
@@ -257,15 +266,15 @@ public final class GraphQlScalars {
         return scalar("Quantity", new Coercing<Quantity, Integer>() {
             @Override
             public Integer serialize(Object value, GraphQLContext context, Locale locale) {
-                if (value instanceof Quantity) return ((Quantity) value).value();
-                if (value instanceof Integer) return (Integer) value;
+                if (value instanceof Quantity q) return q.value();
+                if (value instanceof Integer i) return i;
                 throw new CoercingSerializeException(
                         "Quantity cannot hold a " + value.getClass().getName());
             }
 
             @Override
             public Quantity parseValue(Object input, GraphQLContext context, Locale locale) {
-                if (input instanceof Quantity) return (Quantity) input;
+                if (input instanceof Quantity q) return q;
                 try {
                     return Quantity.of(new BigDecimal(String.valueOf(input).trim()).intValueExact());
                 } catch (RuntimeException e) {
@@ -276,10 +285,10 @@ public final class GraphQlScalars {
             @Override
             public Quantity parseLiteral(
                     Value<?> input, CoercedVariables variables, GraphQLContext context, Locale locale) {
-                if (!(input instanceof IntValue))
+                if (!(input instanceof IntValue i))
                     throw new CoercingParseLiteralException("Quantity is written as an integer");
                 try {
-                    return Quantity.of(((IntValue) input).getValue().intValueExact());
+                    return Quantity.of(i.getValue().intValueExact());
                 } catch (RuntimeException e) {
                     throw new CoercingParseLiteralException("Quantity cannot hold " + input + ": " + e.getMessage());
                 }
@@ -318,46 +327,43 @@ public final class GraphQlScalars {
         });
     }
 
-    private static Object literal(Value<?> input, CoercedVariables variables) {
+    static Object literal(Value<?> input, CoercedVariables variables) {
         if (input == null || input instanceof NullValue) return null;
-        if (input instanceof StringValue) return ((StringValue) input).getValue();
-        if (input instanceof IntValue) return ((IntValue) input).getValue();
-        if (input instanceof FloatValue) return ((FloatValue) input).getValue();
-        if (input instanceof BooleanValue) return ((BooleanValue) input).isValue();
-        if (input instanceof EnumValue) return ((EnumValue) input).getName();
-        if (input instanceof VariableReference) {
-            return variables == null ? null : variables.get(((VariableReference) input).getName());
-        }
-        if (input instanceof ArrayValue) {
+        if (input instanceof StringValue s) return s.getValue();
+        if (input instanceof IntValue i) return i.getValue();
+        if (input instanceof FloatValue f) return f.getValue();
+        if (input instanceof BooleanValue b) return b.isValue();
+        if (input instanceof EnumValue e) return e.getName();
+        if (input instanceof VariableReference v) return variables == null ? null : variables.get(v.getName());
+        if (input instanceof ArrayValue a) {
             List<Object> list = new ArrayList<>();
-            for (Value<?> v : ((ArrayValue) input).getValues()) list.add(literal(v, variables));
+            for (Value<?> v : a.getValues()) list.add(literal(v, variables));
             return list;
         }
-        if (input instanceof ObjectValue) {
+        if (input instanceof ObjectValue o) {
             Map<String, Object> map = new LinkedHashMap<>();
-            for (ObjectField f : ((ObjectValue) input).getObjectFields())
-                map.put(f.getName(), literal(f.getValue(), variables));
+            for (ObjectField f : o.getObjectFields()) map.put(f.getName(), literal(f.getValue(), variables));
             return map;
         }
         throw new CoercingParseLiteralException("JSON cannot read " + input);
     }
 
-    private static Value<?> toLiteral(Object input) {
+    static Value<?> toLiteral(Object input) {
         if (input == null) return NullValue.of();
-        if (input instanceof String) return StringValue.of((String) input);
-        if (input instanceof Boolean) return BooleanValue.of((Boolean) input);
+        if (input instanceof String s) return StringValue.of(s);
+        if (input instanceof Boolean b) return BooleanValue.of(b);
         if (input instanceof Integer || input instanceof Long || input instanceof BigInteger) {
             return new IntValue(new BigInteger(input.toString()));
         }
         if (input instanceof Number) return FloatValue.of(new BigDecimal(input.toString()).doubleValue());
-        if (input instanceof Iterable) {
+        if (input instanceof Iterable<?> items) {
             List<Value> values = new ArrayList<>();
-            for (Object o : (Iterable<?>) input) values.add(toLiteral(o));
+            for (Object o : items) values.add(toLiteral(o));
             return ArrayValue.newArrayValue().values(values).build();
         }
-        if (input instanceof Map) {
+        if (input instanceof Map<?, ?> map) {
             ObjectValue.Builder b = ObjectValue.newObjectValue();
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) input).entrySet()) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
                 b.objectField(new ObjectField(String.valueOf(e.getKey()), toLiteral(e.getValue())));
             }
             return b.build();

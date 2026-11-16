@@ -76,9 +76,9 @@ public class GraphQlErrors extends DataFetcherExceptionResolverAdapter {
     }
 
     /** The refusal an exception is, or null for one the generated services do not raise. */
-    static Refusal refusalOf(Throwable ex) {
-        if (ex instanceof InvariantViolationException) {
-            String code = ((InvariantViolationException) ex).getCode();
+    private static Refusal refusalOf(Throwable ex) {
+        if (ex instanceof InvariantViolationException invariant) {
+            String code = invariant.getCode();
             if (code != null && code.startsWith("state.")) return new Refusal(Classification.CONFLICT, 409);
             if (code != null && code.startsWith("reference.")) return new Refusal(ErrorType.NOT_FOUND, 404);
             return new Refusal(Classification.UNPROCESSABLE, 422);
