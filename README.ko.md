@@ -51,7 +51,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x 도 됩니다 - 버전을 읽어 맞춰 생성
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'io.elasticore' version '3.0.261118-rc18'
+    id 'io.elasticore' version '3.0.261119'
 }
 
 repositories {
@@ -64,8 +64,8 @@ elasticore {
 }
 
 dependencies {
-    implementation 'io.elasticore:elasticore-base:3.0.261118-rc18'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261118-rc18'
+    implementation 'io.elasticore:elasticore-base:3.0.261119'
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261119'
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -185,16 +185,16 @@ Core spec `0.3.0.dev0`. 변환기는 아직 초기이고 도구마다 다르니,
 
 ## 현재 상태
 
-**3.0 은 정식 출시 전(pre-release)입니다** ([Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
+**3.0 은 정식 출시되었습니다**: 첫 정식 릴리스는 3.0.261119 입니다 ([Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
 Gradle 플러그인을 쓰는 프로젝트는 2.x 의 코드를 유지한다고 하지 않는 한 3.0 코드를 받습니다. `elasticore { output = 'v2' }` 는 이력에 적은
 버그 수정과 Spring Boot 4 에서 Jackson 3 에 맞춘 enum, 행을 하나씩 지우는 검색 삭제(Spring Data JPA 4 에는 `delete(Specification)` 이 없음)를 빼면 2.x 가 만들던 코드를 생성합니다. 2.x 가 생성한 코드를
 가진 프로젝트가 아무것도 고르지 않으면, 무엇이든 다시 쓰기 전에 멈추고 고르라고 알립니다
 ([마이그레이션 가이드](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/elasticore-migration-guide.md)).
 풀 리퀘스트마다 2.x 생성기가 만든 기준 프로젝트는 커밋된 그대로여야 하고, 규칙 엔진의 2.x 호환 번들은 그 출력과
-파일마다 비교됩니다 ([자세히](docs/tour.ko.md#현재-상태)). 매 빌드에서 자동 테스트 1,400개 이상이 돌고, 예제 프로젝트들은 생성·컴파일·실행까지 합니다. v3 번들의
-출력은 정식 출시 전까지 바뀔 수 있고, 바뀔 때마다 그 이유를
+파일마다 비교됩니다 ([자세히](docs/tour.ko.md#현재-상태)). 매 빌드에서 자동 테스트 1,400개 이상이 돌고, 예제 프로젝트들은 생성·컴파일·실행까지 합니다. 3.0.261119 부터
+v3 번들의 출력은 프로젝트가 요청할 때(DSL 이나 설정)만 바뀌고, 바뀔 때마다 그 이유를
 [이력](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md)에 적습니다.
-3.0 은 첫 정식 릴리스부터 3년간 지원합니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
+3.0 은 3.0.261119 부터 3년간, 2029-11-19 까지 지원합니다 ([SECURITY.md](SECURITY.md), [BRANCHING.md](BRANCHING.md)).
 
 ## 문서
 

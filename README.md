@@ -56,7 +56,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.8'      // 3.x works too - the version is read and followed
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'io.elasticore' version '3.0.261118-rc18'
+    id 'io.elasticore' version '3.0.261119'
 }
 
 repositories {
@@ -69,8 +69,8 @@ elasticore {
 }
 
 dependencies {
-    implementation 'io.elasticore:elasticore-base:3.0.261118-rc18'
-    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261118-rc18'
+    implementation 'io.elasticore:elasticore-base:3.0.261119'
+    implementation 'io.elasticore.springboot4:elasticore-springboot4:3.0.261119'
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -192,7 +192,7 @@ Core spec `0.3.0.dev0`. The converters are young and differ by tool, so try your
 
 ## Status
 
-**3.0 is in pre-release** ([on Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
+**3.0 is released**: 3.0.261119 is its first stable release ([on Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base)).
 A project on the Gradle plugin gets the 3.0 code unless it keeps 2.x's: `elasticore { output = 'v2' }` generates what 2.x generated, apart
 from the bug fixes the history lists and, on Spring Boot 4, enums written for Jackson 3 and a delete by search that
 removes the rows one by one (Spring Data JPA 4 has no `delete(Specification)`). A project that holds code 2.x
@@ -200,9 +200,10 @@ generated and chose neither is stopped before anything is rewritten, with that c
 ([migration guide](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-migration-guide.md)).
 On every pull request the 2.x generator's output for the reference project must stay as committed, and the rule
 engine's 2.x-compatible bundle is compared with it file by file ([the details](docs/tour.md#status)). More than 1,400 automated tests run on every build, and the sample projects
-are generated, compiled and run. The v3 bundles may still change between pre-releases, each change listed with its
-reason in the [history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md).
-3.0 is supported for three years from its first stable release ([SECURITY.md](SECURITY.md),
+are generated, compiled and run. From 3.0.261119 on, what the v3 bundles generate changes only when a project asks for it
+(the DSL or a setting), each change listed with its reason in the
+[history](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md).
+3.0 is supported for three years from 3.0.261119, until 2029-11-19 ([SECURITY.md](SECURITY.md),
 [BRANCHING.md](BRANCHING.md)).
 
 ## Documentation

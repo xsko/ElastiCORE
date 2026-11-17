@@ -1,3 +1,334 @@
+## 3.0.261119
+
+### New Features (GraphQL)
+
+#### A GraphQL API beside REST, its schema written from the compiled classes (`graphql.enable`, #148)
+- Why: a screen that wants an order with its lines in one round trip, or a partner that works in GraphQL, had to have
+  resolvers written by hand over the generated services - and a schema kept in step with the DTOs by hand.
+- After: `env.yml` `config.graphql.enable: true` (with `mutations: false` for queries only, `path` for
+  `spring.graphql.path`) generates `<Entity>GraphQlController` for every entity the REST API serves (a root under the
+  ddd and hexagonal bundles), in Java and Kotlin, over JPA and MyBatis: `member(memberId)`, `members(search)`,
+  `createMember`, `updateMember`, `deleteMember`, and one mutation per command (`shipOrder(orderId, command)`). They
+  call the service (the use case in the hexagon) the REST controller calls, so access, validation, invariants,
+  `@deleted` and the lifecycle hold as they do for REST; `@readonly`, `@expose(methods=...)` and `@restExclude` take
+  away the same operations.
+  - The schema is written by the build after compiling: `elcoreGraphQl` (plugin, before `processResources`) reads the
+    controllers that carry `@GraphQlDomain` and every class they take and answer, and writes
+    `src/main/resources/graphql/<domain>.graphqls` and `elasticore.graphqls` (root types, scalars, shared types). The
+    type mapping is one class of the runtime library (`GraphQlTypes`), used by the writer and by the scalars wired at
+    run time. A write-only property is in the input only; a value object without setters is sent into its fields, as
+    Jackson reads it. Then every `.graphqls` under `graphql/` is built into one schema; a type name two classes take, an
+    operation two domains name, a property that cannot be written or a schema that does not build stops the build.
+  - Refusals are GraphQL errors with the REST status and code in `extensions` (`NOT_FOUND` 404, `FORBIDDEN` 403,
+    `BAD_REQUEST` 400, `CONFLICT` 409, `UNPROCESSABLE` 422, `BAD_GATEWAY` 502).
+  - Domains that turn it on share one schema and one endpoint: different paths, or an entity of one name served by two
+    of them, stop `elcore3` naming both domains.
+- Not changed: a domain without `graphql.enable` generates exactly what it did (the rule set declares no file, and the
+  build step is not wired where no `env.yml` says graphql). `jpa-springboot` (2.x-compatible) does not carry it. The
+  runtime library only compiles against Spring for GraphQL; its auto-configuration (scalars, errors) applies only where
+  the generated `graphql/elasticore.graphqls` is on the classpath.
+- Not yet: subscriptions, a cursor (Connection) page, a TypeScript client for the GraphQL operations.
+- Checked: `GraphQlGenerationTest` (layered, hexagonal with commands, Kotlin, `mutations: false`, off, two domains
+  disagreeing); `GraphQlSchemaWriterTest` (the files, the shared types, the clashes, a schema that does not build, and
+  queries and mutations executed through Spring for GraphQL against the written schema, on Boot 3 and Boot 4);
+  `elasticore-template-ddd` `GraphQlApiTest` (shop and billing at one `/graphql`, over HTTP: create/read/search, a
+  value object without setters, read-only billing, a command refused and validated) and `elasticore-template-kt`
+  `ShopGraphQlTest`.
+- Files: `GraphQlRules`, `GraphQlSettings`, `v3/graphql.tmpl`, `kt/graphql.tmpl`, `DddAggregateRules`,
+  `DddCommandRules`, `HexUseCaseRules`, `RuleCatalog`, `RulesGenRunner`, `ElastiCorePlugin` (`elcoreGraphQl`),
+  `elasticore-springboot3` `graphql/` and `ElastiCoreGraphQlAutoConfiguration`, env guide 6.1.5 (en, ko), the
+  samples `elasticore-template-ddd` and `elasticore-template-kt`.
+
+### Documentation (sign-in - around the generated `@signin`)
+
+#### The annotation guide shows signing in from your own code and a password reset by mail, as code the pet store runs
+- Why (issue 181, items 2 and 3): applications write both by hand next to the generated sign-in, and the guide only
+  showed `SessionCurrentUser.signIn` after a sign-up. A reset by mail is mail and token work that the application
+  owns; signing in someone identified elsewhere (a reset link, another provider) needs the rules the generated `signin`
+  follows, which were not written down in one place.
+- What: a section of the annotation guide (en, ko) after the `@signin` part, "Around the generated sign-in":
+  - Signing in from your own code: `SessionCurrentUser.signIn` once your code knows who it is - it starts a new session,
+    so an id fixed before is worthless (what the visitor's session should keep is put back after); the key is the
+    `@signin` entity's key, of its type; the role comes from the row, never from the request or a provider; another
+    provider's protocol and account link stay the application's, or Spring Security with a `CurrentUser` bean.
+  - A password reset by mail, on the pet store's `Customer`: an application service of the developer's that asks with
+    the login and confirms with a token; a token that needs no table (the key, a 30-minute expiry, an HMAC over both
+    and the row's password hash, so a new password from any write ends the link); the hash read through the generated
+    ports, since no DTO carries it - a token bound to a DTO's `null` would work forever, and `issue` refuses it; the
+    new password written through the use case as the application itself (`CurrentUser.callAsSystem`), hashed there;
+    the same 202 for every login; nothing sent when the same login asked less than a minute before; the secret from
+    the configuration; the confirm signing the customer in. What it does not do is said: sessions open elsewhere stay
+    signed in.
+- The code is the pet store's: `elasticore-sample-petstore/src/test/java/io/elasticore/sample/guide/signin`, outside the
+  application's packages, so the shop itself and its other tests do not change.
+- Checked:
+  - `PasswordResetGuideTest` (HTTP, the pet store's generated services): the mail goes to the row's address; confirm
+    sets the password, keeps the rest of the row, signs the customer in with a new session id and the one before is
+    invalid; the old password is refused and the new one signs in; the same link twice, a link after the customer
+    changed the password themselves, an altered, malformed or unknown link and a short password are refused (and the
+    refusals do not use the link up); an unknown login and a row without an address get the same 202 and no mail; a
+    second ask within a minute sends nothing; a token names its customer for 30 minutes and only with the hash and the
+    secret it was made with, and no hash binds nothing.
+  - The first version of the example read the hash from the DTO and its token kept working after the reset; the test
+    failed, and the example reads the row.
+  - `GuideCodeTest`: every code block of the section stands, line by line in its order, in those files, and the Korean
+    guide shows the same blocks (a line changed in the guide fails it). `GuideTranslationTest`.
+- Files: `elasticore-annotation-guide.md` (en, ko); in the pet store's tests `guide/signin/` - `PasswordReset`,
+  `PasswordResetTokens`, `PasswordResetMail`, `PasswordResetConfig`, `PasswordResetController`,
+  `PasswordResetGuideTest`, `GuideCodeTest`.
+
+### New Features (field types - `html`, `@safe`, `@plain`)
+
+#### An html field: kept to an allow-list before every write, with a plain-text copy for the search
+- Why (issue 183): a field holding what a rich-text editor sends was a `text`, stored as sent - stored XSS the moment a
+  page renders it. Applications cleaned it by hand before saving (jsoup's `Safelist`) and kept a second field without
+  tags for search and previews. `html` as a type did not exist: the DSL read it as an unknown type, wrote
+  `private html content;` into the entity and dropped the field from the DTO.
+- What: `content: html! @safe(basic) @plain(contentText)` beside `contentText: text @search(like)`.
+  - `html` is a long text, as `text` is (the same column), marked html.
+  - The entity gets `cleanHtml()`: each html field kept to a jsoup safelist - `@safe(basic)`, the default (text markup,
+    links with `rel="nofollow"`, no images), or `@safe(relaxed)` (headings, tables, images too) - and, with
+    `@plain(field)`, its text without tags written to that long text field. What is kept is not reformatted.
+  - The CoreService calls it on every write - a save, an update, an update by condition, and after a lifecycle
+    command, whose parameter is stored by the move inside the entity, past the save path - before the row is written
+    and before `beforeSave`. The method is the entity's, as `derive()` is: under the DDD rule sets the setters are
+    protected.
+  - The `@plain` field is the server's: `@readonly` (no request writes it; read-only in the DTO and TypeScript).
+  - TypeScript: the field's metadata says `html: true`.
+- jsoup: the runtime's `io.elasticore.springboot3.html.Html` is only compiled against it (`compileOnly`, so the POM
+  does not change), and the generated line names `org.jsoup.safety.Safelist`: an application with an html field adds
+  `org.jsoup:jsoup`, and without it the build stops at that line.
+- Refused, the build stops: `@safe` with another value; `@plain` naming no field, a field that is not a long text
+  (`text`, `longtext`, `clob`) or the html field itself; `@safe` or `@plain` on a field that is not html; an html field
+  on a member of an aggregate or on a value object, which no service of theirs writes; the 2.x-compatible output; the
+  2.x generator, by a DSL warning (it stops on any), since it would store what a request sends.
+- Works in: v3 and Kotlin, JPA and MyBatis (layered and hexagonal). The layered MyBatis service gets the before-save
+  slot the other services have; empty, it writes nothing, so a model without html generates the same.
+- Samples: `elasticore-template-ddd`'s board `Post.content` (with a publish command whose parameter sets it),
+  `elasticore-template-kt`'s `Comment.content`, `elasticore-template-mybatis`'s `Gadget.page` (`@safe(relaxed)`); their
+  DDL and `schema.yml` (and the board's semantic model) written again with the new columns.
+- Checked:
+  - `HtmlTest` (runtime, springboot3 and springboot4): basic keeps text markup and links with `rel="nofollow"` and
+    drops a script with its text, a handler, a `javascript:` link and an image; relaxed keeps tables and https images;
+    nothing reformatted; the plain text without a script's text, entities read; null stays null.
+  - `HtmlFieldTest` (generator): layered Java (the three writes call it before `beforeSave`; the method, basic and
+    relaxed; the copy read-only in the DTO; a TEXT column), Kotlin, layered MyBatis, a hexagonal command (cleaned after
+    the move), TypeScript (`html: true`, the copy `readOnly`), a model without html unchanged in JPA and MyBatis (no
+    line left by the empty slot), and every refusal above. `HtmlFieldTypeTest` (loader): the type, and the DSL warning
+    under the 2.x generator only.
+  - HTTP and on the generated schema: `BoardHtmlTest` (a create, the publish command, the search reading the plain
+    copy and not a removed script's text); `CommentHtmlTest` (Kotlin, a save and an update, the caller's copy
+    replaced); `ShopApi.anHtmlColumnIsCleanedAndItsTextKept` (MyBatis, a create and an update; H2 here, PostgreSQL,
+    Oracle and SQL Server in CI).
+  - Without the clean after a command's move, `BoardHtmlTest` fails: the `onerror` handler is stored.
+- Files: `HtmlRules` (new), `SpecFactory.prepareHtml`, `RulesGenRunner`, `AbstractModelLoader`, `DddCommandRules`,
+  `TypeScriptDtoFileRules`, `MyBatisServiceFileRules`, `RuleCatalog` (`jpa-html`, every bundle), template
+  `v3/mybatis_service.tmpl` and `v3/mongo_service.tmpl` (`jpa-html` in `mongo-springboot` too; `HtmlFieldTest.mongoCleansInItsSavePath`); runtime `Html` (new) and the jsoup `compileOnly` in springboot3 and springboot4; the DSL
+  guide's types and annotations, the annotation guide's "html / @safe / @plain" and the rule guide (en, ko).
+
+### Bug Fixes (MongoDB - `@signin(refresh=request)`)
+
+#### A MongoDB domain's signed-in session follows its document too
+- Why: `@signin(refresh=request)` (#205) and `mode: mongo` (#209) were written side by side. The new rule set
+  `spring-signin-refresh` went into every bundle that existed then, and the MongoDB bundle came after: a MongoDB
+  domain that asked for it got no filter and no word, and its sessions kept a role taken away, or a deleted member.
+- After: `mongo-springboot` carries `spring-signin-refresh`. The MongoDB service has the same `me()`, so the filter
+  `MemberSessionRefresh` reads the document again on each request as it does over JPA and MyBatis.
+- Checked: `MongoGenerationTest.aSessionFollowsItsDocumentWhenAsked` (fails without the change: no filter is written).
+- Files: `RuleCatalog` (`mongo-springboot`), `MongoGenerationTest`.
+
+### New Features (v3 - MongoDB)
+
+#### `mode: mongo` is generated by the rule engine: layered Java over Spring Data MongoDB
+- Why: the 3.0 rule engine refused a domain whose env.yml says `mode: mongo` and sent it to the 2.x generator, whose
+  MongoDB output still carried JPA annotations. A MongoDB project had no 3.0 code at all.
+- After: a `mode: mongo` domain gets the bundle `mongo-springboot` (chosen by the mode, as `mybatis-springboot` is):
+  the DTOs, search DTOs, mapper, controller, access checks, `@deleted`, validation and API errors of the JPA bundle,
+  with the storage side written for MongoDB.
+  - The entity: `@Document(collection = "<table name>")` on an entity with a repository of its own, `@Id`,
+    `@Version`, `@CreatedDate` and the other auditing annotations of Spring Data, `@Indexed(unique = true,
+    sparse = true)` for `@unique`, `@CompoundIndex` for `@index`, `@Field` only for a named `@column` (and
+    `targetType = DECIMAL128` for a decimal). No `jakarta.persistence` or Hibernate import.
+  - A to-one relation to an entity with a collection of its own is stored as its id,
+    `@DocumentReference(lazy = true)`. An entity without one (no `@expose`, `@service`, `@repository` - an order's
+    line) is embedded in the document that holds it; its way back, the inverse side of a relation (`mappedBy`),
+    `@joinBy` and `@formula` are `@Transient`. An `@embeddable` value is a nested document.
+  - An enum with `@db(code)`, `money` and `quantity` are stored as their JPA converter writes them, through the
+    runtime's `AttributeValueConverter` (`@ValueConverter`): `"N"`, not `NEW`.
+  - `long @sequence` keys (the document's and its members') come from the runtime's `MongoSequences`: a counter
+    document per collection in `elasticore_sequences`, raised by `findAndModify` `$inc`, starting at 1. `@genid`
+    works as before.
+  - The repository is `XRepository extends MongoRepository<X, ID>`; for an entity with a service it carries the
+    search as static methods: `criteria(searchDTO, owner)` - eq, ne, gt/ge/lt/le, between, in, isnull, and the text
+    conditions as a regular expression with the value's characters escaped (`MongoText`) - `hasCondition`, and
+    `sort`, which takes only the properties in `SORT_FIELDS` (a refused one is a 400, as over JPA and MyBatis).
+  - The service has the JPA v3 service's public methods and signatures (findById, findBySearch, listBySearch,
+    findFirstBySearch, countBySearch, save, update, batchUpdate, delete by keys, deleteById, delete by search,
+    updateBySpecification) over the repository and `MongoTemplate`: a page is a count and a page of documents; a
+    `@deleted` delete writes the time and every read leaves such documents out.
+  - Kotlin, `ddd` and `hexagonal` over MongoDB, `-Pv2`, a `publisher.rules` naming another architecture's or
+    language's bundle, and a relation between a MongoDB domain and a JPA or MyBatis one are refused with what is
+    supported. So are a composite key, an `@abstract(entity)` hierarchy, `@ManyToMany`, a collection of another
+    collection's documents without `mappedBy`, a non-numeric `@sequence` key and a search path past a reference's id.
+- Not changed: JPA and MyBatis output. The shared rules read the new persistence only where they already asked for
+  MyBatis (no EntityManager in the mapper, the owner handed to the search, `@count`/`@onDelete` refused, the members
+  a root's DTO carries). The 2.x generator's `mode: mongo` is untouched.
+- Not yet: Kotlin, ddd and hexagonal over MongoDB; transactions (a write is one document); `@count`, `@onDelete`;
+  a sort or search by a referenced document's other fields; DDL (an index is an annotation, created with
+  `spring.data.mongodb.auto-index-creation=true`).
+- Checked: `MongoGenerationTest` generates a mongo domain in-process and checks the entity, repository, service and
+  mapper, every search operator and the refusals; `PersistenceAxisTest` and `DefaultGenerationTest` say what is
+  written and what is refused. The runtime classes have unit tests in `elasticore-springboot3` (run on Boot 3 and
+  Boot 4). The new sample `elasticore-template-mongo` generates a shop, compiles it and drives its API over HTTP on a
+  real MongoDB 7.0 - create with a reference and embedded lines, a sequence key, a `@genid` key, read back, search
+  paged and sorted with each condition, a refused sort, an update and a stale version (409), a taken unique email
+  (409), a delete and a `@deleted` delete - and reads the stored documents. `elcoreRulesCheck -Pstrict`,
+  `elcoreTreeCheck` and the `elasticore-template-mybatis` and `elasticore-template-ddd` tests are unchanged.
+- Files: `RulesConfig.java`, `RuleCatalog.java`, `RulesGenRunner.java`, `rules/mongo/MongoDocs.java`,
+  `MongoEntityFileRules.java`, `MongoRepositoryRules.java`, `MongoServiceFileRules.java`,
+  `v3/mongo_service.tmpl`, `v3/mongo_repository.tmpl`, `v3/mongo_mapper.tmpl`, `v3/mongo_repositoryHelper.tmpl`,
+  `ServiceAccessRules.java`, `CountRules.java`, `OnDeleteRules.java`, `SoftDelete.java`, `MapperAssembleRules.java`,
+  `MapperFileRules.java`, `RepositoryHelperBaseRules.java`, `MyBatisMapperMemberRules.java`, `DddMapperRules.java`,
+  `MyBatisServiceFileRules.java`; `elasticore-springboot3` `mongo/MongoSequences.java`, `AttributeValueConverter.java`,
+  `MongoText.java` (compileOnly spring-data-mongodb in springboot3 and springboot4); `elasticore-template-mongo`;
+  `elasticore-env-guide.md` (en, ko) 2.2, 2.4 and the bundle table; `MongoGenerationTest.java`,
+  `PersistenceAxisTest.java`, `DefaultGenerationTest.java`.
+
+### Bug Fixes (`schema.yml`)
+
+#### `schema.yml` names the columns the entity maps: references, value types and collections (#203)
+- Why: `blueprint/schema.yml` is read by tools and assistants to write SQL, and its relation lines named columns the
+  table does not have.
+  - A reference's `@foreignKey` was always `{field}_{target key}`: right only for JPA's default, wrong with
+    `referenceColumn: short` or `field` (`author_member_id` for the `author_id` column) and with `@column`
+    (`editor_member_id` for `last_editor_id`).
+  - A field whose type resolves to a value class - `java.math.BigDecimal`, `java.time.Instant`, `java.time.LocalTime`,
+    `Money`, `Quantity`, `byte[]` - fell through to the relation branch:
+    `price: java.math.BigDecimal @relation(mappedBy="price_id") @foreignKey(price_id)` for a `price DECIMAL(10,2)`
+    column.
+  - Every `@relation(mappedBy=...)` held a made-up column (`post_id`, `orders_id`), and a collection's
+    `@foreignKey(orders_id)` named no column anywhere.
+- After: only a type that names an entity of the model is a relation.
+  - A to-one reference is `author: Member @foreignKey(author_id) -- Member entity relationship`. The column follows
+    the rules the entity's `@JoinColumn` follows: a native `@jpa:JoinColumn(name=...)`, else the column of the field
+    `@joinBy` names (a reference by id, with any `referenceColumn` setting), else `@column`, else JPA's default - the
+    field and the target key's own column, by Spring Boot's physical naming (`topic_topic_no` for a key written
+    `@column(topic_no)`).
+  - A one-to-one written `@OneToOne(mappedBy=...)` is the other side, with no column: `@relation(mappedBy="...")`.
+  - A collection of entities holds no column here: `orders: List<Order> @relation(mappedBy="customer")` names the
+    other side's field when `@OneToMany(mappedBy=...)` gives it, and nothing otherwise (`tags: List<Tag>` of a
+    `@ManyToMany`).
+  - A value type is a column, like a string: `price: io.elasticore.springboot3.domain.Money @Column(name = "price")`,
+    `rate: BigDecimal @Column(name = "rate")`, `deletedAt: java.time.Instant @Column(name = "deleted_at")`.
+  - An embedded value (`@embedded`, or an `@embeddable` type) is `billingAddress: Address @Embedded`, its columns
+    the value's own. A list of enum codes or of an embeddable value is `@ElementCollection`: a table of its own.
+- Not changed: a reference to an entity with a composite key still names one column, and a subclass of a JOINED
+  hierarchy still lists its parent's fields under its own table.
+- Generated code is unchanged: `schema.yml` is a description beside the model, which `elcoreRulesCheck` and
+  `elcoreTreeCheck` do not compare. The 2.x template's `schema.yml` changes too - its lines described columns its
+  own DDL does not have.
+- Checked: `SchemaColumnsTest` generates the issue's model, with a collection, a list of enum codes, an embedded value
+  and a target key with `@column`, under `hexagonal-springboot` with `referenceColumn: field` (`author_id`,
+  `last_editor_id`, `parent_id`, as the generated entity maps them) and under the layered default
+  (`author_member_id`, `last_editor_id`, `parent_post_id`, `topic_topic_no`); it fails on the old code. The five
+  samples' `schema.yml` were regenerated, and every to-one `@foreignKey` and every entity field's `@Column` name in
+  them was found among the columns of that entity's table in the sample's `db/schema-h2.sql`, except the parent
+  fields a JOINED subclass lists (above). No collection line names a key any more.
+- Files: `SchemaCodePublisher.java`, `SchemaColumnsTest.java`, `blueprint/schema.yml` of `elasticore-template`,
+  `-template-ddd`, `-template-ddd-mybatis`, `-template-kt`, `-template-mybatis`.
+
+### New Features (sign-in - `@signin(refresh=request)`)
+
+#### `@signin(refresh=request)`: a signed-in session follows its row
+- Why (issue 181, item 1): the generated sign-in puts the row's key and role in the session, and the session kept
+  them until the next sign-in. With a session kept for days, a role the administrator gave or took away waited for
+  that sign-in, and a member whose row was deleted kept a working session with their old role. Applications
+  re-read the row in a filter of their own.
+- What: `@signin(refresh=request)` on the entity that signs in. The entity also gets `XxxSessionRefresh`, a
+  `@Component` filter beside its controller, regenerated with the model. Before each request whose session holds a
+  signed-in key, it reads the row again through the service's `me()`, the read `GET /me` makes, so a row kept under
+  `@deleted` counts as gone:
+  - no row: the session ends (`SessionCurrentUser.signOut`), and the request goes on as a visitor's - what needs a
+    signed-in user answers 401;
+  - a row whose role differs: the session takes it from that request on and keeps its id
+    (`SessionCurrentUser.refresh`, new). The attribute is written only when the roles differ.
+  - A session with no signed-in key (a visitor, or an application with a `CurrentUser` of its own) is not read.
+- A file of its own rather than code in the controller: the controller is the developer's once written, so a
+  project whose controller is already its own still gets it. A hexagonal bundle injects the use case, as for the
+  controller (`hex-usecase-refresh`); the role is read as the sign-in reads it. Removing the option removes the file.
+- Runtime: `io.elasticore.springboot3.security.SessionRefreshFilter` (a `OncePerRequestFilter` the generated class
+  extends) and `SessionCurrentUser.refresh(request, roles)`. The filter lends the request context to the read when
+  nothing set it before (a MockMvc built by hand), and gives it back.
+- Cost: one read of the row per request with a signed-in session. The MyBatis pet store's statement count for a
+  page of orders says so: the customer, then the page's three statements.
+- `@signin` takes no other option: another parameter, another value of `refresh` or `@signin(request)` is a DSL
+  warning, and nothing is generated for it.
+- Works in: v3 and Kotlin, JPA and MyBatis, layered and hexagonal. The 2.x-compatible output has no generated
+  sign-in, so no filter (new rule set `spring-signin-refresh`, in every v3 bundle).
+- Unchanged: a model without `refresh=request` generates the same.
+- Samples: the pet store, the MyBatis pet store (`Customer`) and `elasticore-template-kt` (`Agent`, a string role)
+  say `@signin(refresh=request)`.
+- Checked:
+  - `SessionRefreshFilterTest` (runtime, springboot3 and springboot4): a raised role is the session's and the
+    session id stays; a role taken away; the same role writes nothing; a row that is gone ends the session and the
+    rest of the request sees a visitor; a session nobody signed in to is not read; the request context lent for the
+    read alone.
+  - `SignInRefreshTest` (generator): hexagonal Java (the use case), Kotlin (keywords quoted in the package and the
+    import), layered Java and Kotlin (the service), MyBatis; no filter without the option, without a sign-in or in
+    the 2.x-compatible output; an entity without a role field; the DSL warnings; `me()` reading past `@deleted`.
+  - HTTP, failing before the change: `ShopFlowTest.theSessionFollowsTheCustomersRow` (pet store, JPA) and the same
+    in the MyBatis pet store's `ShopFlow` (H2 here; PostgreSQL, Oracle and SQL Server in CI): a customer made an
+    administrator searches every customer in the same session, made a user again sees only themselves, deleted
+    gets 401; `ShopApiContractTest.theSessionFollowsTheAgentsRow` (Kotlin): a grade changed in the row, then the
+    row deleted.
+  - The whole suites: `elasticore-base`'s 1428 tests, `elasticore-springboot3`'s 284 and `elasticore-springboot4`'s
+    285, the pet store's 38, the MyBatis pet store's 13 and `elasticore-template-kt`'s 181.
+- Files: `SignInRefreshRules` (new), `ServiceAccessRules` (`refreshesPerRequest`, the option warnings, `roleText`
+  shared with the sign-in), `HexUseCaseRules` (`hex-usecase-refresh`), `RuleCatalog`, `RulesGenRunner.needsV3`,
+  templates `v3/sessionRefresh.tmpl`, `kt/sessionRefresh.tmpl`; runtime `SessionRefreshFilter` (new),
+  `SessionCurrentUser`; the annotation guide's `@signin`, the DSL guide's table and the rule guide (en, ko).
+
+### New Features (runtime - Spring Security and the generated access checks)
+
+#### `SpringSecurityCurrentUser`: the generated `@access` / `@owner` checks read who is asking from Spring Security
+- Why: an application that signs people in with Spring Security (a login form, a JWT resource server, an OAuth2 / OIDC
+  login) had to write its own `CurrentUser`, and the guide said so in one line. The step that goes wrong was not written
+  anywhere: `AccessPolicy` compares the identity with a row's owner as text, but a search is narrowed by it and a new row's
+  owner field is set to it, so a `CurrentUser` answering the username where the `@owner` key is a `Long` owns nothing and
+  fails on the first search or create.
+- After: `io.elasticore.springboot3.security.SpringSecurityCurrentUser` (elasticore-springboot3 and -springboot4) answers from
+  `SecurityContextHolder`. No authentication, an `AnonymousAuthenticationToken`, an unauthenticated one or a mapping that
+  answers `null` is a visitor; `hasRole("ADMIN")` holds for the authority `ROLE_ADMIN` and for `ADMIN` itself
+  (`withRolePrefix` for another prefix); `system()` is `CurrentUser.inSystemScope()`, so `runAsSystem` works as before. The
+  identity is the application's mapping: `SpringSecurityCurrentUser.of(auth -> key)`, `claim("customer_id", Long::valueOf)`
+  for a token claim (read through the principal's `getClaim(String)`, which Spring's `Jwt` and `OidcUser` have - no compile
+  dependency on the OAuth2 modules), or `new SpringSecurityCurrentUser()` for the name, documented as right only for a
+  string key holding the username. The annotation guide (en, ko) has a section "Spring Security instead of @signin": when,
+  the bean, a login form (username -> key through the query port), a JWT resource server, an OIDC login (claim or account
+  link), the pitfalls (the key's type, the `ROLE_` prefix, someone signed in without a row) and `runAsSystem`.
+- Not changed: nothing registers it - an application declares the bean (the generated services already take an application
+  `CurrentUser` bean). `spring-security-core` is `compileOnly`, so the published POMs do not change. No generated code
+  changes, so 2.x output and the v3 bundles' output are as before.
+- Checked:
+  - `SpringSecurityCurrentUserTest` (elasticore-springboot3, run again by -springboot4 on Boot 4): a visitor with no,
+    an anonymous or an unauthenticated authentication; roles with and without the prefix, another prefix, none; the name
+    as identity and why a Long key cannot take it; the mapping with `AccessPolicy` (`owns`, `ownerFilter`, `ownerToClaim`,
+    `require`), an account without a row as a visitor, the administrator; the claim helper on a principal with
+    `getClaim`, a missing claim, a principal without `getClaim`, a claim that throws; `runAsSystem`.
+  - `SpringSecurityGuideTest` (the pet store, HTTP through a Spring Security filter chain with HTTP Basic and in-memory
+    accounts, the guide's bean mapping the username to `customerId`): a customer reads and searches only their own row,
+    someone else's customer row and order are 404, cancelling someone else's order is 404; an order is created with the
+    signed-in customer's `Long` key as owner; the administrator (`ROLE_ADMIN`) reads every row and ships the order, which
+    a customer may not (403); a visitor gets 401 and a wrong password is refused by Spring Security; the guide's JWT and
+    OIDC beans map a claim and a linked account. The pet store's other tests run without a filter chain: its tests have
+    `spring-security-config` / `-web`, not the starter, so only the test that imports the guide's configuration is
+    secured. `SecurityGuideCodeTest`: the guide's three blocks stand in those sources, and the Korean guide shows the same.
+- Files: `elasticore-springboot3/src/main/java/io/elasticore/springboot3/security/SpringSecurityCurrentUser.java`,
+  `SpringSecurityCurrentUserTest.java`; `elasticore-springboot3/build.gradle`, `elasticore-springboot4/build.gradle`
+  (`compileOnly` / `testImplementation` spring-security-core); `elasticore-sample-petstore/build.gradle` and its tests
+  `guide/security/` - `ShopSecurity`, `TokenSignIn`, `SpringSecurityGuideTest`, `SecurityGuideCodeTest`;
+  `elasticore-annotation-guide.md` (en, ko).
+
 ## 3.0.261118-rc18
 
 ### Changes (conditions - `==`, `!=`, `>=`, `<=`)

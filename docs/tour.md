@@ -290,17 +290,17 @@ The declarations also produce `blueprint/context-map.md`, a Mermaid context map.
 
 ### Status
 
-- **3.0 is in pre-release.** A project on the Gradle plugin gets the 3.0 code unless it keeps 2.x's. What 2.x generated stays as it was
+- **3.0 is released: 3.0.261119 is its first stable release.** A project on the Gradle plugin gets the 3.0 code unless it keeps 2.x's. What 2.x generated stays as it was
   for a project that keeps it, apart from the bug fixes the history lists and, on Spring Boot 4, enums written for
   Jackson 3: `elasticore { output = 'v2' }` runs 2.x's generator, whose output for the reference project is held to
   the committed tree, and the rule engine's `jpa-springboot` bundle (layered Java) is compared with it — both on every
   pull request. A project holding code 2.x generated that chose neither is stopped before anything is rewritten.
-- The v3 bundles — `jpa-springboot-v3` (layered Java, the default), DDD, hexagonal, Kotlin, TypeScript — may still change
-  between pre-releases; each change is listed with its reason in the
+- The v3 bundles — `jpa-springboot-v3` (layered Java, the default), DDD, hexagonal, Kotlin, TypeScript — change from 3.0.261119
+  on only when a project asks for it (the DSL or a setting); each change is listed with its reason in the
   [history](../elasticore-project/elasticore-base/src/main/resources/elasticore-guide/elasticore-history.md) (in Korean).
-- **3.0 is supported for three years from its first stable release**: bug and security fixes to the generator, the
+- **3.0 is supported for three years from 3.0.261119, until 2029-11-19**: bug and security fixes to the generator, the
   Gradle plugin and both runtime libraries, released from the `release/3.0` branch as `3.0.YYMMDD` versions. They are
   tested on a Spring Boot 4 version the Spring team still supports as open source at the time, and the Spring
   Boot 3 runtime library on 3.5.16, the last open-source Spring Boot 3 release ([SECURITY.md](../SECURITY.md),
-  [BRANCHING.md](../BRANCHING.md)). Until that first stable release, fixes come in the next pre-release. How a release is
+  [BRANCHING.md](../BRANCHING.md)). How a release is
   made: [RELEASING.md](../RELEASING.md).
