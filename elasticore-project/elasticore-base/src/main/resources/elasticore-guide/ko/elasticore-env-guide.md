@@ -482,6 +482,22 @@ entity:
 - `genid` 키는 특별 처리되며, 엔티티 필드에 `@genid` 사용 시 지정된 ID 생성기 메서드가 `@PrePersist`에 등록됨
 - 형식: `genid(패키지.클래스.메서드)`
 
+**응답에서 개인정보 가리기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+```yaml
+config:
+  annotations:
+    maskphone: "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)"
+    maskname:  "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.NAME)"
+```
+```yaml
+      telNumber: string(20) @env:maskphone   # 010-1234-5678 -> 010-****-5678
+      name:      string(50) @env:maskname    # 홍길동 -> 홍*동
+```
+- `@dto:` 이므로 `@Mask` 는 DTO 필드에만 붙고, 엔티티와 DB 에는 값이 그대로 저장된다.
+- Jackson 모듈은 런타임이 스스로 등록한다(Boot 3 은 Jackson 2, Boot 4 는 Jackson 3). 생성되는 DTO 는 둘 다 같다.
+- `MaskType`: `PHONE`(가운데 묶음), `EMAIL`(로컬 부분 앞 두 글자만), `NAME`(첫 글자와 끝 글자만), `PLATE`(끝 숫자 네 개), `CARD`(앞뒤 네 자리만), `RRN`(앞 일곱 자리만).
+- 가리는 것은 응답 JSON 뿐이고 요청은 보낸 그대로 읽는다. 본인과 관리자도 가린 값을 받으며, 읽은 DTO 를 그대로 다시 보내는 클라이언트는 가린 글자를 저장하게 되니 가린 필드는 바뀔 때만 보낸다.
+
 ---
 
 ## 5. jsonview 설정

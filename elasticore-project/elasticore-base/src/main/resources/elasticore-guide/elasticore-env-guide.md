@@ -482,6 +482,22 @@ The `@env:` prefix refers to an annotation defined in env.yml. It is replaced wi
 - The `genid` key is handled specially: when an entity field uses `@genid`, the given ID generator method is registered in `@PrePersist`
 - Form: `genid(package.Class.method)`
 
+**Masking personal data in responses** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+```yaml
+config:
+  annotations:
+    maskphone: "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)"
+    maskname:  "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.NAME)"
+```
+```yaml
+      telNumber: string(20) @env:maskphone   # 010-1234-5678 -> 010-****-5678
+      name:      string(50) @env:maskname    # 홍길동 -> 홍*동
+```
+- `@dto:` puts `@Mask` on the DTO field only; the entity and the database keep the value as it is.
+- The runtime registers the Jackson module by itself (Jackson 2 on Boot 3, Jackson 3 on Boot 4), and the generated DTO is the same on both.
+- `MaskType`: `PHONE` (the middle group), `EMAIL` (two letters of the local part), `NAME` (the first and last letter), `PLATE` (the last four digits), `CARD` (all but the first and last four digits), `RRN` (all but the first seven digits).
+- Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too - and a client that sends a read DTO back unchanged writes the masked text: send a masked field only when it changes.
+
 ---
 
 ## 5. jsonview setting
