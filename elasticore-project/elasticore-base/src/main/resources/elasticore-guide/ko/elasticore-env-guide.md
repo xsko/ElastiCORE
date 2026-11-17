@@ -302,7 +302,7 @@ Oracle·PostgreSQL·SQL Server).
 ### 2.4 MongoDB 모드
 > **동작:** v3 레이어드 Java (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** v3 Kotlin, ddd, hexagonal (빌드 중단)
 
-MongoDB 에 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0 (미출시)
+MongoDB 에 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261119
 
 ```yaml
 config:

@@ -302,7 +302,7 @@ A `@formula` field stays in the entity, but MyBatis does not read it, so its val
 ### 2.4 MongoDB mode
 > **Works in:** v3 layered Java (run on Spring Boot 3), 2.x generator · **Not in:** v3 Kotlin, ddd, hexagonal (stops the build)
 
-A domain kept in MongoDB. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0 (unreleased)
+A domain kept in MongoDB. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0.261119
 
 ```yaml
 config:
