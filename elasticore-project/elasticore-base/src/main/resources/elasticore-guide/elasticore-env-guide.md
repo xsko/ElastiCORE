@@ -623,6 +623,15 @@ config:
 - It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
   It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
+- Where the namespaces name their layers by segment under the base package - `namespace: { base: ... }` lays them out so:
+  `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - the packages your own code adds there are
+  read too, by their first segment after the base: `domain.*` with the domain, `application.*` with the application, and
+  outside both `adapter.*`, `infrastructure.*` and the segments of `control` and `repository` (`interfaces`, say). A
+  hand-written `domain.policy` class that uses `infrastructure.mail` then fails the test. A package it cannot place
+  (`config`, say) is a DSL warning, once, and is not checked; the base package itself (the application class) and the test
+  sources are left out. A layered layout, whose segments name no layers, is read from the namespaces alone.
+- Once written the file is yours, as every file generated once: one you did not edit takes new package lists on the next
+  build, and an edited one goes through the three-way merge (9-2) - it keeps your rules where they do not overlap.
 - Rules: the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
   the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
 - It needs a test dependency: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`

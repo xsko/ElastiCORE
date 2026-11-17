@@ -3,9 +3,13 @@ package io.elasticore.base.model.pub.rules.verify;
 import io.elasticore.base.model.ECoreModel;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * An ArchUnit test that states the hexagon's boundaries as rules the build
@@ -20,6 +24,15 @@ import java.util.Set;
  *   adapters     control
  *   persistence  persistence, repository
  *
+ * Where the namespaces are laid out by segment under the test's base package
+ * - the domain's under base.domain, the application's under base.application
+ * - the packages the project's own code adds there are placed too, by their
+ * first segment after the base (issue 173): domain, application, adapter or
+ * control's segment (adapter.out, infrastructure or the repository's segment
+ * go with persistence: the outbound side). A package it cannot place is
+ * named by the runner, once, rather than guessed. A layered layout, whose
+ * segments name no layers, is read from the namespaces alone.
+ *
  * The domain depends on none of the others; the application depends on
  * neither adapters nor persistence; nothing in the domain names the web. With
  * {@code mapping: xml} the domain also names no persistence technology.
@@ -30,6 +43,52 @@ import java.util.Set;
 final class ArchitectureTestSource {
 
     private ArchitectureTestSource() {
+    }
+
+    /** The four places a package can go; each layer's rules forbid the ones outside it. */
+    enum Layer {
+        DOMAIN,
+        APPLICATION,
+        ADAPTER,
+        PERSISTENCE
+    }
+
+    /** The layers' packages: the namespaces, then the project's own packages placed among them. */
+    static final class Layers {
+        final Set<String> domain;
+        final Set<String> application;
+        final Set<String> adapters;
+        final Set<String> persistence;
+        /** The project's own packages placed, in order. */
+        final List<String> placed = new ArrayList<String>();
+        /** The project's own packages under the base that no segment places. */
+        final List<String> unplaced = new ArrayList<String>();
+
+        Layers(ECoreModel model) {
+            domain = packages(model, "entity", "enumeration", "event", "domainService", "domainRepository");
+            application = packages(model, "service", "dto", "inboundPort", "queryPort");
+            adapters = packages(model, "control");
+            persistence = packages(model, "persistence", "repository");
+            // A namespace two layers share is neither's to forbid.
+            application.removeAll(domain);
+            adapters.removeAll(domain);
+            adapters.removeAll(application);
+            persistence.removeAll(domain);
+            persistence.removeAll(application);
+        }
+
+        private Set<String> of(Layer layer) {
+            switch (layer) {
+                case DOMAIN:
+                    return domain;
+                case APPLICATION:
+                    return application;
+                case ADAPTER:
+                    return adapters;
+                default:
+                    return persistence;
+            }
+        }
     }
 
     /** The package the test sits in: the longest one every namespace of the domain shares. */
@@ -57,17 +116,84 @@ final class ArchitectureTestSource {
         return sb.toString();
     }
 
-    static String render(ECoreModel model, String className, String pkg, boolean kotlin, boolean xmlMapping) {
-        Set<String> domain = packages(model, "entity", "enumeration", "event", "domainService", "domainRepository");
-        Set<String> application = packages(model, "service", "dto", "inboundPort", "queryPort");
-        Set<String> adapters = packages(model, "control");
-        Set<String> persistence = packages(model, "persistence", "repository");
-        // A namespace two layers share is neither's to forbid.
-        application.removeAll(domain);
-        adapters.removeAll(domain);
-        adapters.removeAll(application);
-        persistence.removeAll(domain);
-        persistence.removeAll(application);
+    /**
+     * The layers of the domain, with the packages of the project's own code under the base placed by their
+     * first segment - where the namespaces name their layers that way. A package under a namespace is that
+     * namespace's already; the base itself (the application class) is in no layer.
+     */
+    static Layers layers(ECoreModel model, String base, Collection<String> sourcePackages) {
+        Layers layers = new Layers(model);
+        Map<String, Layer> segments = base == null ? null : segments(model, base);
+        if (segments == null || sourcePackages == null) return layers;
+        Set<String> namespaces = new LinkedHashSet<String>();
+        for (Layer layer : Layer.values()) namespaces.addAll(layers.of(layer));
+        for (String p : new TreeSet<String>(sourcePackages)) {
+            if (!p.startsWith(base + ".") || under(p, namespaces)) continue;
+            String rest = p.substring(base.length() + 1);
+            Layer layer = under(rest, "adapter.out") ? Layer.PERSISTENCE : segments.get(head(rest));
+            if (layer == null) {
+                layers.unplaced.add(p);
+            } else {
+                layers.of(layer).add(p);
+                layers.placed.add(p);
+            }
+        }
+        return layers;
+    }
+
+    /**
+     * Which first segment after the base names which layer, or null when the namespaces are not laid out that
+     * way: the domain's entities under base.domain and the application's services under base.application.
+     */
+    static Map<String, Layer> segments(ECoreModel model, String base) {
+        if (!under(model.getNamespace("entity"), base + ".domain")
+                || !under(model.getNamespace("service"), base + ".application")) {
+            return null;
+        }
+        Map<String, Layer> segments = new LinkedHashMap<String, Layer>();
+        segments.put("domain", Layer.DOMAIN);
+        segments.put("application", Layer.APPLICATION);
+        segments.put("adapter", Layer.ADAPTER);
+        segments.put("infrastructure", Layer.PERSISTENCE);
+        // Where the project put its web and its persistence: interfaces.rest, say.
+        putIfFree(segments, firstSegment(model.getNamespace("control"), base), Layer.ADAPTER);
+        putIfFree(segments, firstSegment(model.getNamespace("repository"), base), Layer.PERSISTENCE);
+        putIfFree(segments, firstSegment(model.getNamespace("persistence"), base), Layer.PERSISTENCE);
+        return segments;
+    }
+
+    private static void putIfFree(Map<String, Layer> segments, String segment, Layer layer) {
+        if (segment != null && !segments.containsKey(segment)) segments.put(segment, layer);
+    }
+
+    private static String firstSegment(String ns, String base) {
+        if (ns == null || !ns.startsWith(base + ".")) return null;
+        return head(ns.substring(base.length() + 1));
+    }
+
+    /** A dotted name's first segment: the whole of it when it has no dot. */
+    private static String head(String dotted) {
+        int dot = dotted.indexOf('.');
+        return dot < 0 ? dotted : dotted.substring(0, dot);
+    }
+
+    private static boolean under(String p, String prefix) {
+        return p != null && (p.equals(prefix) || p.startsWith(prefix + "."));
+    }
+
+    private static boolean under(String p, Set<String> namespaces) {
+        for (String ns : namespaces) {
+            if (under(p, ns)) return true;
+        }
+        return false;
+    }
+
+    static String render(
+            ECoreModel model, String className, String pkg, boolean kotlin, boolean xmlMapping, Layers layers) {
+        Set<String> domain = layers.domain;
+        Set<String> application = layers.application;
+        Set<String> adapters = layers.adapters;
+        Set<String> persistence = layers.persistence;
 
         List<String[]> rules = new ArrayList<String[]>();
         Set<String> outsideDomain = new LinkedHashSet<String>();
@@ -101,26 +227,37 @@ final class ArchitectureTestSource {
                     join(domain), "\"jakarta.persistence..\", \"javax.persistence..\", \"org.hibernate..\"",
                     audited ? "envers" : ""});
         }
-        return kotlin ? kotlin(className, pkg, rules) : java(className, pkg, rules);
+        // The same words as before where nothing of the project's own was placed.
+        String source = layers.placed.isEmpty()
+                ? " * namespaces the domain's env.yml declares. Yours from here: add rules.\n"
+                : " * namespaces the domain's env.yml declares, and the packages of your own\n"
+                        + " * code under them, by their first segment. Yours from here: add rules.\n";
+        return kotlin ? kotlin(className, pkg, rules, source) : java(className, pkg, rules, source);
     }
 
-    private static String java(String className, String pkg, List<String[]> rules) {
+    private static String java(String className, String pkg, List<String[]> rules, String source) {
         StringBuilder s = new StringBuilder();
         s.append("// Initially generated by ElastiCORE; no longer managed - do not remove this line.\n")
-         .append("package ").append(pkg).append(";\n\n")
-         .append("import com.tngtech.archunit.base.DescribedPredicate;\n")
-         .append("import com.tngtech.archunit.core.domain.JavaClass;\n")
-         .append("import com.tngtech.archunit.core.importer.ImportOption;\n")
-         .append("import com.tngtech.archunit.junit.AnalyzeClasses;\n")
-         .append("import com.tngtech.archunit.junit.ArchTest;\n")
-         .append("import com.tngtech.archunit.lang.ArchRule;\n\n")
-         .append("import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;\n\n")
-         .append("/**\n")
-         .append(" * The hexagon's boundaries, checked on every build. The packages are the\n")
-         .append(" * namespaces the domain's env.yml declares. Yours from here: add rules.\n")
-         .append(" */\n")
-         .append("@AnalyzeClasses(packages = \"").append(pkg).append("\", importOptions = ImportOption.DoNotIncludeTests.class)\n")
-         .append("class ").append(className).append(" {\n");
+                .append("package ")
+                .append(pkg)
+                .append(";\n\n")
+                .append("import com.tngtech.archunit.base.DescribedPredicate;\n")
+                .append("import com.tngtech.archunit.core.domain.JavaClass;\n")
+                .append("import com.tngtech.archunit.core.importer.ImportOption;\n")
+                .append("import com.tngtech.archunit.junit.AnalyzeClasses;\n")
+                .append("import com.tngtech.archunit.junit.ArchTest;\n")
+                .append("import com.tngtech.archunit.lang.ArchRule;\n\n")
+                .append("import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;\n\n")
+                .append("/**\n")
+                .append(" * The hexagon's boundaries, checked on every build. The packages are the\n")
+                .append(source)
+                .append(" */\n")
+                .append("@AnalyzeClasses(packages = \"")
+                .append(pkg)
+                .append("\", importOptions = ImportOption.DoNotIncludeTests.class)\n")
+                .append("class ")
+                .append(className)
+                .append(" {\n");
         for (String[] r : rules) {
             s.append("\n    /** ").append(r[1]).append(" */\n")
              .append("    @ArchTest\n")
@@ -132,23 +269,29 @@ final class ArchitectureTestSource {
         return s.toString();
     }
 
-    private static String kotlin(String className, String pkg, List<String[]> rules) {
+    private static String kotlin(String className, String pkg, List<String[]> rules, String source) {
         StringBuilder s = new StringBuilder();
         s.append("// Initially generated by ElastiCORE; no longer managed - do not remove this line.\n")
-         .append("package ").append(pkg).append("\n\n")
-         .append("import com.tngtech.archunit.base.DescribedPredicate\n")
-         .append("import com.tngtech.archunit.core.domain.JavaClass\n")
-         .append("import com.tngtech.archunit.core.importer.ImportOption\n")
-         .append("import com.tngtech.archunit.junit.AnalyzeClasses\n")
-         .append("import com.tngtech.archunit.junit.ArchTest\n")
-         .append("import com.tngtech.archunit.lang.ArchRule\n")
-         .append("import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses\n\n")
-         .append("/**\n")
-         .append(" * The hexagon's boundaries, checked on every build. The packages are the\n")
-         .append(" * namespaces the domain's env.yml declares. Yours from here: add rules.\n")
-         .append(" */\n")
-         .append("@AnalyzeClasses(packages = [\"").append(pkg).append("\"], importOptions = [ImportOption.DoNotIncludeTests::class])\n")
-         .append("class ").append(className).append(" {\n");
+                .append("package ")
+                .append(pkg)
+                .append("\n\n")
+                .append("import com.tngtech.archunit.base.DescribedPredicate\n")
+                .append("import com.tngtech.archunit.core.domain.JavaClass\n")
+                .append("import com.tngtech.archunit.core.importer.ImportOption\n")
+                .append("import com.tngtech.archunit.junit.AnalyzeClasses\n")
+                .append("import com.tngtech.archunit.junit.ArchTest\n")
+                .append("import com.tngtech.archunit.lang.ArchRule\n")
+                .append("import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses\n\n")
+                .append("/**\n")
+                .append(" * The hexagon's boundaries, checked on every build. The packages are the\n")
+                .append(source)
+                .append(" */\n")
+                .append("@AnalyzeClasses(packages = [\"")
+                .append(pkg)
+                .append("\"], importOptions = [ImportOption.DoNotIncludeTests::class])\n")
+                .append("class ")
+                .append(className)
+                .append(" {\n");
         for (String[] r : rules) {
             s.append("\n    /** ").append(r[1]).append(" */\n")
              .append("    @ArchTest\n")

@@ -623,6 +623,15 @@ config:
 - `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
   네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
+- 네임스페이스가 기본 패키지 아래에서 단어로 계층을 나눌 때 - `namespace: { base: ... }` 가 그렇게 놓습니다:
+  `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - 직접 쓴 코드가 거기 더한 패키지도
+  읽습니다. 기본 패키지 다음 첫 단어로 놓습니다: `domain.*` 는 도메인, `application.*` 은 애플리케이션,
+  `adapter.*`, `infrastructure.*` 와 `control`·`repository` 의 단어(`interfaces` 같은 것)는 둘 다의 바깥. 그래서
+  직접 쓴 `domain.policy` 클래스가 `infrastructure.mail` 을 쓰면 테스트가 실패합니다. 놓을 수 없는 패키지
+  (`config` 같은 것)는 DSL 경고를 한 번 내고 검사하지 않습니다. 기본 패키지 자신(애플리케이션 클래스)과 테스트
+  소스는 빼고 봅니다. 단어가 계층을 말하지 않는 layered 레이아웃은 네임스페이스만으로 읽습니다.
+- 한 번 생성된 파일은 다른 한 번 생성 파일처럼 사용자의 것입니다: 고치지 않았으면 다음 빌드에서 새 패키지 목록을 받고,
+  고쳤으면 3-way 병합(9-2)을 거칩니다 - 겹치지 않는 곳의 사용자 규칙은 남습니다.
 - 규칙: 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
   도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
 - 테스트 의존성이 필요합니다: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
