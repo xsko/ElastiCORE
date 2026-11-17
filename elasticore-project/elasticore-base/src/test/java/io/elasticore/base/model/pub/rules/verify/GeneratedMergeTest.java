@@ -593,8 +593,7 @@ public class GeneratedMergeTest {
             for (Path p : (Iterable<Path>) all::iterator) {
                 if (!p.toString().endsWith(".java")) continue;
                 String s = read(p);
-                if (s.startsWith("//ecd:"))
-                    Files.write(p, twoXStamp(s).getBytes(StandardCharsets.UTF_8));
+                if (s.startsWith("//ecd:")) Files.write(p, twoXStamp(s).getBytes(StandardCharsets.UTF_8));
             }
         }
         Path dto = java(project, "PurchaseOrderDTO.java");

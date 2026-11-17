@@ -1,5 +1,6 @@
 package io.elasticore.base.model.pub.rules.verify;
 
+import io.elasticore.base.Version;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -73,7 +74,7 @@ public final class TreeCheckRunner {
         for (Map.Entry<String, String> en : after.entrySet()) {
             if (!en.getValue().startsWith(HEADER) || beforeAll.containsKey(en.getKey())) continue;
             // Stamped by this generator: "_V" and its major.minor (3.0, 3.1, ...).
-            if (en.getValue().contains("_V" + io.elasticore.base.Version.MAJOR) && !en.getValue().contains(MARKER)) {
+            if (en.getValue().contains("_V" + Version.MAJOR) && !en.getValue().contains(MARKER)) {
                 extra.add(en.getKey());
             }
         }
