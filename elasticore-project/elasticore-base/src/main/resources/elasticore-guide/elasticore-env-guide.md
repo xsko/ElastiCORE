@@ -688,7 +688,7 @@ The generated test files are placed under `src/test/java/` at the path of the se
 ---
 
 ## 6-2. Reference column name and admin role (3.0)
-> **Works in:** ddd, hexagonal for `referenceColumn`; v3, Kotlin for `adminRole` · **Not in:** layered for `referenceColumn` (not generated); 2.x-compatible output (output = 'v2'), 2.x generator for `adminRole` (not generated)
+> **Works in:** ddd, hexagonal for `referenceColumn`; v3, Kotlin for `adminRole` · **Not in:** layered for `referenceColumn` (warning); 2.x-compatible output (output = 'v2'), 2.x generator for `adminRole` (not generated)
 
 ```yaml
 config:
