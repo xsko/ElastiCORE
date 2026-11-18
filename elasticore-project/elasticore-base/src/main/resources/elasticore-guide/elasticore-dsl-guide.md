@@ -874,9 +874,9 @@ enumeration:
       SUSPENDED: S,Suspended
 ```
 
-> **A value must fit its field.** `CANCELLED: CXL,Cancelled` with `code: string(2)` stops the build - `elcore` (2.x code) and `elcore3`
-> (3.0 code; up to 3.0.261119 it only warned, and the row failed when it was inserted): `enum OrderStatus.CANCELLED: field 'code' value 'CXL'
-> (length 3) exceeds max length 2 - the column holds 2 characters. Widen the field (code: string(3)) or shorten the value.`
+> **A value must fit its field.** `CANCELLED: CXL,Cancelled` with `code: string(2)` stops the build. `elcore` (2.x code) says
+> `enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2`; `elcore3` (3.0 code; up to 3.0.261119 only a warning)
+> says the same with `[elcore3]` before it and `Make field 'code' at least 3 characters long or shorten the value.` after it.
 
 ---
 

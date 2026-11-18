@@ -105,12 +105,11 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
                                 enumName, ec.getIdentity().getName(), field.getName(), value, value.length(), maxLen);
                         if (io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes()) {
                             // The 3.0 rule engine stops on it, as the 2.x generator
-                            // does: the column is that long, so the row would
-                            // fail when it is inserted.
+                            // does: the value does not fit the field it is declared
+                            // for - for the @db field, the column it is stored in.
                             io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
-                                    "[elcore3] %s - the column holds %d characters. Widen the field (%s: string(%d))"
-                                            + " or shorten the value.",
-                                    found, maxLen, field.getName(), value.length()));
+                                    "[elcore3] %s. Make field '%s' at least %d characters long or shorten the value.",
+                                    found, field.getName(), value.length()));
                         } else {
                             ConsoleLog.storeLog("DSL_WARN", found);
                         }
