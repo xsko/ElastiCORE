@@ -2,7 +2,7 @@
 
 #### A search DTO's `List<Enum> @search(in)` searches the column, `status in (...)`
 - Why: the DSL guide's own search DTO example (4. DTO definition) declares `status: List<Status> @search(in)`.
-  With an entity whose `status` is one enum, every mapper read the list as a collection of the entity and joined it:
+  With an entity whose `status` is one enum, every JPA mapper (not MyBatis, not MongoDB) read the list as a collection of the entity and joined it:
   `Join<PurchaseOrder, OrderStatus> join = root.join("status"); return join.in(status);`. The 2.x generator
   (`elcore`, `output = 'v2'`) and the Kotlin code compiled, and the search failed when it ran -
   `Attribute 'Customer#customerType(BASIC)' is not joinable` on H2. The 3.0 Java code (layered, ddd, hexagonal)
@@ -22,6 +22,7 @@
   to the two asked for through `CustomerRepository.findAll(ShopMapper.toSpec(dto))` - and failed with "is not
   joinable" before the fix; the same in the hexagonal sample (`elasticore-template-ddd`, v3), customers created over
   HTTP. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
+- Known limits: the rule engine looks the entity field up in the search DTO's own domain; a `@searchable` DTO of an entity in another domain still joins in the 3.0 code (2.x looks across domains). The Kotlin output was checked as text, not compiled with this field.
 - Not changed: `@search(eq)` on a list of values against a single column still joins (it searches by one item,
   `statusItem`) - a join on a single column, like the `in` one was; not run.
 - Files: `pub/jpa/MapperSrcPublisher.java`, `pub/rules/base/MapperSpecRules.java`,
