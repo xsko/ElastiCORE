@@ -1228,6 +1228,7 @@ If you commit only the cache, after a pull the old local generated file looks li
 | Unedited file, DSL changed | Writes it anew |
 | Edited file, DSL unchanged | Leaves it as it is - `UNCHANGED(your edits kept)` |
 | Edited file, DSL changed | Merges - `MERGED(your edits kept)` |
+| You and the DSL made the same change, apart from blank lines or spaces at the end of a line | Merges, keeping your layout - not a conflict (indentation and spaces inside a line still count) |
 | The DSL also changed a line you edited | **Conflict** - leaves `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` in the file and the build fails. It keeps failing until you clean up the markers, and what you cleaned up becomes the base from then on |
 | You deleted the file | Generated again - the way to get it back as generated |
 | The DSL no longer produces it | If unedited, it is deleted; if edited, it is kept with a warning (from then on it is the developer's file). Even if unedited, a class that remaining sources still use (and the mapper XML with the same name) is kept and the file that uses it is reported (`still uses it - kept`) - it is deleted in the build after nothing uses it any more |

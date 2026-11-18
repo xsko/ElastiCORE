@@ -458,6 +458,12 @@ public class GeneratedMergeTest {
         assertTrue(log.contains("CustomerFactory.java  KEPT(yours"), log);
         assertTrue(log.contains("CustomerFactory.java: the DSL changes this file of yours where you changed it too"), log);
         assertEquals(mine, read(factory));
+        // A kept file has no marks to look for: the note says where in it the place is.
+        java.util.regex.Matcher at = java.util.regex.Pattern.compile("1 place\\(s\\), at line\\(s\\) (\\d+)\\)")
+                .matcher(log);
+        assertTrue(at.find(), log);
+        String line = mine.split("\n", -1)[Integer.parseInt(at.group(1)) - 1];
+        assertTrue(line.contains("register(") || line.contains("return new Customer();"), line);
     }
 
     @Test
