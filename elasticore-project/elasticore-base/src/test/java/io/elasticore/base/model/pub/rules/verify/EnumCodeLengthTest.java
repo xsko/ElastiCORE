@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * An enum value longer than its field stops elcore3, as it stops the 2.x
- * generator: the column is that long, so the row would fail on insert. Only
+ * generator: the value does not fit its field (for the @db field, its column). Only
  * this finding fails the build; other DSL warnings stay warnings.
  */
 public class EnumCodeLengthTest {
@@ -72,7 +72,7 @@ public class EnumCodeLengthTest {
                     said.contains(
                             "enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2"),
                     said);
-            assertTrue(said.contains("Widen the field (code: string(3)) or shorten the value."), said);
+            assertTrue(said.contains("Make field 'code' at least 3 characters long or shorten the value."), said);
             assertTrue(said.contains("[elcore3] the model check failed"), said);
         }
     }
@@ -158,22 +158,6 @@ public class EnumCodeLengthTest {
                 if (saved[i] == null) System.clearProperty(keys[i]);
                 else System.setProperty(keys[i], saved[i]);
             }
-        }
-    }
-
-    private static String found(File project, String fileName) throws IOException {
-        List<File> hits = new ArrayList<File>();
-        collect(project, fileName, hits);
-        assertEquals(1, hits.size(), fileName + " in " + project + ": " + hits);
-        return new String(Files.readAllBytes(hits.get(0).toPath()), StandardCharsets.UTF_8).replace("\r\n", "\n");
-    }
-
-    private static void collect(File dir, String fileName, List<File> hits) {
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) collect(f, fileName, hits);
-            else if (f.getName().equals(fileName)) hits.add(f);
         }
     }
 
