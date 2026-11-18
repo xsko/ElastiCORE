@@ -3025,6 +3025,26 @@ public final class SpecFactory {
                 deletedFieldOf(root, rootModel) != null);
     }
 
+    /** The name of the domain that declares an entity of that name, or null. */
+    static String domainOfEntity(String entityName) {
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            if (ctx == null || ctx.getAllDomainNames() == null) return null;
+            for (String domain : ctx.getAllDomainNames()) {
+                io.elasticore.base.ModelDomain d = ctx.getDomain(domain);
+                ECoreModel m = d == null ? null : d.getModel();
+                if (m != null
+                        && m.getEntityModels() != null
+                        && m.getEntityModels().findByName(entityName) != null) {
+                    return domain;
+                }
+            }
+        } catch (RuntimeException e) {
+            return null;
+        }
+        return null;
+    }
+
     /** The model of the domain that declares an entity of that name, or null. */
     private static ECoreModel modelOf(String entityName) {
         try {
