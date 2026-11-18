@@ -218,6 +218,8 @@ public class SrcFilePublisher {
             writer.flush();
         } catch (Throwable e) {
             e.printStackTrace();
+            // A source that was not written is a generation that failed: the run ends non-zero.
+            io.elasticore.base.model.pub.rules.ModelCheck.failSaid("not written: " + qualifiedClassName + " - " + e);
             if (modelComponent != null)
                 publisher.errorOnPublish(modelComponent, e);
             else
