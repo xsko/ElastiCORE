@@ -195,6 +195,29 @@ public abstract class ShopApi {
         assertEquals(0, total("customer", "{\"customerId\":" + customer + "}"));
     }
 
+    /**
+     * An html field over MongoDB (#208, #209): kept to the basic safelist on a create and on an update, and its text
+     * without tags written beside it, whatever the request sent - in the stored document too.
+     */
+    @Test
+    public void anHtmlFieldIsCleanedAndItsTextKept() throws Exception {
+        JsonNode created = create("product", "{\"name\":\"Lamp\",\"price\":30,\"descriptionText\":\"sent\","
+                + "\"description\":\"<p onclick=\\\"steal()\\\">A <b>warm</b> lamp</p><script>steal()</script>\"}");
+        String code = created.get("productCode").asText();
+        assertEquals("<p>A <b>warm</b> lamp</p>", created.get("description").asText(), created.toString());
+        assertEquals("A warm lamp", created.get("descriptionText").asText(), created.toString());
+        Document stored = mongo.getCollection("product").find(new Document("_id", code)).first();
+        assertNotNull(stored);
+        assertEquals("<p>A <b>warm</b> lamp</p>", stored.getString("description"), stored.toJson());
+
+        JsonNode changed = body(send("PUT", "/product", "{\"productCode\":\"" + code + "\",\"name\":\"Lamp\",\"price\":30,"
+                + "\"description\":\"<a href=\\\"https://example.com/l\\\">spec</a><img src=\\\"x\\\" onerror=\\\"steal()\\\">\"}"),
+                200);
+        assertEquals("<a href=\"https://example.com/l\" rel=\"nofollow\">spec</a>", changed.get("description").asText(),
+                changed.toString());
+        assertEquals("spec", changed.get("descriptionText").asText(), changed.toString());
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static String unique() {

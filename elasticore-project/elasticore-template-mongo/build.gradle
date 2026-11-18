@@ -64,6 +64,8 @@ dependencies {
 
 	implementation project(':elasticore-project:elasticore-base')
 	implementation project(':elasticore-project:elasticore-springboot3')
+	// shop: Product.description is an html field, cleaned with jsoup's Safelist before it is saved
+	implementation 'org.jsoup:jsoup:1.23.2'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.testcontainers:junit-jupiter'
