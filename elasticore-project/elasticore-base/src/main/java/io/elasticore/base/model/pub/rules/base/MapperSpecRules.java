@@ -244,6 +244,10 @@ public class MapperSpecRules implements CodeRules {
             emitIn(c, e, f, entityFieldNm, childField, fieldNm, isListEntityField);
         } else if ("between".equals(condition) || "~".equals(condition)) {
             emitBetween(c, e.getName(), entityFieldNm, childField, fieldNm, type);
+        } else if (joinSingle && !isListEntityField && childField.isEmpty() && f.dslValue("ref") == null) {
+            // One value searched against one column of the entity - an enum, a
+            // code - is that column's equality; only a collection is joined.
+            and(c, e.getName(), "c.equal(%s,%s)", path(c.syntax(), entityFieldNm, "", "Any"), nn(c, joinItemNm));
         } else if (joinSingle) {
             Syntax sx = c.syntax();
             String sp = String.format("Specification<%s>", e.getName());

@@ -208,6 +208,9 @@ public class MapperSrcPublisher extends SrcFilePublisher {
                 Object column = targetEntity.getAllFieldListMap().get(entityFieldNm);
                 if (column instanceof Field && !((Field) column).getTypeInfo().isList()) isListEntityField = false;
             }
+            // A list field named as one of the entity's single columns (not reached through @ref).
+            boolean listOfValues =
+                    isListfield && !isListEntityField && f.getAnnotationValue(EntityAnnotation.REFERENCE) == null;
 
             String childFieldName="";
             String refFieldNm = f.getAnnotationValue(EntityAnnotation.REFERENCE);
@@ -373,7 +376,13 @@ public class MapperSrcPublisher extends SrcFilePublisher {
             } else {
                 // equals
 
-                if( isJoinWithSingleData) {
+                if (isJoinWithSingleData && listOfValues) {
+                    // One value searched against one column of the entity - an enum,
+                    // a code - is that column's equality; only a collection is joined.
+                    cb.line(
+                            "sp = sp.and((r,q,c) -> c.equal(r.get(%s),%s));",
+                            quoteString(entityFieldNm), joinWithSingleDatafieldName);
+                } else if (isJoinWithSingleData) {
 
                     cb.line("sp = sp.and((root, query, criteriaBuilder) -> {");
                     cb.line("  Join<%s, %s> join = root.join(%s);",entityNm
