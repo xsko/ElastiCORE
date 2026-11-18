@@ -873,6 +873,10 @@ enumeration:
       SUSPENDED: S,Suspended
 ```
 
+> **값은 필드에 맞아야 합니다.** `code: string(2)` 에 `CANCELLED: CXL,Cancelled` 를 적으면 빌드가 멈춥니다. `elcore`(2.x 코드)는
+> `enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2` 라고 하고, `elcore3`(3.0 코드; 3.0.261119 까지는 경고만)는
+> 같은 문장 앞에 `[elcore3]`, 뒤에 `Make field 'code' at least 3 characters long or shorten the value.` 를 붙여 알립니다.
+
 ---
 
 ## 6. Repository 정의

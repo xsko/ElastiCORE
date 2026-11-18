@@ -100,9 +100,19 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
                         value = value.substring(1, value.length() - 1);
                     }
                     if (value.length() > maxLen) {
-                        ConsoleLog.storeLog("DSL_WARN",
-                            String.format("enum %s.%s: field '%s' value '%s' (length %d) exceeds max length %d",
-                                enumName, ec.getIdentity().getName(), field.getName(), value, value.length(), maxLen));
+                        String found = String.format(
+                                "enum %s.%s: field '%s' value '%s' (length %d) exceeds max length %d",
+                                enumName, ec.getIdentity().getName(), field.getName(), value, value.length(), maxLen);
+                        if (io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes()) {
+                            // The 3.0 rule engine stops on it, as the 2.x generator
+                            // does: the value does not fit the field it is declared
+                            // for - for the @db field, the column it is stored in.
+                            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                                    "[elcore3] %s. Make field '%s' at least %d characters long or shorten the value.",
+                                    found, field.getName(), value.length()));
+                        } else {
+                            ConsoleLog.storeLog("DSL_WARN", found);
+                        }
                     }
                 }
             }

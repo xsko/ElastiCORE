@@ -242,10 +242,12 @@ public final class RulesGenRunner {
             else if (wantsKept && !keeps) missing = "@deleted (jpa-entity-annotations or mode: mybatis)";
             else if (wantsDerive && !derive) missing = "@snapshot and @compute (ddd-derive)";
             if (missing != null) {
-                io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                        "[%s] %s declares %s, which the selected rules do not enforce - nothing is checked, derived"
-                                + " or hashed. Declare architecture = 'domain-model' or 'hexagonal', or add the rule set.",
-                        model.getInternalDomainName(), name, missing));
+                io.elasticore.base.util.ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format(
+                                "[%s] %s declares %s, which the selected rules do not enforce - nothing is checked, derived"
+                                        + " or hashed. Declare architecture = 'ddd' or 'hexagonal', or add the rule set.",
+                                model.getInternalDomainName(), name, missing));
             }
         }
     }
