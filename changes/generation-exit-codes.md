@@ -10,7 +10,9 @@
 - Now: an exception ends the run 1 after its stack trace and `[ERROR] ElastiCORE generation failed: <the exception>`;
   a model file not read and a source not written are counted (as elcore3 counts the first) and end it 1 with
   `[ERROR] LOAD ERROR <file> - not read, nothing it declares was generated: <parser message>` or
-  `[ERROR] not written: <class> - <exception>`. The init path (no model DSL yet) still ends 0. Generated code does
+  `[ERROR] not written: <class> - <exception>`. The init path (no model DSL yet) still ends 0. `-Pmode=valid` fails on a model file not read too (it passed),
+  and `-Pmode=clean` ends 1 on one, as it already did on a DSL warning. The annotation processor is unchanged: it never
+  read the model check, so a model file it could not read still fails nothing there. Generated code does
   not change; a 2.x project whose generation fails now fails its build - which is the point.
 - Checked: `GenerationExitTest` runs the extractor's `main` in its own JVM - a `List<>` field (the 2.x generator throws
   `IllegalArgumentException: toName is null`), a model file that is not YAML and a source root that is a file each

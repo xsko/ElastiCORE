@@ -162,6 +162,9 @@ public class DerivedQueryMethodTest {
             "      - id: existsByWarehouse",
             "        params:",
             "          warehouse: string",
+            "      - id: getterByWarehouse",
+            "        params:",
+            "          warehouse: string",
             "      - id: deleteByWarehouse",
             "        params:",
             "          warehouse: string",
@@ -180,6 +183,8 @@ public class DerivedQueryMethodTest {
             assertTrue(repo.contains("long countByWarehouse(String warehouse);"), mode + "\n" + repo);
             assertTrue(repo.contains("boolean existsByWarehouse(String warehouse);"), mode + "\n" + repo);
             assertTrue(repo.contains("void deleteByWarehouse(String warehouse);"), mode + "\n" + repo);
+            // Not a query name as Spring Data reads one (a subject word starts upper case): left void.
+            assertTrue(repo.contains("void getterByWarehouse(String warehouse);"), mode + "\n" + repo);
             assertFalse(repo.contains("void findBy"), mode + "\n" + repo);
         }
     }
@@ -202,6 +207,12 @@ public class DerivedQueryMethodTest {
         assertTrue(repo.contains("List<Stock> findByOnHandLessThan(Integer onHand"), repo);
         assertTrue(repo.contains("long countByWarehouse(String warehouse"), repo);
         assertFalse(repo.contains("void findBy"), repo);
+
+        File hexagonal = project("jpa", NO_RETURN);
+        assertEquals(0, run(hexagonal, "hexagonal", "java", null));
+        String hex = found(hexagonal, "StockRepository.java");
+        assertTrue(hex.contains("List<Stock> findByOnHandLessThan(Integer onHand"), hex);
+        assertTrue(hex.contains("boolean existsByWarehouse(String warehouse"), hex);
 
         File kotlin = project("jpa", NO_RETURN);
         assertEquals(0, run(kotlin, "layered", "kotlin", null));

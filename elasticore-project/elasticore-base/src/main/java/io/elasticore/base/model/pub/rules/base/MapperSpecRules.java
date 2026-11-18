@@ -112,7 +112,8 @@ public class MapperSpecRules implements CodeRules {
             // enum, a code - is that column's in(...); only a collection of the
             // entity is joined.
             FieldSpec column = entityField(e, entityFieldNm);
-            if (column != null && !column.isList()) isListEntityField = false;
+            // A to-one relation (customer: Customer) is not a column of values: it joins as before.
+            if (column != null && !column.isList() && !column.isEntityRef()) isListEntityField = false;
         }
 
         // An encrypted column is compared by its blind index (EncryptRules).

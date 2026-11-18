@@ -76,6 +76,14 @@ public class GenerationExitTest {
         assertTrue(r.log.contains("[ERROR] ElastiCORE generation failed"), r.log);
     }
 
+    /** The validation (-Pmode=valid) fails on a model file not read, as the build does. */
+    @Test
+    public void theValidationOfAModelFileNotReadFails() throws Exception {
+        Result r = extractInItsOwnJvm(project("entity:\n  PurchaseOrder: [unclosed\n"), "valid");
+        assertEquals(1, r.exit, r.log);
+        assertTrue(r.log.contains("[ERROR] LOAD ERROR "), r.log);
+    }
+
     /**
      * A generation that throws ends non-zero with its cause: a field typed List<> fails the 2.x generator
      * ("toName is null"), which printed the stack trace and ended 0.
@@ -174,11 +182,16 @@ public class GenerationExitTest {
 
     /** './gradlew elcore' runs the extractor's main in a JVM of its own; its static model state stays there. */
     private static Result extractInItsOwnJvm(File project) throws Exception {
+        return extractInItsOwnJvm(project, "default");
+    }
+
+    private static Result extractInItsOwnJvm(File project, String mode) throws Exception {
         File log = new File(project, "gen.log");
         Process p = new ProcessBuilder(
                         new File(new File(System.getProperty("java.home"), "bin"), "java").getPath(),
                         "-Xmx256m",
                         "-Dfile.encoding=UTF-8",
+                        "-Dmode=" + mode,
                         "-Delasticore.base.path=" + project.getAbsolutePath(),
                         "-cp",
                         System.getProperty("java.class.path"),

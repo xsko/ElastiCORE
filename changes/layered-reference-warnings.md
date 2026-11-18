@@ -10,10 +10,11 @@
   has the field `customer_customer_id` and the relationship `from_columns: [customer_customer_id]`. All three agree;
   nothing was wrong. `referenceColumn` is read by ddd and hexagonal only, as the env guide says - but nothing said
   it in the build.
-- Now: a layered (v3, Kotlin) build of a domain that sets `referenceColumn: short` or `field` warns
+- Now: a layered (v3, Kotlin) JPA build of a domain that sets `referenceColumn: short` or `field` warns
   `[shop] referenceColumn: short is read by architecture = 'ddd' and 'hexagonal' only - the selected rules keep each
   @ManyToOne on JPA's join column (customer_customer_id for customer: Customer), in the entity, the DDL and the Ossie
-  export alike.` Generated code does not change. The env guide's marker says "(warning)" for layered.
+  export alike.` Generated code does not change. A DSL warning: `elcoreValidate -Pstrict` now fails such a layered project
+  until the setting is removed. The env guide's marker says "(warning)" for layered.
 - Checked: `LayeredReferenceTest` - layered warns, hexagonal does not; fails without the change.
 - Files: `pub/rules/verify/RulesGenRunner.java`, `LayeredReferenceTest.java`, `elasticore-guide/elasticore-env-guide.md`
   and `ko/`.

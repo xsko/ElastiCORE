@@ -206,7 +206,14 @@ public class MapperSrcPublisher extends SrcFilePublisher {
                 // A list of values searched against one column of the entity - an
                 // enum, a code - is that column's in(...); only a collection is joined.
                 Object column = targetEntity.getAllFieldListMap().get(entityFieldNm);
-                if (column instanceof Field && !((Field) column).getTypeInfo().isList()) isListEntityField = false;
+                // A to-one relation (customer: Customer) is not a column of values: it joins as before.
+                if (column instanceof Field
+                        && !((Field) column).getTypeInfo().isList()
+                        && this.publisher
+                                        .getECoreModelContext()
+                                        .findModelComponent(
+                                                ((Field) column).getTypeInfo().getBaseTypeName(), Entity.class)
+                                == null) isListEntityField = false;
             }
             // A list field named as one of the entity's single columns (not reached through @ref).
             boolean listOfValues =

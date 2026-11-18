@@ -216,15 +216,17 @@ public class RepositoryModelLoader extends AbstractModelLoader implements Consta
      */
     static String derivedReturnType(String name, String root, boolean pageable) {
         if (name == null) return null;
-        if (name.startsWith("count") && name.indexOf("By", 5) >= 0) return "long";
-        if (name.startsWith("exists") && name.indexOf("By", 6) >= 0) return "boolean";
-        for (String prefix : new String[] {"find", "read", "get", "query", "search", "stream"}) {
-            if (name.startsWith(prefix) && name.indexOf("By", prefix.length()) >= 0) {
-                return (pageable ? "Page<" : "List<") + root + ">";
-            }
-        }
-        return null;
+        // Spring Data's own reading of a query name (PartTree): a subject word, then By.
+        java.util.regex.Matcher m = DERIVED_QUERY.matcher(name);
+        if (!m.find()) return null;
+        String subject = m.group(1);
+        if ("count".equals(subject)) return "long";
+        if ("exists".equals(subject)) return "boolean";
+        return (pageable ? "Page<" : "List<") + root + ">";
     }
+
+    private static final java.util.regex.Pattern DERIVED_QUERY =
+            java.util.regex.Pattern.compile("^(find|read|get|query|search|stream|count|exists)(\\p{Lu}.*?)??By\\p{Lu}");
 
     private String getMethodName(Select selectQuery) {
         StringBuilder sb = new StringBuilder();
