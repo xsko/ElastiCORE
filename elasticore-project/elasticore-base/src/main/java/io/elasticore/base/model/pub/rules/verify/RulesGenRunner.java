@@ -881,7 +881,8 @@ public final class RulesGenRunner {
         if (validating) return finishValidate(runner, basePath, shown);
         // A listing wrote nothing, so it must not tidy up either: removeStale
         // would read every generated file as no longer produced.
-        if (Boolean.getBoolean("elasticore.rules.list")) return 0;
+        // A listing also ends non-zero when the model check refused the model: the same model fails the build.
+        if (Boolean.getBoolean("elasticore.rules.list")) return refusedByModelCheck() ? 1 : 0;
         runner.writeOrmXml();
         // Nor when the model check failed: a model file that was not read leaves
         // everything it declares unproduced, and those files are not stale - the
@@ -975,13 +976,17 @@ public final class RulesGenRunner {
         }
         // A project's model check that refused the model: every file was
         // still generated, so all of its findings were said in this one run.
+        return refusedByModelCheck() ? 1 : 0;
+    }
+
+    /** Says the model check's failures, if any, and whether there were. */
+    private static boolean refusedByModelCheck() {
         java.util.List<String> refused = io.elasticore.base.model.pub.rules.ModelCheck.failures();
-        if (!refused.isEmpty()) {
-            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] the model check failed (" + refused.size() + ") - fix these and build again:");
-            for (String r : refused) io.elasticore.base.util.ConsoleLog.printWarn("  " + r);
-            return 1;
-        }
-        return 0;
+        if (refused.isEmpty()) return false;
+        io.elasticore.base.util.ConsoleLog.printWarn(
+                "[elcore3] the model check failed (" + refused.size() + ") - fix these and build again:");
+        for (String r : refused) io.elasticore.base.util.ConsoleLog.printWarn("  " + r);
+        return true;
     }
 
     /**
@@ -1284,6 +1289,21 @@ public final class RulesGenRunner {
      * that switch, and the server's rules say it. A second rewrite of a model
      * finds nothing left to do.
      */
+    /**
+     * referenceColumn names the column of a reference held by its id, which only the ddd and hexagonal
+     * rules make: the layered code keeps the relation an object, on JPA's own join column
+     * (customer_customer_id) - the column its DDL and the Ossie export name too. Said, not silently ignored.
+     */
+    private static void warnReferenceColumnUnused(ECoreModel model) {
+        String setting = String.valueOf(model.getConfig("referenceColumn")).trim();
+        if (!"short".equalsIgnoreCase(setting) && !"field".equalsIgnoreCase(setting)) return;
+        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                "[%s] referenceColumn: %s is read by architecture = 'ddd' and 'hexagonal' only - the selected rules"
+                        + " keep each @ManyToOne on JPA's join column (customer_customer_id for customer: Customer),"
+                        + " in the entity, the DDL and the Ossie export alike.",
+                model.getInternalDomainName(), setting));
+    }
+
     private void shapeReferences(List<ECoreModel> models) {
         if (!(v3 || kotlin || typescript)) return;
         ECoreModel saved = currentModel;
@@ -1292,6 +1312,7 @@ public final class RulesGenRunner {
                 if (model == null || model.getEntityModels() == null) continue;
                 currentModel = model;
                 if (shapes(io.elasticore.base.model.pub.rules.ReferencesById.class)) IdReferences.apply(model);
+                else if (!typescript) warnReferenceColumnUnused(model);
                 SpecFactory.prepareCounts(model);
                 SpecFactory.prepareHtml(model);
                 SpecFactory.prepareEncrypt(model);
@@ -1650,7 +1671,10 @@ public final class RulesGenRunner {
                                       ECoreModel model, boolean searchable,
                                       boolean searchDtoWritten) {
         String entityName = spec.getName();
-        if (model.getEntityModels().findByName(entityName) == null) return;
+        if (model.getEntityModels().findByName(entityName) == null) {
+            if (searchable) warnSearchedElsewhere(dto, entityName);
+            return;
+        }
 
         // Only a DTO that gets reverse list methods takes a name: a search
         // DTO maps through toSpec, so one declared first must not push the
@@ -1723,6 +1747,29 @@ public final class RulesGenRunner {
             failed++;
             notes.add(entityName + " mapper section: " + e);
         }
+    }
+
+    /**
+     * A @searchable DTO is searched in its entity's domain only: the mapper's toSpec is written
+     * where the entity is. Declared in another domain, it gets no toSpec and searches by nothing.
+     */
+    private static void warnSearchedElsewhere(io.elasticore.base.model.dto.DataTransfer dto, String entityName) {
+        String named = dto.getMetaInfo().getMetaAnnotationValue("searchable.entity");
+        if (named == null || named.isEmpty()) return;
+        String domain = dto.getIdentity().getDomainId();
+        String home = SpecFactory.domainOfEntity(entityName);
+        String dtoName = dto.getIdentity().getName();
+        io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(
+                home == null
+                        ? String.format(
+                                "[%s] %s @searchable(entity=%s): no domain declares an entity %s, so nothing is"
+                                        + " searched by %s (no toSpec is written).",
+                                domain, dtoName, entityName, entityName, dtoName)
+                        : String.format(
+                                "[%s] %s @searchable(entity=%s): %s is declared in domain '%s', and a search DTO is"
+                                        + " searched only in its entity's domain - no toSpec is written for it here."
+                                        + " Declare %s in domain '%s'.",
+                                domain, dtoName, entityName, entityName, home, dtoName, home));
     }
 
     /** The entity-to-DTO half of a mapper section, for a @searchResult DTO without a @template. */

@@ -875,8 +875,8 @@ enumeration:
 ```
 
 > **값은 필드에 맞아야 합니다.** `code: string(2)` 에 `CANCELLED: CXL,Cancelled` 를 적으면 빌드가 멈춥니다. `elcore`(2.x 코드)는
-> `enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2` 라고 하고, `elcore3`(3.0 코드; 3.0.261119 까지는 경고만)는
-> 같은 문장 앞에 `[elcore3]`, 뒤에 `Make field 'code' at least 3 characters long or shorten the value.` 를 붙여 알립니다.
+> `[shop] enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2` 라고 하고, `elcore3`(3.0 코드; 3.0.261119 까지는 경고만)는
+> 같은 문장 뒤에 `Make field 'code' at least 3 characters long or shorten the value.` 를 붙여 알립니다. 줄에 값을 빠뜨리면 상수 이름이 대신 들어가며, 그렇다고 알립니다: `field 'code' has no value on the line, so the constant's name 'CANCELLED' (length 9) stands in ...`.
 
 ---
 
@@ -899,6 +899,8 @@ repository:
         nativeQuery: false    # true 면 Native SQL
         pageable: false       # true 면 마지막 파라미터로 Pageable 추가
 ```
+
+> **`return:` 을 생략한 파생 쿼리**는 이름대로 답합니다: `find`·`read`·`get`·`query`·`search`·`stream`...`By` 는 `List<Entity>` (`pageable: true` 면 `Page<Entity>`), `countBy` 는 `long`, `existsBy` 는 `boolean`, `deleteBy`·`removeBy` 와 그 밖의 이름은 `void` (3.0.261119 까지는 모두 `void` 였습니다).
 
 > **주의**: `methods` 목록이 없는 항목(예: `ProductRepository:` 아래에 메서드를 키로 적는 형식)은
 > 읽히지 않습니다. 생성기가 경고를 출력하고 그 항목을 건너뜁니다.
