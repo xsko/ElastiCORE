@@ -101,6 +101,7 @@ public class DerivedQueryMethodTest {
         assertTrue(
                 repo.contains("List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);"),
                 repo);
+        assertTrue(repo.contains("Page<Stock> findByWarehouse(String warehouse, Pageable pageable);"), repo);
         assertEquals(1, count(repo, "@Query("), repo);
         assertFalse(repo.contains("Modifying"), repo);
     }
@@ -133,8 +134,89 @@ public class DerivedQueryMethodTest {
     }
 
     // ------------------------------------------------------------------
+    // A derived query without return: answers by its name - it was void for every name.
+
+    private static final String NO_RETURN = String.join(
+            "\n",
+            "entity:",
+            "  Stock:",
+            "    meta: entity @expose(20)",
+            "    fields:",
+            "      stockId: long @id @sequence",
+            "      warehouse: string(20)",
+            "      onHand: int",
+            "",
+            "repository:",
+            "  Stock:",
+            "    methods:",
+            "      - id: findByOnHandLessThan",
+            "        params:",
+            "          onHand: int",
+            "      - id: findByWarehouseOrderByOnHand",
+            "        params:",
+            "          warehouse: string",
+            "        pageable: true",
+            "      - id: countByWarehouse",
+            "        params:",
+            "          warehouse: string",
+            "      - id: existsByWarehouse",
+            "        params:",
+            "          warehouse: string",
+            "      - id: deleteByWarehouse",
+            "        params:",
+            "          warehouse: string",
+            "");
+
+    @Test
+    public void withoutReturnThe2xGeneratorAnswersByTheName() throws Exception {
+        for (String mode : new String[] {"jpa", "mongo"}) {
+            File project = project(mode, NO_RETURN);
+            extract(project);
+            String repo = found(project, "StockRepository.java");
+            assertTrue(repo.contains("List<Stock> findByOnHandLessThan(Integer onHand);"), mode + "\n" + repo);
+            assertTrue(
+                    repo.contains("Page<Stock> findByWarehouseOrderByOnHand(String warehouse, Pageable pageable);"),
+                    mode + "\n" + repo);
+            assertTrue(repo.contains("long countByWarehouse(String warehouse);"), mode + "\n" + repo);
+            assertTrue(repo.contains("boolean existsByWarehouse(String warehouse);"), mode + "\n" + repo);
+            assertTrue(repo.contains("void deleteByWarehouse(String warehouse);"), mode + "\n" + repo);
+            assertFalse(repo.contains("void findBy"), mode + "\n" + repo);
+        }
+    }
+
+    @Test
+    public void withoutReturnTheCompatibleOutputMatchesThe2xGenerator() throws Exception {
+        File legacy = project("jpa", NO_RETURN);
+        extract(legacy);
+        File compatible = project("jpa", NO_RETURN);
+        assertEquals(0, run(compatible, "layered", "java", "elasticore.rules.v2"));
+        assertEquals(
+                methods(found(legacy, "StockRepository.java")), methods(found(compatible, "StockRepository.java")));
+    }
+
+    @Test
+    public void withoutReturnTheV3RepositoriesAnswerByTheName() throws Exception {
+        File layered = project("jpa", NO_RETURN);
+        assertEquals(0, run(layered, "layered", "java", "elasticore.rules.v3"));
+        String repo = found(layered, "StockRepository.java");
+        assertTrue(repo.contains("List<Stock> findByOnHandLessThan(Integer onHand"), repo);
+        assertTrue(repo.contains("long countByWarehouse(String warehouse"), repo);
+        assertFalse(repo.contains("void findBy"), repo);
+
+        File kotlin = project("jpa", NO_RETURN);
+        assertEquals(0, run(kotlin, "layered", "kotlin", null));
+        String kt = found(kotlin, "StockRepository.kt");
+        assertTrue(kt.contains("fun findByOnHandLessThan(onHand: Int"), kt);
+        assertTrue(kt.contains("): List<Stock>"), kt);
+        assertTrue(kt.contains("fun existsByWarehouse(warehouse: String"), kt);
+    }
+    // ------------------------------------------------------------------
 
     private File project(String mode) throws IOException {
+        return project(mode, MODEL);
+    }
+
+    private File project(String mode, String model) throws IOException {
         File project = Files.createTempDirectory("elcore-derived").toFile();
         projects.add(project);
         File dir = new File(project, "src/main/resources/blueprint/inv");
@@ -158,7 +240,7 @@ public class DerivedQueryMethodTest {
                                 "    control: io.acme.inv.controller",
                                 "")
                         .getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(dir, "model/model.yml").toPath(), MODEL.getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(dir, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
         return project;
     }
 
