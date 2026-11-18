@@ -725,7 +725,7 @@ config:
 ---
 
 ## 6-2. 참조 컬럼 이름·관리자 역할 (3.0)
-> **동작:** `referenceColumn` 은 ddd, hexagonal; `adminRole` 은 v3, Kotlin · **안 됨:** `referenceColumn` 은 layered (생성 안 됨); `adminRole` 은 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
+> **동작:** `referenceColumn` 은 ddd, hexagonal; `adminRole` 은 v3, Kotlin · **안 됨:** `referenceColumn` 은 layered (경고); `adminRole` 은 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 ```yaml
 config:
