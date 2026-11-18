@@ -1138,7 +1138,7 @@ public class ServiceAccessRules implements CodeRules {
         if (name == null || name.isEmpty()) return "";
         for (FieldSpec ref : e.fields()) {
             if (ref.isList() || !ref.isEntityRef()) continue;
-            if (!name.startsWith(ref.name()) || ref.dslValueAny("joinby", "joinfield") != null) continue;
+            if (ref.dslValueAny("joinby", "joinfield") != null) continue;
             io.elasticore.base.model.entity.Entity target = entityNamed(ref.typeName());
             io.elasticore.base.model.entity.PkField key = target == null ? null : target.getPkField();
             io.elasticore.base.model.entity.Field pk =
@@ -1153,11 +1153,13 @@ public class ServiceAccessRules implements CodeRules {
             String column = declared != null && !declared.isEmpty()
                     ? declared
                     : io.elasticore.base.util.StringUtils.camelToSnake(ref.name()) + "_" + pk.getDbColumnName();
-            String owner = name.equals(ref.name())
-                    ? ref.name()
+            // The identity as ddd/hexagonal name it: customerId for customer and the key customerId.
+            String owner = pk.getName().startsWith(ref.name())
+                    ? pk.getName()
+                    : ref.name()
                             + Character.toUpperCase(pk.getName().charAt(0))
-                            + pk.getName().substring(1)
-                    : name;
+                            + pk.getName().substring(1);
+            if (!name.equals(ref.name()) && !name.equals(owner)) continue;
             return String.format(
                     " %s is the identity of %s: %s, which only architecture = 'ddd' and 'hexagonal' hold as a field."
                             + " Here, declare it on the column the relation joins on - %s: %s @db(%s) - and join the"

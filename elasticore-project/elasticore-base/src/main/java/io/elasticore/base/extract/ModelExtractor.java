@@ -749,6 +749,8 @@ public class ModelExtractor {
                 int dslWarnCount = ConsoleLog.getAccumulatedCount("DSL_WARN");
 
                 if ("valid".equals(mode)) {
+                    // A model file not read fails the validation as it fails the build.
+                    exitIfAnythingFailed();
                     int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
                     int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
                     int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
@@ -807,6 +809,8 @@ public class ModelExtractor {
                     ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                             "[WARN] DSL Validation Warnings (unmatched domain):", "  ", true);
 
+                    // A model file not read fails the validation as it fails the build.
+                    exitIfAnythingFailed();
                     int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
                     int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
                     int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
@@ -867,7 +871,6 @@ public class ModelExtractor {
             // second one that hid the first.
             if (e instanceof FileNotFoundException) {
                 ConsoleLog.printWarn("ElastiCORE extraction failed. file not found: " + e.getMessage());
-                ConsoleLog.printInfo("Please run './gradlew elcore' to start the initialization process.");
             } else {
                 e.printStackTrace();
             }

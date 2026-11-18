@@ -10,7 +10,9 @@
   item is the column's equality, `sp = sp.and((r,q,c) -> c.equal(r.get("status"),statusItem));` (Kotlin
   `c.equal(r.get<Any>("status"),statusItem!!)`). The search DTO keeps `statusItem`. The 2.x generator changes too,
   because its output failed at run time; a list field that is a collection of the entity, one reached through `@ref`,
-  and every other condition generate as before.
+  one against a to-one relation (`customer: Customer @ManyToOne`), and every other condition generate as before - the
+  same guard now keeps `in` against a to-one relation off the column path too (`search-in-value-list.md` took any
+  non-list field). Both generators leave a `List<Customer>` out of a search DTO anyway (`SearchInValueListTest`).
 - Checked: `SearchInValueListTest` (v3 layered and hexagonal Java, Kotlin, the 2.x generator, and the 2.x-compatible
   rule-engine output equal to the 2.x generator's `toSpec`) - the new cases fail without the fix. Run on H2, probes not
   committed: `paymentMethod: List<PaymentMethod> @search(eq)` added to `OrderSrchDTO` - the 2.x template

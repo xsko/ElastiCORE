@@ -1297,10 +1297,14 @@ public final class RulesGenRunner {
     private static void warnReferenceColumnUnused(ECoreModel model) {
         String setting = String.valueOf(model.getConfig("referenceColumn")).trim();
         if (!"short".equalsIgnoreCase(setting) && !"field".equalsIgnoreCase(setting)) return;
+        // Only a JPA domain has join columns to name.
+        if (!java.util.Arrays.asList(
+                        String.valueOf(model.getConfig("mode", "jpa")).split("\\s*,\\s*"))
+                .contains("jpa")) return;
         io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                 "[%s] referenceColumn: %s is read by architecture = 'ddd' and 'hexagonal' only - the selected rules"
-                        + " keep each @ManyToOne on JPA's join column (customer_customer_id for customer: Customer),"
-                        + " in the entity, the DDL and the Ossie export alike.",
+                        + " keep each @ManyToOne on JPA's default join column, the field and the key's column"
+                        + " (customer_customer_id for customer: Customer), in the entity, the DDL and the Ossie export alike.",
                 model.getInternalDomainName(), setting));
     }
 
@@ -1757,6 +1761,8 @@ public final class RulesGenRunner {
         if (named == null || named.isEmpty()) return;
         String domain = dto.getIdentity().getDomainId();
         String home = SpecFactory.domainOfEntity(entityName);
+        // Another model of the same domain: not this warning's case.
+        if (home != null && home.equals(domain)) return;
         String dtoName = dto.getIdentity().getName();
         io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(
                 home == null

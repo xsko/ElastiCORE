@@ -197,6 +197,34 @@ public class SearchInValueListTest {
         return project;
     }
 
+    // ------------------------------------------------------------------
+    // A list against a to-one relation (customer: Customer @ManyToOne) is not a column of
+    // values: no column equality for it (both generators leave a list of entities out of a search DTO).
+
+    private static final String RELATION_MODEL = MODEL.replace(
+                    "      status: OrderStatus\n", "      status: OrderStatus\n      customer: Customer @ManyToOne\n")
+            .replace(
+                    "dto:\n",
+                    "  Customer:\n    meta: entity\n    fields:\n      customerId: long @id @sequence\n      name: string(20)\n\ndto:\n")
+            .replace(
+                    "      status: List<OrderStatus> @search(in)\n",
+                    "      status: List<OrderStatus> @search(in)\n      customer: List<Customer> @search(eq)\n");
+
+    @Test
+    public void aListAgainstARelationIsNotAColumnOfValues() throws Exception {
+        File legacy = project(RELATION_MODEL);
+        extract(legacy);
+        String mapper = toSpec(found(legacy, "ShopMapper.java"));
+        assertFalse(mapper.contains("c.equal(r.get(\"customer\")"), mapper);
+        File compatible = project(RELATION_MODEL);
+        assertEquals(0, run(compatible, "layered", "java", "elasticore.rules.v2"));
+        assertEquals(mapper, toSpec(found(compatible, "ShopMapper.java")));
+        File v3 = project(RELATION_MODEL);
+        assertEquals(0, run(v3, "layered", "java", "elasticore.rules.v3"));
+        String v3Mapper = toSpec(found(v3, "ShopMapper.java"));
+        assertFalse(v3Mapper.contains("c.equal(r.get(\"customer\")"), v3Mapper);
+    }
+
     private static void assertSearchesTheColumn(String mapper) {
         assertTrue(mapper.contains(STATUS_IN), mapper);
         assertFalse(mapper.contains("root.join(\"status\")"), mapper);

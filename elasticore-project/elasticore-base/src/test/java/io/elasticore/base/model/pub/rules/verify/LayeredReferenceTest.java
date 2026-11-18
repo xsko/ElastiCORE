@@ -55,7 +55,8 @@ public class LayeredReferenceTest {
             + " Customer @ManyToOne @joinBy(customerId); then @owner(customerId).";
 
     private static final String COLUMN_UNUSED = "[shop] referenceColumn: short is read by architecture = 'ddd' and"
-            + " 'hexagonal' only - the selected rules keep each @ManyToOne on JPA's join column (customer_customer_id"
+            + " 'hexagonal' only - the selected rules keep each @ManyToOne on JPA's default join column, the field and the"
+            + " key's column (customer_customer_id"
             + " for customer: Customer), in the entity, the DDL and the Ossie export alike.";
 
     private final List<File> projects = new ArrayList<File>();
