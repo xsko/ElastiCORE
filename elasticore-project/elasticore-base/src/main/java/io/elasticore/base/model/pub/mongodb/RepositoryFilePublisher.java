@@ -110,7 +110,8 @@ public class RepositoryFilePublisher extends SrcFilePublisher {
             //if(method.getName()==null) continue;
             if (!method.isEnable()) continue;
 
-            if(!method.getQueryInfo().isSelectQuery()) {
+            // A method without query: is a derived query, read from its name.
+            if (method.getQueryInfo() != null && !method.getQueryInfo().isSelectQuery()) {
                 p.add("@org.springframework.data.jpa.repository.Modifying");
             }
 
