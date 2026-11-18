@@ -98,6 +98,17 @@ public class EncryptConverterTest {
     }
 
     @Test
+    public void withoutTheIndexKeyAnApplicationWithAnEncryptedFieldDoesNotStart() {
+        FieldCrypto.markUsed();
+        runner.withPropertyValues(FieldCrypto.KEY + "=" + FieldCryptoTest.newKey())
+                .run(context -> {
+                    Throwable failure = context.getStartupFailure();
+                    assertTrue(failure != null, "started without the index key");
+                    assertTrue(messages(failure).contains("elasticore.crypto.index-key is not set"), messages(failure));
+                });
+    }
+
+    @Test
     public void withoutAKeyAnApplicationWithoutOneStartsAsBefore() {
         runner.run(context -> assertNull(context.getStartupFailure()));
     }

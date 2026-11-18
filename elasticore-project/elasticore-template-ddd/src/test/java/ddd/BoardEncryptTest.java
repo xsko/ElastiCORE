@@ -67,7 +67,7 @@ class BoardEncryptTest {
         assertThat(phone).startsWith("v1:").doesNotContain("1234").doesNotContain("5678");
         assertThat(email).startsWith("v1:").doesNotContain("example");
         assertThat(FieldCrypto.current().decrypt(phone)).isEqualTo("010-1234-5678");
-        assertThat(row.get("PHONE_BIDX")).isEqualTo(Bidx.of("01012345678"));
+        assertThat(row.get("PHONE_BIDX")).isEqualTo(Bidx.ofDigits("01012345678"));
 
         JsonNode read = json.readTree(mvc.perform(get(SUBSCRIBERS + "/" + id)).andReturn().getResponse()
                 .getContentAsString());
@@ -103,5 +103,29 @@ class BoardEncryptTest {
         }
         JsonNode none = send(post(SUBSCRIBERS + "/search"), json.createObjectNode().put("phone", "010-9876-5439"));
         assertThat(none.path("content").size()).isZero();
+    }
+
+    /**
+     * The move command's parameter is kept by the aggregate's own method, past the service's save path: the index is
+     * written when JPA writes the row (BlindIndexListener), so the new phone finds it and the old one does not.
+     */
+    @Test
+    @DisplayName("a command that sets the phone re-indexes it")
+    void aCommandReIndexes() throws Exception {
+        long id = create("mover", "010-5555-1111", null);
+        String before = (String) row(id).get("PHONE");
+
+        JsonNode moved = send(post(SUBSCRIBERS + "/" + id + "/move"), json.createObjectNode().put("phone", "010-5555-2222"));
+        assertThat(moved.path("status").asText()).isEqualTo("MOV");
+        assertThat(moved.path("phone").asText()).isEqualTo("010-5555-2222");
+
+        Map<String, Object> row = row(id);
+        assertThat(row.get("PHONE")).isNotEqualTo(before);
+        assertThat(FieldCrypto.current().decrypt((String) row.get("PHONE"))).isEqualTo("010-5555-2222");
+        assertThat(row.get("PHONE_BIDX")).isEqualTo(Bidx.ofDigits("01055552222"));
+        assertThat(send(post(SUBSCRIBERS + "/search"), json.createObjectNode().put("phone", "01055552222"))
+                .path("content").findValuesAsText("subscriberId")).containsExactly(String.valueOf(id));
+        assertThat(send(post(SUBSCRIBERS + "/search"), json.createObjectNode().put("phone", "010-5555-1111"))
+                .path("content").size()).isZero();
     }
 }

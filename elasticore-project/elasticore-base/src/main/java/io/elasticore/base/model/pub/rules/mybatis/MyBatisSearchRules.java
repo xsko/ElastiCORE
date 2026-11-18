@@ -74,7 +74,13 @@ public class MyBatisSearchRules implements CodeRules {
             boolean own = f.hasDsl(EncryptRules.ENCRYPT);
             FieldSpec index = EncryptRules.indexOf(e, encrypted.name());
             if (EncryptRules.equality(condition) && index != null) {
-                c.line(BLOCK, "bidx\t%s\t%s\t%s", index.name(), prop, "String");
+                c.line(
+                        BLOCK,
+                        "%s\t%s\t%s\t%s",
+                        index.hasDsl(EncryptRules.INDEX_DIGITS) ? "bidxdigits" : "bidx",
+                        index.name(),
+                        prop,
+                        "String");
             } else if (!own) {
                 // The entity's own @search was checked with the model (SpecFactory.prepareEncrypt).
                 io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(

@@ -184,9 +184,6 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 // An html field a parameter of the command set is cleaned as on every write.
                 if (c.varValue("htmlAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                // An encrypted field a parameter set gets its blind index as on every write.
-                if (c.varValue("encryptAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("encryptAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s)%n", mapper, open, repo, close))
                  .append("    }");
@@ -207,9 +204,6 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 // An html field a parameter of the command set is cleaned as on every write.
                 if (c.varValue("htmlAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                // An encrypted field a parameter set gets its blind index as on every write.
-                if (c.varValue("encryptAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("encryptAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s);%n", mapper, open, repo, close))
                  .append("    }");

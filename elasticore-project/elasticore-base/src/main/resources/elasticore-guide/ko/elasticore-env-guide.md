@@ -515,8 +515,8 @@ elasticore:
     index-key: ${CRYPTO_INDEX_KEY}   # another 32 bytes: the blind index of @encrypt @search(eq)
     key-version: v1                  # the prefix of what the key writes; v1 when unsaid
 ```
-- 암호화 필드가 있는 애플리케이션은 `elasticore.crypto.key` 없이 시작하지 않는다(메시지가 이름을 말함); 32바이트 base64 가 아닌 키는 어떤 시작도 멈춘다; `elasticore.crypto.index-key` 가 없으면 블라인드 인덱스의 첫 쓰기나 검색이 그 이름을 말하며 실패한다.
-- 키 교체: 새 키를 만들어 `elasticore.crypto.key` 에 두고 `elasticore.crypto.key-version=v2` 로, 옛 키는 `elasticore.crypto.keys.v1` 에 둔다. 행은 접두어가 말하는 키로 읽고, 그 컬럼의 모든 쓰기(새 행, 바뀐 값)는 `v2:` 가 된다; 바뀌지 않은 행은 `v1:` 그대로다(JPA 는 바뀐 것만 쓴다). 모든 행을 옮기려면 이미 있는 행처럼 일회성 작업을 돌린다(어노테이션 가이드, `@encrypt`): 값마다 `decrypt` 해 `encrypt(v)` 를 다시 쓰고, `v1:` 로 시작하는 행이 없어지면 `keys.v1` 을 뺀다. 인덱스 키는 이렇게 바꾸지 않는다: 새 인덱스 키는 모든 `_bidx` 컬럼을 다시 써야 한다(`Bidx.of`).
+- 암호화 필드가 있는 애플리케이션은 `elasticore.crypto.key` 와 `elasticore.crypto.index-key` 없이 시작하지 않는다(메시지가 빠진 것의 이름을 말함); 32바이트 base64 가 아닌 키, 키와 같은 인덱스 키, v1 ~ v9 가 아닌 키 버전은 어떤 시작도 멈춘다.
+- 키 교체: 새 키를 만들어 `elasticore.crypto.key` 에 두고 `elasticore.crypto.key-version=v2` 로, 옛 키는 `elasticore.crypto.keys.v1` 에 둔다. 행은 접두어가 말하는 키로 읽고, 그 컬럼의 모든 쓰기(새 행, 바뀐 값)는 `v2:` 가 된다; 쓰지 않은 행은 `v1:` 그대로이고, JPA 에서 다른 컬럼만 바뀐 행도 그렇다(생성된 엔티티는 `@DynamicUpdate`: 바뀐 컬럼만 쓴다); MyBatis 는 모든 컬럼을 쓰므로 그 행을 수정하면 `v2:` 로 다시 쓰인다. 모든 행을 옮기려면 이미 있는 행처럼 일회성 작업을 돌린다(어노테이션 가이드, `@encrypt`): 값마다 `decrypt` 해 `encrypt(v)` 를 다시 쓰고, `v1:` 로 시작하는 행이 없어지면 `keys.v1` 을 뺀다. 인덱스 키는 이렇게 바꾸지 않는다: 새 인덱스 키는 모든 `_bidx` 컬럼을 다시 써야 한다(`Bidx.of`, `Bidx.ofDigits`).
 - env 별칭은 암호화만 한다: 그 컬럼을 같음으로 검색하면 아무것도 찾지 못한다(매번 글자가 다름). 검색은 인덱스를 쓰는 `@encrypt @search(eq)` 로 한다.
 
 ---

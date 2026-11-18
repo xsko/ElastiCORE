@@ -51,7 +51,8 @@ public final class FieldCrypto {
     private static final int IV_BYTES = 12;
     private static final int TAG_BITS = 128;
     private static final int INDEX_BYTES = 16;
-    private static final Pattern VERSION = Pattern.compile("v[0-9]{1,3}");
+    /** v1 to v9: the column length leaves room for a one-digit version (EncryptRules.columnLength). */
+    private static final Pattern VERSION = Pattern.compile("v[1-9]");
 
     private static volatile FieldCrypto current;
     private static volatile boolean used;
@@ -78,10 +79,14 @@ public final class FieldCrypto {
         String v = properties.apply(KEY_VERSION);
         this.version = v == null || v.trim().isEmpty() ? "v1" : v.trim();
         if (!VERSION.matcher(version).matches()) {
-            throw new IllegalStateException(KEY_VERSION + "=" + version + " - a key version is v1, v2, ...");
+            throw new IllegalStateException(KEY_VERSION + "=" + version + " - a key version is v1 to v9");
         }
         this.key = aes(KEY, properties.apply(KEY));
         this.indexKey = hmac(INDEX_KEY, properties.apply(INDEX_KEY));
+        if (key != null && indexKey != null && java.util.Arrays.equals(key.getEncoded(), indexKey.getEncoded())) {
+            throw new IllegalStateException(INDEX_KEY + " is the same as " + KEY
+                    + " - the blind index needs a key of its" + " own (openssl rand -base64 32)");
+        }
     }
 
     /** Makes this the application's: the converter, the type handler and Bidx use it from now on. */
@@ -125,6 +130,17 @@ public final class FieldCrypto {
         if (key == null) throw new IllegalStateException(missing(KEY));
     }
 
+    /**
+     * Stops where either key is missing: what the start of an application with an encrypted field asks, so a blind
+     * index does not fail on its first write instead.
+     *
+     * @throws IllegalStateException without {@link #KEY} or {@link #INDEX_KEY}
+     */
+    public void requireKeys() {
+        requireKey();
+        if (indexKey == null) throw new IllegalStateException(missing(INDEX_KEY));
+    }
+
     /** The version every write is prefixed with. */
     public String version() {
         return version;
@@ -139,6 +155,8 @@ public final class FieldCrypto {
         try {
             Cipher cipher = Cipher.getInstance(CIPHER);
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
+            // The prefix is bound to the text: a v1 text relabelled v2 does not decrypt.
+            cipher.updateAAD(version.getBytes(StandardCharsets.US_ASCII));
             byte[] sealed = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
             ByteBuffer out = ByteBuffer.allocate(iv.length + sealed.length);
             out.put(iv).put(sealed);
@@ -175,6 +193,7 @@ public final class FieldCrypto {
         try {
             Cipher cipher = Cipher.getInstance(CIPHER);
             cipher.init(Cipher.DECRYPT_MODE, k, new GCMParameterSpec(TAG_BITS, raw, 0, IV_BYTES));
+            cipher.updateAAD(v.getBytes(StandardCharsets.US_ASCII));
             byte[] plain = cipher.doFinal(raw, IV_BYTES, raw.length - IV_BYTES);
             return new String(plain, StandardCharsets.UTF_8);
         } catch (javax.crypto.AEADBadTagException ex) {

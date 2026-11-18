@@ -149,6 +149,7 @@ public class ${className} {
         ${entityClassName} entity = ${mapperName}.toEntity(dto);${createVersionReset}${createIdReset}
         ${deriveBeforeSave}
         beforeSave(entity, dto);${stampCreate}
+        ${encryptBeforeWrite}
         ${cmdRef}.insert(entity);${membersCreate}
         return ${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)));
     }
@@ -179,6 +180,7 @@ public class ${className} {
      * a row another request changed first is refused (409).
      */
     protected void write(${entityClassName} entity) {${stampUpdate}
+        ${encryptBeforeWrite}
         ${writeRow}
     }
 

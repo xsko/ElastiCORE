@@ -55,8 +55,9 @@ entity:
       contentText: text @search(like)
       authorName: string(100)! @search(like)
       authorEmail: string(100) @search(eq)
-      # Kept encrypted in its column (v1:...), found by an equal phone however it is written (its blind index).
-      authorPhone: string(20) @encrypt @s(eq)
+      # Kept encrypted in its column (v1:...), found by an equal phone however its dashes are written
+      # (@encrypt(digits): the blind index is taken of the digits).
+      authorPhone: string(20) @encrypt(digits) @s(eq)
       approved: boolean @default(false) @search(eq)
       article: Article @ManyToOne @fetchjoin @onDelete(cascade)
       parentComment: Comment @ManyToOne @db(test_id) @onDelete(cascade)

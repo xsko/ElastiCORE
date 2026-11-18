@@ -43,7 +43,7 @@ public class ElastiCoreCryptoAutoConfiguration {
 
         @Override
         public void afterSingletonsInstantiated() {
-            if (FieldCrypto.used()) FieldCrypto.current().requireKey();
+            if (FieldCrypto.used()) FieldCrypto.current().requireKeys();
         }
     }
 }

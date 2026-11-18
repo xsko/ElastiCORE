@@ -11,7 +11,11 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** The blind index: one value however its separators are written, 22 characters, the index key's own. */
+/**
+ * The blind index: by default the value trimmed and nothing else, so values that differ stay apart; with
+ * {@code @encrypt(digits)} a number written with or without its separators is one value. 22 characters, the index
+ * key's own.
+ */
 public class BidxTest {
 
     @AfterEach
@@ -20,25 +24,41 @@ public class BidxTest {
     }
 
     @Test
-    public void aNumberWrittenWithOrWithoutSeparatorsIsOneValue() {
-        assertEquals("01012345678", Bidx.normalize("010-1234-5678"));
-        assertEquals("01012345678", Bidx.normalize(" 010 1234 5678 "));
-        assertEquals("01012345678", Bidx.normalize("010.1234.5678"));
-        assertEquals("900101-1234567".replace("-", ""), Bidx.normalize("900101-1234567"));
-        // Anything else is only trimmed: a mail address keeps its dot and dash.
-        assertEquals("ho-gil.dong@example.com", Bidx.normalize("  ho-gil.dong@example.com "));
-        assertEquals("ABC-123", Bidx.normalize("ABC-123"));
-        assertEquals("- .", Bidx.normalize(" - . "));
+    public void byDefaultValuesThatDifferStayApart() {
+        assertEquals("010-1234-5678", Bidx.normalize(" 010-1234-5678 "));
         assertNull(Bidx.normalize(null));
 
         FieldCrypto.install(FieldCrypto.of(FieldCryptoTest.keys()::get));
-        String index = Bidx.of("010-1234-5678");
+        String index = Bidx.of("123-45-678");
         assertEquals(22, index.length(), index);
         assertTrue(index.matches("[A-Za-z0-9_-]{22}"), index);
-        assertEquals(index, Bidx.of("01012345678"));
-        assertEquals(index, Bidx.of(" 010 1234 5678"));
-        assertNotEquals(index, Bidx.of("01012345679"));
+        assertEquals(index, Bidx.of("  123-45-678 "));
+        // Another person's number, another address, another amount: never the same index.
+        assertNotEquals(index, Bidx.of("12-345-678"));
+        assertNotEquals(Bidx.of("10.11.1.1"), Bidx.of("101.1.1.1"));
+        assertNotEquals(Bidx.of("1.5"), Bidx.of("15"));
+        assertNotEquals(Bidx.of("010-1234-5678"), Bidx.of("01012345678"));
         assertNull(Bidx.of(null));
+    }
+
+    @Test
+    public void withDigitsANumberWrittenWithOrWithoutSeparatorsIsOneValue() {
+        assertEquals("01012345678", Bidx.digits("010-1234-5678"));
+        assertEquals("01012345678", Bidx.digits(" 010 1234 5678 "));
+        assertEquals("01012345678", Bidx.digits("010.1234.5678"));
+        // Anything else is only trimmed: a mail address keeps its dot and dash.
+        assertEquals("ho-gil.dong@example.com", Bidx.digits("  ho-gil.dong@example.com "));
+        assertEquals("ABC-123", Bidx.digits("ABC-123"));
+        assertEquals("- .", Bidx.digits(" - . "));
+        assertNull(Bidx.digits(null));
+
+        FieldCrypto.install(FieldCrypto.of(FieldCryptoTest.keys()::get));
+        String index = Bidx.ofDigits("010-1234-5678");
+        assertEquals(index, Bidx.ofDigits("01012345678"));
+        assertEquals(index, Bidx.ofDigits(" 010 1234 5678"));
+        assertEquals(index, Bidx.of("01012345678"));
+        assertNotEquals(index, Bidx.ofDigits("01012345679"));
+        assertNull(Bidx.ofDigits(null));
     }
 
     @Test

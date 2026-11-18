@@ -351,7 +351,7 @@ public abstract class ShopApi {
         assertFalse(stored.contains(serial.substring(4, 8)), stored);
         assertNotEquals(stored, jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, twin));
         assertEquals(dashed, io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(stored));
-        assertEquals(io.elasticore.springboot3.crypto.Bidx.of(serial),
+        assertEquals(io.elasticore.springboot3.crypto.Bidx.ofDigits(serial),
                 jdbc.queryForObject("SELECT serial_no_bidx FROM gadget WHERE gadget_id = ?", String.class, id));
 
         JsonNode read = body(perform(get(API + "/gadget/" + id), 200));
@@ -365,6 +365,12 @@ public abstract class ShopApi {
                 .content("{\"gadgetId\":" + twin + ",\"name\":\"Sealed twin\",\"serialNo\":\"" + serial + "9\"}"), 200);
         assertEquals(1, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
         assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "9\"}"));
+
+        // PUT /batch writes each row through update(): the index follows there too.
+        perform(put(API + "/gadget/batch").contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"gadgetId\":" + id + ",\"name\":\"Sealed\",\"serialNo\":\"" + serial + "8\"}]"), 200);
+        assertEquals(0, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "8\"}"));
     }
 
     // ---- helpers ------------------------------------------------------------------

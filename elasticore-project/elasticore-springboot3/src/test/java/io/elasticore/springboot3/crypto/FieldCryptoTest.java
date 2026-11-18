@@ -78,6 +78,45 @@ public class FieldCryptoTest {
     }
 
     @Test
+    public void aRelabelledVersionDoesNotDecrypt() {
+        // The same key known as v1 and as v2: a v1 text renamed v2 fails, as the version is bound to the text.
+        Map<String, String> p = keys();
+        p.put(FieldCrypto.KEY_VERSION, "v2");
+        p.put(FieldCrypto.KEYS + "v1", p.get(FieldCrypto.KEY));
+        FieldCrypto c = crypto(p);
+        String v2 = c.encrypt("01012345678");
+        assertEquals("01012345678", c.decrypt(v2));
+        assertThrows(IllegalArgumentException.class, () -> c.decrypt("v1:" + v2.substring(3)));
+    }
+
+    @Test
+    public void theIndexKeyIsAKeyOfItsOwnAndBothAreRequiredAtTheStart() {
+        Map<String, String> p = keys();
+        p.put(FieldCrypto.INDEX_KEY, p.get(FieldCrypto.KEY));
+        IllegalStateException same = assertThrows(IllegalStateException.class, () -> crypto(p));
+        assertTrue(same.getMessage().contains("elasticore.crypto.index-key is the same as"), same.getMessage());
+
+        Map<String, String> noIndex = keys();
+        noIndex.remove(FieldCrypto.INDEX_KEY);
+        FieldCrypto c = crypto(noIndex);
+        c.requireKey();
+        IllegalStateException ex = assertThrows(IllegalStateException.class, c::requireKeys);
+        assertTrue(ex.getMessage().startsWith("elasticore.crypto.index-key is not set"), ex.getMessage());
+        crypto(keys()).requireKeys();
+    }
+
+    @Test
+    public void aKeyVersionIsOneDigit() {
+        for (String bad : new String[] {"v0", "v10", "v999", "2"}) {
+            Map<String, String> p = keys();
+            p.put(FieldCrypto.KEY_VERSION, bad);
+            assertThrows(IllegalStateException.class, () -> crypto(p), bad);
+        }
+        FieldCrypto c = crypto(keys());
+        assertThrows(IllegalArgumentException.class, () -> c.decrypt("v10:AAAA"));
+    }
+
+    @Test
     public void aPlainValueIsNotTakenForAnEncryptedOne() {
         FieldCrypto c = crypto(keys());
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> c.decrypt("01012345678"));

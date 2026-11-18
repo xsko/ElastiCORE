@@ -25,3 +25,7 @@ on the database `ELASTICORE_IT_*_URL` names, from that database's schema (CI run
 ```
 
 The generated trees are not committed (`.gitignore`); the blueprint and the tests are.
+
+The shop's `Gadget.serialNo` is `@encrypt(digits)`: the keys it needs (`elasticore.crypto.key`, `elasticore.crypto.index-key`)
+are made fresh for each test run by `TestCryptoKeys` (`src/test/resources/META-INF/spring.factories`); none is in the
+repository. The module has no application of its own to start - an application sets both keys itself, or does not start.

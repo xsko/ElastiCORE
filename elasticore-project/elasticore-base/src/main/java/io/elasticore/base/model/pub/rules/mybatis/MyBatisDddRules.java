@@ -122,12 +122,19 @@ public class MyBatisDddRules implements CodeRules {
                     String check = String.format("new %s().check((%s) this);", listener, root);
                     hooks.computeIfAbsent("beforeInsert", k -> new ArrayList<String>()).add(0, check);
                     hooks.computeIfAbsent("beforeUpdate", k -> new ArrayList<String>()).add(0, check);
-                } else if (!listener.equals("AuditingEntityListener")) {
+                } else if (!listener.equals("AuditingEntityListener")
+                        // The blind index listener's moment is added below, from the fields themselves.
+                        && !listener.equals(io.elasticore.base.model.pub.rules.base.EncryptRules.LISTENER_NAME)) {
                     io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
                             "[%s] %s: the entity listener %s is JPA's to call; under mode: mybatis nothing calls it",
                             e.domainClassName(), root, listener));
                 }
             }
+        }
+        if (!io.elasticore.base.model.pub.rules.base.EncryptRules.indexes(e).isEmpty()) {
+            // The blind indexes, written just before the row is (EncryptRules), as JPA's listener does.
+            hooks.computeIfAbsent("beforeInsert", k -> new ArrayList<String>()).add("indexEncrypted();");
+            hooks.computeIfAbsent("beforeUpdate", k -> new ArrayList<String>()).add("indexEncrypted();");
         }
         if (hooks.isEmpty()) return;
 

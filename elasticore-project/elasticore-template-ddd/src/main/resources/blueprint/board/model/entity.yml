@@ -17,6 +17,15 @@ enumeration:
       DRAFT:     DRF, Draft
       PUBLISHED: PUB, Published
 
+  SubscriberStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      ACTIVE: ACT, Active
+      MOVED:  MOV, Moved
+
 entity:
   # Roots of their own, each pointing to the post by its id.
   Post:
@@ -79,13 +88,23 @@ entity:
   # A reader who gets the board's notices. The phone and the e-mail are kept encrypted in their columns
   # (@encrypt: v1:... in the database, the value in the API); the phone is found by an equal one however it is
   # written (@s(eq): its blind index, phone_bidx). The keys are the elasticore.crypto.* properties.
+  # @encrypt(digits): 010-1234-5678 and 01012345678 are one phone to the search. A subscriber who moves
+  # gives a new phone through the command, and the index follows it when the row is written.
   Subscriber:
     meta: entity @root @expose(20)
     fields:
       subscriberId: long @id @sequence
       nickname: string(50)! @search(like)
-      phone: string(20) @encrypt @s(eq)
+      phone: string(20) @encrypt(digits) @s(eq)
       email: string(100) @encrypt
+      status: SubscriberStatus
+    states:
+      status:
+        initial: ACTIVE
+        move: ACTIVE -> MOVED
+    commands:
+      move:
+        phone: string(20)
 
   # A bookmark outlives its post: the reference is cleared.
   Bookmark:

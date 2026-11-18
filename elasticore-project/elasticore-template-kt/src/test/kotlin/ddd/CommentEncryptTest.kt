@@ -62,7 +62,7 @@ class CommentEncryptTest {
         val column = stored(id, "author_phone")!!
         assertThat(column).startsWith("v1:").doesNotContain("4321")
         assertThat(FieldCrypto.current().decrypt(column)).isEqualTo("010-4321-8765")
-        assertThat(stored(id, "author_phone_bidx")).isEqualTo(Bidx.of("01043218765"))
+        assertThat(stored(id, "author_phone_bidx")).isEqualTo(Bidx.ofDigits("01043218765"))
 
         val read = json.readTree(mvc.perform(get("$comments/$id")).andReturn().response.contentAsString)
         assertThat(read.path("authorPhone").asText()).isEqualTo("010-4321-8765")
@@ -76,5 +76,44 @@ class CommentEncryptTest {
         assertThat(found("010-4321-8765")).isEmpty()
         assertThat(found("01043210000")).containsExactly(id.toString())
         assertThat(stored(id, "author_phone")).isNotEqualTo(column)
+    }
+
+    @Autowired lateinit var service: io.elasticore.blueprint.domain.content.service.CommentService
+
+    private fun create(name: String, phone: String): Long =
+        send(post(comments), """{"content":"<p>x</p>","authorName":"$name","authorPhone":"$phone"}""").path("commentId").asLong()
+
+    /** A PUT without the phone keeps it (skip-null): the column and the index are left as they were. */
+    @Test
+    fun aPartialUpdateKeepsThePhoneAndItsIndex() {
+        val id = create("partial-${System.nanoTime()}", "010-7000-0001")
+        val column = stored(id, "author_phone")
+        send(put(comments), """{"commentId":$id,"content":"<p>x</p>","authorName":"renamed"}""")
+        assertThat(stored(id, "author_phone")).isEqualTo(column)
+        assertThat(stored(id, "author_phone_bidx")).isEqualTo(Bidx.ofDigits("01070000001"))
+        assertThat(found("01070000001")).containsExactly(id.toString())
+    }
+
+    /** PUT /batch and an update by condition write each row through the same moment: the index follows. */
+    @Test
+    fun aBatchAndAnUpdateByConditionReIndex() {
+        val a = create("batch-${System.nanoTime()}", "010-7100-0001")
+        val b = create("batch-${System.nanoTime()}", "010-7100-0002")
+        mvc.perform(put("$comments/batch").contentType(MediaType.APPLICATION_JSON).content(
+            """[{"commentId":$a,"content":"<p>x</p>","authorName":"b","authorPhone":"010-7100-1001"},{"commentId":$b,"content":"<p>x</p>","authorName":"b","authorPhone":"010-7100-1002"}]"""))
+            .andReturn().response.let { assertThat(it.status).`as`(it.contentAsString).isEqualTo(200) }
+        assertThat(found("01071001001")).containsExactly(a.toString())
+        assertThat(found("01071001002")).containsExactly(b.toString())
+        assertThat(found("01071000001")).isEmpty()
+
+        val name = "cond-${System.nanoTime()}"
+        val c = create(name, "010-7200-0001")
+        val changed = service.updateBySpecification(
+            io.elasticore.blueprint.domain.content.dto.CommentDTO().apply { authorPhone = "010-7200-9999" },
+            io.elasticore.blueprint.domain.content.dto.CommentSrchDTO().apply { authorName = name })
+        assertThat(changed).isEqualTo(1)
+        assertThat(found("01072009999")).containsExactly(c.toString())
+        assertThat(found("01072000001")).isEmpty()
+        assertThat(FieldCrypto.current().decrypt(stored(c, "author_phone"))).isEqualTo("010-7200-9999")
     }
 }

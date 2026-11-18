@@ -38,6 +38,8 @@ public class MyBatisServiceFileRules implements CodeRules {
         for (String slot : ServiceAccessRules.SLOTS) c.slot(slot);
         // Filled where the row is cleaned before it is written (an html field); empty otherwise.
         c.slot("deriveBeforeSave");
+        // Filled where the row has blind indexes to write just before its statement (@encrypt); empty otherwise.
+        c.slot("encryptBeforeWrite");
         for (String inline : ServiceAccessRules.INLINE) c.var(inline, "");
 
         String searchResultDto = e.searchResultDtoName();

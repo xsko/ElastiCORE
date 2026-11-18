@@ -59,6 +59,7 @@ CREATE TABLE brd_subscriber (
     nickname VARCHAR2(50 CHAR) NOT NULL,
     phone VARCHAR2(147 CHAR),
     email VARCHAR2(575 CHAR),
+    status VARCHAR2(3 CHAR),
     phone_bidx VARCHAR2(22 CHAR),
     PRIMARY KEY (subscriber_id)
 );

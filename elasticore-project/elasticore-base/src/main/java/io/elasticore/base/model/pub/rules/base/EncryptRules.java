@@ -31,9 +31,10 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * ({@link #columnLength}), in the entity and in the DDL.
  *
  * <p>An equality search compares a blind index instead (SpecFactory.prepareEncrypt adds it: {@code phoneBidx},
- * column {@code phone_bidx}, indexed): the entity's {@code indexEncrypted()} writes it, the service calls it on every
- * write of the row as it cleans an html field (HtmlRules), and the search compares it with {@code Bidx.of(value)}
- * (MapperSpecRules, MyBatisSearchRules). Any other search of an encrypted column is refused there.
+ * column {@code phone_bidx}, indexed): the entity's {@code indexEncrypted()} writes it just before the row is written
+ * (a JPA listener, the MyBatis root's Lifecycle, or the layered MyBatis service after beforeSave), and the search
+ * compares it with {@code Bidx.of(value)} - {@code Bidx.ofDigits} for {@code @encrypt(digits)} - (MapperSpecRules,
+ * MyBatisSearchRules). Any other search of an encrypted column is refused there and in SpecFactory.
  *
  * <p>v3 and Kotlin over JPA, v3 Java over MyBatis. MongoDB and the 2.x-compatible output stop the build, and the 2.x
  * generator on the loader's DSL warning.
@@ -52,8 +53,33 @@ public class EncryptRules implements CodeRules {
     public static final String CONVERTER = "io.elasticore.springboot3.crypto.EncryptConverter";
     public static final String HANDLER = "io.elasticore.springboot3.crypto.EncryptTypeHandler";
     public static final String BIDX = "io.elasticore.springboot3.crypto.Bidx";
+    public static final String LISTENER = "io.elasticore.springboot3.crypto.BlindIndexListener";
+    public static final String LISTENER_NAME = "BlindIndexListener";
+
+    /** {@code @encrypt(digits)}: the index of a number is taken of its digits (Bidx.ofDigits). */
+    public static final String DIGITS = "digits";
+
+    /** The mark of a blind index field whose field is @encrypt(digits). */
+    public static final String INDEX_DIGITS = "bidxdigits";
 
     private static final String[] SEARCH = {"search", "s", "srch", "filter", "searchable"};
+
+    /** Whether an @encrypt value is one the mark takes: none, or digits. */
+    public static boolean knownMode(String value) {
+        String v = value == null ? "" : value.trim();
+        return v.isEmpty() || DIGITS.equalsIgnoreCase(v);
+    }
+
+    /** Whether an @encrypt field's index is taken of its digits. */
+    public static boolean digits(Field f) {
+        String v = f.getAnnotationValue(ENCRYPT);
+        return v != null && DIGITS.equalsIgnoreCase(v.trim());
+    }
+
+    /** The runtime call that takes the index a blind index field holds: Bidx.of, or Bidx.ofDigits. */
+    public static String bidxCall(FieldSpec index) {
+        return BIDX + (index.hasDsl(INDEX_DIGITS) ? ".ofDigits" : ".of");
+    }
 
     /** The blind index field of an encrypted field. */
     public static String indexName(String field) {
@@ -75,7 +101,7 @@ public class EncryptRules implements CodeRules {
 
     /** Whether a condition is the equality an encrypted column is searched by: eq, = or none said. */
     public static boolean equality(String condition) {
-        String c = condition == null ? "" : condition.trim();
+        String c = condition == null ? "" : condition.trim().toLowerCase(java.util.Locale.ROOT);
         return c.isEmpty() || "eq".equals(c) || "=".equals(c) || "auto".equals(c);
     }
 
@@ -151,17 +177,31 @@ public class EncryptRules implements CodeRules {
     }
 
     /**
-     * The service writes the blind indexes before each write, as it cleans an html field (26): before the commands
-     * are written (30) and the values the model derives (40).
+     * JPA writes the blind indexes when it writes the row: the runtime's BlindIndexListener calls the entity's
+     * indexEncrypted() on @PrePersist and @PreUpdate - after the service's beforeSave, the values the model derives
+     * and anything the application set. A listener, as JPA allows one callback per event per class. Under the DDD rules
+     * over MyBatis the root's Lifecycle calls it instead (MyBatisDddRules); the layered MyBatis service just before its
+     * statement ({@link #service}).
+     */
+    @Rule(value = "jpa-encrypt-listener", order = 8)
+    void listener(EntitySpec e) {
+        if (indexes(e).isEmpty() || e.hasMeta("embeddable")) return;
+        SourceCode c = ctx(e);
+        if (c.compatible()) return;
+        c.addEntityListener(LISTENER_NAME);
+        if (!io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)) c.addImport(LISTENER);
+    }
+
+    /**
+     * The layered MyBatis service writes the blind indexes after beforeSave, just before the insert or the update
+     * (mybatis_service.tmpl's encryptBeforeWrite): no listener of MyBatis's would.
      */
     @Rule(value = "service-encrypt", target = "service", order = 27)
     void service(EntitySpec e) {
-        if (indexes(e).isEmpty()) return;
+        if (indexes(e).isEmpty() || !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)) return;
         SourceCode c = ctx(e);
         if (c.compatible()) return;
-        String call = c.syntax().statement("entity.indexEncrypted()");
-        c.varLine("deriveBeforeSave", "%s", call);
-        c.var("encryptAfterCommand", "%s", call);
+        c.varLine("encryptBeforeWrite", "%s", c.syntax().statement("entity.indexEncrypted()"));
     }
 
     /** The entity's indexEncrypted(). */
@@ -172,16 +212,32 @@ public class EncryptRules implements CodeRules {
         SourceCode c = ctx(e);
         if (c.compatible()) return;
         Syntax s = c.syntax();
+        if (s == Syntax.KOTLIN) {
+            // A Kotlin method cannot be written again below: the parent's covers its own fields.
+            boolean inherited = false;
+            boolean own = false;
+            for (FieldSpec index : indexes) {
+                if (index.isParentField()) inherited = true;
+                else own = true;
+            }
+            if (inherited && own) {
+                ModelCheck.fail(String.format(
+                        "[%s] %s: searched encrypted fields both here and in %s - in Kotlin keep them in one class of"
+                                + " the hierarchy (indexEncrypted() is written once)",
+                        e.domainClassName(), e.getName(), e.parentName()));
+                return;
+            }
+            if (inherited) return;
+        }
         c.varLine("fieldList", "")
                 .varLine("fieldList", "/**")
-                .varLine(
-                        "fieldList",
-                        " * Writes the blind index of each encrypted field searched by equality. Called by")
-                .varLine("fieldList", " * the service before each write; call it after setting one yourself.")
+                .varLine("fieldList", " * Writes the blind index of each encrypted field searched by equality. Called")
+                .varLine("fieldList", " * just before the row is written (BlindIndexListener under JPA).")
                 .varLine("fieldList", " */");
         c.varLine("fieldList", s == Syntax.KOTLIN ? "fun indexEncrypted() {" : "public void indexEncrypted() {");
         for (FieldSpec index : indexes) {
-            String value = String.format("%s.of(%s)", BIDX, s.getter("this", s.escapeName(index.dslValue(INDEX_OF))));
+            String value =
+                    String.format("%s(%s)", bidxCall(index), s.getter("this", s.escapeName(index.dslValue(INDEX_OF))));
             c.varLine("fieldList", "    %s", s.statement(s.setter("this", s.escapeName(index.name()), value)));
         }
         c.varLine("fieldList", "}");

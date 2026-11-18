@@ -469,9 +469,9 @@ public final class SpecFactory {
             }
         }
         // The blind index of an encrypted field (prepareEncrypt) is what its search reads: indexed.
-        if (entity.getItems() != null) {
-            for (int i = 0; i < entity.getItems().size(); i++) {
-                Field f = entity.getItems().get(i);
+        // Those of a plain @abstract parent too: it has no table, and its columns are in this one's.
+        if (!isFrame(entity)) {
+            for (Field f : ownAndFrameFields(entity, model)) {
                 if (!f.hasAnnotation(io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_OF)) continue;
                 spec.index(null, f.getAnnotationValue("db"), null);
             }
@@ -741,6 +741,13 @@ public final class SpecFactory {
                 }
                 if (searchable)
                     wordsChecked(
+                            f,
+                            dto.getIdentity().getDomainId(),
+                            dto.getIdentity().getName(),
+                            entity,
+                            model);
+                if (searchable)
+                    encryptedPathsChecked(
                             f,
                             dto.getIdentity().getDomainId(),
                             dto.getIdentity().getName(),
@@ -2062,8 +2069,9 @@ public final class SpecFactory {
                 String root = aggregateOf(name, model);
                 if (root != null) {
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": an encrypted field searched by equality"
-                            + " keeps a blind index the service that saves its entity writes, and " + name
-                            + " is saved through " + root + " - put the searched field on a root, or do not search it");
+                            + " keeps a blind index written with its row, and " + name + " is saved through " + root
+                            + " (whose MyBatis code writes its members without it) - put the searched field on a root,"
+                            + " or do not search it");
                     continue;
                 }
                 String index = io.elasticore.base.model.pub.rules.base.EncryptRules.indexName(f.getName());
@@ -2083,11 +2091,14 @@ public final class SpecFactory {
                 Field derived = lines.parse(
                         index,
                         String.format(
-                                "string(%d) @db(%s_bidx) @%s(%s)",
+                                "string(%d) @db(%s_bidx) @%s(%s)%s",
                                 io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_LENGTH,
                                 column.trim(),
                                 io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_OF,
-                                f.getName()),
+                                f.getName(),
+                                io.elasticore.base.model.pub.rules.base.EncryptRules.digits(f)
+                                        ? " @" + io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_DIGITS
+                                        : ""),
                         entity);
                 entity.addDerivedField(derived);
             }
@@ -2119,7 +2130,88 @@ public final class SpecFactory {
         }
         if (f.hasAnnotation("formula"))
             return "a @formula is computed by the database, not stored - nothing to encrypt";
+        String mode = f.getAnnotationValue(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT);
+        if (!io.elasticore.base.model.pub.rules.base.EncryptRules.knownMode(mode)) {
+            return "@encrypt(" + mode.trim() + ") - say @encrypt, or @encrypt(digits) for a number whose dashes, spaces"
+                    + " and dots its search ignores";
+        }
         return null;
+    }
+
+    /** A plain @abstract: a frame with no table, whose columns are in the table of what extends it. */
+    private static boolean isFrame(Entity entity) {
+        String kind = entity.getMetaInfo().getMetaAnnotationValue("abstract");
+        return entity.getMetaInfo().hasMetaAnnotation("abstract")
+                && !(kind != null && "entity".equalsIgnoreCase(kind.trim()));
+    }
+
+    /** The entity's own fields and those of the frames above it (@extend), whose columns its table holds. */
+    private static java.util.List<Field> ownAndFrameFields(Entity entity, ECoreModel model) {
+        java.util.List<Field> out = new java.util.ArrayList<Field>();
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        boolean first = true;
+        for (Entity at = entity; at != null && seen.add(at.getIdentity().getName()); first = false) {
+            if (!first && !isFrame(at)) break;
+            if (at.getItems() != null) {
+                for (int i = 0; i < at.getItems().size(); i++)
+                    out.add(at.getItems().get(i));
+            }
+            String parent = at.getMetaInfo().getMetaAnnotationValue("extend");
+            if (parent == null || parent.trim().isEmpty()) break;
+            Entity next = model.getEntityModels().findByName(parent.trim());
+            at = next != null ? next : globalEntity(parent.trim());
+        }
+        return out;
+    }
+
+    /**
+     * The encrypted field a search path reaches through a relation (customer.phone), or null. A search through a
+     * relation compares the related row's column, never its blind index, so it would find nothing (EncryptRules).
+     */
+    static String encryptedOnPath(Entity entity, String path, ECoreModel model) {
+        if (entity == null || path == null || path.indexOf('.') < 0) return null;
+        String[] parts = path.trim().split("\\.", -1);
+        Entity at = entity;
+        for (int i = 0; i < parts.length; i++) {
+            Object found = at.getAllFieldListMap() == null
+                    ? null
+                    : at.getAllFieldListMap().get(parts[i].trim());
+            if (!(found instanceof Field)) return null;
+            Field g = (Field) found;
+            if (i == parts.length - 1) {
+                return g.hasAnnotation(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT)
+                        ? at.getIdentity().getName() + "." + g.getName()
+                        : null;
+            }
+            String type = g.getTypeInfo().isList()
+                    ? g.getTypeInfo().getCoreItemType()
+                    : g.getTypeInfo().getDefaultTypeName();
+            Entity next = model.getEntityModels().findByName(type);
+            at = next != null ? next : globalEntity(type);
+            if (at == null) return null;
+        }
+        return null;
+    }
+
+    /** A search field of a search DTO that reaches an encrypted field through a relation: @ref(a.b) or words. */
+    private static void encryptedPathsChecked(
+            Field f, String domainId, String dtoName, Entity entity, ECoreModel model) {
+        java.util.List<String> paths = new java.util.ArrayList<String>();
+        String ref = f.getAnnotationValue("ref");
+        if (ref != null) paths.add(ref);
+        String search = f.getAnnotationValue("search", "s", "srch", "filter", "searchable");
+        if (search != null && search.trim().regionMatches(true, 0, "words:", 0, 6)) {
+            for (String p : search.trim().substring(6).split(",", -1)) paths.add(p.trim());
+        }
+        for (String path : paths) {
+            String encrypted = encryptedOnPath(entity, path, model);
+            if (encrypted == null) continue;
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                    "[%s] %s.%s: the search through %s reaches %s, which is encrypted - a search through a relation"
+                            + " compares the column, whose text differs each time, and finds nothing; search %s by"
+                            + " its own @search(eq), on its entity",
+                    domainId, dtoName, f.getName(), path, encrypted, encrypted));
+        }
     }
 
     /** A string field kept as a long text: text, longtext or clob. */

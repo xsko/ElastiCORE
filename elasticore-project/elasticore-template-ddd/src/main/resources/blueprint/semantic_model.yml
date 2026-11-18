@@ -158,21 +158,17 @@ datasets:
         expression:
           sql: "nickname"
         datatype: String
-      - name: phone
+      - name: status
         expression:
-          sql: "phone"
+          sql: "status"
         datatype: String
-      - name: email
-        expression:
-          sql: "email"
-        datatype: String
-      - name: phone_bidx
-        expression:
-          sql: "phone_bidx"
-        datatype: String
+        ai_context: "Codes: ACT = Active, MOV = Moved"
+        nonportable_extensions:
+          - vendor_name: ELASTICORE
+            data: {"lifecycle": true, "enumeration": "SubscriberStatus", "codes": {"ACT": "Active", "MOV": "Moved"}}
     nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: {"entity": "Subscriber", "domain": "board"}
+        data: {"entity": "Subscriber", "domain": "board", "states": {"status": {"initial": "ACTIVE", "move": "ACTIVE -> MOVED"}}, "omitted_columns": ["phone", "email", "phone_bidx"]}
   - name: Bookmark
     source: brd_bookmark
     primary_key: [bookmark_id]

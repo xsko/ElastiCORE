@@ -34,8 +34,11 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
  */
 public class EncryptConverterHibernateTest {
 
+    /** As the generator writes one: @DynamicUpdate, the listener, and indexEncrypted(). */
     @Entity(name = "CryptoPerson")
     @jakarta.persistence.Table(name = "crypto_person")
+    @org.hibernate.annotations.DynamicUpdate
+    @jakarta.persistence.EntityListeners(BlindIndexListener.class)
     public static class Person {
         @Id
         public Long id;
@@ -43,6 +46,15 @@ public class EncryptConverterHibernateTest {
         @Column(length = 147)
         @Convert(converter = EncryptConverter.class)
         public String phone;
+
+        @Column(name = "phone_bidx", length = 22)
+        public String phoneBidx;
+
+        public String note;
+
+        public void indexEncrypted() {
+            this.phoneBidx = Bidx.ofDigits(this.phone);
+        }
     }
 
     @Configuration
@@ -128,6 +140,48 @@ public class EncryptConverterHibernateTest {
             EntityManager read = context.getBean(EntityManagerFactory.class).createEntityManager();
             assertEquals("010-1234-5678", read.find(Person.class, 1L).phone);
             read.close();
+        }
+    }
+
+    /**
+     * The listener writes the index when the row is: on a persist, and on an update that changed the value - set
+     * after everything the service did, with @DynamicUpdate writing only the changed columns, the index among them.
+     * An update of another column leaves the encrypted text as it was.
+     */
+    @Test
+    public void theListenerIndexesOnEveryWriteOfTheRow() {
+        Map<String, Object> props = new HashMap<String, Object>(FieldCryptoTest.keys());
+        try (AnnotationConfigApplicationContext context = start(props)) {
+            EntityManagerFactory emf = context.getBean(EntityManagerFactory.class);
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            EntityManager em = emf.createEntityManager();
+            em.getTransaction().begin();
+            Person p = new Person();
+            p.id = 2L;
+            p.phone = "010-1111-2222";
+            em.persist(p);
+            em.getTransaction().commit();
+            em.close();
+            assertEquals(
+                    Bidx.ofDigits("01011112222"),
+                    jdbc.queryForObject("select phone_bidx from crypto_person where id = 2", String.class));
+
+            em = emf.createEntityManager();
+            em.getTransaction().begin();
+            em.find(Person.class, 2L).phone = "010-3333-4444";
+            em.getTransaction().commit();
+            em.close();
+            assertEquals(
+                    Bidx.ofDigits("01033334444"),
+                    jdbc.queryForObject("select phone_bidx from crypto_person where id = 2", String.class));
+
+            String text = jdbc.queryForObject("select phone from crypto_person where id = 2", String.class);
+            em = emf.createEntityManager();
+            em.getTransaction().begin();
+            em.find(Person.class, 2L).note = "other column";
+            em.getTransaction().commit();
+            em.close();
+            assertEquals(text, jdbc.queryForObject("select phone from crypto_person where id = 2", String.class));
         }
     }
 }

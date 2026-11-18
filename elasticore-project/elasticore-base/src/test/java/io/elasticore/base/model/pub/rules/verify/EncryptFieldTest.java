@@ -111,10 +111,11 @@ public class EncryptFieldTest {
         assertTrue(entity.contains("columnList = \"phone_bidx\""), entity);
         assertTrue(entity.contains("columnList = \"mail_addr_bidx\""), entity);
 
+        // JPA writes the indexes when it writes the row: the listener, not the service.
+        assertTrue(entity.contains("BlindIndexListener.class"), entity);
+        assertTrue(entity.contains("import io.elasticore.springboot3.crypto.BlindIndexListener;"), entity);
         String core = found(project, "EnMemberCoreService.java");
-        assertEquals(3, occurrences(core, CALL), core);
-        String save = section(core, "public EnMemberDTO save(EnMemberDTO dto) {");
-        assertTrue(save.indexOf(CALL) < save.indexOf("beforeSave(entity, dto);"), save);
+        assertEquals(0, occurrences(core, "indexEncrypted"), core);
 
         // The index is the model's: no DTO carries it, and the DTO checks the declared length.
         String dto = found(project, "EnMemberDTO.java");
@@ -159,8 +160,9 @@ public class EncryptFieldTest {
                 entity);
         assertTrue(entity.contains("fun indexEncrypted() {"), entity);
         assertTrue(entity.contains("this.phoneBidx = io.elasticore.springboot3.crypto.Bidx.of(this.phone)\n"), entity);
+        assertTrue(entity.contains("BlindIndexListener::class"), entity);
         String core = found(project, "EnMemberCoreService.kt");
-        assertEquals(3, occurrences(core, "entity.indexEncrypted()\n"), core);
+        assertEquals(0, occurrences(core, "indexEncrypted"), core);
         String mapper = found(project, "EnforumMapper.kt");
         assertTrue(mapper.contains("io.elasticore.springboot3.crypto.Bidx.of(phone"), mapper);
         assertFalse(found(project, "EnMemberDTO.kt").contains("Bidx"), found(project, "EnMemberDTO.kt"));
@@ -180,7 +182,18 @@ public class EncryptFieldTest {
                     0,
                     new String[1]);
             String core = found(project, "EnMemberCoreService.java");
-            assertEquals(3, occurrences(core, CALL), architecture + "\n" + core);
+            if ("layered".equals(architecture)) {
+                // After beforeSave, just before the insert and in write(), which the updates call.
+                assertEquals(2, occurrences(core, CALL), core);
+                String save = section(core, "public EnMemberDTO save(EnMemberDTO dto) {");
+                assertTrue(save.indexOf("beforeSave(entity, dto);") < save.indexOf(CALL), save);
+                assertTrue(save.indexOf(CALL) < save.indexOf(".insert(entity)"), save);
+                String write = section(core, "protected void write(EnMember entity) {");
+                assertTrue(write.contains(CALL), write);
+            } else {
+                // The root's Lifecycle, which the repository adapter calls just before the statement.
+                assertEquals(0, occurrences(core, "indexEncrypted"), core);
+            }
             String xml = found(project, "EnMemberRepository.xml");
             assertTrue(xml.contains("typeHandler=io.elasticore.springboot3.crypto.EncryptTypeHandler"), xml);
             assertTrue(xml.contains("typeHandler=\"io.elasticore.springboot3.crypto.EncryptTypeHandler\""), xml);
@@ -192,6 +205,12 @@ public class EncryptFieldTest {
                     : found(project, "EnMemberBase.java");
             assertTrue(entity.contains(METHOD), architecture + "\n" + entity);
             assertFalse(entity.contains("jakarta.persistence.Convert"), entity);
+            assertFalse(entity.contains("BlindIndexListener.class"), entity);
+            assertFalse(entity.contains("import io.elasticore.springboot3.crypto"), entity);
+            if (!"layered".equals(architecture)) {
+                assertTrue(entity.contains("public void beforeInsert() {\n\t    indexEncrypted();"), entity);
+                assertTrue(entity.contains("public void beforeUpdate() {\n\t    indexEncrypted();"), entity);
+            }
             String ddl = read(new File(project, "src/main/resources/db/schema-postgresql.sql"));
             assertTrue(ddl.contains("phone VARCHAR(147)"), ddl);
             assertTrue(ddl.contains("phone_bidx VARCHAR(22)"), ddl);
@@ -203,12 +222,110 @@ public class EncryptFieldTest {
         File project = run("elcore-enc-command", "hexagonal", "java", "jpa", MODEL, false, 0, new String[1]);
         String base = found(project, "EnMemberBase.java");
         assertTrue(base.contains(METHOD), base);
+        // The command's move is followed by the row's write, which the listener indexes.
+        assertTrue(
+                found(project, "EnMember.java").contains("BlindIndexListener.class")
+                        || base.contains("BlindIndexListener.class"),
+                base);
         String core = found(project, "EnMemberCoreService.java");
-        String close = section(core, "public EnMemberDTO close(");
-        int move = close.indexOf("entity.close(");
-        assertTrue(move >= 0, close);
-        assertTrue(move < close.indexOf(CALL), close);
-        assertTrue(close.indexOf(CALL) < close.indexOf(".save(entity)"), close);
+        assertTrue(section(core, "public EnMemberDTO close(").contains("entity.close("), core);
+        assertEquals(0, occurrences(core, "indexEncrypted"), core);
+    }
+
+    /**
+     * By default the index is of the value trimmed (Bidx.of), so values that differ stay apart; @encrypt(digits) takes
+     * it of the digits of a number (Bidx.ofDigits) - in the entity, in the JPA search and in the MyBatis one.
+     */
+    @Test
+    public void digitsIsOptIn() throws Exception {
+        String model = field("phone: string(20) @encrypt(digits) @search(EQ)\n      ssn: string(20) @encrypt @s(eq)");
+        File project = run("elcore-enc-digits", "layered", "java", "jpa", model, false, 0, new String[1]);
+        String entity = found(project, "EnMember.java");
+        assertTrue(
+                entity.contains("this.setPhoneBidx(io.elasticore.springboot3.crypto.Bidx.ofDigits(this.getPhone()));"),
+                entity);
+        assertTrue(
+                entity.contains("this.setSsnBidx(io.elasticore.springboot3.crypto.Bidx.of(this.getSsn()));"), entity);
+        String mapper = found(project, "EnforumMapper.java");
+        assertTrue(
+                mapper.contains("c.equal(r.get(\"phoneBidx\"),io.elasticore.springboot3.crypto.Bidx.ofDigits(phone))"),
+                mapper);
+        assertTrue(
+                mapper.contains("c.equal(r.get(\"ssnBidx\"),io.elasticore.springboot3.crypto.Bidx.of(ssn))"), mapper);
+
+        File mybatis = run("elcore-enc-digits-mb", "layered", "java", "mybatis", model, false, 0, new String[1]);
+        String xml = found(mybatis, "EnMemberRepository.xml");
+        assertTrue(xml.contains("@io.elasticore.springboot3.crypto.Bidx@ofDigits(s.phone)"), xml);
+        assertTrue(xml.contains("@io.elasticore.springboot3.crypto.Bidx@of(s.ssn)"), xml);
+
+        assertRefused(
+                "elcore-enc-mode",
+                field("phone: string(20) @encrypt(hash)"),
+                "EnMember.phone: @encrypt(hash) - say @encrypt, or @encrypt(digits)");
+    }
+
+    /** A search through a relation compares the related column, never its index: refused, by @ref and by words. */
+    @Test
+    public void aSearchThroughARelationToAnEncryptedFieldIsRefused() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  EnCustomer:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      customerId: long @id @sequence",
+                "      phone:      string(20) @encrypt @s(eq)",
+                "  EnOrder:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      orderId:  long @id @sequence",
+                "      customer: EnCustomer @ManyToOne",
+                "      memo:     \"string(50) @search(words: memo, customer.phone)\"",
+                "dto:",
+                "  EnOrderFind:",
+                "    meta: dto @searchable(entity=EnOrder)",
+                "    fields:",
+                "      phone: string @ref(customer.phone) @search(eq)",
+                "");
+        String[] log = new String[1];
+        run("elcore-enc-relation", "layered", "java", "jpa", model, false, 1, log);
+        assertTrue(
+                log[0].contains("EnOrderFind.phone: the search through customer.phone reaches EnCustomer.phone,"
+                        + " which is encrypted"),
+                log[0]);
+        assertTrue(
+                log[0].contains(
+                        ".memo: the search through customer.phone reaches EnCustomer.phone, which is" + " encrypted"),
+                log[0]);
+        run("elcore-enc-relation-mb", "layered", "java", "mybatis", model, false, 1, log);
+        assertTrue(
+                log[0].contains("EnOrderFind.phone: the search through customer.phone reaches EnCustomer.phone"),
+                log[0]);
+    }
+
+    /** A plain @abstract parent's searched encrypted field: its index is on the table of what extends it. */
+    @Test
+    public void anInheritedIndexIsOnTheChildsTable() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  EnPerson:",
+                "    meta: entity @abstract",
+                "    fields:",
+                "      phone: string(20) @encrypt @s(eq)",
+                "  EnShopper:",
+                "    meta: entity @root @expose(20) @extend(EnPerson)",
+                "    fields:",
+                "      shopperId: long @id @sequence",
+                "");
+        File project = run("elcore-enc-inherit", "layered", "java", "jpa", model, false, 0, new String[1]);
+        String ddl = read(new File(project, "src/main/resources/db/schema-postgresql.sql"));
+        assertTrue(ddl.contains("phone_bidx VARCHAR(22)"), ddl);
+        assertTrue(ddl.contains("ON en_shopper (phone_bidx);"), ddl);
+        assertTrue(
+                found(project, "EnShopper.java").contains("columnList = \"phone_bidx\""),
+                found(project, "EnShopper.java"));
+        assertFalse(found(project, "EnPerson.java").contains("indexes"), found(project, "EnPerson.java"));
     }
 
     @Test
@@ -235,6 +352,8 @@ public class EncryptFieldTest {
             String core = found(project, "EnNoteCoreService.java");
             assertFalse(core.contains("indexEncrypted"), core);
             assertEquals(0, occurrences(core, "\n\n        beforeSave(entity, dto);"), core);
+            assertFalse(core.contains("${"), core);
+            assertFalse(core.matches("(?s).*\n[ \t]*\n[ \t]*(repository|cmdRepository)\\.(insert|update)\\(.*"), core);
             String entity = found(project, "EnNote.java");
             assertFalse(entity.contains("Bidx"), entity);
             assertFalse(entity.contains("crypto"), entity);
@@ -305,8 +424,8 @@ public class EncryptFieldTest {
         String[] log = new String[1];
         run("elcore-enc-member", "layered", "java", "jpa", model, false, 1, log);
         assertTrue(
-                log[0].contains("EnCard.number: an encrypted field searched by equality keeps a blind index the"
-                        + " service that saves its entity writes, and EnCard is saved through EnMember"),
+                log[0].contains("EnCard.number: an encrypted field searched by equality keeps a blind index written"
+                        + " with its row, and EnCard is saved through EnMember"),
                 log[0]);
         assertFalse(log[0].contains("EnCard.holder:"), log[0]);
         assertTrue(log[0].contains("EnAddress.street: @encrypt is for an entity's field"), log[0]);

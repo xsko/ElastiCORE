@@ -650,7 +650,7 @@ Item:
 | 필드 | `@password` | 해시로만 저장, 응답·검색에 없음 |
 | 필드 | `@safe(basic)` / `@safe(relaxed)` | `html` 필드에: 쓸 때마다 거르는 jsoup 허용 목록 (없으면 basic) |
 | 필드 | `@plain(contentText)` | `html` 필드에: 태그를 뺀 텍스트를 담는 긴 문자열 필드, 요청은 쓰지 못함 |
-| 필드 | `@encrypt` | 컬럼에 암호화해 저장하는 문자열 (AES-256-GCM, `v1:...`), API 에는 원래 값; `@search(eq)` 와 함께면 블라인드 인덱스(`phone_bidx`)로 찾음. 같음만 - like, 범위, in 은 빌드 중단. 키: `elasticore.crypto.*` (어노테이션 가이드, env 가이드). JPA, Kotlin, MyBatis; MongoDB 는 아님 |
+| 필드 | `@encrypt` / `@encrypt(digits)` | 컬럼에 암호화해 저장하는 문자열 (AES-256-GCM, `v1:...`), API 에는 원래 값; `@search(eq)` 와 함께면 앞뒤 공백을 뺀 값의 - `(digits)` 면 숫자만의 - 블라인드 인덱스(`phone_bidx`)로 찾음. 같음만 - like, 범위, in 은 빌드 중단. 키: `elasticore.crypto.*` (어노테이션 가이드, env 가이드). JPA, Kotlin, MyBatis; MongoDB 는 아님 |
 | 필드 | `@login` | `@password` 와 함께 `authenticate(login, password)` 생성. 유일해야 함 (`@signin` 이면 자동, 아니면 `@unique` - 없으면 DSL 경고) |
 | 필드 | `@role` | `@signin` 의 로그인이 세션에 넣는 역할 (없으면 `role` 필드). `@access(admin)` 인 enum·문자열만 - 아니면 역할 없이 로그인하고 DSL 경고 |
 | 필드 | `@snapshot(item.unitCost)` | 참조한 행의 값을 한 번 복사 |

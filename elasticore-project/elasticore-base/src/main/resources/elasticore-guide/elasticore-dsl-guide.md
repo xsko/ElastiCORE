@@ -650,7 +650,7 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Field | `@password` | Stored only as a hash, absent from responses and search |
 | Field | `@safe(basic)` / `@safe(relaxed)` | On an `html` field: the jsoup safelist it is kept to before every write (basic when unsaid) |
 | Field | `@plain(contentText)` | On an `html` field: the long text field that keeps its text without tags; no request writes it |
-| Field | `@encrypt` | A string kept encrypted in its column (AES-256-GCM, `v1:...`), the value in the API; with `@search(eq)` found by a blind index (`phone_bidx`). Equality only - like, range and in stop the build. Keys: `elasticore.crypto.*` (annotation guide, env guide). JPA, Kotlin, MyBatis; not MongoDB |
+| Field | `@encrypt` / `@encrypt(digits)` | A string kept encrypted in its column (AES-256-GCM, `v1:...`), the value in the API; with `@search(eq)` found by a blind index (`phone_bidx`) of the trimmed value - of its digits with `(digits)`. Equality only - like, range and in stop the build. Keys: `elasticore.crypto.*` (annotation guide, env guide). JPA, Kotlin, MyBatis; not MongoDB |
 | Field | `@login` | With `@password`, generates `authenticate(login, password)`. Must be unique (automatic with `@signin`, otherwise `@unique` - a DSL warning if missing) |
 | Field | `@role` | The role that the sign-in of `@signin` puts in the session (the `role` field if absent). Only an enum or string with `@access(admin)` - otherwise it signs in without a role and gives a DSL warning |
 | Field | `@snapshot(item.unitCost)` | Copies the value of the referenced row once |

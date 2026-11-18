@@ -225,9 +225,9 @@ public class MapperSpecRules implements CodeRules {
         and(
                 c,
                 e.getName(),
-                "c.equal(%s,%s.of(%s))",
+                "c.equal(%s,%s(%s))",
                 path(c.syntax(), index.name(), "", "String"),
-                EncryptRules.BIDX,
+                EncryptRules.bidxCall(index),
                 nn(c, fieldNm));
         c.line(BLOCK, "%s}", I2);
     }
