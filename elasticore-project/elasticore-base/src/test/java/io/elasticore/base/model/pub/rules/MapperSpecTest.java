@@ -275,8 +275,32 @@ public class MapperSpecTest {
                 .addField(loader.parse("tags", "List<Tag> @search(in)"));
 
         String out = render(e);
+        assertTrue(out.contains("sp = sp.and((root, query, criteriaBuilder) -> {"), out);
         assertTrue(out.contains("Join<Article, Tag> join = root.join(\"tags\");"), out);
         assertTrue(out.contains("return join.in(tags);"), out);
+    }
+
+    /** A list of values against one column of the entity - an enum - is that column's in(), not a join. */
+    @Test
+    public void inCondition_onAListOfValuesSearchesTheColumn() {
+        EntitySpec e = new EntitySpec("PurchaseOrder")
+                .addField(loader.parse("status", "List<OrderStatus> @search(in)"))
+                .addAllField(loader.parse("orderId", "long @id"))
+                .addAllField(loader.parse("status", "OrderStatus"));
+
+        String out = render(e);
+        assertTrue(out.contains("sp = sp.and((r, q, c) -> r.get(\"status\").in(status));"), out);
+        assertFalse(out.contains("join"), out);
+    }
+
+    /** A collection the entity holds still joins when the entity's fields are known. */
+    @Test
+    public void inCondition_onTheEntitysCollectionStillJoins() {
+        EntitySpec e = new EntitySpec("Article")
+                .addField(loader.parse("tags", "List<Tag> @search(in)"))
+                .addAllField(loader.parse("tags", "List<Tag> @OneToMany"));
+
+        assertTrue(render(e).contains("Join<Article, Tag> join = root.join(\"tags\");"), render(e));
     }
 
     /** A collection field with eq joins on a single item instead. */
@@ -287,6 +311,7 @@ public class MapperSpecTest {
 
         String out = render(e);
         assertTrue(out.contains("Tag tagsItem = searchDTO.getTagsItem();"), out);
+        assertTrue(out.contains("sp = sp.and((root, query, criteriaBuilder) -> {"), out);
         assertTrue(out.contains("Join<Article, Tag> join = root.join(\"tags\");"), out);
         assertTrue(out.contains("return criteriaBuilder.equal(join, tagsItem);"), out);
     }

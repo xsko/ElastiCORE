@@ -107,6 +107,12 @@ public class MapperSpecRules implements CodeRules {
                 entityFieldNm = ref;
             }
             isListEntityField = false;
+        } else if (isListEntityField) {
+            // A list of values searched against one column of the entity - an
+            // enum, a code - is that column's in(...); only a collection of the
+            // entity is joined.
+            FieldSpec column = entityField(e, entityFieldNm);
+            if (column != null && !column.isList()) isListEntityField = false;
         }
 
         // An encrypted column is compared by its blind index (EncryptRules).
@@ -295,18 +301,32 @@ public class MapperSpecRules implements CodeRules {
         } else if (joinSingle) {
             Syntax sx = c.syntax();
             String sp = String.format("Specification<%s>", e.getName());
-            c.line(BLOCK, "%ssp = sp.and(%s", I3,
-                            sx.samBlockOpen(sp, "(root, query, criteriaBuilder)"))
-             .line(BLOCK, "%s  %s", I3, sx.localVar(
-                            String.format("Join<%s, %s>", e.getName(), f.coreItemType()), "join",
-                            sx.genericCall("root", "join",
-                                    f.coreItemType(), RuleText.quote(entityFieldNm))))
-             .line(BLOCK, "%s  %s", I3, sx.lambdaReturn(
-                            String.format("criteriaBuilder.equal(join, %s)", joinItemNm)))
-             .line(BLOCK, "%s%s", I3, sx.samBlockClose());
+            c.line(BLOCK, "%ssp = sp.and(%s", I3, sx.samBlockOpen(sp, "root, query, criteriaBuilder"))
+                    .line(
+                            BLOCK,
+                            "%s  %s",
+                            I3,
+                            sx.localVar(
+                                    String.format("Join<%s, %s>", e.getName(), f.coreItemType()),
+                                    "join",
+                                    sx.genericCall("root", "join", f.coreItemType(), RuleText.quote(entityFieldNm))))
+                    .line(
+                            BLOCK,
+                            "%s  %s",
+                            I3,
+                            sx.lambdaReturn(String.format("criteriaBuilder.equal(join, %s)", joinItemNm)))
+                    .line(BLOCK, "%s%s", I3, sx.samBlockClose());
         } else {
             and(c, e.getName(), "c.equal(%s,%s)", path, nn(c, fieldNm));
         }
+    }
+
+    /** The entity's own field of that name - the search DTO's spec carries them as allFields - or null. */
+    private static FieldSpec entityField(EntitySpec e, String name) {
+        for (FieldSpec column : e.allFields()) {
+            if (name.equals(column.name())) return column;
+        }
+        return null;
     }
 
     /**
@@ -337,15 +357,22 @@ public class MapperSpecRules implements CodeRules {
         Syntax syntax = c.syntax();
         String spec = String.format("Specification<%s>", e.getName());
         if (isListEntityField) {
-            c.line(BLOCK, "%ssp = sp.and(%s", I3,
-                            syntax.samBlockOpen(spec, "(root, query, criteriaBuilder)"))
-             .line(BLOCK, "%s    %s", I3, syntax.localVar(
-                            String.format("Join<%s, %s>", e.getName(), f.coreItemType()), "join",
-                            syntax.genericCall("root", "join",
-                                    f.coreItemType(), RuleText.quote(entityFieldNm))))
-             .line(BLOCK, "%s    %s", I3, syntax.lambdaReturn(
-                            String.format("join.%s(%s)", syntax.escapeName("in"), fieldNm)))
-             .line(BLOCK, "%s%s", I3, syntax.samBlockClose());
+            c.line(BLOCK, "%ssp = sp.and(%s", I3, syntax.samBlockOpen(spec, "root, query, criteriaBuilder"))
+                    .line(
+                            BLOCK,
+                            "%s    %s",
+                            I3,
+                            syntax.localVar(
+                                    String.format("Join<%s, %s>", e.getName(), f.coreItemType()),
+                                    "join",
+                                    syntax.genericCall(
+                                            "root", "join", f.coreItemType(), RuleText.quote(entityFieldNm))))
+                    .line(
+                            BLOCK,
+                            "%s    %s",
+                            I3,
+                            syntax.lambdaReturn(String.format("join.%s(%s)", syntax.escapeName("in"), fieldNm)))
+                    .line(BLOCK, "%s%s", I3, syntax.samBlockClose());
         } else if (!childField.isEmpty()) {
             c.line(BLOCK, "%s%s", I3, syntax.statement(String.format("sp = sp.and(%s)",
                     syntax.sam(spec, "r,q,c", String.format("%s.%s(%s)",

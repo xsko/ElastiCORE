@@ -1106,7 +1106,7 @@ drivers: List<RentDriver> @search(eq)
 
 ### 3.6 in 연산자와 List 필드
 
-**일반 필드:**
+**일반 필드** - 엔티티의 한 컬럼을 값 목록으로 찾는 검색 DTO 필드도 여기에 듭니다. 예: 엔티티의 `status` 가 enum 하나일 때의 `status: List<OrderStatus> @search(in)` (`status in (...)`; 3.0.261119 까지는 join 으로 만들어져 쿼리가 실패했고, 3.0 Java 매퍼는 컴파일되지 않았습니다):
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```

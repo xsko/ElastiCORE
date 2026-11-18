@@ -1106,7 +1106,7 @@ drivers: List<RentDriver> @search(eq)
 
 ### 3.6 The in operator and List fields
 
-**Plain field:**
+**Plain field** - also a search DTO's list of values for one column of the entity, such as `status: List<OrderStatus> @search(in)` where the entity's `status` is one enum (`status in (...)`; up to 3.0.261119 it was joined, so the query failed and the 3.0 Java mapper did not compile):
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
