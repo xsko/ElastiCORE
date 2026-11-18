@@ -69,7 +69,8 @@ public class EncryptRules implements CodeRules {
         if (raw == null) return "";
         String trimmed = raw.trim();
         if (trimmed.startsWith("words")) return trimmed;
-        return trimmed.split(",")[0].trim();
+        int comma = trimmed.indexOf(',');
+        return (comma < 0 ? trimmed : trimmed.substring(0, comma)).trim();
     }
 
     /** Whether a condition is the equality an encrypted column is searched by: eq, = or none said. */

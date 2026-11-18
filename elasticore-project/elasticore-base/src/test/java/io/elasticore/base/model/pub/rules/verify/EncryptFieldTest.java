@@ -250,6 +250,11 @@ public class EncryptFieldTest {
                     field("phone: string(20) @encrypt @search(" + condition + ")"),
                     "EnMember.phone: @search(" + condition + ") - " + like);
         }
+        // The condition is the part before a property name.
+        assertRefused(
+                "elcore-enc-named",
+                field("phone: string(20) @encrypt @search(like, tel)"),
+                "EnMember.phone: @search(like) - " + like);
         assertRefused("elcore-enc-words", field("phone: \"string(20) @encrypt @search(words: phone)\""), like);
         assertRefused(
                 "elcore-enc-long",
