@@ -76,6 +76,17 @@ entity:
       post: Post @onDelete(restrict)
       comment: Comment @onDelete(restrict)
 
+  # A reader who gets the board's notices. The phone and the e-mail are kept encrypted in their columns
+  # (@encrypt: v1:... in the database, the value in the API); the phone is found by an equal one however it is
+  # written (@s(eq): its blind index, phone_bidx). The keys are the elasticore.crypto.* properties.
+  Subscriber:
+    meta: entity @root @expose(20)
+    fields:
+      subscriberId: long @id @sequence
+      nickname: string(50)! @search(like)
+      phone: string(20) @encrypt @s(eq)
+      email: string(100) @encrypt
+
   # A bookmark outlives its post: the reference is cleared.
   Bookmark:
     meta: entity @root @expose(20)

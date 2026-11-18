@@ -5,6 +5,7 @@ import io.elasticore.base.model.pub.rules.EntitySpec;
 import io.elasticore.base.model.pub.rules.FieldSpec;
 import io.elasticore.base.model.pub.rules.Rule;
 import io.elasticore.base.model.pub.rules.SourceCode;
+import io.elasticore.base.model.pub.rules.base.EncryptRules;
 import io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules;
 
 import static io.elasticore.base.model.pub.rules.Ctx.ctx;
@@ -66,6 +67,23 @@ public class MyBatisSearchRules implements CodeRules {
         String path = f.name();
         String ref = f.dslValue("ref");
         if (ref != null && !ref.isEmpty()) path = ref;
+
+        // An encrypted column is compared by its blind index (EncryptRules): "bidx", the index field, the value.
+        FieldSpec encrypted = path.indexOf('.') >= 0 ? null : EncryptRules.encryptedTarget(e, f, path);
+        if (encrypted != null) {
+            boolean own = f.hasDsl(EncryptRules.ENCRYPT);
+            FieldSpec index = EncryptRules.indexOf(e, encrypted.name());
+            if (EncryptRules.equality(condition) && index != null) {
+                c.line(BLOCK, "bidx\t%s\t%s\t%s", index.name(), prop, "String");
+            } else if (!own) {
+                // The entity's own @search was checked with the model (SpecFactory.prepareEncrypt).
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                        "[%s] %s.%s: %s is encrypted, and an encrypted column is searched by equality only, by the"
+                                + " blind index @search(eq) on the entity gives it",
+                        e.domainClassName(), e.searchDtoClassName(), f.name(), encrypted.name()));
+            }
+            return;
+        }
 
         String op = operator(condition);
         if (op == null) {

@@ -129,6 +129,7 @@ In that language nullability is part of the signature, so if they do not match i
 | `jpa-service-access` | O | O | - | `@access`, `@owner`, `@password`, `@login` -> CoreService checks, hashing, `authenticate`; with `@signin`, `me()`, the controller's signin, signout, me, and the unique login column (all v3 bundles) |
 | `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` -> `XxxSessionRefresh`, a filter that reads the signed-in row again on each request (all v3 bundles) |
 | `jpa-html` | O | O | - | `html` fields: the entity's `cleanHtml()` (jsoup safelist, the `@plain` copy), called by the CoreService before every write and after a command; the 2.x-compatible output stops the build (all bundles) |
+| `jpa-encrypt` | O | O | - | `@encrypt` fields: `@Convert(EncryptConverter)` on the JPA field (MyBatis binds `EncryptTypeHandler`), the column as long as the ciphertext, and the entity's `indexEncrypted()` for the blind index of an `@search(eq)` one, called by the CoreService before every write and after a command; MongoDB and the 2.x-compatible output stop the build (all bundles) |
 | `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |
 | Process manager (`processManager:` of `ddd-domain-service`) | O | O | - | After the event commits, in a separate transaction |
 | `ddd-repository-port` / `-adapter` | O | O | - | The browser has no repository |

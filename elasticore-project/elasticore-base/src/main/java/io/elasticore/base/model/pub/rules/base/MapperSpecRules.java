@@ -109,6 +109,14 @@ public class MapperSpecRules implements CodeRules {
             isListEntityField = false;
         }
 
+        // An encrypted column is compared by its blind index (EncryptRules).
+        FieldSpec encrypted =
+                c.compatible() || !childField.isEmpty() ? null : EncryptRules.encryptedTarget(e, f, entityFieldNm);
+        if (encrypted != null) {
+            byIndex(c, e, f, encrypted, condition, fieldNm, type);
+            return;
+        }
+
         // Clean output only, as the search DTO declares it: the 2.x
         // publisher reads isnull as an equality.
         if (SearchDtoBaseRules.isNullCheck(condition) && !c.compatible()) {
@@ -175,6 +183,52 @@ public class MapperSpecRules implements CodeRules {
                         c.syntax().localVar(f.typeName(), name, c.syntax().getter("searchDTO", name)))
                 .line(BLOCK, "%sif(hasValue(%s)){", I2, name);
         and(c, e.getName(), "io.elasticore.springboot3.mapper.Words.match(r, q, c, %s%s)", nn(c, name), quoted);
+        c.line(BLOCK, "%s}", I2);
+    }
+
+    /**
+     * An encrypted column searched by equality: its blind index compared with the index of the value - the column
+     * itself holds a different text for the same value each time. Any other condition, or a field without an index,
+     * is refused: a search that compared the encrypted column would find nothing.
+     */
+    private void byIndex(
+            SourceCode c,
+            EntitySpec e,
+            FieldSpec f,
+            FieldSpec encrypted,
+            String condition,
+            String fieldNm,
+            String type) {
+        // The entity's own @search was checked with the model (SpecFactory.prepareEncrypt).
+        boolean own = f.hasDsl(EncryptRules.ENCRYPT);
+        String at = String.format("[%s] %s.%s", e.domainClassName(), e.searchDtoClassName(), f.name());
+        if (!EncryptRules.equality(condition)) {
+            if (!own) {
+                String said = f.dslValueAny("searchable", "search", "s", "srch", "filter");
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": @search(" + (said == null ? condition : said)
+                        + ") on "
+                        + encrypted.name() + ", which is encrypted - an encrypted column is searched by equality only"
+                        + " (@search(eq))");
+            }
+            return;
+        }
+        FieldSpec index = EncryptRules.indexOf(e, encrypted.name());
+        if (index == null) {
+            if (!own) {
+                io.elasticore.base.model.pub.rules.ModelCheck.fail(at + ": " + encrypted.name() + " is encrypted and"
+                        + " has no blind index to search by - mark it @search(eq) on the entity");
+            }
+            return;
+        }
+        c.line(BLOCK, "%s%s", I2, c.syntax().localVar(type, fieldNm, c.syntax().getter("searchDTO", fieldNm)))
+                .line(BLOCK, "%sif(hasValue(%s)){", I2, fieldNm);
+        and(
+                c,
+                e.getName(),
+                "c.equal(%s,%s.of(%s))",
+                path(c.syntax(), index.name(), "", "String"),
+                EncryptRules.BIDX,
+                nn(c, fieldNm));
         c.line(BLOCK, "%s}", I2);
     }
 

@@ -52,6 +52,15 @@ CREATE TABLE brd_report (
     PRIMARY KEY (report_id)
 );
 
+CREATE TABLE brd_subscriber (
+    subscriber_id BIGINT IDENTITY(1,1) NOT NULL,
+    nickname NVARCHAR(50) NOT NULL,
+    phone NVARCHAR(147),
+    email NVARCHAR(575),
+    phone_bidx NVARCHAR(22),
+    PRIMARY KEY (subscriber_id)
+);
+
 CREATE TABLE cat_author (
     author_id BIGINT IDENTITY(1,1) NOT NULL,
     name NVARCHAR(50) NOT NULL,
@@ -319,6 +328,7 @@ ALTER TABLE shop_order_aud ADD CONSTRAINT fk_shop_order_aud_rev FOREIGN KEY (rev
 ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_order FOREIGN KEY (order_order_id) REFERENCES shop_order (order_id);
 ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_product FOREIGN KEY (product_product_id) REFERENCES shop_products (product_id);
 
+CREATE INDEX ix_brd_subscriber_phone_bidx ON brd_subscriber (phone_bidx);
 CREATE INDEX idx_shop_cat_name ON shop_category (name);
 CREATE UNIQUE INDEX idx_shop_prod_sku ON shop_products (sku);
 CREATE UNIQUE INDEX idx_shop_cust_email ON shop_customer (email);

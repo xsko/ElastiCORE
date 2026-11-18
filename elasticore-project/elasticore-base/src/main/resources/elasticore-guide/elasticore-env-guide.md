@@ -498,6 +498,27 @@ config:
 - `MaskType`: `PHONE` (the middle group), `EMAIL` (two letters of the local part), `NAME` (the first and last letter), `PLATE` (the last four digits), `CARD` (all but the first and last four digits), `RRN` (all but the first seven digits).
 - Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too - and a client that sends a read DTO back unchanged writes the masked text: send a masked field only when it changes.
 
+**Keeping a column encrypted** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): the 3.0 code's `@encrypt` (annotation guide) does it, with the blind index for `@search(eq)`. Without the generator, name the runtime's converter:
+```yaml
+config:
+  annotations:
+    encrypt: "@entity:jakarta.persistence.Convert(converter=io.elasticore.springboot3.crypto.EncryptConverter.class)"
+```
+```yaml
+      telNumber: string(200) @env:encrypt @env:maskphone   # v1:... in the column; the length must hold the ciphertext
+```
+- The keys are Spring properties, read by the runtime's auto-configuration; keep them out of the repository (environment variables or a vault):
+```yaml
+elasticore:
+  crypto:
+    key: ${CRYPTO_KEY}               # base64 of 32 bytes (openssl rand -base64 32): every write uses it
+    index-key: ${CRYPTO_INDEX_KEY}   # another 32 bytes: the blind index of @encrypt @search(eq)
+    key-version: v1                  # the prefix of what the key writes; v1 when unsaid
+```
+- An application with an encrypted field does not start without `elasticore.crypto.key` (the message names it); a key that is no base64 of 32 bytes stops any start; without `elasticore.crypto.index-key` the first write or search of a blind index fails, naming it.
+- Rotating the key: make a new key, set it as `elasticore.crypto.key` with `elasticore.crypto.key-version=v2`, and keep the old one as `elasticore.crypto.keys.v1`. A row is read with the key its prefix names, and every write of the column - a new row, a changed value - is `v2:`; an unchanged row keeps its `v1:` text (JPA writes only what changed). To move every row, run a one-off job as for existing rows (annotation guide, `@encrypt`): `decrypt` each value and write `encrypt(v)` back; once none starts with `v1:`, drop `keys.v1`. The index key is not rotated this way: a new one needs every `_bidx` column written again (`Bidx.of`).
+- The env alias encrypts only: an equality search of that column finds nothing (its text differs each time). Search it through `@encrypt @search(eq)`, which writes the index.
+
 ---
 
 ## 5. jsonview setting

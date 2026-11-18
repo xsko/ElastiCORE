@@ -157,10 +157,12 @@ entities:
       contentText: string @Column(name = "content_text")
       authorName: string(100) @Column(name = "author_name", length = 100)
       authorEmail: string(100) @Column(name = "author_email", length = 100)
+      authorPhone: string(20) @Column(name = "author_phone", length = 147)
       approved: Boolean @Column(name = "approved")
       article: Article @foreignKey(article_article_id) -- Article entity relationship
       parentComment: Comment @foreignKey(test_id) -- Comment entity relationship
       replies: List<Comment> @relation(mappedBy="parentComment") -- List<Comment> entity relationship
+      authorPhoneBidx: string(22) @Column(name = "author_phone_bidx", length = 22)
 
   ContentCategory:
     meta: entity @extend(ContentBase) @java(io.elasticore.blueprint.domain.content.entity.ContentCategory)

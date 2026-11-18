@@ -375,6 +375,9 @@ public final class MyBatisSql {
         if (isEnum(e, f)) return ENUM_HANDLER;
         if (f.isMoney()) return MONEY_HANDLER;
         if (f.isQuantity()) return QUANTITY_HANDLER;
+        if (f.hasDsl(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT) && f.isStringType()) {
+            return io.elasticore.base.model.pub.rules.base.EncryptRules.HANDLER;
+        }
         return null;
     }
 

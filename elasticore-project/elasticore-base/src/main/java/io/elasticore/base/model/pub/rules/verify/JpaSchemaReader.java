@@ -910,6 +910,8 @@ public final class JpaSchemaReader {
         if (s.endsWith("Money.JpaConverter")) return "BigDecimal";
         if (s.endsWith("Quantity.JpaConverter")) return "Integer";
         if (s.endsWith("StringArrayConverter") || s.endsWith("IntegerArrayConverter")) return "String";
+        // An @encrypt column: text, as long as the entity's @Column says (EncryptRules.columnLength).
+        if (s.endsWith("crypto.EncryptConverter")) return "String";
         JClass c = classes.get(s);
         if (c == null && !Character.isLowerCase(s.charAt(0))) {
             String fq = resolveName(owner, s.contains(".") ? s.substring(0, s.indexOf('.')) : s);

@@ -76,6 +76,34 @@ public class EnvAnnotationAliasTest {
         assertFalse(entity.contains("springboot3.mask"), entity);
     }
 
+    /** The runtime's converter named in env.yml, without @encrypt: the entity field is kept encrypted, the DTO not. */
+    @Test
+    public void anEncryptConverterNamedInEnvYmlIsOnTheEntityFieldAndNotOnTheDto() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "    annotations:",
+                        "      encrypt: \"@entity:jakarta.persistence.Convert(converter=io.elasticore.springboot3.crypto"
+                                + ".EncryptConverter.class)\""),
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Customer:",
+                        "    meta: entity @expose(20)",
+                        "    fields:",
+                        "      customerId: long @id @sequence",
+                        "      phone: string(200) @env:encrypt",
+                        ""));
+        String log = run(project);
+        String entity = read(java(project, "Customer.java"));
+        String phone = entity.substring(0, entity.indexOf("String phone;"));
+        assertTrue(
+                phone.substring(phone.lastIndexOf(';'))
+                        .contains("Convert(converter=io.elasticore.springboot3.crypto.EncryptConverter.class)"),
+                entity + "\n---\n" + log);
+        assertFalse(read(java(project, "CustomerDTO.java")).contains("crypto"), log);
+    }
+
     private File project(String config, String model) throws IOException {
         File dir = Files.createTempDirectory("elcore-alias").toFile();
         projects.add(dir);

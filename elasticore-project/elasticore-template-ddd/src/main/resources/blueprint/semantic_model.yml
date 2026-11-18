@@ -146,6 +146,33 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Report", "domain": "board"}
+  - name: Subscriber
+    source: brd_subscriber
+    primary_key: [subscriber_id]
+    fields:
+      - name: subscriber_id
+        expression:
+          sql: "subscriber_id"
+        datatype: Integer
+      - name: nickname
+        expression:
+          sql: "nickname"
+        datatype: String
+      - name: phone
+        expression:
+          sql: "phone"
+        datatype: String
+      - name: email
+        expression:
+          sql: "email"
+        datatype: String
+      - name: phone_bidx
+        expression:
+          sql: "phone_bidx"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Subscriber", "domain": "board"}
   - name: Bookmark
     source: brd_bookmark
     primary_key: [bookmark_id]

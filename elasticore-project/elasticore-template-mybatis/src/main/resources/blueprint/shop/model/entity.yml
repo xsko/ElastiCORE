@@ -60,6 +60,8 @@ entity:
       # Markup, kept to jsoup's relaxed safelist before it is saved; its text without tags beside it (@plain).
       page: html @safe(relaxed) @plain(pageText)
       pageText: text
+      # Kept encrypted in its column (EncryptTypeHandler: v1:...), found by an equal one through its blind index.
+      serialNo: string(30) @encrypt @s(eq)
       image: blob
       madeOn: date
       madeAt: datetime @search(between)

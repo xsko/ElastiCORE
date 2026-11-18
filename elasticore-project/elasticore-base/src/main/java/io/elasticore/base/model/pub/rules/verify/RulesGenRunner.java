@@ -1292,6 +1292,7 @@ public final class RulesGenRunner {
                 if (shapes(io.elasticore.base.model.pub.rules.ReferencesById.class)) IdReferences.apply(model);
                 SpecFactory.prepareCounts(model);
                 SpecFactory.prepareHtml(model);
+                SpecFactory.prepareEncrypt(model);
             }
         } finally {
             currentModel = saved;

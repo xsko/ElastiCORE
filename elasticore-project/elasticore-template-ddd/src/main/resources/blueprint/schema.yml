@@ -257,6 +257,17 @@ entities:
       name: string(50) @Column(name = "name", length = 50)
       phase: string(10) @Column(name = "phase", length = 10)
 
+  Subscriber:
+    meta: entity @java(io.elasticore.sample.ddd.board.domain.model.Subscriber)
+    table: brd_subscriber
+    java: io.elasticore.sample.ddd.board.domain.model.Subscriber
+    fields:
+      subscriberId: Long @Column(name = "subscriber_id") @Id @GeneratedValue
+      nickname: string(50) @Column(name = "nickname", length = 50)
+      phone: string(20) @Column(name = "phone", length = 147)
+      email: string(100) @Column(name = "email", length = 575)
+      phoneBidx: string(22) @Column(name = "phone_bidx", length = 22)
+
   Supplier:
     meta: entity @java(io.elasticore.sample.ddd.catalog.entity.Supplier)
     table: cat_supplier
