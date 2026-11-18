@@ -22,9 +22,9 @@
   to the two asked for through `CustomerRepository.findAll(ShopMapper.toSpec(dto))` - and failed with "is not
   joinable" before the fix; the same in the hexagonal sample (`elasticore-template-ddd`, v3), customers created over
   HTTP. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
-- Known limits: the rule engine looks the entity field up in the search DTO's own domain; a `@searchable` DTO of an entity in another domain still joins in the 3.0 code (2.x looks across domains). The Kotlin output was checked as text, not compiled with this field.
-- Not changed: `@search(eq)` on a list of values against a single column still joins (it searches by one item,
-  `statusItem`) - a join on a single column, like the `in` one was; not run.
+- Follow-ups (`search-list-eq-column.md`): `@search(eq)` on a list of values against a single column, which joined as
+  `in` did, compares the column now; the Kotlin output was compiled and run; a `@searchable` DTO of an entity in
+  another domain gets no `toSpec` in either generator, and elcore3 now says so.
 - Files: `pub/jpa/MapperSrcPublisher.java`, `pub/rules/base/MapperSpecRules.java`,
   `elasticore-guide/elasticore-annotation-guide.md` and `ko/` (3.6), `MapperSpecTest.java`,
   `SearchInValueListTest.java`.

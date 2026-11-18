@@ -364,10 +364,15 @@ public class ServiceAccessRules implements CodeRules {
             owner = null;
         }
         if (owner == null && levels.containsValue("owner")) {
-            io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                    "[%s] %s @access has owner-level operations but no @owner field resolves%s - they are the"
-                            + " administrator's alone until @owner names the identity that holds the owner.",
-                    e.domainClassName(), entity, e.metaValue("owner") == null ? "" : " (@owner(" + e.metaValue("owner") + "))"));
+            io.elasticore.base.util.ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "[%s] %s @access has owner-level operations but no @owner field resolves%s - they are the"
+                                    + " administrator's alone until @owner names the identity that holds the owner.%s",
+                            e.domainClassName(),
+                            entity,
+                            e.metaValue("owner") == null ? "" : " (@owner(" + e.metaValue("owner") + "))",
+                            ownerThroughReference(e)));
         }
         FieldSpec pk = e.pkField();
         boolean ownerIsKey = owner != null && pk != null && owner.name().equals(pk.name());
@@ -1120,6 +1125,48 @@ public class ServiceAccessRules implements CodeRules {
             return null;
         }
         return null;
+    }
+
+    /**
+     * What to write when @owner names the identity of a to-one reference the entity holds as an object -
+     * customerId of customer: Customer @ManyToOne in layered, where only ddd and hexagonal hold the
+     * identity as a field: declare it on the relation's join column and join the relation by it. Empty
+     * when @owner names nothing of the kind.
+     */
+    static String ownerThroughReference(EntitySpec e) {
+        String name = trim(e.metaValue("owner"));
+        if (name == null || name.isEmpty()) return "";
+        for (FieldSpec ref : e.fields()) {
+            if (ref.isList() || !ref.isEntityRef()) continue;
+            if (ref.dslValueAny("joinby", "joinfield") != null) continue;
+            io.elasticore.base.model.entity.Entity target = entityNamed(ref.typeName());
+            io.elasticore.base.model.entity.PkField key = target == null ? null : target.getPkField();
+            io.elasticore.base.model.entity.Field pk =
+                    key == null || key.isMultiple() ? null : key.getItems().get(0);
+            if (pk == null || !pk.getTypeInfo().isBaseType()) continue;
+            String type = pk.getTypeInfo().getDefaultTypeName();
+            String dsl = "Long".equals(type) || "long".equals(type)
+                    ? "long"
+                    : "Integer".equals(type) || "int".equals(type) ? "int" : "String".equals(type) ? "string" : null;
+            if (dsl == null) continue;
+            String declared = ref.dslValueAny("column", "col", "db");
+            String column = declared != null && !declared.isEmpty()
+                    ? declared
+                    : io.elasticore.base.util.StringUtils.camelToSnake(ref.name()) + "_" + pk.getDbColumnName();
+            // The identity as ddd/hexagonal name it: customerId for customer and the key customerId.
+            String owner = pk.getName().startsWith(ref.name())
+                    ? pk.getName()
+                    : ref.name()
+                            + Character.toUpperCase(pk.getName().charAt(0))
+                            + pk.getName().substring(1);
+            if (!name.equals(ref.name()) && !name.equals(owner)) continue;
+            return String.format(
+                    " %s is the identity of %s: %s, which only architecture = 'ddd' and 'hexagonal' hold as a field."
+                            + " Here, declare it on the column the relation joins on - %s: %s @db(%s) - and join the"
+                            + " relation by it: %s: %s @ManyToOne @joinBy(%s); then @owner(%s).",
+                    owner, ref.name(), ref.typeName(), owner, dsl, column, ref.name(), ref.typeName(), owner, owner);
+        }
+        return "";
     }
 
     /** The owner's identity type as both languages name it, or null for one that is not an identity. */

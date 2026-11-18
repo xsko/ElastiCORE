@@ -206,8 +206,18 @@ public class MapperSrcPublisher extends SrcFilePublisher {
                 // A list of values searched against one column of the entity - an
                 // enum, a code - is that column's in(...); only a collection is joined.
                 Object column = targetEntity.getAllFieldListMap().get(entityFieldNm);
-                if (column instanceof Field && !((Field) column).getTypeInfo().isList()) isListEntityField = false;
+                // A to-one relation (customer: Customer) is not a column of values: it joins as before.
+                if (column instanceof Field
+                        && !((Field) column).getTypeInfo().isList()
+                        && this.publisher
+                                        .getECoreModelContext()
+                                        .findModelComponent(
+                                                ((Field) column).getTypeInfo().getBaseTypeName(), Entity.class)
+                                == null) isListEntityField = false;
             }
+            // A list field named as one of the entity's single columns (not reached through @ref).
+            boolean listOfValues =
+                    isListfield && !isListEntityField && f.getAnnotationValue(EntityAnnotation.REFERENCE) == null;
 
             String childFieldName="";
             String refFieldNm = f.getAnnotationValue(EntityAnnotation.REFERENCE);
@@ -373,7 +383,13 @@ public class MapperSrcPublisher extends SrcFilePublisher {
             } else {
                 // equals
 
-                if( isJoinWithSingleData) {
+                if (isJoinWithSingleData && listOfValues) {
+                    // One value searched against one column of the entity - an enum,
+                    // a code - is that column's equality; only a collection is joined.
+                    cb.line(
+                            "sp = sp.and((r,q,c) -> c.equal(r.get(%s),%s));",
+                            quoteString(entityFieldNm), joinWithSingleDatafieldName);
+                } else if (isJoinWithSingleData) {
 
                     cb.line("sp = sp.and((root, query, criteriaBuilder) -> {");
                     cb.line("  Join<%s, %s> join = root.join(%s);",entityNm
