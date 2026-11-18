@@ -69,7 +69,10 @@ public class DtoCleanFileRules implements CodeRules {
                     .valueRaw("com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL"));
         }
 
+        // Only the fields the file declares: a key DTO imports what its key
+        // uses, not the enums and the List of the fields it left out.
         for (FieldSpec f : e.fields()) {
+            if (c.field(f) != null && c.field(f).isRemoved()) continue;
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("dto"));
         }
         RuleText.registerParentImport(c, parentOf(e), e.pkg("dto"));
