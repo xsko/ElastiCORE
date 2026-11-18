@@ -5731,7 +5731,8 @@ public final class RulesGenRunner {
             keptAsYours++;
             System.out.println(label + "  KEPT(yours - the DSL's changes to it do not merge)");
             notes.add("[elcore3] " + key + ": the DSL changes this file of yours where you changed it too ("
-                    + merged.conflicts() + " place(s)) - it is left as it is; take the changes over by hand");
+                    + merged.conflicts() + " place(s), at line(s) " + joinLines(merged.lines())
+                    + ") - it is left as it is; take the changes over by hand");
             warnIfEndpointsDropped(out, disk, base, generated);
             warnIfEndpointsMissing(out, file, content);
             if ((v3 || kotlin) && !typescript) warnIfSignInLeft(out, file, content);
@@ -5749,6 +5750,16 @@ public final class RulesGenRunner {
                 + " change the same lines - marked <<<<<<< yours / >>>>>>> elasticore in the file; resolve them"
                 + " and run again");
         return true;
+    }
+
+    /** "12", "12, 40": where the conflicts of a kept file start. */
+    static String joinLines(java.util.List<Integer> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (Integer line : lines) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(line);
+        }
+        return sb.toString();
     }
 
     /**

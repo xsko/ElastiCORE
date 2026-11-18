@@ -257,6 +257,82 @@ public class ThreeWayMergeTest {
                 "class X(val name: String) // mine"), r.text());
     }
 
+    /** Issue 230: a method both sides took out, one leaving a blank line more. */
+    @Test
+    public void theSameChangeButABlankLineIsNoConflict() {
+        String base = "class C {\n    void read() {}\n\n    void schema() {}\n\n    void search() {}\n}\n";
+        String yours = "class C {\n    void read() {}\n\n    void search() {}\n}\n";
+        String generated = "class C {\n    void read() {}\n\n\n    void search() {}\n}\n";
+        for (ThreeWayMerge.Result r : new ThreeWayMerge.Result[] {
+            ThreeWayMerge.merge(base, yours, generated), ThreeWayMerge.mergeSource(base, yours, generated)
+        }) {
+            assertEquals(0, r.conflicts(), r.text());
+            assertEquals(yours, r.text(), "the developer's layout is kept");
+        }
+        // The other way round: the blank line is the developer's, and it stays.
+        assertEquals(
+                generated, ThreeWayMerge.mergeSource(base, generated, yours).text());
+    }
+
+    @Test
+    public void spacesAtTheEndOfALineAreLayoutToo() {
+        String yours = t("a", "b", "x  ", "d", "e");
+        assertMerged(yours, BASE, yours, t("a", "b", "x", "d", "e"));
+        assertMerged(
+                t("a", "b", "x", "", "d", "e"), BASE, t("a", "b", "x", "", "d", "e"), t("a", "b", "x\t", "d", "e"));
+    }
+
+    /** Indentation and spaces inside a line mean something in YAML, a raw string, a literal: still a conflict. */
+    @Test
+    public void indentationAndSpacesInsideALineAreNotLayout() {
+        assertEquals(
+                1,
+                ThreeWayMerge.merge(BASE, t("a", "b", "  x", "d", "e"), t("a", "b", "x", "d", "e"))
+                        .conflicts());
+        assertEquals(
+                1,
+                ThreeWayMerge.merge(BASE, t("a", "b", "x  y", "d", "e"), t("a", "b", "x y", "d", "e"))
+                        .conflicts());
+    }
+
+    @Test
+    public void aRealConflictWithABlankLineBesideIsStillOne() {
+        ThreeWayMerge.Result r =
+                ThreeWayMerge.merge(BASE, t("a", "b", "mine", "", "d", "e"), t("a", "b", "theirs", "d", "e"));
+        assertEquals(1, r.conflicts());
+        assertTrue(r.text().contains("mine") && r.text().contains("theirs"), r.text());
+        // Lines both deleted, against lines one changed: not alike.
+        assertEquals(
+                1,
+                ThreeWayMerge.merge(BASE, t("a", "b", "", "d", "e"), t("a", "b", "C", "d", "e"))
+                        .conflicts());
+    }
+
+    /** In a class body, the same method both added once - not the developer's and the DSL's one after the other. */
+    @Test
+    public void theSameMethodBothAddedButABlankLineIsTakenOnce() {
+        String base = t("class X {", "    int a;", "}");
+        String yours = t("class X {", "    int a;", "", "    void m() {}", "}");
+        String generated = t("class X {", "    int a;", "    void m() {}", "}");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(base, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertEquals(yours, r.text());
+    }
+
+    @Test
+    public void aConflictSaysWhereItIsInYours() {
+        ThreeWayMerge.Result r =
+                ThreeWayMerge.merge(BASE, t("a", "b", "mine", "d", "e"), t("a", "b", "theirs", "d", "e"));
+        assertEquals(java.util.Arrays.asList(3), r.lines());
+        // In a source, past the imports of the developer's file.
+        String yours = SOURCE.replace("import lombok.Getter;\n", "import lombok.Getter;\nimport java.util.List;\n")
+                .replace("private String name;", "private String mine;");
+        String generated = SOURCE.replace("private String name;", "private String theirs;");
+        ThreeWayMerge.Result s = ThreeWayMerge.mergeSource(SOURCE, yours, generated);
+        assertEquals(1, s.conflicts(), s.text());
+        assertEquals("    private String mine;", yours.split("\n")[s.lines().get(0) - 1]);
+    }
+
     private static void assertMerged(String expected, String base, String yours, String generated) {
         ThreeWayMerge.Result r = ThreeWayMerge.merge(base, yours, generated);
         assertEquals(0, r.conflicts(), r.text());

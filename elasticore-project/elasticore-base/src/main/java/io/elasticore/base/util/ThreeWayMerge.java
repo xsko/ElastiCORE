@@ -32,10 +32,12 @@ public final class ThreeWayMerge {
     public static final class Result {
         private final String text;
         private final int conflicts;
+        private final List<Integer> lines;
 
-        Result(String text, int conflicts) {
+        Result(String text, List<Integer> lines) {
             this.text = text;
-            this.conflicts = conflicts;
+            this.conflicts = lines.size();
+            this.lines = java.util.Collections.unmodifiableList(lines);
         }
 
         public String text() {
@@ -45,13 +47,24 @@ public final class ThreeWayMerge {
         public int conflicts() {
             return conflicts;
         }
+
+        /**
+         * Where each conflict starts in yours, counted from 1: the line of the
+         * developer's text the stretch begins at, or the line it would stand
+         * at where they deleted it. A file kept as it is has no marks to look
+         * for, so this is how to find the places.
+         */
+        public List<Integer> lines() {
+            return lines;
+        }
     }
 
     /** Texts with LF line ends; a CR before one is taken as part of the end. */
     public static Result merge(String base, String yours, String generated) {
         List<String> out = new ArrayList<String>();
-        int conflicts = mergeLines(lines(base), lines(yours), lines(generated), out, false);
-        return new Result(String.join("\n", out), conflicts);
+        List<Integer> at = new ArrayList<Integer>();
+        mergeLines(lines(base), lines(yours), lines(generated), out, false, 0, at);
+        return new Result(String.join("\n", out), at);
     }
 
     /**
@@ -60,12 +73,18 @@ public final class ThreeWayMerge {
      * kept, the generated ones first - a field the DSL added and a method the
      * developer added before the same closing brace; and lines one side only
      * added next to lines the other changed are kept beside the change.
+     * offset: the line of yours a stands at, for where a conflict is (at).
      */
-    private static int mergeLines(List<String> o, List<String> a, List<String> b, List<String> out,
-                                  boolean bothAdded) {
+    private static void mergeLines(
+            List<String> o,
+            List<String> a,
+            List<String> b,
+            List<String> out,
+            boolean bothAdded,
+            int offset,
+            List<Integer> at) {
         int[] ma = matches(o, a);
         int[] mb = matches(o, b);
-        int conflicts = 0;
         int io = 0;
         int ia = 0;
         int ib = 0;
@@ -88,7 +107,9 @@ public final class ThreeWayMerge {
             List<String> bc = b.subList(ib, eb);
             if (ac.equals(oc)) {
                 out.addAll(bc);
-            } else if (bc.equals(oc) || ac.equals(bc)) {
+            } else if (bc.equals(oc) || ac.equals(bc) || sameButLayout(ac, bc)) {
+                // Both made the same change but for blank lines or spaces at
+                // a line's end: the developer's layout is kept.
                 out.addAll(ac);
             } else if (bothAdded && oc.isEmpty()) {
                 out.addAll(bc);
@@ -109,7 +130,7 @@ public final class ThreeWayMerge {
                 out.addAll(bc.subList(0, bc.size() - oc.size()));
                 out.addAll(ac);
             } else {
-                conflicts++;
+                at.add(offset + ia + 1);
                 out.add(YOURS);
                 out.addAll(ac);
                 out.add(BETWEEN);
@@ -120,7 +141,30 @@ public final class ThreeWayMerge {
             ia = ea;
             ib = eb;
         }
-        return conflicts;
+    }
+
+    /**
+     * Whether two stretches differ only in their layout: blank lines, and
+     * spaces or tabs at the end of a line. Indentation and the spaces inside
+     * a line are not layout here - they mean something in YAML, in a Kotlin
+     * raw string, in a string literal - so a stretch that differs in those is
+     * still a conflict.
+     */
+    static boolean sameButLayout(List<String> a, List<String> b) {
+        return content(a).equals(content(b));
+    }
+
+    private static List<String> content(List<String> stretch) {
+        List<String> kept = new ArrayList<String>();
+        for (String line : stretch) {
+            int end = line.length();
+            while (end > 0
+                    && (line.charAt(end - 1) == ' ' || line.charAt(end - 1) == '\t' || line.charAt(end - 1) == '\r')) {
+                end--;
+            }
+            if (end > 0) kept.add(line.substring(0, end));
+        }
+        return kept;
     }
 
     /**
@@ -169,10 +213,11 @@ public final class ThreeWayMerge {
             }
         }
         List<String> out = new ArrayList<String>();
-        int conflicts = mergeLines(o.head, a.head, b.head, out, false);
+        List<Integer> at = new ArrayList<Integer>();
+        mergeLines(o.head, a.head, b.head, out, false, 0, at);
         out.addAll(block);
-        conflicts += mergeLines(o.body, a.body, b.body, out, true);
-        return new Result(String.join("\n", out), conflicts);
+        mergeLines(o.body, a.body, b.body, out, true, a.head.size() + a.imports.size(), at);
+        return new Result(String.join("\n", out), at);
     }
 
     /** A source cut where its imports are: before them, the block itself, after it. */
