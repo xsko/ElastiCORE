@@ -70,7 +70,9 @@ public class DerivedQueryMethodTest {
         extract(project);
 
         String repo = found(project, "StockRepository.java");
-        assertTrue(repo.contains("List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);"), repo);
+        assertTrue(
+                repo.contains("List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);"),
+                repo);
         assertTrue(repo.contains("Page<Stock> findByWarehouse(String warehouse, Pageable pageable);"), repo);
         assertEquals(1, count(repo, "@Query("), "only the JPQL method has a query:\n" + repo);
         assertTrue(repo.contains("List<Stock> findLowStock(@Param(\"threshold\") Integer threshold);"), repo);
@@ -85,7 +87,8 @@ public class DerivedQueryMethodTest {
 
         File compatible = project("jpa");
         assertEquals(0, run(compatible, "layered", "java", "elasticore.rules.v2"));
-        assertEquals(methods(found(legacy, "StockRepository.java")), methods(found(compatible, "StockRepository.java")));
+        assertEquals(
+                methods(found(legacy, "StockRepository.java")), methods(found(compatible, "StockRepository.java")));
     }
 
     /** The 2.x MongoDB repository had the same stop. */
@@ -95,7 +98,9 @@ public class DerivedQueryMethodTest {
         extract(project);
 
         String repo = found(project, "StockRepository.java");
-        assertTrue(repo.contains("List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);"), repo);
+        assertTrue(
+                repo.contains("List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);"),
+                repo);
         assertEquals(1, count(repo, "@Query("), repo);
         assertFalse(repo.contains("Modifying"), repo);
     }
@@ -162,7 +167,8 @@ public class DerivedQueryMethodTest {
         StringBuilder sb = new StringBuilder();
         for (String line : source.split("\n")) {
             String t = line.trim();
-            if (t.startsWith("@Query(") || (t.endsWith(");") && t.contains("("))) sb.append(t).append('\n');
+            if (t.startsWith("@Query(") || (t.endsWith(");") && t.contains("(")))
+                sb.append(t).append('\n');
         }
         return sb.toString();
     }

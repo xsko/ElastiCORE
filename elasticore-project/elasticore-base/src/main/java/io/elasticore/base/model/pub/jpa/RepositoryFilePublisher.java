@@ -133,7 +133,7 @@ public class RepositoryFilePublisher extends SrcFilePublisher {
 
             // A method without query: is a Spring Data derived query (read from
             // its name) - it has no query info and is declared as it is named.
-            if(method.getQueryInfo() != null && !method.getQueryInfo().isSelectQuery()) {
+            if (method.getQueryInfo() != null && !method.getQueryInfo().isSelectQuery()) {
                 p.add("@org.springframework.data.jpa.repository.Modifying");
             }
 
