@@ -72,9 +72,21 @@ public class EnumConstant implements ModelComponent {
             return  new ConstructParam(line, null);
         }
 
+        /** A value the enum line does not give: the constant's name stands in for it. */
+        public static ConstructParam missing(String constantName) {
+            ConstructParam param = create(constantName);
+            param.missing = true;
+            return param;
+        }
+
         private String name;
         private String type;
+        private boolean missing;
 
+        /** True when the enum line gave no value here and the constant's name stands in. */
+        public boolean isMissing() {
+            return missing;
+        }
 
         public String getName() {
             return name;
