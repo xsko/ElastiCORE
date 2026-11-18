@@ -303,6 +303,16 @@ public class MapperSpecTest {
         assertTrue(render(e).contains("Join<Article, Tag> join = root.join(\"tags\");"), render(e));
     }
 
+    /** An entity without a field of that name - the DTO names another - leaves the join as it was. */
+    @Test
+    public void inCondition_withNoEntityFieldOfThatNameKeepsTheJoin() {
+        EntitySpec e = new EntitySpec("Article")
+                .addField(loader.parse("tags", "List<Tag> @search(in)"))
+                .addAllField(loader.parse("articleId", "long @id"));
+
+        assertTrue(render(e).contains("Join<Article, Tag> join = root.join(\"tags\");"), render(e));
+    }
+
     /** A collection field with eq joins on a single item instead. */
     @Test
     public void eqCondition_onCollectionJoinsSingleItem() {

@@ -202,7 +202,7 @@ public class MapperSrcPublisher extends SrcFilePublisher {
 
             boolean isListfield = f.getTypeInfo().isList();
             boolean isListEntityField = isListfield;
-            if (isListfield && targetEntity != null && targetEntity.getAllFieldListMap() != null) {
+            if (isListfield) {
                 // A list of values searched against one column of the entity - an
                 // enum, a code - is that column's in(...); only a collection is joined.
                 Object column = targetEntity.getAllFieldListMap().get(entityFieldNm);
