@@ -352,6 +352,10 @@ public class StateStampTest {
         assertTrue(
                 layeredLog.contains("StDoc declares @stamp (ddd-state), which the selected rules do not enforce"),
                 layeredLog);
+        // The value the build script takes - 'ddd', not the enum's DOMAIN_MODEL.
+        assertTrue(
+                layeredLog.contains("Declare architecture = 'ddd' or 'hexagonal', or add the rule set."), layeredLog);
+        assertFalse(layeredLog.contains("domain-model"), layeredLog);
     }
 
     @Test
