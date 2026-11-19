@@ -940,6 +940,13 @@ public class ServiceAccessRules implements CodeRules {
                     + " locks them out.");
         }
         if (!signsIn(e)) return;
+        if (SoftDelete.applies(e) && !refreshesPerRequest(e)) {
+            warnSignIn(
+                    e,
+                    "a member deleted (@deleted) signs in no more, but a session it already has keeps working"
+                            + " - an administrator's role included - until it expires. Say @signin(refresh=request) to end it"
+                            + " with its next request.");
+        }
         FieldSpec candidate = roleCandidate(e);
         if (candidate != null && !roleIsSafe(e, candidate)) {
             warnSignIn(e, candidate.name() + " is not put in the session as a role: only a field an administrator alone"
