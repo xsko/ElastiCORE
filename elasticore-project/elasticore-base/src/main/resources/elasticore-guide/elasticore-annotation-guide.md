@@ -927,6 +927,29 @@ temporaryData: string @notaudited          # excluded from Envers auditing
 coordinates: int[] @env:integerarray       # see env.yml annotations
 ```
 
+#### @sensitive - left out of the Ossie export
+
+```yaml
+Member:
+  fields:
+    email: string(100)! @sensitive
+    providerAccountId: string(100) @sensitive
+```
+
+A `@sensitive` field is left out of the Apache Ossie semantic model (`ossie-export`), the way `@password` and `@writeonly`
+columns are: a BI or AI tool that writes its queries from the model is not offered the column. Its column is listed in the dataset's
+`omitted_columns`. Use it for a value the application reads but such a tool should not select - an email, a provider's id, an API key.
+
+- It changes nothing else: DTOs, responses, access rules, DDL and the Kotlin/TypeScript output are as without it. What a user sees
+  is still decided by the DTO and the access rules. Nothing is masked or erased.
+- On an `@Embedded` value it leaves out all of that value's columns; on a reference, its join column and its relationship
+  (a separate `customerId` field keeps its own marks). A reference that joins on a `@sensitive` field (`customerId: long @sensitive`
+  with `customer: Customer @ManyToOne`, or `@joinBy(customerId)`) is not exported as a relationship either, with a warning.
+- On an `@id` it is ignored with a warning (the dataset's key and the relationships to it need the column), and on a collection too
+  (it has no column of its own - mark the fields of the other entity).
+- It only matters with the `ossie-export` rule set (rule guide "Apache Ossie semantic model export"); 2.x code
+  (`output = 'v2'`) with `ossie-export` honours it the same way.
+
 ---
 
 ## 3. Search Conditions - Full Reference
