@@ -79,7 +79,8 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
 | `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.3) |
 | `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + 인바운드 포트 — `architecture = 'hexagonal'` + `mode: mybatis` |
-| `mongo-springboot` | 레이어드 Java 를 MongoDB 로 — `mode: mongo` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 Spring Data 문서·`MongoRepository`·`Criteria` 검색; env 가이드 2.4). MongoDB 위의 ddd·hexagonal·Kotlin 은 아직 거부 |
+| `mongo-springboot` | 레이어드 Java 를 MongoDB 로 — `mode: mongo` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 Spring Data 문서·`MongoRepository`·`Criteria` 검색; env 가이드 2.4). MongoDB 위의 ddd·hexagonal 은 아직 거부 |
+| `mongo-springboot-kt` | 같은 것을 Kotlin 으로 — `mode: mongo` 인 Kotlin 도메인이 받음 (저장소의 검색은 companion object; env 가이드 2.4) |
 
 `mode: mybatis` 인 도메인이 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot`·`jpa-springboot-v3` 를
 적으면 각각의 MyBatis 번들로 읽습니다 — mode 는 저장 방식을, 번들은 아키텍처를 말합니다.
@@ -1824,6 +1825,7 @@ relationships:
 | enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."`, 그리고 확장에 데이터로: `{"enumeration": "OrderStatus", "codes": {"PLC": "Placed", ...}}` | 테이블에는 코드만 있으므로 뜻을 함께 - 사람에게는 문장, 프로그램에게는 객체 |
 | 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
+| `@sensitive` | **내보내지 않음** | 애플리케이션은 읽지만, 모델을 보고 쿼리를 쓰는 BI·AI 도구에는 내놓지 않을 값 (이메일, 로그인 제공자의 계정 id, API 키). `omitted_columns` 에 기록하고, 모델의 `ai_context` 가 그런 컬럼을 뺐다고 알림. `@Embedded` 값 객체에 붙이면 그 컬럼 전부. 참조에 붙이면 조인 컬럼과 그 relationship (따로 있는 `customerId` 필드는 그 필드의 표시대로). `@sensitive` 필드로 조인하는 참조도 relationship 으로 내보내지 않고 경고. 그 필드를 읽는 지표는 dataset 에 없는 컬럼을 읽는 지표처럼 거절. `@id` (키와 그 키로 오는 relationship 에 컬럼이 필요)와 컬렉션(자기 컬럼이 없음)에서는 경고하고 무시. 그 밖에는 바뀌는 것이 없음: DTO, 응답, 접근 규칙, DDL, Kotlin/TypeScript 출력은 붙이지 않았을 때와 같음 |
 | `states:`, `@access`, `@owner`, `@event` | `nonportable_extensions` (`ELASTICORE`) | Ossie 에 해당 어휘가 없음 |
 | 엔티티의 행 필터: `@jpa:Where(clause = "...")`, `@jpa:SQLRestriction("...")` | dataset `nonportable_extensions` 의 `row_filter`(적은 절 그대로) + `description` 끝의 `(rows only where: ...)` | Ossie 에는 dataset 의 행 필터가 없어 `source` 는 테이블 그대로. 엔티티 자신의 것만, `Where` 보다 `SQLRestriction`. `@abstract` 부모의 것은 경고하고 내보내지 않음: Hibernate 는 부모가 `@MappedSuperclass` 가 아니라 엔티티로 쓰였을 때만 자식에 적용한다. 그 dataset 의 지표는 `nonportable_extensions` 에 `dataset_row_filter: true` |
 | `@compute`, `@snapshot`, `money`/`quantity` | 필드의 `nonportable_extensions` | 파생 규칙과 값 타입 |

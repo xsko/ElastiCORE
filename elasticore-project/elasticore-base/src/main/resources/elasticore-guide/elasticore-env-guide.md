@@ -300,7 +300,7 @@ Oracle, PostgreSQL and SQL Server).
 A `@formula` field stays in the entity, but MyBatis does not read it, so its value is null, and it is left out of the search conditions (warning).
 
 ### 2.4 MongoDB mode
-> **Works in:** v3 layered Java (run on Spring Boot 3), 2.x generator · **Not in:** v3 Kotlin, ddd, hexagonal (stops the build)
+> **Works in:** v3 layered Java and Kotlin (run on Spring Boot 3), 2.x generator · **Not in:** ddd, hexagonal (stops the build)
 
 A domain kept in MongoDB. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0.261119
 
@@ -317,6 +317,13 @@ as in JPA. Only the storage side differs; the project declares `spring-boot-star
 | `<Entity>.java` | `@Document(collection = "<table name>")`, `@Id`, `@Version`, `@CreatedDate`..., `@Indexed(unique = true, sparse = true)` for `@unique`, `@CompoundIndex` for `@index`, `@Field` only for a named `@column` |
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>`, and the search: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (only `SORT_FIELDS`) |
 | `<Entity>CoreService.java` | The **same method names and signatures** as the JPA version, over the repository and `MongoTemplate` (a search is a `Query` of the Criteria, paged) |
+
+**In Kotlin** (`language = 'kotlin'`, since 3.1) the same files are `.kt`: the entity is a class of `var` properties with the same annotations, the repository's search is its `companion object` (`@JvmStatic`, so `OrderRepository.criteria(...)` reads the same from Java and Kotlin), and the bundle is `mongo-springboot-kt`. A reference is read lazily through a proxy of the referenced class, which Kotlin makes final - open the documents in `build.gradle`, as a Kotlin JPA project opens `@Entity`:
+
+```groovy
+plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<your Kotlin version>' }
+allOpen { annotation 'org.springframework.data.mongodb.core.mapping.Document' }
+```
 
 **How the model is stored**
 
@@ -338,9 +345,10 @@ value, or a reference's id (`customer.customerId`); one further (`customer.name`
 Indexes are created only with `spring.data.mongodb.auto-index-creation=true` (Spring Data's default is off).
 A write is one document - there is no transaction around several (a batch update is its documents one by one).
 
-**Not yet** (stops the build, or as said): Kotlin, ddd and hexagonal; a composite key; an `@abstract(entity)` hierarchy;
+**Not yet** (stops the build, or as said): ddd and hexagonal; a composite key; an `@abstract(entity)` hierarchy;
 `@ManyToMany`; a collection of another collection's documents without `mappedBy`; `@count`, `@onDelete`; DDL (none is
-written). `elasticore-template-mongo` generates a shop, compiles it and runs its API on a real MongoDB (Testcontainers).
+written). `elasticore-template-mongo` generates a shop, compiles it and runs its API on a real MongoDB (Testcontainers);
+`elasticore-template-kt-mongo` does the same in Kotlin, with the same tests.
 
 ### 2.5 UML mode
 > **Works in:** 2.x generator · **Not in:** v3 beside `jpa` or `mybatis` (warning); v3 alone (stops the build)
@@ -717,7 +725,7 @@ config:
 - Example: `shop` and `billing` of `elasticore-template-ddd` (`GraphQlApiTest`), `shop` of `elasticore-template-kt` (`ShopGraphQlTest`).
 
 ### 6.2 Test code generation
-> **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated)
+> **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated); MongoDB (mode: mongo) in Kotlin (warning, not generated)
 
 ```yaml
 config:
@@ -809,6 +817,7 @@ elasticore:
 | `mybatis-springboot` | Layered Java on MyBatis (a domain with `mode: mybatis` gets it automatically - section 2.3) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | The domain model / hexagonal on MyBatis (a domain whose `architecture` is ddd or hexagonal and which has `mode: mybatis` gets it automatically - section 2.3) |
 | `mongo-springboot` | Layered Java on Spring Data MongoDB (a domain with `mode: mongo` gets it automatically - section 2.4) |
+| `mongo-springboot-kt` | The Kotlin version of `mongo-springboot` (a Kotlin domain with `mode: mongo` gets it automatically - section 2.4) |
 
 A bundle is a list of names of individual rule sets, so you can also combine them yourself:
 

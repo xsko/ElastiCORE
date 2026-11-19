@@ -124,6 +124,26 @@ class AttributeValueConverterTest {
     }
 
     @Test
+    void moneyIsReadBackFromTheDecimal128MongoDbKeepsItsAmountAs() {
+        io.elasticore.springboot3.domain.Money price =
+                (io.elasticore.springboot3.domain.Money) AttributeValueConverter.readAs(
+                        new java.math.BigDecimal("12.50"), io.elasticore.springboot3.domain.Money.class);
+        Object stored = AttributeValueConverter.stored(price);
+        assertEquals(
+                0, new java.math.BigDecimal("12.50").compareTo((java.math.BigDecimal) stored), String.valueOf(stored));
+        // MongoDB keeps a BigDecimal as Decimal128, and that is what a read hands back.
+        Object read = AttributeValueConverter.readAs(
+                new org.bson.types.Decimal128(new java.math.BigDecimal("12.50")),
+                io.elasticore.springboot3.domain.Money.class);
+        assertEquals(price, read);
+        // A type without a converter gets the decimal, not the BSON type.
+        assertEquals(
+                new java.math.BigDecimal("3"),
+                AttributeValueConverter.readAs(
+                        new org.bson.types.Decimal128(new java.math.BigDecimal("3")), String.class));
+    }
+
+    @Test
     void aConverterThatCannotBeMadeIsSaid() {
         IllegalStateException e =
                 assertThrows(IllegalStateException.class, () -> AttributeValueConverter.readAs("x", Broken.class));

@@ -449,12 +449,26 @@ public class ServiceAccessRules implements CodeRules {
 
         // ---- a search narrowed to the caller's own rows, by an equality on the owner
         m.add("/** A search narrowed to the caller's own rows where read is the owner's: an equality, whatever the field searches by. */");
-        if (kt) {
+        if (kt && mybatis) {
+            m.add("private fun ownedOnly(): Any? {");
+            if (owner != null) {
+                m.add("    val owner = ACCESS.ownerFilter(currentUser, \"read\") ?: return null")
+                        .add("    return %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ktId(ownerType));
+            } else {
+                m.add("    ACCESS.ownerFilter(currentUser, \"read\") ?: return null")
+                        .add(
+                                "    throw %sForbiddenException(\"%s is read by its owner, and names none (@owner)\")",
+                                RT, entity);
+            }
+            m.add("}").add("");
+        } else if (kt) {
             m.add("private fun ownedOnly(spec: Specification<%s>): Specification<%s> {", entity, entity)
              .add("    val owner = ACCESS.ownerFilter(currentUser, \"read\") ?: return spec");
             if (owner != null) {
-                m.add("    val id = %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ownerType)
-                 .add("    return spec.and(Specification<%s> { r, _, cb -> cb.equal(r.get<Any>(\"%s\"), id) })", entity, owner.name());
+                m.add("    val id = %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ktId(ownerType))
+                        .add(
+                                "    return spec.and(Specification<%s> { r, _, cb -> cb.equal(r.get<Any>(\"%s\"), id) })",
+                                entity, owner.name());
             } else {
                 m.add("    throw %sForbiddenException(\"%s is read by its owner, and names none (@owner)\")", RT, entity);
             }
@@ -492,7 +506,9 @@ public class ServiceAccessRules implements CodeRules {
          .stmt("ACCESS.require(currentUser, operation)");
         if (kt) {
             m.add("    if (!ACCESS.owns(currentUser, operation, %s))", ownerRead)
-             .add("        throw EntityNotFoundException(\"%s not found\")", entity);
+                    .add(
+                            "        throw %s(\"%s not found\")",
+                            orDefault(c.varValue("notFoundException"), "EntityNotFoundException"), entity);
         } else {
             m.add("    if (!ACCESS.owns(currentUser, operation, %s))", ownerRead)
                     .add(
@@ -507,7 +523,8 @@ public class ServiceAccessRules implements CodeRules {
         FieldSpec claimed = owner == null ? null : (!ownerIsKey || !keyGenerated) ? owner : null;
         if (claimed != null) {
             String idOf = kt
-                    ? String.format("%sAccessPolicy.`as`(currentUser.id(), %s::class.javaObjectType)", RT, ownerType)
+                    ? String.format(
+                            "%sAccessPolicy.`as`(currentUser.id(), %s::class.javaObjectType)", RT, ktId(ownerType))
                     : String.format("%sAccessPolicy.as(currentUser.id(), %s.class)", RT, ownerType);
             if (claimed == pk) {
                 // Keyed by its owner: a visitor has no identity to key it by.
@@ -542,7 +559,7 @@ public class ServiceAccessRules implements CodeRules {
             String target = io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.sealed(e, claimed)
                     ? "entity.creation()" : "entity";
             String value = kt
-                    ? String.format("%sAccessPolicy.`as`(id, %s::class.javaObjectType)", RT, ownerType)
+                    ? String.format("%sAccessPolicy.`as`(id, %s::class.javaObjectType)", RT, ktId(ownerType))
                     : String.format("%sAccessPolicy.as(id, %s.class)", RT, ownerType);
             m.add("/** A @readonly owner is the server's: whoever is signed in owns what they create. */");
             if (kt) {
@@ -649,13 +666,17 @@ public class ServiceAccessRules implements CodeRules {
                     .append(loginName)
                     .append(" == null || password == null) return Optional.empty()\n")
                     .append("        val found = ")
-                    .append(query)
-                    .append(".findAll(Specification<")
-                    .append(entity)
-                    .append("> { r, _, cb -> ")
-                    .append(byLogin)
-                    .append(" })\n")
-                    .append("        if (found.size != 1) {\n")
+                    .append(query);
+            if ("mybatis".equals(c.varValue("persistence")) || "mongo".equals(c.varValue("persistence"))) {
+                m.append(".findAllByLogin(").append(loginName).append(")\n");
+            } else {
+                m.append(".findAll(Specification<")
+                        .append(entity)
+                        .append("> { r, _, cb -> ")
+                        .append(byLogin)
+                        .append(" })\n");
+            }
+            m.append("        if (found.size != 1) {\n")
                     .append("            passwordHasher.hash(password)\n")
                     .append("            return Optional.empty()\n")
                     .append("        }\n")
@@ -709,21 +730,45 @@ public class ServiceAccessRules implements CodeRules {
         String dto = entity + "DTO";
         String repo = orDefault(c.varValue("cmdRef"), "repository");
         String mapper = orDefault(c.varValue("mapperName"), e.domainClassName() + "Mapper");
+        // MongoDB: a document kept under @deleted is no one's session (the reads of the service leave it out too).
+        String live = orDefault(c.varValue("liveFilter"), "");
         StringBuilder m = new StringBuilder();
         m.append("    /** The ").append(entity).append(" signed in now - the row the session's identity names - or empty for a visitor. */\n");
         if (kt) {
-            m.append("    open fun me(): Optional<").append(dto).append("> {\n")
-             .append("        val id = currentUser.id() ?: return Optional.empty()\n")
-             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.`as`(id, ")
-             .append(keyType).append("::class.javaObjectType)).map { ").append(mapper).append(".toDTO(it) }\n")
-             .append("    }");
+            m.append("    open fun me(): Optional<")
+                    .append(dto)
+                    .append("> {\n")
+                    .append("        val id = currentUser.id() ?: return Optional.empty()\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.`as`(id, ")
+                    .append(ktId(keyType))
+                    .append("::class.javaObjectType))")
+                    .append(live)
+                    .append(".map { ")
+                    .append(mapper)
+                    .append(".toDTO(it) }\n")
+                    .append("    }");
         } else {
-            m.append("    public Optional<").append(dto).append("> me() {\n")
-             .append("        Object id = currentUser.id();\n")
-             .append("        if (id == null) return Optional.empty();\n")
-             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.as(id, ")
-             .append(keyType).append(".class)).map(row -> ").append(mapper).append(".toDTO(row));\n")
-             .append("    }");
+            m.append("    public Optional<")
+                    .append(dto)
+                    .append("> me() {\n")
+                    .append("        Object id = currentUser.id();\n")
+                    .append("        if (id == null) return Optional.empty();\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.as(id, ")
+                    .append(keyType)
+                    .append(".class))")
+                    .append(live)
+                    .append(".map(row -> ")
+                    .append(mapper)
+                    .append(".toDTO(row));\n")
+                    .append("    }");
         }
         c.addMethod(m.toString());
     }
@@ -1177,6 +1222,14 @@ public class ServiceAccessRules implements CodeRules {
         if ("String".equals(t)) return "String";
         if ("UUID".equals(t)) return "java.util.UUID";
         return null;
+    }
+
+    /**
+     * An identity type as Kotlin names it: Int rather than java.lang.Integer,
+     * whose class literal gives an Integer that an Int property does not take.
+     */
+    private static String ktId(String idType) {
+        return io.elasticore.base.model.pub.rules.Syntax.KOTLIN.typeName(idType);
     }
 
     /** Method text written once and read as Java or Kotlin. */

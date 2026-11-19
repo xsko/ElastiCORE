@@ -1,0 +1,10 @@
+# Generated on every build; the module exists to compile and run what the
+# MongoDB rules produce in Kotlin, not to keep it. What is committed is the
+# blueprint and the tests.
+src/main/kotlin/
+
+# The message bundle the generator writes beside the error handler.
+/src/main/resources/i18n/*-messages.properties
+
+# What the generator last wrote, merged against (elasticore-env-guide.md 9-2).
+/.elasticore/

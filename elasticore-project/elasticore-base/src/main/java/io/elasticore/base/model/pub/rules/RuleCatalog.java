@@ -722,6 +722,44 @@ public final class RuleCatalog {
                 "port",
                 "proto",
                 "grpc-stub");
+        // The same over MongoDB in Kotlin: the Kotlin file shells (entity,
+        // DTOs, enums, mapper) with the MongoDB entity mapping, repository and
+        // service, whose skeletons are under kt/ (mongo_*.tmpl).
+        c.bundle(
+                "mongo-springboot-kt",
+                "jpa-entity",
+                "mongo-entity-file",
+                "jpa-entity-file-kt",
+                "jpa-dto",
+                "jpa-dto-file-kt",
+                "jpa-searchdto",
+                "jpa-searchdto-file-kt",
+                "jpa-enum-kt",
+                "jpa-views",
+                "jpa-support-types",
+                "mongo-repository",
+                "mybatis-search",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble-kt",
+                "jpa-mapper-file",
+                "mybatis-mapper-members",
+                "mongo-service-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-api-errors",
+                "spring-graphql",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "spring-signin-refresh",
+                "jpa-on-delete",
+                "jpa-count",
+                "jpa-html",
+                "jpa-encrypt",
+                "port",
+                "proto",
+                "grpc-stub");
         // The domain-model reading of the same artifacts: everything the v3
         // bundle produces, minus what an aggregate boundary says should not
         // exist. The subtraction is the rules declining, not a mode.

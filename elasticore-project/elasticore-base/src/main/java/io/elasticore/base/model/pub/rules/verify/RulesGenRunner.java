@@ -542,16 +542,28 @@ public final class RulesGenRunner {
                                         ? RulesConfig.Language.TYPESCRIPT
                                         : kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
                 if (refusal == null) {
+                    // The server's language: a client run of a Kotlin project (elcore3ts) reads the
+                    // server's bundle names as the Kotlin server run does.
+                    RulesConfig.Language language = kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA;
+                    String own = language == RulesConfig.Language.KOTLIN
+                            ? RulesConfig.MONGO_BUNDLE_KT
+                            : RulesConfig.MONGO_BUNDLE;
                     java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+                    if (language == RulesConfig.Language.KOTLIN) {
+                        java.util.List<String> kt = RulesConfig.configuredList(model.getConfig("publisher.rules.kt"));
+                        if (kt != null) named = kt;
+                    }
                     for (String rule : named == null ? java.util.Collections.<String>emptyList() : named) {
-                        if (RulesConfig.mongoBundleOf(rule) != null) continue;
+                        if (RulesConfig.mongoBundleOf(rule, language) != null) continue;
                         if (rule.endsWith("-kt")
                                 || rule.startsWith("jpa-springboot")
+                                || rule.startsWith("mongo-springboot")
                                 || rule.contains("mybatis")
                                 || rule.startsWith("ddd-")
                                 || rule.startsWith("hex")) {
                             refusal = "its publisher.rules names " + rule + ", which is not written for MongoDB"
-                                    + " - name mongo-springboot, or leave publisher.rules out";
+                                    + (language == RulesConfig.Language.KOTLIN ? " in Kotlin" : "")
+                                    + " - name " + own + ", or leave publisher.rules out";
                             break;
                         }
                     }
@@ -1338,7 +1350,7 @@ public final class RulesGenRunner {
             return (v3 || kotlin || typescript)
                     && (shapes(io.elasticore.base.model.pub.rules.ImmutableValueObjects.class)
                             || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MYBATIS)
-                            || (v3 && !kotlin && !typescript && persistence() == RulesConfig.Persistence.MONGO));
+                            || ((v3 || kotlin) && !typescript && persistence() == RulesConfig.Persistence.MONGO));
         } finally {
             currentModel = saved;
         }
@@ -2051,7 +2063,7 @@ public final class RulesGenRunner {
             emit(
                     spec,
                     io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.TARGET,
-                    ArtifactTarget.java(currentModel.getNamespace("repository"), spec.getName() + "Repository"),
+                    target(currentModel.getNamespace("repository"), spec.getName() + "Repository"),
                     "mongo-repository");
         }
         mongoStored.clear();
@@ -2661,7 +2673,9 @@ public final class RulesGenRunner {
         }
         io.elasticore.base.model.pub.rules.DomainSpec domain =
                 SpecFactory.fromDomain(domainDirName, model, specs);
-        emitDomain(domain, "Q", target(queryPackage(model), "Q"), "jpa-q-kt");
+        // Q is the JPA Criteria's metadata; a MongoDB domain has its repositories instead.
+        if (persistence() == RulesConfig.Persistence.MONGO) emitMongoRepositories(specs);
+        else emitDomain(domain, "Q", target(queryPackage(model), "Q"), "jpa-q-kt");
         assembleMapper(domain, model);
         emitDomain(domain, "repositoryHelper",
                 target(model.getNamespace("repository"),
@@ -3015,10 +3029,13 @@ public final class RulesGenRunner {
             }
             return out;
         }
-        if (named != null && "publisher.rules".equals(key) && persistence() == RulesConfig.Persistence.MONGO) {
+        if (named != null
+                && ("publisher.rules".equals(key) || (kotlin && "publisher.rules.kt".equals(key)))
+                && persistence() == RulesConfig.Persistence.MONGO) {
             java.util.List<String> out = new ArrayList<String>();
             for (String rule : named) {
-                String mongo = RulesConfig.mongoBundleOf(rule);
+                String mongo = RulesConfig.mongoBundleOf(
+                        rule, kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
                 out.add(mongo != null ? mongo : rule);
             }
             return out;
@@ -3055,6 +3072,84 @@ public final class RulesGenRunner {
         }
     }
 
+    /**
+     * An entity of a MongoDB domain, in Java or Kotlin: the document, the
+     * service and the controller. The repository waits for the search DTO's
+     * conditions and is written with the domain (emitMongoRepositories).
+     */
+    private void generateMongoArtifacts(
+            EntitySpec spec,
+            ECoreModel model,
+            String name,
+            boolean exposed,
+            boolean serviced,
+            boolean repositoryOnly,
+            boolean hasPk) {
+        // What the MongoDB code does not write yet is refused, not written
+        // so that it loses data quietly.
+        java.util.List<String> unsupported = io.elasticore.base.model.pub.rules.mongo.MongoDocs.unsupported(spec);
+        if (!unsupported.isEmpty() && !spec.hasMeta("embeddable") && !spec.isMappedSuperclass()) {
+            io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                    "[elcore3] %s.%s: mode: mongo does not write %s yet - model it otherwise,"
+                            + " or keep this domain on JPA",
+                    spec.domainClassName(), name, String.join("; ", unsupported)));
+            return;
+        }
+        if (kotlin) {
+            emit(
+                    spec,
+                    "entity",
+                    target(model.getNamespace("entity"), entityClassName(spec)),
+                    "jpa-entity",
+                    "mongo-entity-file",
+                    "jpa-entity-file-kt");
+        } else {
+            emit(
+                    spec,
+                    "entity",
+                    target(model.getNamespace("entity"), entityClassName(spec)),
+                    "jpa-entity",
+                    "mongo-entity-file");
+        }
+        if ((serviced || repositoryOnly) && hasPk) {
+            // The repository waits for the search DTO's conditions, which
+            // the DTO pass reads: it is written with the domain.
+            spec.config(
+                    io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.SERVICED_CONFIG,
+                    String.valueOf(serviced));
+            mongoStored.add(spec);
+        }
+        boolean coreOk = true;
+        if (kotlin && serviced && hasPk && spec.testCode()) {
+            // Said, not skipped quietly: Kotlin writes the test for JPA, whose skeleton it is.
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] testCode is not written for mode: mongo - no service test is generated for its entities;"
+                            + " test the MongoDB service against a database (Testcontainers) instead.",
+                    model.getInternalDomainName()));
+        }
+        if (serviced && hasPk) {
+            coreOk = emitSucceeded(
+                    spec,
+                    "service",
+                    target(model.getNamespace("service"), String.format("%sCoreService", name)),
+                    "mongo-service-file");
+            if (coreOk) {
+                emit(
+                        spec,
+                        "service_extend",
+                        target(model.getNamespace("service"), String.format("%sService", name)),
+                        "spring-service-extend");
+            }
+        }
+        if (exposed && hasPk && coreOk) {
+            emit(
+                    spec,
+                    "control",
+                    target(model.getNamespace("control"), String.format("%sController", name)),
+                    "spring-controller");
+        }
+    }
+
     private void generateEntityArtifacts(Entity entity, EntitySpec spec, ECoreModel model) {
         String name = entity.getIdentity().getName();
         boolean exposed = entity.getMetaInfo().hasMetaAnnotation("expose");
@@ -3066,6 +3161,7 @@ public final class RulesGenRunner {
 
         System.out.println("  " + name);
 
+        if ((v3 || kotlin) && !typescript) readBehaviorOverrides(spec, model);
         if ((v3 || kotlin) && !typescript && spec.isAbstractEntity()) checkAbstractEntity(spec, name);
         // An @table that starts with the prefix gets it twice, as 2.x named it - right for a 2.x
         // database, a slip for one made to the name written. Only the database knows which, so the
@@ -3104,11 +3200,10 @@ public final class RulesGenRunner {
 
         // Over MyBatis the artifacts a rule set contributes - the repository
         // adapter writing the aggregate's members - read the related entities.
-        if (v3
-                && !kotlin
-                && !typescript
-                && (persistence() == RulesConfig.Persistence.MYBATIS
-                        || persistence() == RulesConfig.Persistence.MONGO)) {
+        // A MongoDB domain in Kotlin too.
+        if (!typescript
+                && ((v3 && !kotlin && persistence() == RulesConfig.Persistence.MYBATIS)
+                        || ((v3 || kotlin) && persistence() == RulesConfig.Persistence.MONGO))) {
             relateMyBatisEarly(spec);
         }
 
@@ -3141,6 +3236,11 @@ public final class RulesGenRunner {
         // was never generated, and are the developer's from then on - so they
         // wait for a run in which it succeeds.
         boolean coreOk = true;
+
+        if ((v3 || kotlin) && persistence() == RulesConfig.Persistence.MONGO) {
+            generateMongoArtifacts(spec, model, name, exposed, serviced, repositoryOnly, hasPk);
+            return;
+        }
 
         if (kotlin) {
             emit(spec, "entity",
@@ -3190,54 +3290,6 @@ public final class RulesGenRunner {
                         target(model.getNamespace("entity"),
                                 String.format("%sIdentity", name)),
                         "jpa-entity", "jpa-identity-kt");
-            }
-            return;
-        }
-
-        if (v3 && persistence() == RulesConfig.Persistence.MONGO) {
-            // What the MongoDB code does not write yet is refused, not written
-            // so that it loses data quietly.
-            java.util.List<String> unsupported = io.elasticore.base.model.pub.rules.mongo.MongoDocs.unsupported(spec);
-            if (!unsupported.isEmpty() && !spec.hasMeta("embeddable") && !spec.isMappedSuperclass()) {
-                io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
-                        "[elcore3] %s.%s: mode: mongo does not write %s yet - model it otherwise,"
-                                + " or keep this domain on JPA",
-                        spec.domainClassName(), name, String.join("; ", unsupported)));
-                return;
-            }
-            emit(
-                    spec,
-                    "entity",
-                    ArtifactTarget.java(model.getNamespace("entity"), entityClassName(spec)),
-                    "jpa-entity",
-                    "mongo-entity-file");
-            if ((serviced || repositoryOnly) && hasPk) {
-                // The repository waits for the search DTO's conditions, which
-                // the DTO pass reads: it is written with the domain.
-                spec.config(
-                        io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.SERVICED_CONFIG,
-                        String.valueOf(serviced));
-                mongoStored.add(spec);
-            }
-            if (serviced && hasPk) {
-                coreOk = emitSucceeded(
-                        spec,
-                        "service",
-                        ArtifactTarget.java(model.getNamespace("service"), String.format("%sCoreService", name)),
-                        "mongo-service-file");
-                if (coreOk)
-                    emit(
-                            spec,
-                            "service_extend",
-                            ArtifactTarget.java(model.getNamespace("service"), String.format("%sService", name)),
-                            "spring-service-extend");
-            }
-            if (exposed && hasPk && coreOk) {
-                emit(
-                        spec,
-                        "control",
-                        ArtifactTarget.java(model.getNamespace("control"), String.format("%sController", name)),
-                        "spring-controller");
             }
             return;
         }
@@ -3459,6 +3511,22 @@ public final class RulesGenRunner {
                 ArtifactTarget.java(model.getNamespace("entity"),
                         String.format("%sIdentity", spec.getName())),
                 "jpa-identity");
+    }
+
+    /**
+     * The commands the developer's behavior class overrides, read from the
+     * file on disk: a lifecycle command overridden there keeps its parameters
+     * in the override, so the rules do not say they are dropped (issue 229).
+     */
+    private void readBehaviorOverrides(EntitySpec spec, ECoreModel model) {
+        if (spec.getName().equals(entityClassName(spec))) return;
+        ArtifactTarget out = target(model.getNamespace("entity"), spec.getName());
+        File file = new File(rootFor(out) + "/" + out.relativePath());
+        if (!file.isFile()) return;
+        String source = readLf(file);
+        if (source == null) return;
+        java.util.Set<String> names = io.elasticore.base.model.pub.rules.BehaviorOverrides.in(source, kotlin);
+        spec.config(io.elasticore.base.model.pub.rules.BehaviorOverrides.CONFIG, String.join(",", names));
     }
 
     /**

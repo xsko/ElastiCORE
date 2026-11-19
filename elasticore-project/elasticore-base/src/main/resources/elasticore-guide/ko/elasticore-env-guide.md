@@ -300,7 +300,7 @@ Oracle·PostgreSQL·SQL Server).
 `@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
 ### 2.4 MongoDB 모드
-> **동작:** v3 레이어드 Java (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** v3 Kotlin, ddd, hexagonal (빌드 중단)
+> **동작:** v3 레이어드 Java·Kotlin (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** ddd, hexagonal (빌드 중단)
 
 MongoDB 에 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261119
 
@@ -317,6 +317,13 @@ config:
 | `<Entity>.java` | `@Document(collection = "<테이블 이름>")`, `@Id`, `@Version`, `@CreatedDate`..., `@unique` 는 `@Indexed(unique = true, sparse = true)`, `@index` 는 `@CompoundIndex`, `@Field` 는 이름을 준 `@column` 에만 |
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>` 와 검색: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (`SORT_FIELDS` 만) |
 | `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 저장소와 `MongoTemplate` 위에서 동작(검색은 Criteria 의 `Query`, 페이지) |
+
+**Kotlin 으로** (`language = 'kotlin'`, 3.1 부터) 같은 파일이 `.kt` 로 나옵니다: 엔티티는 같은 애노테이션을 단 `var` 프로퍼티의 클래스, 저장소의 검색은 `companion object` (`@JvmStatic` 이라 `OrderRepository.criteria(...)` 를 Java 와 Kotlin 에서 똑같이 부름), 번들은 `mongo-springboot-kt`. 참조는 참조 대상 클래스의 프록시로 지연 로딩되는데 Kotlin 클래스는 final 이므로, Kotlin JPA 프로젝트가 `@Entity` 를 여는 것처럼 `build.gradle` 에서 문서를 엽니다:
+
+```groovy
+plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<사용하는 Kotlin 버전>' }
+allOpen { annotation 'org.springframework.data.mongodb.core.mapping.Document' }
+```
 
 **모델이 저장되는 모양**
 
@@ -338,9 +345,10 @@ config:
 인덱스는 `spring.data.mongodb.auto-index-creation=true` 일 때만 만들어집니다(Spring Data 기본값은 off).
 쓰기는 문서 하나 단위이고 여러 문서를 묶는 트랜잭션은 없습니다(일괄 수정은 문서를 하나씩).
 
-**아직 안 됨** (빌드 중단, 또는 적은 대로): Kotlin, ddd, hexagonal; 복합 키; `@abstract(entity)` 계층;
+**아직 안 됨** (빌드 중단, 또는 적은 대로): ddd, hexagonal; 복합 키; `@abstract(entity)` 계층;
 `@ManyToMany`; `mappedBy` 없는 다른 컬렉션 문서의 컬렉션; `@count`, `@onDelete`; DDL (쓰지 않음).
 `elasticore-template-mongo` 가 상점을 생성·컴파일하고 실제 MongoDB(Testcontainers)에서 API 를 돌립니다.
+`elasticore-template-kt-mongo` 는 같은 일을 Kotlin 으로, 같은 테스트로 합니다.
 
 ### 2.5 UML 모드
 > **동작:** 2.x generator · **안 됨:** v3 에서 `jpa`·`mybatis` 와 함께 (경고); v3 에서 단독 (빌드 중단)
@@ -717,7 +725,7 @@ config:
 - 예제: `elasticore-template-ddd`의 `shop`과 `billing`(`GraphQlApiTest`), `elasticore-template-kt`의 `shop`(`ShopGraphQlTest`).
 
 ### 6.2 테스트 코드 생성
-> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨)
+> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨); Kotlin 의 MongoDB (mode: mongo) (경고, 생성 안 됨)
 
 ```yaml
 config:
@@ -809,6 +817,7 @@ elasticore:
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | 도메인 모델·헥사고날을 MyBatis 로 (`architecture` 가 ddd·hexagonal 이고 `mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 | `mongo-springboot` | 레이어드 Java 를 Spring Data MongoDB 로 (`mode: mongo` 인 도메인이 저절로 받음 - 2.4 절) |
+| `mongo-springboot-kt` | `mongo-springboot` 의 Kotlin 판 (`mode: mongo` 인 Kotlin 도메인이 저절로 받음 - 2.4 절) |
 
 번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
 

@@ -75,7 +75,7 @@ public final class RulesConfig {
      * mongo - so that one word, not two, names it.
      *
      * The rule engine writes JPA, MyBatis and MongoDB code - MongoDB as layered
-     * Java only (mongoRefusal says what else is asked of it).
+     * Java or Kotlin only (mongoRefusal says what else is asked of it).
      */
     public enum Persistence {
         JPA, MYBATIS, MONGO;
@@ -94,16 +94,16 @@ public final class RulesConfig {
         return persistenceOfMode(mode) == Persistence.MONGO;
     }
 
+    /** The MongoDB bundle in Kotlin: the same layered code, written in Kotlin. */
+    public static final String MONGO_BUNDLE_KT = "mongo-springboot-kt";
+
     /**
      * Why an architecture and language cannot be generated as MongoDB code, or
-     * null when they can. MongoDB code is layered Java so far; the client
-     * (TypeScript) is shaped as for any server.
+     * null when they can. MongoDB code is layered, in Java or Kotlin, so far;
+     * the client (TypeScript) is shaped as for any server.
      */
     public static String mongoRefusal(Architecture architecture, Language language) {
         if (language == Language.TYPESCRIPT) return null;
-        if (language == Language.KOTLIN) {
-            return "MongoDB code is written in Java, layered; language = 'kotlin' is generated for JPA only";
-        }
         if (architecture == Architecture.DOMAIN_MODEL || architecture == Architecture.HEXAGONAL) {
             return "MongoDB code is written layered (architecture = 'layered'); architecture = '"
                     + (architecture == Architecture.HEXAGONAL ? "hexagonal" : "ddd")
@@ -165,6 +165,18 @@ public final class RulesConfig {
     }
 
     /**
+     * As mongoBundleOf, for the language being written: a Kotlin run reads
+     * the Kotlin layered bundles (jpa-springboot-kt, mongo-springboot-kt) as
+     * the Kotlin MongoDB one. Null for any other name.
+     */
+    public static String mongoBundleOf(String bundle, Language language) {
+        if (language != Language.KOTLIN) return mongoBundleOf(bundle);
+        if (bundle == null) return null;
+        String name = bundle.trim();
+        return DEFAULT_BUNDLE_KT.equals(name) || MONGO_BUNDLE_KT.equals(name) ? MONGO_BUNDLE_KT : null;
+    }
+
+    /**
      * The persistence the rule engine writes for a domain's mode, or null
      * when the mode names none.
      *
@@ -214,7 +226,7 @@ public final class RulesConfig {
         }
         String refusal = mongoRefusal(architecture, language);
         if (refusal != null) throw new IllegalArgumentException(refusal + ".");
-        return MONGO_BUNDLE;
+        return language == Language.KOTLIN ? MONGO_BUNDLE_KT : MONGO_BUNDLE;
     }
 
     /**

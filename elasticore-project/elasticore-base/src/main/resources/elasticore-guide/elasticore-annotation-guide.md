@@ -927,6 +927,29 @@ temporaryData: string @notaudited          # excluded from Envers auditing
 coordinates: int[] @env:integerarray       # see env.yml annotations
 ```
 
+#### @sensitive - left out of the Ossie export
+
+```yaml
+Member:
+  fields:
+    email: string(100)! @sensitive
+    providerAccountId: string(100) @sensitive
+```
+
+A `@sensitive` field is left out of the Apache Ossie semantic model (`ossie-export`), the way `@password` and `@writeonly`
+columns are: a BI or AI tool that writes its queries from the model is not offered the column. Its column is listed in the dataset's
+`omitted_columns`. Use it for a value the application reads but such a tool should not select - an email, a provider's id, an API key.
+
+- It changes nothing else: DTOs, responses, access rules, DDL and the Kotlin/TypeScript output are as without it. What a user sees
+  is still decided by the DTO and the access rules. Nothing is masked or erased.
+- On an `@Embedded` value it leaves out all of that value's columns; on a reference, its join column and its relationship
+  (a separate `customerId` field keeps its own marks). A reference that joins on a `@sensitive` field (`customerId: long @sensitive`
+  with `customer: Customer @ManyToOne`, or `@joinBy(customerId)`) is not exported as a relationship either, with a warning.
+- On an `@id` it is ignored with a warning (the dataset's key and the relationships to it need the column), and on a collection too
+  (it has no column of its own - mark the fields of the other entity).
+- It only matters with the `ossie-export` rule set (rule guide "Apache Ossie semantic model export"); 2.x code
+  (`output = 'v2'`) with `ossie-export` honours it the same way.
+
 ---
 
 ## 3. Search Conditions - Full Reference
@@ -2427,6 +2450,12 @@ Post:
 - `@safe(basic)`, the default, keeps text markup (paragraphs, emphasis, lists, quotes, code) and links (http, https, ftp, mailto) with
   `rel="nofollow"`, and no images. `@safe(relaxed)` also keeps headings, tables and images (http, https), and adds no `rel`. A script and
   its text, `on...` handlers, `javascript:` links and every other tag and attribute are removed: jsoup's `Safelist.basic()` / `relaxed()`.
+- A relative link is kept as written: `<img src="/api/files/3">` keeps its `src` under `@safe(relaxed)`, and `<a href="/posts/7">`,
+  `#top` and `?page=2` keep theirs under both. So does a protocol-relative one (`//host/x.png`), which takes the page's protocol - a
+  host that `https://host/x.png` would reach anyway. A link to this site gets no `rel`; `rel="nofollow"` is put on a link to another
+  host. A link a browser reads as another host's while it looks like a path here (`/\host`, `https:host`) is removed.
+- `@safe(relaxed)` keeps an image of any http or https host, and loading one tells that host who reads the page. Which images a writer
+  may embed (a file they uploaded, say) is the application's to check, in `beforeSave` - after the clean.
 - `@plain(field)` names a long text field of the same entity (`text`, `longtext` or `clob`). The text without tags - entities read,
   white space collapsed - is written there on every write, and no request writes it (read-only in the DTO and in TypeScript). Put
   `@search` on that field: a search then reads the words, not the markup and not a removed script's text.

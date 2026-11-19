@@ -14,13 +14,13 @@ import org.gradle.api.tasks.JavaExec
 // generated from the same DSL and can be compared.
 
 plugins {
-	id 'org.jetbrains.kotlin.jvm' version '1.9.24'
+	id 'org.jetbrains.kotlin.jvm'
 	// A JPA entity has to be open to be proxied and needs a no-arg
 	// constructor; Kotlin classes are final and have neither by default.
 	// These are the plugins a Kotlin JPA project applies, and the generated
 	// entities assume them - which is why they are not declared open.
-	id 'org.jetbrains.kotlin.plugin.allopen' version '1.9.24'
-	id 'org.jetbrains.kotlin.plugin.jpa' version '1.9.24'
+	id 'org.jetbrains.kotlin.plugin.allopen'
+	id 'org.jetbrains.kotlin.plugin.jpa'
 	id 'io.spring.dependency-management' version '1.1.6'
 	id 'io.elasticore'
 }

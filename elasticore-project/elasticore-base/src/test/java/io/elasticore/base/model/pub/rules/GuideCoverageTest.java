@@ -165,6 +165,14 @@ public class GuideCoverageTest {
     }
 
     @Test
+    @DisplayName("@sensitive, read only by the Ossie export, is in the annotation guide and the export's table")
+    public void theSensitiveWordIsDocumented() throws IOException {
+        // A field word with one reader: found in neither guide, nobody would know the export honours it.
+        assertTrue(read(ANNOTATION_GUIDE).contains("@sensitive"), "the annotation guide does not name @sensitive");
+        assertTrue(read(RULE_GUIDE).contains("| `@sensitive` |"), "the Ossie mapping table does not name @sensitive");
+    }
+
+    @Test
     @DisplayName("every namespace key an artifact is placed by is documented")
     public void namespaceKeysAreDocumented() throws IOException {
         String guide = read(ENV_GUIDE);

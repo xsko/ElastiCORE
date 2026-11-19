@@ -85,7 +85,99 @@ public class CommandParamKeptTest {
         assertTrue(reject.contains("this.rejectReason = rejectReason"), reject);
     }
 
+    /**
+     * The warning says to override the command in the behavior class and keep
+     * the parameter there; once that is done it is not said again (issue 229).
+     */
+    @Test
+    public void javaOverrideInTheBehaviorClassIsNotWarned() throws Exception {
+        File project = project();
+        assertEquals(0, run(project, "java", new ByteArrayOutputStream()));
+        File behavior = file(project, "CkClaim.java");
+        String source = read(behavior);
+        int end = source.lastIndexOf('}');
+        write(
+                behavior,
+                source.substring(0, end)
+                        + "    // a comment that names void approve(String x) is no override\n"
+                        + "    @Override\n"
+                        + "    public void reject(String rejectReason, String note) {\n"
+                        + "        super.reject(rejectReason, note);\n"
+                        + "    }\n"
+                        + source.substring(end));
+        String out = rerun(project, "java");
+        assertFalse(out.contains("the generated move does not keep"), out);
+    }
+
+    @Test
+    public void javaOverrideOfAnotherCommandStillWarns() throws Exception {
+        File project = project();
+        assertEquals(0, run(project, "java", new ByteArrayOutputStream()));
+        File behavior = file(project, "CkClaim.java");
+        String source = read(behavior);
+        int end = source.lastIndexOf('}');
+        write(
+                behavior,
+                source.substring(0, end)
+                        + "    /* public void reject(String rejectReason, String note) - not yet */\n"
+                        + "    @Override\n"
+                        + "    public void approve() {\n"
+                        + "        super.approve();\n"
+                        + "    }\n"
+                        + source.substring(end));
+        String out = rerun(project, "java");
+        assertTrue(out.contains("CkClaim.reject(note): the generated move does not keep note"), out);
+    }
+
+    @Test
+    public void kotlinOverrideInTheBehaviorClassIsNotWarned() throws Exception {
+        File project = project();
+        ByteArrayOutputStream first = new ByteArrayOutputStream();
+        assertEquals(0, run(project, "kotlin", first));
+        String said = new String(first.toByteArray(), StandardCharsets.UTF_8);
+        assertTrue(said.contains("CkClaim.reject(note): the generated move does not keep note"), said);
+        File behavior = file(project, "CkClaim.kt");
+        String source = read(behavior);
+        int end = source.lastIndexOf('}');
+        write(
+                behavior,
+                source.substring(0, end)
+                        + "    override fun reject(rejectReason: String, note: String?) {\n"
+                        + "        super.reject(rejectReason, note)\n"
+                        + "    }\n"
+                        + source.substring(end));
+        String out = rerun(project, "kotlin");
+        assertFalse(out.contains("the generated move does not keep"), out);
+    }
+
     // ------------------------------------------------------------------
+
+    /** A second run in this process, as the next build would be. */
+    private static String rerun(File project, String language) throws Exception {
+        java.lang.reflect.Field tmp =
+                io.elasticore.base.model.core.BaseECoreModelContext.class.getDeclaredField("tmpCtx");
+        tmp.setAccessible(true);
+        tmp.set(null, null);
+        ModelCheck.reset();
+        ByteArrayOutputStream log = new ByteArrayOutputStream();
+        assertEquals(0, run(project, language, log));
+        return new String(log.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    private static File file(File project, String fileName) {
+        List<File> hits = new ArrayList<File>();
+        collect(project, fileName, hits);
+        assertEquals(1, hits.size(), fileName + " in " + project + ": " + hits);
+        return hits.get(0);
+    }
+
+    private static String read(File file) throws IOException {
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static void write(File file, String text) throws IOException {
+        Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));
+    }
 
     private static String section(String source, String head) {
         int from = source.indexOf(head);
