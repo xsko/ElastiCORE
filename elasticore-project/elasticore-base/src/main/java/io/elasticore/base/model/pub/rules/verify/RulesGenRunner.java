@@ -3037,6 +3037,7 @@ public final class RulesGenRunner {
 
         System.out.println("  " + name);
 
+        if ((v3 || kotlin) && !typescript) readBehaviorOverrides(spec, model);
         if ((v3 || kotlin) && !typescript && spec.isAbstractEntity()) checkAbstractEntity(spec, name);
         // An @table that starts with the prefix gets it twice, as 2.x named it - right for a 2.x
         // database, a slip for one made to the name written. Only the database knows which, so the
@@ -3430,6 +3431,22 @@ public final class RulesGenRunner {
                 ArtifactTarget.java(model.getNamespace("entity"),
                         String.format("%sIdentity", spec.getName())),
                 "jpa-identity");
+    }
+
+    /**
+     * The commands the developer's behavior class overrides, read from the
+     * file on disk: a lifecycle command overridden there keeps its parameters
+     * in the override, so the rules do not say they are dropped (issue 229).
+     */
+    private void readBehaviorOverrides(EntitySpec spec, ECoreModel model) {
+        if (spec.getName().equals(entityClassName(spec))) return;
+        ArtifactTarget out = target(model.getNamespace("entity"), spec.getName());
+        File file = new File(rootFor(out) + "/" + out.relativePath());
+        if (!file.isFile()) return;
+        String source = readLf(file);
+        if (source == null) return;
+        java.util.Set<String> names = io.elasticore.base.model.pub.rules.ddd.DddStateRules.overriddenIn(source, kotlin);
+        spec.config(io.elasticore.base.model.pub.rules.ddd.DddStateRules.OVERRIDDEN_CONFIG, String.join(",", names));
     }
 
     /**
