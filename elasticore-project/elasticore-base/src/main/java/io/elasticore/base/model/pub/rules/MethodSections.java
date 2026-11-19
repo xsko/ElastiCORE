@@ -17,6 +17,10 @@ import java.util.Set;
  *   create, read, search, update, batchUpdate, deleteBatch, deleteById,
  *   schemaInfo
  *
+ * A service method's section (one opened by its javadoc) is named by the
+ * method, Java or Kotlin; a test method's ("@Test") by "test:" and the name
+ * its test name starts with (save_ShouldSave... is test:save).
+ *
  * When neither exclusions nor additions are requested the input is returned
  * untouched, so default output stays byte-identical.
  */
@@ -66,7 +70,7 @@ public final class MethodSections {
         List<Integer> starts = new ArrayList<Integer>();
         for (int i = classDecl + 1; i < footer; i++) {
             String t = lines.get(i).trim();
-            if (t.startsWith("@Operation") || t.startsWith("/**")) starts.add(i);
+            if (t.startsWith("@Operation") || t.startsWith("/**") || startsATest(lines, i)) starts.add(i);
         }
         // A class without method sections (an entity with only fields and
         // accessors) has nothing to exclude, but a rule's added method still
@@ -79,13 +83,25 @@ public final class MethodSections {
         for (int i = 0; i < bodyEnd; i++) {
             out.append(lines.get(i)).append('\n');
         }
+        boolean lastTestDropped = false;
         for (int s = 0; s < starts.size(); s++) {
             int from = starts.get(s);
             int to = (s + 1 < starts.size()) ? starts.get(s + 1) : footer;
             String id = sectionId(lines, from, to);
-            if (excluded != null && excluded.contains(id)) continue;
+            lastTestDropped = false;
+            if (excluded != null && excluded.contains(id)) {
+                lastTestDropped = id.startsWith("test:");
+                continue;
+            }
             for (int i = from; i < to; i++) {
                 out.append(lines.get(i)).append('\n');
+            }
+        }
+        // The last test dropped: the one before it ends with the blank line that
+        // separated them, which would now stand before the class's closing brace.
+        if (lastTestDropped && (additions == null || additions.isEmpty())) {
+            while (out.length() > 1 && out.charAt(out.length() - 1) == '\n' && out.charAt(out.length() - 2) == '\n') {
+                out.setLength(out.length() - 1);
             }
         }
         if (additions != null) {
@@ -108,12 +124,48 @@ public final class MethodSections {
     private static final java.util.regex.Pattern SIGNATURE =
             java.util.regex.Pattern.compile("^(?:public|protected)\\s+[^=]*?(\\w+)\\(");
 
+    /** A test method, Java ("void save_ShouldSave()") or Kotlin ("fun save_ShouldSave()"). */
+    private static final java.util.regex.Pattern TEST_SIGNATURE =
+            java.util.regex.Pattern.compile("^(?:public\\s+)?(?:void|fun)\\s+(\\w+)\\(");
+
+    /**
+     * Whether line i opens a test method: "@Test" not already inside a section
+     * a javadoc or another annotation opened just above it.
+     */
+    private static boolean startsATest(List<String> lines, int i) {
+        if (!lines.get(i).trim().equals("@Test")) return false;
+        for (int j = i - 1; j >= 0; j--) {
+            String above = lines.get(j).trim();
+            if (above.isEmpty()) continue;
+            return !above.endsWith("*/") && !above.startsWith("@");
+        }
+        return true;
+    }
+
+    /**
+     * A Kotlin method: "open fun save(", "override fun update(", "fun find(" - public
+     * unless it says otherwise. A private one, like a private Java method, names no
+     * section; a protected one the Java pattern already reads.
+     */
+    private static final java.util.regex.Pattern KOTLIN_SIGNATURE = java.util.regex.Pattern.compile(
+            "^(?:(?:public|internal|open|override|final|suspend|inline|operator)\\s+)*fun\\s+(?:<[^>]*>\\s*)?(\\w+)\\(");
+
     /**
      * Derives the section id: the Spring mapping annotation for controller
      * sections, otherwise the method name from the signature line (overloads
      * share one id, so excluding e.g. "delete" drops every overload).
      */
     static String sectionId(List<String> lines, int from, int to) {
+        for (int i = from; i < to; i++) {
+            if (!lines.get(i).trim().equals("@Test")) continue;
+            // A test: "test:" and the service method it tests, the name before the
+            // first '_' - save_ShouldSave... is test:save, deleteBySearch_... test:deleteBySearch.
+            for (int j = i + 1; j < to; j++) {
+                java.util.regex.Matcher m = TEST_SIGNATURE.matcher(lines.get(j).trim());
+                if (m.find()) return "test:" + m.group(1).split("_", 2)[0];
+            }
+            return "unknown";
+        }
         for (int i = from; i < to; i++) {
             String t = lines.get(i).trim();
             if (t.startsWith("@GetMapping(\"/schema/info\")")) return "schemaInfo";
@@ -126,7 +178,10 @@ public final class MethodSections {
             if (t.startsWith("@GetMapping(")) return "read";
         }
         for (int i = from; i < to; i++) {
-            java.util.regex.Matcher m = SIGNATURE.matcher(lines.get(i).trim());
+            String t = lines.get(i).trim();
+            java.util.regex.Matcher m = SIGNATURE.matcher(t);
+            if (m.find()) return m.group(1);
+            m = KOTLIN_SIGNATURE.matcher(t);
             if (m.find()) return m.group(1);
         }
         return "unknown";

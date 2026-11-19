@@ -24,6 +24,29 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  */
 public class ServiceTestBaseRules implements CodeRules {
 
+    /**
+     * The test calls only what the service has. With {@code @readonly} - or a
+     * {@code @restExclude} naming a service method, or an abstract entity, which is
+     * never saved as itself - the v3 service leaves those methods out, and
+     * their tests go too: a call of a method that is not there does not
+     * compile. The 2.x-compatible output keeps every test, as its service
+     * keeps every method.
+     */
+    @Rule(value = "service-test-method-filter", target = "service_test", order = 20)
+    void methodFilter(EntitySpec e) {
+        SourceCode c = ctx(e);
+        if (c.compatible()) return;
+        java.util.Set<String> gone = ControllerBaseRules.restExcluded(e, true);
+        if (e.hasMeta("readonly")) {
+            gone.addAll(java.util.Arrays.asList(
+                    "save", "update", "batchUpdate", "delete", "deleteById", "updateBySpecification"));
+        }
+        if (gone.contains("save")) c.excludeMethod("test:save", "test:saveAndFindById");
+        if (gone.contains("update")) c.excludeMethod("test:update");
+        if (gone.contains("deleteById")) c.excludeMethod("test:deleteById");
+        if (gone.contains("delete")) c.excludeMethod("test:deleteBySearch");
+    }
+
     @Rule(value = "service-test-vars", target = "service_test", order = 10)
     void vars(EntitySpec e) {
         SourceCode c = ctx(e);
