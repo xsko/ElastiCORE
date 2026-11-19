@@ -12,6 +12,8 @@
   point) is not part of this fix.
 - Checked: `CommandParamKeptTest` - Java and Kotlin, a second run after adding the override to the generated behavior
   class says nothing (both fail without the change); an override of another command, and a comment naming the
-  command, still warn. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ /
+  command, still warn. `BehaviorOverridesTest` - the Java and Kotlin forms read, comments and other methods not.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ /
   0 missing / 0 extra.
-- Files: `DddStateRules.java`, `RulesGenRunner.java`, `CommandParamKeptTest.java`.
+- Files: `BehaviorOverrides.java` (new - the reading, outside any rule set, as the runner names none),
+  `DddStateRules.java`, `RulesGenRunner.java`, `BehaviorOverridesTest.java` (new), `CommandParamKeptTest.java`.

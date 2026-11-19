@@ -213,35 +213,6 @@ public class DddStateRules implements CodeRules {
      * and it was dropped without a word (issue 170) - unless the behavior class
      * overrides the command, where the parameter is the developer's to use.
      */
-    /**
-     * The commands the developer's behavior class overrides, comma-joined:
-     * set by the runner from the file on disk before the entity is written.
-     */
-    public static final String OVERRIDDEN_CONFIG = "ddd.behavior.overridden";
-
-    /**
-     * The methods a behavior class's source declares as overrides of a
-     * command: "void name(" in Java, "override fun name(" in Kotlin. Comments
-     * are left out, so a note that names a method is not one.
-     */
-    public static java.util.Set<String> overriddenIn(String source, boolean kotlin) {
-        java.util.Set<String> out = new java.util.TreeSet<String>();
-        if (source == null) return out;
-        String code = source.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\\n]*", " ");
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                        kotlin ? "\\boverride\\s+fun\\s+(\\w+)\\s*\\(" : "\\bvoid\\s+(\\w+)\\s*\\(")
-                .matcher(code);
-        while (m.find()) out.add(m.group(1));
-        return out;
-    }
-
-    /** Whether the behavior class overrides the command, as the runner read it. */
-    private static boolean overridden(EntitySpec e, String command) {
-        String names = e.config(OVERRIDDEN_CONFIG);
-        if (names == null || names.isEmpty()) return false;
-        return java.util.Arrays.asList(names.split(",")).contains(command);
-    }
-
     private static List<String> kept(EntitySpec e, EntitySpec.CommandSpec cmd, boolean kt) {
         List<String> out = new ArrayList<String>();
         if (cmd == null) return out;
@@ -262,7 +233,7 @@ public class DddStateRules implements CodeRules {
         }
         // Overridden in the behavior class: that is where the warning sends
         // the parameter, so it is not said again (issue 229).
-        if (!unused.isEmpty() && !overridden(e, cmd.name())) {
+        if (!unused.isEmpty() && !io.elasticore.base.model.pub.rules.BehaviorOverrides.overrides(e, cmd.name())) {
             io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
                     "[%s] %s.%s(%s): the generated move does not keep %s - name a parameter as the field it fills"
                             + " (a field of %s of the same type is set by the move), or override %s in %s and keep it"

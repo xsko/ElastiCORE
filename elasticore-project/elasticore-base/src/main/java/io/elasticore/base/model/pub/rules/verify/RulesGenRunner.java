@@ -3444,8 +3444,8 @@ public final class RulesGenRunner {
         if (!file.isFile()) return;
         String source = readLf(file);
         if (source == null) return;
-        java.util.Set<String> names = io.elasticore.base.model.pub.rules.ddd.DddStateRules.overriddenIn(source, kotlin);
-        spec.config(io.elasticore.base.model.pub.rules.ddd.DddStateRules.OVERRIDDEN_CONFIG, String.join(",", names));
+        java.util.Set<String> names = io.elasticore.base.model.pub.rules.BehaviorOverrides.in(source, kotlin);
+        spec.config(io.elasticore.base.model.pub.rules.BehaviorOverrides.CONFIG, String.join(",", names));
     }
 
     /**
