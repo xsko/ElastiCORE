@@ -210,7 +210,8 @@ public class DddStateRules implements CodeRules {
      * a field of the entity, of the same type, is stored there once the move is
      * made - reject(rejectReason) keeps the reason. Any other parameter is said:
      * the generated move cannot know where it goes, the request has to send it,
-     * and it was dropped without a word (issue 170).
+     * and it was dropped without a word (issue 170) - unless the behavior class
+     * overrides the command, where the parameter is the developer's to use.
      */
     private static List<String> kept(EntitySpec e, EntitySpec.CommandSpec cmd, boolean kt) {
         List<String> out = new ArrayList<String>();
@@ -230,7 +231,9 @@ public class DddStateRules implements CodeRules {
                 unused.add(p.name());
             }
         }
-        if (!unused.isEmpty()) {
+        // Overridden in the behavior class: that is where the warning sends
+        // the parameter, so it is not said again (issue 229).
+        if (!unused.isEmpty() && !io.elasticore.base.model.pub.rules.BehaviorOverrides.overrides(e, cmd.name())) {
             io.elasticore.base.model.pub.rules.ModelCheck.warn(String.format(
                     "[%s] %s.%s(%s): the generated move does not keep %s - name a parameter as the field it fills"
                             + " (a field of %s of the same type is set by the move), or override %s in %s and keep it"
