@@ -134,6 +134,50 @@ class GraphQlErrorsTest {
                 .containsEntry("code", "conflict");
     }
 
+    private Object kindOf(String state, int code, String message) {
+        return resolve(new DataIntegrityViolationException(
+                        "SQL [insert ...]; " + message, new java.sql.SQLException(message, state, code)))
+                .getExtensions()
+                .get("code");
+    }
+
+    /** Read from the SQLSTATE - or, where a database says only 23000, its own code - as the REST errors read it. */
+    @Test
+    void eachDatabaseSaysWhichKind() {
+        assertThat(kindOf("23502", 0, "NULL not allowed")).isEqualTo("required");
+        assertThat(kindOf("23505", 0, "duplicate")).isEqualTo("unique");
+        assertThat(kindOf("23503", 0, "fk")).isEqualTo("referenced");
+        assertThat(kindOf("23506", 0, "parent missing")).isEqualTo("referenced");
+        assertThat(kindOf("23513", 0, "check")).isEqualTo("check");
+        assertThat(kindOf("23514", 0, "check")).isEqualTo("check");
+        assertThat(kindOf("HY000", 3819, "Check constraint violated")).isEqualTo("check");
+        assertThat(kindOf("23000", 1048, "Column cannot be null")).isEqualTo("required");
+        assertThat(kindOf("23000", 1400, "cannot insert NULL")).isEqualTo("required");
+        assertThat(kindOf("23000", 515, "Cannot insert the value NULL")).isEqualTo("required");
+        assertThat(kindOf("23000", 1062, "Duplicate entry")).isEqualTo("unique");
+        assertThat(kindOf("23000", 1, "unique constraint violated")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2627, "Violation of UNIQUE KEY")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2601, "Cannot insert duplicate key row")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2290, "check constraint violated")).isEqualTo("check");
+        assertThat(kindOf("23000", 547, "The INSERT statement conflicted with the CHECK constraint"))
+                .isEqualTo("check");
+        assertThat(kindOf("23000", 547, "The INSERT statement conflicted with the FOREIGN KEY constraint"))
+                .isEqualTo("referenced");
+        assertThat(kindOf("23000", 1451, "Cannot delete a parent row")).isEqualTo("referenced");
+        assertThat(kindOf("23000", 2292, "child record found")).isEqualTo("referenced");
+        assertThat(kindOf("23000", 9999, "something else")).isEqualTo("conflict");
+        assertThat(kindOf("42000", 0, "syntax")).isEqualTo("conflict");
+        // The sentence goes with the kind.
+        assertThat(resolve(new DataIntegrityViolationException(
+                                "x", new java.sql.SQLException("NULL not allowed for EMAIL", "23502")))
+                        .getMessage())
+                .isEqualTo("A required value is missing.");
+        assertThat(resolve(new DataIntegrityViolationException(
+                                "x", new java.sql.SQLException("CHECK (PRICE > 0) 'x'", "23514")))
+                        .getMessage())
+                .isEqualTo("A value is outside what the column allows.");
+    }
+
     /** The service's own refusal of a taken identifier says so, as it always did. */
     @Test
     void theServicesOwnDuplicateKeepsItsMessage() {

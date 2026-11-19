@@ -129,17 +129,22 @@ public final class MethodSections {
             java.util.regex.Pattern.compile("^(?:public\\s+)?(?:void|fun)\\s+(\\w+)\\(");
 
     /**
-     * Whether line i opens a test method: "@Test" not already inside a section
-     * a javadoc or another annotation opened just above it.
+     * Whether line i opens a test method: the first of the annotations above
+     * the method ("@Disabled", "@Test", "@DisplayName" ...), one of them @Test,
+     * and no javadoc just above them - a javadoc opens the section itself.
      */
-    private static boolean startsATest(List<String> lines, int i) {
-        if (!lines.get(i).trim().equals("@Test")) return false;
-        for (int j = i - 1; j >= 0; j--) {
-            String above = lines.get(j).trim();
-            if (above.isEmpty()) continue;
-            return !above.endsWith("*/") && !above.startsWith("@");
+    static boolean startsATest(List<String> lines, int i) {
+        if (!lines.get(i).trim().startsWith("@")) return false;
+        if (i > 0) {
+            String above = lines.get(i - 1).trim();
+            if (above.startsWith("@") || above.endsWith("*/")) return false;
         }
-        return true;
+        for (int j = i; j < lines.size(); j++) {
+            String t = lines.get(j).trim();
+            if (t.equals("@Test")) return true;
+            if (!t.startsWith("@")) return false;
+        }
+        return false;
     }
 
     /**
