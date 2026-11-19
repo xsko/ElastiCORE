@@ -74,7 +74,7 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
 
         // DSL validation: check enum constant values against field definitions
         if (fieldItems != null && enumItems != null) {
-            validateEnumValues(enumName, fieldItems, enumItems);
+            validateEnumValues(ctx.getDomainId(), enumName, fieldItems, enumItems);
         }
 
         //(String name, MetaInfo meta, Items<Field> items, Items<EnumConstant> enumConstantItems)
@@ -85,7 +85,8 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
      * Validate enum constant values against field type/length definitions.
      * Reports warnings when values exceed declared field lengths.
      */
-    private void validateEnumValues(String enumName, Items<Field> fieldItems, Items<EnumConstant> enumItems) {
+    private void validateEnumValues(
+            String domain, String enumName, Items<Field> fieldItems, Items<EnumConstant> enumItems) {
         List<Field> fields = fieldItems.getItemList();
         for (EnumConstant ec : enumItems.getItemList()) {
             List<EnumConstant.ConstructParam> params = ec.getConstructParamList();
@@ -100,9 +101,32 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
                         value = value.substring(1, value.length() - 1);
                     }
                     if (value.length() > maxLen) {
-                        ConsoleLog.storeLog("DSL_WARN",
-                            String.format("enum %s.%s: field '%s' value '%s' (length %d) exceeds max length %d",
-                                enumName, ec.getIdentity().getName(), field.getName(), value, value.length(), maxLen));
+                        String constant = ec.getIdentity().getName();
+                        // A value the line leaves out is filled with the constant's name;
+                        // that name, not a value anyone wrote, is what is too long.
+                        String found = param.isMissing()
+                                ? String.format(
+                                        "[%s] enum %s.%s: field '%s' has no value on the line, so the constant's"
+                                                + " name '%s' (length %d) stands in and exceeds max length %d",
+                                        domain, enumName, constant, field.getName(), value, value.length(), maxLen)
+                                : String.format(
+                                        "[%s] enum %s.%s: field '%s' value '%s' (length %d) exceeds max length %d",
+                                        domain, enumName, constant, field.getName(), value, value.length(), maxLen);
+                        if (io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes()) {
+                            // The 3.0 rule engine stops on it, as the 2.x generator
+                            // does: the value does not fit the field it is declared
+                            // for - for the @db field, the column it is stored in.
+                            io.elasticore.base.model.pub.rules.ModelCheck.fail(
+                                    param.isMissing()
+                                            ? String.format(
+                                                    "%s. Give %s a value for '%s' of at most %d characters.",
+                                                    found, constant, field.getName(), maxLen)
+                                            : String.format(
+                                                    "%s. Make field '%s' at least %d characters long or shorten the value.",
+                                                    found, field.getName(), value.length()));
+                        } else {
+                            ConsoleLog.storeLog("DSL_WARN", found);
+                        }
                     }
                 }
             }
@@ -129,7 +153,7 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
             // If no values provided, use enum name for all fields
             List<EnumConstant.ConstructParam> paramList = new ArrayList<>();
             for (int i = 0; i < Math.max(1, fieldCount); i++) {
-                paramList.add(EnumConstant.ConstructParam.create(enumName));
+                paramList.add(EnumConstant.ConstructParam.missing(enumName));
             }
             return EnumConstant.builder().name(enumName).constructParamList(paramList).build();
         }
@@ -156,7 +180,7 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
         if (items.length == 0) {
             // If no items parsed, use enum name for all fields
             for (int i = 0; i < Math.max(1, fieldCount); i++) {
-                paramList.add(EnumConstant.ConstructParam.create(enumName));
+                paramList.add(EnumConstant.ConstructParam.missing(enumName));
             }
         } else if (items.length == 1 && fieldCount == 1) {
             // If only one item and one field, use it directly
@@ -167,7 +191,7 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
             String value = items[0];
             paramList.add(EnumConstant.ConstructParam.create(value));
             for (int i = 1; i < fieldCount; i++) {
-                paramList.add(EnumConstant.ConstructParam.create(enumName));
+                paramList.add(EnumConstant.ConstructParam.missing(enumName));
             }
         } else {
             // If multiple items, use them as provided (matching field count)
@@ -176,7 +200,7 @@ public class EnumerationModelLoader extends AbstractModelLoader implements Const
             }
             // If we have fewer items than fields, fill with enum name
             for (int i = items.length; i < fieldCount; i++) {
-                paramList.add(EnumConstant.ConstructParam.create(enumName));
+                paramList.add(EnumConstant.ConstructParam.missing(enumName));
             }
         }
 

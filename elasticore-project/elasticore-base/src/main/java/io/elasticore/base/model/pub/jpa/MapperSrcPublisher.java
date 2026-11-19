@@ -149,10 +149,8 @@ public class MapperSrcPublisher extends SrcFilePublisher {
         }
     }
 
-
-
-
-    private void makeSpecificationFieldCode(DataTransfer searchDto, CodeStringBuilder cb, String entityNm) {
+    private void makeSpecificationFieldCode(
+            DataTransfer searchDto, CodeStringBuilder cb, String entityNm, Entity targetEntity) {
 
         ListMap<String, Field> listMap = searchDto.getAllFieldListMap();
 
@@ -204,6 +202,22 @@ public class MapperSrcPublisher extends SrcFilePublisher {
 
             boolean isListfield = f.getTypeInfo().isList();
             boolean isListEntityField = isListfield;
+            if (isListfield) {
+                // A list of values searched against one column of the entity - an
+                // enum, a code - is that column's in(...); only a collection is joined.
+                Object column = targetEntity.getAllFieldListMap().get(entityFieldNm);
+                // A to-one relation (customer: Customer) is not a column of values: it joins as before.
+                if (column instanceof Field
+                        && !((Field) column).getTypeInfo().isList()
+                        && this.publisher
+                                        .getECoreModelContext()
+                                        .findModelComponent(
+                                                ((Field) column).getTypeInfo().getBaseTypeName(), Entity.class)
+                                == null) isListEntityField = false;
+            }
+            // A list field named as one of the entity's single columns (not reached through @ref).
+            boolean listOfValues =
+                    isListfield && !isListEntityField && f.getAnnotationValue(EntityAnnotation.REFERENCE) == null;
 
             String childFieldName="";
             String refFieldNm = f.getAnnotationValue(EntityAnnotation.REFERENCE);
@@ -369,7 +383,13 @@ public class MapperSrcPublisher extends SrcFilePublisher {
             } else {
                 // equals
 
-                if( isJoinWithSingleData) {
+                if (isJoinWithSingleData && listOfValues) {
+                    // One value searched against one column of the entity - an enum,
+                    // a code - is that column's equality; only a collection is joined.
+                    cb.line(
+                            "sp = sp.and((r,q,c) -> c.equal(r.get(%s),%s));",
+                            quoteString(entityFieldNm), joinWithSingleDatafieldName);
+                } else if (isJoinWithSingleData) {
 
                     cb.line("sp = sp.and((root, query, criteriaBuilder) -> {");
                     cb.line("  Join<%s, %s> join = root.join(%s);",entityNm
@@ -416,7 +436,7 @@ public class MapperSrcPublisher extends SrcFilePublisher {
         cb2.line("public static Specification<%s> %s(%s searchDTO, Specification<%s> sp)", entityNm, mainMethodNm, dtoNm, entityNm);
         cb2.block();
 
-        makeSpecificationFieldCode(searchDto, cb2 ,entityNm);
+        makeSpecificationFieldCode(searchDto, cb2, entityNm, targetEntity);
 
         cb2.line("return sp;");
         cb2.end();

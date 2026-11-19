@@ -874,6 +874,10 @@ enumeration:
       SUSPENDED: S,Suspended
 ```
 
+> **A value must fit its field.** `CANCELLED: CXL,Cancelled` with `code: string(2)` stops the build. `elcore` (2.x code) says
+> `[shop] enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2`; `elcore3` (3.0 code; up to 3.0.261119 only a warning)
+> says the same with `Make field 'code' at least 3 characters long or shorten the value.` after it. A value the line leaves out is filled with the constant's name, and said so: `field 'code' has no value on the line, so the constant's name 'CANCELLED' (length 9) stands in ...`.
+
 ---
 
 ## 6. Repository definition
@@ -895,6 +899,8 @@ repository:
         nativeQuery: false    # true for native SQL
         pageable: false       # true adds Pageable as the last parameter
 ```
+
+> **A derived query without `return:`** answers by its name: `find`/`read`/`get`/`query`/`search`/`stream`...`By` a `List<Entity>` (a `Page<Entity>` with `pageable: true`), `countBy` a `long`, `existsBy` a `boolean`; `deleteBy`/`removeBy` and any other name stay `void` (up to 3.0.261119 every one was `void`).
 
 > **Warning**: An entry without a `methods` list (for example, the form that writes methods as keys under `ProductRepository:`)
 > is not read. The generator prints a warning and skips that entry.

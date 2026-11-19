@@ -688,6 +688,20 @@ public class ModelExtractor {
 
     }
 
+    /**
+     * A model file the loader could not parse (LOAD ERROR), or a source that could not be written, leaves
+     * code ungenerated: the run ends 1 so the build stops here, not at compile errors that point elsewhere.
+     */
+    private static void exitIfAnythingFailed() {
+        java.util.List<String> refused = io.elasticore.base.model.pub.rules.ModelCheck.failures();
+        if (refused.isEmpty()) return;
+        for (String r : refused) ConsoleLog.printWarn("[ERROR] " + r);
+        ConsoleLog.printWarn(
+                "[ERROR] ElastiCORE generation failed: fix the model above and run ./gradlew elcore again.");
+        ConsoleLog.clear();
+        System.exit(1);
+    }
+
     public static void main(String[] args) {
 
         String mode = System.getProperty("mode");
@@ -735,6 +749,8 @@ public class ModelExtractor {
                 int dslWarnCount = ConsoleLog.getAccumulatedCount("DSL_WARN");
 
                 if ("valid".equals(mode)) {
+                    // A model file not read fails the validation as it fails the build.
+                    exitIfAnythingFailed();
                     int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
                     int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
                     int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
@@ -769,6 +785,8 @@ public class ModelExtractor {
                     System.exit(1);
                 }
 
+                exitIfAnythingFailed();
+
                 long endTime = System.currentTimeMillis();
                 log("Multi-module extract completed (" + (endTime - startTime) + "ms)");
                 return;
@@ -791,6 +809,8 @@ public class ModelExtractor {
                     ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                             "[WARN] DSL Validation Warnings (unmatched domain):", "  ", true);
 
+                    // A model file not read fails the validation as it fails the build.
+                    exitIfAnythingFailed();
                     int diffCount = ConsoleLog.getAccumulatedCount("VALIDATION_DIFF");
                     int newCount = ConsoleLog.getAccumulatedCount("VALIDATION_NEW");
                     int userModCount = ConsoleLog.getAccumulatedCount("VALID_USER_MODIFIED");
@@ -838,20 +858,25 @@ public class ModelExtractor {
                 System.exit(1);
             }
 
+            exitIfAnythingFailed();
+
             long endTime = System.currentTimeMillis();
             long executionTime = endTime - startTime;
             log("ModelExtractor extract completed successfully (Execution time: " + executionTime + "ms)");
 
 
         } catch (Throwable e) {
-            // Check if this is an initialization-related error
-            if (e instanceof FileNotFoundException || e.getMessage().contains("Not found model DSL file")) {
-                FileNotFoundException fnfe = (FileNotFoundException) e;
-                ConsoleLog.printWarn("ElastiCORE extraction failed. file not found: "+fnfe.getMessage());
-                ConsoleLog.printInfo("Please run './gradlew elcore' to start the initialization process.");
+            // A generation that failed fails the build that asked for it, with its cause:
+            // the JVM used to end 0 here, and an exception without a message threw a
+            // second one that hid the first.
+            if (e instanceof FileNotFoundException) {
+                ConsoleLog.printWarn("ElastiCORE extraction failed. file not found: " + e.getMessage());
             } else {
                 e.printStackTrace();
             }
+            ConsoleLog.printWarn("[ERROR] ElastiCORE generation failed: " + e);
+            ConsoleLog.clear();
+            System.exit(1);
         }
 
 

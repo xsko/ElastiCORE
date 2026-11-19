@@ -157,6 +157,10 @@ public class RepositoryModelLoader extends AbstractModelLoader implements Consta
                 returnType = "List<"+rootObjName+">";
         }
 
+        if (returnType == null && (query == null || query.isEmpty())) {
+            returnType = derivedReturnType(methodName != null ? methodName : id, rootObjName, pageable);
+        }
+
         SqlQueryInfo queryInfo = null;
         if(query !=null && query.length()>0) {
             queryInfo = SqlQueryInfo.creat(ctx.getDomainId(), query, isNativeQuery , pageable, mapWrapper ,returnType ,isReturnTypeSet);
@@ -204,6 +208,25 @@ public class RepositoryModelLoader extends AbstractModelLoader implements Consta
                 .build();
     }
 
+    /**
+     * What a derived query (no query:) without return: answers, read from its name as Spring Data reads
+     * it: a find/read/get/query/search/stream...By the entity's rows (a Page when pageable), countBy a long,
+     * existsBy a boolean. A deleteBy/removeBy, or a name that is not a query, stays void - it was declared
+     * void for every name, and a find declared void returned nothing.
+     */
+    static String derivedReturnType(String name, String root, boolean pageable) {
+        if (name == null) return null;
+        // Spring Data's own reading of a query name (PartTree): a subject word, then By.
+        java.util.regex.Matcher m = DERIVED_QUERY.matcher(name);
+        if (!m.find()) return null;
+        String subject = m.group(1);
+        if ("count".equals(subject)) return "long";
+        if ("exists".equals(subject)) return "boolean";
+        return (pageable ? "Page<" : "List<") + root + ">";
+    }
+
+    private static final java.util.regex.Pattern DERIVED_QUERY =
+            java.util.regex.Pattern.compile("^(find|read|get|query|search|stream|count|exists)(\\p{Lu}.*?)??By\\p{Lu}");
 
     private String getMethodName(Select selectQuery) {
         StringBuilder sb = new StringBuilder();

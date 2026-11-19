@@ -1104,9 +1104,11 @@ drivers: List<RentDriver> @search(eq)
 #    return criteriaBuilder.equal(join, driversItem);
 ```
 
+엔티티의 한 컬럼을 값 목록으로 찾는 검색 DTO 필드 - 엔티티의 `status` 가 enum 하나일 때의 `status: List<OrderStatus> @search(eq)` - 도 `statusItem` 을 받고, join 없이 그 컬럼과 비교합니다: `c.equal(r.get("status"),statusItem)` (3.0.261119 까지는 join 으로 만들어져 쿼리가 실패했습니다).
+
 ### 3.6 in 연산자와 List 필드
 
-**일반 필드:**
+**일반 필드** - 엔티티의 한 컬럼을 값 목록으로 찾는 검색 DTO 필드도 여기에 듭니다. 예: 엔티티의 `status` 가 enum 하나일 때의 `status: List<OrderStatus> @search(in)` (`status in (...)`; 3.0.261119 까지는 join 으로 만들어져 쿼리가 실패했고, 3.0 Java 매퍼는 컴파일되지 않았습니다):
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
@@ -2053,7 +2055,7 @@ PurchaseOrder:
 | `create` | 소유자 필드를 로그인 ID 로 덮어씀 - 방문자가 보낸 값도 지움 (관리자는 요청 값 그대로). 소유자가 기본키이고 자동 생성이 아니면 기본키를 로그인 ID 로. 소유자 필드가 `@readonly`·`@noinput` 이면(요청이 보낼 수 없는 값) 관리자를 포함해 로그인한 사람이 소유자 - `runAsSystem` 안에서는 손대지 않음 |
 | `update` | 소유자 필드와 `@access(admin)` 필드는 **행의 현재 값** 으로 (보낸 값 무시, `@dynamicupdate(false)` 에서도 지워지지 않음). `@readonly` 소유자는 관리자의 수정에서도 그대로 |
 | `owner` 의 `findAll`·조건 삭제·조건 수정 | 관리자만 (한 건씩 확인할 수 없으므로) |
-| `owner` 수준인데 `@owner` 가 안 풀림 | 빌드 경고(DSL_WARN) + 실행 시 관리자만 (검색은 403) |
+| `owner` 수준인데 `@owner` 가 안 풀림 | 빌드 경고(DSL_WARN) + 실행 시 관리자만 (검색은 403). layered 에서 `customer: Customer @ManyToOne` 의 `@owner(customerId)` 가 그렇습니다 - 식별자를 필드로 두는 것은 ddd·hexagonal 뿐이라, 경고가 적을 줄을 알려 줍니다: `customerId: long @db(customer_customer_id)` + `customer: Customer @ManyToOne @joinBy(customerId)` |
 | 로그인 안 한 호출 (요청 밖·WebFlux·gRPC·`@Async` 포함) | **방문자** - fail-closed |
 | `CurrentUser.runAsSystem(() -> ...)` 안 | 애플리케이션 자신 - 모두 허용 (시작 시 데이터, 배치) |
 

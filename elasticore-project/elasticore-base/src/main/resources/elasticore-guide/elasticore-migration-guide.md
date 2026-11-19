@@ -15,6 +15,11 @@ as they are.
 so the new 3.0 features (DDD, hexagonal, Kotlin,
 TypeScript) are on only when you declare them.
 
+This holds when you come from 2.2 (2.2.260703 or later). From 2.0.x or 2.1.x, the first build with any later generator -
+3.0 with `output = 'v2'`, a hand-written task, or the last 2.2 - rewrites the files listed in "Coming from 2.0 or 2.1" below
+once: those are 2.2 changes, recorded in the 2.2 history, not in `elasticore-history.md`. 3.0 adds nothing to that list,
+so the diff of that first build is the list and nothing else.
+
 ### If you move to the Gradle plugin (`id 'io.elasticore'`): `output = 'v2'`
 
 From 3.0.261028-rc3, if you declare nothing, the plugin **generates 3.0 code** (the v3 bundle of layered Java).
@@ -64,6 +69,21 @@ A few files show as modified, but all of them carry the `_V2.2` stamp and come f
 entities to the sample model before 3.0. Also, regenerating with the current code
 shows no difference from the committed tree.
 
+### Coming from 2.0 or 2.1
+
+The 2.2 line changed the output below. 3.0 with `output = 'v2'` writes what the last 2.2 writes, so a project generated
+by 2.0.x or 2.1.x sees these changes on its first 3.0 build, once. Only a file whose content changed is rewritten; every
+other file stays byte for byte as it is.
+
+| What | 2.0 / 2.1 output | 2.2 and 3.0 (`output = 'v2'`) | Since | What to do |
+|---|---|---|---|---|
+| Repository with no custom method | `import <dto>.*;` and `import <enums>.*;` | Not imported | 2.2.260415 | Code in the repository's preserved block that names a DTO or an enum: import it in the block |
+| `XxxRepositoryHelper` | `import <dto>.*;` | Not imported | 2.2.260415 | The same |
+| Entity whose `@extend` parent is in another domain | `extends com.x.common.entity.Parent` | `import com.x.common.entity.Parent;` and `extends Parent` | 2.2.260415 | Nothing |
+| The nested relation field added to a DTO automatically (`CustomerDTO customer` next to `customerCustomerId`) | `@Schema(description = "...")` | Also `accessMode = Schema.AccessMode.READ_ONLY` | 2.2.260703 | Nothing: it changes the OpenAPI document only, not the JSON |
+| DSL checks: an enum value longer than its field, `!` after an annotation (`@onetomany!`), a relation annotation on a base type, a type or `@fk` target that does not exist | Not checked | `DSL_WARN`, and `elcore` - so the plugin build - **fails** | 2.2.260415 | Fix the model line the message names |
+| First line `//ecd:..._V1.0` | `_V1.0` (every generator built before 2026-03-01) | `_V<major.minor>`, written only into a file whose content changed | - | Nothing: a file that keeps `_V1.0` did not change |
+
 ---
 
 ## What still changes (all bug fixes)
@@ -93,11 +113,11 @@ This was a problem where the IDE showed a raw type warning at the call site in t
 (`(Ljava/lang/Class;)Ljava/util/Map;`) is the same, so existing
 binaries keep working without recompiling.
 
-### 4. The new DSL validation does not react to 2.x models
+### 4. The DSL validation 3.0 adds does not react to 2.2 models
 
-The `DSL_WARN` that 3.0 adds
-applies only to DDD-specific syntax such as `domainService` and `uses:`. A 2.x model does not have that syntax, so a `-Pmode=valid` CI does not
-suddenly fail.
+The `DSL_WARN` that **3.0 adds**
+applies only to DDD-specific syntax such as `domainService` and `uses:`, so a model that passes on 2.2 passes on 3.0, and a `-Pmode=valid` CI does not
+suddenly fail. A 2.0/2.1 model meets the checks 2.2.260415 added for the first time, and any one of them fails `elcore` ("Coming from 2.0 or 2.1" above). Moving to the 3.0 code (`elcore3`), an enum value longer than its field stops the build there too from the release after 3.0.261119 (before, a warning).
 
 ### 5. `supportAI` is removed
 

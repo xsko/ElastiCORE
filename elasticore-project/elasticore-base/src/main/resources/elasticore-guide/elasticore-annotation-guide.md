@@ -1104,9 +1104,11 @@ drivers: List<RentDriver> @search(eq)
 #    return criteriaBuilder.equal(join, driversItem);
 ```
 
+A search DTO's list of values for one column of the entity - `status: List<OrderStatus> @search(eq)` where the entity's `status` is one enum - also gets `statusItem`, and compares the column with it, no join: `c.equal(r.get("status"),statusItem)` (up to 3.0.261119 it was joined, so the query failed).
+
 ### 3.6 The in operator and List fields
 
-**Plain field:**
+**Plain field** - also a search DTO's list of values for one column of the entity, such as `status: List<OrderStatus> @search(in)` where the entity's `status` is one enum (`status in (...)`; up to 3.0.261119 it was joined, so the query failed and the 3.0 Java mapper did not compile):
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
@@ -2053,7 +2055,7 @@ Generated behavior (CoreService):
 | `create` | Overwrites the owner field with the login ID - a value sent by the visitor is erased too (the admin's request value is kept as it is). If the owner is the primary key and it is not generated, the primary key becomes the login ID. If the owner field is `@readonly` or `@noinput` (a value the request cannot send), the signed-in person is the owner, the admin included - inside `runAsSystem` it is left alone |
 | `update` | The owner field and `@access(admin)` fields take the **row's current value** (the sent value is ignored, and they are not erased even with `@dynamicupdate(false)`). A `@readonly` owner stays as it is even when the admin updates |
 | `findAll`, conditional delete and conditional update at `owner` | Admin only (rows cannot be checked one by one) |
-| `owner` level but `@owner` does not resolve | Build warning (DSL_WARN) + admin only at run time (search is 403) |
+| `owner` level but `@owner` does not resolve | Build warning (DSL_WARN) + admin only at run time (search is 403). So in layered for `@owner(customerId)` with `customer: Customer @ManyToOne` - only ddd and hexagonal hold the identity as a field, and the warning says what to write: `customerId: long @db(customer_customer_id)` + `customer: Customer @ManyToOne @joinBy(customerId)` |
 | A call that is not signed in (including outside a request, WebFlux, gRPC, `@Async`) | **Visitor** - fail-closed |
 | Inside `CurrentUser.runAsSystem(() -> ...)` | The application itself - everything is allowed (start-up data, batches) |
 
