@@ -64,6 +64,28 @@ class GraphQlApiTest {
     }
 
     @Test
+    @DisplayName("a taken unique value is a conflict whose message names neither the value nor the SQL")
+    void aTakenUniqueValueNamesNoValue() {
+        String create = "mutation { createCustomer(input: {firstName: \"Grace\", lastName: \"Hopper\","
+                + " email: \"grace.taken@example.com\", billingAddress: {city: \"Arlington\", zipCode: \"22201\"}})"
+                + " { customerId } }";
+        graphql.document(create).execute().path("createCustomer.customerId").entity(Long.class).get();
+
+        graphql.document(create)
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    assertThat(errors).hasSize(1);
+                    assertThat(errors.get(0).getExtensions()).containsEntry("status", 409);
+                    assertThat(errors.get(0).getMessage())
+                            .as("the message of %s", errors.get(0))
+                            .doesNotContain("grace.taken@example.com")
+                            .doesNotContainIgnoringCase("insert")
+                            .doesNotContainIgnoringCase("idx_shop_cust_email");
+                });
+    }
+
+    @Test
     @DisplayName("billing's operations are served at the same endpoint, read and search only")
     void secondDomainSameEndpoint() {
         ReceiptDTO saved = receipts.save(ReceiptDTO.builder()

@@ -179,6 +179,14 @@ entities:
       parent: ContentCategory @foreignKey(parent_category_id) -- ContentCategory entity relationship
       children: List<ContentCategory> @relation(mappedBy="parent") -- List<ContentCategory> entity relationship
 
+  Country:
+    meta: entity @java(io.elasticore.blueprint.domain.refdata.entity.Country) -- A country a case can be in
+    table: ref_country
+    java: io.elasticore.blueprint.domain.refdata.entity.Country
+    fields:
+      isoCode: string(2) @Column(name = "iso_code", length = 2) @Id
+      name: string(50) @Column(name = "name", length = 50)
+
   Customer:
     meta: entity @extend(AuditEntity) @java(io.elasticore.blueprint.domain.shop.entity.Customer)
     table: shop_customer

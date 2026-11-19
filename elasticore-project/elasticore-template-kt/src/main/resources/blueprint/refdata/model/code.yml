@@ -15,6 +15,14 @@ entity:
     fields:
       country: string(2)
 
+  # @readonly: read and searched over the API, written by the application's own code only -
+  # neither its controller nor its service has a write method.
+  Country:
+    meta: entity @expose(20) @readonly -- A country a case can be in
+    fields:
+      isoCode: string(2) @id
+      name: string(50)! @search(like)
+
   CaseNote:
     meta: entity @expose(20) -- A note on a case, in a status of any kind of code
     fields:

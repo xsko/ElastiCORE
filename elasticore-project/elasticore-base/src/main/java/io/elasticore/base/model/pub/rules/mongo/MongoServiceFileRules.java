@@ -183,7 +183,10 @@ public class MongoServiceFileRules implements CodeRules {
         c.var("auditorMembers", auditor ? MyBatisServiceFileRules.AUDITOR_MEMBERS : "");
     }
 
-    /** A delete: the document removed, or - with @deleted - the time it was deleted written. */
+    /**
+     * A delete: the document removed, or - with @deleted - the time it was deleted written.
+     * ServiceAccessRules.me() reads liveFilter too: a deleted document is no one's session.
+     */
     private void deleteVars(SourceCode c, EntitySpec e, FieldSpec pk, String repository) {
         Syntax syntax = c.syntax();
         if (SoftDelete.applies(e)) {

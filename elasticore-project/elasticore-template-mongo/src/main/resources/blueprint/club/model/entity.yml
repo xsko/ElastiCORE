@@ -1,0 +1,10 @@
+entity:
+  # Signs in (@login, @password), owns itself, and keeps its document when deleted (@deleted):
+  # a deleted member signs in no more, and the session it had ends with its next request.
+  Member:
+    meta: entity @expose(20) @signin(refresh=request) @owner(memberId) @access(read=owner, create=public, update=owner, delete=owner) -- member
+    fields:
+      memberId: long @id @sequence
+      email: string(100)! @login @unique
+      secret: string(255)! @password
+      leftAt: datetime @deleted

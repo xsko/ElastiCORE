@@ -187,6 +187,59 @@ public class ExposeMethodsTest {
         }
     }
 
+    /**
+     * @readonly takes the writes off the service as well as the controller - in Kotlin
+     * too, whose methods are declared "open fun", not "public".
+     */
+    @Test
+    public void aReadonlyServiceHasNoWriteMethodInEitherLanguage() throws Exception {
+        String javaService = found(java, "EmReadCoreService.java");
+        String ktService = found(kotlin, "EmReadCoreService.kt");
+        for (String write :
+                new String[] {"save", "update", "batchUpdate", "delete", "deleteById", "updateBySpecification"}) {
+            assertFalse(
+                    Pattern.compile("public [\\w<>.]+ " + write + "\\(")
+                            .matcher(javaService)
+                            .find(),
+                    write + " in " + javaService);
+            assertFalse(ktService.contains("fun " + write + "("), write + " in " + ktService);
+        }
+        assertTrue(ktService.contains("open fun findById(") && ktService.contains("open fun findBySearch("), ktService);
+        // @restExclude(deleteById) names the service method too, in both.
+        assertFalse(found(java, "EmOldCoreService.java").contains(" deleteById("));
+        String old = found(kotlin, "EmOldCoreService.kt");
+        assertFalse(old.contains("fun deleteById("), old);
+        assertTrue(old.contains("open fun update("), old);
+    }
+
+    /**
+     * The generated service test calls only what the service has: a call of a write the
+     * @readonly service left out would not compile. (The 3.0 Java code writes no service test.)
+     */
+    @Test
+    public void theServiceTestTestsOnlyWhatTheServiceHas() throws Exception {
+        String[][] tests = {
+            {
+                found(kotlin, "EmReadServiceTest.kt"),
+                found(kotlin, "EmOldServiceTest.kt"),
+                found(kotlin, "EmFullServiceTest.kt")
+            }
+        };
+        for (String[] t : tests) {
+            String read = t[0];
+            assertTrue(read.contains("service.findById("), read);
+            // The last test gone, no blank line is left before the closing brace.
+            assertTrue(read.replace("\r\n", "\n").trim().endsWith("    }\n}"), read);
+            for (String write : new String[] {"save", "update", "delete", "deleteById"}) {
+                assertFalse(read.contains("service." + write + "("), write + " in " + read);
+            }
+            // @restExclude(deleteById): its test goes, the others stay.
+            assertFalse(t[1].contains("service.deleteById("), t[1]);
+            assertTrue(t[1].contains("service.update("), t[1]);
+            assertTrue(t[2].contains("service.save(") && t[2].contains("service.deleteById("), t[2]);
+        }
+    }
+
     @Test
     public void thePortPromisesTheWritesServedAndEveryRead() throws Exception {
         String useCase = found(java, "EmCodeUseCase.java");
@@ -362,6 +415,7 @@ public class ExposeMethodsTest {
                                 "    framework: springboot",
                                 "    mode: jpa",
                                 "    j2ee: jakarta",
+                                "    testCode: \"true\"",
                                 "  namespace:",
                                 "    base: io.acme.emshop",
                                 "")
