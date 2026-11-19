@@ -20,7 +20,7 @@
     the clean, so their output is exactly what it was.
 - Checked: `HtmlTest`, run in `elasticore-springboot3` and `elasticore-springboot4` (shared source): a relative image
   and links survive `relaxed` and `basic` (fail without the change); `nofollow` only for another host; the refused
-  protocols and the browser-read forms are removed; the given safelist is unchanged. A probe of 32 URLs through
+  protocols and the browser-read forms are removed, and which links count as such; the given safelist is unchanged. A probe of 32 URLs through
   `<a href>` and `<img src>` under both safelists, old against new, changed only the forms listed above.
 - Guides: the annotation guide (en, ko), `html / @safe / @plain` - relative links, `rel`, and that which images a writer
   may embed is the application's to check in `beforeSave`.

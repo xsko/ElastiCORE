@@ -4,6 +4,8 @@ import org.jsoup.safety.Safelist;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class HtmlTest {
@@ -96,6 +98,31 @@ class HtmlTest {
             assertEquals(
                     "<a rel=\"nofollow\">x</a>", Html.clean("<a href=\"" + url + "\">x</a>", Safelist.basic()), url);
         }
+    }
+
+    @Test
+    void whichLinksABrowserReadsAsAnotherHost() {
+        String[] other = {
+            "/\\h", "\\h", "a\tb", "a\nb", "a\u007fb", "https:h", "HTTP:h", " https:h", "\thttps:/h", "https:\\\\h"
+        };
+        for (String url : other) assertTrue(Html.readAsAnotherHost(url), url);
+        String[] same = {
+            "/a",
+            "a/b",
+            "#top",
+            "?q=1",
+            "",
+            "  /a  ",
+            "https://h/a\\b",
+            "HTTPS://h",
+            " http://h",
+            "mailto:a@b",
+            "javascript:x",
+            "x:y",
+            "1a:b",
+            "a b"
+        };
+        for (String url : same) assertFalse(Html.readAsAnotherHost(url), url);
     }
 
     /** The application's safelist is not changed by the clean. */
