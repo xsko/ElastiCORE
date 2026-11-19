@@ -79,7 +79,8 @@ Each name in `rules` resolves to one of three things.
 | `mybatis-springboot` | Layered Java on MyBatis - taken by domains with `mode: mybatis` (mapper interfaces, XML and schema instead of the JPA entity shell, Repository and Specification; env guide 2.3) |
 | `ddd-mybatis-springboot` | `ddd-springboot` on MyBatis - taken by domains with `architecture = 'ddd'` + `mode: mybatis`. What JPA did by itself (member cascade, orphan removal, version, callbacks, publishing domain events) is done by the generated repository adapter (env guide 2.3) |
 | `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + an inbound port - `architecture = 'hexagonal'` + `mode: mybatis` |
-| `mongo-springboot` | Layered Java on MongoDB - taken by domains with `mode: mongo` (Spring Data documents, a `MongoRepository` and a `Criteria` search instead of the JPA entity shell, Repository and Specification; env guide 2.4). ddd, hexagonal and Kotlin over MongoDB are refused for now |
+| `mongo-springboot` | Layered Java on MongoDB - taken by domains with `mode: mongo` (Spring Data documents, a `MongoRepository` and a `Criteria` search instead of the JPA entity shell, Repository and Specification; env guide 2.4). ddd and hexagonal over MongoDB are refused for now |
+| `mongo-springboot-kt` | The same in Kotlin - taken by Kotlin domains with `mode: mongo` (the repository's search is its companion object; env guide 2.4) |
 
 If a domain with `mode: mybatis` writes `ddd-springboot`, `hexagonal-springboot` or `jpa-springboot-v3` in the `publisher.rules` of env.yml,
 each is read as its MyBatis bundle - mode says how data is stored, the bundle says the architecture.

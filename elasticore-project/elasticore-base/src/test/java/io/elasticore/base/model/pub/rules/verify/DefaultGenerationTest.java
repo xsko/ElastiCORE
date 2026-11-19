@@ -274,11 +274,10 @@ public class DefaultGenerationTest {
     }
 
     @Test
-    public void aMongoDomainInKotlinOrDddIsRefused() throws Exception {
-        // MongoDB code is layered Java: another language or architecture is
-        // refused with what is supported, not written as JPA.
+    public void aMongoDomainInDddIsRefused() throws Exception {
+        // MongoDB code is layered (Java or Kotlin since 3.1): another architecture
+        // is refused with what is supported, not written as JPA.
         String[][] asks = {
-            {"elasticore.language", "kotlin", "MongoDB code is written in Java, layered"},
             {"elasticore.architecture", "ddd", "architecture = 'ddd'"},
             {"elasticore.architecture", "hexagonal", "architecture = 'hexagonal'"}
         };

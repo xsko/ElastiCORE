@@ -54,8 +54,13 @@ public class MongoRepositoryRules implements CodeRules {
                 .var("entityPackageName", e.pkg("entity"))
                 .var("entityClassName", entity)
                 .var("className", "%sRepository", entity)
-                .var("collection", MongoDocs.collection(e))
-                .var("keyType", c.syntax().nullableType(pk.typeName()));
+                .var("collection", MongoDocs.collection(e));
+        if (c.syntax() == io.elasticore.base.model.pub.rules.Syntax.KOTLIN) {
+            c.var("keyType", c.syntax().typeName(pk.typeName()));
+            c.var("body", RuleText.stripTrailing(MongoKotlinRepository.body(c, e, conditions(e))));
+            return;
+        }
+        c.var("keyType", c.syntax().nullableType(pk.typeName()));
 
         StringBuilder body = new StringBuilder();
         String login = ServiceAccessRules.loginField(e);
@@ -272,7 +277,7 @@ public class MongoRepositoryRules implements CodeRules {
         }
     }
 
-    private static String refMethod(EntitySpec target) {
+    static String refMethod(EntitySpec target) {
         return RuleText.uncapital(target.getName()) + "Ref";
     }
 
@@ -314,7 +319,7 @@ public class MongoRepositoryRules implements CodeRules {
     }
 
     /** A field of the entity, its inherited ones included. */
-    private static FieldSpec field(EntitySpec e, String name) {
+    static FieldSpec field(EntitySpec e, String name) {
         for (FieldSpec f : MyBatisSql.fields(e)) {
             if (f.name().equals(name)) return f;
         }
@@ -322,7 +327,7 @@ public class MongoRepositoryRules implements CodeRules {
     }
 
     /** The name a value is stored under in the document. */
-    private static String stored(EntitySpec e, FieldSpec f) {
+    static String stored(EntitySpec e, FieldSpec f) {
         if (f == null) return "_id";
         if (f == e.pkField()) return "_id";
         String named = MongoDocs.explicitName(f);
