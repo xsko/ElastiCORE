@@ -87,8 +87,12 @@ class ${className}(validator: ObjectProvider<jakarta.validation.Validator>,
     fun duplicate(ex: DuplicateKeyException): ProblemDetail =
         // The database's, as Spring's JDBC translator says it: the same answer
         // JPA's DataIntegrityViolationException gets, and never the driver's text.
+        // MongoDB's (E11000): a unique index refused the value; its text names the
+        // index and the value that broke it, so the answer says the kind and no more.
         // Otherwise the service's: a create named an identifier that is taken.
         if (generateSequence(ex.cause) { it.cause?.takeIf { c -> c !== it } }.any { it is java.sql.SQLException }) conflict(ex)
+        else if (ex.cause != null) problem(HttpStatus.CONFLICT, "unique", "Already exists",
+            said("unique", "A unique value is already taken."))
         else problem(HttpStatus.CONFLICT, "already-exists", "Already exists", ex.message)
 
     @ExceptionHandler(OptimisticLockingFailureException::class)
