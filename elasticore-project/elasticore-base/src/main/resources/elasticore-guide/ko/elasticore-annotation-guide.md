@@ -927,6 +927,29 @@ temporaryData: string @notaudited          # Envers 감사 제외
 coordinates: int[] @env:integerarray       # env.yml annotations 참조
 ```
 
+#### @sensitive - Ossie 내보내기에서 뺀다
+
+```yaml
+Member:
+  fields:
+    email: string(100)! @sensitive
+    providerAccountId: string(100) @sensitive
+```
+
+`@sensitive` 필드는 Apache Ossie 시맨틱 모델(`ossie-export`)에서 빠집니다. `@password`, `@writeonly` 컬럼과 같은 방식으로,
+모델을 보고 쿼리를 쓰는 BI·AI 도구에 그 컬럼을 내놓지 않습니다. 컬럼 이름은 dataset 의 `omitted_columns` 에 남습니다.
+애플리케이션은 읽지만 그런 도구가 고르면 안 되는 값 - 이메일, 로그인 제공자의 계정 id, API 키 - 에 붙입니다.
+
+- 그 밖에는 바뀌는 것이 없습니다: DTO, 응답, 접근 규칙, DDL, Kotlin/TypeScript 출력은 붙이지 않았을 때와 같습니다. 사용자에게 무엇이
+  보이는지는 여전히 DTO 와 접근 규칙이 정합니다. 마스킹이나 삭제는 하지 않습니다.
+- `@Embedded` 값 객체에 붙이면 그 값의 컬럼이 모두 빠지고, 참조에 붙이면 조인 컬럼과 그 relationship 이 빠집니다
+  (따로 있는 `customerId` 필드는 그 필드의 표시대로). `@sensitive` 필드로 조인하는 참조(`customerId: long @sensitive` 와
+  `customer: Customer @ManyToOne`, 또는 `@joinBy(customerId)`)도 relationship 으로 내보내지 않고 경고합니다.
+- `@id` 에 붙이면 경고하고 무시합니다 (dataset 의 키와 그 키로 오는 relationship 에 컬럼이 필요). 컬렉션도 마찬가지입니다
+  (자기 컬럼이 없음 - 상대 엔티티의 필드에 붙이세요).
+- `ossie-export` 룰셋을 쓸 때만 의미가 있습니다 (룰 가이드 "Apache Ossie 시맨틱 모델 내보내기"). 2.x 코드(`output = 'v2'`)에
+  `ossie-export` 를 쓰는 빌드에서도 똑같이 적용됩니다.
+
 ---
 
 ## 3. Search Conditions - 완전 참조
