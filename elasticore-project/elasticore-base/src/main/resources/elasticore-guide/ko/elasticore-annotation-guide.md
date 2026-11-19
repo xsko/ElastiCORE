@@ -2427,6 +2427,12 @@ Post:
 - 기본값 `@safe(basic)` 은 글 서식(문단, 강조, 목록, 인용, 코드)과 링크(http, https, ftp, mailto)를 `rel="nofollow"` 와 함께 남기고,
   이미지는 남기지 않습니다. `@safe(relaxed)` 는 제목, 표, 이미지(http, https)도 남기고 `rel` 은 붙이지 않습니다. 스크립트와 그 내용,
   `on...` 핸들러, `javascript:` 링크, 그 밖의 태그·속성은 모두 지웁니다: jsoup 의 `Safelist.basic()` / `relaxed()`.
+- 상대 링크는 쓴 그대로 남습니다: `@safe(relaxed)` 에서 `<img src="/api/files/3">` 은 `src` 를 그대로 두고, `<a href="/posts/7">`,
+  `#top`, `?page=2` 는 둘 다에서 남습니다. 프로토콜 상대 링크(`//host/x.png`)도 남는데, 페이지의 프로토콜을 따르므로
+  `https://host/x.png` 로도 갈 수 있던 호스트입니다. 이 사이트로 가는 링크에는 `rel` 이 붙지 않고, 다른 호스트로 가는 링크에
+  `rel="nofollow"` 가 붙습니다. 여기서는 경로처럼 보여도 브라우저가 다른 호스트로 읽는 링크(`/\host`, `https:host`)는 지웁니다.
+- `@safe(relaxed)` 는 어느 http, https 호스트의 이미지든 남기고, 이미지를 불러오면 그 호스트가 누가 페이지를 읽는지 알게 됩니다.
+  작성자가 넣어도 되는 이미지(예: 자신이 올린 파일)는 애플리케이션이 `beforeSave` 에서 - 거른 뒤에 - 확인합니다.
 - `@plain(field)` 은 같은 엔티티의 긴 문자열 필드(`text`, `longtext`, `clob`)를 가리킵니다. 태그를 뺀 텍스트 - 엔티티를 풀고
   공백을 줄인 것 - 가 모든 쓰기마다 거기에 쓰이고, 요청은 쓰지 못합니다 (DTO 와 TypeScript 에서 읽기 전용). 그 필드에
   `@search` 를 붙이면 검색은 마크업도, 지워진 스크립트의 내용도 아닌 글의 낱말을 읽습니다.
