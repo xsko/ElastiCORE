@@ -938,8 +938,7 @@ Member:
 
 A `@sensitive` field is left out of the Apache Ossie semantic model (`ossie-export`), the way `@password` and `@writeonly`
 columns are: a BI or AI tool that writes its queries from the model is not offered the column. Its column is listed in the dataset's
-`omitted_columns`. Use it for a value the application reads but such a tool should not select - an email, a sign-in provider's
-account id, an API key.
+`omitted_columns`. Use it for a value the application reads but such a tool should not select - an email, a provider's id, an API key.
 
 - It changes nothing else: DTOs, responses, access rules, DDL and the Kotlin/TypeScript output are as without it. What a user sees
   is still decided by the DTO and the access rules. Nothing is masked or erased.
