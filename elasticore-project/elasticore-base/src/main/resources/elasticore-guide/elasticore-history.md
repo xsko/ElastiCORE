@@ -51,7 +51,8 @@
   samples only the `*ApiErrors` files changed (every v3 domain, Java and Kotlin), besides the new tests.
 - Checked: `elasticore-template-mongo` `ShopApi.aTakenUniqueValueIsA409` and `ClubApi.aTakenLoginIsA409ThatNamesNoValue`
   over HTTP against MongoDB 7 (code `already-exists` with the E11000 text before the change);
-  `GraphQlErrorsTest.aStoreRefusalNamesNoValue` / `theServicesOwnDuplicateKeepsItsMessage`;
+  `GraphQlErrorsTest.aStoreRefusalNamesNoValue` / `eachDatabaseSaysWhichKind` /
+  `theServicesOwnDuplicateKeepsItsMessage`;
   `elasticore-template-ddd` `GraphQlApiTest.aTakenUniqueValueNamesNoValue` - a second `createCustomer` with the same
   email over GraphQL on H2 (JPA), whose message named the SQL and the email before the change.
 - Files: `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ApiErrorRules.java` (comment), `GraphQlErrors.java`,
@@ -76,12 +77,15 @@
   `CountryServiceTest.kt` changed. Upgrading: Kotlin code of your own that overrides or calls one of those methods of
   a `@readonly` (or `@restExclude`) entity's service - the extension service `XService.kt`, or a generated service
   test you edited and the build kept - no longer compiles; remove the override or the call.
-- Checked: `ExposeMethodsTest.aReadonlyServiceHasNoWriteMethodInEitherLanguage` (fails without the change).
+- Checked: `ExposeMethodsTest.aReadonlyServiceHasNoWriteMethodInEitherLanguage` (fails without the change) and
+  `theServiceTestTestsOnlyWhatTheServiceHas`, `MethodSectionsKotlinTest` (the Kotlin forms, a private method, a test's
+  section with `@Disabled` or a javadoc above it, no blank line left before the closing brace),
+  `ServiceTestMethodFilterTest` (each exclusion takes its test alone; the 2.x-compatible test keeps every test).
   `elasticore-template-kt`: a `@readonly` `Country` in `refdata` and `ReadOnlyEntityTest` - read and searched over
   HTTP, every write path 404/405 and the table unchanged, and `CountryService` has no write method (it had all six
   before the change); the module's whole suite passes, its generated `CountryServiceTest` included.
-- Files: `MethodSections.java`, `ServiceTestBaseRules.java`, `ExposeMethodsTest.java` (also
-  `theServiceTestTestsOnlyWhatTheServiceHas`), `elasticore-template-kt` (`refdata/model/code.yml`,
+- Files: `MethodSections.java`, `ServiceTestBaseRules.java`, `ExposeMethodsTest.java`, `MethodSectionsKotlinTest.java`
+  (new), `ServiceTestMethodFilterTest.java` (new), `elasticore-template-kt` (`refdata/model/code.yml`,
   `db/schema-*.sql`, `ReadOnlyEntityTest.kt`).
 
 ### Bug Fixes (elcore3 - a lifecycle command's parameters)
