@@ -331,7 +331,7 @@ public final class OssieSemanticModelExporter {
         // The columns of the value fields marked @sensitive: a reference that joins on one is not exported either.
         Set<String> sensitiveColumns = new HashSet<String>();
         for (Field f : all) {
-            if (!f.getTypeInfo().isList() && f.getTypeInfo().isBaseType() && markedSensitive(f))
+            if (!f.getTypeInfo().isList() && (f.getTypeInfo().isBaseType() || enumOf(f) != null) && markedSensitive(f))
                 sensitiveColumns.add(columnOf(f));
         }
         for (Field f : all) {
