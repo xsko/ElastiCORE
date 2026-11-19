@@ -709,21 +709,45 @@ public class ServiceAccessRules implements CodeRules {
         String dto = entity + "DTO";
         String repo = orDefault(c.varValue("cmdRef"), "repository");
         String mapper = orDefault(c.varValue("mapperName"), e.domainClassName() + "Mapper");
+        // MongoDB: a document kept under @deleted is no one's session (the reads of the service leave it out too).
+        String live = orDefault(c.varValue("liveFilter"), "");
         StringBuilder m = new StringBuilder();
         m.append("    /** The ").append(entity).append(" signed in now - the row the session's identity names - or empty for a visitor. */\n");
         if (kt) {
-            m.append("    open fun me(): Optional<").append(dto).append("> {\n")
-             .append("        val id = currentUser.id() ?: return Optional.empty()\n")
-             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.`as`(id, ")
-             .append(keyType).append("::class.javaObjectType)).map { ").append(mapper).append(".toDTO(it) }\n")
-             .append("    }");
+            m.append("    open fun me(): Optional<")
+                    .append(dto)
+                    .append("> {\n")
+                    .append("        val id = currentUser.id() ?: return Optional.empty()\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.`as`(id, ")
+                    .append(keyType)
+                    .append("::class.javaObjectType))")
+                    .append(live)
+                    .append(".map { ")
+                    .append(mapper)
+                    .append(".toDTO(it) }\n")
+                    .append("    }");
         } else {
-            m.append("    public Optional<").append(dto).append("> me() {\n")
-             .append("        Object id = currentUser.id();\n")
-             .append("        if (id == null) return Optional.empty();\n")
-             .append("        return ").append(repo).append(".findById(").append(RT).append("AccessPolicy.as(id, ")
-             .append(keyType).append(".class)).map(row -> ").append(mapper).append(".toDTO(row));\n")
-             .append("    }");
+            m.append("    public Optional<")
+                    .append(dto)
+                    .append("> me() {\n")
+                    .append("        Object id = currentUser.id();\n")
+                    .append("        if (id == null) return Optional.empty();\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.as(id, ")
+                    .append(keyType)
+                    .append(".class))")
+                    .append(live)
+                    .append(".map(row -> ")
+                    .append(mapper)
+                    .append(".toDTO(row));\n")
+                    .append("    }");
         }
         c.addMethod(m.toString());
     }
@@ -895,6 +919,13 @@ public class ServiceAccessRules implements CodeRules {
                     + " locks them out.");
         }
         if (!signsIn(e)) return;
+        if (SoftDelete.applies(e) && !refreshesPerRequest(e)) {
+            warnSignIn(
+                    e,
+                    "a member deleted (@deleted) signs in no more, but a session it already has keeps working"
+                            + " - an administrator's role included - until it expires. Say @signin(refresh=request) to end it"
+                            + " with its next request.");
+        }
         FieldSpec candidate = roleCandidate(e);
         if (candidate != null && !roleIsSafe(e, candidate)) {
             warnSignIn(e, candidate.name() + " is not put in the session as a role: only a field an administrator alone"
