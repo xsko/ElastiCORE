@@ -1,5 +1,89 @@
 ## 3.0.261120
 
+### Security Fixes (sign-in - a member kept under `@deleted` over MongoDB)
+
+#### A member deleted under `@deleted` no longer keeps a working session over MongoDB
+- Why: in `mode: mongo` the service's `me()` read the signed-in document with the repository's `findById`, which
+  finds a document kept under `@deleted` - every other read of the service filters it out. A member who deleted
+  themselves (or was deleted by an administrator) could not sign in again, but the session they had went on:
+  `GET /member/me` answered 200 with the document, `leftAt` set, and `@signin(refresh=request)`, which reads the
+  row through `me()` on each request, kept the session alive instead of ending it.
+- Now: `me()` applies the service's live filter over MongoDB -
+  `findById(...).filter(e -> e.getLeftAt() == null).map(...)` - so `GET /me` answers 401, and with
+  `@signin(refresh=request)` the session ends with the next request, which is a visitor's. JPA and MyBatis were not
+  affected: their `findById` already leaves a deleted row out (the repository's `@Query ... IS NULL`, the mapper's
+  `findById` statement), checked in every architecture and in Kotlin. A model without `@deleted` on a `@signin`
+  entity in `mode: mongo` generates the same. Without `refresh=request` a session is not read again in any store and
+  keeps working - its role included - until it expires (as documented); the build now warns about a `@signin` entity
+  with `@deleted` and no `refresh=request`: `[Shop] Member: a member deleted (@deleted) signs in no more, but a
+  session it already has keeps working - an administrator's role included - until it expires. Say
+  @signin(refresh=request) to end it with its next request.`
+- Checked: `MongoGenerationTest.aSignedInDocumentKeptUnderDeletedIsNoOnesSession` (fails without the change),
+  `aDeletedMemberWhoseSessionIsNotReadAgainIsWarnedAbout` and
+  `overJpaAndMyBatisMeReadsThroughAFindByIdThatLeavesADeletedRowOut`. `elasticore-template-mongo` gains a `club`
+  domain (a `@signin(refresh=request)` member with `@deleted`) and `ClubApi`: over HTTP against MongoDB 7, a member
+  signs in, deletes themselves, cannot sign in again, and the session it had gets 401 from `/member/me` (200 with
+  the deleted document before the change).
+- Files: `ServiceAccessRules.java`, `MongoServiceFileRules.java` (comment), `MongoGenerationTest.java`,
+  `elasticore-template-mongo` (`club` blueprint,
+  `ClubApi.java`, `ClubApiTest.java`, `ClubApiOnServerTest.java`, `schema.yml`).
+
+### Security Fixes (REST and GraphQL errors - a refusal of the store)
+
+#### A taken unique value is answered without the driver's text - no index, no value
+- Why: over MongoDB a taken `@unique` value made a 409 whose `detail` was the driver's message - `Write operation
+  error on server 127.0.0.1:27117. Write error: WriteError{code=11000, message='E11000 duplicate key error collection:
+  club.member index: email dup key: { email: "kim@a.com" }'}` - the server address, the collection, the index and the
+  value (an email). The generated `ApiErrors` answered the store's `DuplicateKeyException` as the service's own. Over
+  GraphQL it was worse and not only MongoDB: the runtime's `GraphQlErrors` put the exception's message in the error
+  for every `DuplicateKeyException`, `DataIntegrityViolationException` and `OptimisticLockingFailureException`, so a
+  JPA or MyBatis unique violation answered `could not execute statement [Unique index or primary key violation:
+  "PUBLIC.IDX_SHOP_CUST_EMAIL ... VALUES ( /* 1 */ 'grace@example.com' )"; SQL statement: insert into shop_customer
+  (...)]`. The REST answer over JPA and MyBatis was already the kind only (by SQLSTATE).
+- Now: REST (`ApiErrors`, Java and Kotlin) - a `DuplicateKeyException` with a cause that is not SQL (MongoDB) is
+  `409 {"code":"unique","detail":"A unique value is already taken."}`, the answer JPA gets; the service's own (a
+  create naming a taken identifier, no cause) keeps its message. GraphQL (both runtime libraries) - a store's refusal
+  says its kind and the same sentence as REST, read from the SQLSTATE as the REST errors read it: `code` `unique`,
+  `referenced`, `required`, `check`, `conflict` (no SQL state: MongoDB) or `stale` (a stale version), with status 409
+  as before. `ApiErrors` is
+  a generate-once file: one you have not edited takes the change on the next build; an edited one takes it when it
+  merges cleanly (env guide 9-2), else the build says `KEPT(yours ...)` and the three lines are yours to add. In the
+  samples only the `*ApiErrors` files changed (every v3 domain, Java and Kotlin), besides the new tests.
+- Checked: `elasticore-template-mongo` `ShopApi.aTakenUniqueValueIsA409` and `ClubApi.aTakenLoginIsA409ThatNamesNoValue`
+  over HTTP against MongoDB 7 (code `already-exists` with the E11000 text before the change);
+  `GraphQlErrorsTest.aStoreRefusalNamesNoValue` / `theServicesOwnDuplicateKeepsItsMessage`;
+  `elasticore-template-ddd` `GraphQlApiTest.aTakenUniqueValueNamesNoValue` - a second `createCustomer` with the same
+  email over GraphQL on H2 (JPA), whose message named the SQL and the email before the change.
+- Files: `v3/apiErrors.tmpl`, `kt/apiErrors.tmpl`, `ApiErrorRules.java` (comment), `GraphQlErrors.java`,
+  `GraphQlErrorsTest.java`, `ShopApi.java`, `GraphQlApiTest.java`, env guide 6.1.5 (GraphQL refusals, en and ko).
+
+### Bug Fixes (Kotlin service - `@readonly` and `@restExclude`)
+
+#### A Kotlin `@readonly` service has no write methods, as the Java one
+- Why: `@readonly` takes the write endpoints off the controller and the write methods (`save`, `update`,
+  `batchUpdate`, `delete`, `deleteById`, `updateBySpecification`) off the service. The service's sections are named
+  by the method's signature, read as Java's `public`/`protected ...` - a Kotlin `open fun save(` named no section, so
+  the Kotlin service (JPA, every architecture) kept every write method. Over HTTP nothing changed: the Kotlin
+  controller already had no write endpoint (`POST`/`PUT`/`DELETE` 404 or 405). But the service bean offered writes to
+  any code that called it - a read-only entity written from inside the application. The same for a
+  `@restExclude(deleteById)` service method.
+- Now: a Kotlin method signature (`open fun`, `override fun`, `fun`; not `private fun`) names its section, so the
+  Kotlin service leaves out what the Java one does. The generated Kotlin service test (`testCode`) called those
+  methods; a test method is now a section too (`test:save` for `save_Should...`), and the tests of a method the
+  service leaves out go with it (rule `service-test-method-filter`; the 2.x-compatible output keeps every test, as
+  its service keeps every method; the 3.0 Java code writes no service test). A Kotlin model without `@readonly` or
+  `@restExclude` generates the same: in the samples only the `@readonly` entity's `CountryCoreService.kt` and
+  `CountryServiceTest.kt` changed. Upgrading: Kotlin code of your own that overrides or calls one of those methods of
+  a `@readonly` (or `@restExclude`) entity's service - the extension service `XService.kt`, or a generated service
+  test you edited and the build kept - no longer compiles; remove the override or the call.
+- Checked: `ExposeMethodsTest.aReadonlyServiceHasNoWriteMethodInEitherLanguage` (fails without the change).
+  `elasticore-template-kt`: a `@readonly` `Country` in `refdata` and `ReadOnlyEntityTest` - read and searched over
+  HTTP, every write path 404/405 and the table unchanged, and `CountryService` has no write method (it had all six
+  before the change); the module's whole suite passes, its generated `CountryServiceTest` included.
+- Files: `MethodSections.java`, `ServiceTestBaseRules.java`, `ExposeMethodsTest.java` (also
+  `theServiceTestTestsOnlyWhatTheServiceHas`), `elasticore-template-kt` (`refdata/model/code.yml`,
+  `db/schema-*.sql`, `ReadOnlyEntityTest.kt`).
+
 ### Bug Fixes (elcore3 - a lifecycle command's parameters)
 
 #### A lifecycle command the behavior class overrides gets no "does not keep" warning (issue 229)
