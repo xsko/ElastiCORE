@@ -1,3 +1,386 @@
+## 3.0.261120
+
+### Bug Fixes (elcore3 - a lifecycle command's parameters)
+
+#### A lifecycle command the behavior class overrides gets no "does not keep" warning (issue 229)
+- Why: since rc17 (issue 170) a lifecycle command parameter that is not named as a field gets
+  `[Shop] Member.withdraw(confirmText): the generated move does not keep confirmText - name a parameter as the field it
+  fills ..., or override withdraw in Member and keep it there` on every build. Overriding the command in the behavior class,
+  as the warning advises, did not silence it: the rule that says it never looked at that class.
+- Now: before an entity is written, the generator reads the developer's behavior class (`Member.java` / `Member.kt`
+  beside `MemberBase`) and notes the commands it overrides - `void withdraw(` in Java, `override fun withdraw(` in
+  Kotlin, comments left out. A command overridden there is not warned about; one that is not is warned as before.
+  Generated code does not change. A way to say in the DSL that a parameter is meant to be dropped (the issue's first
+  point) is not part of this fix.
+- Checked: `CommandParamKeptTest` - Java and Kotlin, a second run after adding the override to the generated behavior
+  class says nothing (both fail without the change); an override of another command, and a comment naming the
+  command, still warn. `BehaviorOverridesTest` - the Java and Kotlin forms read, comments and other methods not.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ /
+  0 missing / 0 extra.
+- Files: `BehaviorOverrides.java` (new - the reading, outside any rule set, as the runner names none),
+  `DddStateRules.java`, `RulesGenRunner.java`, `BehaviorOverridesTest.java` (new), `CommandParamKeptTest.java`.
+
+### Bug Fixes (2.x generator - repository methods)
+
+#### A repository method without `query:` is declared as a Spring Data derived query
+- Why: the DSL guide (6. Repository definition) says a method without `query:` is a Spring Data derived query,
+  read from its name, and its example starts with one. The 2.x generator - `./gradlew elcore`, the plugin with
+  `output = 'v2'` and `@ElastiCore` - stopped on it with `NullPointerException: Cannot invoke
+  "SqlQueryInfo.isSelectQuery()"`, in every version from 2.0 on, and wrote no repository. Such a method has no query
+  info; the repository publisher asked it whether it selects before checking that it has one. The rule engine (v3
+  and the 2.x-compatible `jpa-springboot`) already declared it.
+- Now: the method is declared as it is named, without `@Query` or `@Modifying` -
+  `List<Stock> findByWarehouseAndOnHandGreaterThan(String warehouse ,Integer onHand);`,
+  `Page<Stock> findByWarehouse(String warehouse, Pageable pageable);` with `pageable: true`. The same in the 2.x MongoDB repository. A model without such a method generates the same as
+  before: only the method that used to stop the run takes the new branch.
+- Checked: `DerivedQueryMethodTest` - the 2.x generator (JPA and MongoDB) writes the derived methods next to a JPQL
+  one, the rule engine's 2.x-compatible output declares the same lines, and the v3 layered, Kotlin and hexagonal
+  repositories declare them; the 2.x cases fail without the fix. Run end to end: three derived methods (`Optional`,
+  `List` with two conditions, a `Page`) added to the 2.x template's model, generated with `output = 'v2'` and called
+  in a `@DataJpaTest` on H2 - Spring Data derived and ran each (not committed). `elcoreRulesCheck -Pstrict`,
+  `elcoreTreeCheck`.
+- Files: `pub/jpa/RepositoryFilePublisher.java`, `pub/mongodb/RepositoryFilePublisher.java`,
+  `DerivedQueryMethodTest.java`.
+
+### Bug Fixes (repository - a derived query without `return:`)
+
+#### A derived query without `return:` answers by its name instead of `void`
+- Why: a repository method with neither `query:` nor `return:` was declared `void` in every generator - a
+  `findByLastName` too. It compiled, and the call failed: `JpaSystemException: Specified result type [void] did not
+  match Query selection type [...Customer]` (2.x template on H2, `@DataJpaTest`). The DSL guide did not say what an
+  omitted `return:` means.
+- Now: the model reads the return from the name, as Spring Data does (its own pattern: a subject word that starts upper case, then `By`; `getterByX` is no query and stays `void`): `find`/`read`/`get`/`query`/`search`/`stream`
+  ...`By` -> `List<Entity>` (`Page<Entity>` with `pageable: true`), `countBy` -> `long`, `existsBy` -> `boolean`;
+  `deleteBy`/`removeBy` and any other name stay `void`. A method with `query:` or `return:` is unchanged, and so is
+  a native query (already `List<Entity>`). The 2.x generator changes too, for this case only: its `void` find failed
+  when it was called. No template or sample declares such a method (`elcoreRulesCheck` / `elcoreTreeCheck` unchanged).
+- Checked: `DerivedQueryMethodTest` - the 2.x JPA and MongoDB generators, the 2.x-compatible rule-engine output (equal
+  to 2.x), v3 layered Java, hexagonal and Kotlin declare `List<Stock> findByOnHandLessThan`, `Page<Stock>
+  findByWarehouseOrderByOnHand(..., Pageable pageable)`, `long countByWarehouse`, `boolean existsByWarehouse`,
+  `void deleteByWarehouse`; fail without the change. The MongoDB repository's `Page<Stock> findByWarehouse(String
+  warehouse, Pageable pageable);` is asserted now (review note on `derived-query-method.md`). Run on H2 (probe not
+  committed): the 2.x template with `findByLastName` and `countByLastName` without `return:` - 2 of 3 customers and
+  `2`; before the change, the `JpaSystemException` above.
+- Read, not run: over MyBatis a `findBy`/`countBy` without `return:` was refused and is now generated as a read.
+- Guides: the DSL guide (6. Repository definition), English and Korean.
+- Files: `loader/module/RepositoryModelLoader.java`, `DerivedQueryMethodTest.java`,
+  `elasticore-guide/elasticore-dsl-guide.md` and `ko/`.
+
+### Bug Fixes (DSL validation - an enum value longer than its field)
+
+#### The finding names the domain, says when the value is missing, and `-PlistRules` ends non-zero on it
+- Why (review of `enum-value-length-fails-elcore3.md`): the message named no domain - two domains with the same enum
+  and value said it once, and the 2.x generator printed it under "DSL Validation Warnings (unmatched domain)"; a value
+  the enum line leaves out is filled with the constant's name, and was reported as if written:
+  `value 'CANCELLED' (length 9)`. `-PlistRules` ended 0 on a model the check refused, which the build then refused.
+- Now: `[shop] enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2` (2.x, a DSL
+  warning under its domain, ending the run 1 as before); elcore3 adds `. Make field 'code' at least 3 characters long
+  or shorten the value.` and fails the model check. A value left out: `[shop] enum OrderStatus.CANCELLED: field
+  'code' has no value on the line, so the constant's name 'CANCELLED' (length 9) stands in and exceeds max length 2`
+  (elcore3: `. Give CANCELLED a value for 'code' of at most 2 characters.`). `-PlistRules` prints the model check's
+  failures and ends 1. Generated code does not change.
+- Checked: `GenerationExitTest` - the 2.x generator in-process says the warning and records no model-check failure,
+  and its `main` in a JVM of its own ends 1 with `[ERROR] DSL Validation: 1 warning(s) found.`; the missing-value
+  wording in both generators; elcore3 names the domain; `-PlistRules` ends 1 on the refused model and 0 on a good one.
+  They fail without the change. `EnumCodeLengthTest` still passes.
+- Guides: the DSL guide (5. Enumeration definition), English and Korean.
+- Files: `loader/module/EnumerationModelLoader.java`, `enums/EnumConstant.java`, `pub/rules/verify/RulesGenRunner.java`,
+  `GenerationExitTest.java`, `elasticore-guide/elasticore-dsl-guide.md` and `ko/`.
+
+### Behaviour Changes (elcore3 - DSL validation)
+
+#### An enum value longer than its field stops `elcore3`, as it stops `elcore`
+- Why: `CANCELLED: CXL,Cancelled` with `code: string(2)` does not fit its field (for the `@db` field, the column it is stored in). The 2.x generator
+  (`elcore`, `output = 'v2'`) fails on it; the rule engine (`elcore3`, the 3.0 code) listed it under
+  `[elcore3] DSL validation warnings:` and the build went on, so the mistake surfaced as a failed insert at run time.
+- Now (behaviour change, `elcore3` only): the finding is a model-check failure - generation runs to the end, then
+  `elcore3` ends non-zero and the build fails with `[elcore3] the model check failed (n) - fix these and build again:`
+  and `[shop] enum OrderStatus.CANCELLED: field 'code' value 'CXL' (length 3) exceeds max length 2. Make field
+  'code' at least 3 characters long or shorten the value.` (wording as of `generation-exit-codes.md`). Only this finding: every other
+  `DSL_WARN` stays a warning. The 2.x generator is unchanged (it already failed, with the old message).
+- Checked: `EnumCodeLengthTest` - layered Java (`-Pv3`), hexagonal Java and layered Kotlin fail with that message;
+  `string(3)` builds; a model with another DSL warning (`string(10) @length(max=20)`) still builds and says it. The
+  failing case fails without the change. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`; the samples and templates
+  generate in CI.
+- Guides: the DSL guide (5. Enumeration definition) and the migration guide (item 4), English and Korean.
+- Files: `EnumerationModelLoader.java`, `EnumCodeLengthTest.java`, `elasticore-guide/elasticore-dsl-guide.md`,
+  `elasticore-guide/elasticore-migration-guide.md` and their `ko/` copies.
+
+### Bug Fixes (2.x generator - how a failed generation ends)
+
+#### A failed 2.x generation ends non-zero, with its cause
+- Why: `ModelExtractor.main` - what `./gradlew elcore`, `output = 'v2'` and `-Pv2` run - caught every exception,
+  printed it and ended 0, so a generation that failed let the build go on to compile what was there. Its check
+  `e.getMessage().contains(...)` threw a second exception for one without a message, which hid the cause, and the
+  cast after it would have thrown a `ClassCastException` for any other exception naming "Not found model DSL file".
+  Two failures were not even exceptions there: a model file that is not YAML (`LOAD ERROR`, nothing it declares
+  generated - elcore3 already stopped on it) and a source that could not be written were printed and the run ended 0.
+- Now: an exception ends the run 1 after its stack trace and `[ERROR] ElastiCORE generation failed: <the exception>`;
+  a model file not read and a source not written are counted (as elcore3 counts the first) and end it 1 with
+  `[ERROR] LOAD ERROR <file> - not read, nothing it declares was generated: <parser message>` or
+  `[ERROR] not written: <class> - <exception>`. The init path (no model DSL yet) still ends 0. `-Pmode=valid` fails on a model file not read too (it passed),
+  and `-Pmode=clean` ends 1 on one, as it already did on a DSL warning. The annotation processor is unchanged: it never
+  read the model check, so a model file it could not read still fails nothing there. Generated code does
+  not change; a 2.x project whose generation fails now fails its build - which is the point.
+- Checked: `GenerationExitTest` runs the extractor's `main` in its own JVM - a `List<>` field (the 2.x generator throws
+  `IllegalArgumentException: toName is null`), a model file that is not YAML and a source root that is a file each
+  end 1 with the cause, a model that generates ends 0; they fail without the change (ended 0). With the plugin
+  (`output = 'v2'`, `elasticore-template`): `gradlew :elasticore-project:elasticore-template:elcore` passed as
+  before, and with a `probeBroken: List<>` line added it failed - `[ERROR] ElastiCORE generation failed:
+  java.lang.IllegalArgumentException: toName is null`, `finished with non-zero exit value 1` (probe not committed).
+- Files: `extract/ModelExtractor.java`, `pub/jpa/SrcFilePublisher.java`, `GenerationExitTest.java`.
+
+### Documentation (env guide)
+
+#### The env guide names the release `mode: mongo` came in
+- Why: the env guide's MongoDB section (2.4, English and Korean) still said "Since: 3.0 (unreleased)" after
+  3.0.261119 shipped it.
+- Now: "Since: 3.0.261119", the form the other sections use.
+- Checked: `GuideCoverageTest`, `GuideCoverageKoTest`, `GuideTranslationTest`.
+- Files: `elasticore-guide/elasticore-env-guide.md`, `elasticore-guide/ko/elasticore-env-guide.md`.
+
+### Bug Fixes (runtime - `html` / `@safe`)
+
+#### `Html.clean` keeps a relative link: `<img src="/api/files/3">` keeps its `src` under `@safe(relaxed)` (issue 217)
+- Why: `Html.clean` passed `""` as jsoup's base URI, so a relative URL could not be resolved, never passed the
+  http/https check, and was removed - a site's own uploaded image lost its `src` under `@safe(relaxed)`, a link to
+  `/posts/7` or `#top` its `href` under both safelists.
+- Now: the markup is read against a placeholder base (`https://site.invalid/`) with `preserveRelativeLinks(true)` on a
+  copy of the safelist (the one given is not changed), so a relative link passes the protocol check and is kept as
+  written. What changes, for `basic` and `relaxed` alike:
+  - kept now: a relative link (`/api/files/3`, `files/3`, `../x`, `#top`, `?q=1`) and a protocol-relative one
+    (`//other.host/x.png`). The latter reaches a host that `https://other.host/x.png` reaches too, which both
+    safelists already keep, so no new external host is allowed.
+  - `rel="nofollow"` (basic): put on a link to another host, `//other.host/x` included, and no longer on a link to the
+    site itself (`/posts/7`) - jsoup's rule once a link is relative.
+  - an absolute link is kept as written rather than as jsoup normalised it (`HTTPS://Host/x` stays so, not
+    `https://Host/x`).
+  - still removed: every protocol the safelist refuses (`javascript:`, with any case, leading space, tab, newline or
+    entity; `vbscript:`, `data:`), and a link a browser reads as another host's while jsoup reads it as a path of the
+    base (`/\host`, `\\host`, a tab inside a relative link, `https:host`, `https:\\host`) - these are taken off before
+    the clean, so their output is exactly what it was.
+- Checked: `HtmlTest`, run in `elasticore-springboot3` and `elasticore-springboot4` (shared source): a relative image
+  and links survive `relaxed` and `basic` (fail without the change); `nofollow` only for another host; the refused
+  protocols and the browser-read forms are removed, and which links count as such; the given safelist is unchanged. A probe of 32 URLs through
+  `<a href>` and `<img src>` under both safelists, old against new, changed only the forms listed above.
+- Guides: the annotation guide (en, ko), `html / @safe / @plain` - relative links, `rel`, and that which images a writer
+  may embed is the application's to check in `beforeSave`.
+- Files: `Html.java`, `HtmlTest.java`, `elasticore-annotation-guide.md` (en, ko).
+
+### Bug Fixes (v3 and Kotlin DTO - key DTO)
+
+#### A key DTO imports only what its key fields use
+- Why: issue 231. `MemberKeyDTO` is `MemberDTO` with only the key fields, rendered by the same rule; the rule took
+  the key fields' types off the field list but still registered the imports of every field. So a key DTO imported
+  the enums and `java.util.List` of the fields it left out, and an unused-import check (Checkstyle `UnusedImports`,
+  an IDE inspection) flagged them - on one model, 9 of 12 key DTOs had one to five.
+- Now: the v3 Java DTO file (layered, ddd, hexagonal) and the Kotlin DTO file import the types of the fields they
+  declare only. The DTO itself is unchanged. The TypeScript client already imported from the rendered fields. The 2.x generator and
+  its compatible output (`jpa-springboot`) are left as they are: their DTOs import whole packages with wildcards
+  (`domain.model.*`, `java.util.*`) from a fixed template, which no unused-import check counts per type, and that
+  output must stay byte for byte.
+- Checked: `KeyDtoImportsTest` - the issue's model (two enums, `@email`, a `List<Long>` DTO field) in Java layered,
+  ddd and hexagonal and in Kotlin layered, ddd and hexagonal: the key DTO has `memberId` and none of `MemberLevel`,
+  `MemberStatus`, `java.util.List`, `Email`, and `MemberDTO` still imports them; both cases fail without the fix.
+  The DTO, Kotlin DTO, template-list, parent-import and DDD aggregate tests pass unchanged. `elcoreRulesCheck
+  -Pstrict` (158 MATCH / 0 DIFF / 2 ACCEPTED), `elcoreTreeCheck` (0 differ / 0 missing / 0 extra).
+- Files: `pub/rules/lang/java/DtoCleanFileRules.java`, `pub/rules/lang/kotlin/KotlinDtoFileRules.java`,
+  `KeyDtoImportsTest.java`.
+
+### Bug Fixes (layered - a model written for ddd/hexagonal)
+
+#### Layered with `referenceColumn: short`: the join column was checked, and the unused setting is said
+- Why: a run of the guide's order model in layered showed `@ManyToOne private Customer customer;` with no
+  `@JoinColumn`, while `referenceColumn: short` promises `customer_id`; it was not known which of the entity, the DDL
+  and the Ossie export would disagree.
+- Checked by running (3.0.261119, layered, Boot 3.5.16, H2, `rules = ['ossie-export']`, `ddl { databases = ['h2'] }`):
+  Hibernate created `sh_purchase_order (..., customer_customer_id bigint, ...)` with the foreign key on
+  `customer_customer_id`; `db/schema-h2.sql` has `customer_customer_id BIGINT` and its foreign key; `semantic_model.yml`
+  has the field `customer_customer_id` and the relationship `from_columns: [customer_customer_id]`. All three agree;
+  nothing was wrong. `referenceColumn` is read by ddd and hexagonal only, as the env guide says - but nothing said
+  it in the build.
+- Now: a layered (v3, Kotlin) JPA build of a domain that sets `referenceColumn: short` or `field` warns
+  `[shop] referenceColumn: short is read by architecture = 'ddd' and 'hexagonal' only - the selected rules keep each
+  @ManyToOne on JPA's join column (customer_customer_id for customer: Customer), in the entity, the DDL and the Ossie
+  export alike.` Generated code does not change. A DSL warning: `elcoreValidate -Pstrict` now fails such a layered project
+  until the setting is removed. The env guide's marker says "(warning)" for layered.
+- Checked: `LayeredReferenceTest` - layered warns, hexagonal does not; fails without the change.
+- Files: `pub/rules/verify/RulesGenRunner.java`, `LayeredReferenceTest.java`, `elasticore-guide/elasticore-env-guide.md`
+  and `ko/`.
+
+#### Layered with `@owner(customerId)` through `customer: Customer @ManyToOne`: the warning says what to write
+- Why: the annotation guide's `@access`/`@owner` works in v3 and Kotlin, any architecture, and its example is an order
+  with `@owner(customerId)`. In ddd and hexagonal the reference `customer: Customer` is held as the field
+  `customerId`; in layered it stays an object, so `@owner(customerId)` names no field and the build said only
+  `... no @owner field resolves (@owner(customerId)) - they are the administrator's alone until @owner names the
+  identity that holds the owner.` - the owner's own orders were admin-only (404 to the owner, search 403).
+- Now: the same warning goes on `customerId is the identity of customer: Customer, which only architecture = 'ddd'
+  and 'hexagonal' hold as a field. Here, declare it on the column the relation joins on - customerId: long
+  @db(customer_customer_id) - and join the relation by it: customer: Customer @ManyToOne @joinBy(customerId); then
+  @owner(customerId).` (the column read from the target's key). Layered does not hold references by id on its own:
+  that is the ddd/hexagonal rule set, and turning it on in layered would rename columns of existing layered tables.
+- Checked: `LayeredReferenceTest` - the full warning in layered, none once the two lines it names are written, none in
+  hexagonal; fails without the change. Run (3.0.261119, layered, H2) with those two lines: alice created an order
+  sending `customerId: 2` and it was stored with her id 1; she read it (200) and found it (1 row); bob got 404 and an
+  empty search.
+- Guides: the annotation guide's `@access` table (the row "`@owner` does not resolve"), English and Korean.
+- Files: `pub/rules/base/ServiceAccessRules.java`, `LayeredReferenceTest.java`,
+  `elasticore-guide/elasticore-annotation-guide.md` and `ko/`.
+
+### Bug Fixes (elcore3 - a warning's advice)
+
+#### The layered build's "not enforced" warning names the architecture value the build takes, `'ddd'`
+- Why: a layered (or 2.x-compatible) build of a model that declares DDD-only words - `states:`, `@stamp`, an
+  invariant - warns `... which the selected rules do not enforce - nothing is checked, derived or hashed`, and went
+  on `Declare architecture = 'domain-model' or 'hexagonal', or add the rule set.` The documented value is
+  `architecture = 'ddd'` (`elasticore-env-guide.md`); `RulesConfig` also reads `domain-model`, which no guide names.
+- Now: `Declare architecture = 'ddd' or 'hexagonal', or add the rule set.` Generated code does not change.
+- Checked: `StateStampTest` asserts the advice on the layered run's log and fails without the change.
+- Files: `RulesGenRunner.java`, `StateStampTest.java`.
+
+### Bug Fixes (v3 generated-file merge)
+
+#### The same change on both sides, apart from blank lines, merges instead of conflicting
+- Why: issue 230. A developer took `GET /schema/info` out of a generated controller by hand; `@expose(..., schema=false)`
+  then took the same method out but left one blank line more. `ThreeWayMerge` compared the two changed stretches
+  line by line, found them unequal and counted a conflict - so the owned file stayed `KEPT(yours - the DSL's changes
+  to it do not merge)` on every build and took no further DSL change. Nine of ten such controllers differed only by
+  that blank line. The note said `(1 place(s))` without saying where, so finding the line meant generating the file
+  again beside it.
+- Now: a stretch both sides changed so that it differs only in blank lines and in spaces or tabs at the end of a line
+  merges without a conflict, and the developer's text is kept as it is. Indentation and spaces inside a line still
+  count - they mean something in YAML, a Kotlin raw string or a string literal - so those stay conflicts, as does
+  any stretch whose content differs. In a class body, the same method both sides added (one with a blank line more)
+  is taken once instead of twice. The note of a kept file also says where each place starts in it:
+  `... where you changed it too (1 place(s), at line(s) 42) - it is left as it is ...`. Files whose stretches
+  differ in content merge, conflict and are noted exactly as before.
+- Checked: `ThreeWayMergeTest` - the issue's three texts through `merge` and `mergeSource` (0 conflicts, the
+  developer's text), both directions, trailing spaces and tabs, indentation and inner spaces still a conflict, a
+  real conflict beside a blank line still one, a method added on both sides taken once, the conflict lines; the
+  layout cases fail without the fix. `GeneratedMergeTest` - the kept factory's note names a line of the developer's
+  file. `elcoreRulesCheck -Pstrict` (158 MATCH / 0 DIFF / 2 ACCEPTED), `elcoreTreeCheck` (0 differ / 0 missing /
+  0 extra).
+- Files: `util/ThreeWayMerge.java`, `pub/rules/verify/RulesGenRunner.java`, `ThreeWayMergeTest.java`,
+  `GeneratedMergeTest.java`, `elasticore-env-guide.md` 9-2 and `elasticore-ddd-customize-guide.md` (en and ko).
+
+### Documentation (migration guide)
+
+#### The migration guide says what a 2.0 or 2.1 project sees on its first 3.0 build
+- Why: the guide promised "the generated source code does not change", and its evidence starts at 2.2.260703. A
+  project generated by 2.0.x or 2.1.x that moved to 3.0 with `output = 'v2'` saw repositories, entities and DTOs
+  rewritten (issue #219). Those changes are the 2.2 line's (2.2.260415 and 2.2.260703), recorded in the 2.2 history
+  only; 3.0 with `output = 'v2'` writes what the last 2.2 writes. The guide's item 4 also said the new DSL validation
+  does not react to 2.x models, which holds for 2.2 models only: a 2.0/2.1 model meets the 2.2.260415 checks, and any
+  one of them fails `elcore`.
+- Now: the summary says the promise is from 2.2.260703 on; a new section, "Coming from 2.0 or 2.1", lists what 2.2
+  changed - the wildcard imports a repository without methods and the repository helper no longer have, the import of
+  a cross-domain `@extend` parent, `READ_ONLY` on the auto-added nested relation DTO field, the DSL checks that fail
+  `elcore`, and the `_V1.0` stamp - each with what to do; item 4 says the 3.0 checks touch DDD syntax only and the 2.2
+  checks apply to a 2.0/2.1 model. English and Korean.
+- Checked: the diffs were reproduced by generating one model with 2.0.260213, 2.2.260420, 2.2.261019 and 3.0.261119
+  (`ModelExtractor` and the plugin with `output = 'v2'`): 2.0.260213 -> 3.0.261119 differs in exactly these files,
+  2.2.261019 -> 3.0.261119 in none; an enum code longer than its column fails `elcore` from 2.2.260420 on.
+  `GuideTranslationTest`, `GuideCoverageTest`, `GuideCoverageKoTest`.
+- Files: `elasticore-guide/elasticore-migration-guide.md`, `elasticore-guide/ko/elasticore-migration-guide.md`.
+
+### New Features (Ossie export - `@sensitive`)
+
+#### `@sensitive` leaves a field out of the Apache Ossie semantic model
+- Why: the Ossie export is what a BI or AI tool writes its queries from. It left out `@password` and `@writeonly` columns,
+  but a member's email, a sign-in provider's account id or an API key went out as ordinary fields, so a tool reading the
+  model was told it may select them (issue 184).
+- Now: a field marked `@sensitive` is left out of its dataset and recorded in `omitted_columns`, as a `@password` column
+  is; the model's `ai_context` adds that such columns are left out (only when one is marked). On an `@Embedded` value it
+  leaves out all the value's columns; on a reference, its join column and its relationship. A reference that joins on a
+  `@sensitive` field (its identity field, or `@joinBy`) is not exported as a relationship either, with a warning, so the
+  column does not come back that way. A metric over it is refused.
+  On an `@id` or a collection it is ignored with a `[ossie]` warning: the key and the relationships to it need the column,
+  and a collection has no column of its own.
+- Unchanged: nothing else reads the word - DTOs, responses, access rules, DDL, the 2.x code and the Kotlin/TypeScript
+  output are the same with it and without. A model without it exports byte for byte what it did.
+- Checked: `OssieSensitiveTest` (export with and without the word; embedded value, reference, key, collection, metric;
+  every other generated file identical with and without for v3 hexagonal Java, layered Kotlin, layered Java + TypeScript
+  and the 2.x generator), the Ossie tests, `GuideCoverageTest`/`GuideCoverageKoTest`, `elcoreRulesCheck -Pstrict`
+  and `elcoreTreeCheck`.
+- Files: `OssieSemanticModelExporter`, annotation guide and rule guide (en, ko), `OssieSensitiveTest`, `GuideCoverageTest`.
+
+### Bug Fixes (search - a search DTO of another domain's entity)
+
+#### A `@searchable` DTO of an entity in another domain is reported: it is searched by nothing
+- Why: `search-in-value-list.md` said such a DTO "still joins in the 3.0 code". Run, it does not join - neither
+  generator writes a `toSpec` for it at all: the mapper is written in the entity's domain, from that domain's search
+  DTOs. elcore3 writes the DTO alone (and leaves out a field whose enum is the other domain's); the 2.x generator
+  writes the DTO with `import null.*;`, which does not compile. Nothing said so.
+- Now: elcore3 warns `[search] OrderSearchDTO @searchable(entity=PurchaseOrder): PurchaseOrder is declared in domain
+  'shop', and a search DTO is searched only in its entity's domain - no toSpec is written for it here. Declare
+  OrderSearchDTO in domain 'shop'.`, and for a name no domain declares: `... no domain declares an entity Purchase, so
+  nothing is searched by ... (no toSpec is written).` A warning only; generated code does not change. Searching
+  across domains is not added: 2.x never had it.
+- Checked: `SearchInValueListTest` - both warnings, no `toSpec` written (layered v3, hexagonal); fail without the change.
+- Files: `pub/rules/verify/RulesGenRunner.java`, `pub/rules/verify/SpecFactory.java`, `SearchInValueListTest.java`.
+
+### Bug Fixes (search - `@search(in)` on a list of values)
+
+#### A search DTO's `List<Enum> @search(in)` searches the column, `status in (...)`
+- Why: the DSL guide's own search DTO example (4. DTO definition) declares `status: List<Status> @search(in)`.
+  With an entity whose `status` is one enum, every JPA mapper (not MyBatis, not MongoDB) read the list as a collection of the entity and joined it:
+  `Join<PurchaseOrder, OrderStatus> join = root.join("status"); return join.in(status);`. The 2.x generator
+  (`elcore`, `output = 'v2'`) and the Kotlin code compiled, and the search failed when it ran -
+  `Attribute 'Customer#customerType(BASIC)' is not joinable` on H2. The 3.0 Java code (layered, ddd, hexagonal)
+  did not even compile: the rule engine wrapped the lambda's parameters twice, `((root, query, criteriaBuilder)) ->`,
+  for every join it writes - the `in` join on a collection and the `eq` join on a single item too.
+- Now: a list field is joined only when the entity's field of that name is a collection; a list of values against a
+  single column is that column's `in`: `sp = sp.and((r, q, c) -> r.get("status").in(status));` (Kotlin
+  ``r.get<Any>("status").`in`(status)``). The join lambdas open with one pair of parentheses, as 2.x writes them.
+  The 2.x generator changes too, because its output failed at run time: a model that searches a single column with a
+  list now gets the column's `in` instead of the failing join. Nothing else in 2.x output moves - a list field that is
+  a collection of the entity, and every other condition, generate as before.
+- Checked: `SearchInValueListTest` - the v3 layered, hexagonal and Kotlin mappers and the 2.x generator write the
+  column's `in` for the guide's model (enum `@db(code)`, `@searchable(entity=PurchaseOrder)`), and the
+  2.x-compatible rule-engine output writes the 2.x generator's `toSpec`; all fail without the fix. `MapperSpecTest`:
+  the single-column case, a collection of the entity still joining, one pair of parentheses on both joins. Run on
+  H2 (not committed): a `List<CustomerType> @search(in)` search DTO added to the 2.x template filtered three customers
+  to the two asked for through `CustomerRepository.findAll(ShopMapper.toSpec(dto))` - and failed with "is not
+  joinable" before the fix; the same in the hexagonal sample (`elasticore-template-ddd`, v3), customers created over
+  HTTP. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
+- Follow-ups (`search-list-eq-column.md`): `@search(eq)` on a list of values against a single column, which joined as
+  `in` did, compares the column now; the Kotlin output was compiled and run; a `@searchable` DTO of an entity in
+  another domain gets no `toSpec` in either generator, and elcore3 now says so.
+- Files: `pub/jpa/MapperSrcPublisher.java`, `pub/rules/base/MapperSpecRules.java`,
+  `elasticore-guide/elasticore-annotation-guide.md` and `ko/` (3.6), `MapperSpecTest.java`,
+  `SearchInValueListTest.java`.
+
+### Bug Fixes (search - a list of values against one column)
+
+#### A search DTO's `List<Enum> @search(eq)` compares the column, `status = statusItem`
+- Why: the same failure as `@search(in)` on a list of values (`search-in-value-list.md`), for `eq`. A search DTO's
+  `status: List<OrderStatus> @search(eq)`, where the entity's `status` is one enum, gets the one value it searches by,
+  `statusItem`, and every JPA mapper joined the column with it: `root.join("status")` + `criteriaBuilder.equal(join,
+  statusItem)`. It compiled and failed when it ran - `Attribute 'io.elasticore.blueprint.domain.shop.entity.Order#
+  paymentMethod(BASIC)' is not joinable` on H2 (2.x template, `@DataJpaTest`).
+- Now: a list field is joined only when the entity's field of that name is a collection; against a single column the
+  item is the column's equality, `sp = sp.and((r,q,c) -> c.equal(r.get("status"),statusItem));` (Kotlin
+  `c.equal(r.get<Any>("status"),statusItem!!)`). The search DTO keeps `statusItem`. The 2.x generator changes too,
+  because its output failed at run time; a list field that is a collection of the entity, one reached through `@ref`,
+  one against a to-one relation (`customer: Customer @ManyToOne`), and every other condition generate as before - the
+  same guard now keeps `in` against a to-one relation off the column path too (`search-in-value-list.md` took any
+  non-list field). Both generators leave a `List<Customer>` out of a search DTO anyway (`SearchInValueListTest`).
+- Checked: `SearchInValueListTest` (v3 layered and hexagonal Java, Kotlin, the 2.x generator, and the 2.x-compatible
+  rule-engine output equal to the 2.x generator's `toSpec`) - the new cases fail without the fix. Run on H2, probes not
+  committed: `paymentMethod: List<PaymentMethod> @search(eq)` added to `OrderSrchDTO` - the 2.x template
+  (`output = 'v2'`) found 1 of 3 orders through `OrderRepository.findAll(ShopMapper.toSpec(dto))` (before the fix: the
+  "is not joinable" error above); `elasticore-template-ddd` (hexagonal, v3) found 1 of 3 the same way.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `pub/jpa/MapperSrcPublisher.java`, `pub/rules/base/MapperSpecRules.java`,
+  `elasticore-guide/elasticore-annotation-guide.md` and `ko/` (3.5), `SearchInValueListTest.java`.
+
+#### Kotlin: a list of values in a search DTO compiles and searches
+- Checked by running, not only as text (follow-up of `search-in-value-list.md`): in `elasticore-template-kt` (probe not
+  committed) `OrderSrchDTO` got `paymentMethod: List<PaymentMethod> @search(in)` and
+  `status: List<OrderStatus> @search(eq)`; the Kotlin code compiled, the application booted, three orders were created
+  over HTTP and `POST /api/v1/shop/order/search {"paymentMethod":["CA","PP"]}` answered 2 of 3;
+  `{"statusItem":"PEN"}` ran and answered 0 (the orders' status is not set on create). No code change.
+
 ## 3.0.261119
 
 ### New Features (GraphQL)
