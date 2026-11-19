@@ -18,6 +18,10 @@
   - A layered layout, whose segments name no layers, is read from the namespaces as before, and nothing is said.
 - The test is generated once and then owned: a file nobody edited takes the new package lists on the next build, and an
   edited one goes through the three-way merge like every other owned file (no special case, as agreed on the issue).
+- Upgrading: a project already on `archTest: true` whose test nobody edited takes the wider lists on its next build, with
+  no DSL change, and the test can then fail where hand-written `domain.*` code uses `infrastructure.*` or `adapter.*`, or
+  `application.*` code uses them past a port. That is the check doing its work; there is no switch for the old lists - the
+  fix is to move the dependency behind a port the domain or the application declares.
 - Unchanged: a project without packages of its own there gets the same file, word for word (the header names the
   project's packages only when there are some).
 - Checked: `ArchTestPackagesTest` - a hand-written `domain.policy` class that imports `infrastructure.mail` is in the

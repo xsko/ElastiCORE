@@ -628,7 +628,7 @@ config:
   archTest: true        # test the hexagonal boundaries with ArchUnit (default: false)
 ```
 
-- It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
+- It first writes `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once**, then keeps it in step like every file generated once (below).
   It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
 - Where the namespaces name their layers by segment under the base package - `namespace: { base: ... }` lays them out so:

@@ -628,7 +628,7 @@ config:
   archTest: true        # 헥사고날 경계를 ArchUnit 테스트로 (기본값: false)
 ```
 
-- `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
+- `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 쓰고, 그 뒤로는 다른 한 번 생성 파일처럼 DSL 을 따라갑니다(아래).
   네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
 - 네임스페이스가 기본 패키지 아래에서 단어로 계층을 나눌 때 - `namespace: { base: ... }` 가 그렇게 놓습니다:
