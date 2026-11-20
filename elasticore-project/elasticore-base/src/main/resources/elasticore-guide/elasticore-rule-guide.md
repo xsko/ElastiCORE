@@ -128,7 +128,7 @@ In that language nullability is part of the signature, so if they do not match i
 | `ddd-state` | O | O | **O** | `states:` -> state transition per command, `canX()`, initial value, `@stamp` times. In TS it is `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`, `@compute` -> `derive(lookup)`, which the service calls before saving |
 | `jpa-service-access` | O | O | - | `@access`, `@owner`, `@password`, `@login` -> CoreService checks, hashing, `authenticate`; with `@signin`, `me()`, the controller's signin, signout, me, and the unique login column (all v3 bundles) |
-| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` -> `XxxSessionRefresh`, a filter that reads the signed-in row again on each request (all v3 bundles) |
+| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` and `@signin(refresh=password)` -> `XxxSessionRefresh`, a filter that reads the signed-in row again on each request; with `password` a session opened before a password change ends too (all v3 bundles) |
 | `jpa-html` | O | O | - | `html` fields: the entity's `cleanHtml()` (jsoup safelist, the `@plain` copy), called by the CoreService before every write and after a command; the 2.x-compatible output stops the build (all bundles) |
 | `jpa-encrypt` | O | O | - | `@encrypt` fields: `@Convert(EncryptConverter)` on the JPA field (MyBatis binds `EncryptTypeHandler`), the column as long as the ciphertext, and the entity's `indexEncrypted()` for the blind index of an `@search(eq)` one, called just before the row is written (JPA: the runtime's `BlindIndexListener`; MyBatis: the root's `Lifecycle`, or the layered service after `beforeSave`); MongoDB and the 2.x-compatible output stop the build (all bundles) |
 | `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |
@@ -464,6 +464,8 @@ so if you fix the DSL, it reaches every entry point in the next build. For the t
 - With `@signin(refresh=request)`, `spring-signin-refresh` writes `XxxSessionRefresh` beside the controller, regenerated with the model: before each
   request whose session holds a signed-in key, the row is read again through `me()`; gone ends the session, a changed role is the session's
   (runtime: `SessionRefreshFilter`, `SessionCurrentUser.refresh`). A hexagonal bundle injects the use case, as for the controller (`hex-usecase-refresh`).
+  With `@signin(refresh=password)` the filter extends `PasswordRefreshFilter` and reads through `signedInRow()` (CoreService and use case), the roles
+  and a stamp of the password hash in that one read; the generated update tells it about a password it writes (`PasswordRefreshFilter.written`).
 
 #### Transactional Outbox (`ddd-outbox`)
 

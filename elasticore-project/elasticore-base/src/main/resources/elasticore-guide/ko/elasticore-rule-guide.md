@@ -128,7 +128,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값·`@stamp` 시각. TS 는 `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
 | `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
-| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` -> 로그인한 행을 요청마다 다시 읽는 필터 `XxxSessionRefresh` (v3 번들 전부) |
+| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)`·`@signin(refresh=password)` -> 로그인한 행을 요청마다 다시 읽는 필터 `XxxSessionRefresh`, `password` 이면 비밀번호가 바뀌기 전에 열린 세션도 끝남 (v3 번들 전부) |
 | `jpa-html` | O | O | - | `html` 필드: 엔티티의 `cleanHtml()` (jsoup 허용 목록, `@plain` 복사본) 을 CoreService 가 모든 쓰기 전과 command 뒤에 부름; 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-encrypt` | O | O | - | `@encrypt` 필드: JPA 필드에 `@Convert(EncryptConverter)` (MyBatis 는 `EncryptTypeHandler` 로 바인딩), 암호문만큼 긴 컬럼, `@search(eq)` 필드의 블라인드 인덱스를 쓰는 엔티티의 `indexEncrypted()` 를 행을 쓰기 바로 전에 부름 (JPA: 런타임의 `BlindIndexListener`; MyBatis: 루트의 `Lifecycle`, 또는 layered 서비스가 `beforeSave` 뒤); MongoDB 와 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
@@ -464,6 +464,8 @@ DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노�
 - `@signin(refresh=request)` 이면 `spring-signin-refresh` 가 컨트롤러 옆에 모델과 함께 다시 생성되는 `XxxSessionRefresh` 를 씁니다. 로그인한
   키가 든 세션의 요청마다 먼저 `me()` 로 행을 다시 읽어, 없으면 세션을 끝내고 바뀐 역할은 세션에 넣습니다
   (런타임: `SessionRefreshFilter`, `SessionCurrentUser.refresh`). hexagonal 번들은 컨트롤러처럼 use case 를 주입합니다 (`hex-usecase-refresh`).
+  `@signin(refresh=password)` 이면 필터가 `PasswordRefreshFilter` 를 상속하고 `signedInRow()`(CoreService 와 use case)로, 역할과 비밀번호
+  해시의 스탬프를 그 한 번의 읽기로 읽습니다. 생성된 수정은 자기가 쓰는 비밀번호를 필터에 알립니다 (`PasswordRefreshFilter.written`).
 
 #### 트랜잭션 Outbox (`ddd-outbox`)
 

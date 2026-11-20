@@ -2140,7 +2140,18 @@ sign-in: a role the admin changes waits for that sign-in, and a deleted member k
 request whose session holds a signed-in key, it reads the row again through `me()` - a row kept under `@deleted` counts as gone. No row: the session
 ends and the request goes on as a visitor's (what needs a signed-in user answers 401). A changed role: the session takes it from this request on and
 keeps its id. It costs one read of the row per such request. A session with no signed-in key (a visitor, or a `CurrentUser` of the application's
-own) is not read. `@signin` takes no other option - another is a DSL warning.
+own) is not read. `@signin` takes no option but `refresh=request` and `refresh=password` - another is a DSL warning.
+
+**`@signin(refresh=password)` - a session opened before a password change ends.** It does everything `refresh=request` does, in the
+same one read of the row per signed-in request (`signedInRow()`, added to the CoreService and the use case beside `me()`), and the
+session also holds a stamp of the password hash - the first 16 hex characters of the SHA-256 of the stored hash, never the hash. When
+the row's stamp is no longer the session's, the session ends and the request goes on as a visitor's (a write answers 401). The session
+that changes its own password (`PUT` with the password) keeps going with the new stamp, and the member's other sessions end; when an
+administrator changes a member's password, that member's sessions end and the administrator's is kept. A session without a stamp -
+signed in by your own code (`SessionCurrentUser.signIn`, as the reset below does) or before the option was on - takes the row's at the
+end of the request that signed it in, or on its first request, so your code needs no change. A row that had no password (a member from
+another provider) and gets one is not a change; a password removed is. The 2.x-compatible output (`output = 'v2'`) has no generated
+sign-in, so there `refresh=password` stops the build.
 
 - **Update level.** Every request that writes a row (`PUT`, `PUT /batch`, conditional update) asks for the `update` level - `update`, else `*`,
   else `admin`, and `public` if there is no `@access` at all. The sign-in API is generated only when this is `admin` or `none`, or `owner` with `@owner` being the key.
@@ -2313,8 +2324,8 @@ public CustomerDTO confirm(@RequestBody Map<String, String> body, HttpServletReq
 }
 ```
 
-Sessions open elsewhere stay signed in after a reset; ending them takes a session store that can find a member's sessions
-(Spring Session, say). `PasswordResetGuideTest` checks the rest: the session id changes and the one before is worthless; the
+With `@signin(refresh=password)`, which the pet store says, the sessions opened before a reset end with their next request, and the
+one the confirm signs in keeps going (above); without it they stay signed in. `PasswordResetGuideTest` checks that and the rest: the session id changes and the one before is worthless; the
 old password fails and the new one signs in; the same link twice, a link after the customer changed the password themselves,
 an altered link and an expired one are refused; an unknown login gets the same 202 and no mail; a second ask within a minute
 sends nothing.

@@ -592,7 +592,20 @@ public class ServiceAccessRules implements CodeRules {
             }
             m.add("    }");
         }
-        m.stmt("hashPasswords(dto)").end();
+        m.stmt("hashPasswords(dto)");
+        if (refreshesWithPassword(e) && pk != null && passwords.size() == 1) {
+            // @signin(refresh=password): the session that changes its own password keeps going, with the new stamp.
+            String password = passwords.get(0).name();
+            String key = getter(kt, "entity", pk.name());
+            if (kt) {
+                m.add("    dto.%s?.let { %sPasswordRefreshFilter.written(%s, it) }", password, RT, key);
+            } else {
+                m.add(
+                        "    if (dto.%s() != null) %sPasswordRefreshFilter.written(%s, dto.%s());",
+                        getterName(password), RT, key, getterName(password));
+            }
+        }
+        m.end();
 
         // ---- update by condition: merged skipping nulls, so leaving them out is enough
         m.fun("accessUpdateAll", "dto: " + dto, dto + " dto")
@@ -768,6 +781,79 @@ public class ServiceAccessRules implements CodeRules {
                     .append(".map(row -> ")
                     .append(mapper)
                     .append(".toDTO(row));\n")
+                    .append("    }");
+        }
+        c.addMethod(m.toString());
+        if (refreshesWithPassword(e)) signedInRow(e, c, kt, repo, keyType, live);
+    }
+
+    /**
+     * {@code @signin(refresh=password)}: what the session refresh reads, in the
+     * one read me() makes - the row's roles, and its password hash, which the
+     * runtime only stamps. The entity, not the DTO: no DTO carries the hash.
+     */
+    private void signedInRow(EntitySpec e, SourceCode c, boolean kt, String repo, String keyType, String live) {
+        String password = null;
+        for (FieldSpec f : e.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+        }
+        String role = roleText(e, kt, kt ? "it" : "row");
+        String rowType = RT + "PasswordRefreshFilter.Row";
+        StringBuilder m = new StringBuilder();
+        m.append("    /** The ")
+                .append(e.getName())
+                .append(" signed in now as the session refresh reads it - its roles and")
+                .append(" the stamp of its password - or empty when the row is gone (@signin(refresh=password)). */\n");
+        if (kt) {
+            m.append("    open fun signedInRow(): Optional<")
+                    .append(rowType)
+                    .append("> {\n")
+                    .append("        val id = currentUser.id() ?: return Optional.empty()\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.`as`(id, ")
+                    .append(ktId(keyType))
+                    .append("::class.javaObjectType))")
+                    .append(live)
+                    .append(".map {\n")
+                    .append("            ")
+                    .append(RT)
+                    .append("PasswordRefreshFilter.row(")
+                    .append(RT)
+                    .append("SessionRefreshFilter.roles(")
+                    .append(role == null ? "" : role)
+                    .append("), it.")
+                    .append(password)
+                    .append(")\n")
+                    .append("        }\n")
+                    .append("    }");
+        } else {
+            m.append("    public Optional<")
+                    .append(rowType)
+                    .append("> signedInRow() {\n")
+                    .append("        Object id = currentUser.id();\n")
+                    .append("        if (id == null) return Optional.empty();\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.as(id, ")
+                    .append(keyType)
+                    .append(".class))")
+                    .append(live)
+                    .append("\n")
+                    .append("                .map(row -> ")
+                    .append(RT)
+                    .append("PasswordRefreshFilter.row(\n")
+                    .append("                        ")
+                    .append(RT)
+                    .append("SessionRefreshFilter.roles(")
+                    .append(role == null ? "" : role)
+                    .append("), row.")
+                    .append(getterName(password))
+                    .append("()));\n")
                     .append("    }");
         }
         c.addMethod(m.toString());
@@ -1122,10 +1208,21 @@ public class ServiceAccessRules implements CodeRules {
      * request: @signin(refresh=request) on the entity that signs in. A
      * generated filter reads the row again through me(). When the row is
      * gone, the session ends; when the role has changed, the session takes
-     * the new one.
+     * the new one. @signin(refresh=password) does the same, and more
+     * (refreshesWithPassword).
      */
     public static boolean refreshesPerRequest(EntitySpec e) {
-        return signsIn(e) && "request".equals(trim(e.metaProperty("signin", "refresh")));
+        String refresh = trim(e.metaProperty("signin", "refresh"));
+        return signsIn(e) && ("request".equals(refresh) || "password".equals(refresh));
+    }
+
+    /**
+     * Whether a session opened before a password change ends:
+     * {@code @signin(refresh=password)}, which does what refresh=request does too. The session holds a stamp of the
+     * hash, read in the same one read of the row (signedInRow).
+     */
+    public static boolean refreshesWithPassword(EntitySpec e) {
+        return signsIn(e) && "password".equals(trim(e.metaProperty("signin", "refresh")));
     }
 
     /** What @signin is given that it does not take, one sentence each. */
@@ -1133,17 +1230,19 @@ public class ServiceAccessRules implements CodeRules {
         List<String> out = new ArrayList<String>();
         if (!e.hasMeta("signin")) return out;
         String bare = trim(e.metaValue("signin"));
+        String takes = "@signin takes refresh=request or refresh=password; ";
         if (bare != null && !bare.isEmpty()) {
-            out.add("@signin(" + bare + "): @signin takes refresh=request; " + bare + " is ignored.");
+            out.add("@signin(" + bare + "): " + takes + bare + " is ignored.");
         }
         for (Map.Entry<String, String> p : e.metaProperties("signin").entrySet()) {
             String key = p.getKey();
             String value = trim(p.getValue());
             if (!"refresh".equals(key)) {
-                out.add("@signin(" + key + "=...): @signin takes refresh=request; " + key + " is ignored.");
-            } else if (!"request".equals(value)) {
+                out.add("@signin(" + key + "=...): " + takes + key + " is ignored.");
+            } else if (!"request".equals(value) && !"password".equals(value)) {
                 out.add("@signin(refresh=" + value + "): refresh takes request (the row read again on each"
-                        + " request); the session keeps what the sign-in put in it.");
+                        + " request) or password (the same, and a session opened before a password change ends);"
+                        + " the session keeps what the sign-in put in it.");
             }
         }
         return out;

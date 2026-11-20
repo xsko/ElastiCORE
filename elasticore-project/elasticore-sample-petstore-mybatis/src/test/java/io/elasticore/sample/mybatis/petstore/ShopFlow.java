@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.sql.Connection;
@@ -215,7 +216,8 @@ abstract class ShopFlow {
 
     /**
      * A page of orders with their lines is three statements, however many orders: no N+1. The
-     * request makes one more before them: @signin(refresh=request) reads the signed-in customer again.
+     * request makes one more before them: @signin(refresh=password) reads the signed-in customer again,
+     * its role and its password's stamp in that one read.
      */
     @Test
     void aPageOfOrdersAndTheirLinesIsThreeStatements() throws Exception {
@@ -325,7 +327,7 @@ abstract class ShopFlow {
     }
 
     /**
-     * {@code @signin(refresh=request)}: each request reads the signed-in customer again. A role the
+     * {@code @signin(refresh=password)}, what refresh=request does: each request reads the signed-in customer again. A role the
      * administrator changes is the session's from the next request on, and a deleted customer's
      * session ends - neither waits for the next sign-in.
      */
@@ -362,6 +364,45 @@ abstract class ShopFlow {
         mvc.perform(get("/api/petstore/customer/me").session(admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.login").value("admin"));
+    }
+
+    long idOf(MockHttpSession session) throws Exception {
+        return ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/petstore/customer/me").session(session))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.customerId")).longValue();
+    }
+
+    ResultActions telephone(MockHttpSession session, long id) throws Exception {
+        return mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + id + ",\"telephone\":\"+1 555 0100\"}")
+                .session(session));
+    }
+
+    /**
+     * {@code @signin(refresh=password)}: a password change ends the sessions opened before it. The
+     * session that changed its own keeps going; an administrator who changes it keeps theirs.
+     */
+    @Test
+    void aPasswordChangeEndsTheSessionsOpenedBeforeIt() throws Exception {
+        MockHttpSession changer = signUp("solo");
+        MockHttpSession other = signIn("solo", "force-1234");
+        long id = idOf(changer);
+        mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + id + ",\"password\":\"new-pass-1234\"}")
+                        .session(changer))
+                .andExpect(status().isOk());
+        telephone(changer, id).andExpect(status().isOk());
+        telephone(changer, id).andExpect(status().isOk());
+        telephone(other, id).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/petstore/customer/me").session(other)).andExpect(status().isUnauthorized());
+
+        MockHttpSession admin = signIn("admin", "admin");
+        mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + id + ",\"password\":\"set-by-admin-1\"}")
+                        .session(admin))
+                .andExpect(status().isOk());
+        telephone(changer, id).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/petstore/customer/me").session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.login").value("admin"));
+        signIn("solo", "set-by-admin-1");
     }
 
     @Test

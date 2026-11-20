@@ -1,8 +1,9 @@
 entity:
   # Signs in (@login, @password), owns itself, and keeps its document when deleted (@deleted):
-  # a deleted member signs in no more, and the session it had ends with its next request.
+  # a deleted member signs in no more, and the session it had ends with its next request; so do the
+  # sessions opened before a password change (refresh=password), but the one that made it.
   Member:
-    meta: entity @expose(20) @signin(refresh=request) @owner(memberId) @access(read=owner, create=public, update=owner, delete=owner) -- member
+    meta: entity @expose(20) @signin(refresh=password) @owner(memberId) @access(read=owner, create=public, update=owner, delete=owner) -- member
     fields:
       memberId: long @id @sequence
       email: string(100)! @login @unique

@@ -646,6 +646,7 @@ Verification: the Pet Store `MetricsTest` places, ships and cancels orders, and 
 | Entity meta | `@owner(customerId)` | The field that holds the owner of the row |
 | Entity meta | `@signin` | Sign-in API: `me()`, the controller's `signin`, `signout` and `me`, TypeScript `signIn`, `signOut` and `me`. Needs `@login`, `@password` and `@expose`, one key, update by the owner or an administrator only (`update=owner` + `@owner` on the key, or `update=admin`), delete also by the owner or an administrator only if the request decides the key, only when there is one in the application - otherwise a DSL warning. The login column is unique with `@signin` alone (even if rejected) |
 | Entity meta | `@signin(refresh=request)` | The session follows the row: before each signed-in request the row is read again through `me()` - gone (or `@deleted`) ends the session, a changed role is the session's |
+| Entity meta | `@signin(refresh=password)` | All of `refresh=request`, and a session opened before a password change ends: the session holds a stamp of the hash, checked in the same one read. The session that changed its own password keeps going. Not in the 2.x-compatible output (the build stops) |
 | Field | `@access(admin)` | A field only administrators use |
 | Field | `@password` | Stored only as a hash, absent from responses and search |
 | Field | `@safe(basic)` / `@safe(relaxed)` | On an `html` field: the jsoup safelist it is kept to before every write (basic when unsaid) |

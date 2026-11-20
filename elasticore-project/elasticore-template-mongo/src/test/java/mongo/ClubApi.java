@@ -81,6 +81,55 @@ public abstract class ClubApi {
         assertFalse(taken.body().contains("index"), taken.body());
     }
 
+    /**
+     * {@code @signin(refresh=password)}: a password change ends the sessions opened before it; the
+     * session that made the change keeps going.
+     */
+    @Test
+    public void aPasswordChangeEndsTheOtherSessions() throws Exception {
+        String mail = "pw-" + UUID.randomUUID().toString().substring(0, 8) + "@a.com";
+        long id = body(send(client(), "POST", "/member", "{\"email\":\"" + mail + "\",\"secret\":\"pw-1\"}"), 200)
+                .get("memberId")
+                .asLong();
+        HttpClient changer = client();
+        HttpClient other = client();
+        send(changer, "POST", "/member/signin", "{\"email\":\"" + mail + "\",\"secret\":\"pw-1\"}", 200);
+        send(other, "POST", "/member/signin", "{\"email\":\"" + mail + "\",\"secret\":\"pw-1\"}", 200);
+        send(other, "GET", "/member/me", null, 200);
+
+        send(changer, "PUT", "/member", "{\"memberId\":" + id + ",\"email\":\"" + mail + "\",\"secret\":\"pw-2\"}", 200);
+        send(changer, "GET", "/member/me", null, 200);
+        send(changer, "GET", "/member/me", null, 200);
+        send(other, "GET", "/member/me", null, 401);
+        send(other, "PUT", "/member", "{\"memberId\":" + id + ",\"email\":\"" + mail + "\",\"secret\":\"pw-3\"}", 401);
+        send(client(), "POST", "/member/signin", "{\"email\":\"" + mail + "\",\"secret\":\"pw-2\"}", 200);
+    }
+
+    /**
+     * A member who signed in through another provider has no password; setting one is not a change,
+     * so the other sessions stay. A change after that is one.
+     */
+    @Test
+    public void aFirstPasswordIsNotAChange() throws Exception {
+        long id = 900_000_000L + (long) (Math.random() * 99_999_999L);
+        String mail = "provider-" + UUID.randomUUID().toString().substring(0, 8) + "@a.com";
+        mongo.getCollection("member").insertOne(new Document("_id", id).append("email", mail));
+        HttpClient first = client();
+        HttpClient second = client();
+        send(first, "POST", "/provider/signin/" + id, null, 200);
+        send(second, "POST", "/provider/signin/" + id, null, 200);
+        send(first, "GET", "/member/me", null, 200);
+
+        send(second, "PUT", "/member", "{\"memberId\":" + id + ",\"email\":\"" + mail + "\",\"secret\":\"pw-1\"}", 200);
+        assertNotNull(mongo.getCollection("member").find(new Document("_id", id)).first().get("secret"));
+        send(first, "GET", "/member/me", null, 200);
+        send(second, "GET", "/member/me", null, 200);
+
+        send(second, "PUT", "/member", "{\"memberId\":" + id + ",\"email\":\"" + mail + "\",\"secret\":\"pw-2\"}", 200);
+        send(first, "GET", "/member/me", null, 401);
+        send(second, "GET", "/member/me", null, 200);
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static HttpClient client() {
