@@ -243,8 +243,8 @@ SalesOrder:
 | `SalesOrderShipCommand` | 파라미터가 있는 명령의 요청 DTO (`@NotNull`, `@Size` 등) | 재생성 |
 | `SalesOrderUseCase.ship(orderId, command)` | 인바운드 포트 | 재생성 |
 | `SalesOrderCoreService.ship(...)` | 불러오기 -> `entity.ship(warehouse)` -> 저장, 트랜잭션 | 재생성 |
-| `SalesOrderBase`: `abstract void ship(String warehouse)` | 약속 - 행위 클래스가 이미 있으면 규칙을 쓸 때까지 **컴파일 에러** | 재생성 |
-| `SalesOrder.ship(String)` | 규칙 (처음 한 번 예외를 던지는 틀로 생성) | 개발자 소유 |
+| `SalesOrderBase`: `abstract void ship(String warehouse)` | 약속 - 행위 클래스가 지킴 | 재생성 |
+| `SalesOrder.ship(String)` | 규칙 - 쓸 때까지 예외를 던지는 틀(500); 나중에 더한 명령도 틀을 받고, 고친 클래스에는 병합 | 개발자 소유 |
 
 - 규칙은 생성하지 않습니다. 상태 검사, 값 변경, 이벤트 발생은 `SalesOrder` 에 직접 씁니다.
 - 명령이 애그리거트 밖의 일(재고 차감처럼 도메인 서비스·다른 포트)을 필요로 하면 확장 서비스
@@ -567,8 +567,8 @@ public void cancel() {
 | `@stamp: written only for a root with a behaviour class` | `@editable` 루트 | 기록 안 함. 필드는 쓸 수 있는 채로 |
 
 경고는 `elcore3` 출력 끝의 `[elcore3] DSL validation warnings:` 아래에 모여 나옵니다. 빌드는 멈추지 않으므로
-생성 후 이 목록을 꼭 확인하세요. 생명주기가 빠지면 명령이 추상 메서드로 돌아가서, 행위 클래스에 구현이 없으면
-`PurchaseOrder is not abstract and does not override ship()` 같은 컴파일 오류로 이어집니다.
+생성 후 이 목록을 꼭 확인하세요. 생명주기가 빠지면 명령이 추상 메서드로 돌아가고, 행위 클래스에는 예외를 던지는
+틀이 다시 들어갑니다(고친 클래스에는 병합): 프로젝트는 빌드되고, 생명주기를 고치거나 규칙을 쓸 때까지 그 명령은 500 입니다.
 
 ---
 
@@ -1064,10 +1064,10 @@ processManager:
 | `BillingProcessManager` | 한 번 생성, 이후 개발자 소유 | 이벤트마다 `handle(...)` — 다음 단계를 쓰는 자리 |
 
 **DSL 을 고치면 소스가 따라옵니다.**
-- `on` 에 이벤트를 더하면 재생성되는 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생깁니다. 개발자 클래스에 그 단계를
-  쓰기 전까지 컴파일러가 정확히 알려 줍니다: `LoyaltyProcessManager is not abstract and does not override abstract
-  method handle(OrderCancelledEvent)` (`elasticore-template-ddd` 에서 실제로 확인한 메시지). 업무 명령(`commands:`)과
-  같은 방식이라, 단계가 조용히 빠지지 않습니다.
+- `on` 에 이벤트를 더하면 재생성되는 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는
+  빈 `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합(`MERGED(your edits kept)`).
+  프로젝트는 빌드되고, 그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다: `on` 에 더한 뒤에는 개발자 클래스에서
+  새로 생긴 빈 `handle` 을 찾으세요.
 - `uses` 에 애그리거트를 더하면 Base 에 포트 필드가 생기고, 개발자 클래스는 고치지 않습니다.
 - `on` 에서 이벤트를 빼면 개발자 클래스의 `@Override handle(그 이벤트)` 가 덮어쓸 것이 없어 컴파일 오류가 납니다 —
   지울 코드를 컴파일러가 가리킵니다.
