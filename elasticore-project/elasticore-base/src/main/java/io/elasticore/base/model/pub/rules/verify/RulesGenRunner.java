@@ -2611,7 +2611,36 @@ public final class RulesGenRunner {
                 ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, name, true)
                 : ArtifactTarget.of("java", "src/test/java", "java", pkg, name, true);
         String label = String.format("    %-12s %s", "archTest", out.relativePath());
-        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping()));
+        // The project's own packages under the base go in by their first segment (issue 173); one that no
+        // segment places is said, once, rather than guessed.
+        ArchitectureTestSource.Layers layers = ArchitectureTestSource.layers(model, pkg, mainSourcePackages());
+        for (String unplaced : layers.unplaced) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] %s: %s places a package of your own by its first segment after %s (domain, application,"
+                            + " adapter, infrastructure), and this one has none of them - it is not checked. Move it"
+                            + " under one of them, or add its rule to the test.",
+                    model.getInternalDomainName(), unplaced, name, pkg));
+        }
+        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping(), layers));
+    }
+
+    /** The packages the project's main sources (src/main) declare - what its own code adds among them. */
+    private java.util.Set<String> mainSourcePackages() {
+        java.util.Set<String> packages = new java.util.TreeSet<String>();
+        for (Map.Entry<File, String> src : projectSources().entrySet()) {
+            String path = src.getKey().getPath().replace('\\', '/');
+            if (!path.contains("/src/main/")) continue;
+            String pkg = declaredPackage(src.getValue());
+            if (!pkg.isEmpty()) packages.add(pkg);
+        }
+        return packages;
+    }
+
+    /** A source's package as the JVM names it: a Kotlin keyword written `in` is in. */
+    static String declaredPackage(String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.`]+)")
+                .matcher(text);
+        return m.find() ? m.group(1).replace("`", "") : "";
     }
 
 
