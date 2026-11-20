@@ -5,14 +5,14 @@
   in `omitted_columns`, but `unique_keys` still named them: `email: string(100)! @unique @sensitive` wrote
   `unique_keys: [[email]]`, and `@Index(columnList="provider,provider_user_id", unique="true")` with
   `providerUserId: string(100)! @sensitive` wrote `[[provider, provider_user_id]]`. A `@password @unique` or
-  `@writeonly @unique` column, and an `@Index` over an embedded value's `@sensitive` column, did the same. Ossie reads a
-  key name that is not a field of the dataset as an error, and the key told a reader the left-out column exists and is
-  unique (issue 245).
+  `@writeonly @unique` column, and an `@Index` over an embedded value's `@sensitive` column, did the same. Ossie's name
+  rule lets `unique_keys` name only fields of the dataset, and a name that is not one is an error (`validate_references`
+  in apache/ossie's `validation/validate.py`); the key also stated that the left-out column is unique (issue 245).
 - Now: a unique key (`@unique` or `@Index(..., unique="true")`) that holds any column the field list left out is not
   written, as a whole - its other columns alone are another key, which is not unique - and a `[ossie]` warning names
   the key and the column. The decision is the field list's own: a column counts as left out when the field list
   recorded it in `omitted_columns` (names compared ignoring case). The dataset's other unique keys are written as
-  before.
+  before, and the left-out column is still named in `omitted_columns`.
 - Unchanged: a dataset with no left-out column writes the same unique keys. The committed exports of
   `elasticore-sample-petstore`, `elasticore-template-ddd` and `elasticore-template-ddd-mybatis`, regenerated with the
   fix, are unchanged.
