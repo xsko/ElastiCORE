@@ -3135,16 +3135,31 @@ public final class RulesGenRunner {
             key = "publisher.rules";
             named = RulesConfig.configuredList(model.getConfig(key));
         }
-        if (named == null) return null;
+        String where = String.format("domain '%s' names", model.getInternalDomainName());
+        if (named == null) {
+            // The project's own list, which a domain that names none runs.
+            key = RulesConfig.PROP_RULES;
+            named = RulesConfig.configuredList(System.getProperty(key));
+            where = "the build names";
+        }
         RuleCatalog catalog = RuleCatalog.standard();
-        for (String rule : named) {
+        String refusal = named == null ? null : javaRuleIn(catalog, named, where, key);
+        // And the rule sets the build adds to every domain (the plugin's rules list).
+        return refusal != null
+                ? refusal
+                : javaRuleIn(catalog, RulesConfig.addedRules(), "the build adds", RulesConfig.PROP_RULES_ADD);
+    }
+
+    /** The refusal for the first of the names that writes Java, or null. */
+    private static String javaRuleIn(RuleCatalog catalog, java.util.List<String> names, String where, String key) {
+        for (String rule : names) {
             String set = RulesConfig.javaOnlySetOf(catalog, rule);
             if (set == null) continue;
             String kotlin = RulesConfig.kotlinCounterpartOf(rule);
             return String.format(
-                    "domain '%s' names %s in %s, which writes Java%s, but the build's language is"
+                    "%s %s in %s, which writes Java%s, but the build's language is"
                             + " kotlin - %s, or leave %s out for the bundle the build's architecture names.",
-                    model.getInternalDomainName(),
+                    where,
                     rule.trim(),
                     key,
                     set.equals(rule.trim()) ? "" : " (its set " + set + ")",
