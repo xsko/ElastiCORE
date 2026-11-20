@@ -69,12 +69,12 @@ public class GrpcStubRules implements CodeRules {
         String prefix = String.format("grpc.%s", p.clientName());
 
         c.var("packageName", p.javaPackage())
-         .var("gRpcServiceName", p.getName())
-         .var("importList", String.format("%s.*", p.javaPackage()))
-         // Written as the Spring placeholder the generated @Value reads, not
-         // as a template variable of this generator.
-         .var("gRpcServiceIp", "${%s.ip:localhost}", prefix)
-         .var("gRpcServicePort", "${%s.port:9090}", prefix);
+                .var("gRpcServiceName", p.getName())
+                .var("importList", String.format("%s.*", p.javaPackage()))
+                // Written as the Spring placeholder the generated @Value reads, not
+                // as a template variable of this generator.
+                .var("gRpcServiceIp", placeholder(syntax, String.format("%s.ip:localhost", prefix)))
+                .var("gRpcServicePort", placeholder(syntax, String.format("%s.port:9090", prefix)));
 
         for (ProtoServiceSpec.Rpc rpc : p.rpcs()) {
             describe(c, rpc);
@@ -87,6 +87,15 @@ public class GrpcStubRules implements CodeRules {
              .varLine("gRpcMethodList", "}")
              .varLine("gRpcMethodList", "");
         }
+    }
+
+    /**
+     * A Spring property placeholder as this language's string literal must
+     * spell it: Kotlin reads "${...}" as its own string template, so there it
+     * is escaped to reach Spring as written. Java's is as it always was.
+     */
+    private static String placeholder(Syntax syntax, String property) {
+        return (syntax == Syntax.KOTLIN ? "\\" : "") + "${" + property + "}";
     }
 
     /** The rpc's own description, above the method it becomes. */
