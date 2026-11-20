@@ -76,7 +76,11 @@ public abstract class ClubApi {
                 "{\"email\":\"" + leeMail + "\",\"secret\":\"pw-lee\"}"), 200).get("memberId").asInt();
         assertEquals(kimId + 1, leeId, "an int key from the sequence");
         // The same email again: the unique index refuses it.
-        send(lee, "POST", "/member", "{\"email\":\"" + kimMail + "\",\"secret\":\"x\"}", 409);
+        HttpResponse<String> taken = send(lee, "POST", "/member", "{\"email\":\"" + kimMail + "\",\"secret\":\"x\"}", 409);
+        // The kind of refusal, never the driver's text (E11000, the index and the value).
+        assertEquals("unique", json.readTree(taken.body()).get("code").asText(), taken.body());
+        assertFalse(taken.body().contains(kimMail), taken.body());
+        assertFalse(taken.body().contains("E11000"), taken.body());
 
         // A visitor has no me; a wrong password is a 401.
         send(kim, "GET", "/member/me", null, 401);

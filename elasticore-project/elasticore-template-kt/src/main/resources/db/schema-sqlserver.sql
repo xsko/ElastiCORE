@@ -293,6 +293,12 @@ CREATE TABLE ref_color_marker (
     PRIMARY KEY (marker_id)
 );
 
+CREATE TABLE ref_country (
+    iso_code NVARCHAR(2) NOT NULL,
+    name NVARCHAR(50) NOT NULL,
+    PRIMARY KEY (iso_code)
+);
+
 CREATE TABLE ref_party (
     party_id BIGINT IDENTITY(1,1) NOT NULL,
     name NVARCHAR(50) NOT NULL,

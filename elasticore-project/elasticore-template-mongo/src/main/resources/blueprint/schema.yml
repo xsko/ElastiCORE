@@ -25,6 +25,16 @@ entities:
       joinedAt: Date @Column(name = "joined_at")
       retiredAt: Date @Column(name = "retired_at")
 
+  Member:
+    meta: entity @java(io.elasticore.sample.mongo.club.domain.model.Member) -- member
+    table: member
+    java: io.elasticore.sample.mongo.club.domain.model.Member
+    fields:
+      memberId: Long @Column(name = "member_id") @Id @GeneratedValue
+      email: string(100) @Column(name = "email", length = 100) @Unique
+      secret: string(255) @Column(name = "secret", length = 255)
+      leftAt: Date @Column(name = "left_at")
+
   OrderLine:
     meta: entity @java(io.elasticore.sample.mongo.shop.domain.model.OrderLine) -- order line
     table: order_line

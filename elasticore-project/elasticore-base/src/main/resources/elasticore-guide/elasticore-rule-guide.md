@@ -1735,6 +1735,124 @@ dependencies {
 Whatever you add to the `elasticore` configuration, `elasticore-base` is not removed, and the module you declare here is compiled first, without
 waiting for generation. For examples and how to test, see `elasticore-ddd-customize-guide.md`.
 
+#### Your own copy of the runtime (`runtimePackages`)
+> **Works in:** the 3.0 code - Java and Kotlin, every architecture · **Not in:** `output = 'v2'` (ignored, with a warning)
+
+The generated code uses the ElastiCORE runtime: `elasticore-springboot3` (or `-springboot4`, whose classes are in the same
+packages) and a few classes of `elasticore-base`. A project that must not ship an ElastiCORE jar - a rule about third-party
+libraries, a fork of its own - can have the code generated against packages it owns, and keep its own copy of those classes.
+The application then compiles and runs with no ElastiCORE jar at all; the generator still runs in the build, on its own classpath.
+
+```gradle
+elasticore {
+    architecture = 'hexagonal'
+    language     = 'java'
+    runtimePackages = [
+        'io.elasticore.springboot3': 'com.test.springboot',
+        'io.elasticore.runtime'    : 'com.test.runtime',
+        'io.elasticore.base.util'  : 'com.test.util',
+    ]
+}
+```
+
+**How a name is rewritten**
+
+- Only the prefix changes; sub-packages and class names stay:
+  `io.elasticore.springboot3.validation.NotFoundException` becomes `com.test.springboot.validation.NotFoundException`.
+- Everywhere in the generated text: imports, and qualified names in code -
+  `@ExceptionHandler(io.elasticore.springboot3.validation.NotFoundException.class)`,
+  `io.elasticore.base.util.StringUtils.camelToSnake(...)`, `io.elasticore.springboot3.entity.FixedAtCreation.check(...)` -
+  in Java and Kotlin, and in the resources the run writes beside them.
+- Whole package segments only: `io.elasticore.springboot3` does not match `io.elasticore.springboot3x`.
+- The longest key first: beside `'io.elasticore.springboot3'`, a key `'io.elasticore.springboot3.security'` takes the security classes.
+- A key starts with `io.elasticore.` and names a package of the runtime: a key over a namespace of the project
+  (`'io.elasticore.sample': ...` in a project `io.elasticore.sample.shop`) is refused. A value is a package name in Java
+  and in Kotlin (`com.acme.in` is not: `in` is a Kotlin keyword), not under `io.elasticore`, and neither a namespace of the
+  project nor one that holds one (`com.acme.shop` in a project `com.acme.shop`: put the copy in `com.acme.shop.runtime`).
+  Otherwise the build fails before anything is generated.
+- Unset, the generated code is byte for byte what it was.
+- The text is rewritten before it is merged and kept in `.elasticore/cache`, so the file and its base agree.
+- **Turning it on in a project generated before.** A merged file - one `.elasticore/cache` holds - is renamed on every side
+  before the merge: its cached base, the file as you left it, and the new text. Your edits stay where they are and are renamed
+  with the rest (an import of a runtime class you added becomes the mapped one), and a conflict is only where your edit and a
+  change of the DSL meet, as without the setting. A file the run does not write - a file without a base (`SKIP(user-owned)`,
+  `SKIP(not in the cache)`), or one the DSL no longer produces that is kept because a source of yours uses it - is not
+  renamed; the run names it (below), and you change its imports by hand. A file only renamed is reported
+  `RENAMED(your edits kept; ...)`, and a kept file of yours `KEPT(...; the runtime's packages renamed)`.
+- **Changing or removing it.** `.elasticore/cache` records, with each text, the mapping it was renamed with - in the same
+  save, so a run of one domain (`-Pdomain`), or one that stops or whose model check fails, leaves every text paired with
+  its own. When the mapping differs, a merged file's base and the file are renamed back from the mapping recorded for it
+  and on to the new one (back to `io.elasticore` when the setting is removed), so your edits stay and only real conflicts
+  remain; the run says `changed since the last run`. A file the run does not write is said when it still names a package
+  of a previous mapping. A previous mapping that cannot be undone by name (two keys on one value, one value under
+  another), or that a key or value of would rename the project, is said, and those files are renamed with the new
+  mapping only. Removing the setting also renames classes you added to your copy (`com.acme.rt.validation.MyNotFound`)
+  back to `io.elasticore`, where no such class is: change those references by hand. A run of every domain without the
+  setting deletes `build/elasticore/runtime-classes.txt`; a cache without the setting records no mapping.
+- Kotlin with `mapping: xml`: the domain classes carry the mapped `@com.test.springboot.entity.PersistentModel`, so the
+  all-open and no-arg plugins name that one: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, and
+  the same for `noArg` (`elasticore-env-guide.md`, `mapping: xml`).
+- Not rewritten: `blueprint/schema.yml` and the Ossie export describe the model, the runtime's type names
+  (`io.elasticore.springboot3.domain.Money`) among it. They are not compiled.
+- `elcoreGraphQl` runs the schema writer from your copy (`com.test.springboot.graphql.GraphQlSchemaWriter`), which runs on the
+  application's classpath.
+
+**What a run says**
+
+```
+[elcore3] runtime   : io.elasticore.base.util -> com.test.util, io.elasticore.runtime -> com.test.runtime, ...
+[elcore3] runtimePackages: the generated code uses 38 runtime class(es) your packages have to provide - build/elasticore/runtime-classes.txt
+  com.test.runtime.security.TransformPermissionChecker
+  com.test.springboot.entity.*
+  com.test.springboot.validation.NotFoundException
+  ...
+```
+
+- The list is the classes the generated files now name under your packages, one per line, also written to
+  `build/elasticore/runtime-classes.txt` by a run of every domain (`-Pdomain` prints it only). A wildcard import
+  (`com.test.springboot.entity.*`) stands for its package: copy that package whole. A nested class (`Money$JpaConverter`
+  in orm.xml) is listed as the class it is in (`Money`), the file to copy. A copy under the project's own package
+  (`'io.elasticore.springboot3': 'com.acme.shop.runtime'` in a project `com.acme.shop`) is listed like any other.
+- A warning for every package under `io.elasticore` the generated files still name, with the files: either no key covers it -
+  add one - or it is in a file the run did not write (yours, or kept because a source of yours uses it) - change its
+  imports. The project's own packages (a project whose base package is under `io.elasticore`) are not counted. Your own
+  hand-written sources are not read.
+
+**What you provide**
+
+1. The classes in the list, and the classes they use in turn, from the sources jars: `elasticore-springboot3-<version>-sources.jar`
+   (for Spring Boot 4, `elasticore-springboot4-<version>-sources.jar`, which holds the Jackson 3 classes) and
+   `elasticore-base-<version>-sources.jar` - `io/elasticore/runtime/**`, `io/elasticore/base/util/StringUtils.java` and
+   `ModelTransList.java`. They are Apache-2.0: keep the license notice.
+2. The copy rewritten with the same mapping, **string literals included**: `GraphQlErrors` and `RequestErrors` name runtime
+   classes in strings. The copy also names two packages the generated code does not - `io.elasticore.springboot.autoconfigure`
+   (the auto-configurations) and `io.elasticore.base.Version` (the start-up banner) - move those too.
+3. The Spring auto-configuration the jar brought: its
+   `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` lists `ElastiCoreAutoConfiguration`
+   (ports, `DbmsService`, the transaction gateway), `ElastiCoreLookupAutoConfiguration`, `ElastiCoreGraphQlAutoConfiguration`,
+   `ElastiCoreMaskAutoConfiguration`, `ElastiCoreCryptoAutoConfiguration` and `ElastiCoreMyBatisAutoConfiguration`. Copy the ones
+   your application uses and list them, under their new names, in a file of your own at the same path. Without it, the beans the
+   generated code is given (the field crypto, the lookup, the GraphQL scalars, the ports) are missing when the application starts.
+4. `META-INF/services/jakarta.validation.ConstraintValidator`: the bound checks of `Money` and `Quantity`
+   (`ValueBoundValidators$MoneyDecimalMin` and the others), under the new names. Without it, `@min`/`@max` on a money or quantity
+   field is not checked.
+5. The libraries the copied classes use, which the jar used to bring along. For elasticore-template-ddd (below):
+   `spring-boot-starter-webflux` (`HttpApiClient`: WebClient and reactor-netty), `commons-lang3`, `commons-jexl3` 3.0
+   (`SqlPortGateway`), `reflections` 0.10.2 (`PortServiceRegistrar`), `jnanoid` 2.0.0 (`IdUtils`),
+   `jackson-dataformat-xml` and `-yaml`, and Lombok (`ModelTransList`).
+
+> **Security.** `CurrentUser`, `TransformPermissionChecker` and `ForbiddenException` - with `AccessPolicy` and
+> `NotSignedInException` - are what the generated access checks (`@access`, `@owner`) stand on. Start from the shipped sources,
+> not from classes written from scratch: a `CurrentUser` that answers wrongly, or a `ForbiddenException` your error handler turns
+> into a 200, opens every endpoint the DSL closed.
+
+**Upgrading.** The code a newer ElastiCORE generates can name classes, methods or constructors your copy does not have yet.
+After an upgrade, compare `build/elasticore/runtime-classes.txt` with the last one, and take the classes that are new or changed
+from the new version's sources jar; a compile error names what is still missing.
+
+Checked on `elasticore-template-ddd` (hexagonal Java, Spring Boot 3.3): 38 classes listed, 92 of the runtime's 140 classes copied
+(the list and what it uses); the project compiled and its tests ran with no `io.elasticore` artifact on the classpath.
+
 ### Apache Ossie semantic model export (`ossie-export`)
 
 [Apache Ossie](https://github.com/apache/ossie) (incubating) is the ASF's vendor-neutral standard for exchanging semantic metadata between analytics, BI and AI platforms -

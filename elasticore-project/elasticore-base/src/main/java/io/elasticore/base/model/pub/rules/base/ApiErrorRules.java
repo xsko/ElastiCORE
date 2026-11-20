@@ -27,7 +27,8 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * <pre>
  *   EntityNotFoundException              404  the row is not there
  *   DuplicateKeyException                409  a create named a taken identifier (already-exists);
- *                                             from the database (MyBatis): as DataIntegrityViolationException
+ *                                             from the database (MyBatis): as DataIntegrityViolationException;
+ *                                             from MongoDB (E11000): unique, without the driver's text
  *   OptimisticLockingFailureException    409  the version sent is not the row's
  *   DataIntegrityViolationException      409  unique, referenced, conflict; 400 required - by the SQLSTATE
  *   ConstraintViolationException         400  a value breaks its constraint

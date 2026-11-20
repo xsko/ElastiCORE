@@ -409,6 +409,14 @@ public final class RulesGenRunner {
                     + " output and the other switch) - choose one");
             return 1;
         }
+        // elasticore { runtimePackages }: checked before the model is read, so a mistyped mapping says so at once.
+        RuntimePackages runtimePackages;
+        try {
+            runtimePackages = RuntimePackages.fromSystemProperties();
+        } catch (IllegalArgumentException e) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + e.getMessage() + ". No source was written.");
+            return 1;
+        }
         boolean v3 = v3Asked;
         boolean force = Boolean.getBoolean("elasticore.rules.force");
         boolean kotlin = Boolean.getBoolean("elasticore.rules.kt");
@@ -748,6 +756,23 @@ public final class RulesGenRunner {
 
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
+        // The runtime's packages, rewritten in the 3.0 code only: the code 2.x
+        // generates stays byte for byte what 2.x wrote. The TypeScript client
+        // names no Java package.
+        if (runtimePackages != null && !typescript) {
+            if (v3 || kotlin) {
+                String refused = refusedByNamespaces(runtimePackages, loader.allModels());
+                if (refused != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn(refused + " No source was written.");
+                    return 1;
+                }
+                runner.runtimePackages = runtimePackages;
+                System.out.println("[elcore3] runtime   : " + runtimePackages.describe());
+            } else {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] runtimePackages is ignored: it rewrites the"
+                        + " 3.0 code, and this build writes the code 2.x generates, which keeps io.elasticore");
+            }
+        }
         if (domainFilter != null) {
             // A package a generated domain uses too is not only theirs: its
             // classes this run did not map are stale, not someone else's.
@@ -772,6 +797,8 @@ public final class RulesGenRunner {
             try {
                 runner.cache = GeneratedCache.load(new File(basePath));
                 merging = runner;
+                // The mapping the cached texts were renamed with, against this run's.
+                if (!typescript && (v3 || kotlin)) runner.readCachedMappings(loader.allModels());
                 // A 2.x project's first merging run: the code 2.x generated is
                 // the base of every file the developer edited since.
                 java.util.List<String> sourceRoots = new ArrayList<String>(loader.moduleRoots().values());
@@ -918,10 +945,17 @@ public final class RulesGenRunner {
         // Whatever else happened: the files this run wrote are on disk, and
         // the next run merges against what it wrote into them.
         runner.saveCache();
+        // The setting removed: the list of the classes it had the project provide goes with it, once a run
+        // of every domain has renamed the files back. Each cached text records its own mapping (GeneratedCache).
+        if (domainFilter == null && runner.runtimePackages == null && !runner.previousMappings.isEmpty()) {
+            File list = new File(basePath, RuntimePackages.REPORT);
+            if (list.isFile() && !list.delete()) runner.notes.add(RuntimePackages.REPORT + ": cannot be removed");
+        }
         if (domainFilter == null && runner.succeeded() && !modelChecked) {
             System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
         }
         runner.printSummary();
+        runner.reportRuntimePackages(basePath, domainFilter == null);
         java.util.List<String> roots = new ArrayList<String>();
         if (modulePaths != null && !modulePaths.trim().isEmpty()) {
             for (String m : modulePaths.split(",")) if (!m.trim().isEmpty()) roots.add(m.trim());
@@ -4760,8 +4794,14 @@ public final class RulesGenRunner {
                 if (otherDomainPackages != null) {
                     previous = cache.get(key);
                     if (previous == null && file.isFile() && ownOrmXml(file)) previous = readLf(file);
+                    // Named as the cache or the file had it: renamed as this run's text is.
+                    previous = renamed(key, previous);
                 }
-                writeMerged("  " + relative(file), file, key, m.toXml(previous, otherDomainPackages), true);
+                String merged = m.toXml(previous, otherDomainPackages);
+                // The sources it is taken from are rewritten already, and the other domains' part above.
+                if (runtimePackages != null) merged = runtimePackages.rewrite(merged);
+                if (tracksRuntime()) runtimeFiles.add(file);
+                writeMerged("  " + relative(file), file, key, merged, true);
                 continue;
             }
             String xml = m.toXml();
@@ -4781,13 +4821,17 @@ public final class RulesGenRunner {
                     }
                 } else {
                     if (otherDomainPackages != null) xml = m.toXml(existing, otherDomainPackages);
+                    if (runtimePackages != null) xml = runtimePackages.rewrite(xml);
                     if (equalsIgnoringLineEndings(existing, xml)) {
+                        if (tracksRuntime()) runtimeFiles.add(file);
                         unchanged++;
                         System.out.println("  " + relative(file) + "  UNCHANGED");
                         continue;
                     }
                 }
             }
+            if (runtimePackages != null) xml = runtimePackages.rewrite(xml);
+            if (tracksRuntime()) runtimeFiles.add(file);
             if (preview != null) {
                 preview.wrote(canonical(file), xml.replace("\r\n", "\n"));
                 wrote++;
@@ -4927,6 +4971,8 @@ public final class RulesGenRunner {
             if (user == null && !n.endsWith(".java") && !n.endsWith(".kt")) user = keptNames.get(baseName(f));
             if (user != null) {
                 keptInUse(label, user);
+                // Not written by this run, so as generated then: what it names is the report's too.
+                if (tracksRuntime()) runtimeFiles.add(f);
                 continue;
             }
             if (preview != null) {
@@ -5562,6 +5608,8 @@ public final class RulesGenRunner {
             "elasticore.rules.ts",
             "elasticore.rules.kt",
             "elasticore.rules.list",
+            // the bases are what 2.x wrote, with its own package names
+            RuntimePackages.PROPERTY,
             // a migration check's: the bases are the 2.x code, generated as the 2.x code
             PROP_MIGRATION_CHECK,
             PROP_VALIDATE,
@@ -5685,6 +5733,155 @@ public final class RulesGenRunner {
         notes.add(message);
     }
 
+    /**
+     * Why a mapping cannot be applied to these domains, or null. A key names a
+     * package of the runtime: one over a namespace of the project's would
+     * rename the project. A value is the project's copy of the runtime: one
+     * that is a namespace, or holds one, would put the runtime's packages
+     * among the project's (its {@code entity} package beside the project's)
+     * - and renaming back from it, when the mapping changes, would rename the
+     * project's classes too. Every namespace of every domain is checked.
+     */
+    static String refusedByNamespaces(RuntimePackages mapping, java.util.Collection<ECoreModel> models) {
+        // The keys first, then a value that is a namespace, then one that holds one: the plainest reason.
+        for (int pass = 0; pass < 3; pass++) {
+            for (ECoreModel m : models) {
+                Map<String, String> namespaces = new java.util.TreeMap<String, String>(m.getNamespaceMap());
+                for (Map.Entry<String, String> ns : namespaces.entrySet()) {
+                    String pkg = ns.getValue() == null ? "" : ns.getValue().trim();
+                    if (pkg.isEmpty()) continue;
+                    String where =
+                            pkg + ", the " + ns.getKey() + " namespace of domain '" + m.getInternalDomainName() + "'";
+                    for (Map.Entry<String, String> en : mapping.mapping().entrySet()) {
+                        String key = en.getKey();
+                        String value = en.getValue();
+                        if (pass == 0 && (pkg.equals(key) || pkg.startsWith(key + "."))) {
+                            return "[elcore3] runtimePackages: the key '" + key + "' covers " + where
+                                    + " - a key names a package of the ElastiCORE runtime, not one of the project's.";
+                        }
+                        if ((pass == 1 && pkg.equals(value)) || (pass == 2 && pkg.startsWith(value + "."))) {
+                            return "[elcore3] runtimePackages: the value '" + value + "' of '" + key + "' "
+                                    + (pass == 1 ? "is " : "holds ") + where + " - the copy of the runtime"
+                                    + " goes in a package of its own, e.g. '" + value + ".runtime'.";
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The mappings other than this run's that cached texts were renamed with
+     * (GeneratedCache.mappingOf), by the spec the cache records - those a text
+     * can be renamed back from. Each cached text carries its own: a run of one
+     * domain, one that stopped half way, one whose model check failed, leave
+     * every text paired with the mapping it was renamed with.
+     */
+    private final Map<String, RuntimePackages> reversible = new java.util.HashMap<String, RuntimePackages>();
+
+    /** Every other mapping the cache holds that can be read: what the files may still name. */
+    private final List<RuntimePackages> previousMappings = new ArrayList<RuntimePackages>();
+
+    /** This run's mapping as the cache records it; empty: none. */
+    private String currentSpec = "";
+
+    /**
+     * The mappings the cache's texts were renamed with, against this run's.
+     * Compared as mappings, not as text. One that cannot be read, that a key
+     * or value of it would rename the project by (refusedByNamespaces), or
+     * that has no way back (two keys on one value), is said; its files are
+     * renamed with this run's mapping only, and from then on recorded with it.
+     */
+    private void readCachedMappings(java.util.Collection<ECoreModel> models) {
+        currentSpec = runtimePackages == null ? "" : runtimePackages.spec();
+        cache.putMapping(currentSpec);
+        List<String> changedFrom = new ArrayList<String>();
+        for (String said : cache.mappingsHeld()) {
+            RuntimePackages previous;
+            try {
+                previous = RuntimePackages.parse(said);
+            } catch (IllegalArgumentException e) {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/"
+                        + GeneratedCache.NAME
+                        + " records a mapping that cannot be read ('" + said + "': " + e.getMessage() + ") - its files"
+                        + " are renamed with this run's mapping only, and recorded with it from now on");
+                continue;
+            }
+            if (previous == null || previous.spec().equals(currentSpec)) {
+                if (previous != null) reversible.put(said, null);
+                continue;
+            }
+            previousMappings.add(previous);
+            String refused = refusedByNamespaces(previous, models);
+            if (refused != null || previous.inverse() == null) {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] runtimePackages: the files of the previous"
+                        + " mapping " + previous.describe() + " are not renamed back from it - "
+                        + (refused != null
+                                ? refused.replace("[elcore3] runtimePackages: ", "")
+                                : "it cannot be undone by name: two keys share a value, or one value is under another")
+                        + " They are renamed with this run's mapping only, and recorded with it from now on;"
+                        + " what still names the previous one is said at the end.");
+                continue;
+            }
+            reversible.put(said, previous);
+            changedFrom.add(previous.describe());
+        }
+        if (!changedFrom.isEmpty()) {
+            System.out.println("[elcore3] runtime   : changed since the last run - " + String.join(" | ", changedFrom)
+                    + "  =>  " + (runtimePackages == null ? "io.elasticore" : runtimePackages.describe())
+                    + "; each merged file is renamed from the mapping it was written with");
+        }
+    }
+
+    private static void addTo(Map<String, java.util.Set<String>> map, String key, String value) {
+        java.util.Set<String> values = map.get(key);
+        if (values == null) {
+            values = new java.util.TreeSet<String>();
+            map.put(key, values);
+        }
+        values.add(value);
+    }
+
+    /** Whether this run renames or reports runtime package names at all. */
+    private boolean tracksRuntime() {
+        return runtimePackages != null || !previousMappings.isEmpty();
+    }
+
+    /**
+     * A text of a file - its cached base, or the file as it is - renamed as
+     * this run's new text is: back from the mapping the cache records for that
+     * file, when it is another one that can be undone, and on to this run's.
+     * With this run's mapping alone otherwise; as it is without any; null for null.
+     */
+    private String renamed(String key, String text) {
+        if (text == null) return null;
+        String was = cache == null || key == null ? "" : cache.mappingOf(key);
+        RuntimePackages previous = was.isEmpty() ? null : reversible.get(was);
+        if (previous != null) return RuntimePackages.transit(text, previous, runtimePackages);
+        return runtimePackages == null ? text : runtimePackages.rewrite(text);
+    }
+
+    /**
+     * The generated text without runtimePackages' renaming - the text a stamp
+     * of a 3.0 run before the setting has the hash of - or null when there is
+     * no mapping, or no way back.
+     */
+    private String unrenamed(String generated) {
+        if (runtimePackages == null) return null;
+        RuntimePackages back = runtimePackages.inverse();
+        return back == null ? null : back.rewrite(generated);
+    }
+
+    /**
+     * withBlocks, and the blocks renamed: they come from a stamp's file, which
+     * names io.elasticore; the text around them is renamed already.
+     */
+    private String withBlocksRenamed(String text, HashUtils.Response blocks) {
+        if (blocks == null || runtimePackages == null) return withBlocks(text, blocks);
+        return runtimePackages.rewrite(withCustomBlocks(text, blocks));
+    }
+
     private boolean writeMergedSource(String label, ArtifactTarget out, File file, String key, String content) {
         String generated = content.replace("\r\n", "\n");
         boolean skeleton = owned(generated);
@@ -5711,8 +5908,8 @@ public final class RulesGenRunner {
         if (base == null) {
             HashUtils.Response st = readStatus(file);
             if (st == null || st.getEcd() == null || st.getPreSourceContent() == null) {
-                // No stamp: the developer's - unless it is exactly what is generated now.
-                if (!disk.equals(generated)) return false;
+                // No stamp: the developer's - unless it is exactly what is generated now (renamed as it is).
+                if (!renamed(key, disk).equals(generated)) return false;
                 base = disk;
             } else {
                 int eol = disk.indexOf('\n');
@@ -5722,7 +5919,12 @@ public final class RulesGenRunner {
                         || (st.getStatus() == HashUtils.UNTRACKED && neverEdited(st))) {
                     base = st.getPreSourceContent().replace("\r\n", "\n");
                 } else {
-                    base = confirmedBase(stamp, st.getEcd(), generated,
+                    // With runtimePackages the stamp's hash is of the text before the renaming: that, too.
+                    base = confirmedBase(
+                            stamp,
+                            st.getEcd(),
+                            generated,
+                            unrenamed(generated),
                             upgradeBases == null ? null : upgradeBases.get(key));
                     if (base == null) return false;
                 }
@@ -5740,14 +5942,25 @@ public final class RulesGenRunner {
                 }
             }
         }
+        // runtimePackages: the base and the file renamed as the new text is, so the merge sees the
+        // developer's edits and the DSL's changes, not the renaming - which would conflict wherever
+        // an edit is next to a runtime name. A renamed file is written even where nothing else changed.
+        String asRead = disk;
+        String asOnDiskRead = asOnDisk;
+        base = renamed(key, base);
+        disk = renamed(key, disk);
+        asOnDisk = renamed(key, asOnDisk);
+        // Renamed on disk by this run: the file is written, and the run says so.
+        boolean renamedHere = !disk.equals(asRead) || (asOnDisk != null && !asOnDisk.equals(asOnDiskRead));
+        boolean rewrite = stamped || renamedHere;
         mergedKeys.add(key);
         if (disk.equals(base)) {
             // Nor did the DSL change it: the file as it was, its blocks where they stand.
-            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocks(generated, blocks);
+            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocksRenamed(generated, blocks);
             if (asOnDisk != null) blockImports(key, base, asOnDisk, text);
-            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, text)) return true;
+            if ((rewrite || !disk.equals(generated)) && !writeLf(label, file, text)) return true;
             cache.put(key, generated);
-            if (disk.equals(generated) && !stamped) {
+            if (disk.equals(generated) && !rewrite) {
                 unchanged++;
                 System.out.println(label + "  UNCHANGED");
             } else {
@@ -5763,10 +5976,15 @@ public final class RulesGenRunner {
             return true;
         }
         if (disk.equals(generated) || base.equals(generated)) {
-            if (stamped && !writeLf(label, file, asOnDisk != null ? asOnDisk : disk)) return true;
+            if (rewrite && !writeLf(label, file, asOnDisk != null ? asOnDisk : disk)) return true;
             cache.put(key, generated);
-            unchanged++;
-            System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            if (renamedHere) {
+                wrote++;
+                System.out.println(label + "  RENAMED(your edits kept; the runtime's packages, runtimePackages)");
+            } else {
+                unchanged++;
+                System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            }
             return true;
         }
         io.elasticore.base.util.ThreeWayMerge.Result merged =
@@ -5779,12 +5997,12 @@ public final class RulesGenRunner {
             blocks = null;
         }
         if (merged.conflicts() == 0 && blocks != null) {
-            blockImports(key, base, asOnDisk, withBlocks(merged.text(), blocks));
+            blockImports(key, base, asOnDisk, withBlocksRenamed(merged.text(), blocks));
         } else if (preview != null && merged.conflicts() == 0) {
             preview.merged(key, base, disk, merged.text());
         }
         if (merged.conflicts() == 0) {
-            if (!writeLf(label, file, withBlocks(merged.text(), blocks))) return true;
+            if (!writeLf(label, file, withBlocksRenamed(merged.text(), blocks))) return true;
             cache.put(key, generated);
             wrote++;
             mergedWithEdits++;
@@ -5793,15 +6011,18 @@ public final class RulesGenRunner {
         }
         if (skeleton) {
             // The developer's own code: left as it is, against the base it
-            // was written from, so the next run tries again.
-            if (stamped && !writeLf(label, file, disk)) return true;
+            // was written from, so the next run tries again - renamed, with runtimePackages.
+            if (rewrite && !writeLf(label, file, disk)) return true;
             cache.put(key, base);
             skipped++;
             keptAsYours++;
-            System.out.println(label + "  KEPT(yours - the DSL's changes to it do not merge)");
+            System.out.println(label + "  KEPT(yours - the DSL's changes to it do not merge"
+                    + (renamedHere ? "; the runtime's packages renamed" : "") + ")");
             notes.add("[elcore3] " + key + ": the DSL changes this file of yours where you changed it too ("
                     + merged.conflicts() + " place(s), at line(s) " + joinLines(merged.lines())
-                    + ") - it is left as it is; take the changes over by hand");
+                    + ") - it is left as it is"
+                    + (renamedHere ? " but for the runtime's package names (runtimePackages)" : "")
+                    + "; take the changes over by hand");
             warnIfEndpointsDropped(out, disk, base, generated);
             warnIfEndpointsMissing(out, file, content);
             if ((v3 || kotlin) && !typescript) warnIfSignInLeft(out, file, content);
@@ -5951,7 +6172,7 @@ public final class RulesGenRunner {
             } else if (overwritten && !cache.existed()) {
                 // The first merging run: the file holds what the last run wrote over it.
                 base = disk;
-            } else if (!disk.equals(generated)) {
+            } else if (!renamed(key, disk).equals(generated)) {
                 skipped++;
                 System.out.println(label + "  SKIP(not in the cache)");
                 notes.add("[elcore3] " + key + ": not in " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
@@ -5963,12 +6184,20 @@ public final class RulesGenRunner {
         // -Pforce does not reach here: builds leave it on to regenerate every
         // run, which merging does anyway, and an edit is never thrown away by
         // a setting. Deleting the file is how to have it generated afresh.
+        // runtimePackages: the base and the file renamed as the new text is (writeMergedSource).
+        String asRead = disk;
+        String asOnDiskRead = asOnDisk;
+        base = renamed(key, base);
+        disk = renamed(key, disk);
+        asOnDisk = renamed(key, asOnDisk);
+        boolean renamedHere = !disk.equals(asRead) || (asOnDisk != null && !asOnDisk.equals(asOnDiskRead));
+        boolean rewrite = stamped || renamedHere;
         if (base == null || disk.equals(base)) {
             // Nor did the DSL change it: the file as it was, its blocks where they stand.
-            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocks(generated, blocks);
-            if ((stamped || !disk.equals(generated)) && !writeLf(label, file, text)) return;
+            String text = asOnDisk != null && base.equals(generated) ? asOnDisk : withBlocksRenamed(generated, blocks);
+            if ((rewrite || !disk.equals(generated)) && !writeLf(label, file, text)) return;
             cache.put(key, generated);
-            if (disk.equals(generated) && !stamped) {
+            if (disk.equals(generated) && !rewrite) {
                 unchanged++;
                 System.out.println(label + "  UNCHANGED");
             } else {
@@ -5986,11 +6215,16 @@ public final class RulesGenRunner {
         }
         if (disk.equals(generated) || base.equals(generated)) {
             // The developer's text already is the new one, or the DSL did not
-            // change this file: nothing to write - but a stamp to take off.
-            if (stamped && !writeLf(label, file, disk)) return;
+            // change this file: nothing to write - but a stamp to take off, or names to rename.
+            if (rewrite && !writeLf(label, file, disk)) return;
             cache.put(key, generated);
-            unchanged++;
-            System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            if (renamedHere) {
+                wrote++;
+                System.out.println(label + "  RENAMED(your edits kept; the runtime's packages, runtimePackages)");
+            } else {
+                unchanged++;
+                System.out.println(label + (disk.equals(generated) ? "  UNCHANGED" : "  UNCHANGED(your edits kept)"));
+            }
             return;
         }
         io.elasticore.base.util.ThreeWayMerge.Result merged = io.elasticore.base.util.ThreeWayMerge.merge(base, disk, generated);
@@ -6092,6 +6326,10 @@ public final class RulesGenRunner {
         File file = new File(rootFor(out) + "/" + out.relativePath());
         remember(file);
 
+        // elasticore { runtimePackages }: before the style, the merge, the cache
+        // and the stamp, so all of them see the text that lands on disk.
+        if (runtimePackages != null) rendered = runtimePackages.rewrite(rendered);
+
         // What would actually land on disk, so that a file already carrying
         // the house style is recognised as unchanged - and one that does not
         // is rewritten.
@@ -6105,6 +6343,30 @@ public final class RulesGenRunner {
             content = orm(out).extract(content, out.packageName(), out.fileName(), kotlin);
         }
         if (xmlMapping()) content = movedQuery(out, content);
+        if (runtimePackages != null) {
+            // Again: the XML mapping puts the runtime's PersistentModel on a Kotlin domain class by its
+            // full name. A text rewritten already is as it was (RuntimePackages.parse).
+            if (xmlMapping()) content = runtimePackages.rewrite(content);
+            // A class of the project's in a package a key covers would have its own package renamed:
+            // refused before the run (refusedByNamespaces) for every namespace; this is any other package.
+            // Nor one in the package of the project's copy of the runtime, or under it: the two would mix.
+            String pkg = out.packageName();
+            boolean underKey = pkg != null && runtimePackages.covers(pkg);
+            if (underKey || (pkg != null && runtimePackages.isUnderValue(pkg))) {
+                failed++;
+                notes.add("[elcore3] " + out.relativePath() + ": its package " + pkg + " is under a runtimePackages "
+                        + (underKey
+                                ? "key - a key names a package of the ElastiCORE runtime"
+                                : "value - the copy of the runtime goes in a package of its own"));
+                System.out.println(label + "  ERROR package under a runtimePackages " + (underKey ? "key" : "value"));
+                return;
+            }
+        }
+        if (tracksRuntime()) {
+            runtimeFiles.add(file);
+            boolean source = "java".equals(out.extension()) || "kt".equals(out.extension());
+            if (source && out.packageName() != null) writtenPackages.add(out.packageName());
+        }
 
         // Gathering what the code 2.x generates, for an upgrade's bases: nothing is written.
         if (captured != null) {
@@ -6341,6 +6603,82 @@ public final class RulesGenRunner {
             System.out.println("[elcore3] " + failed
                     + " artifact(s) could not be generated - see the notes above.");
         }
+    }
+
+    /** elasticore { runtimePackages }, when this run rewrites the runtime's packages; null otherwise. */
+    private RuntimePackages runtimePackages;
+
+    /**
+     * With runtimePackages: the files this run generated, or kept because a
+     * source still uses them - read from disk at the end, not held in memory.
+     */
+    private final java.util.Set<File> runtimeFiles = new java.util.LinkedHashSet<File>();
+
+    /** With runtimePackages: the packages this run wrote Java or Kotlin classes into - the project's own. */
+    private final java.util.Set<String> writtenPackages = new java.util.TreeSet<String>();
+
+    /**
+     * With runtimePackages, after the run: what the generated files still name
+     * under io.elasticore - a mapping missing, or a file the run did not
+     * write: the developer's, or one kept because a source of theirs uses it -
+     * and the runtime classes they now name under the project's packages,
+     * which the project has to provide. The list is also written to
+     * build/elasticore/runtime-classes.txt by a run of every domain. Each file
+     * is read as it is on disk; one that could not be written is not there,
+     * and the run has failed already.
+     */
+    private void reportRuntimePackages(String basePath, boolean wholeRun) {
+        if (!tracksRuntime() || runtimeFiles.isEmpty()) return;
+        java.util.Set<String> own = RuntimePackages.ownRoots(writtenPackages);
+        Map<String, java.util.Set<String>> leftovers = new java.util.TreeMap<String, java.util.Set<String>>();
+        // What files still name of the previous run's mapping, where this run maps elsewhere or not at all.
+        Map<String, java.util.Set<String>> previousNames = new java.util.TreeMap<String, java.util.Set<String>>();
+        java.util.Set<String> required = new java.util.TreeSet<String>();
+        for (File file : runtimeFiles) {
+            String text = file.isFile() ? readLf(file) : null;
+            if (text == null) continue;
+            if (runtimePackages != null) {
+                for (String pkg : RuntimePackages.leftovers(text, own)) addTo(leftovers, pkg, relative(file));
+                required.addAll(runtimePackages.requiredClasses(text, own));
+            }
+            for (RuntimePackages previous : previousMappings) {
+                for (String pkg : previous.packagesNamed(text, own)) {
+                    if (runtimePackages == null || !runtimePackages.isUnderValue(pkg)) {
+                        addTo(previousNames, pkg, relative(file));
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, java.util.Set<String>> en : previousNames.entrySet()) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] runtimePackages: " + en.getKey() + ", a package of"
+                    + " the previous run's mapping, is still named in "
+                    + en.getValue().size() + " file(s), e.g. "
+                    + en.getValue().iterator().next() + " - a file the run did not rename; change its imports by hand");
+        }
+        if (runtimePackages == null) return;
+        for (Map.Entry<String, java.util.Set<String>> en : leftovers.entrySet()) {
+            String pkg = en.getKey();
+            java.util.Set<String> files = en.getValue();
+            String where = files.size() + " file(s), e.g. " + files.iterator().next();
+            io.elasticore.base.util.ConsoleLog.printWarn(
+                    runtimePackages.covers(pkg)
+                            ? "[elcore3] runtimePackages: " + pkg + " is still named in " + where
+                                    + " - a file the run did not write (yours, or kept because a source of yours"
+                                    + " uses it); change its imports by hand"
+                            : "[elcore3] runtimePackages: the generated code still names " + pkg + " (" + where
+                                    + ") - no" + " mapping covers it; add one to elasticore { runtimePackages }");
+        }
+        File report = new File(basePath, RuntimePackages.REPORT);
+        System.out.println("[elcore3] runtimePackages: the generated code uses " + required.size()
+                + " runtime class(es) your packages have to provide"
+                + (wholeRun ? " - " + RuntimePackages.REPORT : ""));
+        StringBuilder list = new StringBuilder();
+        for (String cls : required) {
+            System.out.println("  " + cls);
+            list.append(cls).append('\n');
+        }
+        // A run of one domain lists that domain's classes: the file is the whole project's.
+        if (wholeRun) writeText(report, list.toString());
     }
 
     /** Whether the run produced everything it was asked for. */

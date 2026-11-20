@@ -616,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  빌드에 `runtimePackages` 가 있으면(`elasticore-rule-guide.md`) 클래스에는 매핑된 이름이 붙습니다 -
+  `'io.elasticore.springboot3': 'com.acme.runtime'` 이면 `@com.acme.runtime.entity.PersistentModel` - 두 줄도 그것을 적습니다.
 - Envers(`@Audited`)를 쓰는 도메인은 그 어노테이션이 남으므로, 생성되는 아키텍처 테스트가 `org.hibernate.envers` 는 허용합니다.
 - 사용자가 만든 `META-INF/orm.xml` 이 있으면 덮어쓰지 않고 `META-INF/elasticore-orm.xml` 에 쓰고
   `spring.jpa.mapping-resources` 설정을 안내합니다.
@@ -705,7 +707,9 @@ config:
   `Long`·`BigDecimal`·`Date`·`DateTime`·`Money` 같은 스칼라가 모두 클래스를 따릅니다. 이어서 `graphql/` 아래의 모든 `.graphqls`를
   (직접 쓴 파일 포함) 하나의 스키마로 빌드해 보고, 빌드되지 않으면 파일과 이유를 출력하고 빌드를 멈춥니다.
 - 거부는 GraphQL 오류가 되고, `extensions`에 REST와 같은 상태와 코드를 담습니다: `NOT_FOUND` 404, `FORBIDDEN` 403, `BAD_REQUEST` 400,
-  `CONFLICT` 409(중복, 오래된 버전, 커맨드를 허용하지 않는 상태), `UNPROCESSABLE` 422.
+  `CONFLICT` 409(중복, 오래된 버전, 커맨드를 허용하지 않는 상태), `UNPROCESSABLE` 422. 데이터베이스나 MongoDB가 거부한
+  것은 종류만 말합니다 - 코드 `unique`, `referenced`, `required`, `check`, `conflict`, `stale`과 REST API와 같은 문장. SQL,
+  인덱스, 값을 담은 드라이버의 메시지는 내보내지 않습니다.
 - 여러 도메인이 스키마 하나와 엔드포인트 하나를 함께 씁니다. `path`가 서로 다르거나, 그런 두 도메인이 같은 이름의 엔티티를
   제공하면 빌드(`elcore3`)가 두 도메인을 밝히고 멈춥니다. 직접 쓰는 `.graphqls`에는 `type Query`가 아니라 `extend type Query`를 씁니다.
 - 의존성: `implementation 'org.springframework.boot:spring-boot-starter-graphql'`

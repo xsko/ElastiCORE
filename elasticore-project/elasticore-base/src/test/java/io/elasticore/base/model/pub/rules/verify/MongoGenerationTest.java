@@ -872,6 +872,64 @@ public class MongoGenerationTest {
         assertTrue(read(project, "MemberCoreService.java").contains(" me()"), read(project, "MemberCoreService.java"));
     }
 
+    private static final String SIGNED_IN_AND_DELETED = String.join(
+            "\n",
+            "entity:",
+            "  Member:",
+            "    meta: entity @expose(20) @signin(refresh=request) @owner(memberId)"
+                    + " @access(read=owner, create=public, update=owner, delete=owner)",
+            "    fields:",
+            "      memberId: long @id @sequence",
+            "      email: string(100)! @login @unique",
+            "      secret: string(255)! @password",
+            "      leftAt: datetime @deleted",
+            "");
+
+    /** Without refresh=request a session outlives its member's delete: the build says so, and how to end it. */
+    @Test
+    public void aDeletedMemberWhoseSessionIsNotReadAgainIsWarnedAbout() throws Exception {
+        String said = "a member deleted (@deleted) signs in no more, but a session it already has keeps working";
+        String log = run(project(SIGNED_IN_AND_DELETED.replace("@signin(refresh=request)", "@signin"), "jpa"), 0);
+        assertTrue(log.contains("Member: " + said), log);
+        assertFalse(run(project(SIGNED_IN_AND_DELETED, "jpa"), 0).contains(said));
+    }
+
+    /** Over JPA and MyBatis the repository's findById itself leaves a deleted row out, and me() reads through it. */
+    @Test
+    public void overJpaAndMyBatisMeReadsThroughAFindByIdThatLeavesADeletedRowOut() throws Exception {
+        File jpa = project(SIGNED_IN_AND_DELETED, "jpa");
+        run(jpa, 0);
+        assertTrue(read(jpa, "MemberCoreService.java")
+                .contains(".findById(io.elasticore.springboot3.security.AccessPolicy.as(id, Long.class)).map(row -> "));
+        String repository = read(jpa, "MemberRepository.java");
+        assertTrue(
+                repository.contains("@Query(\"SELECT e FROM Member e WHERE e.memberId = :id AND e.leftAt IS NULL\")"
+                        + "\n    java.util.Optional<Member> findById("),
+                repository);
+
+        File mybatis = project(SIGNED_IN_AND_DELETED, "mybatis");
+        run(mybatis, 0);
+        assertTrue(read(mybatis, "MemberCoreService.java")
+                .contains(".findById(io.elasticore.springboot3.security.AccessPolicy.as(id, Long.class)).map(row -> "));
+        Path xml = findResource(mybatis, "MemberRepository.xml");
+        assertNotNull(xml);
+        String mapper = new String(Files.readAllBytes(xml), StandardCharsets.UTF_8);
+        int findById = mapper.indexOf("<select id=\"findById\"");
+        assertTrue(findById >= 0, mapper);
+        assertTrue(
+                mapper.substring(findById, mapper.indexOf("</select>", findById))
+                        .contains("t.left_at IS NULL"),
+                mapper);
+    }
+
+    private static Path findResource(File project, String name) throws IOException {
+        try (Stream<Path> all = Files.walk(new File(project, "src/main/resources").toPath())) {
+            return all.filter(p -> p.getFileName().toString().equals(name))
+                    .findFirst()
+                    .orElse(null);
+        }
+    }
+
     // ---- helpers -----------------------------------------------------------------------
 
     private String run(File project, int expected) throws Exception {

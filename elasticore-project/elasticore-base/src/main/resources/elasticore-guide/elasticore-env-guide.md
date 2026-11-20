@@ -616,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  With `runtimePackages` in the build (`elasticore-rule-guide.md`), the classes carry the mapped name - for
+  `'io.elasticore.springboot3': 'com.acme.runtime'`, `@com.acme.runtime.entity.PersistentModel` - and the two lines name that one.
 - A domain that uses Envers (`@Audited`) keeps that annotation, so the generated architecture test allows `org.hibernate.envers`.
 - If a `META-INF/orm.xml` made by the user exists, it is not overwritten; the mapping is written to `META-INF/elasticore-orm.xml` and
   the `spring.jpa.mapping-resources` setting is shown.
@@ -705,7 +707,9 @@ config:
   the scalars `Long`, `BigDecimal`, `Date`, `DateTime`, `Money` and so on follow the class. Then every `.graphqls` under `graphql/` -
   your own files too - is built into one schema; if it does not build, the build stops with the file and the reason.
 - Refusals are GraphQL errors with the REST status and code in `extensions`: `NOT_FOUND` 404, `FORBIDDEN` 403, `BAD_REQUEST` 400,
-  `CONFLICT` 409 (a duplicate, a stale version, a state that does not allow the command), `UNPROCESSABLE` 422.
+  `CONFLICT` 409 (a duplicate, a stale version, a state that does not allow the command), `UNPROCESSABLE` 422. A refusal of
+  the database or MongoDB says only its kind - code `unique`, `referenced`, `required`, `check`, `conflict` or `stale`, with
+  the REST API's sentence - never the driver's text, which names the SQL, the index and the value.
 - Several domains share one schema and one endpoint: different `path` values, or an entity of the same name served by two such
   domains, stop the build (`elcore3`) naming both domains. In your own `.graphqls`, write `extend type Query`, not `type Query`.
 - Dependencies: `implementation 'org.springframework.boot:spring-boot-starter-graphql'`

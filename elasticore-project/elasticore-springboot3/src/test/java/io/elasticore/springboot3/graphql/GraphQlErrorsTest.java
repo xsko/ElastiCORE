@@ -12,6 +12,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.constraints.NotNull;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
@@ -76,6 +77,113 @@ class GraphQlErrorsTest {
                 (List<Map<String, Object>>) e.getExtensions().get("errors");
         assertThat(list).hasSize(1);
         assertThat(list.get(0)).containsEntry("field", "name");
+    }
+
+    /**
+     * What the database or MongoDB refused names its SQL, index and the value that broke
+     * it - an email, say. The error says the kind of refusal and nothing of that.
+     */
+    @Test
+    void aStoreRefusalNamesNoValue() {
+        DataIntegrityViolationException sql = new DataIntegrityViolationException(
+                "could not execute statement [Unique index or primary key violation: \"PUBLIC.UK_EMAIL ON"
+                        + " PUBLIC.CUSTOMER(EMAIL) VALUES ( /* 1 */ 'kim@a.com' )\"; SQL statement: insert into"
+                        + " customer (email) values (?)]",
+                new java.sql.SQLIntegrityConstraintViolationException("Unique index violation 'kim@a.com'", "23505"));
+        GraphQLError e = resolve(sql);
+        assertThat(e.getErrorType().toString()).isEqualTo("CONFLICT");
+        assertThat(e.getExtensions()).containsEntry("status", 409).containsEntry("code", "unique");
+        assertThat(e.getMessage()).isEqualTo("A unique value is already taken.");
+
+        DuplicateKeyException mongo = new DuplicateKeyException(
+                "Write operation error on server localhost:27017. Write error: WriteError{code=11000, message='E11000"
+                        + " duplicate key error collection: club.member index: email dup key: { email: \"kim@a.com\" }'}",
+                new IllegalStateException("E11000 duplicate key error ... kim@a.com"));
+        assertThat(resolve(mongo).getMessage()).isEqualTo("A unique value is already taken.");
+        assertThat(resolve(mongo).getExtensions()).containsEntry("code", "unique");
+
+        DataIntegrityViolationException referenced = new DataIntegrityViolationException(
+                "could not execute statement [FK_ORDER_CUSTOMER: PUBLIC.ORDERS FOREIGN KEY(CUSTOMER_ID) (CAST(7 AS BIGINT))]",
+                new java.sql.SQLIntegrityConstraintViolationException("Referential integrity 7", "23503"));
+        assertThat(resolve(referenced).getMessage()).doesNotContain("FK_ORDER").doesNotContain("7");
+        assertThat(resolve(referenced).getExtensions())
+                .containsEntry("code", "referenced")
+                .containsEntry("status", 409);
+
+        // MyBatis: Spring's JDBC translator's DuplicateKeyException, the SQL its cause.
+        DuplicateKeyException mybatis = new DuplicateKeyException(
+                "### Error updating database. Cause: Duplicate entry 'kim@a.com' for key 'uk_email' ### SQL: INSERT INTO"
+                        + " member (email) VALUES (?)",
+                new java.sql.SQLIntegrityConstraintViolationException("Duplicate entry 'kim@a.com'", "23000", 1062));
+        assertThat(resolve(mybatis).getMessage()).isEqualTo("A unique value is already taken.");
+        assertThat(resolve(mybatis).getExtensions()).containsEntry("code", "unique");
+
+        // A stale version: the ORM's text names the entity and its key.
+        org.springframework.dao.OptimisticLockingFailureException stale =
+                new org.springframework.dao.OptimisticLockingFailureException("Row was updated or deleted by another"
+                        + " transaction (or unsaved-value mapping was incorrect): [io.acme.shop.Customer#5]");
+        assertThat(resolve(stale).getMessage())
+                .isEqualTo("The row was changed after it was read. Read it again and resend.");
+        assertThat(resolve(stale).getExtensions())
+                .containsEntry("code", "stale")
+                .containsEntry("status", 409);
+
+        // A driver without a SQL state (MongoDB's write error, say): the kind it may be, and no text.
+        assertThat(resolve(new DataIntegrityViolationException("Write error ... 'kim@a.com'"))
+                        .getExtensions())
+                .containsEntry("code", "conflict");
+    }
+
+    private Object kindOf(String state, int code, String message) {
+        return resolve(new DataIntegrityViolationException(
+                        "SQL [insert ...]; " + message, new java.sql.SQLException(message, state, code)))
+                .getExtensions()
+                .get("code");
+    }
+
+    /** Read from the SQLSTATE - or, where a database says only 23000, its own code - as the REST errors read it. */
+    @Test
+    void eachDatabaseSaysWhichKind() {
+        assertThat(kindOf("23502", 0, "NULL not allowed")).isEqualTo("required");
+        assertThat(kindOf("23505", 0, "duplicate")).isEqualTo("unique");
+        assertThat(kindOf("23503", 0, "fk")).isEqualTo("referenced");
+        assertThat(kindOf("23506", 0, "parent missing")).isEqualTo("referenced");
+        assertThat(kindOf("23513", 0, "check")).isEqualTo("check");
+        assertThat(kindOf("23514", 0, "check")).isEqualTo("check");
+        assertThat(kindOf("HY000", 3819, "Check constraint violated")).isEqualTo("check");
+        assertThat(kindOf("23000", 1048, "Column cannot be null")).isEqualTo("required");
+        assertThat(kindOf("23000", 1400, "cannot insert NULL")).isEqualTo("required");
+        assertThat(kindOf("23000", 515, "Cannot insert the value NULL")).isEqualTo("required");
+        assertThat(kindOf("23000", 1062, "Duplicate entry")).isEqualTo("unique");
+        assertThat(kindOf("23000", 1, "unique constraint violated")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2627, "Violation of UNIQUE KEY")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2601, "Cannot insert duplicate key row")).isEqualTo("unique");
+        assertThat(kindOf("23000", 2290, "check constraint violated")).isEqualTo("check");
+        assertThat(kindOf("23000", 547, "The INSERT statement conflicted with the CHECK constraint"))
+                .isEqualTo("check");
+        assertThat(kindOf("23000", 547, "The INSERT statement conflicted with the FOREIGN KEY constraint"))
+                .isEqualTo("referenced");
+        assertThat(kindOf("23000", 1451, "Cannot delete a parent row")).isEqualTo("referenced");
+        assertThat(kindOf("23000", 2292, "child record found")).isEqualTo("referenced");
+        assertThat(kindOf("23000", 9999, "something else")).isEqualTo("conflict");
+        assertThat(kindOf("42000", 0, "syntax")).isEqualTo("conflict");
+        // The sentence goes with the kind.
+        assertThat(resolve(new DataIntegrityViolationException(
+                                "x", new java.sql.SQLException("NULL not allowed for EMAIL", "23502")))
+                        .getMessage())
+                .isEqualTo("A required value is missing.");
+        assertThat(resolve(new DataIntegrityViolationException(
+                                "x", new java.sql.SQLException("CHECK (PRICE > 0) 'x'", "23514")))
+                        .getMessage())
+                .isEqualTo("A value is outside what the column allows.");
+    }
+
+    /** The service's own refusal of a taken identifier says so, as it always did. */
+    @Test
+    void theServicesOwnDuplicateKeepsItsMessage() {
+        GraphQLError e = resolve(new DuplicateKeyException("Customer 5 already exists; update it instead"));
+        assertThat(e.getMessage()).isEqualTo("Customer 5 already exists; update it instead");
+        assertThat(e.getExtensions()).doesNotContainKey("code");
     }
 
     @Test

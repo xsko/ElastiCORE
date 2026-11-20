@@ -112,7 +112,11 @@ public abstract class ShopApi {
     public void aTakenUniqueValueIsA409() throws Exception {
         String email = unique() + "@a.com";
         create("customer", "{\"name\":\"Lee\",\"email\":\"" + email + "\"}");
-        send("POST", "/customer", "{\"name\":\"Lee 2\",\"email\":\"" + email + "\"}", 409);
+        HttpResponse<String> taken = send("POST", "/customer", "{\"name\":\"Lee 2\",\"email\":\"" + email + "\"}", 409);
+        // The kind of refusal, never the driver's text (E11000, the index and the value).
+        assertEquals("unique", json.readTree(taken.body()).get("code").asText(), taken.body());
+        assertFalse(taken.body().contains(email), taken.body());
+        assertFalse(taken.body().contains("E11000"), taken.body());
         // Without an email, as many as you like: the index leaves them out.
         create("customer", "{\"name\":\"No mail 1\"}");
         create("customer", "{\"name\":\"No mail 2\"}");
