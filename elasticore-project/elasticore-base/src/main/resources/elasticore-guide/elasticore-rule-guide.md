@@ -408,10 +408,10 @@ For each command declared in an entity's `commands:`, it builds one path: `POST 
 (load, call, save) -> the abstract method of `XxxBase` -> the rule in `Xxx`.
 For the DSL syntax and the table of generated code, see "Business commands" in `elasticore-dsl-guide.md`.
 
-- The method is abstract, so if you add a command to an existing behavior class, it does not compile until you write the rule - it cannot be forgotten.
-  When the behavior class is first created, a stub that throws comes with it, so calling it in that state gives 500.
-- The first time the behavior class is written, a stub for each command goes in (Java: `UnsupportedOperationException`,
-  Kotlin: `TODO()`). It is not added to an existing behavior class, so you write it yourself (the compiler tells you).
+- The method is abstract in `XxxBase`, and the behavior class gets a stub for each command that throws (Java:
+  `throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin: `TODO("Xxx.ship: write the rule")`).
+- A command added later gets its stub too: a behavior class you never edited is regenerated, an edited one is merged
+  (`MERGED(your edits kept)`). The project builds, and calling the command answers 500 until you write the rule - the compiler does not remind you.
 - The controller is a developer-owned file. A controller you have not touched is regenerated and gets the
   command endpoint; a controller you edited is left as it is.
 - A root with no `@editable` field gets no PUT (neither in the controller nor in the use case).
@@ -553,9 +553,10 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 }
 ```
 
-- If you add an event to `on`, the Base gets an abstract `handle(new event)`, and it does not compile until you write it in the developer class
-  (it cannot be forgotten). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
-  injected as a field, not through the constructor. If you have never edited the developer file, it is regenerated too.
+- If you add an event to `on`, the Base gets a listener and an abstract `handle(new event)`, and the developer class gets an empty
+  `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did. The project builds, and the event
+  does nothing until you write the step. An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
+  injected as a field, not through the constructor.
 - It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, the shipment that has already
   happened is not undone - retry and compensation are decided by `handle` (the compensation step of a saga).
 - If you put the needed values in the event content (payload), you do not have to read the original aggregate again.
