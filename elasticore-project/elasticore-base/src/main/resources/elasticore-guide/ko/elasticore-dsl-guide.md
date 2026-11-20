@@ -244,7 +244,7 @@ SalesOrder:
 | `SalesOrderUseCase.ship(orderId, command)` | 인바운드 포트 | 재생성 |
 | `SalesOrderCoreService.ship(...)` | 불러오기 -> `entity.ship(warehouse)` -> 저장, 트랜잭션 | 재생성 |
 | `SalesOrderBase`: `abstract void ship(String warehouse)` | 약속 - 행위 클래스가 지킴 | 재생성 |
-| `SalesOrder.ship(String)` | 규칙 - 쓸 때까지 예외를 던지는 틀(500); 나중에 더한 명령도 틀을 받고, 고친 클래스에는 병합 | 개발자 소유 |
+| `SalesOrder.ship(String)` | 규칙 - 쓸 때까지 예외를 던지는 틀(500); 나중에 더한 명령도 틀을 받고, 고친 클래스에는 병합 (병합이 닿지 않는 클래스는 받지 않음: 컴파일 오류) | 개발자 소유 |
 
 - 규칙은 생성하지 않습니다. 상태 검사, 값 변경, 이벤트 발생은 `SalesOrder` 에 직접 씁니다.
 - 명령이 애그리거트 밖의 일(재고 차감처럼 도메인 서비스·다른 포트)을 필요로 하면 확장 서비스
@@ -569,6 +569,7 @@ public void cancel() {
 경고는 `elcore3` 출력 끝의 `[elcore3] DSL validation warnings:` 아래에 모여 나옵니다. 빌드는 멈추지 않으므로
 생성 후 이 목록을 꼭 확인하세요. 생명주기가 빠지면 명령이 추상 메서드로 돌아가고, 행위 클래스에는 예외를 던지는
 틀이 다시 들어갑니다(고친 클래스에는 병합): 프로젝트는 빌드되고, 생명주기를 고치거나 규칙을 쓸 때까지 그 명령은 500 입니다.
+병합이 닿지 않는 행위 클래스(`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`)는 틀을 받지 않고, 빠진 메서드를 컴파일러가 알려 줍니다.
 
 ---
 
@@ -1067,10 +1068,11 @@ processManager:
 - `on` 에 이벤트를 더하면 재생성되는 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는
   빈 `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합(`MERGED(your edits kept)`).
   프로젝트는 빌드되고, 그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다: `on` 에 더한 뒤에는 개발자 클래스에서
-  새로 생긴 빈 `handle` 을 찾으세요.
+  새로 생긴 빈 `handle` 을 찾으세요. 병합이 닿지 않는 파일(`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`)은 그대로 두고,
+  빠진 `handle` 을 컴파일러가 알려 줍니다.
 - `uses` 에 애그리거트를 더하면 Base 에 포트 필드가 생기고, 개발자 클래스는 고치지 않습니다.
-- `on` 에서 이벤트를 빼면 개발자 클래스의 `@Override handle(그 이벤트)` 가 덮어쓸 것이 없어 컴파일 오류가 납니다 —
-  지울 코드를 컴파일러가 가리킵니다.
+- `on` 에서 이벤트를 빼면, 고친 적 없는 `handle(그 이벤트)` 는 빠지고(다시 생성 또는 병합) 고친 것은 남아
+  (`KEPT(yours ...)`) `@Override` 가 덮어쓸 것이 없어 컴파일 오류가 납니다 — 지울 코드를 컴파일러가 가리킵니다.
 - 개발자 파일을 아직 고치지 않았다면 그것도 DSL 을 따라 다시 생성됩니다.
 - 이 나눔 전에 만들어 이미 고친 파일은 그대로 두고 Base 만 새로 생깁니다. 생성기가 경고합니다
   (`... does not extend XxxBase, which is regenerated from the DSL ...`): `extends XxxBase` 를 붙이고, 리스너를

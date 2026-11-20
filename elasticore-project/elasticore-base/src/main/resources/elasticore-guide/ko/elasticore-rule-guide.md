@@ -410,6 +410,7 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
   `throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin: `TODO("Xxx.ship: write the rule")`).
 - 나중에 더한 명령도 틀을 받습니다: 고친 적 없는 행위 클래스는 다시 생성되고, 고친 클래스에는 병합됩니다
   (`MERGED(your edits kept)`). 프로젝트는 빌드되고, 규칙을 쓸 때까지 그 명령을 호출하면 500 입니다 - 컴파일러는 알려 주지 않습니다.
+  병합이 닿지 않는 파일(`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`)은 틀을 받지 않고, 빠진 메서드를 컴파일러가 알려 줍니다.
 - 컨트롤러는 개발자 소유 파일입니다. 손대지 않은 컨트롤러는 다시 생성되어 명령 엔드포인트가
   들어가고, 고친 컨트롤러는 그대로 둡니다.
 - `@editable` 필드가 없는 루트는 PUT 을 만들지 않습니다 (컨트롤러와 유스케이스 모두).
@@ -551,7 +552,7 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 
 - `on` 에 이벤트를 더하면 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는 빈
   `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합. 프로젝트는 빌드되고,
-  그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다. `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
+  그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다(병합이 닿지 않는 파일은 그대로 두고, 빠진 `handle` 을 컴파일러가 알려 줌). `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
   생성자가 아니라 필드로 주입하는 이유입니다.
 - 이벤트를 낸 트랜잭션이 **커밋된 뒤, 자기 트랜잭션에서** 실행됩니다. 여기서 실패해도 이미 일어난
   출고는 되돌려지지 않습니다 — 재시도·보상은 `handle` 이 정합니다(사가의 보상 단계).

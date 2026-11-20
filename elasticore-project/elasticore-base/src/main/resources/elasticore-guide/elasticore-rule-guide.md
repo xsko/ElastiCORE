@@ -410,6 +410,7 @@ For the DSL syntax and the table of generated code, see "Business commands" in `
   `throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin: `TODO("Xxx.ship: write the rule")`).
 - A command added later gets its stub too: a behavior class you never edited is regenerated, an edited one is merged
   (`MERGED(your edits kept)`). The project builds, and calling the command answers 500 until you write the rule - the compiler does not remind you.
+  A file the merge does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) gets no stub, and the compiler names the missing method.
 - The controller is a developer-owned file. A controller you have not touched is regenerated and gets the
   command endpoint; a controller you edited is left as it is.
 - A root with no `@editable` field gets no PUT (neither in the controller nor in the use case).
@@ -551,7 +552,7 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 
 - If you add an event to `on`, the Base gets a listener and an abstract `handle(new event)`, and the developer class gets an empty
   `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did. The project builds, and the event
-  does nothing until you write the step. An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
+  does nothing until you write the step (a file the merge does not reach is left as it is, and the compiler names the missing `handle`). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
   injected as a field, not through the constructor.
 - It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, the shipment that has already
   happened is not undone - retry and compensation are decided by `handle` (the compensation step of a saga).
