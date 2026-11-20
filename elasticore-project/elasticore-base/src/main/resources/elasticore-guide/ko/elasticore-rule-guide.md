@@ -406,10 +406,11 @@ DSL 에서 사라진 것이 만들던 파일 - 마지막 `@min` 이 값 타입�
 (불러오기·호출·저장) -> `XxxBase` 의 추상 메서드 -> `Xxx` 의 규칙으로 이어지는 한 길을 만듭니다.
 DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을 보세요.
 
-- 추상 메서드이므로, 이미 있는 행위 클래스에 명령을 추가하면 규칙을 쓸 때까지 컴파일되지 않습니다 - 빠뜨릴 수 없습니다.
-  행위 클래스를 처음 만들 때는 예외를 던지는 틀이 함께 생기므로, 그 상태로 호출하면 500 입니다.
-- 행위 클래스를 처음 쓸 때 각 명령의 틀이 들어갑니다 (Java: `UnsupportedOperationException`,
-  Kotlin: `TODO()`). 이미 있는 행위 클래스에는 추가되지 않으므로 직접 씁니다 (컴파일러가 알려 줍니다).
+- `XxxBase` 에서는 추상 메서드이고, 행위 클래스에는 명령마다 예외를 던지는 틀이 들어갑니다 (Java:
+  `throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin: `TODO("Xxx.ship: write the rule")`).
+- 나중에 더한 명령도 틀을 받습니다: 고친 적 없는 행위 클래스는 다시 생성되고, 고친 클래스에는 병합됩니다
+  (`MERGED(your edits kept)`). 프로젝트는 빌드되고, 규칙을 쓸 때까지 그 명령을 호출하면 500 입니다 - 컴파일러는 알려 주지 않습니다.
+  병합이 닿지 않는 파일(`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`)은 틀을 받지 않고, 빠진 메서드를 컴파일러가 알려 줍니다.
 - 컨트롤러는 개발자 소유 파일입니다. 손대지 않은 컨트롤러는 다시 생성되어 명령 엔드포인트가
   들어가고, 고친 컨트롤러는 그대로 둡니다.
 - `@editable` 필드가 없는 루트는 PUT 을 만들지 않습니다 (컨트롤러와 유스케이스 모두).
@@ -549,9 +550,10 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 }
 ```
 
-- `on` 에 이벤트를 더하면 Base 에 추상 `handle(새 이벤트)` 가 생겨, 개발자 클래스에 쓰기 전까지 컴파일되지 않습니다
-  (빠뜨릴 수 없음). `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
-  생성자가 아니라 필드로 주입하는 이유입니다. 개발자 파일을 고친 적이 없다면 그것도 다시 생성됩니다.
+- `on` 에 이벤트를 더하면 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는 빈
+  `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합. 프로젝트는 빌드되고,
+  그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다(병합이 닿지 않는 파일은 그대로 두고, 빠진 `handle` 을 컴파일러가 알려 줌). `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
+  생성자가 아니라 필드로 주입하는 이유입니다.
 - 이벤트를 낸 트랜잭션이 **커밋된 뒤, 자기 트랜잭션에서** 실행됩니다. 여기서 실패해도 이미 일어난
   출고는 되돌려지지 않습니다 — 재시도·보상은 `handle` 이 정합니다(사가의 보상 단계).
 - 이벤트 내용(payload)에 필요한 값을 실어 두면 원래 애그리거트를 다시 읽지 않아도 됩니다.
@@ -1229,11 +1231,28 @@ Kotlin 빌드에서 도메인이 Java 번들이나 Java 전용 세트(`jpa-sprin
 | 키 | 적용 대상 |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin (있으면 위보다 우선) |
-| `publisher.rules.ts` | TypeScript |
+| `publisher.rules.kt` | Kotlin - Kotlin 빌드에서만, 아래 참고 |
+| `publisher.rules.ts` | TypeScript - Kotlin 빌드에서만, 아래 참고 |
 
 `publisher.rules`에 Kotlin 번들을 적어두면 TypeScript 생성이 그걸 물려받아
 `.ts` 파일에 Kotlin 규칙이 들어갑니다 — 그래서 TypeScript는 물려받지 않습니다.
+
+`publisher.rules.kt` 와 `publisher.rules.ts` 는 `rules` **아래**의 키입니다: `rules` 가 목록이 아니라 맵이 되므로,
+그 옆에 서버의 목록을 함께 둘 수 없습니다. Kotlin 서버의 목록은 `kt:` 아래에 씁니다:
+
+```yaml
+    publisher:
+      rules:
+        kt: [jpa-springboot-kt, ddd-aggregate]   # elcore3 (Kotlin)
+        ts: [ts-model]                           # elcore3ts
+```
+
+- 맵에서 자기 키를 찾지 못한 실행은 맵을 목록으로 읽고 멈춥니다: Java 빌드의 `elcore3`(Java 는 거기에 키가 없음),
+  또는 맵에 `ts:` 만 있는 Kotlin 빌드의 `elcore3` 가 맵의 글자를 규칙 이름으로 읽어 실패합니다 -
+  `ts: [ts-model]` 만 있는 맵이면 `Unknown rule set '{ts=[ts-model]}'`. 그래서 Java 빌드는 TypeScript 규칙을 `env.yml` 에서 고를 수 없고,
+  그 `elcore3ts` 는 `ts-model` 을 실행합니다.
+- 다른 표기는 읽히지 않고, 경고도 없습니다: `publisher:` 아래 `rules:` 옆의 따옴표 친 `"rules.kt":`, 또는
+  `config:` 아래의 `"publisher.rules.kt":` 키. 실행이 어떤 목록을 썼는지는 `-PlistRules` 가 보여 줍니다.
 
 ### 번들 조합
 

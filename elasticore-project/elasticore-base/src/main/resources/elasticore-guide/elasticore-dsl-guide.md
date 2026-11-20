@@ -243,8 +243,8 @@ SalesOrder:
 | `SalesOrderShipCommand` | Request DTO of a command that has parameters (`@NotNull`, `@Size` and so on) | Regenerated |
 | `SalesOrderUseCase.ship(orderId, command)` | Inbound port | Regenerated |
 | `SalesOrderCoreService.ship(...)` | Load -> `entity.ship(warehouse)` -> save, transaction | Regenerated |
-| `SalesOrderBase`: `abstract void ship(String warehouse)` | The promise - if the behavior class already exists, a **compile error** until you write the rule | Regenerated |
-| `SalesOrder.ship(String)` | The rule (generated once as a skeleton that throws an exception) | Developer-owned |
+| `SalesOrderBase`: `abstract void ship(String warehouse)` | The promise, kept by the behavior class | Regenerated |
+| `SalesOrder.ship(String)` | The rule - a skeleton that throws an exception (500) until you write it; a command added later gets one too, merged into an edited class (a class the merge does not reach gets none: a compile error) | Developer-owned |
 
 - The rule is not generated. You write the state check, the value change and the event raising directly in `SalesOrder`.
 - If a command needs something outside the aggregate (a domain service or another port, such as deducting stock), override `ship(orderId, command)` in the extension service
@@ -567,8 +567,9 @@ public void cancel() {
 | `@stamp: written only for a root with a behaviour class` | `@editable` root | Not stamped; the field stays writable |
 
 Warnings are collected under `[elcore3] DSL validation warnings:` at the end of the `elcore3` output. The build does not stop, so
-be sure to check this list after generation. If a lifecycle is dropped, the command goes back to an abstract method, and if the behavior class has no implementation, it leads to a
-compile error such as `PurchaseOrder is not abstract and does not override ship()`.
+be sure to check this list after generation. If a lifecycle is dropped, the command goes back to an abstract method, and the behavior class gets the
+skeleton that throws again (merged into an edited one): the project builds, and the command answers 500 until you fix the lifecycle or write the rule.
+A behavior class the merge does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) gets no skeleton, and the compiler names the missing method.
 
 ---
 
@@ -1064,13 +1065,14 @@ The generated code is two files, like a domain service.
 | `BillingProcessManager` | Generated once, then owned by the developer | A `handle(...)` for each event - the place to write the next step |
 
 **When you change the DSL, the source follows.**
-- If you add an event to `on`, the regenerated Base gets a listener and an abstract `handle(new event)`. Until you write that step in the developer class, the compiler tells you exactly: `LoyaltyProcessManager is not abstract and does not override abstract
-  method handle(OrderCancelledEvent)` (the message actually seen in `elasticore-template-ddd`). It works the same way as business commands (`commands:`),
-  so a step is never
-  silently missing.
+- If you add an event to `on`, the regenerated Base gets a listener and an abstract `handle(new event)`, and the developer class gets an
+  empty `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did (`MERGED(your edits kept)`).
+  The project builds, and the event does nothing until you write the step: after adding to `on`, look in the developer class
+  for the new empty `handle`. A file the merge does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) is left as it is,
+  and the compiler names the missing `handle`.
 - If you add an aggregate to `uses`, the Base gets a port field, and you do not edit the developer class.
-- If you remove an event from `on`, the developer class's `@Override handle(that event)` has nothing to override and fails to compile -
-  the compiler points at the code to delete.
+- If you remove an event from `on`, a `handle(that event)` you never edited is taken out (regenerated or merged); one you edited stays
+  (`KEPT(yours ...)`), its `@Override` has nothing to override and fails to compile - the compiler points at the code to delete.
 - If you have not yet edited the developer file, it is regenerated to follow the DSL too.
 - A file that was created before this split and already edited is left as it is, and only the Base is newly created. The generator warns
   (`... does not extend XxxBase, which is regenerated from the DSL ...`): add `extends XxxBase`, change the listener to

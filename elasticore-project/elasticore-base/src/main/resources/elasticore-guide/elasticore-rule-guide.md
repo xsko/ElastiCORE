@@ -406,10 +406,11 @@ For each command declared in an entity's `commands:`, it builds one path: `POST 
 (load, call, save) -> the abstract method of `XxxBase` -> the rule in `Xxx`.
 For the DSL syntax and the table of generated code, see "Business commands" in `elasticore-dsl-guide.md`.
 
-- The method is abstract, so if you add a command to an existing behavior class, it does not compile until you write the rule - it cannot be forgotten.
-  When the behavior class is first created, a stub that throws comes with it, so calling it in that state gives 500.
-- The first time the behavior class is written, a stub for each command goes in (Java: `UnsupportedOperationException`,
-  Kotlin: `TODO()`). It is not added to an existing behavior class, so you write it yourself (the compiler tells you).
+- The method is abstract in `XxxBase`, and the behavior class gets a stub for each command that throws (Java:
+  `throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin: `TODO("Xxx.ship: write the rule")`).
+- A command added later gets its stub too: a behavior class you never edited is regenerated, an edited one is merged
+  (`MERGED(your edits kept)`). The project builds, and calling the command answers 500 until you write the rule - the compiler does not remind you.
+  A file the merge does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) gets no stub, and the compiler names the missing method.
 - The controller is a developer-owned file. A controller you have not touched is regenerated and gets the
   command endpoint; a controller you edited is left as it is.
 - A root with no `@editable` field gets no PUT (neither in the controller nor in the use case).
@@ -549,9 +550,10 @@ public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
 }
 ```
 
-- If you add an event to `on`, the Base gets an abstract `handle(new event)`, and it does not compile until you write it in the developer class
-  (it cannot be forgotten). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
-  injected as a field, not through the constructor. If you have never edited the developer file, it is regenerated too.
+- If you add an event to `on`, the Base gets a listener and an abstract `handle(new event)`, and the developer class gets an empty
+  `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did. The project builds, and the event
+  does nothing until you write the step (a file the merge does not reach is left as it is, and the compiler names the missing `handle`). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
+  injected as a field, not through the constructor.
 - It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, the shipment that has already
   happened is not undone - retry and compensation are decided by `handle` (the compensation step of a saga).
 - If you put the needed values in the event content (payload), you do not have to read the original aggregate again.
@@ -1229,11 +1231,28 @@ they use the same key. TypeScript uses **its own key**, because its output is a 
 | Key | Applies to |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin (takes precedence over the one above if present) |
-| `publisher.rules.ts` | TypeScript |
+| `publisher.rules.kt` | Kotlin - in a Kotlin build only, see below |
+| `publisher.rules.ts` | TypeScript - in a Kotlin build only, see below |
 
 If you write a Kotlin bundle in `publisher.rules`, TypeScript generation inherits it and
 Kotlin rules end up in `.ts` files - so TypeScript does not inherit.
+
+`publisher.rules.kt` and `publisher.rules.ts` are keys **under** `rules`: `rules` becomes a map instead of a list,
+so it cannot hold the server's list beside them. The Kotlin server's list goes under `kt:`:
+
+```yaml
+    publisher:
+      rules:
+        kt: [jpa-springboot-kt, ddd-aggregate]   # elcore3 (Kotlin)
+        ts: [ts-model]                           # elcore3ts
+```
+
+- A run that finds no key of its own in the map reads the map as a list and stops: the `elcore3` of a Java build
+  (Java has no key there), or of a Kotlin build whose map holds only `ts:`, fails on the map's text as a rule name -
+  `Unknown rule set '{ts=[ts-model]}'` for a map holding only `ts: [ts-model]`. So a Java build cannot choose its TypeScript rules in `env.yml`; its
+  `elcore3ts` runs `ts-model`.
+- Other spellings are not read, and nothing warns: a quoted `"rules.kt":` beside `rules:` under `publisher:`, or a
+  `"publisher.rules.kt":` key under `config:`. `-PlistRules` shows the list a run took.
 
 ### Combining bundles
 
