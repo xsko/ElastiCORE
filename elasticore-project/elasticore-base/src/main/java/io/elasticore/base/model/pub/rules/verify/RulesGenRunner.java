@@ -5034,8 +5034,14 @@ public final class RulesGenRunner {
                 if (neverEdited(st)) {
                     unedited.put(f, rel);
                 } else {
+                    String text = readLf(f);
+                    File twin = text == null ? null : twinOf(f, text);
                     String message = "[elcore3] " + rel + " was generated, the DSL no longer produces it,"
-                            + " and it has been edited - delete it, or move what you wrote.";
+                            + " and it has been edited - delete it, or move what you wrote."
+                            + (twin == null
+                                    ? ""
+                                    : " " + relative(twin) + " declares the same class now, so the"
+                                            + " build has it twice until this one goes.");
                     io.elasticore.base.util.ConsoleLog.printWarn(message);
                     notes.add(message);
                 }
@@ -5117,10 +5123,21 @@ public final class RulesGenRunner {
         }
         if (going.isEmpty()) return used;
         Map<File, String> sources = projectSources();
+        // A class this run wrote in the other language - the project changed
+        // it - is there whatever names it: the old file breaks nothing by
+        // going, and kept, the build has the class twice. Its twin names the
+        // class it declares, which counted as a use, so it stayed every run.
+        java.util.Set<File> twinned = new java.util.HashSet<File>();
+        for (File f : going) {
+            String text = sources.get(f);
+            if (text == null) text = readLf(f);
+            if (text != null && twinOf(f, text) != null) twinned.add(f);
+        }
         boolean changed = true;
         while (changed) {
             changed = false;
             for (File f : new ArrayList<File>(going)) {
+                if (twinned.contains(f)) continue;
                 String text = sources.get(f);
                 if (text == null) text = readLf(f);
                 if (text == null) continue;
@@ -5150,6 +5167,39 @@ public final class RulesGenRunner {
             if (user != null) byGiven.put(f, user);
         }
         return byGiven;
+    }
+
+    /**
+     * The file this run wrote that declares the class of a Java or Kotlin
+     * source in the other of the two languages - X.kt for X.java and the
+     * reverse, in the same package - or null. What a project whose language
+     * changed has in place of the old file.
+     */
+    File twinOf(File file, String text) {
+        String name = file.getName();
+        String other = name.endsWith(".java") ? ".kt" : name.endsWith(".kt") ? ".java" : null;
+        if (other == null) return null;
+        String cls = name.substring(0, name.lastIndexOf('.'));
+        String pkg = quotedPackageOf(text);
+        java.util.regex.Pattern declares = java.util.regex.Pattern.compile(
+                "\\b(?:class|interface|object|enum|record)\\s+" + java.util.regex.Pattern.quote(cls) + "\\b");
+        for (String path : produced) {
+            File twin = new File(path);
+            if (!twin.getName().equals(cls + other)) continue;
+            String written = preview != null ? preview.written().get(canonical(twin)) : null;
+            if (written == null) written = readLf(twin);
+            if (written == null) continue;
+            if (!pkg.equals(quotedPackageOf(written))) continue;
+            if (declares.matcher(withoutComments(written)).find()) return twin;
+        }
+        return null;
+    }
+
+    /** The package of a source, a Kotlin one's quoted segments (adapter.`in`.web) read as Java names them. */
+    private static String quotedPackageOf(String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.`]+)")
+                .matcher(text);
+        return m.find() ? m.group(1).replace("`", "") : "";
     }
 
     /**
@@ -6364,8 +6414,13 @@ public final class RulesGenRunner {
                 unedited.put(f, key);
                 continue;
             } else if (disk != null) {
+                File twin = twinOf(f, disk);
                 String message = "[elcore3] " + key + " was generated, the DSL no longer produces it,"
-                        + " and it has been edited - it is yours now; delete it, or move what you wrote.";
+                        + " and it has been edited - it is yours now; delete it, or move what you wrote."
+                        + (twin == null
+                                ? ""
+                                : " " + relative(twin) + " declares the same class now, so the"
+                                        + " build has it twice until this one goes.");
                 io.elasticore.base.util.ConsoleLog.printWarn(message);
                 notes.add(message);
             }

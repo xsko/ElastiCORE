@@ -1254,6 +1254,7 @@ If you commit only the cache, after a pull the old local generated file looks li
 | The DSL also changed a line you edited | **Conflict** - leaves `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` in the file and the build fails. It keeps failing until you clean up the markers, and what you cleaned up becomes the base from then on |
 | You deleted the file | Generated again - the way to get it back as generated |
 | The DSL no longer produces it | If unedited, it is deleted; if edited, it is kept with a warning (from then on it is the developer's file). Even if unedited, a class that remaining sources still use (and the mapper XML with the same name) is kept and the file that uses it is reported (`still uses it - kept`) - it is deleted in the build after nothing uses it any more |
+| You changed `language` (java <-> kotlin) | The files of the old language go as above - an unedited one even while sources name its class, since the new language's file declares the same class. An edited one is kept with a warning that names that file: move what you wrote there and delete the old one (until then the build has the class twice) |
 | A different file where the cache has none | Not overwritten, reported (if the cache file is missing, the summary tells you to fetch it from git) |
 | A file generated with a first-line marker (older version, 2.x) | "Projects that had markers" below |
 
