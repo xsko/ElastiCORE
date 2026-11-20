@@ -11,7 +11,8 @@
   process-manager list, the lifecycle warnings) say what lands: a stub that throws
   (`throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin `TODO("Xxx.ship: write the rule")`),
   answering 500 until the rule is written; an empty `handle(new event)` (`// The next step goes here.`) that does
-  nothing until the step is written; regenerated when untouched, `MERGED(your edits kept)` when edited.
+  nothing until the step is written; regenerated when untouched, `MERGED(your edits kept)` when edited. A file the merge
+  does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) still fails to compile, and the guides say so.
 - Checked: standalone hexagonal projects (plugin and `elasticore-base` from this branch), Java and Kotlin, each once
   with the generate-once files untouched and once edited (a rule written for `close`, a line in `handle`), then a
   command `escalate` added to `commands:` and `TicketClosed` added to `on`:
@@ -23,4 +24,10 @@
     booted, `escalate` answers 500 (`kotlin.NotImplementedError`).
   - A lifecycle given to `escalate` removes the untouched stub from the edited class (merged); a typo in it
     (`ESCALATD`, the DSL warning names it) brings the stub back by the merge, and `compileJava` passes.
+  - Where the merge does not reach, the guides keep the compile error: with `merge = false` an edited `Ticket.java` is
+    `SKIP(user-owned)` and `compileJava` fails (`Ticket is not abstract and does not override abstract method
+    escalate(Integer)`), while the untouched process manager is `REGENERATED(owned, never edited)`. Removing the event
+    of an edited `handle` from `on` leaves the file `KEPT(yours - the DSL's changes to it do not merge)` and fails
+    (`method does not override or implement a method from a supertype`); removing the event of an untouched `handle`
+    merges it out and builds. The DSL guide's line on removing an event says so.
 - Files: rule guide (en, ko), DSL guide (en, ko).
