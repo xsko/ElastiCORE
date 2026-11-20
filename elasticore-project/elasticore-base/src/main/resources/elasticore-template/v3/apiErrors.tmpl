@@ -108,6 +108,12 @@ public class ${className} {
                 return conflict(ex);
             }
         }
+        // MongoDB's (E11000): a unique index refused the value. Its text names the
+        // index and the value that broke it, so the answer says the kind and no more.
+        if (ex.getCause() != null) {
+            return problem(HttpStatus.CONFLICT, "unique", "Already exists",
+                    said("unique", "A unique value is already taken."));
+        }
         // The service's: a create named an identifier that is taken.
         return problem(HttpStatus.CONFLICT, "already-exists", "Already exists", ex.getMessage());
     }
