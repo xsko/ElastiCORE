@@ -945,6 +945,8 @@ Member:
 - `@Embedded` 값 객체에 붙이면 그 값의 컬럼이 모두 빠지고, 참조에 붙이면 조인 컬럼과 그 relationship 이 빠집니다
   (따로 있는 `customerId` 필드는 그 필드의 표시대로). `@sensitive` 필드로 조인하는 참조(`customerId: long @sensitive` 와
   `customer: Customer @ManyToOne`, 또는 `@joinBy(customerId)`)도 relationship 으로 내보내지 않고 경고합니다.
+- 그 컬럼이 든 유일 키(`email: string(100)! @unique @sensitive`, 또는 그 컬럼을 적은 `@Index(..., unique="true")`)는
+  `unique_keys` 에 통째로 쓰지 않고 경고합니다: 나머지 컬럼만으로는 다른 키이고, 유일하지 않습니다.
 - `@id` 에 붙이면 경고하고 무시합니다 (dataset 의 키와 그 키로 오는 relationship 에 컬럼이 필요). 컬렉션도 마찬가지입니다
   (자기 컬럼이 없음 - 상대 엔티티의 필드에 붙이세요).
 - `ossie-export` 룰셋을 쓸 때만 의미가 있습니다 (룰 가이드 "Apache Ossie 시맨틱 모델 내보내기"). 2.x 코드(`output = 'v2'`)에
