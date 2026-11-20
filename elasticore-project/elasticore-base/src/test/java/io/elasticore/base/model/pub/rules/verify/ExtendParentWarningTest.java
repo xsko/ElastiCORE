@@ -104,11 +104,26 @@ public class ExtendParentWarningTest {
     public void aKnownParentAFullClassNameOrAnotherDomainsIsNotSaid() throws Exception {
         String base = String.join(
                 "\n", "  Base:", "    meta: entity @abstract", "    fields:", "      createdBy: string(20)", "");
-        for (String parent : new String[] {"Base", "com.acme.support.HandWritten", "other:Base"}) {
+        for (String parent : new String[] {
+            "Base", "com.acme.support.HandWritten", "other:Base", "com.acme.support.Audited<Long, String>"
+        }) {
             File project = project(model(parent, "").replace("entity:\n", "entity:\n" + base));
             String log = run(project, -1);
             assertFalse(log.contains("unresolved @extend parent"), parent + ": " + log);
         }
+    }
+
+    @Test
+    public void aGenericParentIsReadByItsName() throws Exception {
+        // One parent: the comma is a type argument's, not a second name.
+        File project = project(model("Missing<Long, String>", ""));
+        String log = run(project, -1);
+        String said =
+                "[dgshop] Note: unresolved @extend parent 'Missing' - no matching Entity or DTO found in any domain";
+        assertTrue(log.contains(said), log);
+        assertEquals(log.indexOf(said), log.lastIndexOf(said), log);
+        assertFalse(log.contains("parent 'String"), log);
+        assertFalse(log.contains("parent 'Long"), log);
     }
 
     // ---- helpers ----------------------------------------------------------------------
