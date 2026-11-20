@@ -147,6 +147,7 @@ public class ModelExtractor {
                         Entity e = items.get(i);
                         if (e == null) continue;
                         validateFieldTypes(e.getIdentity().getName(), e.getItems(), domainName, typeRegistry);
+                        validateParent(e.getIdentity().getName(), e.getMetaInfo(), domainName, typeRegistry);
                         if (io.elasticore.base.model.dto.TemplateList.of(e.getMetaInfo())
                                 .hasLists()) {
                             refuse(
@@ -165,6 +166,7 @@ public class ModelExtractor {
                         DataTransfer d = items.get(i);
                         if (d == null) continue;
                         validateFieldTypes(d.getIdentity().getName(), d.getItems(), domainName, typeRegistry);
+                        validateParent(d.getIdentity().getName(), d.getMetaInfo(), domainName, typeRegistry);
                         reportForcedRefs(d, domainName, allContexts);
                         for (String problem : io.elasticore.base.model.dto.TemplateList.problemsOf(d, allContexts))
                             refuse(domainName, problem);
@@ -232,6 +234,34 @@ public class ModelExtractor {
         }
         if (!domains.contains(domainName)) {
             domains.add(domainName);
+        }
+    }
+
+    /**
+     * An @extend(Parent) naming no Entity or DTO of any domain: said as a DSL
+     * warning, as an unresolved field type is. A warning, not an error - a
+     * class written by hand may be the parent on purpose. A full class name
+     * and a domain-qualified one (other:Parent) are not looked up, as for fields.
+     */
+    private static void validateParent(
+            String componentName,
+            io.elasticore.base.model.MetaInfo meta,
+            String domainName,
+            Map<String, List<String>> typeRegistry) {
+        if (meta == null || !meta.hasMetaAnnotation("extend")) return;
+        String value = meta.getMetaAnnotationValue("extend");
+        if (value == null) return;
+        for (String part : java.util.regex.Pattern.compile(",").split(value, -1)) {
+            String parent = part.trim();
+            int generic = parent.indexOf('<');
+            if (generic >= 0) parent = parent.substring(0, generic).trim();
+            if (parent.isEmpty() || parent.contains(".") || parent.contains(":")) continue;
+            if (typeRegistry.containsKey(parent)) continue;
+            ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "[%s] %s: unresolved @extend parent '%s' - no matching Entity or DTO found in any domain",
+                            domainName, componentName, parent));
         }
     }
 
