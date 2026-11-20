@@ -107,7 +107,20 @@ public final class RuntimePackages {
             "while",
             "true",
             "false",
-            "null"));
+            "null",
+            // Kotlin's hard keywords besides Java's: the generated code may be Kotlin.
+            "as",
+            "fun",
+            "in",
+            "is",
+            "object",
+            "typealias",
+            "typeof",
+            "val",
+            "var",
+            "when",
+            // Not an identifier on its own since Java 9, nor in Kotlin.
+            "_"));
 
     /** From -> to, the longest key first. */
     private final Map<String, String> mapping;
@@ -170,6 +183,18 @@ public final class RuntimePackages {
             given.put(from, to);
         }
         if (given.isEmpty()) return null;
+        // A value a key covers would be rewritten again by the next pass over the same text - the merge
+        // renames the cache's base and the file as well as the new text - so the rewrite must be idempotent.
+        for (Map.Entry<String, String> en : given.entrySet()) {
+            for (String key : given.keySet()) {
+                String to = en.getValue();
+                if (to.equals(key) || to.startsWith(key + ".")) {
+                    throw new IllegalArgumentException("runtimePackages: the value '" + to + "' of '" + en.getKey()
+                            + "' is under the key '" + key + "', so it would be rewritten again - map to a package"
+                            + " outside the keys, e.g. 'com.acme.runtime'");
+                }
+            }
+        }
         return new RuntimePackages(given);
     }
 
@@ -182,7 +207,7 @@ public final class RuntimePackages {
         }
         if (!isPackageName(to)) {
             throw new IllegalArgumentException("runtimePackages: the value '" + to + "' of '" + from
-                    + "' is not a Java package name, e.g. 'com.acme.runtime'");
+                    + "' is not a Java package name, or names a Kotlin keyword, e.g. 'com.acme.runtime'");
         }
     }
 
@@ -249,32 +274,45 @@ public final class RuntimePackages {
      * The classes under the mapped packages the text names, outermost class
      * by its qualified name ({@code com.acme.rt.http.Foo} for
      * {@code com.acme.rt.http.Foo.Bar}, a static import's method left off),
-     * and {@code com.acme.rt.port.*} for a wildcard import. A name in one of
-     * {@code own} or below it is the project's own and is left out.
+     * and {@code com.acme.rt.port.*} for a wildcard import. A name under a
+     * mapped package is the runtime's even where that package is inside the
+     * project's ({@code com.acme.shop.runtime} in a project
+     * {@code com.acme.shop}); only a package of {@code own} below the mapped
+     * one - a value above the project, {@code com.acme} - is the project's.
      */
     public Set<String> requiredClasses(String text, Collection<String> own) {
         Set<String> found = new TreeSet<String>();
         if (text == null) return found;
         Matcher m = targets.matcher(text);
         while (m.find()) {
-            int end = m.end();
+            String target = m.group(1);
             // The segments after the package: as far as a name runs, a star last.
             Matcher rest = REST_OF_NAME.matcher(text);
-            rest.region(end, text.length());
-            String name = rest.lookingAt() ? m.group(1) + rest.group() : m.group(1);
-            if (isOwn(name, own)) continue;
+            rest.region(m.end(), text.length());
+            String name = rest.lookingAt() ? target + rest.group() : target;
+            List<String> below = new ArrayList<String>();
+            for (String p : own) {
+                if (p.startsWith(target + ".")) below.add(p);
+            }
+            if (isOwn(name, below)) continue;
             String cls = outermostClass(name);
             if (cls != null) found.add(cls);
         }
         return found;
     }
 
-    /** The name up to its first segment that starts upper case, a wildcard as itself; null for a package alone. */
+    /**
+     * The name up to its first segment that starts upper case, a wildcard as
+     * itself; null for a package alone. A nested class's binary name
+     * ({@code Money$JpaConverter}) is its outer class: that is the file.
+     */
     static String outermostClass(String name) {
         if (name.endsWith(".*")) return name;
         String[] segments = name.split("\\.", -1);
         StringBuilder sb = new StringBuilder();
-        for (String s : segments) {
+        for (String segment : segments) {
+            int dollar = segment.indexOf('$');
+            String s = dollar > 0 ? segment.substring(0, dollar) : segment;
             if (sb.length() > 0) sb.append('.');
             sb.append(s);
             if (!s.isEmpty() && Character.isUpperCase(s.charAt(0))) return sb.toString();

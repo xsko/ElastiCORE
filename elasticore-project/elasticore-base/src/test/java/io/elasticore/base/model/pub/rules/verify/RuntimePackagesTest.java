@@ -221,4 +221,66 @@ public class RuntimePackagesTest {
                         + " io.elasticore.springboot3 -> com.test.springboot",
                 MAPPING.describe());
     }
+
+    /** A copy of the runtime under the project's own base package is still the runtime: listed. */
+    @Test
+    public void aCopyUnderTheProjectsOwnPackageIsListed() {
+        RuntimePackages inside = RuntimePackages.parse("io.elasticore.springboot3=com.acme.shop.runtime");
+        Set<String> own = RuntimePackages.ownRoots(Arrays.asList("com.acme.shop.entity", "com.acme.shop.dto"));
+        assertTrue(own.contains("com.acme.shop"), own.toString());
+        String text = inside.rewrite(String.join(
+                "\n",
+                "import io.elasticore.springboot3.validation.NotFoundException;",
+                "import com.acme.shop.entity.Item;",
+                ""));
+        assertEquals(
+                Collections.singleton("com.acme.shop.runtime.validation.NotFoundException"),
+                inside.requiredClasses(text, own));
+        // A mapping value above the project's packages does not list the project's own classes.
+        RuntimePackages above = RuntimePackages.parse("io.elasticore.springboot3=com.acme");
+        String both = above.rewrite("import io.elasticore.springboot3.validation.NotFoundException;\n"
+                + "import com.acme.shop.entity.Item;\n");
+        assertEquals(Collections.singleton("com.acme.validation.NotFoundException"), above.requiredClasses(both, own));
+    }
+
+    /** A nested class is provided with the class it is in: the list names that one. */
+    @Test
+    public void aNestedBinaryNameListsItsOuterClass() {
+        String xml = MAPPING.rewrite("<convert converter=\"io.elasticore.springboot3.domain.Money$JpaConverter\"/>\n"
+                + "<listener class=\"io.elasticore.springboot3.crypto.Bidx$Listener$Inner\"/>\n");
+        assertEquals(
+                Arrays.asList("com.test.springboot.crypto.Bidx", "com.test.springboot.domain.Money"),
+                new java.util.ArrayList<String>(MAPPING.requiredClasses(xml, Collections.<String>emptySet())));
+        assertEquals(
+                Collections.singleton("io.elasticore.springboot3.domain"),
+                RuntimePackages.leftovers(
+                        "x = io.elasticore.springboot3.domain.Money$JpaConverter;", Collections.<String>emptySet()));
+    }
+
+    /** The code is Kotlin as well: a package named by a Kotlin keyword does not compile there. */
+    @Test
+    public void kotlinKeywordsAreNoPackageName() {
+        for (String bad : new String[] {
+            "com.in.x", "com.fun", "com.object.rt", "com.is", "com.val", "com.when", "com.typealias", "com._", "_"
+        }) {
+            assertThrows(
+                    IllegalArgumentException.class, () -> RuntimePackages.parse("io.elasticore.runtime=" + bad), bad);
+        }
+        RuntimePackages.parse("io.elasticore.runtime=com.data.inside");
+    }
+
+    /** A value under a key would be rewritten again on the next pass: refused, so the rewrite is idempotent. */
+    @Test
+    public void aValueUnderAKeyIsRefused() {
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> RuntimePackages.parse("io.elasticore.springboot3=io.elasticore.springboot3.copy"));
+        assertTrue(e.getMessage().contains("'io.elasticore.springboot3.copy'"), e.getMessage());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RuntimePackages.parse(
+                        "io.elasticore.springboot3=com.a,io.elasticore.runtime=io.elasticore.springboot3.r"));
+        String once = MAPPING.rewrite("import io.elasticore.springboot3.validation.NotFoundException;");
+        assertEquals(once, MAPPING.rewrite(once));
+    }
 }

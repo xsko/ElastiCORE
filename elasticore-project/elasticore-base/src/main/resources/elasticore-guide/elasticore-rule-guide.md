@@ -1765,11 +1765,21 @@ elasticore {
   in Java and Kotlin, and in the resources the run writes beside them.
 - Whole package segments only: `io.elasticore.springboot3` does not match `io.elasticore.springboot3x`.
 - The longest key first: beside `'io.elasticore.springboot3'`, a key `'io.elasticore.springboot3.security'` takes the security classes.
-- A key starts with `io.elasticore.`, a value is a Java package name; otherwise the build fails before anything is generated.
+- A key starts with `io.elasticore.` and names a package of the runtime: a key over the project's own packages
+  (`'io.elasticore.sample': ...` in a project `io.elasticore.sample.shop`) is refused. A value is a package name in Java
+  and in Kotlin (`com.acme.in` is not: `in` is a Kotlin keyword), and not under a key (`io.elasticore.springboot3.copy`
+  would be rewritten again). Otherwise the build fails before anything is generated.
 - Unset, the generated code is byte for byte what it was.
-- The text is rewritten before it is merged and kept in `.elasticore/cache`, so the file and its base agree, and turning the
-  setting on in a generated project is one more run. A file that is yours - a generate-once file you edited, `SKIP(user-owned)` -
-  is not rewritten; the run names it (below).
+- The text is rewritten before it is merged and kept in `.elasticore/cache`, so the file and its base agree.
+- **Turning it on in a project generated before.** A merged file - one `.elasticore/cache` holds - is renamed on every side
+  before the merge: its cached base, the file as you left it, and the new text. Your edits stay where they are and are renamed
+  with the rest (an import of a runtime class you added becomes the mapped one), and a conflict is only where your edit and a
+  change of the DSL meet, as without the setting. A file the run does not write - a file without a base (`SKIP(user-owned)`,
+  `SKIP(not in the cache)`), or one the DSL no longer produces that is kept because a source of yours uses it - is not
+  renamed; the run names it (below), and you change its imports by hand.
+- Kotlin with `mapping: xml`: the domain classes carry the mapped `@com.test.springboot.entity.PersistentModel`, so the
+  all-open and no-arg plugins name that one: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, and
+  the same for `noArg` (`elasticore-env-guide.md`, `mapping: xml`).
 - Not rewritten: `blueprint/schema.yml` and the Ossie export describe the model, the runtime's type names
   (`io.elasticore.springboot3.domain.Money`) among it. They are not compiled.
 - `elcoreGraphQl` runs the schema writer from your copy (`com.test.springboot.graphql.GraphQlSchemaWriter`), which runs on the
@@ -1788,10 +1798,13 @@ elasticore {
 
 - The list is the classes the generated files now name under your packages, one per line, also written to
   `build/elasticore/runtime-classes.txt` by a run of every domain (`-Pdomain` prints it only). A wildcard import
-  (`com.test.springboot.entity.*`) stands for its package: copy that package whole.
+  (`com.test.springboot.entity.*`) stands for its package: copy that package whole. A nested class (`Money$JpaConverter`
+  in orm.xml) is listed as the class it is in (`Money`), the file to copy. A copy under the project's own package
+  (`'io.elasticore.springboot3': 'com.acme.shop.runtime'` in a project `com.acme.shop`) is listed like any other.
 - A warning for every package under `io.elasticore` the generated files still name, with the files: either no key covers it -
-  add one - or it is in a file of yours the run did not rewrite - change its imports. The project's own packages (a project whose
-  base package is under `io.elasticore`) are not counted.
+  add one - or it is in a file the run did not write (yours, or kept because a source of yours uses it) - change its
+  imports. The project's own packages (a project whose base package is under `io.elasticore`) are not counted. Your own
+  hand-written sources are not read.
 
 **What you provide**
 

@@ -616,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  With `runtimePackages` in the build (`elasticore-rule-guide.md`), the classes carry the mapped name - for
+  `'io.elasticore.springboot3': 'com.acme.runtime'`, `@com.acme.runtime.entity.PersistentModel` - and the two lines name that one.
 - A domain that uses Envers (`@Audited`) keeps that annotation, so the generated architecture test allows `org.hibernate.envers`.
 - If a `META-INF/orm.xml` made by the user exists, it is not overwritten; the mapping is written to `META-INF/elasticore-orm.xml` and
   the `spring.jpa.mapping-resources` setting is shown.

@@ -616,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  빌드에 `runtimePackages` 가 있으면(`elasticore-rule-guide.md`) 클래스에는 매핑된 이름이 붙습니다 -
+  `'io.elasticore.springboot3': 'com.acme.runtime'` 이면 `@com.acme.runtime.entity.PersistentModel` - 두 줄도 그것을 적습니다.
 - Envers(`@Audited`)를 쓰는 도메인은 그 어노테이션이 남으므로, 생성되는 아키텍처 테스트가 `org.hibernate.envers` 는 허용합니다.
 - 사용자가 만든 `META-INF/orm.xml` 이 있으면 덮어쓰지 않고 `META-INF/elasticore-orm.xml` 에 쓰고
   `spring.jpa.mapping-resources` 설정을 안내합니다.

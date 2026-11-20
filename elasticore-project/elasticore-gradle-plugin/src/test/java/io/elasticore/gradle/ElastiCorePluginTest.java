@@ -167,17 +167,35 @@ public class ElastiCorePluginTest {
                         + "        'io.elasticore.base.util'  : 'com.test.util',\n"
                         + "    ]\n"
                         + "}",
-                REPORTER);
-        assertTrue(reportOf(run("reportElcore"))
-                .contains("elasticore.runtime.packages="
-                        + "io.elasticore.base.util=com.test.util,io.elasticore.runtime=com.test.runtime,"
-                        + "io.elasticore.springboot3=com.test.springboot"));
+                RULE_ENGINE_REPORTER);
+        String reported = run("reportRuleEngine").getOutput();
+        // Every task that runs the rule engine gets it ...
+        for (String task :
+                new String[] {"elcore3", "elcore3ts", "elcoreDdl", "elcoreMigrationCheck", "elcoreValidate"}) {
+            assertTrue(
+                    reported.contains("<<<" + task + ":elasticore.runtime.packages="
+                            + "io.elasticore.base.util=com.test.util,io.elasticore.runtime=com.test.runtime,"
+                            + "io.elasticore.springboot3=com.test.springboot>>>"),
+                    task + ": " + reported);
+        }
+        // ... and the 2.x generator, which never rewrites, does not.
+        assertTrue(reported.contains("<<<elcore:none>>>"), reported);
 
         // Unset, nothing is passed and the generated code is what it always was.
-        writeBuild("plugins { id 'io.elasticore' }", "elasticore { architecture = 'hexagonal' }", REPORTER);
-        String reported = reportOf(run("reportElcore"));
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { architecture = 'hexagonal' }", RULE_ENGINE_REPORTER);
+        reported = run("reportRuleEngine").getOutput();
         assertTrue(!reported.contains("elasticore.runtime.packages"), reported);
     }
+
+    /** Each generation task's runtimePackages property, as <<<task:value>>> or <<<task:none>>>. */
+    private static final String RULE_ENGINE_REPORTER = "tasks.register('reportRuleEngine') {\n"
+            + "    doLast {\n"
+            + "        ['elcore', 'elcore3', 'elcore3ts', 'elcoreDdl', 'elcoreMigrationCheck', 'elcoreValidate'].each { n ->\n"
+            + "            def v = tasks.getByName(n).systemProperties['elasticore.runtime.packages']\n"
+            + "            println '<<<' + n + ':' + (v == null ? 'none' : 'elasticore.runtime.packages=' + v) + '>>>'\n"
+            + "        }\n"
+            + "    }\n"
+            + "}";
 
     @Test
     @DisplayName("with runtimePackages the GraphQL schema writer is the project's copy of it")
@@ -219,6 +237,13 @@ public class ElastiCorePluginTest {
         String value = runAndFail("help").getOutput();
         assertTrue(
                 value.contains("the value 'com.1test' of 'io.elasticore.runtime' is not a Java package name"), value);
+
+        // The code may be Kotlin: a Kotlin keyword is no package name there.
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['io.elasticore.runtime': 'com.fun.rt'] }");
+        String kotlin = runAndFail("help").getOutput();
+        assertTrue(kotlin.contains("the value 'com.fun.rt' of 'io.elasticore.runtime'"), kotlin);
     }
 
     @Test
@@ -228,11 +253,12 @@ public class ElastiCorePluginTest {
         writeBuild(
                 "plugins { id 'io.elasticore' }",
                 "elasticore { output = 'v2'; runtimePackages = ['io.elasticore.runtime': 'com.test.runtime'] }",
-                REPORTER);
-        BuildResult result = run("reportElcore");
+                RULE_ENGINE_REPORTER);
+        BuildResult result = run("reportRuleEngine");
         assertTrue(result.getOutput().contains("runtimePackages is ignored"), result.getOutput());
-        String reported = reportOf(result);
-        assertTrue(!reported.contains("elasticore.runtime.packages"), reported);
+        // elcore3 by hand writes the 2.x-compatible code here: no task is told.
+        assertTrue(!result.getOutput().contains("elasticore.runtime.packages="), result.getOutput());
+        assertTrue(result.getOutput().contains("<<<elcore3:none>>>"), result.getOutput());
     }
 
     @Test

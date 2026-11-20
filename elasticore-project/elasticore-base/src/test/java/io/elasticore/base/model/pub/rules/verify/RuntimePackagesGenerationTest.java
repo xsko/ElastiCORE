@@ -308,7 +308,7 @@ public class RuntimePackagesGenerationTest {
         return text;
     }
 
-    private static Map<String, String> snapshot(File dir) throws IOException {
+    static Map<String, String> snapshot(File dir) throws IOException {
         final Map<String, String> files = new TreeMap<String, String>();
         final Path root = dir.toPath();
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
