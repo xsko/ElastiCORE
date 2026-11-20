@@ -1,6 +1,6 @@
 ### Documentation (rule guide - `publisher.rules.kt` / `publisher.rules.ts`)
 
-#### The rule guide shows how `publisher.rules.kt` and `publisher.rules.ts` are written, and that only a Kotlin build can
+#### The rule guide shows how `publisher.rules.kt` and `publisher.rules.ts` are written
 - Why: "Choosing rules per language" listed `publisher.rules.kt` ("takes precedence over the one above if present") and
   `publisher.rules.ts` with no example. The runner reads them as the path `publisher` -> `rules` -> `kt` / `ts`, so they
   are keys under `rules`, and `rules` cannot be a list and a map at once: the two never sit beside a `publisher.rules`
@@ -21,4 +21,7 @@
     with and without a `rules:` list beside them; `"publisher.rules.kt":` / `"publisher.rules.ts":` under `config:`.
   - Java build with `rules: { ts: [ts-model] }`, and Kotlin build with only `ts:`: `elcore3` fails with
     `Unknown rule set '{ts=[ts-model]}'`; Java build with a `kt:` map: `Unknown rule set '{kt=[jpa-springboot-kt'`.
+- Later in the same release (`rules-map-no-own-key.md`): the failure this entry documents is fixed. A run with no key
+  of its own in the map takes its default rules, so a Java build chooses its TypeScript rules with `ts:` alone, and the
+  guides say so. The `Unknown rule set` lines above describe the behaviour before that fix.
 - Files: rule guide (en, ko), DDD customize guide (en, ko).

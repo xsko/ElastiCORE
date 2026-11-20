@@ -123,7 +123,7 @@ public final class RulesGenRunner {
     static String domainAskingForV3(List<ECoreModel> models) {
         if (models == null) return null;
         for (ECoreModel model : models) {
-            java.util.List<String> rules = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+            java.util.List<String> rules = RulesConfig.domainList(model, "publisher.rules");
             if (rules == null) continue;
             for (String rule : rules) {
                 if (needsV3(rule)) {
@@ -142,7 +142,7 @@ public final class RulesGenRunner {
     static String domainKeepingTwoX(List<ECoreModel> models) {
         if (models == null) return null;
         for (ECoreModel model : models) {
-            java.util.List<String> rules = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+            java.util.List<String> rules = RulesConfig.domainList(model, "publisher.rules");
             if (rules == null) continue;
             for (String rule : rules) {
                 if (RulesConfig.DEFAULT_BUNDLE.equals(rule.trim())) {
@@ -542,7 +542,7 @@ public final class RulesGenRunner {
                                         ? RulesConfig.Language.TYPESCRIPT
                                         : kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
                 if (refusal == null) {
-                    java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+                    java.util.List<String> named = RulesConfig.domainList(model, "publisher.rules");
                     for (String rule : named == null ? java.util.Collections.<String>emptyList() : named) {
                         if (RulesConfig.mongoBundleOf(rule) != null) continue;
                         if (rule.endsWith("-kt")
@@ -571,7 +571,7 @@ public final class RulesGenRunner {
                                         : kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA);
                 // What the domain's own env.yml names counts as much as the build's word.
                 if (refusal == null) {
-                    java.util.List<String> named = RulesConfig.configuredList(model.getConfig("publisher.rules"));
+                    java.util.List<String> named = RulesConfig.domainList(model, "publisher.rules");
                     if (named != null) {
                         // The sets the names stand for, a MyBatis bundle's included.
                         java.util.Set<String> sets = new java.util.HashSet<String>();
@@ -616,6 +616,8 @@ public final class RulesGenRunner {
                     return 1;
                 }
             }
+            String unread = RulesConfig.unreadRulesKeys(model);
+            if (unread != null) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", unread);
             for (String m : modes) {
                 if (RulesConfig.persistenceNamed(m) == persistence) continue;
                 io.elasticore.base.util.ConsoleLog.storeLog(
@@ -973,7 +975,7 @@ public final class RulesGenRunner {
         // The Ossie semantic model, where a project asked for it. Beside the
         // schema because it is the same kind of thing: a side-car describing
         // the whole model, regenerated with it, never edited.
-        if (io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.requested(allModels)) {
+        if (io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.requested(allModels, kotlin)) {
             io.elasticore.base.model.pub.ossie.OssieSemanticModelExporter.export(
                     new ArrayList<io.elasticore.base.ECoreModelContext>(loader.contexts().values()),
                     schemaRootOf(basePath, modulePaths));
@@ -2935,6 +2937,9 @@ public final class RulesGenRunner {
         java.util.List<String> off = RulesConfig.resolveSuppress(domainConfig("publisher.suppress"));
         System.out.println("[rules] " + domainDirName + ": " + String.join(" + ", names)
                 + (off.isEmpty() ? "" : "   (suppressed: " + String.join(", ", off) + ")"));
+        // The listing ends before the warnings are shown: an unread key is said with it.
+        String unread = RulesConfig.unreadRulesKeys(currentModel);
+        if (unread != null) System.out.println("  " + unread);
         java.util.Map<String, java.util.List<String[]>> byTarget = new java.util.TreeMap<String, java.util.List<String[]>>();
         java.util.Set<String> seen = new java.util.HashSet<String>();
         for (String name : names) {
@@ -2988,9 +2993,7 @@ public final class RulesGenRunner {
 
     /** A rule selection this domain declares in its own env.yml, or null. */
     private java.util.List<String> domainConfig(String key) {
-        java.util.List<String> named = currentModel == null
-                ? null
-                : RulesConfig.configuredList(currentModel.getConfig(key));
+        java.util.List<String> named = RulesConfig.domainList(currentModel, key);
         // A MyBatis domain naming its architecture's bundle gets the MyBatis
         // one of it: mode says the persistence, the bundle the architecture.
         if (named != null && "publisher.rules".equals(key) && persistence() == RulesConfig.Persistence.MYBATIS) {
@@ -3020,10 +3023,10 @@ public final class RulesGenRunner {
      */
     static String javaRulesInKotlin(ECoreModel model) {
         String key = "publisher.rules.kt";
-        java.util.List<String> named = RulesConfig.configuredList(model.getConfig(key));
+        java.util.List<String> named = RulesConfig.domainList(model, key);
         if (named == null) {
             key = "publisher.rules";
-            named = RulesConfig.configuredList(model.getConfig(key));
+            named = RulesConfig.domainList(model, key);
         }
         String where = String.format("domain '%s' names", model.getInternalDomainName());
         if (named == null) {
