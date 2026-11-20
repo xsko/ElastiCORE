@@ -1229,11 +1229,28 @@ they use the same key. TypeScript uses **its own key**, because its output is a 
 | Key | Applies to |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin (takes precedence over the one above if present) |
-| `publisher.rules.ts` | TypeScript |
+| `publisher.rules.kt` | Kotlin - in a Kotlin build only, see below |
+| `publisher.rules.ts` | TypeScript - in a Kotlin build only, see below |
 
 If you write a Kotlin bundle in `publisher.rules`, TypeScript generation inherits it and
 Kotlin rules end up in `.ts` files - so TypeScript does not inherit.
+
+`publisher.rules.kt` and `publisher.rules.ts` are keys **under** `rules`: `rules` becomes a map instead of a list,
+so it cannot hold the server's list beside them. The Kotlin server's list goes under `kt:`:
+
+```yaml
+    publisher:
+      rules:
+        kt: [jpa-springboot-kt, ddd-aggregate]   # elcore3 (Kotlin)
+        ts: [ts-model]                           # elcore3ts
+```
+
+- A run that finds no key of its own in the map reads the map as a list and stops: the `elcore3` of a Java build
+  (Java has no key there), or of a Kotlin build whose map holds only `ts:`, fails on the map's text as a rule name -
+  `Unknown rule set '{ts=[ts-model]}'` for a map holding only `ts: [ts-model]`. So a Java build cannot choose its TypeScript rules in `env.yml`; its
+  `elcore3ts` runs `ts-model`.
+- Other spellings are not read, and nothing warns: a quoted `"rules.kt":` beside `rules:` under `publisher:`, or a
+  `"publisher.rules.kt":` key under `config:`. `-PlistRules` shows the list a run took.
 
 ### Combining bundles
 
