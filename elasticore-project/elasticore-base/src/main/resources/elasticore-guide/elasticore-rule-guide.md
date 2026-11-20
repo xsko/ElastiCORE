@@ -1815,7 +1815,7 @@ relationships:
 | Entity (except `@abstract` and `@embeddable`) | `datasets[]` | `source` = the table (`table.prefix` + the `@table` name or the entity's) |
 | `-- label` | `description` | |
 | `@id` field (including a composite key) | `primary_key` | |
-| `@unique`, `@Index(unique="true")` | `unique_keys` | By the column name of the dataset field - an attribute name in `columnList` (`seatNo`) becomes the column of that field (`seat_no`, or the `@column` name if there is one), a column name belongs to that field regardless of case (`HALL_ID` if `@column(HALL_ID)`), and any other name follows Hibernate (`seqCd` -> `seq_cd`). The same key appears once |
+| `@unique`, `@Index(unique="true")` | `unique_keys` | By the column name of the dataset field - an attribute name in `columnList` (`seatNo`) becomes the column of that field (`seat_no`, or the `@column` name if there is one), a column name belongs to that field regardless of case (`HALL_ID` if `@column(HALL_ID)`), and any other name follows Hibernate (`seqCd` -> `seq_cd`). The same key appears once. A key that holds a column the export leaves out (`@password`, `@writeonly`, `@sensitive`) is not written at all, with a `[ossie]` warning - its other columns alone are another key, which is not unique |
 | Value field | `fields[]` + `expression.sql` (column) + `datatype` | The type mapping is the "Value types at a glance" table in the DSL guide |
 | `@formula(sql)` | `expression` = that SQL | A computed column. An expression goes in `expression.sql`; if it contains a subquery (SELECT), one `ANSI_SQL` entry in `dialects` - see "Form of the expression" below |
 | Fields of `@extend(Parent)` | `fields` of the child dataset | Because the inherited columns are also in that table |
