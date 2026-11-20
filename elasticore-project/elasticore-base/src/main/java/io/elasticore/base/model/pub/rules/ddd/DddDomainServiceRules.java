@@ -68,8 +68,9 @@ public class DddDomainServiceRules implements CodeRules,
      * The split keeps the DSL the place a change is made. A name added to
      * 'uses' is a field of the regenerated base, usable without touching the
      * developer's class; an event added to a process manager's 'on' is a new
-     * listener in the base and an abstract handle(...) the compiler asks the
-     * developer's class for - the way a command added to an entity is.
+     * listener in the base and an abstract handle(...), which the merge adds
+     * to the developer's class empty - the way a command added to an entity
+     * gets its throwing stub (processManager below).
      *
      * Declared here rather than looped over in the runner, which is what the
      * runner did first: it imported this class, called these two helpers and
@@ -304,9 +305,13 @@ public class DddDomainServiceRules implements CodeRules,
 
     /**
      * The developer's process manager, written once: one handle(...) per event
-     * the DSL names, each a place for the next step. An event added later is
-     * an abstract method of the regenerated base, so the compiler says what is
-     * missing here instead of the step being silently absent.
+     * the DSL names, each an empty place for the next step. An event added
+     * later is an abstract method of the regenerated base, and the
+     * generated-file merge adds its empty handle(...) here - regenerated when
+     * untouched, merged into the developer's edits - so the build passes and
+     * the event does nothing until its step is written. Only a file the merge
+     * does not reach (KEPT, or an edited one under merge = false -
+     * SKIP(user-owned)) is missing it, and then fails to compile.
      */
     @Rule(value = "ddd-process-manager", target = "processManager", order = 10)
     void processManager(DomainSpec d) {
