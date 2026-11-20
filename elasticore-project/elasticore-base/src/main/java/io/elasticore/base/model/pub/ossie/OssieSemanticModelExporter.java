@@ -303,12 +303,8 @@ public final class OssieSemanticModelExporter {
         if (!pk.isEmpty())
             b.append("    primary_key: [").append(join(plain(pk), ", ")).append("]\n");
 
-        List<List<String>> unique = uniqueKeys(entity, all);
-        if (!unique.isEmpty()) {
-            b.append("    unique_keys:\n");
-            for (List<String> key : unique)
-                b.append("      - [").append(join(plain(key), ", ")).append("]\n");
-        }
+        // The unique keys come here, once the fields below have said which columns are left out.
+        int uniqueAt = b.length();
 
         String label = entity.getMetaInfo().getMetaAnnotationValue("label");
         String description = label != null && !label.trim().isEmpty() ? label.trim() : null;
@@ -356,6 +352,13 @@ public final class OssieSemanticModelExporter {
             } else if (target != null && isTable(target)) {
                 reference(fields, entity, f, target, all, hidden ? omitted : null, sensitiveColumns);
             }
+        }
+        List<List<String>> unique = withoutLeftOut(entity, uniqueKeys(entity, all), omitted);
+        if (!unique.isEmpty()) {
+            StringBuilder keys = new StringBuilder("    unique_keys:\n");
+            for (List<String> key : unique)
+                keys.append("      - [").append(join(plain(key), ", ")).append("]\n");
+            b.insert(uniqueAt, keys);
         }
         b.append("    fields:\n");
         for (String text : fields.values()) b.append(text);
@@ -583,6 +586,36 @@ public final class OssieSemanticModelExporter {
             }
         }
         return keys;
+    }
+
+    /**
+     * The unique keys without those that hold a column the field list left out (omitted): such a key
+     * is dropped as a whole, and said. It would name a column that is not a field, and the rest of it
+     * is another key, which is not unique (issue 245). Column names compare as the database's do,
+     * ignoring case.
+     */
+    private static List<List<String>> withoutLeftOut(Entity entity, List<List<String>> keys, List<String> omitted) {
+        if (omitted.isEmpty()) return keys;
+        Set<String> leftOut = new HashSet<String>();
+        for (String column : omitted) leftOut.add(column.toLowerCase(java.util.Locale.ROOT));
+        List<List<String>> out = new ArrayList<List<String>>();
+        for (List<String> key : keys) {
+            String hidden = null;
+            for (String column : key) {
+                if (leftOut.contains(column.toLowerCase(java.util.Locale.ROOT))) {
+                    hidden = column;
+                    break;
+                }
+            }
+            if (hidden == null) {
+                out.add(key);
+                continue;
+            }
+            ConsoleLog.printWarn("[ossie] " + entity.getIdentity().getName() + ": the unique key [" + join(key, ", ")
+                    + "] is not exported - it holds " + hidden + ", a column the export leaves out"
+                    + " (omitted_columns).");
+        }
+        return out;
     }
 
     /**
