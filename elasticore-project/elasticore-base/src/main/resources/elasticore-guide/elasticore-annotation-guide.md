@@ -140,6 +140,8 @@ Inherits a parent entity. Generates `extends ParentEntity`.
 User:
   meta: entity @extend(AuditEntity)
 ```
+A parent that is no Entity or DTO of any domain is a DSL warning (`unresolved @extend parent 'X' - no matching Entity or DTO found in any domain`, which `elcoreValidate -Pstrict` fails on), not an error:
+a class you wrote by hand can be the parent on purpose. Name it by its full class name (`com.acme.support.BaseRecord`), which is not looked up, as a domain-qualified name (`other:Parent`) is not - by its simple name it warns.
 
 ### @embeddable
 > **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for a value object that holds another value object, a relation or a collection (stops the build)

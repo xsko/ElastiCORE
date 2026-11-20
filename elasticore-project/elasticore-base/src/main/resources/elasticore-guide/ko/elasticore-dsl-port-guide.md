@@ -960,6 +960,39 @@ port:
 - `@client`: gRPC 클라이언트 코드 생성
 - Protocol Buffer 서비스 정의(.proto)가 자동 생성됨
 
+### gRPC 빌드 설정
+
+생성된 서버와 클라이언트는 `protoc` 가 `.proto` 로부터 만드는 클래스(`UserGrpcServiceGrpc`, 메시지들)를 씁니다.
+그래서 빌드에 protobuf Gradle 플러그인과 gRPC 라이브러리가 필요합니다 - 없으면 `compileJava` / `compileKotlin` 이 그 이름에서 실패합니다.
+`elcore3` 가 `.proto` 를 플러그인이 읽는 `src/main/proto` 에 쓰고, 스텁은 그 뒤에 생성됩니다.
+네임스페이스 `proto` (`namespace: proto: com.acme.integ.grpc`) 가 생성된 서버와 클라이언트의 패키지입니다.
+
+```gradle
+plugins {
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.25.1' }
+    plugins { grpc { artifact = 'io.grpc:protoc-gen-grpc-java:1.60.0' } }
+    generateProtoTasks { all()*.plugins { grpc {} } }
+}
+// The .proto is written by elcore3: generate the stubs after it.
+tasks.matching { it.name == 'generateProto' }.configureEach { dependsOn 'elcore3' }
+
+dependencies {
+    implementation 'io.grpc:grpc-protobuf:1.60.0'
+    implementation 'io.grpc:grpc-stub:1.60.0'
+    implementation 'com.google.protobuf:protobuf-java:3.25.1'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'   // javax.annotation.Generated in the generated stubs
+}
+```
+
+- 같은 블록이 Java 와 Kotlin 에 다 맞습니다 (`language = 'kotlin'`: Kotlin 서버·클라이언트가 Java 스텁을 씁니다).
+- 클라이언트는 `grpc.<service>.ip` (기본 `localhost`) 와 `grpc.<service>.port` (기본 `9090`) 를 읽습니다. 예: `grpc.userGrpcService.port: 9090`.
+- 이 설정은 생성된 코드를 컴파일합니다. 실행 시 클라이언트의 전송 계층과, 생성된 `...Provider`
+  (생성된 `ImplBase` 를 상속한 Spring `@Component`) 를 서비스하는 서버는 생성되지 않습니다 - 프로젝트에 맞게 고르세요.
+
 ---
 
 ## 5. 환경 설정

@@ -580,14 +580,18 @@ config:
 
 ```yaml
 config:
-  archTest: true        # test the hexagonal boundaries with ArchUnit (default: false)
+  archTest: true        # test the layer boundaries with ArchUnit (default: false)
 ```
 
 - It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
   It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
-- Rules: the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
+- Rules for `ddd` and `hexagonal` (the domain's rules include `ddd-aggregate`): the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
   the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
+- Rules for `layered` (any other selection): the services (`service`, `dto`) do not depend on the web (`control`) / persistence and the entities do not depend on
+  the services or the web - the DTOs (`dto`) and the outbound ports (`port`) are shared and allowed / (with `mapping: xml`) the entities do not know `jakarta.persistence` or `org.hibernate`.
+  The layered services call the repositories and the persistence helper directly, which the hexagon's rule forbids.
+  A layered project whose test an earlier version wrote with the hexagon's rules gets the layered ones by deleting `<Domain>ArchitectureTest` (move your own rules aside first).
 - It needs a test dependency: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - Use cases: block layer violations in the build without code review, convey the boundaries to a new team member as code
 
@@ -1197,6 +1201,7 @@ If you commit only the cache, after a pull the old local generated file looks li
 | The DSL also changed a line you edited | **Conflict** - leaves `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` in the file and the build fails. It keeps failing until you clean up the markers, and what you cleaned up becomes the base from then on |
 | You deleted the file | Generated again - the way to get it back as generated |
 | The DSL no longer produces it | If unedited, it is deleted; if edited, it is kept with a warning (from then on it is the developer's file). Even if unedited, a class that remaining sources still use (and the mapper XML with the same name) is kept and the file that uses it is reported (`still uses it - kept`) - it is deleted in the build after nothing uses it any more |
+| You changed `language` (java <-> kotlin) | The files of the old language go as above - an unedited one even while sources name its class, since the new language's file declares the same class. An edited one is kept with a warning that names that file: move what you wrote there and delete the old one (until then the build has the class twice) |
 | A different file where the cache has none | Not overwritten, reported (if the cache file is missing, the summary tells you to fetch it from git) |
 | A file generated with a first-line marker (older version, 2.x) | "Projects that had markers" below |
 

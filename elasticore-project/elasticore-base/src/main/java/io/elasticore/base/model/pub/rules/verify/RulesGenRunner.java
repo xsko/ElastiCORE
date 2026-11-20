@@ -605,6 +605,17 @@ public final class RulesGenRunner {
                 }
                 if (mybatisDomain == null) mybatisDomain = model.getInternalDomainName();
             }
+            // A Kotlin build reads the Kotlin key, or the server's one; a Java
+            // set named there writes Java into the .kt files - Lombok and all -
+            // which only the Kotlin compiler would find. The other way round a
+            // Kotlin shell says so itself (SourceCode.requireSyntax).
+            if (kotlin && !typescript) {
+                String refusal = javaRulesInKotlin(model);
+                if (refusal != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + refusal + " No source was written.");
+                    return 1;
+                }
+            }
             for (String m : modes) {
                 if (RulesConfig.persistenceNamed(m) == persistence) continue;
                 io.elasticore.base.util.ConsoleLog.storeLog(
@@ -2554,7 +2565,11 @@ public final class RulesGenRunner {
         return found;
     }
 
-    /** archTest: true - the hexagon's boundaries as an ArchUnit test, written once. */
+    /**
+     * archTest: true - the hexagon's boundaries as an ArchUnit test, written
+     * once; for a domain whose rules are the layered ones (no aggregate rules),
+     * the layers' rules, which its code holds.
+     */
     private void emitArchitectureTest(io.elasticore.base.model.pub.rules.DomainSpec domain, ECoreModel model) {
         if (typescript || !"true".equalsIgnoreCase(model.getConfig("archTest", "false"))) return;
         String pkg = ArchitectureTestSource.basePackage(model);
@@ -2564,7 +2579,8 @@ public final class RulesGenRunner {
                 ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, name, true)
                 : ArtifactTarget.of("java", "src/test/java", "java", pkg, name, true);
         String label = String.format("    %-12s %s", "archTest", out.relativePath());
-        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping()));
+        boolean layered = !selects(io.elasticore.base.model.pub.rules.AggregateBoundaries.class);
+        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping(), layered));
     }
 
 
@@ -2994,6 +3010,53 @@ public final class RulesGenRunner {
             return out;
         }
         return named;
+    }
+
+    /**
+     * Why a Kotlin build cannot generate a domain with the rules it names, or
+     * null when it can: a set or bundle written in Java, under the key the
+     * Kotlin run reads (publisher.rules.kt, else publisher.rules). Said with
+     * the Kotlin name to write instead, where there is one.
+     */
+    static String javaRulesInKotlin(ECoreModel model) {
+        String key = "publisher.rules.kt";
+        java.util.List<String> named = RulesConfig.configuredList(model.getConfig(key));
+        if (named == null) {
+            key = "publisher.rules";
+            named = RulesConfig.configuredList(model.getConfig(key));
+        }
+        String where = String.format("domain '%s' names", model.getInternalDomainName());
+        if (named == null) {
+            // The project's own list, which a domain that names none runs.
+            key = RulesConfig.PROP_RULES;
+            named = RulesConfig.configuredList(System.getProperty(key));
+            where = "the build names";
+        }
+        RuleCatalog catalog = RuleCatalog.standard();
+        String refusal = named == null ? null : javaRuleIn(catalog, named, where, key);
+        // And the rule sets the build adds to every domain (the plugin's rules list).
+        return refusal != null
+                ? refusal
+                : javaRuleIn(catalog, RulesConfig.addedRules(), "the build adds", RulesConfig.PROP_RULES_ADD);
+    }
+
+    /** The refusal for the first of the names that writes Java, or null. */
+    private static String javaRuleIn(RuleCatalog catalog, java.util.List<String> names, String where, String key) {
+        for (String rule : names) {
+            String set = RulesConfig.javaOnlySetOf(catalog, rule);
+            if (set == null) continue;
+            String kotlin = RulesConfig.kotlinCounterpartOf(rule);
+            return String.format(
+                    "%s %s in %s, which writes Java%s, but the build's language is"
+                            + " kotlin - %s, or leave %s out for the bundle the build's architecture names.",
+                    where,
+                    rule.trim(),
+                    key,
+                    set.equals(rule.trim()) ? "" : " (its set " + set + ")",
+                    kotlin != null ? "name " + kotlin + " instead" : "take it out",
+                    key);
+        }
+        return null;
     }
 
     /** What the root of a hierarchy cannot be generated as, said before its code is written. */
@@ -4837,8 +4900,14 @@ public final class RulesGenRunner {
                 if (neverEdited(st)) {
                     unedited.put(f, rel);
                 } else {
+                    String text = readLf(f);
+                    File twin = text == null ? null : twinOf(f, text);
                     String message = "[elcore3] " + rel + " was generated, the DSL no longer produces it,"
-                            + " and it has been edited - delete it, or move what you wrote.";
+                            + " and it has been edited - delete it, or move what you wrote."
+                            + (twin == null
+                                    ? ""
+                                    : " " + relative(twin) + " declares the same class now, so the"
+                                            + " build has it twice until this one goes.");
                     io.elasticore.base.util.ConsoleLog.printWarn(message);
                     notes.add(message);
                 }
@@ -4918,10 +4987,21 @@ public final class RulesGenRunner {
         }
         if (going.isEmpty()) return used;
         Map<File, String> sources = projectSources();
+        // A class this run wrote in the other language - the project changed
+        // it - is there whatever names it: the old file breaks nothing by
+        // going, and kept, the build has the class twice. Its twin names the
+        // class it declares, which counted as a use, so it stayed every run.
+        java.util.Set<File> twinned = new java.util.HashSet<File>();
+        for (File f : going) {
+            String text = sources.get(f);
+            if (text == null) text = readLf(f);
+            if (text != null && twinOf(f, text) != null) twinned.add(f);
+        }
         boolean changed = true;
         while (changed) {
             changed = false;
             for (File f : new ArrayList<File>(going)) {
+                if (twinned.contains(f)) continue;
                 String text = sources.get(f);
                 if (text == null) text = readLf(f);
                 if (text == null) continue;
@@ -4951,6 +5031,39 @@ public final class RulesGenRunner {
             if (user != null) byGiven.put(f, user);
         }
         return byGiven;
+    }
+
+    /**
+     * The file this run wrote that declares the class of a Java or Kotlin
+     * source in the other of the two languages - X.kt for X.java and the
+     * reverse, in the same package - or null. What a project whose language
+     * changed has in place of the old file.
+     */
+    File twinOf(File file, String text) {
+        String name = file.getName();
+        String other = name.endsWith(".java") ? ".kt" : name.endsWith(".kt") ? ".java" : null;
+        if (other == null) return null;
+        String cls = name.substring(0, name.lastIndexOf('.'));
+        String pkg = quotedPackageOf(text);
+        java.util.regex.Pattern declares = java.util.regex.Pattern.compile(
+                "\\b(?:class|interface|object|enum|record)\\s+" + java.util.regex.Pattern.quote(cls) + "\\b");
+        for (String path : produced) {
+            File twin = new File(path);
+            if (!twin.getName().equals(cls + other)) continue;
+            String written = preview != null ? preview.written().get(canonical(twin)) : null;
+            if (written == null) written = readLf(twin);
+            if (written == null) continue;
+            if (!pkg.equals(quotedPackageOf(written))) continue;
+            if (declares.matcher(withoutComments(written)).find()) return twin;
+        }
+        return null;
+    }
+
+    /** The package of a source, a Kotlin one's quoted segments (adapter.`in`.web) read as Java names them. */
+    private static String quotedPackageOf(String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.`]+)")
+                .matcher(text);
+        return m.find() ? m.group(1).replace("`", "") : "";
     }
 
     /**
@@ -5977,8 +6090,13 @@ public final class RulesGenRunner {
                 unedited.put(f, key);
                 continue;
             } else if (disk != null) {
+                File twin = twinOf(f, disk);
                 String message = "[elcore3] " + key + " was generated, the DSL no longer produces it,"
-                        + " and it has been edited - it is yours now; delete it, or move what you wrote.";
+                        + " and it has been edited - it is yours now; delete it, or move what you wrote."
+                        + (twin == null
+                                ? ""
+                                : " " + relative(twin) + " declares the same class now, so the"
+                                        + " build has it twice until this one goes.");
                 io.elasticore.base.util.ConsoleLog.printWarn(message);
                 notes.add(message);
             }

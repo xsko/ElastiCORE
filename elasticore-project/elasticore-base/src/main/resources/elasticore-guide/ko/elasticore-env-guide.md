@@ -580,14 +580,18 @@ config:
 
 ```yaml
 config:
-  archTest: true        # 헥사고날 경계를 ArchUnit 테스트로 (기본값: false)
+  archTest: true        # 계층 경계를 ArchUnit 테스트로 (기본값: false)
 ```
 
 - `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
   네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
-- 규칙: 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
+- `ddd`·`hexagonal` 의 규칙 (도메인의 규칙에 `ddd-aggregate` 가 있을 때): 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
   도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
+- `layered` 의 규칙 (그 밖의 선택): 서비스(`service`, `dto`)는 웹(`control`)에 의존하지 않음 / 영속성과 엔티티는 서비스나 웹에
+  의존하지 않음 - DTO(`dto`)와 아웃바운드 포트(`port`)는 함께 쓰는 것이라 허용 / (`mapping: xml` 이면) 엔티티는 `jakarta.persistence`·`org.hibernate` 를 모름.
+  layered 의 서비스는 리포지토리와 영속성 헬퍼를 직접 부르므로, 헥사고날의 규칙으로는 실패합니다.
+  이전 버전이 헥사고날 규칙으로 테스트를 써 둔 layered 프로젝트는 `<Domain>ArchitectureTest` 를 지우면 layered 규칙을 받습니다 (직접 쓴 규칙은 먼저 옮겨 두세요).
 - 테스트 의존성이 필요합니다: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - 사용 사례: 코드 리뷰 없이도 계층 위반을 빌드에서 차단, 팀 합류자에게 경계를 코드로 전달
 
@@ -1197,6 +1201,7 @@ DSL 이 뺀 엔드포인트(`@expose(methods)`, `@readonly`)를 아직 제공하
 | 고친 줄을 DSL 도 바꿈 | **충돌** - 파일에 `<<<<<<< yours` / `=======` / `>>>>>>> elasticore` 를 남기고 빌드 실패. 표시를 정리할 때까지 계속 실패하고, 정리한 내용이 그 뒤의 기준 |
 | 파일을 지움 | 다시 생성 - 생성된 그대로 다시 받는 방법 |
 | DSL 이 더 만들지 않음 | 고치지 않았으면 지우고, 고쳤으면 남기고 경고(그 뒤로 개발자 파일). 고치지 않았어도 남는 소스가 아직 쓰는 클래스(와 같은 이름의 매퍼 XML)는 남기고 쓰는 파일을 알림(`still uses it - kept`) - 쓰는 곳이 없어진 다음 빌드에서 지움 |
+| `language` 를 바꿈 (java <-> kotlin) | 이전 언어의 파일은 위와 같이 정리 - 새 언어의 파일이 같은 클래스를 선언하므로, 고치지 않은 파일은 소스가 그 클래스를 써도 지움. 고친 파일은 남기고 그 새 파일을 알리는 경고 - 고친 내용을 그리로 옮기고 이전 파일을 지움 (그때까지 빌드에는 같은 클래스가 둘) |
 | 캐시에 없는 자리에 다른 파일 | 덮어쓰지 않고 알림 (캐시 파일이 없으면 요약이 git 에서 가져오라고 함) |
 | 첫 줄 표시로 생성된 파일(이전 버전, 2.x) | 아래 "표시가 있던 프로젝트" |
 
