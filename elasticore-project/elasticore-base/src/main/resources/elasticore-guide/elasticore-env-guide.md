@@ -580,14 +580,17 @@ config:
 
 ```yaml
 config:
-  archTest: true        # test the hexagonal boundaries with ArchUnit (default: false)
+  archTest: true        # test the layer boundaries with ArchUnit (default: false)
 ```
 
 - It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
   It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
-- Rules: the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
+- Rules for `ddd` and `hexagonal` (the domain's rules include `ddd-aggregate`): the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
   the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
+- Rules for `layered` (any other selection): the services (`service`, `dto`) do not depend on the web (`control`) / persistence and the entities do not depend on
+  the services or the web - the DTOs (`dto`) and the outbound ports (`port`) are shared and allowed / (with `mapping: xml`) the entities do not know `jakarta.persistence` or `org.hibernate`.
+  The layered services call the repositories and the persistence helper directly, which the hexagon's rule forbids.
 - It needs a test dependency: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - Use cases: block layer violations in the build without code review, convey the boundaries to a new team member as code
 

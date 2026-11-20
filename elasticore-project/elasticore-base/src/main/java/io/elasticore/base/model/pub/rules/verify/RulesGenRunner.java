@@ -2565,7 +2565,11 @@ public final class RulesGenRunner {
         return found;
     }
 
-    /** archTest: true - the hexagon's boundaries as an ArchUnit test, written once. */
+    /**
+     * archTest: true - the hexagon's boundaries as an ArchUnit test, written
+     * once; for a domain whose rules are the layered ones (no aggregate rules),
+     * the layers' rules, which its code holds.
+     */
     private void emitArchitectureTest(io.elasticore.base.model.pub.rules.DomainSpec domain, ECoreModel model) {
         if (typescript || !"true".equalsIgnoreCase(model.getConfig("archTest", "false"))) return;
         String pkg = ArchitectureTestSource.basePackage(model);
@@ -2575,7 +2579,8 @@ public final class RulesGenRunner {
                 ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, name, true)
                 : ArtifactTarget.of("java", "src/test/java", "java", pkg, name, true);
         String label = String.format("    %-12s %s", "archTest", out.relativePath());
-        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping()));
+        boolean layered = !selects(io.elasticore.base.model.pub.rules.AggregateBoundaries.class);
+        write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping(), layered));
     }
 
 

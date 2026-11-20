@@ -580,14 +580,17 @@ config:
 
 ```yaml
 config:
-  archTest: true        # 헥사고날 경계를 ArchUnit 테스트로 (기본값: false)
+  archTest: true        # 계층 경계를 ArchUnit 테스트로 (기본값: false)
 ```
 
 - `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
   네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
-- 규칙: 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
+- `ddd`·`hexagonal` 의 규칙 (도메인의 규칙에 `ddd-aggregate` 가 있을 때): 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
   도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
+- `layered` 의 규칙 (그 밖의 선택): 서비스(`service`, `dto`)는 웹(`control`)에 의존하지 않음 / 영속성과 엔티티는 서비스나 웹에
+  의존하지 않음 - DTO(`dto`)와 아웃바운드 포트(`port`)는 함께 쓰는 것이라 허용 / (`mapping: xml` 이면) 엔티티는 `jakarta.persistence`·`org.hibernate` 를 모름.
+  layered 의 서비스는 리포지토리와 영속성 헬퍼를 직접 부르므로, 헥사고날의 규칙으로는 실패합니다.
 - 테스트 의존성이 필요합니다: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - 사용 사례: 코드 리뷰 없이도 계층 위반을 빌드에서 차단, 팀 합류자에게 경계를 코드로 전달
 

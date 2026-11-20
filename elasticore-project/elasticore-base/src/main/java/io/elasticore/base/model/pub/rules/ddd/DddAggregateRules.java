@@ -26,7 +26,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * behaviour on the aggregate, and the DSL declares data - so what is generated
  * is the boundary and a place to write the behaviour, not the behaviour.
  */
-public class DddAggregateRules implements CodeRules {
+public class DddAggregateRules implements CodeRules, io.elasticore.base.model.pub.rules.AggregateBoundaries {
 
     /** Only a root is fetched by identity, so only a root has a repository. */
     @Rule(value = "ddd-repository", target = "repository", order = 1)
