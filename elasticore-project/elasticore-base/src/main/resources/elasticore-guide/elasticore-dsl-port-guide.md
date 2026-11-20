@@ -960,6 +960,39 @@ port:
 - `@client`: generates gRPC client code
 - The Protocol Buffer service definition (.proto) is generated automatically
 
+### Build setup for gRPC
+
+The generated server and client name the classes `protoc` generates from the `.proto` (`UserGrpcServiceGrpc`, the messages),
+so the build needs the protobuf Gradle plugin and the gRPC libraries - without them `compileJava` / `compileKotlin` fails on those names.
+`elcore3` writes the `.proto` to `src/main/proto`, where the plugin reads it; the stubs are generated after it.
+The namespace `proto` (`namespace: proto: com.acme.integ.grpc`) is the package of the generated server and client.
+
+```gradle
+plugins {
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.25.1' }
+    plugins { grpc { artifact = 'io.grpc:protoc-gen-grpc-java:1.60.0' } }
+    generateProtoTasks { all()*.plugins { grpc {} } }
+}
+// The .proto is written by elcore3: generate the stubs after it.
+tasks.matching { it.name == 'generateProto' }.configureEach { dependsOn 'elcore3' }
+
+dependencies {
+    implementation 'io.grpc:grpc-protobuf:1.60.0'
+    implementation 'io.grpc:grpc-stub:1.60.0'
+    implementation 'com.google.protobuf:protobuf-java:3.25.1'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'   // javax.annotation.Generated in the generated stubs
+}
+```
+
+- The same block works for Java and Kotlin (`language = 'kotlin'`: the Kotlin server and client use the Java stubs).
+- The client reads `grpc.<service>.ip` (default `localhost`) and `grpc.<service>.port` (default `9090`), e.g. `grpc.userGrpcService.port: 9090`.
+- This setup compiles the generated code. A transport for the client at runtime and a server that serves the generated `...Provider`
+  (a Spring `@Component` extending the generated `ImplBase`) are not generated - choose them for your project.
+
 ---
 
 ## 5. Environment setup
