@@ -256,6 +256,62 @@ public final class RulesConfig {
         }
     }
 
+    /** The bundles written in Java: every one but the Kotlin and TypeScript ones. */
+    private static final String[] JAVA_BUNDLES = {
+        DEFAULT_BUNDLE,
+        DEFAULT_BUNDLE_V3,
+        "ddd-springboot",
+        "hexagonal-springboot",
+        MYBATIS_BUNDLE,
+        MYBATIS_DDD_BUNDLE,
+        MYBATIS_HEXAGONAL_BUNDLE,
+        MONGO_BUNDLE
+    };
+
+    /** The Kotlin bundles. */
+    private static final String[] KOTLIN_BUNDLES = {DEFAULT_BUNDLE_KT, "ddd-springboot-kt", "hexagonal-springboot-kt"};
+
+    /**
+     * The rule set of a name (a set or a bundle) that writes Java and only
+     * Java, or null when it has none - a Kotlin bundle, a language-neutral set
+     * (ddd-aggregate, ossie-export) or a project's own class.
+     *
+     * A set the Java bundles hold and the Kotlin ones do not is Java's: a
+     * file shell, a Lombok value object. Asked of the bundles rather than
+     * listed, so a set joining them is placed by where it is put. The two
+     * Java shells no bundle names are said by name.
+     */
+    public static String javaOnlySetOf(RuleCatalog catalog, String name) {
+        java.util.Set<String> kotlinSets = new java.util.HashSet<String>();
+        for (String b : KOTLIN_BUNDLES) kotlinSets.addAll(catalog.setNamesOf(b));
+        java.util.Set<String> javaSets = new java.util.LinkedHashSet<String>();
+        for (String b : JAVA_BUNDLES) javaSets.addAll(catalog.setNamesOf(b));
+        javaSets.add("jpa-identity");
+        javaSets.add("jpa-service-compat");
+        javaSets.removeAll(kotlinSets);
+        for (String set : catalog.setNamesOf(name.trim())) {
+            if (javaSets.contains(set)) return set;
+        }
+        return null;
+    }
+
+    /** The Kotlin name of a Java bundle or set, or null when it has none. */
+    public static String kotlinCounterpartOf(String name) {
+        switch (name.trim()) {
+            case DEFAULT_BUNDLE:
+            case DEFAULT_BUNDLE_V3:
+                return DEFAULT_BUNDLE_KT;
+            case "ddd-springboot":
+                return "ddd-springboot-kt";
+            case "hexagonal-springboot":
+                return "hexagonal-springboot-kt";
+            case "ddd-value-object":
+                return "ddd-value-object-kt";
+            default:
+                return null;
+        }
+    }
+
     public static final String PROP_ARCHITECTURE = "elasticore.architecture";
     public static final String PROP_LANGUAGE = "elasticore.language";
 

@@ -605,6 +605,17 @@ public final class RulesGenRunner {
                 }
                 if (mybatisDomain == null) mybatisDomain = model.getInternalDomainName();
             }
+            // A Kotlin build reads the Kotlin key, or the server's one; a Java
+            // set named there writes Java into the .kt files - Lombok and all -
+            // which only the Kotlin compiler would find. The other way round a
+            // Kotlin shell says so itself (SourceCode.requireSyntax).
+            if (kotlin && !typescript) {
+                String refusal = javaRulesInKotlin(model);
+                if (refusal != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + refusal + " No source was written.");
+                    return 1;
+                }
+            }
             for (String m : modes) {
                 if (RulesConfig.persistenceNamed(m) == persistence) continue;
                 io.elasticore.base.util.ConsoleLog.storeLog(
@@ -2994,6 +3005,38 @@ public final class RulesGenRunner {
             return out;
         }
         return named;
+    }
+
+    /**
+     * Why a Kotlin build cannot generate a domain with the rules it names, or
+     * null when it can: a set or bundle written in Java, under the key the
+     * Kotlin run reads (publisher.rules.kt, else publisher.rules). Said with
+     * the Kotlin name to write instead, where there is one.
+     */
+    static String javaRulesInKotlin(ECoreModel model) {
+        String key = "publisher.rules.kt";
+        java.util.List<String> named = RulesConfig.configuredList(model.getConfig(key));
+        if (named == null) {
+            key = "publisher.rules";
+            named = RulesConfig.configuredList(model.getConfig(key));
+        }
+        if (named == null) return null;
+        RuleCatalog catalog = RuleCatalog.standard();
+        for (String rule : named) {
+            String set = RulesConfig.javaOnlySetOf(catalog, rule);
+            if (set == null) continue;
+            String kotlin = RulesConfig.kotlinCounterpartOf(rule);
+            return String.format(
+                    "domain '%s' names %s in %s, which writes Java%s, but the build's language is"
+                            + " kotlin - %s, or leave %s out for the bundle the build's architecture names.",
+                    model.getInternalDomainName(),
+                    rule.trim(),
+                    key,
+                    set.equals(rule.trim()) ? "" : " (its set " + set + ")",
+                    kotlin != null ? "name " + kotlin + " instead" : "take it out",
+                    key);
+        }
+        return null;
     }
 
     /** What the root of a hierarchy cannot be generated as, said before its code is written. */
