@@ -317,9 +317,15 @@ public class RuntimePackagesGenerationTest {
                 String rel = root.relativize(file).toString().replace('\\', '/');
                 boolean dsl = rel.startsWith("src/main/resources/blueprint/petstore/");
                 boolean guide = rel.startsWith("src/main/resources/blueprint/") && rel.endsWith(".md");
-                // The record of the mapping names the runtime's packages: it is the mapping, no output.
-                boolean record = rel.equals(".elasticore/runtime-packages");
-                if (!dsl && !guide && !record) {
+                if (rel.equals(GeneratedCache.DIR + "/" + GeneratedCache.NAME)) {
+                    // The cache: its texts, not the record of the mapping each was renamed with.
+                    StringBuilder texts = new StringBuilder();
+                    for (Map.Entry<String, String> en :
+                            GeneratedCache.read(Files.readAllBytes(file)).entrySet()) {
+                        if (!en.getKey().equals(".runtime-packages")) texts.append(en.getValue());
+                    }
+                    files.put(rel, texts.toString());
+                } else if (!dsl && !guide) {
                     String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8).replace("\r\n", "\n");
                     // The stamp's time differs on every run by design.
                     if (text.startsWith("//ecd:")) text = text.substring(text.indexOf('\n') + 1);

@@ -1779,12 +1779,16 @@ elasticore {
   써서 남겨 둔 파일 - 은 바꾸지 않습니다.
   실행이 그 파일을 알려 주고(아래), import 는 직접 고치세요. 이름만 바뀐 파일은
   `RENAMED(your edits kept; ...)`, 개발자의 것으로 남긴 파일은 `KEPT(...; the runtime's packages renamed)` 로 알립니다.
-- **바꾸거나 없앨 때.** 병합하는 실행은 이름을 바꾼 매핑을 캐시 옆 `.elasticore/runtime-packages` 에 남깁니다 - 캐시와
-  함께 커밋하세요. 다음 실행에서 매핑이 다르면, 병합되는 파일의 베이스와 파일을 남긴 매핑에서 되돌린 뒤 새 매핑으로 바꿉니다
+- **바꾸거나 없앨 때.** `.elasticore/cache` 는 텍스트마다 그것을 바꾼 매핑을 같은 저장에서 함께 남깁니다. 그래서 한
+  도메인만 생성한 실행(`-Pdomain`), 중간에 멈춘 실행, 모델 검사가 실패한 실행도 모든 텍스트를 제 매핑과 짝지어 둡니다.
+  매핑이 다르면, 병합되는 파일의 베이스와 파일을 그 파일에 남은 매핑에서 되돌린 뒤 새 매핑으로 바꿉니다
   (설정을 없애면 `io.elasticore` 로 되돌립니다). 그래서 수정은 남고 진짜 충돌만 남으며, 실행은
   `changed since the last run` 이라고 알립니다. 실행이 쓰지 않는 파일이 이전 매핑의 패키지를 아직 부르면 알려 줍니다.
-  두 키가 한 값을 가리키거나 한 값이 다른 값 아래에 있는 이전 매핑은 이름으로 되돌릴 수 없어,
-  그렇다고 알리고 새 매핑만 씁니다.
+  이름으로 되돌릴 수 없는 이전 매핑(두 키가 한 값, 한 값이 다른 값 아래), 또는 그 키나 값이 프로젝트의 이름을 바꿀
+  이전 매핑은 그렇다고 알리고, 그 파일들은 새 매핑만으로 바꿉니다.
+  설정을 없애면 사본에 직접 더한 클래스(`com.acme.rt.validation.MyNotFound`)도 `io.elasticore` 로 되돌아가는데,
+  거기에는 그런 클래스가 없습니다: 그 참조는 직접 고치세요. 설정 없이 모든 도메인을 생성한 실행은
+  `build/elasticore/runtime-classes.txt` 를 지우며, 설정이 없는 캐시는 매핑을 남기지 않습니다.
 - Kotlin 에 `mapping: xml`: 도메인 클래스에 매핑된 `@com.test.springboot.entity.PersistentModel` 이 붙으므로, all-open 과
   no-arg 플러그인도 그것을 적습니다: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, `noArg` 도
   같습니다(`elasticore-env-guide.md`, `mapping: xml`).

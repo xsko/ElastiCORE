@@ -282,7 +282,7 @@ public class RuntimePackagesProjectTest {
         assertTrue(generate(A, "hexagonal", "java").startsWith("exit 0\n"));
         assertEquals(
                 "io.elasticore.springboot3=com.a.rt",
-                read(new File(project, ".elasticore/runtime-packages")).trim());
+                recordedMappingOf("src/main/java/com/acme/shop/adapter/in/web/ShopApiErrors.java"));
         File errors = editNextToTheInlineName("com.a.rt");
         File controller = find(project, "/StockController.java");
         String pkg = read(controller).replaceAll("(?s)^.*?package ([\\w.]+);.*$", "$1");
@@ -303,9 +303,11 @@ public class RuntimePackagesProjectTest {
         String key = "src/main/java/com/acme/shop/adapter/in/web/ShopApiErrors.java";
         String cachedBase = GeneratedCache.load(project).get(key);
         assertTrue(cachedBase.contains("com.b.rt.") && !cachedBase.contains("com.a.rt"), cachedBase);
+        assertEquals("io.elasticore.springboot3=com.b.rt", recordedMappingOf(key));
+        // The kept controller keeps its record with its text: A, as the file on disk.
         assertEquals(
-                "io.elasticore.springboot3=com.b.rt",
-                read(new File(project, ".elasticore/runtime-packages")).trim());
+                "io.elasticore.springboot3=com.a.rt",
+                recordedMappingOf("src/main/java/com/acme/shop/adapter/in/web/StockController.java"));
         // The kept controller is not written: it names A still, and the run says so.
         assertTrue(read(controller).contains("com.a.rt."), "the kept controller was rewritten");
         assertTrue(
@@ -332,7 +334,20 @@ public class RuntimePackagesProjectTest {
         for (Map.Entry<String, String> en : snapshot(project).entrySet()) {
             assertFalse(en.getValue().contains("com.a.rt"), en.getKey());
         }
-        assertFalse(new File(project, ".elasticore/runtime-packages").exists(), "the record of the mapping is left");
+        assertEquals("", recordedMappingOf("src/main/java/com/acme/shop/adapter/in/web/ShopApiErrors.java"));
+        assertFalse(
+                new File(project, RuntimePackages.REPORT).exists(), "the class list of the removed setting is left");
+    }
+
+    /** The mapping the cache records for a file's text; empty: none. */
+    private String recordedMappingOf(String key) throws IOException {
+        String said = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()))
+                .get(".runtime-packages");
+        if (said == null) return "";
+        for (String line : said.split("\n", -1)) {
+            if (line.startsWith(key + "\t")) return line.substring(key.length() + 1);
+        }
+        return "";
     }
 
     /** A real conflict is a conflict with the setting on too: marked, and the build fails. */

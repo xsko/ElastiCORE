@@ -31,15 +31,39 @@ final class GeneratedCache {
     static final String DIR = ".elasticore";
     static final String NAME = "cache";
 
+    /**
+     * The entry that says, for each file, the runtimePackages mapping its text
+     * was renamed with: one line "path TAB from=to,..." per file that had one.
+     * Written in the same save as the texts, so a base is never paired with
+     * another mapping than its own - whatever part of a project a run wrote,
+     * or wherever it stopped. Absent when no file had a mapping: the cache of
+     * a project without the setting is as it always was. No generated file
+     * is named so: they are all under src/.
+     */
+    static final String MAPPINGS = ".runtime-packages";
+
     private final File file;
     private final TreeMap<String, String> entries;
+    private final TreeMap<String, String> mappings;
     private final boolean existed;
     private boolean changed;
 
+    /** The mapping of this run, recorded with every text put. Empty: none. */
+    private String putMapping = "";
+
     private GeneratedCache(File file, TreeMap<String, String> entries, boolean existed) {
         this.file = file;
-        this.entries = entries;
         this.existed = existed;
+        this.mappings = new TreeMap<String, String>();
+        String said = entries.remove(MAPPINGS);
+        if (said != null) {
+            for (String line : said.split("\n", -1)) {
+                int tab = line.indexOf('\t');
+                if (tab > 0)
+                    mappings.put(line.substring(0, tab), line.substring(tab + 1).trim());
+            }
+        }
+        this.entries = entries;
     }
 
     /** The project's cache, empty when it has none yet; an unreadable one throws. */
@@ -51,6 +75,32 @@ final class GeneratedCache {
         // cache deleted from beside them was there before.
         boolean existed = file.isFile() || new File(file.getParentFile(), ".gitattributes").isFile();
         return new GeneratedCache(file, entries, existed);
+    }
+
+    /** The mapping this run's texts are renamed with (RuntimePackages.spec()), recorded with each put. */
+    void putMapping(String spec) {
+        this.putMapping = spec == null ? "" : spec.trim();
+    }
+
+    /** The mapping the cached text of a file was renamed with, as recorded; empty: none, or no such file. */
+    String mappingOf(String path) {
+        String m = entries.containsKey(path) ? mappings.get(path) : null;
+        return m == null ? "" : m;
+    }
+
+    /** Every mapping a cached text was renamed with, as recorded - not the empty one. */
+    Set<String> mappingsHeld() {
+        Set<String> held = new java.util.TreeSet<String>();
+        for (Map.Entry<String, String> en : mappings.entrySet()) {
+            if (entries.containsKey(en.getKey()) && !en.getValue().isEmpty()) held.add(en.getValue());
+        }
+        return held;
+    }
+
+    /** For a test: the recorded mapping of a file, as a hand-edited cache would say it. */
+    void recordMapping(String path, String spec) {
+        mappings.put(path, spec);
+        changed = true;
     }
 
     File file() {
@@ -74,10 +124,13 @@ final class GeneratedCache {
     void put(String path, String content) {
         String old = entries.put(path, content);
         if (!content.equals(old)) changed = true;
+        String was = putMapping.isEmpty() ? mappings.remove(path) : mappings.put(path, putMapping);
+        if (!putMapping.equals(was == null ? "" : was)) changed = true;
     }
 
     void remove(String path) {
         if (entries.remove(path) != null) changed = true;
+        mappings.remove(path);
     }
 
     Set<String> paths() {
@@ -99,7 +152,15 @@ final class GeneratedCache {
             Files.write(attributes.toPath(), (NAME + " binary\n").getBytes(StandardCharsets.UTF_8));
         }
         File tmp = new File(dir, NAME + ".tmp");
-        Files.write(tmp.toPath(), zip(entries));
+        TreeMap<String, String> all = new TreeMap<String, String>(entries);
+        StringBuilder said = new StringBuilder();
+        for (Map.Entry<String, String> en : mappings.entrySet()) {
+            if (entries.containsKey(en.getKey()) && !en.getValue().isEmpty()) {
+                said.append(en.getKey()).append('\t').append(en.getValue()).append('\n');
+            }
+        }
+        if (said.length() > 0) all.put(MAPPINGS, said.toString());
+        Files.write(tmp.toPath(), zip(all));
         try {
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (java.nio.file.AtomicMoveNotSupportedException e) {
