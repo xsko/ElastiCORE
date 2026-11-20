@@ -40,9 +40,15 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * </pre>
  *
  * The rule itself is not generated: the base declares the method abstract,
- * so a command added to the DSL and not yet written is a compile error rather
- * than a gap found in production. The behaviour class gets a stub that throws
- * the first time it is written, for the same reason the factory's does.
+ * and the behaviour class gets a stub that throws (Java
+ * UnsupportedOperationException, Kotlin TODO) - one that quietly did nothing
+ * would reach production. A command added to the DSL later gets the same
+ * stub (unless states: writes its move, DddStateRules): the generated-file
+ * merge adds it to the behaviour class, regenerated when untouched and
+ * merged into the developer's edits, so the build passes and the command
+ * answers with the stub's error until its rule is written. Only a class the
+ * merge does not reach (KEPT, or an edited one under merge = false -
+ * SKIP(user-owned)) is missing the method, and then fails to compile.
  *
  * A command needs a class to be written in, so it is for a root the
  * behaviour rules split - which, with these rule sets, is every root that is
@@ -92,9 +98,10 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
     }
 
     /**
-     * The place to keep it, written once with the behaviour class. A stub
-     * that throws: one that quietly did nothing would reach production.
-     * After the class shell (10).
+     * The place to keep it, written with the behaviour class - and, for a
+     * command added later, added to it by the generated-file merge (see the
+     * class comment). A stub that throws: one that quietly did nothing would
+     * reach production. After the class shell (10).
      */
     @Rule(value = "ddd-command-stub", target = "behavior", order = 20)
     void stubs(EntitySpec e) {

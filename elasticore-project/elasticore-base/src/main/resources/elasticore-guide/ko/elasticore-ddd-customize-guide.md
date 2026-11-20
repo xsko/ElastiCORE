@@ -1076,7 +1076,7 @@ ${entryList}
 | 내 파일(`SalesOrder.java`)에 반영이 안 된다 | 빌드 로그에 `KEPT`·`SKIP`으로 남은 개발자 파일, 또는 표시 줄 없이 복사한 파일 | 생성기 알림대로 직접 붙이기 (5장) |
 | 생성된 파일에 빈 줄이 생기고 값이 없다 | 채우지 않은 `${빈칸}` — 오류가 아니라 빈 줄이 됨 | 9.1처럼 `code.unfilledSlots()`로 어느 빈칸인지 확인 (대개 이름 오타) |
 | `env.yml`에 `rules:`를 쓰니 헥사고날 파일이 사라졌다 | `env.yml`의 `rules`는 번들을 **대체** | 빌드의 `rules = [...]`를 쓰거나 번들 이름도 함께 적기 |
-| TypeScript 클라이언트(`elcore3ts`)에 우리 규칙이 안 들어간다 | 의도된 동작. 더한 규칙은 서버(Java·Kotlin)에만 적용 | TypeScript용은 따로 만듭니다: TypeScript를 쓰는 규칙과 `elasticore-template/ts/` 스켈레톤을 만들고 `env.yml`의 `publisher.rules` 의 `ts:` 아래에 `ts-model`과 함께 적기 - Kotlin 빌드에서만 (`elasticore-rule-guide.md` "언어별 규칙 선택") |
+| TypeScript 클라이언트(`elcore3ts`)에 우리 규칙이 안 들어간다 | 의도된 동작. 더한 규칙은 서버(Java·Kotlin)에만 적용 | TypeScript용은 따로 만듭니다: TypeScript를 쓰는 규칙과 `elasticore-template/ts/` 스켈레톤을 만들고 `env.yml`의 `publisher.rules` 의 `ts:` 아래에 `ts-model`과 함께 적기 - Java 빌드와 Kotlin 빌드 모두; 맵에 자기 키가 없는 실행(Java 빌드의 `elcore3`)은 기본값을 실행 (`elasticore-rule-guide.md` "언어별 규칙 선택") |
 | Outbox 메시지가 나가지 않는다 | `@EnableScheduling` 없음, 또는 `OutboxPublisher` 빈 없음 | 6.8 |
 | 규칙을 고쳤는데 결과가 그대로 | 생성기 것이 아닌 파일이거나 손으로 고친 파일 | 생성 로그의 `SKIP(...)` 이유 확인 |
 
