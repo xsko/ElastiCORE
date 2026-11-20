@@ -541,6 +541,66 @@ public final class RulesConfig {
         return out.isEmpty() ? null : out;
     }
 
+    /**
+     * The keys a publisher.rules map is read by: kt by the elcore3 of a
+     * Kotlin build, ts by elcore3ts. Java has none - its list is the plain
+     * publisher.rules: [...].
+     */
+    public static final List<String> RULES_KEYS =
+            java.util.Collections.unmodifiableList(java.util.Arrays.asList("kt", "ts"));
+
+    /**
+     * The rule list a domain's env.yml holds at this key (publisher.rules,
+     * publisher.rules.kt, publisher.rules.ts), or null when it holds none.
+     *
+     * publisher.rules is a list, or a map of the per-language lists (kt:,
+     * ts:). Read as text the map came back as "{ts=[ts-model]}", which named
+     * a rule set that does not exist and stopped the run. A map is not a
+     * list: a run whose own key the map does not hold reads nothing, as if
+     * the domain named no rules, and takes its default.
+     */
+    public static List<String> domainList(io.elasticore.base.model.ECoreModel model, String key) {
+        if (model == null) return null;
+        if (configValue(model.getConfigMap(), key) instanceof java.util.Map) return null;
+        return configuredList(model.getConfig(key));
+    }
+
+    /**
+     * The warning for the keys of a domain's publisher.rules map that no run
+     * reads (java:, a typo such as kts:), or null. Said, not refused: the run
+     * goes on as if the key were not there.
+     */
+    public static String unreadRulesKeys(io.elasticore.base.model.ECoreModel model) {
+        if (model == null) return null;
+        Object rules = configValue(model.getConfigMap(), "publisher.rules");
+        if (!(rules instanceof java.util.Map)) return null;
+        List<String> unread = new ArrayList<String>();
+        for (Object key : ((java.util.Map<?, ?>) rules).keySet()) {
+            String name = String.valueOf(key);
+            if (!RULES_KEYS.contains(name)) unread.add(name);
+        }
+        if (unread.isEmpty()) return null;
+        return String.format(
+                "[%s] publisher.rules has a key no run reads: %s - the keys are kt (a Kotlin build's"
+                        + " elcore3) and ts (elcore3ts). A run whose key the map does not hold takes its default"
+                        + " rules; a Java build names its own in a list, publisher.rules: [...].",
+                model.getInternalDomainName(), String.join(", ", unread));
+    }
+
+    /** The value at a dotted path of a config map, as YAML parsed it, or null. */
+    private static Object configValue(java.util.Map<String, Object> config, String key) {
+        Object value = config;
+        int from = 0;
+        while (true) {
+            int dot = key.indexOf('.', from);
+            String part = dot < 0 ? key.substring(from) : key.substring(from, dot);
+            if (!(value instanceof java.util.Map)) return null;
+            value = ((java.util.Map<?, ?>) value).get(part);
+            if (dot < 0) return value;
+            from = dot + 1;
+        }
+    }
+
     /** Domain rules win; otherwise the project property; otherwise the default bundle. */
     static String[] resolveRules(List<String> domainRules, String defaultBundle) {
         if (domainRules != null && !domainRules.isEmpty()) {

@@ -1235,8 +1235,8 @@ they use the same key. TypeScript uses **its own key**, because its output is a 
 | Key | Applies to |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin - in a Kotlin build only, see below |
-| `publisher.rules.ts` | TypeScript - in a Kotlin build only, see below |
+| `publisher.rules.kt` | Kotlin (`elcore3` of a Kotlin build) |
+| `publisher.rules.ts` | TypeScript (`elcore3ts`), in a Java or a Kotlin build |
 
 If you write a Kotlin bundle in `publisher.rules`, TypeScript generation inherits it and
 Kotlin rules end up in `.ts` files - so TypeScript does not inherit.
@@ -1251,10 +1251,23 @@ so it cannot hold the server's list beside them. The Kotlin server's list goes u
         ts: [ts-model]                           # elcore3ts
 ```
 
-- A run that finds no key of its own in the map reads the map as a list and stops: the `elcore3` of a Java build
-  (Java has no key there), or of a Kotlin build whose map holds only `ts:`, fails on the map's text as a rule name -
-  `Unknown rule set '{ts=[ts-model]}'` for a map holding only `ts: [ts-model]`. So a Java build cannot choose its TypeScript rules in `env.yml`; its
-  `elcore3ts` runs `ts-model`.
+A run that finds no key of its own in the map runs as if `publisher.rules` were not written: the default of its
+architecture and language. Java has no key of its own, so a Java build chooses its TypeScript rules with `ts:` alone,
+and its `elcore3` runs the Java default:
+
+```yaml
+    publisher:
+      rules:
+        ts: [ts-model]                           # elcore3ts; elcore3 (Java) runs its default
+```
+
+- The same for a Kotlin build whose map holds only `ts:` (its `elcore3` runs the Kotlin default) and for
+  `elcore3ts` with a map holding only `kt:` (it runs `ts-model`).
+- A Java build cannot name its own server list and `ts:` together in `env.yml`: the server's list is a list, and a
+  map has no Java key.
+- A key no run reads (`java:`, a typo such as `kts:`) is left out with a DSL warning naming the keys that are read:
+  `publisher.rules has a key no run reads: java - the keys are kt (a Kotlin build's elcore3) and ts (elcore3ts)`.
+- A Java bundle under `kt:` stops a Kotlin build, as in the list (see "A wrong combination fails" above).
 - Other spellings are not read, and nothing warns: a quoted `"rules.kt":` beside `rules:` under `publisher:`, or a
   `"publisher.rules.kt":` key under `config:`. `-PlistRules` shows the list a run took.
 

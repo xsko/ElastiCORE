@@ -114,6 +114,16 @@ public final class OssieSemanticModelExporter {
      * reads, from the same keys every other rule selection uses.
      */
     public static boolean requested(List<ECoreModel> models) {
+        return requested(models, false);
+    }
+
+    /**
+     * As above, for a run of a Kotlin build or not: the domain's list is the
+     * one that run takes - publisher.rules.kt in a Kotlin build, else the
+     * publisher.rules list. A publisher.rules map is never read as a list
+     * (RulesConfig.domainList).
+     */
+    public static boolean requested(List<ECoreModel> models, boolean kotlin) {
         String property = System.getProperty("elasticore.publisher.rules");
         if (property != null && property.contains(RULE_SET)) return true;
         // The build's rules list (elasticore { rules = ['ossie-export'] }).
@@ -121,7 +131,12 @@ public final class OssieSemanticModelExporter {
 
         if (models == null) return false;
         for (ECoreModel model : models) {
-            String declared = model.getConfig("publisher.rules");
+            List<String> declared = kotlin
+                    ? io.elasticore.base.model.pub.rules.RulesConfig.domainList(model, "publisher.rules.kt")
+                    : null;
+            if (declared == null) {
+                declared = io.elasticore.base.model.pub.rules.RulesConfig.domainList(model, "publisher.rules");
+            }
             if (declared != null && declared.contains(RULE_SET)) return true;
         }
         return false;

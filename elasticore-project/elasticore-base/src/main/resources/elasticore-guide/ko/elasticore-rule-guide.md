@@ -1235,8 +1235,8 @@ Kotlin 빌드에서 도메인이 Java 번들이나 Java 전용 세트(`jpa-sprin
 | 키 | 적용 대상 |
 |---|---|
 | `publisher.rules` | Java, Kotlin |
-| `publisher.rules.kt` | Kotlin - Kotlin 빌드에서만, 아래 참고 |
-| `publisher.rules.ts` | TypeScript - Kotlin 빌드에서만, 아래 참고 |
+| `publisher.rules.kt` | Kotlin (Kotlin 빌드의 `elcore3`) |
+| `publisher.rules.ts` | TypeScript (`elcore3ts`), Java 빌드와 Kotlin 빌드 모두 |
 
 `publisher.rules`에 Kotlin 번들을 적어두면 TypeScript 생성이 그걸 물려받아
 `.ts` 파일에 Kotlin 규칙이 들어갑니다 — 그래서 TypeScript는 물려받지 않습니다.
@@ -1251,10 +1251,23 @@ Kotlin 빌드에서 도메인이 Java 번들이나 Java 전용 세트(`jpa-sprin
         ts: [ts-model]                           # elcore3ts
 ```
 
-- 맵에서 자기 키를 찾지 못한 실행은 맵을 목록으로 읽고 멈춥니다: Java 빌드의 `elcore3`(Java 는 거기에 키가 없음),
-  또는 맵에 `ts:` 만 있는 Kotlin 빌드의 `elcore3` 가 맵의 글자를 규칙 이름으로 읽어 실패합니다 -
-  `ts: [ts-model]` 만 있는 맵이면 `Unknown rule set '{ts=[ts-model]}'`. 그래서 Java 빌드는 TypeScript 규칙을 `env.yml` 에서 고를 수 없고,
-  그 `elcore3ts` 는 `ts-model` 을 실행합니다.
+맵에서 자기 키를 찾지 못한 실행은 `publisher.rules` 를 적지 않은 것처럼 실행됩니다: 그 아키텍처와 언어의 기본값.
+Java 는 자기 키가 없으므로, Java 빌드는 `ts:` 만 적어 TypeScript 규칙을 고르고,
+그 `elcore3` 는 Java 기본값을 실행합니다:
+
+```yaml
+    publisher:
+      rules:
+        ts: [ts-model]                           # elcore3ts; elcore3 (Java) runs its default
+```
+
+- 맵에 `ts:` 만 있는 Kotlin 빌드도 같습니다(그 `elcore3` 는 Kotlin 기본값을 실행). 맵에 `kt:` 만 있으면
+  `elcore3ts` 는 `ts-model` 을 실행합니다.
+- Java 빌드는 자기 서버 목록과 `ts:` 를 `env.yml` 에 함께 적을 수 없습니다: 서버의 목록은 목록이고,
+  맵에는 Java 키가 없습니다.
+- 어떤 실행도 읽지 않는 키(`java:`, `kts:` 같은 오타)는 빠지고, 읽히는 키를 알려 주는 DSL 경고가 나옵니다:
+  `publisher.rules has a key no run reads: java - the keys are kt (a Kotlin build's elcore3) and ts (elcore3ts)`.
+- `kt:` 아래의 Java 번들은 목록에서와 같이 Kotlin 빌드를 멈춥니다(위의 "잘못 조합하면 실패합니다" 참고).
 - 다른 표기는 읽히지 않고, 경고도 없습니다: `publisher:` 아래 `rules:` 옆의 따옴표 친 `"rules.kt":`, 또는
   `config:` 아래의 `"publisher.rules.kt":` 키. 실행이 어떤 목록을 썼는지는 `-PlistRules` 가 보여 줍니다.
 
