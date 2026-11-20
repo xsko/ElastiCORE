@@ -1222,6 +1222,8 @@ c.requireSyntax(Syntax.KOTLIN, "kt-dto-file");
 ```
 
 어긋나면 어느 규칙이 어느 언어를 쓰려 했는지와 함께 그 자리에서 멈춥니다.
+Kotlin 빌드에서 도메인이 Java 번들이나 Java 전용 세트(`jpa-springboot-v3`, `ddd-springboot`, `ddd-value-object` ...)를 적으면 파일을 하나도 쓰기 전에 멈추고,
+대신 적을 Kotlin 이름(`jpa-springboot-kt`, `ddd-springboot-kt`, `ddd-value-object-kt`)을 알려 줍니다 - 또는 `publisher.rules` 를 빼세요.
 
 ### 언어별 규칙 선택
 

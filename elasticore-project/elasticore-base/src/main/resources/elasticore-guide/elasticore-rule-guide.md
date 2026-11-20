@@ -1222,6 +1222,8 @@ c.requireSyntax(Syntax.KOTLIN, "kt-dto-file");
 ```
 
 If it does not match, it stops on the spot, saying which rule tried to use which language.
+A Kotlin build whose domain names a Java bundle or a Java-only set (`jpa-springboot-v3`, `ddd-springboot`, `ddd-value-object` ...) stops before any file is written,
+with the Kotlin name to write instead (`jpa-springboot-kt`, `ddd-springboot-kt`, `ddd-value-object-kt`) - or leave `publisher.rules` out.
 
 ### Choosing rules per language
 
