@@ -100,6 +100,33 @@ public class KotlinJavaBundleTest {
     }
 
     @Test
+    public void aJavaSetTheBuildAddsOrNamesIsRefusedToo() throws Exception {
+        String[][] cases = {
+            {
+                "elasticore.publisher.rules.add",
+                "ddd-value-object",
+                "the build adds ddd-value-object",
+                "ddd-value-object-kt"
+            },
+            {"elasticore.publisher.rules", "jpa-springboot-v3", "the build names jpa-springboot-v3", "jpa-springboot-kt"
+            },
+        };
+        for (String[] c : cases) {
+            File project = project("");
+            System.setProperty("elasticore.language", "kotlin");
+            System.setProperty(c[0], c[1]);
+            try {
+                String log = run(project, 1);
+                assertTrue(log.contains(c[2] + " in " + c[0] + ", which writes Java"), log);
+                assertTrue(log.contains("name " + c[3] + " instead"), log);
+                assertFalse(wroteSource(project), "a source was written: " + log);
+            } finally {
+                System.clearProperty(c[0]);
+            }
+        }
+    }
+
+    @Test
     public void aKotlinBundleWithLanguageNeutralSetsIsGenerated() throws Exception {
         File project =
                 project("    publisher:\n      rules: [jpa-springboot-kt, ddd-aggregate, ddd-reference, ossie-export]");

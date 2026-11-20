@@ -307,6 +307,8 @@ public final class RulesConfig {
                 return "hexagonal-springboot-kt";
             case "ddd-value-object":
                 return "ddd-value-object-kt";
+            case "jpa-identity":
+                return "jpa-identity-kt";
             default:
                 return null;
         }
