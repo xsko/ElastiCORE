@@ -173,6 +173,23 @@ public class GuideCoverageTest {
     }
 
     @Test
+    @DisplayName("runtimePackages, its class list and what the project has to provide are in the rule guide")
+    public void theRuntimePackagesAreDocumented() throws IOException {
+        String guide = read(RULE_GUIDE);
+        // A setting with no other reader than the plugin: unfindable unless the guide names it, and what it
+        // leaves the project to provide - the auto-configuration, the validators, the access checks - with it.
+        for (String term : new String[] {
+            "runtimePackages",
+            "build/elasticore/runtime-classes.txt",
+            "AutoConfiguration.imports",
+            "jakarta.validation.ConstraintValidator",
+            "TransformPermissionChecker"
+        }) {
+            assertTrue(guide.contains(term), "the rule guide does not name " + term);
+        }
+    }
+
+    @Test
     @DisplayName("every namespace key an artifact is placed by is documented")
     public void namespaceKeysAreDocumented() throws IOException {
         String guide = read(ENV_GUIDE);

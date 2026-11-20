@@ -154,6 +154,88 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("runtimePackages is passed as from=to pairs, and only when given")
+    public void theRuntimePackagesArePassed() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore {\n"
+                        + "    architecture = 'hexagonal'\n"
+                        + "    runtimePackages = [\n"
+                        + "        'io.elasticore.springboot3': 'com.test.springboot',\n"
+                        + "        'io.elasticore.runtime'    : 'com.test.runtime',\n"
+                        + "        'io.elasticore.base.util'  : 'com.test.util',\n"
+                        + "    ]\n"
+                        + "}",
+                REPORTER);
+        assertTrue(reportOf(run("reportElcore"))
+                .contains("elasticore.runtime.packages="
+                        + "io.elasticore.base.util=com.test.util,io.elasticore.runtime=com.test.runtime,"
+                        + "io.elasticore.springboot3=com.test.springboot"));
+
+        // Unset, nothing is passed and the generated code is what it always was.
+        writeBuild("plugins { id 'io.elasticore' }", "elasticore { architecture = 'hexagonal' }", REPORTER);
+        String reported = reportOf(run("reportElcore"));
+        assertTrue(!reported.contains("elasticore.runtime.packages"), reported);
+    }
+
+    @Test
+    @DisplayName("with runtimePackages the GraphQL schema writer is the project's copy of it")
+    public void theGraphQlWriterFollowsTheRuntimePackages() throws IOException {
+        String writer = "tasks.register('reportWriter') {\n"
+                + "    doLast { println '<<<' + tasks.getByName('elcoreGraphQl').mainClass.get() + '>>>' }\n"
+                + "}";
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['io.elasticore.springboot3': 'com.test.springboot',"
+                        + " 'io.elasticore.springboot3.graphql': 'com.test.gql'] }",
+                writer);
+        assertEquals("com.test.gql.GraphQlSchemaWriter", reportOf(run("reportWriter")));
+
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['io.elasticore.springboot3': 'com.test.springboot'] }",
+                writer);
+        assertEquals("com.test.springboot.graphql.GraphQlSchemaWriter", reportOf(run("reportWriter")));
+
+        writeBuild("plugins { id 'io.elasticore' }", writer);
+        assertEquals("io.elasticore.springboot3.graphql.GraphQlSchemaWriter", reportOf(run("reportWriter")));
+    }
+
+    @Test
+    @DisplayName("a runtimePackages key outside io.elasticore, or a value that is no package, fails the build")
+    public void aMistypedRuntimePackageFails() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['com.acme.runtime': 'com.test.runtime'] }");
+        String key = runAndFail("help").getOutput();
+        assertTrue(key.contains("the key 'com.acme.runtime' is not an ElastiCORE runtime package"), key);
+
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['io.elasticore.runtime': 'com.1test'] }");
+        String value = runAndFail("help").getOutput();
+        assertTrue(
+                value.contains("the value 'com.1test' of 'io.elasticore.runtime' is not a Java package name"), value);
+    }
+
+    @Test
+    @DisplayName("runtimePackages beside output = 'v2' is said to be ignored, and not passed")
+    public void theRuntimePackagesAreIgnoredForTheTwoXCode() throws IOException {
+        writeSettings("single");
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { output = 'v2'; runtimePackages = ['io.elasticore.runtime': 'com.test.runtime'] }",
+                REPORTER);
+        BuildResult result = run("reportElcore");
+        assertTrue(result.getOutput().contains("runtimePackages is ignored"), result.getOutput());
+        String reported = reportOf(result);
+        assertTrue(!reported.contains("elasticore.runtime.packages"), reported);
+    }
+
+    @Test
     @DisplayName("ddl comments are passed when they are on, and not otherwise")
     public void theDdlCommentsArePassedWhenOn() throws IOException {
         writeSettings("single");

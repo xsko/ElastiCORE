@@ -147,6 +147,14 @@ public class ElastiCorePlugin implements Plugin<Project> {
         // is the one thing the configuration cache refuses, so the lazier
         // version of this was the less compatible one.
         project.afterEvaluate(evaluated -> {
+            // Checked here, so a mistyped mapping fails the build before any task runs - and said once
+            // where the build keeps 2.x's code, which the 2.x generator writes as it always did.
+            if (runtimePackagesOf(extension) != null && keepsTwoX(extension)) {
+                evaluated
+                        .getLogger()
+                        .warn("[elasticore] runtimePackages is ignored: it rewrites the 3.0 code, and"
+                                + " this build keeps the code 2.x generates (output = 'v2')");
+            }
             elcore.configure(task -> {
                 arguments(task, evaluated, extension);
 
@@ -209,6 +217,11 @@ public class ElastiCorePlugin implements Plugin<Project> {
             }
 
             if (usesGraphQl(evaluated)) wireGraphQl(evaluated, elcoreGraphQl);
+            // The writer is a runtime class: with runtimePackages it is the project's copy, under its package.
+            if (runtimePackagesOf(extension) != null && !keepsTwoX(extension)) {
+                String writer = mappedClass(GRAPHQL_WRITER, extension);
+                elcoreGraphQl.configure(task -> task.getMainClass().set(writer));
+            }
 
             if (Boolean.TRUE.equals(extension.getGenerateBeforeCompile().get())) {
                 // Whichever task this project actually runs: the rule engine,
@@ -291,6 +304,64 @@ public class ElastiCorePlugin implements Plugin<Project> {
         return true;
     }
 
+    /** The system property the generator reads runtimePackages from (RuntimePackages.PROPERTY). */
+    static final String RUNTIME_PACKAGES = "elasticore.runtime.packages";
+
+    private static final java.util.regex.Pattern PACKAGE_NAME =
+            java.util.regex.Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+
+    /**
+     * runtimePackages as the generator takes it - {@code from=to,from=to},
+     * sorted - or null when the build set none. A key that is not under
+     * io.elasticore, or a value that is not a package name, fails the build
+     * here, before anything runs.
+     */
+    static String runtimePackagesOf(ElastiCoreExtension extension) {
+        java.util.Map<String, String> given =
+                extension.getRuntimePackages().getOrElse(java.util.Collections.<String, String>emptyMap());
+        if (given.isEmpty()) return null;
+        List<String> pairs = new ArrayList<String>();
+        for (java.util.Map.Entry<String, String> en : new java.util.TreeMap<String, String>(given).entrySet()) {
+            String from = en.getKey().trim();
+            String to = en.getValue() == null ? "" : en.getValue().trim();
+            if (!from.startsWith("io.elasticore.")
+                    || !PACKAGE_NAME.matcher(from).matches()) {
+                throw new org.gradle.api.GradleException("elasticore { runtimePackages }: the key '" + from
+                        + "' is not an ElastiCORE runtime package - a key is a package starting with io.elasticore.,"
+                        + " e.g. 'io.elasticore.springboot3'");
+            }
+            if (!PACKAGE_NAME.matcher(to).matches()) {
+                throw new org.gradle.api.GradleException("elasticore { runtimePackages }: the value '" + to + "' of '"
+                        + from + "' is not a Java package name, e.g. 'com.acme.runtime'");
+            }
+            pairs.add(from + "=" + to);
+        }
+        return String.join(",", pairs);
+    }
+
+    /**
+     * A runtime class's name as the generated code names it: the longest
+     * runtimePackages key that is a whole-segment prefix of it, replaced.
+     * As it is when no key is.
+     */
+    static String mappedClass(String className, ElastiCoreExtension extension) {
+        String best = null;
+        java.util.Map<String, String> given =
+                extension.getRuntimePackages().getOrElse(java.util.Collections.<String, String>emptyMap());
+        for (String from : given.keySet()) {
+            String key = from.trim();
+            if ((className.equals(key) || className.startsWith(key + "."))
+                    && (best == null || key.length() > best.length())) {
+                best = key;
+            }
+        }
+        if (best == null) return className;
+        for (java.util.Map.Entry<String, String> en : given.entrySet()) {
+            if (en.getKey().trim().equals(best)) return en.getValue().trim() + className.substring(best.length());
+        }
+        return className;
+    }
+
     /** What the generator is told, decided once the build script has been read. */
     private void arguments(JavaExec task, Project project, ElastiCoreExtension extension) {
         task.systemProperty("elasticore.base.path", project.getProjectDir().getAbsolutePath());
@@ -335,6 +406,11 @@ public class ElastiCorePlugin implements Plugin<Project> {
         }
         if (extension.getOssieName().isPresent()) {
             task.systemProperty("elasticore.ossie.name", extension.getOssieName().get());
+        }
+        // The runtime's packages, for the 3.0 code: a build keeping 2.x's code is told once (apply).
+        String runtime = runtimePackagesOf(extension);
+        if (runtime != null && !keepsTwoX(extension)) {
+            task.systemProperty(RUNTIME_PACKAGES, runtime);
         }
         if (extension.getGuides().isPresent()) {
             task.systemProperty("elasticore.guides", extension.getGuides().get());

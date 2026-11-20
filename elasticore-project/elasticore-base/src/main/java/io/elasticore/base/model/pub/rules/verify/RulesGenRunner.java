@@ -409,6 +409,14 @@ public final class RulesGenRunner {
                     + " output and the other switch) - choose one");
             return 1;
         }
+        // elasticore { runtimePackages }: checked before the model is read, so a mistyped mapping says so at once.
+        RuntimePackages runtimePackages;
+        try {
+            runtimePackages = RuntimePackages.fromSystemProperties();
+        } catch (IllegalArgumentException e) {
+            io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + e.getMessage() + ". No source was written.");
+            return 1;
+        }
         boolean v3 = v3Asked;
         boolean force = Boolean.getBoolean("elasticore.rules.force");
         boolean kotlin = Boolean.getBoolean("elasticore.rules.kt");
@@ -748,6 +756,18 @@ public final class RulesGenRunner {
 
         RulesGenRunner runner = new RulesGenRunner(basePath, v3, force, kotlin, typescript);
         runner.moduleRoots = loader.moduleRoots();
+        // The runtime's packages, rewritten in the 3.0 code only: the code 2.x
+        // generates stays byte for byte what 2.x wrote. The TypeScript client
+        // names no Java package.
+        if (runtimePackages != null && !typescript) {
+            if (v3 || kotlin) {
+                runner.runtimePackages = runtimePackages;
+                System.out.println("[elcore3] runtime   : " + runtimePackages.describe());
+            } else {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] runtimePackages is ignored: it rewrites the"
+                        + " 3.0 code, and this build writes the code 2.x generates, which keeps io.elasticore");
+            }
+        }
         if (domainFilter != null) {
             // A package a generated domain uses too is not only theirs: its
             // classes this run did not map are stale, not someone else's.
@@ -922,6 +942,7 @@ public final class RulesGenRunner {
             System.out.println("[elcore3] generated files the DSL no longer produces are kept until the model check passes");
         }
         runner.printSummary();
+        runner.reportRuntimePackages(basePath, domainFilter == null);
         java.util.List<String> roots = new ArrayList<String>();
         if (modulePaths != null && !modulePaths.trim().isEmpty()) {
             for (String m : modulePaths.split(",")) if (!m.trim().isEmpty()) roots.add(m.trim());
@@ -4761,7 +4782,10 @@ public final class RulesGenRunner {
                     previous = cache.get(key);
                     if (previous == null && file.isFile() && ownOrmXml(file)) previous = readLf(file);
                 }
-                writeMerged("  " + relative(file), file, key, m.toXml(previous, otherDomainPackages), true);
+                String merged = m.toXml(previous, otherDomainPackages);
+                // Taken from the rewritten sources already; a converter it names is one to provide.
+                if (runtimePackages != null) runtimeTexts.put(file, merged);
+                writeMerged("  " + relative(file), file, key, merged, true);
                 continue;
             }
             String xml = m.toXml();
@@ -4782,12 +4806,14 @@ public final class RulesGenRunner {
                 } else {
                     if (otherDomainPackages != null) xml = m.toXml(existing, otherDomainPackages);
                     if (equalsIgnoringLineEndings(existing, xml)) {
+                        if (runtimePackages != null) runtimeTexts.put(file, xml);
                         unchanged++;
                         System.out.println("  " + relative(file) + "  UNCHANGED");
                         continue;
                     }
                 }
             }
+            if (runtimePackages != null) runtimeTexts.put(file, xml);
             if (preview != null) {
                 preview.wrote(canonical(file), xml.replace("\r\n", "\n"));
                 wrote++;
@@ -5562,6 +5588,8 @@ public final class RulesGenRunner {
             "elasticore.rules.ts",
             "elasticore.rules.kt",
             "elasticore.rules.list",
+            // the bases are what 2.x wrote, with its own package names
+            RuntimePackages.PROPERTY,
             // a migration check's: the bases are the 2.x code, generated as the 2.x code
             PROP_MIGRATION_CHECK,
             PROP_VALIDATE,
@@ -6092,6 +6120,10 @@ public final class RulesGenRunner {
         File file = new File(rootFor(out) + "/" + out.relativePath());
         remember(file);
 
+        // elasticore { runtimePackages }: before the style, the merge, the cache
+        // and the stamp, so all of them see the text that lands on disk.
+        if (runtimePackages != null) rendered = runtimePackages.rewrite(rendered);
+
         // What would actually land on disk, so that a file already carrying
         // the house style is recognised as unchanged - and one that does not
         // is rewritten.
@@ -6105,6 +6137,10 @@ public final class RulesGenRunner {
             content = orm(out).extract(content, out.packageName(), out.fileName(), kotlin);
         }
         if (xmlMapping()) content = movedQuery(out, content);
+        if (runtimePackages != null) {
+            runtimeTexts.put(file, content);
+            if (out.packageName() != null) writtenPackages.add(out.packageName());
+        }
 
         // Gathering what the code 2.x generates, for an upgrade's bases: nothing is written.
         if (captured != null) {
@@ -6341,6 +6377,66 @@ public final class RulesGenRunner {
             System.out.println("[elcore3] " + failed
                     + " artifact(s) could not be generated - see the notes above.");
         }
+    }
+
+    /** elasticore { runtimePackages }, when this run rewrites the runtime's packages; null otherwise. */
+    private RuntimePackages runtimePackages;
+
+    /** With runtimePackages: every generated text of this run, by the file it goes to. */
+    private final Map<File, String> runtimeTexts = new java.util.LinkedHashMap<File, String>();
+
+    /** With runtimePackages: the packages this run wrote classes into - the project's own. */
+    private final java.util.Set<String> writtenPackages = new java.util.TreeSet<String>();
+
+    /**
+     * With runtimePackages, after the run: what the generated files still name
+     * under io.elasticore - a mapping missing, or a file of the developer's
+     * written before the mapping - and the runtime classes they now name under
+     * the project's packages, which the project has to provide. The list is
+     * also written to build/elasticore/runtime-classes.txt by a run of every
+     * domain. Each file is read as it is on disk: one the run left to the
+     * developer keeps what it had.
+     */
+    private void reportRuntimePackages(String basePath, boolean wholeRun) {
+        if (runtimePackages == null || runtimeTexts.isEmpty()) return;
+        java.util.Set<String> own = RuntimePackages.ownRoots(writtenPackages);
+        Map<String, java.util.Set<String>> leftovers = new java.util.TreeMap<String, java.util.Set<String>>();
+        java.util.Set<String> required = new java.util.TreeSet<String>();
+        for (Map.Entry<File, String> en : runtimeTexts.entrySet()) {
+            String text = en.getKey().isFile() ? readLf(en.getKey()) : null;
+            if (text == null) text = en.getValue();
+            for (String pkg : RuntimePackages.leftovers(text, own)) {
+                java.util.Set<String> files = leftovers.get(pkg);
+                if (files == null) {
+                    files = new java.util.TreeSet<String>();
+                    leftovers.put(pkg, files);
+                }
+                files.add(relative(en.getKey()));
+            }
+            required.addAll(runtimePackages.requiredClasses(text, own));
+        }
+        for (Map.Entry<String, java.util.Set<String>> en : leftovers.entrySet()) {
+            String pkg = en.getKey();
+            java.util.Set<String> files = en.getValue();
+            String where = files.size() + " file(s), e.g. " + files.iterator().next();
+            io.elasticore.base.util.ConsoleLog.printWarn(
+                    runtimePackages.covers(pkg)
+                            ? "[elcore3] runtimePackages: " + pkg + " is still named in " + where
+                                    + " - a file of yours the" + " run did not rewrite; change its imports by hand"
+                            : "[elcore3] runtimePackages: the generated code still names " + pkg + " (" + where
+                                    + ") - no" + " mapping covers it; add one to elasticore { runtimePackages }");
+        }
+        File report = new File(basePath, RuntimePackages.REPORT);
+        System.out.println("[elcore3] runtimePackages: the generated code uses " + required.size()
+                + " runtime class(es) your packages have to provide"
+                + (wholeRun ? " - " + RuntimePackages.REPORT : ""));
+        StringBuilder list = new StringBuilder();
+        for (String cls : required) {
+            System.out.println("  " + cls);
+            list.append(cls).append('\n');
+        }
+        // A run of one domain lists that domain's classes: the file is the whole project's.
+        if (wholeRun) writeText(report, list.toString());
     }
 
     /** Whether the run produced everything it was asked for. */
