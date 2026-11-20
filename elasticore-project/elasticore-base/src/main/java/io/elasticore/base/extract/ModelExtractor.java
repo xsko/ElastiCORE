@@ -251,18 +251,18 @@ public class ModelExtractor {
         if (meta == null || !meta.hasMetaAnnotation("extend")) return;
         String value = meta.getMetaAnnotationValue("extend");
         if (value == null) return;
-        for (String part : java.util.regex.Pattern.compile(",").split(value, -1)) {
-            String parent = part.trim();
-            int generic = parent.indexOf('<');
-            if (generic >= 0) parent = parent.substring(0, generic).trim();
-            if (parent.isEmpty() || parent.contains(".") || parent.contains(":")) continue;
-            if (typeRegistry.containsKey(parent)) continue;
-            ConsoleLog.storeLog(
-                    "DSL_WARN",
-                    String.format(
-                            "[%s] %s: unresolved @extend parent '%s' - no matching Entity or DTO found in any domain",
-                            domainName, componentName, parent));
-        }
+        // One parent, written after extends as it stands: a comma is a type
+        // argument's (Base<A, B>), not a second parent.
+        String parent = value.trim();
+        int generic = parent.indexOf('<');
+        if (generic >= 0) parent = parent.substring(0, generic).trim();
+        if (parent.isEmpty() || parent.contains(".") || parent.contains(":")) return;
+        if (typeRegistry.containsKey(parent)) return;
+        ConsoleLog.storeLog(
+                "DSL_WARN",
+                String.format(
+                        "[%s] %s: unresolved @extend parent '%s' - no matching Entity or DTO found in any domain",
+                        domainName, componentName, parent));
     }
 
     private static void validateFieldTypes(String componentName, ModelComponentItems<Field> fieldItems,
