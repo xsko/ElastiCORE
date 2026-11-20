@@ -945,6 +945,8 @@ columns are: a BI or AI tool that writes its queries from the model is not offer
 - On an `@Embedded` value it leaves out all of that value's columns; on a reference, its join column and its relationship
   (a separate `customerId` field keeps its own marks). A reference that joins on a `@sensitive` field (`customerId: long @sensitive`
   with `customer: Customer @ManyToOne`, or `@joinBy(customerId)`) is not exported as a relationship either, with a warning.
+- A unique key that holds its column (`email: string(100)! @unique @sensitive`, or an `@Index(..., unique="true")` that names
+  it) is not written to `unique_keys` at all, with a warning: the other columns alone are another key, which is not unique.
 - On an `@id` it is ignored with a warning (the dataset's key and the relationships to it need the column), and on a collection too
   (it has no column of its own - mark the fields of the other entity).
 - It only matters with the `ossie-export` rule set (rule guide "Apache Ossie semantic model export"); 2.x code

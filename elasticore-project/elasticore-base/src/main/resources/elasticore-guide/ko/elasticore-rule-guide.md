@@ -1935,7 +1935,7 @@ relationships:
 | 엔티티 (`@abstract`·`@embeddable` 제외) | `datasets[]` | `source` = 테이블 (`table.prefix` + `@table` 이름 또는 엔티티 이름) |
 | `-- 라벨` | `description` | |
 | `@id` 필드 (복합 키 포함) | `primary_key` | |
-| `@unique`, `@Index(unique="true")` | `unique_keys` | 데이터셋 필드의 컬럼 이름으로 - `columnList` 의 속성 이름(`seatNo`)은 그 필드의 컬럼(`seat_no`, `@column` 이면 그 이름), 컬럼 이름은 대소문자와 상관없이 그 필드의 것(`@column(HALL_ID)` 이면 `HALL_ID`), 그 밖의 이름은 Hibernate 처럼(`seqCd` → `seq_cd`). 같은 키는 한 번 |
+| `@unique`, `@Index(unique="true")` | `unique_keys` | 데이터셋 필드의 컬럼 이름으로 - `columnList` 의 속성 이름(`seatNo`)은 그 필드의 컬럼(`seat_no`, `@column` 이면 그 이름), 컬럼 이름은 대소문자와 상관없이 그 필드의 것(`@column(HALL_ID)` 이면 `HALL_ID`), 그 밖의 이름은 Hibernate 처럼(`seqCd` → `seq_cd`). 같은 키는 한 번. 내보내기에서 빠지는 컬럼(`@password`, `@writeonly`, `@sensitive`)이 든 키는 통째로 쓰지 않고 `[ossie]` 경고를 냅니다 - 나머지 컬럼만으로는 다른 키이고, 유일하지 않습니다 |
 | 값 필드 | `fields[]` + `expression.sql`(컬럼) + `datatype` | 타입 대응은 DSL 가이드 "값 타입 한눈에" 표 |
 | `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `expression.sql`, 서브쿼리(SELECT)가 들어 있으면 `dialects` 의 `ANSI_SQL` 항목 하나 - 아래 "식의 형태" |
 | `@extend(Parent)` 의 필드 | 자식 dataset 의 `fields` | 상속된 컬럼도 그 테이블에 있으므로 |

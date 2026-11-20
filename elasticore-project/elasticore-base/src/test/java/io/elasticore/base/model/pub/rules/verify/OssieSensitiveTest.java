@@ -237,6 +237,129 @@ public class OssieSensitiveTest {
         assertTrue(plain[0].contains("name: topScore"), plain[0]);
     }
 
+    /**
+     * Unique keys over columns the export leaves out (issue 245), or (marked false) the same
+     * model without the marks: @sensitive on a field, on an embeddable's field, @password and
+     * @writeonly, each in a key of its own field or of an @Index, beside keys that hold none.
+     */
+    private static String keysModel(boolean marked) {
+        String s = marked ? " @sensitive" : "";
+        return String.join(
+                "\n",
+                "entity:",
+                "  Address:",
+                "    meta: entity @embeddable",
+                "    fields:",
+                "      city: string(50)",
+                "      street: string(100)" + s,
+                "",
+                "  Customer:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      customerId: long @id @sequence",
+                "      email: string(100)! @unique" + s,
+                "      code: string(20)! @unique",
+                "      name: string(50)!",
+                "",
+                "  SocialAccount:",
+                "    meta: entity @root @expose(20)"
+                        + " @Index(name=\"uk_social_account\", columnList=\"provider,provider_user_id\", unique=\"true\")",
+                "          @Index(name=\"uk_social_handle\", columnList=\"provider,handle\", unique=\"true\")",
+                "    fields:",
+                "      socialAccountId: long @id @sequence",
+                "      provider: string(20)!",
+                "      providerUserId: string(100)!" + s,
+                "      handle: string(50)!",
+                "",
+                "  Credential:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      credentialId: long @id @sequence",
+                "      loginName: string(50)! @unique",
+                "      secret: string(100)! @unique" + (marked ? " @password" : ""),
+                "      token: string(100) @unique" + (marked ? " @writeonly" : ""),
+                "",
+                "  Team:",
+                "    meta: entity @root @expose(20)"
+                        + " @Index(name=\"uk_team_office\", columnList=\"street,city\", unique=\"true\")",
+                "    fields:",
+                "      teamId: long @id @sequence",
+                "      office: Address @Embedded",
+                "",
+                // The column in capitals by @column, the @Index name read as Hibernate reads it (badge_serial).
+                "  Badge:",
+                "    meta: entity @embeddable",
+                "    fields:",
+                "      serial: string(40) @column(BADGE_SERIAL)" + s,
+                "",
+                "  Guard:",
+                "    meta: entity @root @expose(20)"
+                        + " @Index(name=\"uk_guard_badge\", columnList=\"BADGE_SERIAL\", unique=\"true\")",
+                "    fields:",
+                "      guardId: long @id @sequence",
+                "      badge: Badge @Embedded",
+                "");
+    }
+
+    @Test
+    @DisplayName("a unique key that holds a column the export leaves out is left out as a whole; the others stay")
+    public void aUniqueKeyOverALeftOutColumnIsNotExported() throws Exception {
+        String[] out = export(keysModel(true));
+        String yaml = out[0];
+        // @unique on a @sensitive field: its key goes, the other @unique key of the dataset stays.
+        assertEquals(keys(new String[] {"code"}), dataset(yaml, "Customer").get("unique_keys"), yaml);
+        assertTrue(((List<?>) extension(dataset(yaml, "Customer")).get("omitted_columns")).contains("email"), yaml);
+        // An @Index key with a @sensitive column goes as a whole - [provider] alone is not unique.
+        assertEquals(
+                keys(new String[] {"provider", "handle"}),
+                dataset(yaml, "SocialAccount").get("unique_keys"),
+                yaml);
+        // @password and @writeonly columns are left out of the fields; so are their keys.
+        assertEquals(
+                keys(new String[] {"login_name"}), dataset(yaml, "Credential").get("unique_keys"), yaml);
+        // A key over an embedded value's @sensitive column.
+        assertNull(dataset(yaml, "Team").get("unique_keys"), yaml);
+        // The key's name and the left-out column differ in case only: the same column.
+        assertTrue(((List<?>) extension(dataset(yaml, "Guard")).get("omitted_columns")).contains("BADGE_SERIAL"), yaml);
+        assertNull(dataset(yaml, "Guard").get("unique_keys"), yaml);
+        // Every name left in unique_keys is a field of its dataset.
+        for (String name : new String[] {"Customer", "SocialAccount", "Credential", "Team", "Guard"}) {
+            Map<String, Object> d = dataset(yaml, name);
+            @SuppressWarnings("unchecked")
+            List<List<String>> unique = (List<List<String>>) d.get("unique_keys");
+            if (unique == null) continue;
+            for (List<String> key : unique) assertTrue(fieldNames(d).containsAll(key), name + " " + key + "\n" + yaml);
+        }
+        assertTrue(
+                out[1].contains("[ossie] Customer: the unique key [email] is not exported - it holds email,"), out[1]);
+    }
+
+    @Test
+    @DisplayName("without the marks, every unique key is exported as before")
+    public void withoutTheMarksEveryUniqueKeyIsExported() throws Exception {
+        String[] out = export(keysModel(false));
+        String yaml = out[0];
+        assertEquals(
+                keys(new String[] {"email"}, new String[] {"code"}),
+                dataset(yaml, "Customer").get("unique_keys"));
+        assertEquals(
+                keys(new String[] {"provider", "provider_user_id"}, new String[] {"provider", "handle"}),
+                dataset(yaml, "SocialAccount").get("unique_keys"));
+        assertEquals(
+                keys(new String[] {"login_name"}, new String[] {"secret"}, new String[] {"token"}),
+                dataset(yaml, "Credential").get("unique_keys"));
+        assertEquals(
+                keys(new String[] {"street", "city"}), dataset(yaml, "Team").get("unique_keys"));
+        assertEquals(keys(new String[] {"badge_serial"}), dataset(yaml, "Guard").get("unique_keys"));
+        assertFalse(out[1].contains("unique key"), out[1]);
+    }
+
+    private static List<List<String>> keys(String[]... keys) {
+        List<List<String>> out = new ArrayList<List<String>>();
+        for (String[] k : keys) out.add(java.util.Arrays.asList(k));
+        return out;
+    }
+
     @Test
     @DisplayName("without the word, nothing is left out and the instructions are as before")
     public void withoutTheWordTheExportIsAsBefore() throws Exception {
