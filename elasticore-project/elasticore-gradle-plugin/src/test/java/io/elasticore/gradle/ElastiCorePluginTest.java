@@ -244,6 +244,16 @@ public class ElastiCorePluginTest {
                 "elasticore { runtimePackages = ['io.elasticore.runtime': 'com.fun.rt'] }");
         String kotlin = runAndFail("help").getOutput();
         assertTrue(kotlin.contains("the value 'com.fun.rt' of 'io.elasticore.runtime'"), kotlin);
+
+        // A value under io.elasticore could be a key's, or under one: rewritten twice.
+        writeBuild(
+                "plugins { id 'io.elasticore' }",
+                "elasticore { runtimePackages = ['io.elasticore.springboot3': 'io.elasticore.x',"
+                        + " 'io.elasticore.x.security': 'com.b'] }");
+        String under = runAndFail("help").getOutput();
+        assertTrue(
+                under.contains("the value 'io.elasticore.x' of 'io.elasticore.springboot3' is under io.elasticore"),
+                under);
     }
 
     @Test

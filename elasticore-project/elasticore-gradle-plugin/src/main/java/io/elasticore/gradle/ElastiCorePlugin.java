@@ -422,6 +422,11 @@ public class ElastiCorePlugin implements Plugin<Project> {
                 throw new org.gradle.api.GradleException("elasticore { runtimePackages }: the value '" + to + "' of '"
                         + from + "' is not a Java package name, or names a Kotlin keyword, e.g. 'com.acme.runtime'");
             }
+            if (to.equals("io.elasticore") || to.startsWith("io.elasticore.")) {
+                throw new org.gradle.api.GradleException("elasticore { runtimePackages }: the value '" + to + "' of '"
+                        + from + "' is under io.elasticore - a value is a package of the project's own,"
+                        + " e.g. 'com.acme.runtime'");
+            }
             pairs.add(from + "=" + to);
         }
         return String.join(",", pairs);

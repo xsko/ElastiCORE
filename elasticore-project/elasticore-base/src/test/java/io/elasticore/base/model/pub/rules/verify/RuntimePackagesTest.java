@@ -269,6 +269,48 @@ public class RuntimePackagesTest {
         RuntimePackages.parse("io.elasticore.runtime=com.data.inside");
     }
 
+    /** From one mapping to another, and back to io.elasticore: the way back is by value, longest first. */
+    @Test
+    public void aTextGoesFromOneMappingToAnother() {
+        RuntimePackages a = RuntimePackages.parse(
+                "io.elasticore.springboot3=com.a.rt,io.elasticore.springboot3.security=com.a.sec");
+        RuntimePackages b = RuntimePackages.parse("io.elasticore.springboot3=com.b.rt");
+        String original = "import io.elasticore.springboot3.security.CurrentUser;\n"
+                + "@ExceptionHandler(io.elasticore.springboot3.validation.NotFoundException.class)\n";
+        String underA = a.rewrite(original);
+        assertEquals(b.rewrite(original), RuntimePackages.transit(underA, a, b));
+        assertEquals(original, RuntimePackages.transit(underA, a, null));
+        assertEquals(underA, RuntimePackages.transit(original, null, a));
+        assertEquals("io.elasticore.springboot3=com.a.rt,io.elasticore.springboot3.security=com.a.sec", a.spec());
+        assertEquals(a.spec(), RuntimePackages.parse(a.spec()).spec());
+    }
+
+    /** Two keys to one value, or a value under another, cannot be undone by name. */
+    @Test
+    public void anAmbiguousMappingHasNoWayBack() {
+        assertTrue(RuntimePackages.parse("io.elasticore.runtime=com.x,io.elasticore.base.util=com.x")
+                        .inverse()
+                == null);
+        assertTrue(RuntimePackages.parse("io.elasticore.springboot3=com.x,io.elasticore.runtime=com.x.rt")
+                        .inverse()
+                == null);
+        assertTrue(MAPPING.inverse() != null);
+    }
+
+    /** A key under a value is the same double rewrite the other way round: any value under io.elasticore is refused. */
+    @Test
+    public void aValueUnderIoElasticoreIsRefused() {
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> RuntimePackages.parse(
+                        "io.elasticore.springboot3=io.elasticore.x,io.elasticore.x.security=com.b"));
+        assertTrue(
+                e.getMessage().contains("'io.elasticore.x'") && e.getMessage().contains("under io.elasticore"),
+                e.getMessage());
+        assertThrows(
+                IllegalArgumentException.class, () -> RuntimePackages.parse("io.elasticore.runtime=io.elasticore"));
+    }
+
     /** A value under a key would be rewritten again on the next pass: refused, so the rewrite is idempotent. */
     @Test
     public void aValueUnderAKeyIsRefused() {

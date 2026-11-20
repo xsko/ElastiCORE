@@ -1765,10 +1765,11 @@ elasticore {
   in Java and Kotlin, and in the resources the run writes beside them.
 - Whole package segments only: `io.elasticore.springboot3` does not match `io.elasticore.springboot3x`.
 - The longest key first: beside `'io.elasticore.springboot3'`, a key `'io.elasticore.springboot3.security'` takes the security classes.
-- A key starts with `io.elasticore.` and names a package of the runtime: a key over the project's own packages
+- A key starts with `io.elasticore.` and names a package of the runtime: a key over a namespace of the project
   (`'io.elasticore.sample': ...` in a project `io.elasticore.sample.shop`) is refused. A value is a package name in Java
-  and in Kotlin (`com.acme.in` is not: `in` is a Kotlin keyword), and not under a key (`io.elasticore.springboot3.copy`
-  would be rewritten again). Otherwise the build fails before anything is generated.
+  and in Kotlin (`com.acme.in` is not: `in` is a Kotlin keyword), not under `io.elasticore`, and neither a namespace of the
+  project nor one that holds one (`com.acme.shop` in a project `com.acme.shop`: put the copy in `com.acme.shop.runtime`).
+  Otherwise the build fails before anything is generated.
 - Unset, the generated code is byte for byte what it was.
 - The text is rewritten before it is merged and kept in `.elasticore/cache`, so the file and its base agree.
 - **Turning it on in a project generated before.** A merged file - one `.elasticore/cache` holds - is renamed on every side
@@ -1776,7 +1777,14 @@ elasticore {
   with the rest (an import of a runtime class you added becomes the mapped one), and a conflict is only where your edit and a
   change of the DSL meet, as without the setting. A file the run does not write - a file without a base (`SKIP(user-owned)`,
   `SKIP(not in the cache)`), or one the DSL no longer produces that is kept because a source of yours uses it - is not
-  renamed; the run names it (below), and you change its imports by hand.
+  renamed; the run names it (below), and you change its imports by hand. A file only renamed is reported
+  `RENAMED(your edits kept; ...)`, and a kept file of yours `KEPT(...; the runtime's packages renamed)`.
+- **Changing or removing it.** A merging run records the mapping it renamed with in `.elasticore/runtime-packages`, beside
+  the cache - commit it with the cache. When the mapping differs on the next run, the merged files' bases and the files
+  are renamed back from the recorded mapping and on to the new one (back to `io.elasticore` when the setting is removed),
+  so your edits stay and only real conflicts remain; the run says `changed since the last run`. A file the run does not
+  write is said when it still names a package of the previous mapping. A previous mapping with two keys on one value, or
+  one value under another, cannot be undone by name: the run says so and renames with the new mapping only.
 - Kotlin with `mapping: xml`: the domain classes carry the mapped `@com.test.springboot.entity.PersistentModel`, so the
   all-open and no-arg plugins name that one: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, and
   the same for `noArg` (`elasticore-env-guide.md`, `mapping: xml`).

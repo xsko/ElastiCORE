@@ -9,8 +9,11 @@
   key first. The text is rewritten before the merge and `.elasticore/cache`, so the file and its base agree; turned on in
   a project generated before, a merged file's cached base and the file on disk are renamed too before the merge, so an
   edit next to a runtime name stays and does not conflict. Kotlin with `mapping: xml` gets the mapped `PersistentModel`.
-  A key that is not under `io.elasticore.` or covers the project's own packages, a value that is not a package name in
-  Java and Kotlin, and a value under a key fail the build. The run prints the mapping, the
+  A merging run records the mapping in `.elasticore/runtime-packages`; when it changes or is removed, the merged files
+  are renamed back from the recorded one and on to the new one, and a file the run does not write that still names the
+  previous mapping is said. A file only renamed is reported `RENAMED`. A key that is not under `io.elasticore.` or covers
+  a namespace of the project, a value that is not a package name in Java and Kotlin, is under `io.elasticore`, or is or
+  holds a namespace of the project fail the build. The run prints the mapping, the
   runtime classes the generated code now names under the project's packages (also `build/elasticore/runtime-classes.txt`),
   and a warning for each package under `io.elasticore` a generated file still names - a mapping missing, or a file the run
   did not write (the developer's, or one kept because a source of theirs uses it). A nested class is listed as the class it
@@ -26,7 +29,9 @@
   run writes nothing, a mistyped mapping stops the run; a Kotlin build; the 2.x code left as it is);
   `RuntimePackagesProjectTest` (turned on over hand edits - next to an inline runtime name, on the line after it, in
   the imports - with no conflict; Kotlin with `mapping: xml`; a copy under the project's package listed; a key over the
-  project's packages refused; a file kept in use reported; unset as before);
+  project's packages refused; a file kept in use reported; unset as before; the mapping changed A -> B and removed, an
+  edit next to a runtime name kept with no conflict; a real conflict still marked; a kept skeleton renamed and said so; a
+  2.x custom block renamed; an edited stamped 3.0 file confirmed by its unrenamed text; any namespace checked);
   `ElastiCorePluginTest` (passed, not passed unset, refused, ignored with v2, the GraphQL writer's class);
   `GuideCoverageTest`/`GuideCoverageKoTest`; `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`. End to end:
   elasticore-template-ddd generated through the plugin with the three packages mapped, 92 of the runtime's 140 classes

@@ -1765,23 +1765,33 @@ elasticore {
   Java 와 Kotlin 모두, 그리고 그 실행이 옆에 쓰는 리소스에서도.
 - 패키지 단위(세그먼트)로만 맞춥니다: `io.elasticore.springboot3` 는 `io.elasticore.springboot3x` 에 맞지 않습니다.
 - 가장 긴 키가 먼저입니다: `'io.elasticore.springboot3'` 옆의 `'io.elasticore.springboot3.security'` 가 security 클래스를 가져갑니다.
-- 키는 `io.elasticore.` 로 시작하고 런타임의 패키지를 가리킵니다: 프로젝트 자신의 패키지를 덮는 키
+- 키는 `io.elasticore.` 로 시작하고 런타임의 패키지를 가리킵니다: 프로젝트의 namespace 를 덮는 키
   (`io.elasticore.sample.shop` 프로젝트의 `'io.elasticore.sample': ...`)는 거절합니다. 값은 Java 와 Kotlin 모두에서 패키지
-  이름이어야 하고(`com.acme.in` 은 아님: `in` 은 Kotlin 키워드), 키 아래에 있으면 안 됩니다(`io.elasticore.springboot3.copy` 는
-  다시 바뀝니다). 아니면 아무것도 생성하기 전에 빌드가 실패합니다.
+  이름이어야 하고(`com.acme.in` 은 아님: `in` 은 Kotlin 키워드), `io.elasticore` 아래가 아니어야 하며, 프로젝트의 namespace 도,
+  그것을 담는 패키지도 아니어야 합니다(`com.acme.shop` 프로젝트의 `com.acme.shop`: 사본은 `com.acme.shop.runtime` 에).
+  아니면 아무것도 생성하기 전에 빌드가 실패합니다.
 - 설정하지 않으면 생성된 코드는 바이트 하나까지 지금과 같습니다.
 - 텍스트는 병합되고 `.elasticore/cache` 에 들어가기 전에 바뀌므로 파일과 그 베이스가 같습니다.
 - **이미 생성된 프로젝트에서 켤 때.** 병합되는 파일 - `.elasticore/cache` 에 있는 파일 - 은 병합 전에 모든 쪽이 바뀝니다:
   캐시의 베이스, 개발자가 둔 파일, 새 텍스트. 개발자의 수정은 제자리에 남고 나머지와 함께 이름이 바뀌며(직접 더한 런타임
   클래스 import 도 매핑된 것으로), 충돌은 설정이 없을 때처럼 개발자의 수정과 DSL 의 변경이 만나는 곳에만 생깁니다. 실행이 쓰지
   않는 파일 - 베이스가 없는 파일(`SKIP(user-owned)`, `SKIP(not in the cache)`), 또는 DSL 이 더는 만들지 않지만 개발자의 소스가
-  써서 남겨 둔 파일 - 은 바꾸지 않고, 실행이 그 파일을 알려 줍니다(아래). import 는 직접 고치세요.
+  써서 남겨 둔 파일 - 은 바꾸지 않습니다.
+  실행이 그 파일을 알려 주고(아래), import 는 직접 고치세요. 이름만 바뀐 파일은
+  `RENAMED(your edits kept; ...)`, 개발자의 것으로 남긴 파일은 `KEPT(...; the runtime's packages renamed)` 로 알립니다.
+- **바꾸거나 없앨 때.** 병합하는 실행은 이름을 바꾼 매핑을 캐시 옆 `.elasticore/runtime-packages` 에 남깁니다 - 캐시와
+  함께 커밋하세요. 다음 실행에서 매핑이 다르면, 병합되는 파일의 베이스와 파일을 남긴 매핑에서 되돌린 뒤 새 매핑으로 바꿉니다
+  (설정을 없애면 `io.elasticore` 로 되돌립니다). 그래서 수정은 남고 진짜 충돌만 남으며, 실행은
+  `changed since the last run` 이라고 알립니다. 실행이 쓰지 않는 파일이 이전 매핑의 패키지를 아직 부르면 알려 줍니다.
+  두 키가 한 값을 가리키거나 한 값이 다른 값 아래에 있는 이전 매핑은 이름으로 되돌릴 수 없어,
+  그렇다고 알리고 새 매핑만 씁니다.
 - Kotlin 에 `mapping: xml`: 도메인 클래스에 매핑된 `@com.test.springboot.entity.PersistentModel` 이 붙으므로, all-open 과
   no-arg 플러그인도 그것을 적습니다: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, `noArg` 도
   같습니다(`elasticore-env-guide.md`, `mapping: xml`).
 - 바꾸지 않는 것: `blueprint/schema.yml` 과 Ossie 내보내기는 모델을 설명하고, 런타임의 타입 이름
   (`io.elasticore.springboot3.domain.Money`)도 그 설명에 들어 있습니다. 컴파일되지 않습니다.
-- `elcoreGraphQl` 은 사본의 스키마 작성기(`com.test.springboot.graphql.GraphQlSchemaWriter`)를 애플리케이션의 클래스패스에서 실행합니다.
+- `elcoreGraphQl` 은 사본의 스키마 작성기(`com.test.springboot.graphql.GraphQlSchemaWriter`)를
+  애플리케이션의 클래스패스에서 실행합니다.
 
 **실행이 알려 주는 것**
 
@@ -1800,8 +1810,9 @@ elasticore {
   (`Money`), 곧 복사할 파일로 적습니다. 프로젝트 자신의 패키지 아래의 사본(`com.acme.shop` 프로젝트의
   `'io.elasticore.springboot3': 'com.acme.shop.runtime'`)도 다른 것과 똑같이 적습니다.
 - 생성된 파일이 아직 부르는 `io.elasticore` 아래의 패키지마다, 파일과 함께 경고합니다: 덮는 키가 없거나 - 키를 더하세요 -
-  실행이 쓰지 않은 파일(개발자의 것, 또는 개발자의 소스가 써서 남겨 둔 것)에 있거나 - 그 import 를 고치세요. 프로젝트 자신의
-  패키지(기본 패키지가 `io.elasticore` 아래인 프로젝트)는 세지 않습니다. 직접 쓴 소스는 읽지 않습니다.
+  실행이 쓰지 않은 파일(개발자의 것, 또는 개발자의 소스가 써서 남겨 둔 것)에 있거나 - 그 import 를 고치세요.
+  프로젝트 자신의 패키지(기본 패키지가 `io.elasticore` 아래인 프로젝트)는 세지 않습니다.
+  직접 쓴 소스는 읽지 않습니다.
 
 **프로젝트가 갖춰야 하는 것**
 
@@ -1819,7 +1830,8 @@ elasticore {
    애플리케이션이 쓰는 것을 복사하고, 새 이름으로 같은 경로의 자기 파일에 적으세요. 없으면 생성된 코드가 받는 빈(필드 암호화,
    lookup, GraphQL 스칼라, 포트)이 애플리케이션 시작 때 없습니다.
 4. `META-INF/services/jakarta.validation.ConstraintValidator`: `Money`·`Quantity` 의 범위 검사
-   (`ValueBoundValidators$MoneyDecimalMin` 등)를 새 이름으로. 없으면 money·quantity 필드의 `@min`/`@max` 가 검사되지 않습니다.
+   (`ValueBoundValidators$MoneyDecimalMin` 등)를 새 이름으로. 없으면 money·quantity 필드의 `@min`/`@max` 가
+   검사되지 않습니다.
 5. 복사한 클래스가 쓰는, jar 가 함께 가져오던 라이브러리. elasticore-template-ddd(아래)에서는:
    `spring-boot-starter-webflux`(`HttpApiClient`: WebClient 와 reactor-netty), `commons-lang3`, `commons-jexl3` 3.0
    (`SqlPortGateway`), `reflections` 0.10.2(`PortServiceRegistrar`), `jnanoid` 2.0.0(`IdUtils`),
@@ -1827,7 +1839,8 @@ elasticore {
 
 > **보안.** `CurrentUser`, `TransformPermissionChecker`, `ForbiddenException` - 그리고 `AccessPolicy`, `NotSignedInException` -
 > 은 생성된 접근 검사(`@access`, `@owner`)가 기대는 클래스입니다. 처음부터 새로 쓰지 말고 배포된 소스에서 시작하세요:
-> 잘못 답하는 `CurrentUser`, 또는 에러 처리기가 200 으로 바꾸는 `ForbiddenException` 은 DSL 이 닫은 모든 엔드포인트를 엽니다.
+> 잘못 답하는 `CurrentUser`, 또는 에러 처리기가 200 으로 바꾸는 `ForbiddenException` 은
+> DSL 이 닫은 모든 엔드포인트를 엽니다.
 
 **업그레이드.** 새 ElastiCORE 가 생성하는 코드는 사본에 아직 없는 클래스·메서드·생성자를 부를 수 있습니다. 업그레이드한 뒤
 `build/elasticore/runtime-classes.txt` 를 지난번 것과 비교하고, 새로 생겼거나 바뀐 클래스를 새 버전의 소스 jar 에서 가져오세요.

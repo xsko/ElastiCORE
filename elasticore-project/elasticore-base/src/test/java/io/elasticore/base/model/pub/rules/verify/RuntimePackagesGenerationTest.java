@@ -317,7 +317,9 @@ public class RuntimePackagesGenerationTest {
                 String rel = root.relativize(file).toString().replace('\\', '/');
                 boolean dsl = rel.startsWith("src/main/resources/blueprint/petstore/");
                 boolean guide = rel.startsWith("src/main/resources/blueprint/") && rel.endsWith(".md");
-                if (!dsl && !guide) {
+                // The record of the mapping names the runtime's packages: it is the mapping, no output.
+                boolean record = rel.equals(".elasticore/runtime-packages");
+                if (!dsl && !guide && !record) {
                     String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8).replace("\r\n", "\n");
                     // The stamp's time differs on every run by design.
                     if (text.startsWith("//ecd:")) text = text.substring(text.indexOf('\n') + 1);

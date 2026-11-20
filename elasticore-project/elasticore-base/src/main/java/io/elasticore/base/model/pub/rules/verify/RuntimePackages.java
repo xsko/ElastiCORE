@@ -128,12 +128,26 @@ public final class RuntimePackages {
     private final Pattern keys;
     private final Pattern targets;
 
+    /** What every key starts with: a text without it names none of them (io.elasticore. for a mapping). */
+    private final String quick;
+
     private RuntimePackages(Map<String, String> given) {
         Map<String, String> sorted = new LinkedHashMap<String, String>();
         for (String from : longestFirst(given.keySet())) sorted.put(from, given.get(from));
         this.mapping = Collections.unmodifiableMap(sorted);
         this.keys = alternation(sorted.keySet());
         this.targets = alternation(new TreeSet<String>(sorted.values()));
+        String common = null;
+        for (String k : sorted.keySet()) {
+            if (common == null) {
+                common = k;
+                continue;
+            }
+            int n = 0;
+            while (n < common.length() && n < k.length() && common.charAt(n) == k.charAt(n)) n++;
+            common = common.substring(0, n);
+        }
+        this.quick = common == null ? "" : common;
     }
 
     /** The longest first, then alphabetically: the order a prefix is tried in. */
@@ -183,19 +197,50 @@ public final class RuntimePackages {
             given.put(from, to);
         }
         if (given.isEmpty()) return null;
-        // A value a key covers would be rewritten again by the next pass over the same text - the merge
-        // renames the cache's base and the file as well as the new text - so the rewrite must be idempotent.
-        for (Map.Entry<String, String> en : given.entrySet()) {
-            for (String key : given.keySet()) {
-                String to = en.getValue();
-                if (to.equals(key) || to.startsWith(key + ".")) {
-                    throw new IllegalArgumentException("runtimePackages: the value '" + to + "' of '" + en.getKey()
-                            + "' is under the key '" + key + "', so it would be rewritten again - map to a package"
-                            + " outside the keys, e.g. 'com.acme.runtime'");
-                }
+        return new RuntimePackages(given);
+    }
+
+    /**
+     * The mapping as the build gives it and the run records it: {@code from=to,...},
+     * sorted - one text for one mapping, whatever order it was written in.
+     */
+    public String spec() {
+        List<String> pairs = new ArrayList<String>();
+        for (Map.Entry<String, String> en : new java.util.TreeMap<String, String>(mapping).entrySet()) {
+            pairs.add(en.getKey() + "=" + en.getValue());
+        }
+        return String.join(",", pairs);
+    }
+
+    /**
+     * The way back: each value renamed to its key, the longest value first.
+     * Null when two keys map to one value, or a value is under another -
+     * which key a name came from cannot be told then. Built here, not
+     * parsed: its values are under io.elasticore, which a mapping's never are.
+     */
+    public RuntimePackages inverse() {
+        Map<String, String> back = new LinkedHashMap<String, String>();
+        for (Map.Entry<String, String> en : mapping.entrySet()) {
+            if (back.put(en.getValue(), en.getKey()) != null) return null;
+        }
+        for (String a : back.keySet()) {
+            for (String b : back.keySet()) {
+                if (b.startsWith(a + ".")) return null;
             }
         }
-        return new RuntimePackages(given);
+        return new RuntimePackages(back);
+    }
+
+    /**
+     * A text renamed from one mapping to another: back from {@code previous}
+     * (none: the text names io.elasticore) and on to {@code current} (none:
+     * it is to name io.elasticore again). {@code previous} has an inverse
+     * ({@link #inverse()}); the caller checks.
+     */
+    public static String transit(String text, RuntimePackages previous, RuntimePackages current) {
+        if (text == null) return null;
+        String back = previous == null ? text : previous.inverse().rewrite(text);
+        return current == null ? back : current.rewrite(back);
     }
 
     /** A key under io.elasticore and a value that is a package name, or why not. */
@@ -208,6 +253,12 @@ public final class RuntimePackages {
         if (!isPackageName(to)) {
             throw new IllegalArgumentException("runtimePackages: the value '" + to + "' of '" + from
                     + "' is not a Java package name, or names a Kotlin keyword, e.g. 'com.acme.runtime'");
+        }
+        // Under io.elasticore a value could be a key's, or under one: rewritten again by the next pass
+        // over the same text - the merge renames the cached base and the file as well as the new text.
+        if (to.equals("io.elasticore") || to.startsWith(RUNTIME_PREFIX)) {
+            throw new IllegalArgumentException("runtimePackages: the value '" + to + "' of '" + from
+                    + "' is under io.elasticore - a value is a package of the project's own, e.g. 'com.acme.runtime'");
         }
     }
 
@@ -236,7 +287,7 @@ public final class RuntimePackages {
 
     /** The text with every mapped prefix replaced: whole segments, the longest key first. */
     public String rewrite(String text) {
-        if (text == null || text.indexOf("io.elasticore.") < 0) return text;
+        if (text == null || text.indexOf(quick) < 0) return text;
         Matcher m = keys.matcher(text);
         if (!m.find()) return text;
         StringBuffer out = new StringBuffer(text.length() + 64);
@@ -282,6 +333,27 @@ public final class RuntimePackages {
      */
     public Set<String> requiredClasses(String text, Collection<String> own) {
         Set<String> found = new TreeSet<String>();
+        for (String name : namesUnderValues(text, own)) {
+            String cls = outermostClass(name);
+            if (cls != null) found.add(cls);
+        }
+        return found;
+    }
+
+    /**
+     * The packages under the mapped packages the text names, the project's
+     * own left out as {@link #requiredClasses} leaves them out - for a mapping
+     * a project used before, what a file still names of it.
+     */
+    public Set<String> packagesNamed(String text, Collection<String> own) {
+        Set<String> found = new TreeSet<String>();
+        for (String name : namesUnderValues(text, own)) found.add(packageOf(name));
+        return found;
+    }
+
+    /** Every qualified name under a mapped package the text holds, but the project's own. */
+    private List<String> namesUnderValues(String text, Collection<String> own) {
+        List<String> found = new ArrayList<String>();
         if (text == null) return found;
         Matcher m = targets.matcher(text);
         while (m.find()) {
@@ -294,11 +366,17 @@ public final class RuntimePackages {
             for (String p : own) {
                 if (p.startsWith(target + ".")) below.add(p);
             }
-            if (isOwn(name, below)) continue;
-            String cls = outermostClass(name);
-            if (cls != null) found.add(cls);
+            if (!isOwn(name, below)) found.add(name);
         }
         return found;
+    }
+
+    /** Whether the name is a mapped package or under one: what this mapping renames to. */
+    public boolean isUnderValue(String name) {
+        for (String v : mapping.values()) {
+            if (name.equals(v) || name.startsWith(v + ".")) return true;
+        }
+        return false;
     }
 
     /**
