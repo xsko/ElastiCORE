@@ -140,6 +140,8 @@ StatusCode:
 User:
   meta: entity @extend(AuditEntity)
 ```
+어느 도메인의 Entity 나 DTO 도 아닌 부모는 오류가 아니라 DSL 경고입니다 (`unresolved @extend parent 'X' - no matching Entity or DTO found in any domain`, `elcoreValidate -Pstrict` 는 이것으로 실패):
+직접 작성한 클래스를 일부러 부모로 둘 수 있습니다. 전체 클래스 이름(`com.acme.support.BaseRecord`)이나 도메인을 붙인 이름(`other:Parent`)은 찾아보지 않습니다.
 
 ### @embeddable
 > **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 다른 값 객체, 관계 또는 컬렉션을 담은 값 객체 (빌드 중단)
