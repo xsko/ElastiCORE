@@ -647,6 +647,7 @@ config:
 - `layered` 의 규칙 (그 밖의 선택): 서비스(`service`, `dto`)는 웹(`control`)에 의존하지 않음 / 영속성과 엔티티는 서비스나 웹에
   의존하지 않음 - DTO(`dto`)와 아웃바운드 포트(`port`)는 함께 쓰는 것이라 허용 / (`mapping: xml` 이면) 엔티티는 `jakarta.persistence`·`org.hibernate` 를 모름.
   layered 의 서비스는 리포지토리와 영속성 헬퍼를 직접 부르므로, 헥사고날의 규칙으로는 실패합니다.
+  이전 버전이 헥사고날 규칙으로 테스트를 써 둔 layered 프로젝트는 `<Domain>ArchitectureTest` 를 지우면 layered 규칙을 받습니다 (직접 쓴 규칙은 먼저 옮겨 두세요).
 - 테스트 의존성이 필요합니다: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - 사용 사례: 코드 리뷰 없이도 계층 위반을 빌드에서 차단, 팀 합류자에게 경계를 코드로 전달
 

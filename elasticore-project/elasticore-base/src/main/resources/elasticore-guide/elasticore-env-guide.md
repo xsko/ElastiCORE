@@ -647,6 +647,7 @@ config:
 - Rules for `layered` (any other selection): the services (`service`, `dto`) do not depend on the web (`control`) / persistence and the entities do not depend on
   the services or the web - the DTOs (`dto`) and the outbound ports (`port`) are shared and allowed / (with `mapping: xml`) the entities do not know `jakarta.persistence` or `org.hibernate`.
   The layered services call the repositories and the persistence helper directly, which the hexagon's rule forbids.
+  A layered project whose test an earlier version wrote with the hexagon's rules gets the layered ones by deleting `<Domain>ArchitectureTest` (move your own rules aside first).
 - It needs a test dependency: `testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'`
 - Use cases: block layer violations in the build without code review, convey the boundaries to a new team member as code
 
