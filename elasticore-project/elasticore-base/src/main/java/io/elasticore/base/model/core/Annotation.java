@@ -45,6 +45,22 @@ public class Annotation {
     /** True for a label whose parameters are its translations (LabelTranslations). */
     private boolean translatedLabel;
 
+    /** The key=value pairs in the order written; null when the annotation has none. */
+    private Map<String, String> parametersAsWritten;
+
+    /** The values written without '=' beside key=value pairs: @ui(menu=sales, staff) holds staff. */
+    private List<String> flags = Collections.emptyList();
+
+    /**
+     * Records the parameters as written: the pairs in their order and the values
+     * without '=' among them, which the value of a key=value annotation does not keep.
+     */
+    public Annotation asWritten(Map<String, String> pairs, List<String> bare) {
+        this.parametersAsWritten = Collections.unmodifiableMap(new LinkedHashMap<String, String>(pairs));
+        this.flags = Collections.unmodifiableList(new ArrayList<String>(bare));
+        return this;
+    }
+
     private Annotation(String name, String value, Properties properties) {
         this(name, properties);
         this.value = value;
