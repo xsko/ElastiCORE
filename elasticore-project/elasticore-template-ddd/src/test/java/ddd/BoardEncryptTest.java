@@ -72,7 +72,8 @@ class BoardEncryptTest {
         JsonNode read = json.readTree(mvc.perform(get(SUBSCRIBERS + "/" + id)).andReturn().getResponse()
                 .getContentAsString());
         assertThat(read.path("phone").asText()).isEqualTo("010-1234-5678");
-        assertThat(read.path("email").asText()).isEqualTo("reader@example.com");
+        // The e-mail is also @Mask(EMAIL): the response shows it masked.
+        assertThat(read.path("email").asText()).isEqualTo("re****@example.com");
         assertThat(read.has("phoneBidx")).as(read.toString()).isFalse();
 
         // Hibernate made the converter when it started: a missing key would have stopped the start.
@@ -103,6 +104,45 @@ class BoardEncryptTest {
         }
         JsonNode none = send(post(SUBSCRIBERS + "/search"), json.createObjectNode().put("phone", "010-9876-5439"));
         assertThat(none.path("content").size()).isZero();
+    }
+
+    @Autowired private io.elasticore.sample.ddd.board.application.SubscriberService subscribers;
+
+    /**
+     * Issue 270: Subscriber.email is @encrypt and @Mask(EMAIL). A client that sends the read DTO back unchanged sends
+     * the masked text; the update compares it with the stored value - decrypted - masked, finds it the same, and keeps
+     * the stored value. The batch update the same. Subscriber is a root changed by its commands: no PUT is exposed and
+     * any other e-mail is a change the root refuses, so its service's update is called here, the one an application
+     * calls (the HTTP round trip, with a new value written, is the Kotlin and MyBatis samples').
+     */
+    @Test
+    @DisplayName("a masked e-mail sent back as shown keeps the stored one")
+    void aMaskedValueSentBackKeepsTheStoredOne() throws Exception {
+        long id = create("masked", "010-3333-4444", "keeper@example.com");
+        String column = (String) row(id).get("EMAIL");
+        JsonNode read = json.readTree(mvc.perform(get(SUBSCRIBERS + "/" + id)).andReturn().getResponse()
+                .getContentAsString());
+        assertThat(read.path("email").asText()).isEqualTo("ke****@example.com");
+
+        io.elasticore.sample.ddd.board.application.dto.SubscriberDTO back =
+                json.treeToValue(read, io.elasticore.sample.ddd.board.application.dto.SubscriberDTO.class);
+        assertThat(back.getEmail()).isEqualTo("ke****@example.com");
+        assertThat(subscribers.update(back).getEmail()).isEqualTo("keeper@example.com");
+        assertThat(row(id).get("EMAIL")).isEqualTo(column);
+        assertThat(FieldCrypto.current().decrypt(column)).isEqualTo("keeper@example.com");
+
+        subscribers.batchUpdate(java.util.List.of(
+                json.treeToValue(read, io.elasticore.sample.ddd.board.application.dto.SubscriberDTO.class)));
+        assertThat(row(id).get("EMAIL")).isEqualTo(column);
+
+        // Other text is a change, which this root takes only through its commands.
+        back = json.treeToValue(read, io.elasticore.sample.ddd.board.application.dto.SubscriberDTO.class);
+        back.setEmail("ke***@example.com");
+        io.elasticore.sample.ddd.board.application.dto.SubscriberDTO other = back;
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> subscribers.update(other))
+                .isInstanceOf(io.elasticore.springboot3.validation.InvariantViolationException.class)
+                .hasMessageContaining("Subscriber.email");
+        assertThat(row(id).get("EMAIL")).isEqualTo(column);
     }
 
     /**

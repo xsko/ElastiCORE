@@ -196,6 +196,48 @@ public abstract class ShopApi {
         assertEquals(0, total("customer", "{\"customerId\":" + customer + "}"));
     }
 
+    /**
+     * Issue 270: Customer.email is @Mask(EMAIL). The read DTO sent back as it is carries the masked text, which is the
+     * stored value masked: PUT and PUT /batch keep the stored address. A new one is written, and so is masked text
+     * that is not the stored value masked.
+     */
+    @Test
+    public void aMaskedFieldSentBackAsShownKeepsTheStoredValue() throws Exception {
+        String local = "keeper" + unique();
+        String email = local + "@a.com";
+        String masked = local.substring(0, 2) + "*".repeat(local.length() - 2) + "@a.com";
+        long id = id(create("customer", "{\"name\":\"Masked\",\"email\":\"" + email + "\"}"), "customerId");
+        com.fasterxml.jackson.databind.node.ObjectNode read =
+                (com.fasterxml.jackson.databind.node.ObjectNode) body(send("GET", "/customer/" + id, null), 200);
+        assertEquals(masked, read.get("email").asText(), read.toString());
+
+        read.put("name", "Masked renamed");
+        JsonNode updated = body(send("PUT", "/customer", json.writeValueAsString(read)), 200);
+        assertEquals("Masked renamed", updated.get("name").asText(), updated.toString());
+        assertEquals(masked, updated.get("email").asText(), updated.toString());
+        assertEquals(email, storedEmail(id));
+
+        read.put("name", "Masked batched");
+        send("PUT", "/customer/batch", "[" + json.writeValueAsString(read) + "]", 200);
+        assertEquals(email, storedEmail(id));
+
+        String moved = "moved" + unique() + "@a.com";
+        read.put("email", moved);
+        send("PUT", "/customer", json.writeValueAsString(read), 200);
+        assertEquals(moved, storedEmail(id));
+
+        // The old masked text is not the new address masked: written as sent, as any other text.
+        read.put("email", masked);
+        send("PUT", "/customer", json.writeValueAsString(read), 200);
+        assertEquals(masked, storedEmail(id));
+    }
+
+    private String storedEmail(long customerId) {
+        Document stored = mongo.getCollection("customer").find(new Document("_id", customerId)).first();
+        assertNotNull(stored);
+        return stored.getString("email");
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static String unique() {

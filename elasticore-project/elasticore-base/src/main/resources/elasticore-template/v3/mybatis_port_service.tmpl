@@ -170,7 +170,7 @@ public class ${className} {
         ${entityClassName} entity = ${cmdRef}.findById(${pkDtoInfo}).orElse(null);
         ${accessUpdate}
         if (entity == null)
-            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}
+            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${maskKeep}
         ${mapperName}.mapping(dto, entity, ${isSkipNull});
         ${deriveBeforeSave}
         beforeSave(entity, dto);

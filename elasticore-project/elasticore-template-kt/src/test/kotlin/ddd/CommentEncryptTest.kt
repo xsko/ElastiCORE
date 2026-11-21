@@ -57,7 +57,8 @@ class CommentEncryptTest {
     fun theColumnHoldsCiphertextAndTheSearchFindsItByTheBlindIndex() {
         val created = send(post(comments), """{"content":"<p>hi</p>","authorName":"kim","authorPhone":"010-4321-8765"}""")
         val id = created.path("commentId").asLong()
-        assertThat(created.path("authorPhone").asText()).isEqualTo("010-4321-8765")
+        // Also @Mask(PHONE): the response shows it masked.
+        assertThat(created.path("authorPhone").asText()).isEqualTo("010-****-8765")
 
         val column = stored(id, "author_phone")!!
         assertThat(column).startsWith("v1:").doesNotContain("4321")
@@ -65,7 +66,7 @@ class CommentEncryptTest {
         assertThat(stored(id, "author_phone_bidx")).isEqualTo(Bidx.ofDigits("01043218765"))
 
         val read = json.readTree(mvc.perform(get("$comments/$id")).andReturn().response.contentAsString)
-        assertThat(read.path("authorPhone").asText()).isEqualTo("010-4321-8765")
+        assertThat(read.path("authorPhone").asText()).isEqualTo("010-****-8765")
         assertThat(read.has("authorPhoneBidx")).`as`(read.toString()).isFalse()
 
         assertThat(found("01043218765")).containsExactly(id.toString())
@@ -92,6 +93,44 @@ class CommentEncryptTest {
         assertThat(stored(id, "author_phone")).isEqualTo(column)
         assertThat(stored(id, "author_phone_bidx")).isEqualTo(Bidx.ofDigits("01070000001"))
         assertThat(found("01070000001")).containsExactly(id.toString())
+    }
+
+    /**
+     * Issue 270: authorPhone is @encrypt and @Mask(PHONE). The read DTO sent back as it is carries the masked text,
+     * which is the stored value - decrypted - masked: PUT and PUT /batch keep the stored phone and its index. A new
+     * phone is written, and so is masked text that is not the stored value masked.
+     */
+    @Test
+    fun aMaskedPhoneSentBackAsShownKeepsTheStoredOne() {
+        val id = create("masked-${System.nanoTime()}", "010-7300-0001")
+        val column = stored(id, "author_phone")
+        val read = json.readTree(mvc.perform(get("$comments/$id")).andReturn().response.contentAsString)
+                as com.fasterxml.jackson.databind.node.ObjectNode
+        assertThat(read.path("authorPhone").asText()).isEqualTo("010-****-0001")
+
+        read.put("authorName", "renamed")
+        val updated = send(put(comments), json.writeValueAsString(read))
+        assertThat(updated.path("authorName").asText()).isEqualTo("renamed")
+        assertThat(updated.path("authorPhone").asText()).isEqualTo("010-****-0001")
+        assertThat(stored(id, "author_phone")).isEqualTo(column)
+        assertThat(found("01073000001")).containsExactly(id.toString())
+
+        read.put("authorName", "batched")
+        mvc.perform(put("$comments/batch").contentType(MediaType.APPLICATION_JSON)
+            .content(json.writeValueAsString(json.createArrayNode().add(read))))
+            .andReturn().response.let { assertThat(it.status).`as`(it.contentAsString).isEqualTo(200) }
+        assertThat(stored(id, "author_phone")).isEqualTo(column)
+        assertThat(FieldCrypto.current().decrypt(column)).isEqualTo("010-7300-0001")
+
+        read.put("authorPhone", "010-7300-0002")
+        assertThat(send(put(comments), json.writeValueAsString(read)).path("authorPhone").asText()).isEqualTo("010-****-0002")
+        assertThat(FieldCrypto.current().decrypt(stored(id, "author_phone"))).isEqualTo("010-7300-0002")
+        assertThat(found("01073000002")).containsExactly(id.toString())
+
+        // The old masked text is not the new phone masked: written as sent, as any other text.
+        read.put("authorPhone", "010-****-0001")
+        send(put(comments), json.writeValueAsString(read))
+        assertThat(FieldCrypto.current().decrypt(stored(id, "author_phone"))).isEqualTo("010-****-0001")
     }
 
     /** PUT /batch and an update by condition write each row through the same moment: the index follows. */

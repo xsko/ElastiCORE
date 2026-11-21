@@ -90,13 +90,14 @@ entity:
   # written (@s(eq): its blind index, phone_bidx). The keys are the elasticore.crypto.* properties.
   # @encrypt(digits): 010-1234-5678 and 01012345678 are one phone to the search. A subscriber who moves
   # gives a new phone through the command, and the index follows it when the row is written.
+  # The e-mail is also shown masked (@env:maskemail: re****@example.com); sent back as shown, an update keeps it.
   Subscriber:
     meta: entity @root @expose(20)
     fields:
       subscriberId: long @id @sequence
       nickname: string(50)! @search(like)
       phone: string(20) @encrypt(digits) @s(eq)
-      email: string(100) @encrypt
+      email: string(100) @encrypt @env:maskemail
       status: SubscriberStatus
     states:
       status:
