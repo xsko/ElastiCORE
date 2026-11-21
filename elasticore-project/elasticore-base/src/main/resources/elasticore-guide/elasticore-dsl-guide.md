@@ -102,7 +102,7 @@ entity:
 
 ### A label in other languages (`@label(en=...)`)
 
-> **Works in:** every mode (JPA, MyBatis, MongoDB), Java and Kotlin, every architecture - it is model information.
+> **Works in:** every mode, language and architecture the generator writes (JPA, MyBatis, MongoDB; Java, Kotlin) - it is model information.
 > The label bundle is written by the v3 bundles for a domain that has an API (`@expose`); the `labels` of the
 > TypeScript client by `ts-model`; the synonyms by `ossie-export`.
 

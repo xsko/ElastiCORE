@@ -102,7 +102,7 @@ entity:
 
 ### 다른 언어의 라벨 (`@label(en=...)`)
 
-> **동작 범위:** 모든 모드(JPA, MyBatis, MongoDB), Java 와 Kotlin, 모든 아키텍처 - 모델 정보이다.
+> **동작 범위:** 생성기가 쓰는 모든 모드·언어·아키텍처(JPA, MyBatis, MongoDB; Java, Kotlin) - 모델 정보이다.
 > 라벨 번들은 v3 번들이 API 가 있는 도메인(`@expose`)에 쓰고, TypeScript 클라이언트의 `labels` 는 `ts-model`,
 > synonyms 는 `ossie-export` 가 쓴다.
 
