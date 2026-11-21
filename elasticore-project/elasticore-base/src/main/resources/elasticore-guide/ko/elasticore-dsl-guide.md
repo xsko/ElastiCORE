@@ -122,8 +122,9 @@ entity:
   TypeScript 키다. 번들 파일은 `_` 로 쓴다(`_pt_BR`) - `ResourceBundle` 이 찾는 이름이다.
 - 값은 다음 쉼표까지(공백과 아포스트로피 포함, `en=Owner's name`)이고, 쉼표가 들어가면 따옴표로 감싼다
   (`en="Cost, per unit"`). 한 줄의 `@label(...)` 여러 개는 하나의 라벨이다.
-- 직접 쓴 `@label` 만 이렇게 읽고, `--` 텍스트는 아니다: `-- sum = price * qty` 는 전처럼 라벨이다. 언어 태그가 아닌
-  키가 있는 `@label(...)` (`@label(en=Unit cost, note=x)`) 은 2.x 처럼 읽고, 빌드가 경고한다(`DSL_WARN`).
+- 직접 쓴 `@label` 만 이렇게 읽고, `--` 텍스트는 아니다: `-- sum = price * qty` 는 전처럼 라벨이다.
+  언어 태그가 아닌 키가 있는 `@label(...)` (`@label(en=Unit cost, note=x)`) 은 2.x 처럼 읽고,
+  빌드가 경고한다(`DSL_WARN`).
 - 있는 언어만 쓴다. `@label(...)` 이 없는 필드는 모든 언어에서 `--` 라벨이다.
 - `--` 라벨과 `| 설명` 은 전과 같이 읽힌다. `field.getAnnotationValue("label")` 은 여전히 `단가`,
   `field.getAnnotationValue("label.en")` 은 `Unit cost`. 룰은 `FieldSpec.labelTranslations()`,
@@ -147,8 +148,9 @@ entity:
    `ResourceBundle` 처럼 기본 파일로 간다. 둘 다 생성 파일이다 - 파일이 아니라 DSL 을 고친다. Spring 은 다른 번들처럼
    읽는다 - `spring.messages.basename` 에 이름을 더하고(`messages,i18n/petstore-labels`) `MessageSource` 에
    요청의 `Locale` 로 `Item.unitCost` 를 물으면 된다(서버가 그리는 화면, 내보내기 파일의 열 제목 등).
-   `spring.messages.fallback-to-system-locale: false` 도 둔다 - Spring Boot 의 기본값(`true`)이면 파일이 없는 언어는
-   `--` 라벨이 아니라 서버 머신 언어의 파일을 받는다(영어 서버면 영어).
+   `spring.messages.fallback-to-system-locale: false` 도 둔다 - Spring Boot 의 기본값(`true`)이면
+   파일이 없는 언어는 `--` 라벨이 아니라 서버 머신 언어의 파일을 받는다
+   (영어 서버면 영어).
 2. **TypeScript 클라이언트** - `XxxFields` 의 각 필드 항목에 `labels` 가 붙는다:
    ```ts
    unitCost: { label: "단가", labels: { en: "Unit cost", ja: "単価", "zh-TW": "單價" }, required: true },
