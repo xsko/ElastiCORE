@@ -235,6 +235,25 @@ public class AbstractModelLoader implements ConstantParam {
         return false;
     }
 
+    /**
+     * Whether an '=' stands outside every quoted string. A quote opens a string
+     * only when it is closed later, so an apostrophe in a word (Owner's) is a letter.
+     */
+    static boolean equalsOutsideQuotes(String parameters) {
+        for (int i = 0; i < parameters.length(); i++) {
+            char ch = parameters.charAt(i);
+            if (ch == '"' || ch == '\'') {
+                int close = parameters.indexOf(ch, i + 1);
+                if (close > 0) {
+                    i = close;
+                    continue;
+                }
+            }
+            if (ch == '=') return true;
+        }
+        return false;
+    }
+
     /** key=value, key="value" or a single value - the 2.x reading of annotation parameters. */
     private static final Pattern KV =
             Pattern.compile("(\\w+)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
@@ -267,6 +286,11 @@ public class AbstractModelLoader implements ConstantParam {
             // must not be split into key=value pairs at its '='. Trimmed, so
             // the quotes are the ends of the value and are stripped as usual.
             singleValue = parameters.trim();
+        } else if (!equalsOutsideQuotes(parameters)) {
+            // Every '=' is inside a quoted string: @pattern('^(?=.*[0-9]).+$', 'needs a digit')
+            // is a value and its message, not key=value pairs (issue 267: the lookahead's
+            // '=' split it, and the regular expression became "digit'").
+            singleValue = parameters;
         }else {
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*([^,]+)|([^,\\s]+)");
             //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*\"([^\"]*)\"|(\\w+)\\s*=\\s*([^,\\s]+)");
@@ -291,14 +315,25 @@ public class AbstractModelLoader implements ConstantParam {
             }
              */
 
+            // The pairs in their order and the values without '=' among them, kept
+            // beside the 2.x reading (which keeps neither) for a team's own marker:
+            // @ui(menu=sales, order=30, staff) lost staff (issue 273).
+            java.util.Map<String, String> pairs = new java.util.LinkedHashMap<String, String>();
+            java.util.List<String> bare = new java.util.ArrayList<String>();
             while (kvMatcher.find()) {
                 if (kvMatcher.group(1) != null) {
                     String key = kvMatcher.group(1);
                     String value = kvMatcher.group(2) != null ? kvMatcher.group(2) : kvMatcher.group(3);
                     properties.setProperty(key, value);
+                    pairs.put(key, value);
                 } else if (kvMatcher.group(4) != null) {
                     singleValue = kvMatcher.group(4);
+                    bare.add(kvMatcher.group(4));
                 }
+            }
+            if (!properties.isEmpty()) {
+                return Annotation.create(annotationName, singleValue, properties)
+                        .asWritten(pairs, bare);
             }
         }
 
@@ -465,25 +500,21 @@ public class AbstractModelLoader implements ConstantParam {
             }
         }
 
-        //Pattern pattern = Pattern.compile("@(\\w+)(?:\\((.*?)\\))?");
-        //Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\((.*?)\\))?");
-        //Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\('([^']*?)'\\))?");
-        //Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\(('([^']*?)'|[^()]*?)\\))?");
-        //Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\(([^()]*(?:\\([^)]*\\))?[^()]*)\\))?");
+        // Pattern pattern = Pattern.compile("@(\\w+)(?:\\((.*?)\\))?");
+        // Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\((.*?)\\))?");
+        // Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\('([^']*?)'\\))?");
+        // Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\(('([^']*?)'|[^()]*?)\\))?");
+        // Pattern pattern = Pattern.compile("@(\\w+(?::\\w+)?)(?:\\(([^()]*(?:\\([^)]*\\))?[^()]*)\\))?");
 
-        //Pattern pattern = Pattern.compile("@([\\w:.]+(?::\\w+)?)(?:\\(([^()]*(?:\\([^)]*\\))?[^()]*)\\))?");
-        //Pattern pattern = Pattern.compile("@([\\w:.]+)\\s*\\((.*)\\)", Pattern.DOTALL);
+        // Pattern pattern = Pattern.compile("@([\\w:.]+(?::\\w+)?)(?:\\(([^()]*(?:\\([^)]*\\))?[^()]*)\\))?");
+        // Pattern pattern = Pattern.compile("@([\\w:.]+)\\s*\\((.*)\\)", Pattern.DOTALL);
 
-        //Pattern pattern = Pattern.compile("@([\\w:.]+(?:[:]\\w+)?)(?:\\((([^()]|\"[^\"]*\")*?)\\))?",Pattern.DOTALL);
-        Pattern pattern = Pattern.compile("@([\\w:.]+(?:[:]\\w+)?)(?:\\((([^()]*|\\([^()]*\\)|\"[^\"]*\")*?)\\))?", Pattern.DOTALL);
-
-
-
-
-
-
-
-
+        // Pattern pattern = Pattern.compile("@([\\w:.]+(?:[:]\\w+)?)(?:\\((([^()]|\"[^\"]*\")*?)\\))?",Pattern.DOTALL);
+        // Parentheses inside the value nest two deep: a regular expression's
+        // group in a group, '^((a|b)c)$', is part of it (issue 267).
+        Pattern pattern = Pattern.compile(
+                "@([\\w:.]+(?:[:]\\w+)?)(?:\\((([^()]*|\\((?:[^()]|\\([^()]*\\))*\\)|\"[^\"]*\")*?)\\))?",
+                Pattern.DOTALL);
 
         Matcher matcher = pattern.matcher(fieldLine);
 

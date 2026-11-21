@@ -722,6 +722,28 @@ public final class EntitySpec {
         return this;
     }
 
+    private final java.util.Map<String, java.util.List<String>> metaFlags =
+            new java.util.LinkedHashMap<String, java.util.List<String>>();
+
+    /** Records the values a meta annotation holds without '=' beside its pairs. */
+    public EntitySpec metaFlags(String name, java.util.List<String> flags) {
+        if (name == null || flags == null || flags.isEmpty()) return this;
+        metaFlags.put(
+                name.toLowerCase(java.util.Locale.ROOT),
+                java.util.Collections.unmodifiableList(new java.util.ArrayList<String>(flags)));
+        return this;
+    }
+
+    /**
+     * The values a meta annotation holds without '=' beside its key=value pairs, in
+     * order: {@code @ui(menu=sales, order=30, staff)} -> [staff], and its pairs in
+     * {@link #metaProperties(String)}. Empty when there are none.
+     */
+    public java.util.List<String> metaFlags(String name) {
+        java.util.List<String> flags = metaFlags.get(name.toLowerCase(java.util.Locale.ROOT));
+        return flags == null ? java.util.Collections.<String>emptyList() : flags;
+    }
+
     private final java.util.Map<String, java.util.List<String>> repeatedMeta =
             new java.util.LinkedHashMap<String, java.util.List<String>>();
 
