@@ -205,7 +205,7 @@ open class ${className}(
         ${validateUpdate}
         val entity = ${cmdRef}.findById(${pkDtoInfo})${liveFilter}.orElse(null)
         ${accessUpdate}
-        if (entity == null) throw NotFoundException("Invalid ${dtoClassName} ID")${versionCheck}
+        if (entity == null) throw NotFoundException("Invalid ${dtoClassName} ID")${versionCheck}${maskKeep}
         ${mapperName}.mapping(dto, entity, ${isSkipNull})
         ${deriveBeforeSave}
         beforeSave(entity, dto)

@@ -504,7 +504,8 @@ config:
 - `@dto:` 이므로 `@Mask` 는 DTO 필드에만 붙고, 엔티티와 DB 에는 값이 그대로 저장된다.
 - Jackson 모듈은 런타임이 스스로 등록한다(Boot 3 은 Jackson 2, Boot 4 는 Jackson 3). 생성되는 DTO 는 둘 다 같다.
 - `MaskType`: `PHONE`(가운데 묶음), `EMAIL`(로컬 부분 앞 두 글자만), `NAME`(첫 글자와 끝 글자만), `PLATE`(끝 숫자 네 개), `CARD`(앞뒤 네 자리만), `RRN`(앞 일곱 자리만).
-- 가리는 것은 응답 JSON 뿐이고 요청은 보낸 그대로 읽는다. 본인과 관리자도 가린 값을 받으며, 읽은 DTO 를 그대로 다시 보내는 클라이언트는 가린 글자를 저장하게 되니 가린 필드는 바뀔 때만 보낸다.
+- 가리는 것은 응답 JSON 뿐이고 요청은 보낸 그대로 읽는다. 본인과 관리자도 가린 값을 받는다.
+- 읽은 DTO 를 그대로 다시 보내도 된다: 3.0 코드의 수정(`PUT`, `PUT /batch`; JPA, MyBatis, MongoDB, Java, Kotlin)은 가린 필드의 글자를 저장된 값을 가린 것 - `@encrypt` 면 복호화한 값 - 과 비교해 같으면 저장된 값을 그대로 둔다. 그 밖의 글자는 저장하고, 생성은 보낸 그대로 저장한다. 필드는 클래스 이름 `io.elasticore.springboot3.mask.Mask`(또는 `runtimePackages` 가 바꾼 이름)로 찾는다. 지켜지지 않는 곳: 조건 수정(`updateBySpecification`), 매퍼를 직접 부르는 직접 짠 코드.
 
 **컬럼을 암호화해 저장하기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): 3.0 코드의 `@encrypt`(어노테이션 가이드)가 하고, `@search(eq)` 에는 블라인드 인덱스도 쓴다. 생성기 없이 쓸 때는 런타임의 컨버터를 이름으로 둔다:
 ```yaml

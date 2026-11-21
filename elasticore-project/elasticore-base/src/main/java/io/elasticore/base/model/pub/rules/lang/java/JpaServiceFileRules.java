@@ -149,6 +149,10 @@ public class JpaServiceFileRules implements CodeRules {
         dependencyVars(c, e);
         joinFetchVars(c, e);
         writeGuardVars(c, e, isSkipNull, pkFromDto);
+        // A masked field sent back unchanged keeps its stored value (MaskedFields); nothing without one.
+        c.var(
+                "maskKeep",
+                io.elasticore.base.model.pub.rules.base.MaskedFields.keepStatements(c.syntax(), e, "        "));
     }
 
     /**

@@ -504,7 +504,8 @@ config:
 - `@dto:` puts `@Mask` on the DTO field only; the entity and the database keep the value as it is.
 - The runtime registers the Jackson module by itself (Jackson 2 on Boot 3, Jackson 3 on Boot 4), and the generated DTO is the same on both.
 - `MaskType`: `PHONE` (the middle group), `EMAIL` (two letters of the local part), `NAME` (the first and last letter), `PLATE` (the last four digits), `CARD` (all but the first and last four digits), `RRN` (all but the first seven digits).
-- Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too - and a client that sends a read DTO back unchanged writes the masked text: send a masked field only when it changes.
+- Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too.
+- A client may send a read DTO back unchanged: the 3.0 code's update (`PUT` and `PUT /batch`; JPA, MyBatis, MongoDB, Java and Kotlin) compares a masked field's text with the stored value masked - with `@encrypt`, the decrypted value - and keeps the stored value when they are the same. Any other text is written, and a create writes what it is sent. The field is found by the class name `io.elasticore.springboot3.mask.Mask` (or the name `runtimePackages` gives it). Not kept: an update by condition (`updateBySpecification`), and code of your own that calls the mapper.
 
 **Keeping a column encrypted** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): the 3.0 code's `@encrypt` (annotation guide) does it, with the blind index for `@search(eq)`. Without the generator, name the runtime's converter:
 ```yaml

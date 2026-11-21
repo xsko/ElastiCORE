@@ -125,6 +125,7 @@ public class MongoServiceFileRules implements CodeRules {
                             syntax.statement(syntax.setter("entity", pk.name(), genId))));
         }
         c.var("createIdReset", createId.toString());
+        c.var("maskKeep", io.elasticore.base.model.pub.rules.base.MaskedFields.keepStatements(syntax, e, "        "));
 
         FieldSpec version = MyBatisSql.version(e);
         if (version == null) {

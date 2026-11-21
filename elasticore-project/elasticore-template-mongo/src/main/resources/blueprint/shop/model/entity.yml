@@ -22,7 +22,7 @@ entity:
     fields:
       customerId: long @id @sequence
       name: string(50)! @search(like)
-      email: string(100) @unique @search(eq)
+      email: string(100) @unique @search(eq) @env:maskemail   # shown masked; sent back as shown, an update keeps it
       grade: int @default(1) @search(>=)
       address: Address
       joinedAt: datetime @jpa:CreatedDate
