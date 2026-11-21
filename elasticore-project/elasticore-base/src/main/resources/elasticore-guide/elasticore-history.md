@@ -1,3 +1,628 @@
+## 3.0.261121
+
+### Changes (archTest - the packages of the project's own code)
+
+#### The generated architecture test checks the packages hand-written code adds under the base, placed by segment
+- Why (issue 173): `archTest: true` took its layers from the namespaces alone. The generated classes keep to those
+  boundaries by construction, so the test's work is on hand-written code, which tends to live in packages that are not
+  namespaces - `domain.policy`, `infrastructure.mail`, an inbound `adapter.in.mq` - and no rule covered them: a domain
+  policy that imported an SMTP sender, or a service that called it past its port, passed.
+- What: where the namespaces name their layers by segment under the test's base package (the entities under
+  `<base>.domain`, the services under `<base>.application` - what `namespace: { base: ... }` writes), the packages the
+  project's main sources declare there are placed by their first segment after the base:
+  - `domain.*` with the domain, `application.*` with the application;
+  - `adapter.*`, `infrastructure.*` and the first segments of `control`, `repository` and `persistence` (`interfaces`,
+    say) outside both (`adapter.out.*` with persistence, the outbound side).
+  - A package under a namespace is that namespace's already; the base itself (the application class) and test sources
+    are left out.
+  - A package it cannot place (`config`, say) is a DSL warning, once - it names the package and says to move it or
+    add its rule - and is not guessed.
+  - A layered layout, whose segments name no layers, is read from the namespaces as before, and nothing is said.
+- The test is generated once and then owned: a file nobody edited takes the new package lists on the next build, and an
+  edited one goes through the three-way merge like every other owned file (no special case, as agreed on the issue).
+- Upgrading: a project already on `archTest: true` whose test nobody edited takes the wider lists on its next build, with
+  no DSL change, and the test can then fail where hand-written `domain.*` code uses `infrastructure.*` or `adapter.*`, or
+  `application.*` code uses them past a port. That is the check doing its work; there is no switch for the old lists - the
+  fix is to move the dependency behind a port the domain or the application declares.
+- Unchanged: a project without packages of its own there gets the same file, word for word (the header names the
+  project's packages only when there are some).
+- Checked: `ArchTestPackagesTest` - a hand-written `domain.policy` class that imports `infrastructure.mail` is in the
+  domain rule, and `infrastructure.mail`, `adapter.out.search` and `adapter.in.mq` are in what the domain and the
+  application may not use; the base package, a package under a namespace and a test source are not; `config` is said
+  once; with `control`, `repository` and `persistence` under `interfaces.rest`, `storage.jpa` and `db.mapping`, a
+  hand-written `interfaces.mq` goes with the adapters and `storage.cache` and `db.audit` with persistence; Kotlin's
+  `` adapter.`in`.mq `` read as `adapter.in.mq`; without packages of its own the file as before; a
+  layered layout neither scanned nor warned; an untouched file updated and an edited one merged (its own rule kept).
+  `elasticore-template-ddd`'s `ShopArchitectureTest` (`interfaces.rest`, no packages of its own) is unchanged.
+- Files: `ArchitectureTestSource` (`layers`, `segments`), `RulesGenRunner` (`emitArchitectureTest`,
+  `mainSourcePackages`, `declaredPackage`); env guide 6.1.3 (en, ko).
+
+### Improvements (source comments - a command or event added later)
+
+#### The rule sets' comments say a command or event added later builds, as the guides do
+- Why: `DddCommandRules` said a command added to the DSL and not yet written "is a compile error", and
+  `DddDomainServiceRules` said an event added to a process manager's `on` is an abstract method "the compiler asks
+  the developer's class for". Since the generated-file merge that holds only where the merge does not reach; the
+  guides were corrected (`guide-new-command-stub.md`), the code comments were not.
+- Now: the comments say what lands - the behaviour class gets a stub that throws (Java
+  `UnsupportedOperationException`, Kotlin `TODO`), the process manager an empty `handle`, both regenerated when
+  untouched and merged into the developer's edits - and that a file the merge does not reach (`KEPT`, or an edited
+  one under `merge = false`, `SKIP(user-owned)`) still fails to compile. Comments only; no generated text changed.
+- Not in this change: the Javadoc the process manager base templates write into every generated `XxxBase`
+  (`v3/processManagerBase.tmpl`, `kt/processManagerBase.tmpl`) is generated output; it is corrected on its own
+  (`process-manager-base-comment.md`).
+- Checked: `SourceAsciiTest`; `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck` unchanged.
+- Files: `DddCommandRules.java`, `DddDomainServiceRules.java`.
+
+### New Features (v3 entity and runtime - `@encrypt`)
+
+#### `@encrypt`: a column kept encrypted (AES-256-GCM), and with `@search(eq)` found by a blind index
+- Why: projects kept personal data encrypted with a converter of their own (`phone: string(20) @env:encrypt
+  @env:maskphone`), and then could not search it: the column holds a different text for the same value each time,
+  so `@s(eq)` found nothing.
+- Now: `phone: string(20) @encrypt @s(eq)`. The runtime (`io.elasticore.springboot3.crypto`, both runtimes) encrypts
+  with AES-256-GCM and a random 12-byte IV per write and stores `v1:` + base64(IV, ciphertext, tag), the version bound
+  to it as associated data; the prefix names the key (v1 to v9), so after a rotation old rows are read with
+  `elasticore.crypto.keys.v1` and every write uses the current `elasticore.crypto.key` (`elasticore.crypto.key-version`).
+  JPA: the entity field gets `@Convert(converter = EncryptConverter.class)` - the same line a project without the
+  generator names in env.yml (`@entity:jakarta.persistence.Convert(...)`). MyBatis: the mapper binds and reads the
+  column through `EncryptTypeHandler`. The column is `ceil((n * 4 + 28) / 3) * 4 + 3` long (147 for `string(20)`) in
+  the entity, the DDL, Flyway and schema.yml, and Oracle's large-column check reads that length; the DTO still checks
+  n. An `@encrypt` field searched by equality (`eq`, `=`, a bare `@search`, any case) gets a companion field the model
+  writes, `phoneBidx` / `phone_bidx` (22 characters, indexed - on the child's table for a field of a plain `@abstract`
+  parent): HMAC-SHA256 with `elasticore.crypto.index-key` over the trimmed value, 16 bytes in base64url. Values that
+  differ stay apart; `@encrypt(digits)` opts in to dropping the `-`, ` `, `.` of a number (`Bidx.ofDigits`), so
+  `010-1234-5678` finds `01012345678`. The entity's `indexEncrypted()` writes the index just before the row is
+  written: under JPA the runtime's `BlindIndexListener` (`@EntityListeners`, `@PrePersist`/`@PreUpdate`), after
+  `beforeSave`, the derived values, a lifecycle command and any code that set the field; under the DDD rules over
+  MyBatis the root's `Lifecycle` (`beforeInsert`/`beforeUpdate`); the layered MyBatis service after `beforeSave`,
+  before its insert and in `write()`. The search compares it with `Bidx.of(value)` - JPA (Java, Kotlin) and MyBatis
+  (`<bind>` of `@...Bidx@of`). No DTO, search DTO, TypeScript model or generated service-test fixture carries it, and
+  the Ossie model leaves out the encrypted column and its index, as it leaves out a password. The auto-configuration
+  `ElastiCoreCryptoAutoConfiguration` installs the keys before any bean is made; an application whose converter or
+  type handler was made does not start without both keys, nor with a malformed key or an index key equal to the key,
+  each named in the message.
+- Refused (the build stops, each with its message): a search other than equality on an encrypted column (like, a
+  prefix or a suffix, `>`/`>=`/`<`/`<=`, between, in, `!=`, the ignore-case conditions, `words:`) - on the entity, and
+  on a declared search DTO, which is also refused when the entity field has no `@search(eq)` index; a search through a
+  relation that reaches an encrypted field (`@ref(customer.phone)`, `words: customer.phone`); `@encrypt` on a field
+  that is not a single string, on a key, with `@unique`, with `@formula`, on a value object, or with a value other than
+  `digits`; a searched encrypted field of an aggregate member; in Kotlin, searched encrypted fields both in a class and
+  in its parent; mode: mongo; the 2.x-compatible output; and the 2.x generator (a DSL warning, as for `html`). Not
+  done: existing plaintext rows (a one-off migration, steps in the annotation guide); sorting by an encrypted column
+  sorts its ciphertext; a new index key needs every `_bidx` column rewritten; the converter has no table or column, so
+  a ciphertext copied into another row decrypts there (documented).
+- 2.x: a model without `@encrypt` generates as before (`elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED,
+  `elcoreTreeCheck` 0 / 0 / 0).
+- Checked: `FieldCryptoTest` (round trip, a random IV, a tampered, relabelled or foreign text refused, rotation v1 ->
+  v2, one-digit versions, both keys required, the index key not the key), `BidxTest` (`123-45-678` != `12-345-678`,
+  `10.11.1.1` != `101.1.1.1`, `1.5` != `15` by default; `010-1234-5678` == `01012345678` with digits),
+  `EncryptConverterTest` (the converter, the type handler over H2, the auto-configuration: no key or no index key with
+  an encrypted field fails the start, without one starts), `EncryptConverterHibernateTest` (under Spring's bean
+  container Hibernate makes the converter at start: no key, no start; the listener indexes a persist and an update,
+  `@DynamicUpdate` leaves an untouched encrypted column as it was) - in both runtimes; `EncryptFieldTest` (JPA layered
+  and hexagonal, Kotlin, MyBatis layered and hexagonal, TypeScript, digits, the DDL, an inherited index, schema.yml,
+  each refusal), `EncryptFieldMarkTest` (the 2.x generator stops), `EnvAnnotationAliasTest` (the env.yml converter on
+  the entity, not the DTO); over HTTP with the database read by JDBC: `elasticore-template-ddd` `BoardEncryptTest`
+  (Subscriber; the move command re-indexes), `elasticore-template-kt` `CommentEncryptTest` (Comment.authorPhone; a
+  partial update keeps the index, PUT /batch and an update by condition re-index), `elasticore-template-mybatis`
+  `ShopApi.anEncryptedColumnHoldsCiphertextAndIsFoundByItsIndex` (Gadget.serialNo; update and PUT /batch) - ciphertext
+  in the column, the value in the API, the same value stored differently, a search with and without dashes. The
+  samples' keys are made per test run (`TestCryptoKeys`); none is in the repository, and the samples have no
+  application of their own to start (their READMEs say so).
+- Files: `EncryptRules.java` (new), `SpecFactory.prepareEncrypt`, `RulesGenRunner`, `RuleCatalog` (`jpa-encrypt` in
+  every bundle), `JpaEntityBaseRules`, `MapperSpecRules`, `ServiceTestBaseRules`, `MyBatisSearchRules`,
+  `MyBatisMapperRules`, `MyBatisServiceFileRules` and `v3/mybatis_service.tmpl` (`encryptBeforeWrite`),
+  `MyBatisDddRules`, `MyBatisSql`, `MyBatisTables`, `JpaSchemaReader`, `SchemaCodePublisher`,
+  `OssieSemanticModelExporter`, `AbstractModelLoader`; `elasticore-springboot3/.../crypto/` (`FieldCrypto`, `Bidx`,
+  `EncryptConverter`, `EncryptTypeHandler`, `BlindIndexListener`), `ElastiCoreCryptoAutoConfiguration` and its
+  AutoConfiguration.imports line; the annotation, DSL, env and rule guides (en, ko); the three samples' blueprints,
+  schemas, READMEs and tests.
+
+### Bug Fixes (gRPC ports - the Kotlin client, and the build setup)
+
+#### The Kotlin gRPC client escapes its Spring placeholders, and the port guide says what a gRPC build needs
+- Why: with `language = 'kotlin'`, a `meta: proto @client` port wrote
+  `@Value("${grpc.syncGrpcService.ip:localhost}")` into `SyncGrpcServiceClient.kt`. Kotlin reads `"${...}"` as its own
+  string template, so the file did not parse. The template modules exclude `**/grpc/**` from compilation (they run no
+  protoc), so no build of this repository compiled it. The Java client also needs the protobuf Gradle plugin and the gRPC
+  libraries, which the port guide did not mention.
+- Now: `GrpcStubRules` writes the placeholder as Kotlin spells it, `@Value("\${grpc.syncGrpcService.ip:localhost}")`,
+  as `DddOutboxRules` already did for the outbox relay's. The Java client is written as before, byte for byte. The port
+  guide has a "Build setup for gRPC" section: the protobuf plugin 0.9.4, protoc 3.25.1, grpc 1.60.0, `generateProto`
+  after `elcore3` (which writes `src/main/proto`), the client's two properties, and what is not generated (a runtime
+  transport, a server for the provider).
+- Other Kotlin output: every `"${` of the `kt/` templates is a slot filled with a name, and the outbox relay's
+  placeholders were escaped already. The 2.x generator writes the gRPC stubs in Java only (`ProtoSrcPublisher`), so it
+  is unchanged.
+- Checked: `KotlinSpringPlaceholderTest` - the Kotlin client test and a scan of every generated `.kt` of a hexagonal
+  Kotlin domain with a proto port for an unescaped `${name:default}` failed before the fix (`SyncGrpcServiceClient.kt:
+  ${grpc.syncGrpcService.ip:localhost}`) and pass after it; the Java client is checked unchanged. The audit's Kotlin
+  repro (layered, Boot 4) with the guide's block added runs `generateProto` and `compileKotlin` successfully, and the
+  Java repro (hexagonal, Boot 4) with the same block runs `compileJava` successfully. `elcoreRulesCheck -Pstrict`,
+  `elcoreTreeCheck`, `GuideTranslationTest`.
+- Files: `GrpcStubRules`, `KotlinSpringPlaceholderTest`, port guide (en, ko).
+
+### Documentation (rule guide, DSL guide - a command or event added later)
+
+#### The guides say a command or an event added later builds, with a stub that throws or an empty `handle`
+- Why: the rule guide said a command added to an existing behavior class "does not compile until you write the rule - it
+  cannot be forgotten", that its stub "is not added to an existing behavior class", and that an event added to a process
+  manager's `on` "does not compile until you write it in the developer class". The DSL guide said the same (the
+  `SalesOrderBase` row, the `LoyaltyProcessManager is not abstract ...` message, and a dropped lifecycle leading to a
+  compile error). Since the generated-file merge, `elcore3` adds the missing method to the generate-once file - it
+  regenerates an untouched one and merges into an edited one - so the project builds and nothing reminds you.
+- Now: the rule guide ("Business commands", "Process manager") and the DSL guide (the command table, the
+  process-manager list, the lifecycle warnings) say what lands: a stub that throws
+  (`throw new UnsupportedOperationException("Xxx.ship: write the rule")`, Kotlin `TODO("Xxx.ship: write the rule")`),
+  answering 500 until the rule is written; an empty `handle(new event)` (`// The next step goes here.`) that does
+  nothing until the step is written; regenerated when untouched, `MERGED(your edits kept)` when edited. A file the merge
+  does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) still fails to compile, and the guides say so.
+- Checked: standalone hexagonal projects (plugin and `elasticore-base` from this branch), Java and Kotlin, each once
+  with the generate-once files untouched and once edited (a rule written for `close`, a line in `handle`), then a
+  command `escalate` added to `commands:` and `TicketClosed` added to `on`:
+  - Java: `Ticket.java` and `FollowupProcessManager.java` `WROTE` (untouched) / `MERGED(your edits kept)` (edited);
+    the edits kept, `escalate(Integer level)` added with the throwing stub, `handle(TicketClosedEvent)` added empty;
+    `compileJava` passes in both. Booted, `POST /api/v1/desk/ticket/1/escalate` answers 500
+    (`UnsupportedOperationException: Ticket.escalate: write the rule` in the log); `close` answers 200.
+  - Kotlin: the same files, `TODO("Ticket.escalate: write the rule")` and an empty `handle`; `compileKotlin` passes;
+    booted, `escalate` answers 500 (`kotlin.NotImplementedError`).
+  - A lifecycle given to `escalate` removes the untouched stub from the edited class (merged); a typo in it
+    (`ESCALATD`, the DSL warning names it) brings the stub back by the merge, and `compileJava` passes.
+  - Where the merge does not reach, the guides keep the compile error: with `merge = false` an edited `Ticket.java` is
+    `SKIP(user-owned)` and `compileJava` fails (`Ticket is not abstract and does not override abstract method
+    escalate(Integer)`), while the untouched process manager is `REGENERATED(owned, never edited)`. Removing the event
+    of an edited `handle` from `on` leaves the file `KEPT(yours - the DSL's changes to it do not merge)` and fails
+    (`method does not override or implement a method from a supertype`); removing the event of an untouched `handle`
+    merges it out and builds. The DSL guide's line on removing an event says so.
+- Files: rule guide (en, ko), DSL guide (en, ko).
+
+### Documentation (rule guide - `publisher.rules.kt` / `publisher.rules.ts`)
+
+#### The rule guide shows how `publisher.rules.kt` and `publisher.rules.ts` are written
+- Why: "Choosing rules per language" listed `publisher.rules.kt` ("takes precedence over the one above if present") and
+  `publisher.rules.ts` with no example. The runner reads them as the path `publisher` -> `rules` -> `kt` / `ts`, so they
+  are keys under `rules`, and `rules` cannot be a list and a map at once: the two never sit beside a `publisher.rules`
+  list. Written as a flat key they are not read at all. The DDD customize guide told a project to list its TypeScript
+  rule "in `publisher.rules.ts` in `env.yml`", which in a Java build stops `elcore3`.
+- Now: the guide shows the one form that is read - `rules: { kt: [...], ts: [...] }` - says a run with no key of its
+  own in the map (a Java build's `elcore3`, a Kotlin one with only `ts:`) stops with `Unknown rule set '{ts=[ts-model]}'`,
+  so a Java build cannot choose its TypeScript rules in `env.yml`, and names the spellings that are ignored without a
+  warning. The table says both keys are for a Kotlin build only. The customize guide's troubleshooting row says the same.
+  No code changed: `.kt` and `.ts` are read the same way, so there was no loader inconsistency to fix.
+- Checked: standalone projects (plugin and `elasticore-base` from this branch), `elcore3 -PlistRules` / `elcore3ts -PlistRules`:
+  - Kotlin build, `rules: { kt: [jpa-springboot-kt, ddd-aggregate] }` -> `[rules] demo: jpa-springboot-kt + ddd-aggregate`;
+    with `ddd-reference` added, the generated `PurchaseOrder`, its DTOs, mapper and service differ from the plain
+    `[jpa-springboot-kt]` run (6 files), so the list is used, not only listed. `ts: [jpa-dto, jpa-dto-file-ts]` in the
+    map -> `elcore3ts` lists `jpa-dto + jpa-dto-file-ts`. The guide's example (`kt:` + `ts: [ts-model]`): `elcore3`
+    and `elcore3ts` succeed and write the Kotlin server and the `.ts` client, and `compileKotlin` passes.
+  - Not read (the run took the default or the `publisher.rules` list): `"rules.kt":` / `"rules.ts":` under `publisher:`
+    with and without a `rules:` list beside them; `"publisher.rules.kt":` / `"publisher.rules.ts":` under `config:`.
+  - Java build with `rules: { ts: [ts-model] }`, and Kotlin build with only `ts:`: `elcore3` fails with
+    `Unknown rule set '{ts=[ts-model]}'`; Java build with a `kt:` map: `Unknown rule set '{kt=[jpa-springboot-kt'`.
+- Later in the same release (`rules-map-no-own-key.md`): the failure this entry documents is fixed. A run with no key
+  of its own in the map takes its default rules, so a Java build chooses its TypeScript rules with `ts:` alone, and the
+  guides say so. The `Unknown rule set` lines above describe the behaviour before that fix.
+- Files: rule guide (en, ko), DDD customize guide (en, ko).
+
+### Bug Fixes (Kotlin - a Java bundle named by the domain)
+
+#### A Kotlin build whose domain names a Java bundle stops before it writes a file
+- Why: with `language = 'kotlin'`, a domain whose env.yml names a Java bundle or set - `publisher.rules: [jpa-springboot-v3]`,
+  as the catalog domain of `elasticore-template-ddd` does - was generated into `.kt` files holding Java and Lombok
+  (`import lombok.Getter`, `@SuperBuilder`), and only `compileKotlin` found it. The other way round (a Java build naming
+  `jpa-springboot-kt`) already stopped, through the Kotlin shells' `requireSyntax`; the Java shells say nothing of the
+  language they write, so this direction passed.
+- Now: before anything is written, a Kotlin run reads the rules each domain names (`publisher.rules.kt`, else
+  `publisher.rules`), and one that holds a set only the Java bundles have - a Java file shell, the Lombok value object -
+  stops the run: `[elcore3] domain 'shop' names jpa-springboot-v3 in publisher.rules, which writes Java (its set
+  jpa-entity-file), but the build's language is kotlin - name jpa-springboot-kt instead, or leave publisher.rules out for
+  the bundle the build's architecture names. No source was written.` The build's own lists are read the same way: the
+  `elasticore.publisher.rules` a domain naming none runs, and the sets the build adds to every domain (the plugin's
+  `rules`). The Kotlin name is given for `jpa-springboot`, `jpa-springboot-v3`, `ddd-springboot`,
+  `hexagonal-springboot`, `ddd-value-object` and `jpa-identity`. Which sets are Java's is read from the bundles (in a
+  Java bundle and in no Kotlin one - a Kotlin bundle is one named `-kt`, `mongo-springboot-kt` among them), plus the
+  two Java shells no bundle names.
+- Unchanged: a Java build, a Kotlin domain naming the Kotlin bundles with language-neutral sets
+  (`[jpa-springboot-kt, ddd-aggregate, ddd-reference, ossie-export]`, as `elasticore-template-kt` does), a project's own
+  rule classes, and 2.x (which has no Kotlin: `-Pv2` with Kotlin is refused already).
+- Checked: `KotlinJavaBundleTest` - the refusal tests failed before the fix (exit 0, `.kt` files written) and pass after;
+  the audit's repro (`language = 'kotlin'` + `[jpa-springboot-v3]`, Boot 4) now stops with the message above and writes
+  no source. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
+- Files: `RulesConfig` (`javaOnlySetOf`, `kotlinCounterpartOf`), `RulesGenRunner`, `KotlinJavaBundleTest`, rule guide (en, ko).
+
+### New Features (MongoDB - Kotlin)
+
+#### `mode: mongo` is generated in Kotlin: `language = 'kotlin'`, layered
+- Why: a MongoDB domain was generated as layered Java only; a Kotlin build was refused ("MongoDB code is written in
+  Java, layered"). A DSL word should work in every language the generator writes.
+- Now: a Kotlin build writes the same layered MongoDB code in Kotlin, from the new bundle `mongo-springboot-kt`
+  (chosen by `bundleFor(LAYERED, KOTLIN, MONGO)`; a domain naming `jpa-springboot-kt` or `mongo-springboot-kt` in
+  `publisher.rules` / `publisher.rules.kt` gets it too). The entity is a class of `var` properties with the
+  annotations the Java one carries (`@Document`, `@Id`, `@Version`, `@Indexed`, `@CompoundIndex`, `@Field`,
+  `@ValueConverter(AttributeValueConverter::class)`, `@DocumentReference(lazy = true)`, `@Transient`), without
+  Lombok; the repository's search (`criteria`, `hasCondition`, `sort`, `SORT_FIELDS`) is its `companion object`,
+  each function `@JvmStatic`, so `OrderRepository.criteria(...)` is the same call from Java and Kotlin; the service
+  (`kt/mongo_service.tmpl`), the mapper and the repository helper name neither `EntityManager` nor `Specification`.
+  Everything the Java cell writes is written: `@sequence` (long and int) and `@genid` keys, members embedded in their
+  document, references by id, `@deleted`, `@jpa:CreatedDate` / `LastModifiedDate` / `CreatedBy` (through the
+  application's `AuditorAware`), `@jpa:Version`, every search condition, `@access` / `@owner`, `@signin`
+  (`refresh=request`), `@password`, admin-only fields, html fields, `@readonly`, enums by their code, money.
+  A reference is read through a proxy of the referenced class, which Kotlin makes final: the project opens its
+  documents with all-open on `org.springframework.data.mongodb.core.mapping.Document`, as a Kotlin JPA project opens
+  `@Entity` (env guide 2.4). ddd and hexagonal over MongoDB stay refused, in Java and Kotlin; the Java cell's
+  "Not yet" list carries over unchanged.
+- Previously refused - no existing output changes: the JPA Kotlin tree (`elasticore-template-kt`, `src/main/kotlin`,
+  `src/test/kotlin` and resources, 407 files) and the Java MongoDB tree (`elasticore-template-mongo`, 53 files)
+  regenerate byte-identical; the Java-only branches the change touches are guarded by the language. The three fixes
+  below change output only for the models they name, which did not compile or did not work before.
+- `testCode: "true"` writes no service test over MongoDB (its skeleton is JPA's); a Kotlin build, where `testCode`
+  otherwise works, now says so once per domain instead of leaving the tests out without a word (env guide 6.2).
+- The client run of a Kotlin project (`elcore3ts`) reads the domain's `publisher.rules` as the Kotlin server run does,
+  so naming `mongo-springboot-kt` does not stop it.
+- Fixed on the way:
+  - `money` over MongoDB (Java and Kotlin) failed every read with a 500: `AttributeValueConverter` handed the
+    `Decimal128` MongoDB keeps a `BigDecimal` as to Money's converter (`ClassCastException`). It reads it back as the
+    `BigDecimal` it was. Runtime only; no generated file changes.
+  - `@signin(refresh=request)` with `@deleted` over MongoDB (Java and Kotlin): `me()` read the member with
+    `findById` alone, which a MongoDB repository answers for a deleted document too, so a member who deleted their
+    own account kept a working session. `me()` now leaves a deleted document out, as every other read of the
+    service does (`.filter(e -> e.getLeftAt() == null)`), and the session ends with the next request. The Java
+    MongoDB output changes for such a model only; JPA has no live filter there and is unchanged.
+  - Kotlin (JPA and MongoDB): an `int` identity (`@owner`, a signed-in key) was read with
+    `Integer::class.javaObjectType`, which an `Int` property does not take - the service did not compile. It is
+    `Int::class.javaObjectType` now. The JPA Kotlin output changes only for an `int` owner or sign-in key; the
+    sample has none.
+- Checked: `elasticore-template-kt-mongo` (new) generates the shop of `elasticore-template-mongo` and a club domain
+  (sign-in, owners, int keys, html, auditing, every search condition, money, a compound index, `@readonly`) in
+  Kotlin, compiles it, and runs `elasticore-template-mongo`'s HTTP tests word for word plus the club's against a
+  real MongoDB 7.0 - 8 tests, all passing (Testcontainers on CI, as `elasticore-template-mongo`). The same blueprint
+  and tests on Spring Boot 4.0.8, Kotlin 2.2 and `elasticore-springboot4` (a local build outside the repository: this
+  build pins Kotlin 1.9 for every module): generated, compiled, 8 of 8 passing - which is why a `between` search
+  reads its bounds into a value (Spring Data MongoDB 5 declares the operand non-null). `MongoGenerationTest` (Kotlin
+  cases, among them ddd and hexagonal still refused in Kotlin, the bundle names, the client run, `testCode`, the
+  deleted member's session and the JPA Kotlin int owner), `PersistenceAxisTest`, `DefaultGenerationTest`,
+  `AttributeValueConverterTest`; the full `elasticore-base` suite; `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF /
+  2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `RulesConfig.java`, `RuleCatalog.java`, `RulesGenRunner.java`, `mongo/MongoEntityFileRules.java`,
+  `MongoRepositoryRules.java`, `MongoKotlinRepository.java` (new), `MongoServiceFileRules.java`,
+  `lang/kotlin/KotlinMapperAssembleRules.java`, `mybatis/MyBatisMapperMemberRules.java`,
+  `MyBatisServiceFileRules.java`, `base/ServiceAccessRules.java`; templates `kt/mongo_repository.tmpl`,
+  `kt/mongo_repositoryHelper.tmpl`, `kt/mongo_mapper.tmpl`, `kt/mongo_service.tmpl`; `elasticore-springboot3`
+  `mongo/AttributeValueConverter.java`; `elasticore-template-kt-mongo` (new); `elasticore-env-guide.md` and
+  `elasticore-rule-guide.md` (en, ko) 2.4 and the bundle tables; the root `build.gradle` declares the Kotlin plugins
+  once for both Kotlin samples.
+
+### New Features (labels - `@label(en=...)`)
+
+#### A label in other languages: `@label(en=Unit cost, ja=単価) -- 단가`
+- Why: the `--` label is in one language, and a screen, an export or an AI tool asked in another language had nothing
+  to go by. The DSL is the place the labels already live, so their translations belong beside them, on the same line.
+- Now: `@label` takes `language=text` pairs on a field line and on a `meta:` line (entity, DTO, enumeration). The `--`
+  text stays the label; each pair is that label in another language. The key is a language tag, read in one form
+  (`pt_BR`, `PT-br` -> `pt-BR`; `zh-hant-tw` -> `zh-Hant-TW`); a value runs to the next comma, spaces and apostrophes
+  included, and is quoted when it holds one. `@label(단가, en=...)` without a `--` comment is the same label, and
+  several `@label(...)` on a line are one. Only an `@label` the developer writes is read this way - never the one the
+  loader builds from `--`, so `-- sum = price * qty` stays a label. An explicit `@label` with a key that is not a
+  language tag is read as in 2.x, with a `DSL_WARN`. Read with `FieldSpec.labelTranslations()` and
+  `EntitySpec.labelTranslations()`; `getAnnotationValue("label.en")` reads one.
+  - **The label bundle:** beside the message bundle, `i18n/<domain>-labels.properties` (every label, as the `--` text
+    says it) and one `<domain>-labels_<language>.properties` per language (`zh-TW` -> `_zh_TW`), keys `Type` and
+    `Type.field`, non-ASCII escaped. Written by the v3 bundles for a domain with an API (`@expose`), in every mode and
+    both languages, and merged against the cache like the message bundle.
+  - **The TypeScript client:** a field's entry in `XxxFields` gets `labels: { en: "Unit cost", ... }`.
+  - **The Apache Ossie export:** the translations are the field's and the dataset's `ai_context.synonyms`, after the
+    `@terms` words, each once; the `description` stays the `--` label.
+- Before: `@label(en=Unit cost) -- 단가` lost the label: the explicit `@label` came first and, holding only key=value
+  pairs, had no value, so the `--` text, which the loader adds as a second `@label`, was a sibling nobody read - the
+  entity comment, `@Comment`, `@Schema`, the TypeScript label and the Ossie description were all empty (run on the
+  loader before this change: `getAnnotationValue("label")` and `getDescription()` both null).
+- Unchanged: a `@label` whose keys are not all language tags is read as before (2.x key=value), and so is a plain `--`
+  label. A domain without a translation writes no label bundle and the same TypeScript and Ossie output. Not
+  translated: Javadoc, `@Schema(description)`, `@Comment` and column comments, and the server's error sentences (the
+  message bundle translates those). An enumeration's constant lines take no `@label`.
+- Left: when a language is taken out of the DSL, its `_<language>` file is removed by a run that merges against the
+  cache (unedited, as any stale generated file); a run without the cache leaves it.
+- Sample: the pet store's `Item` (meta label and `unitCost`) is in English and Japanese.
+- Checked: `LabelTranslationParseTest` (the merge with `--` and `| description`, quoted and unquoted values,
+  apostrophes, two `@label`s on a line, tags in any case, a meta line; a `--` comment with `=` and an explicit `@label`
+  with a non-language key read as in 2.x), `LabelTranslationTypeScriptTest`, `LabelTranslationGenerationTest` (the
+  bundle and the Ossie synonyms from a generated project; the same bundle from MyBatis layered Java, MongoDB layered
+  Java and Kotlin, and JPA ddd Kotlin; no bundle and no synonyms without a translation); in the pet store
+  `LabelBundleTest` (Spring's `ResourceBundleMessageSource` answers `Unit cost` in English, `単価` in Japanese and `단가`
+  in Korean and French; with the system-locale fallback on, French gets the English file, as the guide warns) with
+  `SemanticModelTest` and `ShopFlowTest`; the pet store's export passes Apache Ossie main's
+  validator (`1b1ebb6`); `elasticore-base` tests; `elcoreRulesCheck -Pstrict` (158 / 0 / 2) and `elcoreTreeCheck`
+  (0 differ / 0 missing).
+- Files: `LabelTranslations`, `LabelCatalog` (new), `Annotation`, `AbstractModelLoader`, `FieldSpec`, `EntitySpec`,
+  `TypeScriptDtoFileRules`, `OssieSemanticModelExporter`, `RulesGenRunner`; the DSL, env and rule-dev guides (en, ko);
+  the pet store model, `.gitignore`, `semantic_model.yml` and `LabelBundleTest`.
+
+### Bug Fixes (generated-file merge - a project that changes its language)
+
+#### Switching `language` between java and kotlin removes the old language's generated files
+- Why: after `language = 'java'` became `'kotlin'`, `elcore3` kept every unedited `.java` it had generated with
+  `...CategoryCoreService.java is no longer generated, but ...CategoryCoreService.kt still uses it - kept; it goes on a
+  later run once nothing uses it.`, and `compileKotlin` failed on each class twice (97 Redeclaration errors in the
+  audit's pet store repro). A later run kept them again: the check for a kept source that still uses a dropped class
+  counted the new Kotlin file of the same class - it names the class it declares - and every other Kotlin file that
+  names it.
+- Now: a dropped Java or Kotlin file whose class this run wrote in the other language (same class name, same package,
+  the new file declaring it) is not kept for its users - the new file serves them, and keeping the old one only breaks
+  the build. It goes as an unedited stale file always did: only when it is still what was generated (its
+  `.elasticore/cache` base, or its 3.0 hash line). An edited one is kept as before, and its warning now adds
+  `...CustomerDTO.kt declares the same class now, so the build has it twice until this one goes.`
+- Unchanged: a dropped class with no file of the same class in the other language is kept while a source uses it, as
+  before; the code 2.x generates (no merge) tidies up as it did.
+- Checked: `LanguageSwitchTest` - java -> kotlin (with a Java class of the developer's naming a generated DTO) and
+  kotlin -> java failed before the fix (the old files were kept, `still uses it`) and pass after: no class left in both
+  languages, no `.java` left in the cache, and the next run says nothing more; an edited `CustomerDTO.java` stays with
+  the warning while the other files go; a dropped Kotlin DTO a Java class still uses is still kept. End to end on the
+  pet store seed (Boot 4): generated and compiled as Java, switched to Kotlin - `compileKotlin compileJava` succeeds, 0
+  `still uses it`, 0 Redeclaration, only the application class left in `src/main/java`; a second build removes and
+  keeps nothing. The `GeneratedMergeTest` and `MigrationCheckTest` cases of kept files pass unchanged.
+- Files: `RulesGenRunner` (`stillUsed`, `twinOf`, the edited-file warnings), `LanguageSwitchTest`, env guide (en, ko).
+
+### Bug Fixes (`archTest: true` - the layered code)
+
+#### `archTest: true` over the layered code writes rules the layered code holds
+- Why: `archTest: true` wrote the hexagon's rules whatever the domain was generated as, and the layered services call
+  the repositories and the persistence helper directly - `applicationDependsOnPortsNotAdapters` failed on the generated
+  code itself (43 violations on the README model, e.g. `ProductCoreService` depending on
+  `infrastructure.persistence.ShopRepositoryHelper`; the template-ddd blueprint built layered failed the same way in
+  JPA Java, JPA Kotlin and MyBatis Java).
+- Now (owner's decision: rules that fit a layered layout, not a refusal or a skip): a domain whose rules hold no
+  `ddd-aggregate` - layered, declared or not - gets the layers' rules, on the packages read from the namespaces as for
+  the hexagon: `servicesDependOnNoWeb` (the services and the DTOs depend on no `control` class) and
+  `persistenceDependsOnNothingAbove` (persistence and the entities depend on no service and no `control` class). The
+  DTOs and the outbound ports (`dto`, `port`) are shared and allowed - a MyBatis mapper takes the search DTO, a port
+  adapter implements its port - by an exception in the rule where they sit under the services' package. With
+  `mapping: xml` the entities also name no persistence technology, as in the hexagon's test. The file's comment says
+  what it checks.
+- Upgrading: a layered project that holds the hexagon's test an earlier version wrote gets the layered one by
+  deleting `<Domain>ArchitectureTest` (env guide 6.1.3).
+- Not covered: a `service` namespace that is a parent package of `entity` or `persistence`, or one shared with `dto`,
+  leaves the rules too strict or too loose - as the hexagon's rules are on such a layout; the defaults are neither.
+- Unchanged: ddd and hexagonal domains get the same file as before - generated by the old and the new code for both
+  architectures and compared, byte for byte equal.
+- Checked: `LayeredArchitectureTestTest` - the layered Java, layered Kotlin and no-architecture cases failed before the
+  fix (the hexagon's rules were written) and pass after; the hexagonal and ddd case passes before and after. Built and
+  run with ArchUnit: the README model (JPA Java, Boot 4), and the template-ddd blueprint built layered as JPA Java (Boot
+  3), JPA Kotlin (Boot 3) and MyBatis Java (Boot 3) - every generated test passes (2 or 3 rules). Not a no-op: in the
+  README project a service naming a controller and an entity-package class naming a service each fail their rule once,
+  while a persistence class naming a DTO passes.
+- Files: `ArchitectureTestSource`, `RulesGenRunner` (`emitArchitectureTest`), `AggregateBoundaries` (the runner asks for
+  the kind of rule set, not for `ddd-aggregate` by name, as `ExtensionPointTest` requires), `DddAggregateRules`,
+  `LayeredArchitectureTestTest`, env guide 6.1.3 (en, ko).
+
+### New Features (runtime - masking personal data in responses)
+
+#### `@Mask(MaskType.PHONE)`: a response field written masked, named in env.yml as any other annotation
+- Why: projects mask phone numbers, names and plates in their responses (`telNumber: string(20) @env:maskphone`), and
+  each wrote its own Jackson serializer for it - one for Jackson 2 and, on Spring Boot 4, another for Jackson 3.
+- Now: the runtime has `io.elasticore.springboot3.mask.Mask` and `MaskType` (`PHONE`, `EMAIL`, `NAME`, `PLATE`, `CARD`,
+  `RRN`), and a Jackson module its auto-configuration registers (`ElastiCoreMaskAutoConfiguration`; Jackson 2 in
+  `elasticore-springboot3`, Jackson 3 in `elasticore-springboot4`, the same class name `MaskJackson`). An env.yml
+  annotation `maskphone: "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)"`
+  puts it on the DTO field; the entity keeps the value. Only the response is masked; a request is read as sent. The
+  module acts only on fields that carry `@Mask`: an application without one writes the same JSON. No DSL word and
+  no generated code changed.
+- Checked: `MaskTypeTest` (each type, separators kept, a Seoul number `02-123-4567` -> `02-***-4567`) in both
+  runtimes; `MaskJacksonTest` (Spring Boot 3's auto-configured ObjectMapper) and `MaskJackson3Test` (Spring Boot 4's
+  JsonMapper) mask the marked fields, leave the others and read a request unchanged; `EnvAnnotationAliasTest` - the
+  env.yml alias reaches the v3 DTO field and not the entity.
+- Files: `elasticore-springboot3/src/main/java/io/elasticore/springboot3/mask/`, `.../jackson2/.../MaskJackson.java`,
+  `elasticore-springboot4/src/jackson3/.../MaskJackson.java`, `ElastiCoreMaskAutoConfiguration.java`, the env guide
+  (en, ko) section 4.
+
+### Bug Fixes (Ossie export - a unique key over a column left out)
+
+#### A unique key that holds a column the export leaves out is not written to `unique_keys`
+- Why: the export leaves `@password`, `@writeonly` and `@sensitive` columns out of a dataset's `fields` and lists them
+  in `omitted_columns`, but `unique_keys` still named them: `email: string(100)! @unique @sensitive` wrote
+  `unique_keys: [[email]]`, and `@Index(columnList="provider,provider_user_id", unique="true")` with
+  `providerUserId: string(100)! @sensitive` wrote `[[provider, provider_user_id]]`. A `@password @unique` or
+  `@writeonly @unique` column, and an `@Index` over an embedded value's `@sensitive` column, did the same. Ossie's name
+  rule lets `unique_keys` name only fields of the dataset, and a name that is not one is an error (`validate_references`
+  in apache/ossie's `validation/validate.py`); the key also stated that the left-out column is unique (issue 245).
+- Now: a unique key (`@unique` or `@Index(..., unique="true")`) that holds any column the field list left out is not
+  written, as a whole - its other columns alone are another key, which is not unique - and a `[ossie]` warning names
+  the key and the column. The decision is the field list's own: a column counts as left out when the field list
+  recorded it in `omitted_columns` (names compared ignoring case). The dataset's other unique keys are written as
+  before, and the left-out column is still named in `omitted_columns`.
+- Unchanged: a dataset with no left-out column writes the same unique keys. The committed exports of
+  `elasticore-sample-petstore`, `elasticore-template-ddd` and `elasticore-template-ddd-mybatis`, regenerated with the
+  fix, are unchanged.
+- Checked: `OssieSensitiveTest` - the new test failed before the fix (expected `[[code]]` but was `[[email], [code]]`,
+  and the export it printed held the key in each case above) and passes after it; the same model without the marks
+  writes every key. The Ossie tests,
+  `GuideTranslationTest`, `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`.
+- Files: `OssieSemanticModelExporter`, `OssieSensitiveTest`, annotation guide and rule guide (en, ko).
+
+### Improvements (generated code comments - process manager base)
+
+#### The generated process manager base says what an event added to `on` does now
+- Why: the Javadoc every generated `XxxProcessManagerBase` carries said "An event added to 'on' is a new handle(...)
+  the compiler asks for there". Since the generated-file merge that is no longer so: the developer's process manager
+  gets an empty `handle(NewEvent)` (`// The next step goes here.`), merged into their edits, and the build passes. The
+  rule guide and the DSL guide already said so (`guide-new-command-stub.md`); the generated comment was left as it was
+  (`comment-new-command-stub.md`) because it is generated output.
+- Now: the comment says that an event added to `on` puts an empty `handle(...)` in the developer's class, merged into
+  their edits, and the build passes; that only a file the merge does not reach (`KEPT`, `SKIP(user-owned)`) fails to
+  compile until the developer writes it; and that a `handle(...)` the developer edited for an event removed from `on`
+  stays and fails to compile. Java and Kotlin say the same (`a field here` / `a property here`).
+- Regenerating changes the class comment of every project's `XxxProcessManagerBase` and nothing else. The base is
+  regenerated on every build, and a project's own process manager class is untouched by this; since generated files
+  are merged, a developer's own edits stay.
+- Checked: generated `elasticore-template-ddd`, `elasticore-template-ddd-mybatis` and `elasticore-template-kt` with
+  the new and the old templates - the only differences are the comment lines of the three process manager bases, and
+  all three compile. No committed file holds a generated base (the samples' generated trees are gitignored) and no test
+  pins the sentence. `ProcessManagerRulesTest`; `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED and
+  `elcoreTreeCheck` 0 differ / 0 missing / 0 extra (no 2.x output changed).
+- Files: `v3/processManagerBase.tmpl`, `kt/processManagerBase.tmpl`.
+
+### Bug Fixes (rule selection - `publisher.rules` as a map)
+
+#### A run whose key a `publisher.rules` map does not hold takes its default rules instead of stopping
+- Why: `publisher.rules` is a list, or a map of per-language lists (`kt:`, `ts:`). A run that found no key of its own
+  in the map read the map's text as a rule name and stopped: a Java build's `elcore3` with any map
+  (`Unknown rule set '{ts=[ts-model]}'`, `'{kt=[jpa-springboot-kt'`), a Kotlin build's with only `ts:`. So a Java build
+  could not choose its TypeScript rules in `env.yml` at all. `elcore3ts` of a Java build with a map read the same text
+  as the server's rules, so its client was shaped for a server with none of its rules (a ddd build's `.ts` files
+  differed from those of the same build without `publisher.rules`).
+- Now: a map is never read as a list (`RulesConfig.domainList`). A run with no key of its own in it runs exactly as if
+  the domain had no `publisher.rules` - the default of its architecture, language and mode: `elcore3` of a Java build
+  (Java has no key; none was added), `elcore3` of a Kotlin build without `kt:`, `elcore3ts` without `ts:`. A Kotlin
+  build still reads `kt:` and `elcore3ts` `ts:`. The list form is unchanged, and so is the refusal of a Java bundle in
+  a Kotlin build (in the list or under `kt:`). A key no run reads (`java:`, `kts:`) is a DSL warning naming the keys
+  that are read (`kt`, `ts`), also in `-PlistRules`; it does not stop the run. Every reader goes through it: the
+  selection of `elcore3` / `elcore3ts` and `-PlistRules`, the server's rules a TypeScript run shapes the client by, the
+  Kotlin Java-bundle refusal, the MyBatis and MongoDB checks of what a domain names, the v3 / 2.x mode decision, and
+  the Ossie export request (which now reads the list the run takes - `kt:` in a Kotlin build - instead of searching
+  the text; `ossie-export` named only under `ts:` no longer turns the export on; it is a server-side rule set). `elcoreValidate`, `elcoreDdl` and `elcoreMigrationCheck` run the same runner. The rule guide (en, ko)
+  "Choosing rules per language" and the DDD customize guide's TypeScript row say so, with a Java build choosing its
+  TypeScript rules (`ts:` alone).
+- Checked: `RulesMapPerLanguageTest` (10 cases; 6 failed before the fix with `Unknown rule set` or a different
+  client): Java build with only `ts:` and with `kt:` + `ts:` lists and generates what a domain with no rules does; Kotlin
+  build with only `ts:` likewise, with `kt:` runs `jpa-springboot-kt + ddd-aggregate`; `elcore3ts` of a Java build runs
+  its `ts:` list and, without one, its default; a ddd Java build's `.ts` client with a `ts:` map is byte-equal to the
+  one without `publisher.rules`; the list form and the Kotlin refusal are unchanged; `java:` / `kts:` warn; the Ossie
+  export follows `kt:` in a Kotlin build only. Standalone projects (plugin and `elasticore-base` from this branch):
+  a Java build with `rules: { ts: [ts-model] }` - `elcore3` lists `jpa-springboot-v3` and writes the Java server,
+  `elcore3ts -PlistRules` lists `ts-model` and writes the client, `compileJava`, `elcoreValidate`,
+  `elcoreMigrationCheck` and `elcoreDdl` pass (the same project on the jar before the fix: `Unknown rule set
+  '{ts=[ts-model]}'`); with `java:` + `kt:` + `ts:` the warning is shown and the build passes; a Kotlin build with only
+  `ts:` lists `jpa-springboot-kt`, and `elcore3`, `elcore3ts` and `compileKotlin` pass.
+- Files: `RulesConfig.java`, `RulesGenRunner.java`, `OssieSemanticModelExporter.java`, `RulesMapPerLanguageTest.java`,
+  rule guide (en, ko), DDD customize guide (en, ko).
+
+### New Features (Gradle plugin - `runtimePackages`)
+
+#### `elasticore { runtimePackages }` generates the code against the project's own copy of the runtime
+- Why: the generated code imports the ElastiCORE runtime (`elasticore-springboot3`/`-springboot4` and a few classes of
+  `elasticore-base`). A project that may not ship an ElastiCORE jar had no way to run the generated code without it.
+- Now: `runtimePackages = ['io.elasticore.springboot3': 'com.acme.springboot', ...]` rewrites the runtime's package
+  prefixes in the 3.0 code to the project's packages - imports and qualified names in code, Java and Kotlin, and the
+  resources the run writes (orm.xml under `mapping: xml`). Only the prefix changes, whole package segments, the longest
+  key first. The text is rewritten before the merge and `.elasticore/cache`, so the file and its base agree; turned on in
+  a project generated before, a merged file's cached base and the file on disk are renamed too before the merge, so an
+  edit next to a runtime name stays and does not conflict. Kotlin with `mapping: xml` gets the mapped `PersistentModel`.
+  `.elasticore/cache` records with each text the mapping it was renamed with, in the same save - so a `-Pdomain` run, a
+  failed model check or a run that stops leaves every text paired with its own. When the mapping changes or is removed, a
+  merged file's base and the file are renamed back from the mapping recorded for it and on to the new one; a recorded
+  mapping that cannot be read, cannot be undone by name, or would rename the project is said and not used. A file the run
+  does not write that still names a previous mapping is said; a run of every domain without the setting deletes
+  `build/elasticore/runtime-classes.txt`, and a cache without the setting records no mapping. A file only renamed is
+  reported `RENAMED`. A key that is not under `io.elasticore.` or covers a namespace of the project, a value that is not a
+  package name in Java and Kotlin, is under `io.elasticore`, or is or holds a namespace of the project fail the build, and
+  so does a generated package under a key or a value. The run prints the mapping, the
+  runtime classes the generated code now names under the project's packages (also `build/elasticore/runtime-classes.txt`),
+  and a warning for each package under `io.elasticore` a generated file still names - a mapping missing, or a file the run
+  did not write (the developer's, or one kept because a source of theirs uses it). A nested class is listed as the class it
+  is in; a copy under the project's own package is listed like any other. Only the rule-engine tasks are given the
+  setting; `elcoreGraphQl` runs the schema writer from the project's copy.
+- Unchanged: unset, nothing is passed and the generated code is byte for byte what it was. With `output = 'v2'` the
+  setting is ignored with a warning, and the code 2.x generates keeps `io.elasticore`. No DSL word or env.yml key; no
+  runtime class moved. `blueprint/schema.yml` and the Ossie export still name the runtime's types: they describe the
+  model and are not compiled.
+- Checked: `RuntimePackagesTest` (segments, longest first, imports and inline names, Kotlin, no-op, leftovers without the
+  project's own packages, the class list); `RuntimePackagesGenerationTest` (the pet store on Spring Boot 4 and the ddd
+  sample with orm.xml: nothing of the three packages left in sources, resources or the cache, the list written, a second
+  run writes nothing, a mistyped mapping stops the run; a Kotlin build; the 2.x code left as it is);
+  `RuntimePackagesProjectTest` (turned on over hand edits - next to an inline runtime name, on the line after it, in
+  the imports - with no conflict; Kotlin with `mapping: xml`; a copy under the project's package listed; a key over the
+  project's packages refused; a file kept in use reported; unset as before; the mapping changed A -> B and removed, an
+  edit next to a runtime name kept with no conflict; a real conflict still marked; a kept skeleton renamed and said so; a
+  2.x custom block renamed; an edited stamped 3.0 file confirmed by its unrenamed text; any namespace checked);
+  `RuntimePackagesMappingChangeTest` (a change, then `-Pdomain` - an edited and a KEPT file renamed once; a change in a run
+  whose model check failed, then a whole run - renamed once; the record in the cache and only with the setting; removal
+  deleting the record and `runtime-classes.txt`; an unreadable, a project-renaming and an irreversible record said; a
+  value equal to a namespace refused);
+  `ElastiCorePluginTest` (passed, not passed unset, refused, ignored with v2, the GraphQL writer's class);
+  `GuideCoverageTest`/`GuideCoverageKoTest`; `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`. End to end:
+  elasticore-template-ddd generated through the plugin with the three packages mapped, 92 of the runtime's 140 classes
+  copied with their packages rewritten, compiled and its tests run with no `io.elasticore` artifact on the classpath.
+- Files: `RuntimePackages` (new), `RulesGenRunner`, `GeneratedCache`, `ElastiCoreExtension`, `ElastiCorePlugin`, rule
+  guide and env guide (en, ko), `RuntimePackagesTest`, `RuntimePackagesGenerationTest`, `RuntimePackagesProjectTest`,
+  `RuntimePackagesMappingChangeTest`, `ElastiCorePluginTest`, `GuideCoverageTest`.
+
+### New Features (sign-in - `@signin(refresh=password)`)
+
+#### `@signin(refresh=password)` ends the sessions opened before a password change
+- Why: `@signin(refresh=request)` reads the signed-in row on every request and follows a deleted row and a changed role,
+  but a session someone opened with the old password outlived a password change. Doing it by hand took a second read of
+  the row per request, because `me()` answers a DTO and no DTO carries the hash (issue 216; the design agreed there).
+- Now: `refresh=password` is a second value of `refresh`. It does everything `refresh=request` does, and the session
+  also holds a stamp of the password hash - the first 16 hex characters of the SHA-256 of the stored hash, never the
+  hash. The stamp is read in the same one read of the row: the generated filter extends the runtime's new
+  `PasswordRefreshFilter` and reads through `signedInRow()`, which the CoreService (and the use case, hexagonal) gets
+  beside `me()` and which reads the entity as `me()` does. A session whose stamp is not the row's ends, and the request
+  goes on as a visitor's.
+  - The generated update reports the hash it stores (`PasswordRefreshFilter.written`). When the transaction commits,
+    the session of that row takes the new stamp at once, so a request it sends as soon as the answer arrives meets the
+    new one; without a transaction (MongoDB), once the request is answered below 400. So the session that changes
+    its own password keeps going, the member's other sessions end, and an administrator who changes a member's
+    password ends that member's sessions and keeps their own.
+  - A session without a stamp - signed in by the application's own code (`SessionCurrentUser.signIn`), or before the
+    option was on - takes the row's at the end of the request that signed it in, or on its first request. The
+    generated sign-in is stamped by its own request, so there is no gap before a session's first request.
+  - A row that had no password and gets one is not a change; a password removed is.
+  - The 2.x-compatible output has no generated sign-in: there `refresh=password` stops the build with a message.
+- Unchanged: `refresh=request` generates what it did. `elcore3` of the pet store (JPA, hexagonal Java), the Kotlin
+  template (JPA, hexagonal Kotlin), the MyBatis pet store, and the Java and Kotlin MongoDB templates, all on
+  `refresh=request`, wrote the same 849 files with this change as without it. `SessionRefreshFilter` is not changed.
+- Samples: the pet store, the MyBatis pet store, the Kotlin template and the Java MongoDB template say
+  `refresh=password` now; the Kotlin MongoDB template keeps `refresh=request`.
+- Checked: through HTTP on the generated applications - `PasswordRefreshTest` (pet store: own change, administrator's
+  change, a session stamped by the request that signed it in, a session without a stamp, one read of the customer per
+  signed-in request by Hibernate's statistics), `PasswordResetGuideTest` (a reset ends the sessions opened before it and
+  keeps the one its confirm signs in), the MyBatis `ShopFlow` (own and administrator's change; a page of orders is
+  still the customer read plus three statements), the Kotlin `ShopApiContractTest`, the MongoDB `ClubApi` (own change;
+  a first password is not a change). The new pet store tests fail with `refresh=request` (5 of the 6). The existing
+  role and delete tests run on `refresh=password`. `PasswordRefreshFilterTest` (runtime), `SignInRefreshTest`
+  (generation in every mode, the 2.x refusal), a compile of the hexagonal MyBatis template and of the Kotlin MongoDB
+  template with a temporary `refresh=password` model, `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`.
+- Files: `ServiceAccessRules`, `SignInRefreshRules`, `HexUseCaseRules`, `RulesGenRunner`, templates
+  `v3/sessionRefreshPassword.tmpl`, `kt/sessionRefreshPassword.tmpl`, runtime `PasswordRefreshFilter` (new); the
+  annotation, DSL and rule guides (en, ko); the sample models and tests above.
+
+### Samples (elasticore-template-mongo - an html field)
+
+#### The MongoDB sample keeps a product description as html, and its test checks the stored document
+- Why: `html` (#208) is cleaned over MongoDB too - the Mongo bundle of #209 got `jpa-html` in #208 - but no sample
+  used it there, so nothing ran the Mongo path end to end against a database.
+- What: the shop's `Product` gets `description: html @plain(descriptionText)` and `descriptionText: text @search(like)`;
+  the module puts jsoup on its classpath, as an application that uses `html` does.
+- Checked: `ShopApi.anHtmlFieldIsCleanedAndItsTextKept`, run by `MongoApiTest` on a MongoDB container (and by
+  `MongoApiOnServerTest` on a server named by `ELASTICORE_IT_MONGODB_URI`). A create drops the `onclick` and the
+  `<script>`, keeps the `<b>`, and writes the text without tags over the `descriptionText` the request sent - in the
+  response and in the stored document. An update drops an `<img onerror=...>` and gives the link `rel="nofollow"`.
+- Files: `elasticore-template-mongo` - `build.gradle`, `blueprint/shop/model/entity.yml`, `blueprint/schema.yml`
+  (regenerated), `src/test/java/mongo/ShopApi.java`.
+
+### Bug Fixes (DSL warnings - an unknown `@extend` parent)
+
+#### An `@extend(Parent)` that names no Entity or DTO of any domain is a DSL warning
+- Why: an unknown field type is a DSL warning (`unresolved type 'X' - no matching Entity, DTO, or Enum found in any
+  domain`), but an unknown `@extend` parent said nothing - the generated class extended a class that exists nowhere, and
+  only the compiler said so.
+- Now (owner's decision: a warning, not an error - a hand-written class may be the parent on purpose): the same check
+  that reads the field types reads each entity's and DTO's `@extend` and stores a DSL warning for a parent that no
+  domain declares: `[shop] Order: unresolved @extend parent 'Base' - no matching Entity or DTO found in any domain`. A
+  full class name and a domain-qualified one (`other:Parent`) are not looked up, as for fields; a generic parent is
+  read by its name (`Base<Long, String>` is `Base`). Being a DSL warning, `elcoreValidate -Pstrict` fails on it as it
+  does on the field one. Both generators run the check (`ModelExtractor.validateGlobalTypeReferences`).
+- Upgrading: a project whose parent is a class of its own named by its simple name (`@extend(BaseRecord)`, the class
+  in the same package) compiled before and now warns - and fails `elcoreValidate -Pstrict`. Naming it by its full class
+  name silences the warning; the generated `extends` is the same class.
+- Unchanged: generated output - the check only stores a warning. The samples' parents are all declared, so they say
+  nothing new.
+- Checked: `ExtendParentWarningTest` - the warning for an entity and for a DTO, and the `-Pstrict` validation failing
+  on it, failed before the change (no warning, validation passed) and pass after; a known parent, a full class name
+  (also a generic one, `com.acme.support.Audited<Long, String>`) and a domain-qualified one give no warning, and
+  `Missing<Long, String>` gives one warning, for `Missing`. `elcoreRulesCheck -Pstrict`, `elcoreTreeCheck`.
+- Files: `ModelExtractor`, `ExtendParentWarningTest`, annotation guide (en, ko).
+
 ## 3.0.261120
 
 ### Security Fixes (sign-in - a member kept under `@deleted` over MongoDB)
