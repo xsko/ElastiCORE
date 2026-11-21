@@ -375,6 +375,9 @@ public final class MyBatisSql {
         if (isEnum(e, f)) return ENUM_HANDLER;
         if (f.isMoney()) return MONEY_HANDLER;
         if (f.isQuantity()) return QUANTITY_HANDLER;
+        if (f.hasDsl(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT) && f.isStringType()) {
+            return io.elasticore.base.model.pub.rules.base.EncryptRules.HANDLER;
+        }
         return null;
     }
 
@@ -532,7 +535,11 @@ public final class MyBatisSql {
      */
     public static boolean isLob(EntitySpec e, FieldSpec f) {
         String jdbc = jdbcType(e, f);
-        return "CLOB".equals(jdbc) || "BLOB".equals(jdbc) || ("VARCHAR".equals(jdbc) && f.rawLength() > 4000);
+        // An encrypted column is as long as its ciphertext (MyBatisTables), not the declared length.
+        int length = f.hasDsl(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT)
+                ? io.elasticore.base.model.pub.rules.base.EncryptRules.columnLength(f)
+                : f.rawLength();
+        return "CLOB".equals(jdbc) || "BLOB".equals(jdbc) || ("VARCHAR".equals(jdbc) && length > 4000);
     }
 
     /**

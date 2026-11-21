@@ -36,6 +36,9 @@ entity:
       name: string(100)! @search(like)
       price: long! @search(between)
       stock: int
+      # Markup, kept to jsoup's basic safelist before it is saved; its text without tags beside it (@plain).
+      description: html @plain(descriptionText)
+      descriptionText: text @search(like)
 
   PurchaseOrder:
     meta: entity @expose(20) @access(*=public) -- order

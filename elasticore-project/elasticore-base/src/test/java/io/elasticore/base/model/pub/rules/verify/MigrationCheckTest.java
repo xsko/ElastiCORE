@@ -152,7 +152,7 @@ public class MigrationCheckTest {
                 String text = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
                 int eol = text.indexOf('\n');
                 if (text.startsWith("//ecd:") && eol > 0) {
-                    String stamp = text.substring(0, eol).replace("_V3.0", "_V2.2");
+                    String stamp = text.substring(0, eol).replace("_V" + io.elasticore.base.Version.MAJOR, "_V2.2");
                     Files.write(f.toPath(), (stamp + text.substring(eol)).getBytes(StandardCharsets.UTF_8));
                 }
             }

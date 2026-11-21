@@ -25,7 +25,7 @@ sourceSets {
         // The shared tests, and this module's own on a web layer switched
         // back to Jackson 2 (src/jackson2test/java - not springboot3's
         // folder of the same name, whose tests need Jackson 2 throughout).
-        java.srcDirs = ["$shared/src/test/java", "src/jackson2test/java"]
+        java.srcDirs = ["$shared/src/test/java", "src/jackson2test/java", "src/jackson3test/java"]
         resources.srcDirs = ["$shared/src/test/resources"]
     }
 }

@@ -334,6 +334,45 @@ public abstract class ShopApi {
         assertEquals("new", changed.get("pageText").asText(), changed.toString());
     }
 
+    /**
+     * An @encrypt column: the database holds v1:... ciphertext, different for the same value in two rows, and the
+     * API the value; the search by equality compares the blind index, so the number with or without its dashes finds
+     * the row - after an update too, which writes the new value's index.
+     */
+    @Test
+    public void anEncryptedColumnHoldsCiphertextAndIsFoundByItsIndex() throws Exception {
+        String serial = "77" + String.format("%010d", Math.abs(System.nanoTime() % 10_000_000_000L));
+        String dashed = serial.substring(0, 4) + "-" + serial.substring(4, 8) + "-" + serial.substring(8);
+        long id = id(create("gadget", "{\"name\":\"Sealed\",\"serialNo\":\"" + dashed + "\"}"), "gadgetId");
+        long twin = id(create("gadget", "{\"name\":\"Sealed twin\",\"serialNo\":\"" + dashed + "\"}"), "gadgetId");
+
+        String stored = jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id);
+        assertTrue(stored.startsWith("v1:"), stored);
+        assertFalse(stored.contains(serial.substring(4, 8)), stored);
+        assertNotEquals(stored, jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, twin));
+        assertEquals(dashed, io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(stored));
+        assertEquals(io.elasticore.springboot3.crypto.Bidx.ofDigits(serial),
+                jdbc.queryForObject("SELECT serial_no_bidx FROM gadget WHERE gadget_id = ?", String.class, id));
+
+        JsonNode read = body(perform(get(API + "/gadget/" + id), 200));
+        assertEquals(dashed, read.get("serialNo").asText(), read.toString());
+        assertFalse(read.has("serialNoBidx"), read.toString());
+
+        assertEquals(2, total("gadget", "{\"serialNo\":\"" + serial + "\"}"));
+        assertEquals(2, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
+
+        perform(put(API + "/gadget").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"gadgetId\":" + twin + ",\"name\":\"Sealed twin\",\"serialNo\":\"" + serial + "9\"}"), 200);
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "9\"}"));
+
+        // PUT /batch writes each row through update(): the index follows there too.
+        perform(put(API + "/gadget/batch").contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"gadgetId\":" + id + ",\"name\":\"Sealed\",\"serialNo\":\"" + serial + "8\"}]"), 200);
+        assertEquals(0, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "8\"}"));
+    }
+
     // ---- helpers ------------------------------------------------------------------
 
     private static String order(long customer, String product, String status, int amount, String memo) {

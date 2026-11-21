@@ -76,16 +76,31 @@ public class MongoServiceFileRules implements CodeRules {
                         isSkipNull ? "BeanValidation.validatePresent(dto)" : "BeanValidation.validate(dto)");
 
         String type = syntax.nullableType(pk.typeName());
+        boolean kotlin = syntax == Syntax.KOTLIN;
+        // Kotlin: the key a caller hands in may be absent, which its type says;
+        // the repository takes a value, so that is where it is asserted.
         c.var("pkDtoDefine", syntax.parameter(type, pk.name()))
                 .var("pkDtoParamInfo", syntax.getter("dto", pk.name()))
-                .var("pkDtoInfo", syntax.getter("dto", pk.name()))
-                .var("pkDtoInfo2", pk.name())
+                .var(
+                        "pkDtoInfo",
+                        kotlin ? syntax.notNull(syntax.getter("dto", pk.name())) : syntax.getter("dto", pk.name()))
+                .var("pkDtoInfo2", kotlin ? syntax.notNull(pk.name()) : pk.name())
                 .var("pkOfEach", syntax.getter("each", pk.name()))
                 .var("pkOfEntity", syntax.getter("entity", pk.name()));
         boolean primitive = pk.hasDslAny("primitive", "prim");
         String read = syntax.getter("dto", pk.name());
-        c.var("pkPresent", primitive ? "true" : read + " != null")
-                .var("pkPresentAny", primitive ? "(" + read + " != 0)" : read + " != null");
+        if (primitive && kotlin) {
+            // No primitive declaration to lean on: a Long or an Int, compared with a zero of its own type.
+            String zero = pk.typeName() != null
+                            && pk.typeName().toLowerCase(java.util.Locale.ROOT).startsWith("long")
+                    ? "0L"
+                    : "0";
+            c.var("pkPresent", read + " != null")
+                    .var("pkPresentAny", "(" + read + " != null && " + read + " != " + zero + ")");
+        } else {
+            c.var("pkPresent", primitive ? "true" : read + " != null")
+                    .var("pkPresentAny", primitive ? "(" + read + " != 0)" : read + " != null");
+        }
 
         writeVars(c, e, pk);
         deleteVars(c, e, pk, repository);
@@ -119,10 +134,10 @@ public class MongoServiceFileRules implements CodeRules {
                     "versionCheck",
                     nl
                             + syntax.statement(String.format(
-                                    "io.elasticore.springboot3.validation.VersionCheck.check(dto, %s, %s, %s.class, %s)",
+                                    "io.elasticore.springboot3.validation.VersionCheck.check(dto, %s, %s, %s, %s)",
                                     RuleText.quote(version.name()),
                                     syntax.getter("entity", version.name()),
-                                    e.getName(),
+                                    syntax.javaClassLiteral(e.getName()),
                                     syntax.getter("dto", pk.name()))));
             c.var(
                     "createVersionReset",
@@ -171,16 +186,24 @@ public class MongoServiceFileRules implements CodeRules {
             }
             if (each.length() == 0) continue;
             String list = syntax.getter("entity", f.name());
+            String member = target.pkg("entity") + "." + target.getName();
             members.append(nl)
-                    .append(String.format(
-                            "if (%s != null) for (%s m : %s) {",
-                            list, target.pkg("entity") + "." + target.getName(), list))
+                    .append(
+                            syntax == Syntax.KOTLIN
+                                    ? String.format("for (m in %s ?: emptyList<%s>()) {", list, member)
+                                    : String.format("if (%s != null) for (%s m : %s) {", list, member, list))
                     .append(each)
                     .append(nl)
                     .append("}");
         }
         c.var("membersPrepare", members.toString());
-        c.var("auditorMembers", auditor ? MyBatisServiceFileRules.AUDITOR_MEMBERS : "");
+        c.var(
+                "auditorMembers",
+                !auditor
+                        ? ""
+                        : syntax == Syntax.KOTLIN
+                                ? MyBatisServiceFileRules.AUDITOR_MEMBERS_KT
+                                : MyBatisServiceFileRules.AUDITOR_MEMBERS);
     }
 
     /**
@@ -189,6 +212,34 @@ public class MongoServiceFileRules implements CodeRules {
      */
     private void deleteVars(SourceCode c, EntitySpec e, FieldSpec pk, String repository) {
         Syntax syntax = c.syntax();
+        if (syntax == Syntax.KOTLIN) {
+            String id = syntax.notNull(pk.name());
+            if (SoftDelete.applies(e)) {
+                FieldSpec deleted = SoftDelete.field(e);
+                String live = String.format(".filter { e -> %s == null }", syntax.getter("e", deleted.name()));
+                c.var("liveFilter", live)
+                        .var("deleteNote", ": the time it was deleted is written, and reads leave it out (@deleted)")
+                        .var(
+                                "deleteBody",
+                                String.format(
+                                        "%s.findById(%s)%s.ifPresent { e ->\n"
+                                                + "            %s\n"
+                                                + "            %s.save(e)\n"
+                                                + "        }",
+                                        repository,
+                                        id,
+                                        live,
+                                        syntax.setter("e", deleted.name(), MyBatisSql.nowType(deleted)),
+                                        repository))
+                        .var("notThere", String.format("!%s.findById(%s)%s.isPresent", repository, id, live));
+            } else {
+                c.var("liveFilter", "")
+                        .var("deleteNote", "")
+                        .var("deleteBody", String.format("%s.deleteById(%s)", repository, id))
+                        .var("notThere", String.format("!%s.existsById(%s)", repository, id));
+            }
+            return;
+        }
         if (SoftDelete.applies(e)) {
             FieldSpec deleted = SoftDelete.field(e);
             String live = String.format(".filter(e -> %s == null)", syntax.getter("e", deleted.name()));

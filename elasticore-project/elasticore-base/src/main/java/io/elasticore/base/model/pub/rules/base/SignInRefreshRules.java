@@ -72,6 +72,8 @@ public class SignInRefreshRules implements CodeRules, ArtifactContributor {
         String pkg = e.pkg("control");
         if (pkg == null || pkg.isEmpty()) pkg = e.pkg("service");
         String role = ServiceAccessRules.roleText(e, kt, "signedIn");
+        // refresh=password: the runtime's PasswordRefreshFilter, which reads the roles and the stamp in one read.
+        if (ServiceAccessRules.refreshesWithPassword(e)) c.template("sessionRefreshPassword");
 
         c.var("packageName", pkg)
                 .var("className", className(e))

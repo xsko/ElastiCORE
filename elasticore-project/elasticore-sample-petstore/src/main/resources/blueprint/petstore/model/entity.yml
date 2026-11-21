@@ -61,8 +61,9 @@ entity:
 
   Customer:
     # 가입은 누구나, 읽기·수정은 본인(과 관리자), 삭제는 관리자
-    # refresh=request: 관리자가 바꾼 역할과 삭제가 다시 로그인하지 않아도 다음 요청부터 세션에 반영된다
-    meta: entity @root @editable @expose(20) @signin(refresh=request) @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
+    # refresh=password: 관리자가 바꾼 역할과 삭제가 다시 로그인하지 않아도 다음 요청부터 세션에 반영되고,
+    # 비밀번호가 바뀌면 그 전에 열린 세션은 끝난다 (바꾼 세션은 유지)
+    meta: entity @root @editable @expose(20) @signin(refresh=password) @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
           @Index(name="uk_ps_customer_login", columnList="login", unique="true") -- 고객
     fields:
       customerId:  long @id @sequence

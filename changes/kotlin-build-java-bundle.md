@@ -14,7 +14,8 @@
   `elasticore.publisher.rules` a domain naming none runs, and the sets the build adds to every domain (the plugin's
   `rules`). The Kotlin name is given for `jpa-springboot`, `jpa-springboot-v3`, `ddd-springboot`,
   `hexagonal-springboot`, `ddd-value-object` and `jpa-identity`. Which sets are Java's is read from the bundles (in a
-  Java bundle and in no Kotlin one), plus the two Java shells no bundle names.
+  Java bundle and in no Kotlin one - a Kotlin bundle is one named `-kt`, `mongo-springboot-kt` among them), plus the
+  two Java shells no bundle names.
 - Unchanged: a Java build, a Kotlin domain naming the Kotlin bundles with language-neutral sets
   (`[jpa-springboot-kt, ddd-aggregate, ddd-reference, ossie-export]`, as `elasticore-template-kt` does), a project's own
   rule classes, and 2.x (which has no Kotlin: `-Pv2` with Kotlin is refused already).

@@ -315,7 +315,8 @@ class ShopFlowTest {
     }
 
     /**
-     * {@code @signin(refresh=request)}: each request reads the signed-in customer again. A role the
+     * {@code @signin(refresh=password)} does what refresh=request does (PasswordRefreshTest has the
+     * rest): each request reads the signed-in customer again. A role the
      * administrator changes is the session's from the next request on, and a deleted customer's
      * session ends - neither waits for the next sign-in.
      */

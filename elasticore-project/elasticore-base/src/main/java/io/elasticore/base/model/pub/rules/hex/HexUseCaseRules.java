@@ -238,6 +238,14 @@ public class HexUseCaseRules implements CodeRules, ArtifactContributor {
             if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) {
                 methods.add(method(s, String.format("Optional<%s>", dto), "me", ""));
             }
+            // @signin(refresh=password): the session refresh reads the roles and the password's stamp.
+            if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.refreshesWithPassword(e)) {
+                methods.add(method(
+                        s,
+                        "Optional<io.elasticore.springboot3.security.PasswordRefreshFilter.Row>",
+                        "signedInRow",
+                        ""));
+            }
         }
 
         for (int i = 0; i < methods.size(); i++) {

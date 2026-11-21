@@ -545,7 +545,7 @@ public class GeneratedMergeTest {
             for (Path p : (Iterable<Path>) all::iterator) {
                 if (!p.toString().endsWith(".java")) continue;
                 String s = read(p);
-                if (s.startsWith("//ecd:")) Files.write(p, s.replaceFirst("_V3\\.0", "_V2.2").getBytes(StandardCharsets.UTF_8));
+                if (s.startsWith("//ecd:")) Files.write(p, twoXStamp(s).getBytes(StandardCharsets.UTF_8));
             }
         }
         Path dto = java(project, "PurchaseOrderDTO.java");
@@ -582,6 +582,11 @@ public class GeneratedMergeTest {
         assertArrayEquals(cache, Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
     }
 
+    /** The file with its hash line's version - this generator's major.minor - as 2.2 stamps it. */
+    private static String twoXStamp(String s) {
+        return s.replaceFirst(java.util.regex.Pattern.quote("_V" + io.elasticore.base.Version.MAJOR), "_V2.2");
+    }
+
     /**
      * A project with the 2.x code, stamped as 2.x stamps it, whose PurchaseOrderDTO carries the
      * given custom blocks: {@code header} under the package line, {@code body} after the first field.
@@ -594,8 +599,7 @@ public class GeneratedMergeTest {
             for (Path p : (Iterable<Path>) all::iterator) {
                 if (!p.toString().endsWith(".java")) continue;
                 String s = read(p);
-                if (s.startsWith("//ecd:"))
-                    Files.write(p, s.replaceFirst("_V3\\.0", "_V2.2").getBytes(StandardCharsets.UTF_8));
+                if (s.startsWith("//ecd:")) Files.write(p, twoXStamp(s).getBytes(StandardCharsets.UTF_8));
             }
         }
         Path dto = java(project, "PurchaseOrderDTO.java");

@@ -1,0 +1,97 @@
+// The MongoDB reading of the pipeline in Kotlin, kept where it can be compiled and run.
+//
+// elasticore-template-mongo's shop, generated with language = 'kotlin': the
+// entity a Spring Data MongoDB document, a MongoRepository whose search is a
+// companion object, the service over MongoTemplate - all Kotlin. The tests
+// are elasticore-template-mongo's, in Java, run against the Kotlin
+// application: the same requests, the same answers. They run against a real
+// MongoDB, which Testcontainers starts - skipped where Docker is not running
+// (CI fails instead, DockerOnCiTest), or run against the server
+// ELASTICORE_IT_MONGODB_URI names.
+//
+//   ./gradlew :elasticore-project:elasticore-template-kt-mongo:test
+
+plugins {
+	id 'org.jetbrains.kotlin.jvm'
+	// A reference to another collection's document is read lazily
+	// (@DocumentReference(lazy = true)), through a proxy of the referenced
+	// class - which Kotlin makes final unless all-open opens it. What a Kotlin
+	// MongoDB project applies, as a Kotlin JPA one opens @Entity.
+	id 'org.jetbrains.kotlin.plugin.allopen'
+	id 'io.spring.dependency-management' version '1.1.6'
+	id 'io.elasticore'
+}
+
+elasticore {
+	architecture = 'layered'
+	language = 'kotlin'
+}
+
+dependencies {
+	elasticore project(':elasticore-project:elasticore-base')
+}
+
+group = 'elasticore-template-kt-mongo'
+version = '1.0.0-SNAPSHOT'
+
+kotlin {
+	jvmToolchain(17)
+}
+
+allOpen {
+	annotation 'org.springframework.data.mongodb.core.mapping.Document'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencyManagement {
+	imports {
+		mavenBom 'org.springframework.boot:spring-boot-dependencies:3.5.16'
+	}
+}
+
+dependencies {
+	implementation 'org.jetbrains.kotlin:kotlin-stdlib'
+	// Spring reads Kotlin classes through kotlin-reflect - Spring Data the
+	// documents' constructors among them.
+	implementation 'org.jetbrains.kotlin:kotlin-reflect'
+
+	// What a MongoDB project declares: Spring Data MongoDB, and no JPA.
+	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+
+	implementation project(':elasticore-project:elasticore-base')
+	implementation project(':elasticore-project:elasticore-springboot3')
+	// club: Note.body is an html field, cleaned with jsoup's Safelist before it is saved
+	implementation 'org.jsoup:jsoup:1.23.2'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:mongodb'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+	useJUnitPlatform()
+	testLogging { events 'passed', 'skipped', 'failed' }
+	jvmArgs '-Duser.language=ko', '-Duser.country=KR'
+}
+
+// A run that reads a stale file checks nothing: the generated tree is
+// cleared first, files rather than directories (a handle on Windows).
+task elcore3clean(type: Delete) {
+	group = 'elasticore'
+	description = 'Removes previously generated sources'
+	delete fileTree('src/main/kotlin')
+}
+
+tasks.named('elcore3') {
+	systemProperty 'elasticore.rules.force', 'true'
+	dependsOn elcore3clean
+}
+
+compileKotlin.mustRunAfter 'elcore3'

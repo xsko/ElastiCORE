@@ -300,7 +300,7 @@ Oracle·PostgreSQL·SQL Server).
 `@formula` 필드는 엔티티에 남지만 MyBatis 가 읽지 않아 값이 null 이고, 검색 조건에서도 빠집니다(경고).
 
 ### 2.4 MongoDB 모드
-> **동작:** v3 레이어드 Java (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** v3 Kotlin, ddd, hexagonal (빌드 중단)
+> **동작:** v3 레이어드 Java·Kotlin (Spring Boot 3 에서 실행 확인), 2.x generator · **안 됨:** ddd, hexagonal (빌드 중단)
 
 MongoDB 에 저장하는 도메인. **모델(DSL)은 그대로이고 `mode` 한 단어만 바꿉니다.** Since: 3.0.261119
 
@@ -317,6 +317,13 @@ config:
 | `<Entity>.java` | `@Document(collection = "<테이블 이름>")`, `@Id`, `@Version`, `@CreatedDate`..., `@unique` 는 `@Indexed(unique = true, sparse = true)`, `@index` 는 `@CompoundIndex`, `@Field` 는 이름을 준 `@column` 에만 |
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>` 와 검색: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (`SORT_FIELDS` 만) |
 | `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 저장소와 `MongoTemplate` 위에서 동작(검색은 Criteria 의 `Query`, 페이지) |
+
+**Kotlin 으로** (`language = 'kotlin'`, 3.1 부터) 같은 파일이 `.kt` 로 나옵니다: 엔티티는 같은 애노테이션을 단 `var` 프로퍼티의 클래스, 저장소의 검색은 `companion object` (`@JvmStatic` 이라 `OrderRepository.criteria(...)` 를 Java 와 Kotlin 에서 똑같이 부름), 번들은 `mongo-springboot-kt`. 참조는 참조 대상 클래스의 프록시로 지연 로딩되는데 Kotlin 클래스는 final 이므로, Kotlin JPA 프로젝트가 `@Entity` 를 여는 것처럼 `build.gradle` 에서 문서를 엽니다:
+
+```groovy
+plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<사용하는 Kotlin 버전>' }
+allOpen { annotation 'org.springframework.data.mongodb.core.mapping.Document' }
+```
 
 **모델이 저장되는 모양**
 
@@ -338,9 +345,10 @@ config:
 인덱스는 `spring.data.mongodb.auto-index-creation=true` 일 때만 만들어집니다(Spring Data 기본값은 off).
 쓰기는 문서 하나 단위이고 여러 문서를 묶는 트랜잭션은 없습니다(일괄 수정은 문서를 하나씩).
 
-**아직 안 됨** (빌드 중단, 또는 적은 대로): Kotlin, ddd, hexagonal; 복합 키; `@abstract(entity)` 계층;
+**아직 안 됨** (빌드 중단, 또는 적은 대로): ddd, hexagonal; 복합 키; `@abstract(entity)` 계층;
 `@ManyToMany`; `mappedBy` 없는 다른 컬렉션 문서의 컬렉션; `@count`, `@onDelete`; DDL (쓰지 않음).
 `elasticore-template-mongo` 가 상점을 생성·컴파일하고 실제 MongoDB(Testcontainers)에서 API 를 돌립니다.
+`elasticore-template-kt-mongo` 는 같은 일을 Kotlin 으로, 같은 테스트로 합니다.
 
 ### 2.5 UML 모드
 > **동작:** 2.x generator · **안 됨:** v3 에서 `jpa`·`mybatis` 와 함께 (경고); v3 에서 단독 (빌드 중단)
@@ -482,6 +490,43 @@ entity:
 - `genid` 키는 특별 처리되며, 엔티티 필드에 `@genid` 사용 시 지정된 ID 생성기 메서드가 `@PrePersist`에 등록됨
 - 형식: `genid(패키지.클래스.메서드)`
 
+**응답에서 개인정보 가리기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+```yaml
+config:
+  annotations:
+    maskphone: "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)"
+    maskname:  "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.NAME)"
+```
+```yaml
+      telNumber: string(20) @env:maskphone   # 010-1234-5678 -> 010-****-5678
+      name:      string(50) @env:maskname    # 홍길동 -> 홍*동
+```
+- `@dto:` 이므로 `@Mask` 는 DTO 필드에만 붙고, 엔티티와 DB 에는 값이 그대로 저장된다.
+- Jackson 모듈은 런타임이 스스로 등록한다(Boot 3 은 Jackson 2, Boot 4 는 Jackson 3). 생성되는 DTO 는 둘 다 같다.
+- `MaskType`: `PHONE`(가운데 묶음), `EMAIL`(로컬 부분 앞 두 글자만), `NAME`(첫 글자와 끝 글자만), `PLATE`(끝 숫자 네 개), `CARD`(앞뒤 네 자리만), `RRN`(앞 일곱 자리만).
+- 가리는 것은 응답 JSON 뿐이고 요청은 보낸 그대로 읽는다. 본인과 관리자도 가린 값을 받으며, 읽은 DTO 를 그대로 다시 보내는 클라이언트는 가린 글자를 저장하게 되니 가린 필드는 바뀔 때만 보낸다.
+
+**컬럼을 암호화해 저장하기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): 3.0 코드의 `@encrypt`(어노테이션 가이드)가 하고, `@search(eq)` 에는 블라인드 인덱스도 쓴다. 생성기 없이 쓸 때는 런타임의 컨버터를 이름으로 둔다:
+```yaml
+config:
+  annotations:
+    encrypt: "@entity:jakarta.persistence.Convert(converter=io.elasticore.springboot3.crypto.EncryptConverter.class)"
+```
+```yaml
+      telNumber: string(200) @env:encrypt @env:maskphone   # v1:... in the column; the length must hold the ciphertext
+```
+- 키는 Spring 프로퍼티이고 런타임의 자동 설정이 읽는다; 저장소에 두지 않는다 (환경 변수나 vault):
+```yaml
+elasticore:
+  crypto:
+    key: ${CRYPTO_KEY}               # base64 of 32 bytes (openssl rand -base64 32): every write uses it
+    index-key: ${CRYPTO_INDEX_KEY}   # another 32 bytes: the blind index of @encrypt @search(eq)
+    key-version: v1                  # the prefix of what the key writes; v1 when unsaid
+```
+- 암호화 필드가 있는 애플리케이션은 `elasticore.crypto.key` 와 `elasticore.crypto.index-key` 없이 시작하지 않는다(메시지가 빠진 것의 이름을 말함); 32바이트 base64 가 아닌 키, 키와 같은 인덱스 키, v1 ~ v9 가 아닌 키 버전은 어떤 시작도 멈춘다.
+- 키 교체: 새 키를 만들어 `elasticore.crypto.key` 에 두고 `elasticore.crypto.key-version=v2` 로, 옛 키는 `elasticore.crypto.keys.v1` 에 둔다. 행은 접두어가 말하는 키로 읽고, 그 컬럼의 모든 쓰기(새 행, 바뀐 값)는 `v2:` 가 된다; 쓰지 않은 행은 `v1:` 그대로이고, JPA 에서 다른 컬럼만 바뀐 행도 그렇다(생성된 엔티티는 `@DynamicUpdate`: 바뀐 컬럼만 쓴다); MyBatis 는 모든 컬럼을 쓰므로 그 행을 수정하면 `v2:` 로 다시 쓰인다. 모든 행을 옮기려면 이미 있는 행처럼 일회성 작업을 돌린다(어노테이션 가이드, `@encrypt`): 값마다 `decrypt` 해 `encrypt(v)` 를 다시 쓰고, `v1:` 로 시작하는 행이 없어지면 `keys.v1` 을 뺀다. 인덱스 키는 이렇게 바꾸지 않는다: 새 인덱스 키는 모든 `_bidx` 컬럼을 다시 써야 한다(`Bidx.of`, `Bidx.ofDigits`).
+- env 별칭은 암호화만 한다: 그 컬럼을 같음으로 검색하면 아무것도 찾지 못한다(매번 글자가 다름). 검색은 인덱스를 쓰는 `@encrypt @search(eq)` 로 한다.
+
 ---
 
 ## 5. jsonview 설정
@@ -571,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  빌드에 `runtimePackages` 가 있으면(`elasticore-rule-guide.md`) 클래스에는 매핑된 이름이 붙습니다 -
+  `'io.elasticore.springboot3': 'com.acme.runtime'` 이면 `@com.acme.runtime.entity.PersistentModel` - 두 줄도 그것을 적습니다.
 - Envers(`@Audited`)를 쓰는 도메인은 그 어노테이션이 남으므로, 생성되는 아키텍처 테스트가 `org.hibernate.envers` 는 허용합니다.
 - 사용자가 만든 `META-INF/orm.xml` 이 있으면 덮어쓰지 않고 `META-INF/elasticore-orm.xml` 에 쓰고
   `spring.jpa.mapping-resources` 설정을 안내합니다.
@@ -583,9 +630,18 @@ config:
   archTest: true        # 계층 경계를 ArchUnit 테스트로 (기본값: false)
 ```
 
-- `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 생성합니다.
+- `src/test/java/<기본 패키지>/<Domain>ArchitectureTest.java` (Kotlin 은 `src/test/kotlin`) 를 **처음 한 번** 쓰고, 그 뒤로는 다른 한 번 생성 파일처럼 DSL 을 따라갑니다(아래).
   네임스페이스로 계층을 읽습니다: 도메인(`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   애플리케이션(`service`, `dto`, `inboundPort`, `queryPort`), 어댑터(`control`), 영속성(`persistence`, `repository`).
+- 네임스페이스가 기본 패키지 아래에서 단어로 계층을 나눌 때 - `namespace: { base: ... }` 가 그렇게 놓습니다:
+  `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - 직접 쓴 코드가 거기 더한 패키지도
+  읽습니다. 기본 패키지 다음 첫 단어로 놓습니다: `domain.*` 는 도메인, `application.*` 은 애플리케이션,
+  `adapter.*`, `infrastructure.*` 와 `control`·`repository` 의 단어(`interfaces` 같은 것)는 둘 다의 바깥. 그래서
+  직접 쓴 `domain.policy` 클래스가 `infrastructure.mail` 을 쓰면 테스트가 실패합니다. 놓을 수 없는 패키지
+  (`config` 같은 것)는 DSL 경고를 한 번 내고 검사하지 않습니다. 기본 패키지 자신(애플리케이션 클래스)과 테스트
+  소스는 빼고 봅니다. 단어가 계층을 말하지 않는 layered 레이아웃은 네임스페이스만으로 읽습니다.
+- 한 번 생성된 파일은 다른 한 번 생성 파일처럼 사용자의 것입니다: 고치지 않았으면 다음 빌드에서 새 패키지 목록을 받고,
+  고쳤으면 3-way 병합(9-2)을 거칩니다 - 겹치지 않는 곳의 사용자 규칙은 남습니다.
 - `ddd`·`hexagonal` 의 규칙 (도메인의 규칙에 `ddd-aggregate` 가 있을 때): 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
   도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
 - `layered` 의 규칙 (그 밖의 선택): 서비스(`service`, `dto`)는 웹(`control`)에 의존하지 않음 / 영속성과 엔티티는 서비스나 웹에
@@ -677,7 +733,7 @@ config:
 - 예제: `elasticore-template-ddd`의 `shop`과 `billing`(`GraphQlApiTest`), `elasticore-template-kt`의 `shop`(`ShopGraphQlTest`).
 
 ### 6.2 테스트 코드 생성
-> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨)
+> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨); Kotlin 의 MongoDB (mode: mongo) (경고, 생성 안 됨)
 
 ```yaml
 config:
@@ -769,6 +825,7 @@ elasticore:
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 (`mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | 도메인 모델·헥사고날을 MyBatis 로 (`architecture` 가 ddd·hexagonal 이고 `mode: mybatis` 인 도메인이 저절로 받음 - 2.3 절) |
 | `mongo-springboot` | 레이어드 Java 를 Spring Data MongoDB 로 (`mode: mongo` 인 도메인이 저절로 받음 - 2.4 절) |
+| `mongo-springboot-kt` | `mongo-springboot` 의 Kotlin 판 (`mode: mongo` 인 Kotlin 도메인이 저절로 받음 - 2.4 절) |
 
 번들은 개별 룰셋의 이름 목록이므로 직접 조합해도 됩니다:
 

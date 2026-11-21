@@ -2,6 +2,11 @@ plugins {
     id 'maven-publish'
     // The merge gates (gradle/quality.gradle) apply these to the libraries.
     id 'info.solidsoft.pitest' version '1.19.0' apply false
+    // The Kotlin samples (elasticore-template-kt, elasticore-template-kt-mongo) apply these; declared once
+    // here, so the Kotlin Gradle plugin is loaded once for the build rather than once per module.
+    id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false
+    id 'org.jetbrains.kotlin.plugin.allopen' version '1.9.24' apply false
+    id 'org.jetbrains.kotlin.plugin.jpa' version '1.9.24' apply false
 }
 
 allprojects {

@@ -2144,7 +2144,18 @@ sign-in: a role the admin changes waits for that sign-in, and a deleted member k
 request whose session holds a signed-in key, it reads the row again through `me()` - a row kept under `@deleted` counts as gone. No row: the session
 ends and the request goes on as a visitor's (what needs a signed-in user answers 401). A changed role: the session takes it from this request on and
 keeps its id. It costs one read of the row per such request. A session with no signed-in key (a visitor, or a `CurrentUser` of the application's
-own) is not read. `@signin` takes no other option - another is a DSL warning.
+own) is not read. `@signin` takes no option but `refresh=request` and `refresh=password` - another is a DSL warning.
+
+**`@signin(refresh=password)` - a session opened before a password change ends.** It does everything `refresh=request` does, in the
+same one read of the row per signed-in request (`signedInRow()`, added to the CoreService and the use case beside `me()`), and the
+session also holds a stamp of the password hash - the first 16 hex characters of the SHA-256 of the stored hash, never the hash. When
+the row's stamp is no longer the session's, the session ends and the request goes on as a visitor's (a write answers 401). The session
+that changes its own password (`PUT` with the password) keeps going with the new stamp, and the member's other sessions end; when an
+administrator changes a member's password, that member's sessions end and the administrator's is kept. A session without a stamp -
+signed in by your own code (`SessionCurrentUser.signIn`, as the reset below does) or before the option was on - takes the row's at the
+end of the request that signed it in, or on its first request, so your code needs no change. A row that had no password (a member from
+another provider) and gets one is not a change; a password removed is. The 2.x-compatible output (`output = 'v2'`) has no generated
+sign-in, so there `refresh=password` stops the build.
 
 - **Update level.** Every request that writes a row (`PUT`, `PUT /batch`, conditional update) asks for the `update` level - `update`, else `*`,
   else `admin`, and `public` if there is no `@access` at all. The sign-in API is generated only when this is `admin` or `none`, or `owner` with `@owner` being the key.
@@ -2317,8 +2328,8 @@ public CustomerDTO confirm(@RequestBody Map<String, String> body, HttpServletReq
 }
 ```
 
-Sessions open elsewhere stay signed in after a reset; ending them takes a session store that can find a member's sessions
-(Spring Session, say). `PasswordResetGuideTest` checks the rest: the session id changes and the one before is worthless; the
+With `@signin(refresh=password)`, which the pet store says, the sessions opened before a reset end with their next request, and the
+one the confirm signs in keeps going (above); without it they stay signed in. `PasswordResetGuideTest` checks that and the rest: the session id changes and the one before is worthless; the
 old password fails and the new one signs in; the same link twice, a link after the customer changed the password themselves,
 an altered link and an expired one are refused; an unknown login gets the same 202 and no mail; a second ask within a minute
 sends nothing.
@@ -2472,6 +2483,61 @@ Post:
   store what a request sends.
 - A value set after the service has cleaned the row (in `beforeSave`, or through the repository) is not cleaned: call
   `entity.cleanHtml()` after setting one.
+
+## @encrypt - a column kept encrypted, searched by equality (v3)
+> **Works in:** v3 (JPA: layered, ddd, hexagonal), Kotlin, MyBatis (mode: mybatis) · **Not in:** MongoDB (mode: mongo) (build stops); 2.x-compatible output (output = 'v2') (build stops); 2.x generator (build stops)
+
+```yaml
+Customer:
+  meta: entity @root @expose(20)
+  fields:
+    phone: string(20) @encrypt(digits) @s(eq)   # v1:... in the column, 010-1234-5678 in the API; found with or without dashes
+    ssn:   string(20) @encrypt @s(eq)           # found by the same text only
+    email: string(100) @encrypt                 # encrypted, not searched
+```
+
+- The value is encrypted when the row is written and decrypted when it is read: AES-256-GCM with a random 12-byte IV per write, so
+  the same value is stored differently each time. The column holds `v1:` and the base64 of IV, ciphertext and tag (the version is
+  bound to it as associated data); the DTO, the API and the entity in your code hold the value. JPA: the entity field gets
+  `@Convert(converter = EncryptConverter.class)`; MyBatis: the mapper binds and reads the column through `EncryptTypeHandler` (both
+  in `io.elasticore.springboot3.crypto`). A converter knows no table or column, so a ciphertext copied into another row or column
+  decrypts there too: whoever can write the table can move a value between rows.
+- The column is as long as the ciphertext of the declared length can be: `ceil((n * 4 + 28) / 3) * 4 + 3` - 147 for `string(20)`,
+  575 for `string(100)`, 1403 without a length (255) - in the entity and in the DDL / Flyway output. The DTO still checks the
+  declared length. A `text` field keeps its long-text column. A key version is v1 to v9: the prefix is sized for one digit.
+- `@search(eq)`, `@s(eq)` or a bare `@search` (any case) adds a blind index beside the field: `phoneBidx`, column `phone_bidx`
+  (the field's column name with `_bidx`), 22 characters, indexed - on the table of the entity that extends a plain `@abstract`
+  parent too. It is HMAC-SHA256 with a separate key over the value trimmed, cut to 16 bytes, in base64url: two values that differ
+  are two indexes. `@encrypt(digits)` also drops the dashes, spaces and dots of a value made of digits and those, so `010-1234-5678`
+  and `01012345678` find each other - and so would `123-45-678` and `12-345-678`: use it only where the separators mean nothing.
+  The entity's `indexEncrypted()` writes it just before the row is written: under JPA the runtime's `BlindIndexListener`
+  (`@PrePersist`, `@PreUpdate`), after `beforeSave`, the derived values and any code that set the field; under the DDD rules over
+  MyBatis the root's `Lifecycle` (`beforeInsert`, `beforeUpdate`); the layered MyBatis service after `beforeSave`, before its insert
+  and in `write()`. The search compares `phoneBidx` with `Bidx.of(value)` (`Bidx.ofDigits`), never the encrypted column. No DTO
+  carries the index, and the Ossie model leaves out both the encrypted column and its index (as it leaves out a password).
+- Keys are Spring properties, never in the repository (an environment variable or a vault): `elasticore.crypto.key` (base64 of 32
+  bytes: `openssl rand -base64 32`) and `elasticore.crypto.index-key` (another 32 bytes, not the same). An application with an
+  encrypted field does not start without both, and the message names the missing one; a key that is no base64 of 32 bytes, or an
+  index key equal to the key, stops any start. Rotation: env guide. The samples make their keys in their tests and have no
+  application of their own to run; an application sets them for every profile it starts with.
+- **Not supported** (the build stops): a search other than equality - `like`, a prefix or a suffix, `>`, `between`, `in`, `!=`, the
+  ignore-case conditions, `words:` - since a part, a range or a case cannot be found in a column whose text differs each time; a
+  search through a relation that reaches an encrypted field (`@ref(customer.phone)`, `words: customer.phone`); `@encrypt` on a field
+  that is not a single string, on a key, with `@unique`, with `@formula`, on a value object (`@embeddable`), or with a value other
+  than `digits`; a searched encrypted field on a member of an aggregate; a declared search DTO that searches an encrypted field other
+  than by equality, or one without the entity's `@search(eq)`; MongoDB; the 2.x-compatible output and the 2.x generator, which
+  would store the value as sent. Sorting by an encrypted column sorts its ciphertext.
+- **Rows that are already there** hold the plain value, which is not read (`a stored value without a key version`). Encrypt them once,
+  before the new code serves requests: (1) widen the column (`alter table customer alter column phone varchar(147)`) and add
+  `phone_bidx varchar(22)` with its index - the DDL / Flyway output has both; (2) with the application's keys, run a one-off job that
+  reads each row's plain value with plain JDBC and writes `FieldCrypto.current().encrypt(v)` and `Bidx.of(v)` (`Bidx.ofDigits(v)`)
+  back (`update customer set phone = ?, phone_bidx = ? where customer_id = ?`); (3) start the application. A row written later by
+  SQL around the application needs the same two values; so does one a layered MyBatis repository writes without the service.
+- Without the generator, name the converter in env.yml (env guide, `@entity:`): that encrypts, and writes no index.
+- Verified over HTTP with the database read by JDBC: `elasticore-template-ddd` `BoardEncryptTest` (a command re-indexes),
+  `elasticore-template-mybatis` `ShopApi.anEncryptedColumnHoldsCiphertextAndIsFoundByItsIndex`; Kotlin by `elasticore-template-kt`
+  `CommentEncryptTest` (a partial update, PUT /batch, an update by condition); the listener under Hibernate by the runtime's
+  `EncryptConverterHibernateTest`.
 
 ## @deleted - a delete keeps the row (v3)
 > **Works in:** v3 (JPA, MyBatis), Kotlin · **Not in:** 2.x-compatible output (output = 'v2') - a delete removes the row (warning); 2.x generator (not generated); mapping: xml on Spring Boot 3 (stops the build)

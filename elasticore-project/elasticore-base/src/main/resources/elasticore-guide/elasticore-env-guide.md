@@ -300,7 +300,7 @@ Oracle, PostgreSQL and SQL Server).
 A `@formula` field stays in the entity, but MyBatis does not read it, so its value is null, and it is left out of the search conditions (warning).
 
 ### 2.4 MongoDB mode
-> **Works in:** v3 layered Java (run on Spring Boot 3), 2.x generator · **Not in:** v3 Kotlin, ddd, hexagonal (stops the build)
+> **Works in:** v3 layered Java and Kotlin (run on Spring Boot 3), 2.x generator · **Not in:** ddd, hexagonal (stops the build)
 
 A domain kept in MongoDB. **The model (DSL) stays the same; you change only the one word `mode`.** Since: 3.0.261119
 
@@ -317,6 +317,13 @@ as in JPA. Only the storage side differs; the project declares `spring-boot-star
 | `<Entity>.java` | `@Document(collection = "<table name>")`, `@Id`, `@Version`, `@CreatedDate`..., `@Indexed(unique = true, sparse = true)` for `@unique`, `@CompoundIndex` for `@index`, `@Field` only for a named `@column` |
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>`, and the search: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (only `SORT_FIELDS`) |
 | `<Entity>CoreService.java` | The **same method names and signatures** as the JPA version, over the repository and `MongoTemplate` (a search is a `Query` of the Criteria, paged) |
+
+**In Kotlin** (`language = 'kotlin'`, since 3.1) the same files are `.kt`: the entity is a class of `var` properties with the same annotations, the repository's search is its `companion object` (`@JvmStatic`, so `OrderRepository.criteria(...)` reads the same from Java and Kotlin), and the bundle is `mongo-springboot-kt`. A reference is read lazily through a proxy of the referenced class, which Kotlin makes final - open the documents in `build.gradle`, as a Kotlin JPA project opens `@Entity`:
+
+```groovy
+plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<your Kotlin version>' }
+allOpen { annotation 'org.springframework.data.mongodb.core.mapping.Document' }
+```
 
 **How the model is stored**
 
@@ -338,9 +345,10 @@ value, or a reference's id (`customer.customerId`); one further (`customer.name`
 Indexes are created only with `spring.data.mongodb.auto-index-creation=true` (Spring Data's default is off).
 A write is one document - there is no transaction around several (a batch update is its documents one by one).
 
-**Not yet** (stops the build, or as said): Kotlin, ddd and hexagonal; a composite key; an `@abstract(entity)` hierarchy;
+**Not yet** (stops the build, or as said): ddd and hexagonal; a composite key; an `@abstract(entity)` hierarchy;
 `@ManyToMany`; a collection of another collection's documents without `mappedBy`; `@count`, `@onDelete`; DDL (none is
-written). `elasticore-template-mongo` generates a shop, compiles it and runs its API on a real MongoDB (Testcontainers).
+written). `elasticore-template-mongo` generates a shop, compiles it and runs its API on a real MongoDB (Testcontainers);
+`elasticore-template-kt-mongo` does the same in Kotlin, with the same tests.
 
 ### 2.5 UML mode
 > **Works in:** 2.x generator · **Not in:** v3 beside `jpa` or `mybatis` (warning); v3 alone (stops the build)
@@ -482,6 +490,43 @@ The `@env:` prefix refers to an annotation defined in env.yml. It is replaced wi
 - The `genid` key is handled specially: when an entity field uses `@genid`, the given ID generator method is registered in `@PrePersist`
 - Form: `genid(package.Class.method)`
 
+**Masking personal data in responses** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+```yaml
+config:
+  annotations:
+    maskphone: "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)"
+    maskname:  "@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.NAME)"
+```
+```yaml
+      telNumber: string(20) @env:maskphone   # 010-1234-5678 -> 010-****-5678
+      name:      string(50) @env:maskname    # 홍길동 -> 홍*동
+```
+- `@dto:` puts `@Mask` on the DTO field only; the entity and the database keep the value as it is.
+- The runtime registers the Jackson module by itself (Jackson 2 on Boot 3, Jackson 3 on Boot 4), and the generated DTO is the same on both.
+- `MaskType`: `PHONE` (the middle group), `EMAIL` (two letters of the local part), `NAME` (the first and last letter), `PLATE` (the last four digits), `CARD` (all but the first and last four digits), `RRN` (all but the first seven digits).
+- Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too - and a client that sends a read DTO back unchanged writes the masked text: send a masked field only when it changes.
+
+**Keeping a column encrypted** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): the 3.0 code's `@encrypt` (annotation guide) does it, with the blind index for `@search(eq)`. Without the generator, name the runtime's converter:
+```yaml
+config:
+  annotations:
+    encrypt: "@entity:jakarta.persistence.Convert(converter=io.elasticore.springboot3.crypto.EncryptConverter.class)"
+```
+```yaml
+      telNumber: string(200) @env:encrypt @env:maskphone   # v1:... in the column; the length must hold the ciphertext
+```
+- The keys are Spring properties, read by the runtime's auto-configuration; keep them out of the repository (environment variables or a vault):
+```yaml
+elasticore:
+  crypto:
+    key: ${CRYPTO_KEY}               # base64 of 32 bytes (openssl rand -base64 32): every write uses it
+    index-key: ${CRYPTO_INDEX_KEY}   # another 32 bytes: the blind index of @encrypt @search(eq)
+    key-version: v1                  # the prefix of what the key writes; v1 when unsaid
+```
+- An application with an encrypted field does not start without `elasticore.crypto.key` and `elasticore.crypto.index-key` (the message names the missing one); a key that is no base64 of 32 bytes, an index key equal to the key, or a key version other than v1 to v9 stops any start.
+- Rotating the key: make a new key, set it as `elasticore.crypto.key` with `elasticore.crypto.key-version=v2`, and keep the old one as `elasticore.crypto.keys.v1`. A row is read with the key its prefix names, and every write of the column - a new row, a changed value - is `v2:`; a row that is not written keeps its `v1:` text, and so does one whose other columns change under JPA (the generated entity is `@DynamicUpdate`: only the changed columns are written), while MyBatis writes every column, so any update of the row rewrites it as `v2:`. To move every row, run a one-off job as for existing rows (annotation guide, `@encrypt`): `decrypt` each value and write `encrypt(v)` back; once none starts with `v1:`, drop `keys.v1`. The index key is not rotated this way: a new one needs every `_bidx` column written again (`Bidx.of`, `Bidx.ofDigits`).
+- The env alias encrypts only: an equality search of that column finds nothing (its text differs each time). Search it through `@encrypt @search(eq)`, which writes the index.
+
 ---
 
 ## 5. jsonview setting
@@ -571,6 +616,8 @@ config:
   allOpen { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   noArg   { annotation 'io.elasticore.springboot3.entity.PersistentModel' }
   ```
+  With `runtimePackages` in the build (`elasticore-rule-guide.md`), the classes carry the mapped name - for
+  `'io.elasticore.springboot3': 'com.acme.runtime'`, `@com.acme.runtime.entity.PersistentModel` - and the two lines name that one.
 - A domain that uses Envers (`@Audited`) keeps that annotation, so the generated architecture test allows `org.hibernate.envers`.
 - If a `META-INF/orm.xml` made by the user exists, it is not overwritten; the mapping is written to `META-INF/elasticore-orm.xml` and
   the `spring.jpa.mapping-resources` setting is shown.
@@ -583,9 +630,18 @@ config:
   archTest: true        # test the layer boundaries with ArchUnit (default: false)
 ```
 
-- It generates `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once, the first time**.
+- It first writes `src/test/java/<base package>/<Domain>ArchitectureTest.java` (`src/test/kotlin` for Kotlin) **once**, then keeps it in step like every file generated once (below).
   It reads the layers from the namespaces: domain (`entity`, `enumeration`, `event`, `domainService`, `domainRepository`),
   application (`service`, `dto`, `inboundPort`, `queryPort`), adapter (`control`), persistence (`persistence`, `repository`).
+- Where the namespaces name their layers by segment under the base package - `namespace: { base: ... }` lays them out so:
+  `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - the packages your own code adds there are
+  read too, by their first segment after the base: `domain.*` with the domain, `application.*` with the application, and
+  outside both `adapter.*`, `infrastructure.*` and the segments of `control` and `repository` (`interfaces`, say). A
+  hand-written `domain.policy` class that uses `infrastructure.mail` then fails the test. A package it cannot place
+  (`config`, say) is a DSL warning, once, and is not checked; the base package itself (the application class) and the test
+  sources are left out. A layered layout, whose segments name no layers, is read from the namespaces alone.
+- Once written the file is yours, as every file generated once: one you did not edit takes new package lists on the next
+  build, and an edited one goes through the three-way merge (9-2) - it keeps your rules where they do not overlap.
 - Rules for `ddd` and `hexagonal` (the domain's rules include `ddd-aggregate`): the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
   the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
 - Rules for `layered` (any other selection): the services (`service`, `dto`) do not depend on the web (`control`) / persistence and the entities do not depend on
@@ -677,7 +733,7 @@ config:
 - Example: `shop` and `billing` of `elasticore-template-ddd` (`GraphQlApiTest`), `shop` of `elasticore-template-kt` (`ShopGraphQlTest`).
 
 ### 6.2 Test code generation
-> **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated)
+> **Works in:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **Not in:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated); MongoDB (mode: mongo) in Kotlin (warning, not generated)
 
 ```yaml
 config:
@@ -769,6 +825,7 @@ elasticore:
 | `mybatis-springboot` | Layered Java on MyBatis (a domain with `mode: mybatis` gets it automatically - section 2.3) |
 | `ddd-mybatis-springboot` / `hexagonal-mybatis-springboot` | The domain model / hexagonal on MyBatis (a domain whose `architecture` is ddd or hexagonal and which has `mode: mybatis` gets it automatically - section 2.3) |
 | `mongo-springboot` | Layered Java on Spring Data MongoDB (a domain with `mode: mongo` gets it automatically - section 2.4) |
+| `mongo-springboot-kt` | The Kotlin version of `mongo-springboot` (a Kotlin domain with `mode: mongo` gets it automatically - section 2.4) |
 
 A bundle is a list of names of individual rule sets, so you can also combine them yourself:
 

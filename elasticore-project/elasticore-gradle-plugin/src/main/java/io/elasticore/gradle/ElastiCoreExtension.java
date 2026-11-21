@@ -1,6 +1,7 @@
 package io.elasticore.gradle;
 
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 
 /**
@@ -89,6 +90,25 @@ public abstract class ElastiCoreExtension {
      * tool to list it by.
      */
     public abstract Property<String> getOssieName();
+
+    /**
+     * The ElastiCORE runtime's package prefixes, rewritten in the generated
+     * code to packages the project owns - so it compiles and runs against the
+     * project's own copy of those classes, with no ElastiCORE jar:
+     *
+     * <pre>
+     * runtimePackages = [
+     *     'io.elasticore.springboot3': 'com.acme.springboot',
+     *     'io.elasticore.runtime'    : 'com.acme.runtime',
+     *     'io.elasticore.base.util'  : 'com.acme.util',
+     * ]
+     * </pre>
+     *
+     * Only the prefix changes, whole package segments, the longest key first.
+     * For the 3.0 code only: with {@code output = 'v2'} it is ignored, with a
+     * warning. Unset, the generated code is what it always was.
+     */
+    public abstract MapProperty<String, String> getRuntimePackages();
 
     /**
      * The language of the guides every generation copies into the blueprint

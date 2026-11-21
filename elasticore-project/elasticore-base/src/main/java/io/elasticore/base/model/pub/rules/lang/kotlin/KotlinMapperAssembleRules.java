@@ -78,41 +78,53 @@ public class KotlinMapperAssembleRules implements CodeRules {
             .line(rev, "    fun mapping(from: %s?, to: %s?, isSkipNull: Boolean, c: MappingContext?) {", dto, en);
         reverseBody(code, rev, false);
         code.line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s, to: %s) {", dto, en)
-            .line(rev, "        mapping(from, to, false)")
-            .line(rev, "    }")
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s, to: %s, c: MappingContext?) {", dto, en)
-            .line(rev, "        mapping(from, to, false, c)")
-            .line(rev, "    }")
-            .line(rev, SEP).line(rev, SEP)
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s, to: %s, em: EntityManager?) {", dto, en)
-            .line(rev, "        mapping(from, to, false, null, em)")
-            .line(rev, "    }")
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s, to: %s, isSkipNull: Boolean, em: EntityManager?) {", dto, en)
-            .line(rev, "        mapping(from, to, isSkipNull, null, em)")
-            .line(rev, "    }")
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s, to: %s, c: MappingContext?, em: EntityManager?) {", dto, en)
-            .line(rev, "        mapping(from, to, false, c, em)")
-            .line(rev, "    }")
-            .line(rev, "    @JvmStatic")
-            .line(rev, "    fun mapping(from: %s?, to: %s?, isSkipNull: Boolean, c: MappingContext?,"
-                            + " em: EntityManager?) {", dto, en);
+                .line(rev, SEP)
+                .line(rev, SEP)
+                .line(rev, "    @JvmStatic")
+                .line(rev, "    fun mapping(from: %s, to: %s) {", dto, en)
+                .line(rev, "        mapping(from, to, false)")
+                .line(rev, "    }")
+                .line(rev, "    @JvmStatic")
+                .line(rev, "    fun mapping(from: %s, to: %s, c: MappingContext?) {", dto, en)
+                .line(rev, "        mapping(from, to, false, c)")
+                .line(rev, "    }")
+                .line(rev, SEP)
+                .line(rev, SEP);
+        // The EntityManager overloads attach a JPA reference for a relation's
+        // key; a MongoDB document holds the key itself, which the plain ones set.
+        boolean em = !io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.applies(e)
+                && !io.elasticore.base.model.pub.rules.mongo.MongoDocs.applies(e);
+        if (em) {
+            code.line(rev, "    @JvmStatic")
+                    .line(rev, "    fun mapping(from: %s, to: %s, em: EntityManager?) {", dto, en)
+                    .line(rev, "        mapping(from, to, false, null, em)")
+                    .line(rev, "    }")
+                    .line(rev, "    @JvmStatic")
+                    .line(rev, "    fun mapping(from: %s, to: %s, isSkipNull: Boolean, em: EntityManager?) {", dto, en)
+                    .line(rev, "        mapping(from, to, isSkipNull, null, em)")
+                    .line(rev, "    }")
+                    .line(rev, "    @JvmStatic")
+                    .line(rev, "    fun mapping(from: %s, to: %s, c: MappingContext?, em: EntityManager?) {", dto, en)
+                    .line(rev, "        mapping(from, to, false, c, em)")
+                    .line(rev, "    }")
+                    .line(rev, "    @JvmStatic")
+                    .line(
+                            rev,
+                            "    fun mapping(from: %s?, to: %s?, isSkipNull: Boolean, c: MappingContext?,"
+                                    + " em: EntityManager?) {",
+                            dto,
+                            en);
         reverseBody(code, rev, true);
         code.line(rev, "    }")
             .line(rev, SEP).line(rev, SEP);
+        }
 
         // An abstract entity has no instance to make: a DTO can only update a row that is there.
         if (e.isKnownAbstractEntity(en)) return;
         toOne(code, rev, "toEntity", dto, en, false);
-        toOne(code, rev, "toEntity", dto, en, true);
+        if (em) toOne(code, rev, "toEntity", dto, en, true);
         toList(code, rev, mapper, "toEntity", dto, en, String.format("to%sList", revList), false);
-        toList(code, rev, mapper, "toEntity", dto, en, String.format("to%sList", revList), true);
+        if (em) toList(code, rev, mapper, "toEntity", dto, en, String.format("to%sList", revList), true);
         toListModifier(code, rev, "toEntity", dto, en, String.format("to%sList", revList), dto, en);
     }
 

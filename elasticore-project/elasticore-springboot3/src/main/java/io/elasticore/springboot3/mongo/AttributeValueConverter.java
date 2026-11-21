@@ -59,6 +59,8 @@ public class AttributeValueConverter implements MongoValueConverter<Object, Obje
     /** The value of the type, from what the document holds. */
     public static Object readAs(Object value, Class<?> type) {
         if (value == null || type.isInstance(value)) return value;
+        // A BigDecimal column value (Money's) is kept as Decimal128, and read back as one.
+        if (value instanceof org.bson.types.Decimal128) value = ((org.bson.types.Decimal128) value).bigDecimalValue();
         return converterOf(type).convertToEntityAttribute(value);
     }
 

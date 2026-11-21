@@ -38,6 +38,8 @@ public class MongoEntityFileRules implements CodeRules {
 
     @Rule(value = "mongo-lombok", target = "entity", order = 6)
     void lombok(EntitySpec e) {
+        // A Kotlin property has its accessors already, and the class its constructor.
+        if (ctx(e).syntax() != io.elasticore.base.model.pub.rules.Syntax.JAVA) return;
         ctx(e).ensureClassAnnotation(AnnoCode.of("lombok.Getter"))
                 .ensureClassAnnotation(AnnoCode.of("lombok.Setter"))
                 .ensureClassAnnotation(AnnoCode.of("lombok.NoArgsConstructor"));
@@ -114,7 +116,7 @@ public class MongoEntityFileRules implements CodeRules {
             if (MongoDocs.converted(e, f)) {
                 c.field(f)
                         .ensure(AnnoCode.of("org.springframework.data.convert.ValueConverter")
-                                .valRaw("value", "%s.class", MongoDocs.VALUE_CONVERTER));
+                                .valRaw("value", c.syntax().classLiteral(MongoDocs.VALUE_CONVERTER)));
             }
             if (MongoDocs.isReference(e, f)) {
                 c.field(f).ensure(AnnoCode.of(MAPPING + "DocumentReference").val("lazy", true));
@@ -154,6 +156,8 @@ public class MongoEntityFileRules implements CodeRules {
     @Rule(value = "mongo-entity-file", target = "entity", order = 90, phase = Rule.Phase.TAIL)
     void fileVars(EntitySpec e) {
         SourceCode c = ctx(e);
+        // The Kotlin file shell is kt-entity-file's (KotlinEntityFileRules), on kt/entity.tmpl.
+        if (c.syntax() != io.elasticore.base.model.pub.rules.Syntax.JAVA) return;
         for (FieldSpec f : e.fields()) {
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("entity"));
         }

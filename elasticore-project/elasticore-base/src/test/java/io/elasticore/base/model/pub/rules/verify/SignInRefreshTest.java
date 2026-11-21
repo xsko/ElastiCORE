@@ -194,7 +194,8 @@ public class SignInRefreshTest {
                 log);
         assertTrue(log[0].contains("RfMember: @signin(refresh=command): refresh takes request"), log[0]);
         assertTrue(
-                log[0].contains("RfMember: @signin(remember=...): @signin takes refresh=request; remember is ignored."),
+                log[0].contains("RfMember: @signin(remember=...): @signin takes refresh=request or refresh=password;"
+                        + " remember is ignored."),
                 log[0]);
         assertEquals(0, count(project, "RfMemberSessionRefresh.java"));
 
@@ -208,9 +209,154 @@ public class SignInRefreshTest {
                 0,
                 log);
         assertTrue(
-                log[0].contains("RfMember: @signin(request): @signin takes refresh=request; request is ignored."),
+                log[0].contains("RfMember: @signin(request): @signin takes refresh=request or refresh=password;"
+                        + " request is ignored."),
                 log[0]);
         assertEquals(0, count(bare, "RfMemberSessionRefresh.java"));
+    }
+
+    // ---- @signin(refresh=password), issue 216 ------------------------------------
+
+    private static final String PASSWORD = MODEL.replace("@signin(refresh=request)", "@signin(refresh=password)");
+
+    @Test
+    public void passwordReadsTheStampInTheSameOneReadThroughThePort() throws Exception {
+        String[] log = new String[1];
+        File project = run("elcore-refresh-pw-hex", "hexagonal", "java", "jpa", PASSWORD, false, 0, log);
+        String filter = found(project, "RfMemberSessionRefresh.java");
+        assertTrue(filter.contains("import io.acme.rfshop.application.port.in.RfMemberUseCase;"), filter);
+        assertTrue(
+                filter.contains("@Component\npublic class RfMemberSessionRefresh extends PasswordRefreshFilter {"),
+                filter);
+        assertTrue(
+                filter.contains("protected Optional<PasswordRefreshFilter.Row> signedInRow() {\n"
+                        + "\t\treturn service.signedInRow();"),
+                filter);
+        assertFalse(filter.contains("service.me()"), filter);
+        String port = found(project, "RfMemberUseCase.java");
+        assertTrue(
+                port.contains("Optional<io.elasticore.springboot3.security.PasswordRefreshFilter.Row> signedInRow();"),
+                port);
+        String core = found(project, "RfMemberCoreService.java");
+        // One read, the one me() makes, by the session's key; the hash of the entity, which no DTO carries.
+        assertTrue(
+                core.contains("public Optional<io.elasticore.springboot3.security.PasswordRefreshFilter.Row>"
+                        + " signedInRow() {\n"
+                        + "        Object id = currentUser.id();\n"
+                        + "        if (id == null) return Optional.empty();\n"
+                        + "        return repository.findById(io.elasticore.springboot3.security.AccessPolicy.as(id,"
+                        + " Long.class))\n"
+                        + "                .map(row -> io.elasticore.springboot3.security.PasswordRefreshFilter.row(\n"
+                        + "                        io.elasticore.springboot3.security.SessionRefreshFilter.roles("
+                        + "row.getRole() == null ? null : row.getRole().name()), row.getSecret()));"),
+                core);
+        // The session that writes its own password keeps going.
+        assertTrue(
+                core.contains(
+                        "    if (dto.getSecret() != null) io.elasticore.springboot3.security.PasswordRefreshFilter"
+                                + ".written(entity.getMemberId(), dto.getSecret());"),
+                core);
+        assertFalse(log[0].contains("@signin("), log[0]);
+    }
+
+    @Test
+    public void passwordInKotlin() throws Exception {
+        File project = run("elcore-refresh-pw-kt", "hexagonal", "kotlin", "jpa", PASSWORD, false, 0, new String[1]);
+        String filter = found(project, "RfMemberSessionRefresh.kt");
+        assertTrue(
+                filter.contains("@Component\nclass RfMemberSessionRefresh(private val service: RfMemberUseCase)"
+                        + " : PasswordRefreshFilter() {"),
+                filter);
+        assertTrue(
+                filter.contains(
+                        "override fun signedInRow(): Optional<PasswordRefreshFilter.Row> =" + " service.signedInRow()"),
+                filter);
+        String core = found(project, "RfMemberCoreService.kt");
+        assertTrue(
+                core.contains("open fun signedInRow(): Optional<io.elasticore.springboot3.security"
+                        + ".PasswordRefreshFilter.Row> {"),
+                core);
+        assertTrue(
+                core.contains(
+                        "io.elasticore.springboot3.security.SessionRefreshFilter.roles(it.role?.name), it.secret)"),
+                core);
+        assertTrue(
+                core.contains("dto.secret?.let { io.elasticore.springboot3.security.PasswordRefreshFilter"
+                        + ".written(entity.memberId, it) }"),
+                core);
+    }
+
+    /** The same in every persistence and language refresh=request is in. */
+    @Test
+    public void passwordInEveryModeRequestIsIn() throws Exception {
+        String[][] runs = {
+            {"layered", "java", "jpa", "java"},
+            {"layered", "kotlin", "jpa", "kt"},
+            {"ddd", "java", "jpa", "java"},
+            {"ddd", "kotlin", "jpa", "kt"},
+            {"layered", "java", "mybatis", "java"},
+            {"ddd", "java", "mybatis", "java"},
+            {"hexagonal", "java", "mybatis", "java"},
+            {"layered", "java", "mongo", "java"},
+            {"layered", "kotlin", "mongo", "kt"}
+        };
+        for (String[] r : runs) {
+            String at = r[0] + "/" + r[1] + "/" + r[2];
+            File project = run(
+                    "elcore-refresh-pw-" + r[0] + "-" + r[1] + "-" + r[2],
+                    r[0],
+                    r[1],
+                    r[2],
+                    PASSWORD,
+                    false,
+                    0,
+                    new String[1]);
+            String filter = found(project, "RfMemberSessionRefresh." + r[3]);
+            assertTrue(filter.contains("PasswordRefreshFilter"), at + "\n" + filter);
+            assertTrue(filter.contains("service.signedInRow()"), at + "\n" + filter);
+            String core = found(project, "RfMemberCoreService." + r[3]);
+            assertTrue(core.contains("signedInRow()"), at + "\n" + core);
+            assertTrue(core.contains("PasswordRefreshFilter.written("), at + "\n" + core);
+        }
+    }
+
+    /** A MongoDB document kept under @deleted is no one's session: signedInRow reads past it as me() does. */
+    @Test
+    public void passwordOverMongoLeavesADeletedDocumentOut() throws Exception {
+        File project = run("elcore-refresh-pw-mongo", "layered", "java", "mongo", PASSWORD, false, 0, new String[1]);
+        String core = found(project, "RfMemberCoreService.java");
+        assertTrue(
+                core.contains("Long.class)).filter(e -> e.getLeftAt() == null)\n"
+                        + "                .map(row -> io.elasticore.springboot3.security.PasswordRefreshFilter.row("),
+                core);
+    }
+
+    /** refresh=request generates what it did: no stamp is read or written. */
+    @Test
+    public void requestAloneHasNoStamp() throws Exception {
+        for (String arch : new String[] {"hexagonal", "layered"}) {
+            File project = run("elcore-refresh-req-" + arch, arch, "java", "jpa", MODEL, false, 0, new String[1]);
+            String core = found(project, "RfMemberCoreService.java");
+            assertFalse(core.contains("signedInRow"), core);
+            assertFalse(core.contains("PasswordRefreshFilter"), core);
+            assertFalse(found(project, "RfMemberSessionRefresh.java").contains("PasswordRefreshFilter"));
+        }
+    }
+
+    /** The 2.x-compatible output has no generated sign-in: refresh=password stops the build, rather than being ignored. */
+    @Test
+    public void passwordStopsTheCompatibleOutput() throws Exception {
+        String[] log = new String[1];
+        File project = run("elcore-refresh-pw-v2", "layered", "java", "jpa", PASSWORD, true, null, log);
+        assertTrue(lastExit != 0, "the build is stopped:\n" + log[0]);
+        assertTrue(
+                log[0].contains("[rfshop] RfMember: @signin(refresh=password) is generated by the 3.0 code; the"
+                        + " 2.x-compatible output has no generated sign-in"),
+                log[0]);
+        assertEquals(0, count(project, "RfMemberSessionRefresh.java"));
+        String[] request = new String[1];
+        run("elcore-refresh-req-v2", "layered", "java", "jpa", MODEL, true, 0, request);
+        assertFalse(request[0].contains("refresh=password"), request[0]);
     }
 
     /** An entity whose sign-in cannot be met gets no filter either; why is said as before. */
@@ -236,6 +382,9 @@ public class SignInRefreshTest {
         File project = run("elcore-refresh-v2", "layered", "java", "jpa", MODEL, true, null, new String[1]);
         assertEquals(0, count(project, "RfMemberSessionRefresh.java"));
     }
+
+    /** The exit of the last run. */
+    private static int lastExit;
 
     private static File run(
             String name,
@@ -303,6 +452,7 @@ public class SignInRefreshTest {
             else if ("layered".equals(architecture)) System.setProperty("elasticore.rules.v3", "true");
             System.setProperty(DdlConfig.DATABASES, "postgresql");
             int code = RulesGenRunner.run(new String[0]);
+            lastExit = code;
             if (exit != null) assertEquals(exit.intValue(), code, "the run's exit: " + project);
         } finally {
             System.setOut(out);

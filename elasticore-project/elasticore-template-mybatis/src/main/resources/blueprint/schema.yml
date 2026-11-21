@@ -44,11 +44,13 @@ entities:
       body: string @Column(name = "body")
       page: string @Column(name = "page")
       pageText: string @Column(name = "page_text")
+      serialNo: string(30) @Column(name = "serial_no", length = 203)
       image: byte[] @Column(name = "image")
       madeOn: Date @Column(name = "made_on")
       madeAt: Date @Column(name = "made_at")
       opensAt: java.time.LocalTime @Column(name = "opens_at")
       stampedAt: java.time.Instant @Column(name = "stamped_at")
+      serialNoBidx: string(22) @Column(name = "serial_no_bidx", length = 22)
 
   Product:
     meta: entity @java(io.elasticore.sample.mybatis.shop.domain.model.Product) -- product

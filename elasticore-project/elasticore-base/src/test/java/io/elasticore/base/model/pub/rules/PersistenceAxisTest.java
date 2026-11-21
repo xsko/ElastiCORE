@@ -47,7 +47,7 @@ public class PersistenceAxisTest {
     }
 
     @Test
-    public void mongoIsLayeredJava() {
+    public void mongoIsLayeredJavaOrKotlin() {
         assertEquals(
                 RulesConfig.MONGO_BUNDLE,
                 RulesConfig.bundleFor(
@@ -62,11 +62,31 @@ public class PersistenceAxisTest {
                         RulesConfig.Architecture.HEXAGONAL,
                         RulesConfig.Language.TYPESCRIPT,
                         RulesConfig.Persistence.MONGO));
-        IllegalArgumentException kt = assertThrows(
-                IllegalArgumentException.class,
-                () -> RulesConfig.bundleFor(
+        // Kotlin layered since 3.1: refused before, so no existing output changes.
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE_KT,
+                RulesConfig.bundleFor(
                         RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MONGO));
-        assertTrue(kt.getMessage().contains("MongoDB code is written in Java, layered"), kt.getMessage());
+        assertNull(RulesConfig.mongoRefusal(RulesConfig.Architecture.LAYERED, RulesConfig.Language.KOTLIN));
+        for (RulesConfig.Architecture a : new RulesConfig.Architecture[] {
+            RulesConfig.Architecture.DOMAIN_MODEL, RulesConfig.Architecture.HEXAGONAL
+        }) {
+            IllegalArgumentException kt = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> RulesConfig.bundleFor(a, RulesConfig.Language.KOTLIN, RulesConfig.Persistence.MONGO));
+            assertTrue(kt.getMessage().contains("MongoDB code is written layered"), kt.getMessage());
+        }
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE_KT,
+                RulesConfig.mongoBundleOf("jpa-springboot-kt", RulesConfig.Language.KOTLIN));
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE_KT,
+                RulesConfig.mongoBundleOf(" mongo-springboot-kt ", RulesConfig.Language.KOTLIN));
+        assertNull(RulesConfig.mongoBundleOf("mongo-springboot", RulesConfig.Language.KOTLIN));
+        assertNull(RulesConfig.mongoBundleOf(null, RulesConfig.Language.KOTLIN));
+        assertNull(RulesConfig.mongoBundleOf("mongo-springboot-kt", RulesConfig.Language.JAVA));
+        assertEquals(
+                RulesConfig.MONGO_BUNDLE, RulesConfig.mongoBundleOf("mongo-springboot", RulesConfig.Language.JAVA));
         IllegalArgumentException ddd = assertThrows(
                 IllegalArgumentException.class,
                 () -> RulesConfig.bundleFor(

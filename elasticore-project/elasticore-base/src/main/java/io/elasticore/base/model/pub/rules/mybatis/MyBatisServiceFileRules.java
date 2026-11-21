@@ -38,6 +38,8 @@ public class MyBatisServiceFileRules implements CodeRules {
         for (String slot : ServiceAccessRules.SLOTS) c.slot(slot);
         // Filled where the row is cleaned before it is written (an html field); empty otherwise.
         c.slot("deriveBeforeSave");
+        // Filled where the row has blind indexes to write just before its statement (@encrypt); empty otherwise.
+        c.slot("encryptBeforeWrite");
         for (String inline : ServiceAccessRules.INLINE) c.var(inline, "");
 
         String searchResultDto = e.searchResultDtoName();
@@ -291,7 +293,9 @@ public class MyBatisServiceFileRules implements CodeRules {
             if (MyBatisSql.createdDate(f) || MyBatisSql.lastModifiedDate(f)) {
                 value = MyBatisSql.nowType(f);
             } else if (MyBatisSql.createdBy(f) || MyBatisSql.lastModifiedBy(f)) {
-                value = String.format("(%s) currentAuditor()", syntax.nullableType(f.typeName()));
+                value = syntax == Syntax.KOTLIN
+                        ? String.format("currentAuditor() as %s", syntax.nullableType(f.typeName()))
+                        : String.format("(%s) currentAuditor()", syntax.nullableType(f.typeName()));
             } else {
                 continue;
             }
@@ -320,6 +324,15 @@ public class MyBatisServiceFileRules implements CodeRules {
             + "    protected Object currentAuditor() {\n"
             + "        return auditorAware == null ? null : auditorAware.getCurrentAuditor().orElse(null);\n"
             + "    }";
+
+    /** AUDITOR_MEMBERS in Kotlin. */
+    public static final String AUDITOR_MEMBERS_KT = "\n\n"
+            + "    /** Who is writing: the application's AuditorAware, when it has one. */\n"
+            + "    @set:org.springframework.beans.factory.annotation.Autowired(required = false)\n"
+            + "    protected var auditorAware: org.springframework.data.domain.AuditorAware<*>? = null\n"
+            + "\n"
+            + "    /** The current auditor, or null without an AuditorAware or a signed-in one. */\n"
+            + "    protected open fun currentAuditor(): Any? = auditorAware?.currentAuditor?.orElse(null)";
 
     /** The service keeps the methods the controller keeps, as the JPA one does. */
     @Rule(value = "mybatis-service-method-filter", target = "service", order = 20)

@@ -647,10 +647,12 @@ Item:
 | 엔티티 meta | `@owner(customerId)` | 행의 주인을 담는 필드 |
 | 엔티티 meta | `@signin` | 로그인 API: `me()`, 컨트롤러의 `signin`·`signout`·`me`, TypeScript `signIn`·`signOut`·`me`. `@login`·`@password`·`@expose`, 키 하나, 본인·관리자만 수정(`update=owner` + 키의 `@owner`, 또는 `update=admin`), 요청이 정하는 키면 삭제도 본인·관리자만, 애플리케이션에 하나일 때만 - 아니면 DSL 경고. 로그인 컬럼 unique 는 `@signin` 만으로 (거절되어도) |
 | 엔티티 meta | `@signin(refresh=request)` | 세션이 행을 따라감: 로그인한 요청마다 먼저 `me()` 로 행을 다시 읽어, 없으면(또는 `@deleted`) 세션을 끝내고 바뀐 역할은 세션에 넣음 |
+| 엔티티 meta | `@signin(refresh=password)` | `refresh=request` 의 전부에 더해, 비밀번호가 바뀌기 전에 열린 세션은 끝남: 세션은 해시의 스탬프를 가지고, 같은 한 번의 읽기에서 비교. 자기 비밀번호를 바꾼 세션은 유지. 2.x 호환 출력에는 없음 (빌드가 멈춤) |
 | 필드 | `@access(admin)` | 관리자만 쓰는 필드 |
 | 필드 | `@password` | 해시로만 저장, 응답·검색에 없음 |
 | 필드 | `@safe(basic)` / `@safe(relaxed)` | `html` 필드에: 쓸 때마다 거르는 jsoup 허용 목록 (없으면 basic) |
 | 필드 | `@plain(contentText)` | `html` 필드에: 태그를 뺀 텍스트를 담는 긴 문자열 필드, 요청은 쓰지 못함 |
+| 필드 | `@encrypt` / `@encrypt(digits)` | 컬럼에 암호화해 저장하는 문자열 (AES-256-GCM, `v1:...`), API 에는 원래 값; `@search(eq)` 와 함께면 앞뒤 공백을 뺀 값의 - `(digits)` 면 숫자만의 - 블라인드 인덱스(`phone_bidx`)로 찾음. 같음만 - like, 범위, in 은 빌드 중단. 키: `elasticore.crypto.*` (어노테이션 가이드, env 가이드). JPA, Kotlin, MyBatis; MongoDB 는 아님 |
 | 필드 | `@login` | `@password` 와 함께 `authenticate(login, password)` 생성. 유일해야 함 (`@signin` 이면 자동, 아니면 `@unique` - 없으면 DSL 경고) |
 | 필드 | `@role` | `@signin` 의 로그인이 세션에 넣는 역할 (없으면 `role` 필드). `@access(admin)` 인 enum·문자열만 - 아니면 역할 없이 로그인하고 DSL 경고 |
 | 필드 | `@snapshot(item.unitCost)` | 참조한 행의 값을 한 번 복사 |

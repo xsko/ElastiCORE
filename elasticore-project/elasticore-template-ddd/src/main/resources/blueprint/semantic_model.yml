@@ -146,6 +146,29 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Report", "domain": "board"}
+  - name: Subscriber
+    source: brd_subscriber
+    primary_key: [subscriber_id]
+    fields:
+      - name: subscriber_id
+        expression:
+          sql: "subscriber_id"
+        datatype: Integer
+      - name: nickname
+        expression:
+          sql: "nickname"
+        datatype: String
+      - name: status
+        expression:
+          sql: "status"
+        datatype: String
+        ai_context: "Codes: ACT = Active, MOV = Moved"
+        nonportable_extensions:
+          - vendor_name: ELASTICORE
+            data: {"lifecycle": true, "enumeration": "SubscriberStatus", "codes": {"ACT": "Active", "MOV": "Moved"}}
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Subscriber", "domain": "board", "states": {"status": {"initial": "ACTIVE", "move": "ACTIVE -> MOVED"}}, "omitted_columns": ["phone", "email", "phone_bidx"]}
   - name: Bookmark
     source: brd_bookmark
     primary_key: [bookmark_id]

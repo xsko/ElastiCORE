@@ -1,0 +1,76 @@
+name: Ossie compatibility
+
+# The Ossie export (the ossie-export rule set) claims to speak the Apache Ossie
+# spec, and that spec is still in development: its schema and its validator
+# change from week to week. Every Monday the committed exports of the samples
+# are checked against the validator and schema on apache/ossie's main, so a
+# change upstream that our output no longer meets is seen within a week, not
+# when a user meets it. CI already keeps the committed exports equal to what
+# the build writes, so checking them checks the generator.
+on:
+  schedule:
+    - cron: '0 0 * * 1'   # Monday 00:00 UTC (09:00 KST)
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/ossie-compat.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ossie:
+    name: Exports validate against Apache Ossie main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Apache Ossie, main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: apache/ossie
+          ref: main
+          path: .ossie
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The validator names its own dependencies (PEP 723 header); install
+      # those, so a raised minimum upstream does not fail this job by itself.
+      - name: The validator's dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          deps=$("$RUNNER_TEMP/venv/bin/python" - .ossie/validation/validate.py <<'EOF'
+          import re, sys, tomllib
+          text = open(sys.argv[1], encoding="utf-8").read()
+          block = re.search(r"(?ms)^# /// script\s*$(.*?)^# ///\s*$", text).group(1)
+          meta = tomllib.loads("\n".join(l[2:] if l.startswith("# ") else l[1:] for l in block.splitlines()))
+          print("\n".join(meta["dependencies"]))
+          EOF
+          )
+          printf 'dependencies:\n%s\n' "$deps"
+          mapfile -t list <<< "$deps"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "${list[@]}"
+
+      - name: What changed upstream in the last week
+        run: |
+          {
+            echo "### Apache Ossie main: $(git -C .ossie log -1 --format='%h %cs %s')"
+            echo
+            echo "Commits of the last 8 days that touch core-spec/ or validation/:"
+            echo
+            git -C .ossie log --since='8 days ago' --format='- %h %cs %s' -- core-spec validation | head -50
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The committed exports pass the validator
+        run: |
+          mapfile -t files < <(git ls-files 'elasticore-project/*/src/main/resources/blueprint/semantic_model.yml')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error title=No export found::No committed semantic_model.yml - the check would pass on nothing."
+            exit 1
+          fi
+          grep -h '^version:' "${files[@]}" | sort -u
+          "$RUNNER_TEMP/venv/bin/python" -I .ossie/validation/validate.py \
+            --schema .ossie/core-spec/ossie-schema.json -- "${files[@]}"

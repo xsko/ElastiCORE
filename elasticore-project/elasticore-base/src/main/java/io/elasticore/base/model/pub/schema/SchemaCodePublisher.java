@@ -244,8 +244,15 @@ public class SchemaCodePublisher implements CodePublisher {
             if (isEnumType) {
                 // For enum types, use the length from enum definition
                 length = getEnumCodeLength(enumModel);
+            } else if (field.hasAnnotation("encrypt")
+                    && !field.hasAnnotation("text")
+                    && !field.hasAnnotation("longtext")
+                    && !field.hasAnnotation("lob")) {
+                // The column holds the ciphertext of the declared length (3.0 only: 2.x refuses @encrypt).
+                length = io.elasticore.base.model.pub.rules.base.EncryptRules.columnLength(
+                        length != null && length > 0 ? length : 255);
             }
-            
+
             if (length != null && length > 0) {
                 columnAnnotation.append(", length = ").append(length);
             }
