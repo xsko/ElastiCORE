@@ -410,6 +410,413 @@ public class MongoGenerationTest {
         assertTrue(log.contains("Lead.customer is Customer of the MongoDB domain dgshop"), log);
     }
 
+    // ---- Kotlin ------------------------------------------------------------------------
+
+    @Test
+    public void inKotlinTheDocumentIsAKotlinClassWithTheSameMapping() throws Exception {
+        File project = project(MODEL, "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+
+        String order = readKt(project, "PurchaseOrder.kt");
+        assertTrue(
+                order.contains(
+                        "@Document(collection = \"purchase_order\")\nclass PurchaseOrder : java.io.Serializable {"),
+                order);
+        assertTrue(order.contains("@Id\n    var orderId: Long? = null"), order);
+        assertTrue(order.contains("@Field(value = \"order_number\")\n    var orderNo: String? = null"), order);
+        assertTrue(
+                order.contains("@ValueConverter(value = io.elasticore.springboot3.mongo.AttributeValueConverter::class)"
+                        + "\n    var status: OrderStatus? = null"),
+                order);
+        assertTrue(order.contains("@DocumentReference(lazy = true)\n    var customer: Customer? = null"), order);
+        assertTrue(order.contains("var items: MutableList<OrderLine>? = null"), order);
+        assertTrue(order.contains("@Version\n    var version: Long? = null"), order);
+        assertFalse(order.contains("lombok"), order);
+        assertTrue(readKt(project, "OrderLine.kt").contains("@Transient\n    var order: PurchaseOrder? = null"));
+        assertTrue(readKt(project, "Customer.kt").contains("@Indexed(unique = true, sparse = true)\n    var email:"));
+
+        for (String name : new String[] {
+            "PurchaseOrder.kt",
+            "OrderLine.kt",
+            "Customer.kt",
+            "PurchaseOrderRepository.kt",
+            "CustomerRepository.kt",
+            "PurchaseOrderCoreService.kt",
+            "CustomerCoreService.kt",
+            "DgshopMapper.kt",
+            "DgshopRepositoryHelper.kt"
+        }) {
+            String text = readKt(project, name);
+            assertFalse(text.contains("jakarta.persistence"), name + "\n" + text);
+            assertFalse(text.contains("EntityManager"), name + "\n" + text);
+            assertFalse(text.contains("Specification<"), name + "\n" + text);
+        }
+        assertNull(findKt(project, "Q.kt"), "Q is JPA's metadata");
+        assertNull(findKt(project, "OrderLineRepository.kt"), "a member is kept in its order");
+        assertNull(find(project, "PurchaseOrder.java"), "a Kotlin run writes no Java");
+    }
+
+    @Test
+    public void inKotlinTheSearchIsTheRepositorysCompanionObject() throws Exception {
+        File project = project(MODEL, "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String repo = readKt(project, "PurchaseOrderRepository.kt");
+        assertTrue(repo.contains("interface PurchaseOrderRepository : MongoRepository<PurchaseOrder, Long> {"), repo);
+        assertTrue(repo.contains("    companion object {"), repo);
+        assertTrue(repo.contains("        @JvmStatic\n        fun criteria(s: io.acme.dgshop"), repo);
+        assertTrue(repo.contains("        @JvmStatic\n        fun hasCondition(s: io.acme.dgshop"), repo);
+        assertTrue(repo.contains("        @JvmStatic\n        fun sort(sort: Sort?): Sort? {"), repo);
+        assertTrue(
+                repo.contains("s.status?.let { v -> and.add(Criteria.where(\"status\").`is`("
+                        + "io.elasticore.springboot3.mongo.AttributeValueConverter.stored(v))) }"),
+                repo);
+        assertTrue(
+                repo.contains("s.customerCustomerId?.let { v -> and.add(Criteria.where(\"customer\").`is`("
+                        + "customerRef(v))) }"),
+                repo);
+        assertTrue(repo.contains("s.amountFrom?.let { v -> and.add(Criteria.where(\"amount\").gte(v)) }"), repo);
+        assertTrue(
+                repo.contains("s.memo?.let { v -> if (v.isNotBlank()) and.add(Criteria.where(\"memo\").regex("
+                        + "io.elasticore.springboot3.mongo.MongoText.match(v.trim(), true, true,"),
+                repo);
+        assertTrue(
+                repo.contains("and.add(if (s.deliveredAtEmpty == true) Criteria.where(\"deliveredAt\").`is`(null)"
+                        + " else Criteria.where(\"deliveredAt\").ne(null))"),
+                repo);
+        assertTrue(repo.contains("if (owner != null) and.add(Criteria.where(\"ownerId\").`is`(owner))"), repo);
+        assertTrue(repo.contains("m[\"customer.customerId\"] = \"customer\""), repo);
+        assertTrue(repo.contains("?: throw BadRequestException(\"PurchaseOrder cannot be sorted by '\""), repo);
+        assertTrue(repo.contains("|| !s.memo.isNullOrBlank()"), repo);
+        assertTrue(repo.contains("ref.customerId = id"), repo);
+        assertTrue(
+                readKt(project, "CustomerRepository.kt").contains("and.add(Criteria.where(\"retiredAt\").`is`(null))"));
+    }
+
+    @Test
+    public void inKotlinTheServiceKeepsTheJpaSignatures() throws Exception {
+        File project = project(MODEL, "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String service = readKt(project, "PurchaseOrderCoreService.kt");
+        for (String signature : new String[] {
+            "public open fun findById(orderId: Long?): Optional<PurchaseOrderDTO> {",
+            "public open fun findBySearch(searchDTO: PurchaseOrderSrchDTO): Page<PurchaseOrderDTO> {",
+            "public open fun save(dto: PurchaseOrderDTO): PurchaseOrderDTO? {",
+            "public open fun deleteById(orderId: Long?): Boolean {",
+            "public open fun updateBySpecification(dto: PurchaseOrderDTO, srchDTO: PurchaseOrderSrchDTO): Int {"
+        }) {
+            assertTrue(service.contains(signature), signature + "\n" + service);
+        }
+        assertTrue(
+                service.contains("entity.orderId = io.elasticore.springboot3.mongo.MongoSequences.next(mongo,"
+                        + " \"purchase_order\")"),
+                service);
+        assertTrue(
+                service.contains("for (m in entity.items ?: emptyList<io.acme.dgshop.entity.OrderLine>()) {"), service);
+        assertTrue(
+                service.contains("if (m.lineId == null) m.lineId = io.elasticore.springboot3.mongo.MongoSequences"
+                        + ".next(mongo, \"order_line\")"),
+                service);
+        assertTrue(
+                service.contains("VersionCheck.check(dto, \"version\", entity.version, PurchaseOrder::class.java,"),
+                service);
+        assertTrue(service.contains("helper.purchaseOrder.findById(orderId!!)"), service);
+        assertTrue(service.contains("helper.purchaseOrder.deleteById(orderId!!)"), service);
+        // The owner's documents: the owner handed to the repository's Criteria, in Kotlin.
+        assertTrue(
+                service.contains(
+                        "private fun ownedOnly(): Any? {\n"
+                                + "        val owner = ACCESS.ownerFilter(currentUser, \"read\") ?: return null\n"
+                                + "        return io.elasticore.springboot3.security.AccessPolicy.`as`(owner, Long::class.javaObjectType)"),
+                service);
+        assertTrue(service.contains("throw NotFoundException(\"PurchaseOrder not found\")"), service);
+        assertFalse(service.contains("@Transactional"), service);
+
+        String customer = readKt(project, "CustomerCoreService.kt");
+        assertTrue(customer.contains("e.retiredAt = java.time.LocalDateTime.now()"), customer);
+        assertTrue(customer.contains("findById(customerId!!).filter { e -> e.retiredAt == null }"), customer);
+        assertTrue(
+                customer.contains("if (entity.joinedAt == null) entity.joinedAt = java.time.LocalDateTime.now()"),
+                customer);
+        assertTrue(
+                customer.contains(
+                        "!helper.customer.findById(customerId!!).filter { e -> e.retiredAt == null }" + ".isPresent"),
+                customer);
+
+        String mapper = readKt(project, "DgshopMapper.kt");
+        assertTrue(mapper.contains("val members = java.util.ArrayList<OrderLine>()"), mapper);
+        assertTrue(mapper.contains("for (d in itemsSent) {"), mapper);
+        assertTrue(mapper.contains("to.items = members"), mapper);
+        assertFalse(mapper.contains("em: EntityManager"), mapper);
+        String helper = readKt(project, "DgshopRepositoryHelper.kt");
+        assertTrue(helper.contains("Holds a domain's MongoDB repositories"), helper);
+        assertTrue(helper.contains("val purchaseOrder: PurchaseOrderRepository,"), helper);
+    }
+
+    @Test
+    public void inKotlinEveryConditionIsACriteria() throws Exception {
+        File project = project(OPS, "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String repo = readKt(project, "GadgetRepository.kt");
+        String text = "io.elasticore.springboot3.mongo.MongoText";
+        for (String expected : new String[] {
+            "Criteria.where(\"code\").regex(" + text + ".match(v.trim(), false, false, true))",
+            "Criteria.where(\"head\").regex(" + text + ".match(v.trim(), false, true, false))",
+            "Criteria.where(\"ihead\").regex(" + text + ".match(v.trim(), false, true, true))",
+            "Criteria.where(\"tail\").regex(" + text + ".match(v.trim(), true, false, false))",
+            "Criteria.where(\"itail\").regex(" + text + ".match(v.trim(), true, false, true))",
+            "Criteria.where(\"kind\").regex(" + text + ".like(v))",
+            "Criteria.where(\"rank\").gt(v)",
+            "Criteria.where(\"floor\").gte(v)",
+            "Criteria.where(\"ceiling\").lt(v)",
+            "Criteria.where(\"top\").lte(v)",
+            "Criteria.where(\"other\").ne(v)"
+        }) {
+            assertTrue(repo.contains(expected), expected + "\n" + repo);
+        }
+        assertTrue(readKt(project, "Gadget.kt")
+                .contains("@CompoundIndex(name = \"ix_rank\", def = \"{'rank': -1, 'label': 1}\")"));
+        assertTrue(
+                readKt(project, "GadgetCoreService.kt")
+                        .contains(
+                                "if (entity.gadgetId == null) entity.gadgetId = io.elasticore.springboot3.util.IdUtils.newId(12)"));
+    }
+
+    @Test
+    public void inKotlinAConvertedValueIsSearchedAsTheDocumentStoresIt() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "enumeration:",
+                        "  Grade:",
+                        "    meta: enum @db(code) @json(code)",
+                        "    fields:",
+                        "      code: string(1) @code",
+                        "    enum:",
+                        "      USER:  U",
+                        "      ADMIN: A",
+                        "entity:",
+                        "  Item:",
+                        "    meta: entity @expose(20) @access(*=public)",
+                        "    fields:",
+                        "      itemId: long @id @sequence",
+                        "      grade: Grade @search(in)",
+                        "      code: string(10) @search(in)",
+                        "      size: int @search(between)",
+                        ""),
+                "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String repo = readKt(project, "ItemRepository.kt");
+        // One value in the search DTO: compared as the document stores it, the enum by its code.
+        assertTrue(
+                repo.contains("s.grade?.let { v -> and.add(Criteria.where(\"grade\").`is`("
+                        + "io.elasticore.springboot3.mongo.AttributeValueConverter.stored(v))) }"),
+                repo);
+        assertTrue(
+                repo.contains("s.code?.let { v -> if (v.isNotBlank()) and.add(Criteria.where(\"code\").`is`(v)) }"),
+                repo);
+        assertTrue(repo.contains("|| !s.code.isNullOrBlank()"), repo);
+        assertTrue(repo.contains("s.sizeFrom?.let { v -> and.add(Criteria.where(\"size\").gte(v)) }"), repo);
+        assertTrue(repo.contains("s.sizeTo?.let { v -> and.add(Criteria.where(\"size\").lte(v)) }"), repo);
+    }
+
+    @Test
+    public void inKotlinASignInReadsTheLoginThroughTheRepository() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Member:",
+                        "    meta: entity @expose(20) @signin @owner(memberId)"
+                                + " @access(read=owner, create=public, update=owner, delete=owner)",
+                        "    fields:",
+                        "      memberId: int @id @sequence",
+                        "      email: string(100)! @login @column(mail)",
+                        "      secret: string(100) @password",
+                        "      writtenBy: string(40) @jpa:CreatedBy",
+                        "      leftAt: datetime @deleted",
+                        ""),
+                "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String repo = readKt(project, "MemberRepository.kt");
+        assertTrue(
+                repo.contains("@org.springframework.data.mongodb.repository.Query(\"{ 'mail': ?0, 'leftAt': null }\")"
+                        + "\n    fun findAllByLogin(value: String?): List<Member>"),
+                repo);
+        String service = readKt(project, "MemberCoreService.kt");
+        assertTrue(service.contains("val found = helper.member.findAllByLogin(email)"), service);
+        // An Int key is read as an Int, not as the java.lang.Integer the Java code names.
+        assertTrue(service.contains("AccessPolicy.`as`(id, Int::class.javaObjectType)"), service);
+        assertFalse(service.contains("Integer::class"), service);
+        assertTrue(
+                service.contains(
+                        "Math.toIntExact(io.elasticore.springboot3.mongo.MongoSequences.next(mongo," + " \"member\"))"),
+                service);
+        // @CreatedBy: the AuditorAware's, in Kotlin.
+        assertTrue(
+                service.contains("if (entity.writtenBy == null) entity.writtenBy = currentAuditor() as String?"),
+                service);
+        assertTrue(service.contains("protected open fun currentAuditor(): Any? ="), service);
+        assertTrue(readKt(project, "MemberController.kt").contains("@PostMapping(\"/signin\")"));
+    }
+
+    @Test
+    public void inKotlinAReadOnlyEntityKeepsOnlyItsReads() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Notice:",
+                        "    meta: entity @expose(20) @readonly",
+                        "    fields:",
+                        "      noticeId: long @id @sequence",
+                        "      text: string(200)",
+                        ""),
+                "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String service = readKt(project, "NoticeCoreService.kt");
+        assertTrue(service.contains("fun findById("), service);
+        assertTrue(service.contains("fun findBySearch("), service);
+        for (String gone : new String[] {
+            "fun save(",
+            "fun update(",
+            "fun write(",
+            "fun deleteRow(",
+            "fun delete(",
+            "fun prepareMembers(",
+            "fun updateBySpecification("
+        }) {
+            assertFalse(service.contains(gone), gone + "\n" + service);
+        }
+    }
+
+    @Test
+    public void inKotlinDddAndHexagonalAreStillRefused() throws Exception {
+        for (String architecture : new String[] {"ddd", "hexagonal"}) {
+            File project = project(MODEL, "mongo");
+            System.setProperty("elasticore.language", "kotlin");
+            System.setProperty("elasticore.architecture", architecture);
+            String log = run(project, 1);
+            assertTrue(log.contains("is mode: mongo, but MongoDB code is written layered"), log);
+            assertTrue(log.contains("architecture = '" + architecture + "' is generated for JPA and MyBatis"), log);
+            assertNull(findKt(project, "PurchaseOrder.kt"), log);
+        }
+    }
+
+    @Test
+    public void inKotlinADomainNamesTheKotlinBundles() throws Exception {
+        // The Kotlin layered bundles are read as the Kotlin MongoDB one.
+        for (String rule : new String[] {"jpa-springboot-kt", "mongo-springboot-kt"}) {
+            File project = project(MODEL, "mongo");
+            named(project, rule);
+            System.setProperty("elasticore.language", "kotlin");
+            run(project, 0);
+            assertNotNull(findKt(project, "PurchaseOrderRepository.kt"), rule);
+        }
+        // The Java bundle is not Kotlin, and the Kotlin one is not Java.
+        File kt = project(MODEL, "mongo");
+        named(kt, "mongo-springboot");
+        System.setProperty("elasticore.language", "kotlin");
+        String log = run(kt, 1);
+        assertTrue(
+                log.contains("its publisher.rules names mongo-springboot, which is not written for MongoDB in Kotlin"
+                        + " - name mongo-springboot-kt"),
+                log);
+        System.clearProperty("elasticore.language");
+        File java = project(MODEL, "mongo");
+        named(java, "mongo-springboot-kt");
+        log = run(java, 1);
+        assertTrue(
+                log.contains("its publisher.rules names mongo-springboot-kt, which is not written for MongoDB"
+                        + " - name mongo-springboot,"),
+                log);
+    }
+
+    @Test
+    public void theClientRunOfAKotlinProjectReadsTheKotlinBundle() throws Exception {
+        // elcore3ts of a Kotlin build: the server's names are read as the Kotlin server run reads them.
+        File project = project(MODEL, "mongo");
+        named(project, "mongo-springboot-kt");
+        System.setProperty("elasticore.language", "kotlin");
+        System.setProperty("elasticore.rules.ts", "true");
+        String log = run(project, 0);
+        assertFalse(log.contains("which is not written for MongoDB"), log);
+    }
+
+    @Test
+    public void aSignedInDocumentKeptUnderDeletedIsNoOnesSession() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Member:",
+                "    meta: entity @expose(20) @signin(refresh=request) @owner(memberId)"
+                        + " @access(read=owner, create=public, update=owner, delete=owner)",
+                "    fields:",
+                "      memberId: int @id @sequence",
+                "      email: string(100)! @login @unique",
+                "      secret: string(255)! @password",
+                "      leftAt: datetime @deleted",
+                "");
+        File java = project(model, "mongo");
+        run(java, 0);
+        assertTrue(read(java, "MemberCoreService.java")
+                .contains(".findById(io.elasticore.springboot3.security"
+                        + ".AccessPolicy.as(id, Integer.class)).filter(e -> e.getLeftAt() == null).map(row ->"));
+        File kt = project(model, "mongo");
+        System.setProperty("elasticore.language", "kotlin");
+        run(kt, 0);
+        assertTrue(readKt(kt, "MemberCoreService.kt")
+                .contains(".findById(io.elasticore.springboot3.security"
+                        + ".AccessPolicy.`as`(id, Int::class.javaObjectType)).filter { e -> e.leftAt == null }.map {"));
+    }
+
+    @Test
+    public void inKotlinJpaAnIntOwnerIsReadAsAnInt() throws Exception {
+        // The JPA Kotlin service of an int @owner named java.lang.Integer, which an Int property does not take.
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Diary:",
+                        "    meta: entity @expose(20) @owner(writerId) @access(read=owner, *=owner, create=public)",
+                        "    fields:",
+                        "      diaryId: long @id @sequence",
+                        "      writerId: int",
+                        ""),
+                "jpa");
+        System.setProperty("elasticore.language", "kotlin");
+        run(project, 0);
+        String service = readKt(project, "DiaryCoreService.kt");
+        assertTrue(service.contains("AccessPolicy.`as`(currentUser.id(), Int::class.javaObjectType)"), service);
+        assertFalse(service.contains("Integer::class"), service);
+    }
+
+    @Test
+    public void inKotlinTestCodeIsSaidNotToBeWrittenForMongo() throws Exception {
+        File project = project(MODEL, "mongo");
+        File env = new File(project, "src/main/resources/blueprint/dgshop/env.yml");
+        String text = new String(Files.readAllBytes(env.toPath()), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    testCode: \"true\"\n");
+        Files.write(env.toPath(), text.getBytes(StandardCharsets.UTF_8));
+        System.setProperty("elasticore.language", "kotlin");
+        String log = run(project, 0);
+        assertTrue(log.contains("[dgshop] testCode is not written for mode: mongo"), log);
+        assertFalse(new File(project, "src/test/kotlin").exists(), "no service test is written");
+    }
+
+    private static void named(File project, String rule) throws IOException {
+        File env = new File(project, "src/main/resources/blueprint/dgshop/env.yml");
+        String text = new String(Files.readAllBytes(env.toPath()), StandardCharsets.UTF_8)
+                .replace("    j2ee: jakarta\n", "    j2ee: jakarta\n    publisher:\n      rules: [" + rule + "]\n");
+        Files.write(env.toPath(), text.getBytes(StandardCharsets.UTF_8));
+    }
+
     @Test
     public void aDomainNamingAnotherArchitecturesRulesIsRefused() throws Exception {
         File project = project(MODEL, "mongo");
@@ -477,22 +884,6 @@ public class MongoGenerationTest {
             "      secret: string(255)! @password",
             "      leftAt: datetime @deleted",
             "");
-
-    /**
-     * A member kept under @deleted is no one's session: me() - which GET /me and the
-     * refresh filter read - leaves it out as every read of the service does. MongoDB's
-     * findById finds a kept document, so the service's live filter goes with it.
-     */
-    @Test
-    public void aSignedInDocumentKeptUnderDeletedIsNoOnesSession() throws Exception {
-        File project = project(SIGNED_IN_AND_DELETED, "mongo");
-        run(project, 0);
-        String service = read(project, "MemberCoreService.java");
-        assertTrue(
-                service.contains(".findById(io.elasticore.springboot3.security.AccessPolicy.as(id, Long.class))"
-                        + ".filter(e -> e.getLeftAt() == null).map(row -> "),
-                service);
-    }
 
     /** Without refresh=request a session outlives its member's delete: the build says so, and how to end it. */
     @Test
@@ -591,6 +982,22 @@ public class MongoGenerationTest {
 
     private static Path find(File project, String name) throws IOException {
         File root = new File(project, "src/main/java");
+        if (!root.isDirectory()) return null;
+        try (Stream<Path> all = Files.walk(root.toPath())) {
+            return all.filter(p -> p.getFileName().toString().equals(name))
+                    .findFirst()
+                    .orElse(null);
+        }
+    }
+
+    private static String readKt(File project, String name) throws IOException {
+        Path p = findKt(project, name);
+        assertNotNull(p, name + " was not written");
+        return new String(Files.readAllBytes(p), StandardCharsets.UTF_8).replace("\r\n", "\n");
+    }
+
+    private static Path findKt(File project, String name) throws IOException {
+        File root = new File(project, "src/main/kotlin");
         if (!root.isDirectory()) return null;
         try (Stream<Path> all = Files.walk(root.toPath())) {
             return all.filter(p -> p.getFileName().toString().equals(name))

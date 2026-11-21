@@ -101,6 +101,32 @@ class PasswordResetGuideTest {
         signIn("reset1", "new-pass-1234").andExpect(status().isOk());
     }
 
+    /**
+     * @signin(refresh=password): the sessions opened before the reset end with their next request; the one the
+     * confirm signs in is stamped with the new password and keeps going.
+     */
+    @Test
+    void aResetEndsTheSessionsOpenedBeforeItAndKeepsTheOneItSignsIn() throws Exception {
+        MvcResult signedUp = signUp("reset6", "reset6@example.com");
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(signedUp.getResponse().getContentAsString(), "$.customerId")).longValue();
+        MockHttpSession elsewhere = (MockHttpSession) signIn("reset6", "force-1234").andExpect(status().isOk())
+                .andReturn().getRequest().getSession(false);
+        mvc.perform(get("/api/petstore/customer/me").session(elsewhere)).andExpect(status().isOk());
+
+        mvc.perform(json(post(RESET), "{\"login\":\"reset6\"}")).andExpect(status().isAccepted());
+        String token = outbox.tokensTo("reset6@example.com").get(0);
+        MvcResult confirmed = mvc.perform(json(post(RESET + "/confirm"), "{\"token\":\"" + token + "\",\"password\":\"new-pass-1234\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        MockHttpSession after = (MockHttpSession) confirmed.getRequest().getSession(false);
+
+        String telephone = "{\"customerId\":" + id + ",\"telephone\":\"+1 555 0199\"}";
+        mvc.perform(json(put("/api/petstore/customer"), telephone).session(after)).andExpect(status().isOk());
+        mvc.perform(json(put("/api/petstore/customer"), telephone).session(after)).andExpect(status().isOk());
+        mvc.perform(json(put("/api/petstore/customer"), telephone).session(elsewhere)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/petstore/customer/me").session(elsewhere)).andExpect(status().isUnauthorized());
+    }
+
     @Test
     void theAnswerIsTheSameForEveryLoginAndAMinuteSendsOneMail() throws Exception {
         int before = outbox.sent.size();

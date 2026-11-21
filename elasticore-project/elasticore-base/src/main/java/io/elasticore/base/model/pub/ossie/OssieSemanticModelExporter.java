@@ -540,7 +540,12 @@ public final class OssieSemanticModelExporter {
 
     /** {@code @password} and {@code @writeonly} are never read back by the application; a semantic layer is a reader. */
     private static boolean neverRead(Field f) {
-        return f.hasAnnotation("password") || f.hasAnnotation("writeonly");
+        return f.hasAnnotation("password")
+                || f.hasAnnotation("writeonly")
+                // An @encrypt column holds ciphertext, its blind index a hash: a query over either answers nothing
+                // true - no filter, group or count by the value - so neither is exported (Ossie has no such mark).
+                || f.hasAnnotation(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT)
+                || f.hasAnnotation(io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_OF);
     }
 
     /**

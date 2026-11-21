@@ -79,7 +79,8 @@ env.yml publisher.rules  >  시스템 속성 elasticore.publisher.rules  >  기�
 | `mybatis-springboot` | 레이어드 Java 를 MyBatis 로 — `mode: mybatis` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 매퍼 인터페이스·XML·스키마; env 가이드 2.3) |
 | `ddd-mybatis-springboot` | `ddd-springboot` 를 MyBatis 로 — `architecture = 'ddd'` + `mode: mybatis` 인 도메인이 받음. JPA 가 스스로 하던 일(멤버 cascade·고아 삭제·버전·콜백·도메인 이벤트 발행)은 생성된 저장소 어댑터가 함 (env 가이드 2.3) |
 | `hexagonal-mybatis-springboot` | `ddd-mybatis-springboot` + 인바운드 포트 — `architecture = 'hexagonal'` + `mode: mybatis` |
-| `mongo-springboot` | 레이어드 Java 를 MongoDB 로 — `mode: mongo` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 Spring Data 문서·`MongoRepository`·`Criteria` 검색; env 가이드 2.4). MongoDB 위의 ddd·hexagonal·Kotlin 은 아직 거부 |
+| `mongo-springboot` | 레이어드 Java 를 MongoDB 로 — `mode: mongo` 인 도메인이 받음 (JPA 엔티티 껍데기·Repository·Specification 대신 Spring Data 문서·`MongoRepository`·`Criteria` 검색; env 가이드 2.4). MongoDB 위의 ddd·hexagonal 은 아직 거부 |
+| `mongo-springboot-kt` | 같은 것을 Kotlin 으로 — `mode: mongo` 인 Kotlin 도메인이 받음 (저장소의 검색은 companion object; env 가이드 2.4) |
 
 `mode: mybatis` 인 도메인이 env.yml 의 `publisher.rules` 에 `ddd-springboot`·`hexagonal-springboot`·`jpa-springboot-v3` 를
 적으면 각각의 MyBatis 번들로 읽습니다 — mode 는 저장 방식을, 번들은 아키텍처를 말합니다.
@@ -127,8 +128,9 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-state` | O | O | **O** | `states:` -> 명령마다 상태 전이·`canX()`·초기값·`@stamp` 시각. TS 는 `canShip(dto)` |
 | `ddd-derive` | O | O | - | `@snapshot`·`@compute` -> `derive(lookup)`, 서비스가 저장 전에 호출 |
 | `jpa-service-access` | O | O | - | `@access`·`@owner`·`@password`·`@login` -> CoreService 검사·해시·`authenticate`, `@signin` 이면 `me()`·컨트롤러의 signin·signout·me·유일한 로그인 컬럼 (v3 번들 전부) |
-| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)` -> 로그인한 행을 요청마다 다시 읽는 필터 `XxxSessionRefresh` (v3 번들 전부) |
+| `spring-signin-refresh` | O | O | - | `@signin(refresh=request)`·`@signin(refresh=password)` -> 로그인한 행을 요청마다 다시 읽는 필터 `XxxSessionRefresh`, `password` 이면 비밀번호가 바뀌기 전에 열린 세션도 끝남 (v3 번들 전부) |
 | `jpa-html` | O | O | - | `html` 필드: 엔티티의 `cleanHtml()` (jsoup 허용 목록, `@plain` 복사본) 을 CoreService 가 모든 쓰기 전과 command 뒤에 부름; 2.x 호환 출력은 빌드 중단 (번들 전부) |
+| `jpa-encrypt` | O | O | - | `@encrypt` 필드: JPA 필드에 `@Convert(EncryptConverter)` (MyBatis 는 `EncryptTypeHandler` 로 바인딩), 암호문만큼 긴 컬럼, `@search(eq)` 필드의 블라인드 인덱스를 쓰는 엔티티의 `indexEncrypted()` 를 행을 쓰기 바로 전에 부름 (JPA: 런타임의 `BlindIndexListener`; MyBatis: 루트의 `Lifecycle`, 또는 layered 서비스가 `beforeSave` 뒤); MongoDB 와 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
 | 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
@@ -463,6 +465,8 @@ DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노�
 - `@signin(refresh=request)` 이면 `spring-signin-refresh` 가 컨트롤러 옆에 모델과 함께 다시 생성되는 `XxxSessionRefresh` 를 씁니다. 로그인한
   키가 든 세션의 요청마다 먼저 `me()` 로 행을 다시 읽어, 없으면 세션을 끝내고 바뀐 역할은 세션에 넣습니다
   (런타임: `SessionRefreshFilter`, `SessionCurrentUser.refresh`). hexagonal 번들은 컨트롤러처럼 use case 를 주입합니다 (`hex-usecase-refresh`).
+  `@signin(refresh=password)` 이면 필터가 `PasswordRefreshFilter` 를 상속하고 `signedInRow()`(CoreService 와 use case)로, 역할과 비밀번호
+  해시의 스탬프를 그 한 번의 읽기로 읽습니다. 생성된 수정은 자기가 쓰는 비밀번호를 필터에 알립니다 (`PasswordRefreshFilter.written`).
 
 #### 트랜잭션 Outbox (`ddd-outbox`)
 
@@ -1766,6 +1770,124 @@ dependencies {
 
 `elasticore` 설정에 무엇을 더해도 `elasticore-base` 는 빠지지 않고, 여기 선언한 모듈은 생성을 기다리지
 않고 먼저 컴파일됩니다. 예제와 테스트 방법은 `elasticore-ddd-customize-guide.md`.
+
+#### 런타임을 프로젝트의 사본으로 (`runtimePackages`)
+> **동작:** 3.0 코드 - Java 와 Kotlin, 모든 아키텍처 · **안 됨:** `output = 'v2'` (경고와 함께 무시)
+
+생성된 코드는 ElastiCORE 런타임을 씁니다: `elasticore-springboot3`(또는 `-springboot4`, 클래스가 같은 패키지에 있음)과
+`elasticore-base` 의 몇 개 클래스. ElastiCORE jar 를 배포에 넣을 수 없는 프로젝트 - 외부 라이브러리 규정, 자체 포크 -
+는 코드를 자기 패키지를 향해 생성하고, 그 클래스들의 사본을 직접 가질 수 있습니다. 그러면 애플리케이션은 ElastiCORE jar 없이
+컴파일되고 실행됩니다. 생성기는 여전히 빌드에서, 자기 클래스패스로 돕니다.
+
+```gradle
+elasticore {
+    architecture = 'hexagonal'
+    language     = 'java'
+    runtimePackages = [
+        'io.elasticore.springboot3': 'com.test.springboot',
+        'io.elasticore.runtime'    : 'com.test.runtime',
+        'io.elasticore.base.util'  : 'com.test.util',
+    ]
+}
+```
+
+**이름이 바뀌는 규칙**
+
+- 접두어만 바뀌고 하위 패키지와 클래스 이름은 그대로입니다:
+  `io.elasticore.springboot3.validation.NotFoundException` 은 `com.test.springboot.validation.NotFoundException` 이 됩니다.
+- 생성된 텍스트 어디서나: import, 그리고 코드 안의 정규화된 이름 -
+  `@ExceptionHandler(io.elasticore.springboot3.validation.NotFoundException.class)`,
+  `io.elasticore.base.util.StringUtils.camelToSnake(...)`, `io.elasticore.springboot3.entity.FixedAtCreation.check(...)` -
+  Java 와 Kotlin 모두, 그리고 그 실행이 옆에 쓰는 리소스에서도.
+- 패키지 단위(세그먼트)로만 맞춥니다: `io.elasticore.springboot3` 는 `io.elasticore.springboot3x` 에 맞지 않습니다.
+- 가장 긴 키가 먼저입니다: `'io.elasticore.springboot3'` 옆의 `'io.elasticore.springboot3.security'` 가 security 클래스를 가져갑니다.
+- 키는 `io.elasticore.` 로 시작하고 런타임의 패키지를 가리킵니다: 프로젝트의 namespace 를 덮는 키
+  (`io.elasticore.sample.shop` 프로젝트의 `'io.elasticore.sample': ...`)는 거절합니다. 값은 Java 와 Kotlin 모두에서 패키지
+  이름이어야 하고(`com.acme.in` 은 아님: `in` 은 Kotlin 키워드), `io.elasticore` 아래가 아니어야 하며, 프로젝트의 namespace 도,
+  그것을 담는 패키지도 아니어야 합니다(`com.acme.shop` 프로젝트의 `com.acme.shop`: 사본은 `com.acme.shop.runtime` 에).
+  아니면 아무것도 생성하기 전에 빌드가 실패합니다.
+- 설정하지 않으면 생성된 코드는 바이트 하나까지 지금과 같습니다.
+- 텍스트는 병합되고 `.elasticore/cache` 에 들어가기 전에 바뀌므로 파일과 그 베이스가 같습니다.
+- **이미 생성된 프로젝트에서 켤 때.** 병합되는 파일 - `.elasticore/cache` 에 있는 파일 - 은 병합 전에 모든 쪽이 바뀝니다:
+  캐시의 베이스, 개발자가 둔 파일, 새 텍스트. 개발자의 수정은 제자리에 남고 나머지와 함께 이름이 바뀌며(직접 더한 런타임
+  클래스 import 도 매핑된 것으로), 충돌은 설정이 없을 때처럼 개발자의 수정과 DSL 의 변경이 만나는 곳에만 생깁니다. 실행이 쓰지
+  않는 파일 - 베이스가 없는 파일(`SKIP(user-owned)`, `SKIP(not in the cache)`), 또는 DSL 이 더는 만들지 않지만 개발자의 소스가
+  써서 남겨 둔 파일 - 은 바꾸지 않습니다.
+  실행이 그 파일을 알려 주고(아래), import 는 직접 고치세요. 이름만 바뀐 파일은
+  `RENAMED(your edits kept; ...)`, 개발자의 것으로 남긴 파일은 `KEPT(...; the runtime's packages renamed)` 로 알립니다.
+- **바꾸거나 없앨 때.** `.elasticore/cache` 는 텍스트마다 그것을 바꾼 매핑을 같은 저장에서 함께 남깁니다. 그래서 한
+  도메인만 생성한 실행(`-Pdomain`), 중간에 멈춘 실행, 모델 검사가 실패한 실행도 모든 텍스트를 제 매핑과 짝지어 둡니다.
+  매핑이 다르면, 병합되는 파일의 베이스와 파일을 그 파일에 남은 매핑에서 되돌린 뒤 새 매핑으로 바꿉니다
+  (설정을 없애면 `io.elasticore` 로 되돌립니다). 그래서 수정은 남고 진짜 충돌만 남으며, 실행은
+  `changed since the last run` 이라고 알립니다. 실행이 쓰지 않는 파일이 이전 매핑의 패키지를 아직 부르면 알려 줍니다.
+  이름으로 되돌릴 수 없는 이전 매핑(두 키가 한 값, 한 값이 다른 값 아래), 또는 그 키나 값이 프로젝트의 이름을 바꿀
+  이전 매핑은 그렇다고 알리고, 그 파일들은 새 매핑만으로 바꿉니다.
+  설정을 없애면 사본에 직접 더한 클래스(`com.acme.rt.validation.MyNotFound`)도 `io.elasticore` 로 되돌아가는데,
+  거기에는 그런 클래스가 없습니다: 그 참조는 직접 고치세요. 설정 없이 모든 도메인을 생성한 실행은
+  `build/elasticore/runtime-classes.txt` 를 지우며, 설정이 없는 캐시는 매핑을 남기지 않습니다.
+- Kotlin 에 `mapping: xml`: 도메인 클래스에 매핑된 `@com.test.springboot.entity.PersistentModel` 이 붙으므로, all-open 과
+  no-arg 플러그인도 그것을 적습니다: `allOpen { annotation 'com.test.springboot.entity.PersistentModel' }`, `noArg` 도
+  같습니다(`elasticore-env-guide.md`, `mapping: xml`).
+- 바꾸지 않는 것: `blueprint/schema.yml` 과 Ossie 내보내기는 모델을 설명하고, 런타임의 타입 이름
+  (`io.elasticore.springboot3.domain.Money`)도 그 설명에 들어 있습니다. 컴파일되지 않습니다.
+- `elcoreGraphQl` 은 사본의 스키마 작성기(`com.test.springboot.graphql.GraphQlSchemaWriter`)를
+  애플리케이션의 클래스패스에서 실행합니다.
+
+**실행이 알려 주는 것**
+
+```
+[elcore3] runtime   : io.elasticore.base.util -> com.test.util, io.elasticore.runtime -> com.test.runtime, ...
+[elcore3] runtimePackages: the generated code uses 38 runtime class(es) your packages have to provide - build/elasticore/runtime-classes.txt
+  com.test.runtime.security.TransformPermissionChecker
+  com.test.springboot.entity.*
+  com.test.springboot.validation.NotFoundException
+  ...
+```
+
+- 목록은 생성된 파일이 이제 프로젝트 패키지 아래에서 부르는 클래스로, 한 줄에 하나씩이며, 모든 도메인을 생성한 실행이
+  `build/elasticore/runtime-classes.txt` 에도 씁니다(`-Pdomain` 은 출력만). 와일드카드 import(`com.test.springboot.entity.*`)는
+  그 패키지를 뜻합니다: 패키지를 통째로 복사하세요. 중첩 클래스(orm.xml 의 `Money$JpaConverter`)는 그것을 담은 클래스
+  (`Money`), 곧 복사할 파일로 적습니다. 프로젝트 자신의 패키지 아래의 사본(`com.acme.shop` 프로젝트의
+  `'io.elasticore.springboot3': 'com.acme.shop.runtime'`)도 다른 것과 똑같이 적습니다.
+- 생성된 파일이 아직 부르는 `io.elasticore` 아래의 패키지마다, 파일과 함께 경고합니다: 덮는 키가 없거나 - 키를 더하세요 -
+  실행이 쓰지 않은 파일(개발자의 것, 또는 개발자의 소스가 써서 남겨 둔 것)에 있거나 - 그 import 를 고치세요.
+  프로젝트 자신의 패키지(기본 패키지가 `io.elasticore` 아래인 프로젝트)는 세지 않습니다.
+  직접 쓴 소스는 읽지 않습니다.
+
+**프로젝트가 갖춰야 하는 것**
+
+1. 목록의 클래스와, 그 클래스들이 다시 쓰는 클래스. 소스 jar 에서: `elasticore-springboot3-<version>-sources.jar`
+   (Spring Boot 4 는 Jackson 3 클래스가 든 `elasticore-springboot4-<version>-sources.jar`)와
+   `elasticore-base-<version>-sources.jar` 의 `io/elasticore/runtime/**`, `io/elasticore/base/util/StringUtils.java`,
+   `ModelTransList.java`. Apache-2.0 이므로 라이선스 고지를 남기세요.
+2. 같은 매핑으로 바꾼 사본, **문자열 리터럴까지**: `GraphQlErrors` 와 `RequestErrors` 는 런타임 클래스를 문자열로 부릅니다.
+   사본은 생성된 코드가 부르지 않는 두 패키지도 부릅니다 - `io.elasticore.springboot.autoconfigure`(자동 구성)와
+   `io.elasticore.base.Version`(시작 배너) - 이것들도 옮기세요.
+3. jar 가 가져오던 Spring 자동 구성: 그 jar 의
+   `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 는 `ElastiCoreAutoConfiguration`
+   (포트, `DbmsService`, 트랜잭션 게이트웨이), `ElastiCoreLookupAutoConfiguration`, `ElastiCoreGraphQlAutoConfiguration`,
+   `ElastiCoreMaskAutoConfiguration`, `ElastiCoreCryptoAutoConfiguration`, `ElastiCoreMyBatisAutoConfiguration` 을 적고 있습니다.
+   애플리케이션이 쓰는 것을 복사하고, 새 이름으로 같은 경로의 자기 파일에 적으세요. 없으면 생성된 코드가 받는 빈(필드 암호화,
+   lookup, GraphQL 스칼라, 포트)이 애플리케이션 시작 때 없습니다.
+4. `META-INF/services/jakarta.validation.ConstraintValidator`: `Money`·`Quantity` 의 범위 검사
+   (`ValueBoundValidators$MoneyDecimalMin` 등)를 새 이름으로. 없으면 money·quantity 필드의 `@min`/`@max` 가
+   검사되지 않습니다.
+5. 복사한 클래스가 쓰는, jar 가 함께 가져오던 라이브러리. elasticore-template-ddd(아래)에서는:
+   `spring-boot-starter-webflux`(`HttpApiClient`: WebClient 와 reactor-netty), `commons-lang3`, `commons-jexl3` 3.0
+   (`SqlPortGateway`), `reflections` 0.10.2(`PortServiceRegistrar`), `jnanoid` 2.0.0(`IdUtils`),
+   `jackson-dataformat-xml`·`-yaml`, Lombok(`ModelTransList`).
+
+> **보안.** `CurrentUser`, `TransformPermissionChecker`, `ForbiddenException` - 그리고 `AccessPolicy`, `NotSignedInException` -
+> 은 생성된 접근 검사(`@access`, `@owner`)가 기대는 클래스입니다. 처음부터 새로 쓰지 말고 배포된 소스에서 시작하세요:
+> 잘못 답하는 `CurrentUser`, 또는 에러 처리기가 200 으로 바꾸는 `ForbiddenException` 은
+> DSL 이 닫은 모든 엔드포인트를 엽니다.
+
+**업그레이드.** 새 ElastiCORE 가 생성하는 코드는 사본에 아직 없는 클래스·메서드·생성자를 부를 수 있습니다. 업그레이드한 뒤
+`build/elasticore/runtime-classes.txt` 를 지난번 것과 비교하고, 새로 생겼거나 바뀐 클래스를 새 버전의 소스 jar 에서 가져오세요.
+컴파일 오류가 아직 빠진 것을 알려 줍니다.
+
+`elasticore-template-ddd`(hexagonal Java, Spring Boot 3.3)에서 확인했습니다: 목록 38개, 런타임 클래스 140개 중 92개 복사
+(목록과 그것이 쓰는 것). 클래스패스에 `io.elasticore` 아티팩트 없이 컴파일되고 테스트가 돌았습니다.
 
 ### Apache Ossie 시맨틱 모델 내보내기 (`ossie-export`)
 

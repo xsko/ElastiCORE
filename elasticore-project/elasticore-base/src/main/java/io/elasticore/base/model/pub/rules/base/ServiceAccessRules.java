@@ -449,12 +449,26 @@ public class ServiceAccessRules implements CodeRules {
 
         // ---- a search narrowed to the caller's own rows, by an equality on the owner
         m.add("/** A search narrowed to the caller's own rows where read is the owner's: an equality, whatever the field searches by. */");
-        if (kt) {
+        if (kt && mybatis) {
+            m.add("private fun ownedOnly(): Any? {");
+            if (owner != null) {
+                m.add("    val owner = ACCESS.ownerFilter(currentUser, \"read\") ?: return null")
+                        .add("    return %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ktId(ownerType));
+            } else {
+                m.add("    ACCESS.ownerFilter(currentUser, \"read\") ?: return null")
+                        .add(
+                                "    throw %sForbiddenException(\"%s is read by its owner, and names none (@owner)\")",
+                                RT, entity);
+            }
+            m.add("}").add("");
+        } else if (kt) {
             m.add("private fun ownedOnly(spec: Specification<%s>): Specification<%s> {", entity, entity)
              .add("    val owner = ACCESS.ownerFilter(currentUser, \"read\") ?: return spec");
             if (owner != null) {
-                m.add("    val id = %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ownerType)
-                 .add("    return spec.and(Specification<%s> { r, _, cb -> cb.equal(r.get<Any>(\"%s\"), id) })", entity, owner.name());
+                m.add("    val id = %sAccessPolicy.`as`(owner, %s::class.javaObjectType)", RT, ktId(ownerType))
+                        .add(
+                                "    return spec.and(Specification<%s> { r, _, cb -> cb.equal(r.get<Any>(\"%s\"), id) })",
+                                entity, owner.name());
             } else {
                 m.add("    throw %sForbiddenException(\"%s is read by its owner, and names none (@owner)\")", RT, entity);
             }
@@ -492,7 +506,9 @@ public class ServiceAccessRules implements CodeRules {
          .stmt("ACCESS.require(currentUser, operation)");
         if (kt) {
             m.add("    if (!ACCESS.owns(currentUser, operation, %s))", ownerRead)
-             .add("        throw EntityNotFoundException(\"%s not found\")", entity);
+                    .add(
+                            "        throw %s(\"%s not found\")",
+                            orDefault(c.varValue("notFoundException"), "EntityNotFoundException"), entity);
         } else {
             m.add("    if (!ACCESS.owns(currentUser, operation, %s))", ownerRead)
                     .add(
@@ -507,7 +523,8 @@ public class ServiceAccessRules implements CodeRules {
         FieldSpec claimed = owner == null ? null : (!ownerIsKey || !keyGenerated) ? owner : null;
         if (claimed != null) {
             String idOf = kt
-                    ? String.format("%sAccessPolicy.`as`(currentUser.id(), %s::class.javaObjectType)", RT, ownerType)
+                    ? String.format(
+                            "%sAccessPolicy.`as`(currentUser.id(), %s::class.javaObjectType)", RT, ktId(ownerType))
                     : String.format("%sAccessPolicy.as(currentUser.id(), %s.class)", RT, ownerType);
             if (claimed == pk) {
                 // Keyed by its owner: a visitor has no identity to key it by.
@@ -542,7 +559,7 @@ public class ServiceAccessRules implements CodeRules {
             String target = io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.sealed(e, claimed)
                     ? "entity.creation()" : "entity";
             String value = kt
-                    ? String.format("%sAccessPolicy.`as`(id, %s::class.javaObjectType)", RT, ownerType)
+                    ? String.format("%sAccessPolicy.`as`(id, %s::class.javaObjectType)", RT, ktId(ownerType))
                     : String.format("%sAccessPolicy.as(id, %s.class)", RT, ownerType);
             m.add("/** A @readonly owner is the server's: whoever is signed in owns what they create. */");
             if (kt) {
@@ -575,7 +592,20 @@ public class ServiceAccessRules implements CodeRules {
             }
             m.add("    }");
         }
-        m.stmt("hashPasswords(dto)").end();
+        m.stmt("hashPasswords(dto)");
+        if (refreshesWithPassword(e) && pk != null && passwords.size() == 1) {
+            // @signin(refresh=password): the session that changes its own password keeps going, with the new stamp.
+            String password = passwords.get(0).name();
+            String key = getter(kt, "entity", pk.name());
+            if (kt) {
+                m.add("    dto.%s?.let { %sPasswordRefreshFilter.written(%s, it) }", password, RT, key);
+            } else {
+                m.add(
+                        "    if (dto.%s() != null) %sPasswordRefreshFilter.written(%s, dto.%s());",
+                        getterName(password), RT, key, getterName(password));
+            }
+        }
+        m.end();
 
         // ---- update by condition: merged skipping nulls, so leaving them out is enough
         m.fun("accessUpdateAll", "dto: " + dto, dto + " dto")
@@ -649,13 +679,17 @@ public class ServiceAccessRules implements CodeRules {
                     .append(loginName)
                     .append(" == null || password == null) return Optional.empty()\n")
                     .append("        val found = ")
-                    .append(query)
-                    .append(".findAll(Specification<")
-                    .append(entity)
-                    .append("> { r, _, cb -> ")
-                    .append(byLogin)
-                    .append(" })\n")
-                    .append("        if (found.size != 1) {\n")
+                    .append(query);
+            if ("mybatis".equals(c.varValue("persistence")) || "mongo".equals(c.varValue("persistence"))) {
+                m.append(".findAllByLogin(").append(loginName).append(")\n");
+            } else {
+                m.append(".findAll(Specification<")
+                        .append(entity)
+                        .append("> { r, _, cb -> ")
+                        .append(byLogin)
+                        .append(" })\n");
+            }
+            m.append("        if (found.size != 1) {\n")
                     .append("            passwordHasher.hash(password)\n")
                     .append("            return Optional.empty()\n")
                     .append("        }\n")
@@ -723,7 +757,7 @@ public class ServiceAccessRules implements CodeRules {
                     .append(".findById(")
                     .append(RT)
                     .append("AccessPolicy.`as`(id, ")
-                    .append(keyType)
+                    .append(ktId(keyType))
                     .append("::class.javaObjectType))")
                     .append(live)
                     .append(".map { ")
@@ -747,6 +781,79 @@ public class ServiceAccessRules implements CodeRules {
                     .append(".map(row -> ")
                     .append(mapper)
                     .append(".toDTO(row));\n")
+                    .append("    }");
+        }
+        c.addMethod(m.toString());
+        if (refreshesWithPassword(e)) signedInRow(e, c, kt, repo, keyType, live);
+    }
+
+    /**
+     * {@code @signin(refresh=password)}: what the session refresh reads, in the
+     * one read me() makes - the row's roles, and its password hash, which the
+     * runtime only stamps. The entity, not the DTO: no DTO carries the hash.
+     */
+    private void signedInRow(EntitySpec e, SourceCode c, boolean kt, String repo, String keyType, String live) {
+        String password = null;
+        for (FieldSpec f : e.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+        }
+        String role = roleText(e, kt, kt ? "it" : "row");
+        String rowType = RT + "PasswordRefreshFilter.Row";
+        StringBuilder m = new StringBuilder();
+        m.append("    /** The ")
+                .append(e.getName())
+                .append(" signed in now as the session refresh reads it - its roles and")
+                .append(" the stamp of its password - or empty when the row is gone (@signin(refresh=password)). */\n");
+        if (kt) {
+            m.append("    open fun signedInRow(): Optional<")
+                    .append(rowType)
+                    .append("> {\n")
+                    .append("        val id = currentUser.id() ?: return Optional.empty()\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.`as`(id, ")
+                    .append(ktId(keyType))
+                    .append("::class.javaObjectType))")
+                    .append(live)
+                    .append(".map {\n")
+                    .append("            ")
+                    .append(RT)
+                    .append("PasswordRefreshFilter.row(")
+                    .append(RT)
+                    .append("SessionRefreshFilter.roles(")
+                    .append(role == null ? "" : role)
+                    .append("), it.")
+                    .append(password)
+                    .append(")\n")
+                    .append("        }\n")
+                    .append("    }");
+        } else {
+            m.append("    public Optional<")
+                    .append(rowType)
+                    .append("> signedInRow() {\n")
+                    .append("        Object id = currentUser.id();\n")
+                    .append("        if (id == null) return Optional.empty();\n")
+                    .append("        return ")
+                    .append(repo)
+                    .append(".findById(")
+                    .append(RT)
+                    .append("AccessPolicy.as(id, ")
+                    .append(keyType)
+                    .append(".class))")
+                    .append(live)
+                    .append("\n")
+                    .append("                .map(row -> ")
+                    .append(RT)
+                    .append("PasswordRefreshFilter.row(\n")
+                    .append("                        ")
+                    .append(RT)
+                    .append("SessionRefreshFilter.roles(")
+                    .append(role == null ? "" : role)
+                    .append("), row.")
+                    .append(getterName(password))
+                    .append("()));\n")
                     .append("    }");
         }
         c.addMethod(m.toString());
@@ -1101,10 +1208,21 @@ public class ServiceAccessRules implements CodeRules {
      * request: @signin(refresh=request) on the entity that signs in. A
      * generated filter reads the row again through me(). When the row is
      * gone, the session ends; when the role has changed, the session takes
-     * the new one.
+     * the new one. @signin(refresh=password) does the same, and more
+     * (refreshesWithPassword).
      */
     public static boolean refreshesPerRequest(EntitySpec e) {
-        return signsIn(e) && "request".equals(trim(e.metaProperty("signin", "refresh")));
+        String refresh = trim(e.metaProperty("signin", "refresh"));
+        return signsIn(e) && ("request".equals(refresh) || "password".equals(refresh));
+    }
+
+    /**
+     * Whether a session opened before a password change ends:
+     * {@code @signin(refresh=password)}, which does what refresh=request does too. The session holds a stamp of the
+     * hash, read in the same one read of the row (signedInRow).
+     */
+    public static boolean refreshesWithPassword(EntitySpec e) {
+        return signsIn(e) && "password".equals(trim(e.metaProperty("signin", "refresh")));
     }
 
     /** What @signin is given that it does not take, one sentence each. */
@@ -1112,17 +1230,19 @@ public class ServiceAccessRules implements CodeRules {
         List<String> out = new ArrayList<String>();
         if (!e.hasMeta("signin")) return out;
         String bare = trim(e.metaValue("signin"));
+        String takes = "@signin takes refresh=request or refresh=password; ";
         if (bare != null && !bare.isEmpty()) {
-            out.add("@signin(" + bare + "): @signin takes refresh=request; " + bare + " is ignored.");
+            out.add("@signin(" + bare + "): " + takes + bare + " is ignored.");
         }
         for (Map.Entry<String, String> p : e.metaProperties("signin").entrySet()) {
             String key = p.getKey();
             String value = trim(p.getValue());
             if (!"refresh".equals(key)) {
-                out.add("@signin(" + key + "=...): @signin takes refresh=request; " + key + " is ignored.");
-            } else if (!"request".equals(value)) {
+                out.add("@signin(" + key + "=...): " + takes + key + " is ignored.");
+            } else if (!"request".equals(value) && !"password".equals(value)) {
                 out.add("@signin(refresh=" + value + "): refresh takes request (the row read again on each"
-                        + " request); the session keeps what the sign-in put in it.");
+                        + " request) or password (the same, and a session opened before a password change ends);"
+                        + " the session keeps what the sign-in put in it.");
             }
         }
         return out;
@@ -1208,6 +1328,14 @@ public class ServiceAccessRules implements CodeRules {
         if ("String".equals(t)) return "String";
         if ("UUID".equals(t)) return "java.util.UUID";
         return null;
+    }
+
+    /**
+     * An identity type as Kotlin names it: Int rather than java.lang.Integer,
+     * whose class literal gives an Integer that an Int property does not take.
+     */
+    private static String ktId(String idType) {
+        return io.elasticore.base.model.pub.rules.Syntax.KOTLIN.typeName(idType);
     }
 
     /** Method text written once and read as Java or Kotlin. */

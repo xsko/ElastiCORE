@@ -138,6 +138,17 @@ public class AbstractModelLoader implements ConstantParam {
                             entityName, fieldNm));
         }
 
+        // An @encrypt field is kept encrypted by the 3.0 code only; the 2.x
+        // generator would store it as sent, so it stops there as for html.
+        if (!io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes() && f.hasAnnotation("encrypt")) {
+            ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "%s.%s: an @encrypt field is kept encrypted by the 3.0 code only (elcore3);"
+                                    + " the 2.x generator would store it as sent. Generate it with elcore3.",
+                            entityName, fieldNm));
+        }
+
         // Check for relationship annotations used with primitive types
         if (f.getTypeInfo() != null && f.getTypeInfo().isBaseType()) {
             String[] relationAnnotations = {"onetomany", "manytoone", "onetoone", "manytomany"};

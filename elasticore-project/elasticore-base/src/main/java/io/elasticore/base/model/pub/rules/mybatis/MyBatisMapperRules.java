@@ -917,6 +917,19 @@ public class MyBatisMapperRules implements CodeRules {
             case "ieq":
                 sb.append(bindLike(bind, prop + "." + lower)).append("AND LOWER(").append(column).append(") = #{").append(bind).append("}");
                 break;
+            case "bidx":
+            case "bidxdigits":
+                // An encrypted column's blind index, compared with the value's (EncryptRules).
+                sb.append(bindLike(
+                                bind,
+                                "@" + io.elasticore.base.model.pub.rules.base.EncryptRules.BIDX
+                                        + ("bidxdigits".equals(op) ? "@ofDigits(" : "@of(") + prop + ")"))
+                        .append("AND ")
+                        .append(column)
+                        .append(" = #{")
+                        .append(bind)
+                        .append(",jdbcType=VARCHAR}");
+                break;
             case "prefix":
                 sb.append(textLike(bind, column, prop, "", "%", false));
                 break;

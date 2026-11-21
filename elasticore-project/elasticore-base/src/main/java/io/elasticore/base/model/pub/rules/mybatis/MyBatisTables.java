@@ -152,6 +152,10 @@ public final class MyBatisTables {
         switch (jdbc) {
             case "VARCHAR": {
                 int len = f.rawLength();
+                // An encrypted column holds the ciphertext of the declared length.
+                if (f.hasDsl(io.elasticore.base.model.pub.rules.base.EncryptRules.ENCRYPT)) {
+                    len = io.elasticore.base.model.pub.rules.base.EncryptRules.columnLength(f);
+                }
                 boolean code = MyBatisSql.isEnum(e, f);
                 if (code) {
                     String dbLen = e.enumDbLength(RuleText.simpleName(f.typeName()));

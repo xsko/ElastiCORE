@@ -9,8 +9,8 @@
   `UnsupportedOperationException`, Kotlin `TODO`), the process manager an empty `handle`, both regenerated when
   untouched and merged into the developer's edits - and that a file the merge does not reach (`KEPT`, or an edited
   one under `merge = false`, `SKIP(user-owned)`) still fails to compile. Comments only; no generated text changed.
-- Left as it is: the Javadoc the process manager base templates write into every generated `XxxBase`
-  (`v3/processManagerBase.tmpl`, `kt/processManagerBase.tmpl`: "An event added to 'on' is a new handle(...) the
-  compiler asks for there") is generated output; changing it changes every project's regenerated base.
+- Not in this change: the Javadoc the process manager base templates write into every generated `XxxBase`
+  (`v3/processManagerBase.tmpl`, `kt/processManagerBase.tmpl`) is generated output; it is corrected on its own
+  (`process-manager-base-comment.md`).
 - Checked: `SourceAsciiTest`; `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck` unchanged.
 - Files: `DddCommandRules.java`, `DddDomainServiceRules.java`.

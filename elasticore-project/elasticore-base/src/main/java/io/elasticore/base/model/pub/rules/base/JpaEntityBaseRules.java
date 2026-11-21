@@ -357,7 +357,11 @@ public class JpaEntityBaseRules implements CodeRules {
         // the column its length whatever else is said about it.
         String enumLen = null;
         boolean lengthDefined = false;
-        if (f.maxLength() > 0 && !f.isBigDecimal() && !f.isMoney()) {
+        if (f.hasDsl(EncryptRules.ENCRYPT) && !ctx(e).compatible() && f.isStringType()) {
+            // The column holds the ciphertext of the declared length, which the DTO still checks.
+            if (!EncryptRules.longText(f)) col.val("length", EncryptRules.columnLength(f));
+            lengthDefined = true;
+        } else if (f.maxLength() > 0 && !f.isBigDecimal() && !f.isMoney()) {
             col.val("length", f.maxLength());
             lengthDefined = true;
         } else if (isEnum) {

@@ -1,0 +1,59 @@
+enumeration:
+  Grade:
+    meta: enum @db(code) @json(code) -- member grade
+    fields:
+      code: string(1) @code
+    enum:
+      USER:  U
+      ADMIN: A
+
+entity:
+  # Signs in (@login, @password), owns itself, and keeps its document when deleted.
+  Member:
+    meta: entity @expose(20) @signin(refresh=request) @owner(memberId) @access(read=owner, create=public, update=owner, delete=owner) -- member
+    fields:
+      memberId: int @id @sequence
+      email: string(100)! @login @unique @column(mail) @search(eq)
+      secret: string(255)! @password
+      grade: Grade @default(Grade.USER) @access(admin)
+      joinedAt: datetime @jpa:CreatedDate
+      leftAt: datetime @deleted
+
+  # A member's notes: read and written by their owner only.
+  Note:
+    meta: entity @expose(20) @owner(ownerId) @access(read=owner, update=owner, delete=owner, create=public) -- note
+    fields:
+      noteId: long @id @sequence
+      ownerId: int
+      title: string(100)! @search(like)
+      body: html @safe(relaxed)
+      writtenBy: string(40) @jpa:CreatedBy
+      changedAt: datetime @jpa:LastModifiedDate
+
+  # Every search condition, a key the service makes, money and a compound index.
+  Gadget:
+    meta: entity @expose(20) @access(*=public) @index(name=ix_rank, columnList="rank DESC, label") -- gadget
+    fields:
+      gadgetId: string(12) @id @genid
+      label: string(40) @search(%_%)
+      code: string(10) @search(__=)
+      head: string(10) @search(_%)
+      ihead: string(10) @search(__%)
+      tail: string(10) @search(%_)
+      itail: string(10) @search(%__)
+      kind: string(10) @search
+      rank: int @search(>)
+      floor: int @search(>=)
+      ceiling: int @search(<)
+      top: int @search(<=)
+      other: int @search(!=)
+      grade: Grade @search(eq)
+      price: money(10.2)
+
+  # Read only over the API: no create, update or delete.
+  Notice:
+    meta: entity @expose(20) @readonly @access(*=public) -- notice
+    fields:
+      noticeId: long @id @sequence
+      text: string(200)
+

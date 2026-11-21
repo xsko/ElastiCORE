@@ -138,3 +138,8 @@ Named honestly, because the gap is the point:
 
 See `docs/design/ddd-ruleset.md` for the full pattern inventory and why each
 line above falls where it does.
+
+`board`'s `Subscriber.phone` and `Subscriber.email` are `@encrypt`: the keys they need
+(`elasticore.crypto.key`, `elasticore.crypto.index-key`) are made fresh for each test run by `src/test/java/ddd/TestCryptoKeys`
+(registered in `src/test/resources/META-INF/spring.factories`); none is in the repository. The module has no
+application of its own to start (`DddSampleApp` is the tests') - an application sets both keys itself, or does not start.

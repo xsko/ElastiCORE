@@ -77,7 +77,7 @@ public class MyBatisMapperMemberRules implements CodeRules {
     void members(EntitySpec e) {
         if (!applies(e) || domainRulesWriteMembers(e)) return;
         SourceCode c = ctx(e);
-        if (c.syntax() != Syntax.JAVA) return;
+        if (c.syntax() != Syntax.JAVA && c.syntax() != Syntax.KOTLIN) return;
         java.util.Set<String> written = new java.util.HashSet<String>();
         for (FieldSpec f : e.fields()) {
             if (!f.isList() || !written.add(f.name())) continue;
@@ -85,6 +85,36 @@ public class MyBatisMapperMemberRules implements CodeRules {
             if (member == null) continue;
             String read = c.syntax().getter("from", f.name());
             String owner = e.ownerFieldOf(member[1]);
+            if (c.syntax() == Syntax.KOTLIN) {
+                // Not isNullOrEmpty(): an empty list replaces the members with none.
+                c.line(MapperBaseRules.REV_BODY, "        val %sSent = %s", f.name(), read)
+                        .line(
+                                MapperBaseRules.REV_BODY,
+                                "        if ((c == null || c.fd(%s).checkEnable()) && %sSent != null) {",
+                                RuleText.quote(f.name()),
+                                f.name())
+                        .line(
+                                MapperBaseRules.REV_BODY,
+                                "            val members = java.util.ArrayList<%s>()",
+                                member[1])
+                        .line(MapperBaseRules.REV_BODY, "            for (d in %sSent) {", f.name())
+                        .line(MapperBaseRules.REV_BODY, "                val m = %s()", member[1])
+                        .line(MapperBaseRules.REV_BODY, "                mapping(d, m, isSkipNull, c)");
+                if (owner != null) {
+                    c.line(
+                            MapperBaseRules.REV_BODY,
+                            "                %s",
+                            c.syntax().setter("m", owner, "to"));
+                }
+                c.line(MapperBaseRules.REV_BODY, "                members.add(m)")
+                        .line(MapperBaseRules.REV_BODY, "            }")
+                        .line(
+                                MapperBaseRules.REV_BODY,
+                                "            %s",
+                                c.syntax().setter(c.mapperTarget(f.name()), f.name(), "members"))
+                        .line(MapperBaseRules.REV_BODY, "        }");
+                continue;
+            }
             // Not hasValue(), which an empty list fails: [] replaces the members with none.
             c.line(MapperBaseRules.REV_BODY, "        if(c==null || c.fd(%s).checkEnable())", RuleText.quote(f.name()))
              .line(MapperBaseRules.REV_BODY, "        if(%s != null){", read)

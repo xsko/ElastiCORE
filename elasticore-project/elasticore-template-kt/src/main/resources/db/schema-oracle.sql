@@ -83,9 +83,11 @@ CREATE TABLE cms_comment (
     content_text CLOB,
     author_name VARCHAR2(100 CHAR) NOT NULL,
     author_email VARCHAR2(100 CHAR),
+    author_phone VARCHAR2(147 CHAR),
     approved NUMBER(1),
     article_article_id VARCHAR2(36 CHAR),
     test_id NUMBER(19),
+    author_phone_bidx VARCHAR2(22 CHAR),
     PRIMARY KEY (comment_id)
 );
 
@@ -565,6 +567,7 @@ ALTER TABLE shop_vip_profile ADD CONSTRAINT fk_shop_vip_profile_customer FOREIGN
 
 CREATE UNIQUE INDEX idx_cms_art_slug ON cms_article (slug);
 CREATE INDEX idx_cms_art_pub_date ON cms_article (publish_date);
+CREATE INDEX ix_cms_comment_author__d2d721a ON cms_comment (author_phone_bidx);
 CREATE UNIQUE INDEX idx_hr_dept_code ON hr_department (code);
 CREATE UNIQUE INDEX idx_hr_emp_email ON hr_employee (email);
 CREATE INDEX idx_hr_emp_dept ON hr_employee (department_dept_id);

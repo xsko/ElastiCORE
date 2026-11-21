@@ -191,7 +191,7 @@ class ShopApiContractTest {
     private lateinit var jdbc: org.springframework.jdbc.core.JdbcTemplate
 
     @Test
-    @DisplayName("@signin(refresh=request): a grade changed in the row is the session's at the next request; a removed agent's session ends")
+    @DisplayName("@signin(refresh=password), as refresh=request: a grade changed in the row is the session's at the next request; a removed agent's session ends")
     fun theSessionFollowsTheAgentsRow() {
         val agents = "/api/v1/shop/agent"
         fun create(login: String) = assertThat(mvc.perform(post(agents).contentType(MediaType.APPLICATION_JSON)
@@ -215,5 +215,44 @@ class ShopApiContractTest {
         jdbc.update("delete from shop_agent where agent_id = ?", id)
         assertThat(search().status).isEqualTo(401)
         assertThat(mvc.perform(get("$agents/me").session(session)).andReturn().response.status).isEqualTo(401)
+    }
+
+    @Test
+    @DisplayName("@signin(refresh=password): a password change ends the sessions opened before it, but the one that made it and an administrator's")
+    fun aPasswordChangeEndsTheSessionsOpenedBeforeIt() {
+        val agents = "/api/v1/shop/agent"
+        fun create(login: String) = assertThat(mvc.perform(post(agents).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"login":"$login","secret":"pw-$login"}""")).andReturn().response.status).isEqualTo(200)
+        fun signIn(login: String, secret: String): org.springframework.test.web.servlet.MvcResult {
+            val r = mvc.perform(post("$agents/signin").contentType(MediaType.APPLICATION_JSON)
+                .content("""{"login":"$login","secret":"$secret"}""")).andReturn()
+            assertThat(r.response.status).isEqualTo(200)
+            return r
+        }
+        fun session(r: org.springframework.test.web.servlet.MvcResult) = r.request.session as org.springframework.mock.web.MockHttpSession
+        fun search(s: org.springframework.mock.web.MockHttpSession) = mvc.perform(post("$agents/search").session(s)
+            .contentType(MediaType.APPLICATION_JSON).content("{}")).andReturn().response.status
+        fun setSecret(by: org.springframework.mock.web.MockHttpSession, id: Long, secret: String) =
+            mvc.perform(put(agents).session(by).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"agentId":$id,"secret":"$secret"}""")).andReturn().response.status
+
+        create("worf")
+        val first = signIn("worf", "pw-worf")
+        val id = json.readTree(first.response.contentAsString).path("agentId").asLong()
+        val changer = session(first)
+        val other = session(signIn("worf", "pw-worf"))
+
+        assertThat(setSecret(changer, id, "new-worf")).isEqualTo(200)
+        assertThat(search(changer)).isEqualTo(200)
+        assertThat(search(changer)).isEqualTo(200)
+        assertThat(search(other)).isEqualTo(401)
+
+        create("picard")
+        jdbc.update("update shop_agent set grade = 'ADMIN' where login = 'picard'")
+        val admin = session(signIn("picard", "pw-picard"))
+        assertThat(setSecret(admin, id, "by-admin")).isEqualTo(200)
+        assertThat(search(changer)).isEqualTo(401)
+        assertThat(mvc.perform(get("$agents/me").session(admin)).andReturn().response.status).isEqualTo(200)
+        signIn("worf", "by-admin")
     }
 }

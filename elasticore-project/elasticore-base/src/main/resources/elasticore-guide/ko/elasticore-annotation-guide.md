@@ -2144,7 +2144,18 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
 요청마다 먼저 `me()` 로 행을 다시 읽습니다 - `@deleted` 로 남긴 행은 없는 것으로 봅니다. 행이 없으면 세션을 끝내고 요청은 방문자의 것으로
 이어집니다 (로그인이 필요한 요청은 401). 역할이 바뀌었으면 이 요청부터 세션이 새 역할을 가지고, 세션 id 는 그대로입니다.
 이런 요청마다 행을 한 번 읽는 비용이 듭니다. 로그인한 키가 없는 세션(방문자, 애플리케이션이 직접 만든 `CurrentUser`)은
-읽지 않습니다. `@signin` 은 다른 옵션을 받지 않습니다 - 다른 것은 DSL 경고입니다.
+읽지 않습니다. `@signin` 은 `refresh=request` 와 `refresh=password` 밖의 옵션을 받지 않습니다 - 다른 것은 DSL 경고입니다.
+
+**`@signin(refresh=password)` - 비밀번호가 바뀌기 전에 열린 세션은 끝납니다.** `refresh=request` 가 하는 일을 모두, 로그인한 요청마다
+같은 한 번의 행 읽기로 합니다 (`signedInRow()` - CoreService 와 use case 의 `me()` 옆에 생김). 그리고 세션은 비밀번호 해시의
+스탬프도 가집니다 - 저장된 해시의 SHA-256 앞 16자리 16진수이고, 해시 자체는 아닙니다. 행의 스탬프가 세션의 것과 다르면
+세션을 끝내고 요청은 방문자의 것으로 이어집니다 (쓰기는 401). 자기 비밀번호를 바꾼 세션(비밀번호를 담은 `PUT`)은 새 스탬프로
+계속되고, 그 회원의 다른 세션은 끝납니다.
+관리자가 회원의 비밀번호를 바꾸면 그 회원의 세션이 끝나고 관리자의 세션은 남습니다.
+스탬프가 없는 세션 - 애플리케이션 코드가 로그인시킨 세션(`SessionCurrentUser.signIn`, 아래 재설정처럼)이나 이 옵션 전에 열린
+세션 - 은 로그인시킨 요청의 끝에, 또는 첫 요청에 행의 스탬프를 받으므로 애플리케이션 코드는 바꿀 것이 없습니다. 비밀번호가 없던
+행(다른 로그인 제공자로 가입한 회원)에 비밀번호가 생기는 것은 변경이 아니고, 비밀번호를 지우는 것은 변경입니다. 2.x 호환 출력
+(`output = 'v2'`)에는 생성되는 로그인이 없으므로, 거기서는 `refresh=password` 가 빌드를 멈춥니다.
 
 - **수정 수준.** 행을 쓰는 요청(`PUT`, `PUT /batch`, 조건 수정)은 모두 `update` 수준을 묻습니다 - `update`, 없으면 `*`,
   그것도 없으면 `admin`, `@access` 가 아예 없으면 `public`. 이것이 `admin`·`none` 이거나, `owner` 이면서 `@owner` 가 키일
@@ -2317,8 +2328,8 @@ public CustomerDTO confirm(@RequestBody Map<String, String> body, HttpServletReq
 }
 ```
 
-재설정 뒤에도 다른 곳에 열린 세션은 로그인된 채 남습니다. 그것까지 끝내려면 회원의 세션을 찾을 수 있는 세션
-저장소가 필요합니다 (Spring Session 같은 것). 나머지는 `PasswordResetGuideTest` 가 확인합니다: 세션 id 가 바뀌고
+펫스토어처럼 `@signin(refresh=password)` 이면 재설정 전에 열린 세션은 다음 요청에서 끝나고, 확인 요청이 로그인시킨 세션은
+계속됩니다 (위). 이것이 없으면 로그인된 채 남습니다. 그것과 나머지를 `PasswordResetGuideTest` 가 확인합니다: 세션 id 가 바뀌고
 이전 것은 쓸모없음, 이전 비밀번호는 실패하고 새 비밀번호로 로그인됨, 같은 링크 두 번, 고객이 직접 비밀번호를 바꾼 뒤의
 링크, 변조된 링크, 만료된 링크는 거절, 없는 로그인도 같은 202 에 메일 없음, 1분 안의 두 번째 요청은 아무것도
 보내지 않음.
@@ -2472,6 +2483,61 @@ Post:
   2.x 생성기(`elcore`).
 - 서비스가 행을 거른 뒤에 넣은 값(`beforeSave` 안이나 리포지터리를 통해)은 걸러지지 않습니다: 값을 넣은 뒤에
   `entity.cleanHtml()` 을 부릅니다.
+
+## @encrypt — 암호화해 저장하고 같음으로 찾는 컬럼 (v3)
+> **동작:** v3 (JPA: layered, ddd, hexagonal), Kotlin, MyBatis (mode: mybatis) · **미동작:** MongoDB (mode: mongo) (빌드 중단); 2.x 호환 출력 (output = 'v2') (빌드 중단); 2.x 생성기 (빌드 중단)
+
+```yaml
+Customer:
+  meta: entity @root @expose(20)
+  fields:
+    phone: string(20) @encrypt(digits) @s(eq)   # v1:... in the column, 010-1234-5678 in the API; found with or without dashes
+    ssn:   string(20) @encrypt @s(eq)           # found by the same text only
+    email: string(100) @encrypt                 # encrypted, not searched
+```
+
+- 값은 행을 쓸 때 암호화되고 읽을 때 복호화됩니다: AES-256-GCM, 쓸 때마다 무작위 12바이트 IV 를 쓰므로 같은 값도
+  매번 다르게 저장됩니다. 컬럼에는 `v1:` 과 IV·암호문·태그의 base64 가 들어가고 (버전은 연관 데이터로 묶임), DTO·API·코드 속
+  엔티티에는 원래 값이 있습니다. JPA: 엔티티 필드에
+  `@Convert(converter = EncryptConverter.class)` 가 붙고; MyBatis: 매퍼가 `EncryptTypeHandler` 로 컬럼을 바인딩하고 읽습니다 (둘 다
+  `io.elasticore.springboot3.crypto`). 컨버터는 테이블도 컬럼도 모르므로, 다른 행이나 컬럼에 복사한 암호문도
+  그곳에서 복호화됩니다: 테이블에 쓸 수 있는 사람은 값을 행 사이로 옮길 수 있습니다.
+- 컬럼 길이는 선언한 길이의 암호문이 될 수 있는 만큼입니다: `ceil((n * 4 + 28) / 3) * 4 + 3` - `string(20)` 은 147,
+  `string(100)` 은 575, 길이가 없으면(255) 1403 - 엔티티에도 DDL / Flyway 출력에도. DTO 는 여전히 선언한 길이로
+  검사합니다. `text` 필드는 긴 문자열 컬럼 그대로입니다. 키 버전은 v1 ~ v9 입니다: 접두어는 한 자리에 맞춰져 있습니다.
+- `@search(eq)`, `@s(eq)` 또는 값 없는 `@search` (대소문자 무관) 는 필드 옆에 블라인드 인덱스를 더합니다: `phoneBidx`, 컬럼
+  `phone_bidx` (필드 컬럼 이름 + `_bidx`), 22자, 인덱스 있음 - 일반 `@abstract` 부모를 확장한 엔티티의 테이블에도.
+  별도 키의 HMAC-SHA256 을 앞뒤 공백만 뺀 값에 계산해 16바이트로 잘라 base64url 로 씁니다: 다른 두 값은
+  다른 두 인덱스입니다. `@encrypt(digits)` 는 숫자와 대시·공백·점만으로 된 값의 구분자도 빼므로, `010-1234-5678` 과
+  `01012345678` 이 서로를 찾고 - `123-45-678` 과 `12-345-678` 도 그렇습니다: 구분자가 의미 없는 곳에만 씁니다.
+  엔티티의 `indexEncrypted()` 가 행을 쓰기 바로 전에 씁니다: JPA 는 런타임의 `BlindIndexListener`
+  (`@PrePersist`, `@PreUpdate`) 가 `beforeSave`, 파생 값, 그 필드를 바꾼 어떤 코드 뒤에; MyBatis 위의 DDD 규칙은
+  루트의 `Lifecycle` (`beforeInsert`, `beforeUpdate`); layered MyBatis 서비스는 `beforeSave` 뒤, insert 전과
+  `write()` 안에서. 검색은 암호화된 컬럼이 아니라 `phoneBidx` 를 `Bidx.of(value)` (`Bidx.ofDigits`) 와 비교합니다. 어떤 DTO 에도
+  인덱스는 없고, Ossie 모델은 암호화 컬럼과 그 인덱스를 둘 다 뺍니다 (비밀번호를 빼듯이).
+- 키는 Spring 프로퍼티이고 저장소에 두지 않습니다 (환경 변수나 vault): `elasticore.crypto.key` (32바이트의 base64:
+  `openssl rand -base64 32`), `elasticore.crypto.index-key` (또 다른 32바이트, 같으면 안 됨). 암호화 필드가 있는 애플리케이션은
+  둘 다 없으면 시작하지 않고, 메시지가 빠진 것의 이름을 말합니다; 32바이트 base64 가 아닌 키, 또는 키와 같은
+  인덱스 키는 어떤 시작도 멈춥니다. 키 교체: env 가이드. 샘플은 테스트에서 키를 만들고 따로 실행할
+  애플리케이션이 없습니다; 애플리케이션은 시작하는 모든 프로파일에 키를 둡니다.
+- **지원하지 않음** (빌드 중단): 같음 외의 검색 - `like`, 앞부분·뒷부분, `>`, `between`, `in`, `!=`, 대소문자 무시
+  조건, `words:` - 매번 글자가 다른 컬럼에서는 일부, 범위, 대소문자를 찾을 수 없기 때문; 관계를 거쳐
+  암호화 필드에 닿는 검색 (`@ref(customer.phone)`, `words: customer.phone`); 단일 문자열이 아닌 필드,
+  키, `@unique` 와 함께, `@formula` 와 함께, 값 객체(`@embeddable`)의 `@encrypt`, 또는 `digits` 외의 값;
+  애그리거트 멤버의 검색되는 암호화 필드; 암호화 필드를 같음 외로 찾거나
+  엔티티의 `@search(eq)` 없이 찾는 선언한 검색 DTO; MongoDB; 값을 보낸 그대로 저장할 2.x 호환 출력과
+  2.x 생성기. 암호화 컬럼으로 정렬하면 암호문 순서로 정렬됩니다.
+- **이미 있는 행** 은 평문을 담고 있고, 평문은 읽히지 않습니다 (`a stored value without a key version`). 새 코드가 요청을 받기
+  전에 한 번 암호화합니다: (1) 컬럼을 넓히고 (`alter table customer alter column phone varchar(147)`) 인덱스와 함께
+  `phone_bidx varchar(22)` 를 더합니다 - DDL / Flyway 출력에 둘 다 있습니다; (2) 애플리케이션의 키로, 각 행의 평문을
+  일반 JDBC 로 읽어 `FieldCrypto.current().encrypt(v)` 와 `Bidx.of(v)` (`Bidx.ofDigits(v)`) 를 다시 쓰는 일회성
+  작업을 돌립니다 (`update customer set phone = ?, phone_bidx = ? where customer_id = ?`); (3) 애플리케이션을 시작합니다.
+  애플리케이션 밖의 SQL 로 나중에 쓰는 행도 같은 두 값이 필요합니다; 서비스 없이 layered MyBatis 리포지터리로 쓰는 행도.
+- 생성기 없이 쓸 때는 env.yml 에 컨버터를 이름으로 둡니다 (env 가이드, `@entity:`): 암호화만 하고 인덱스는 쓰지 않습니다.
+- HTTP 로, DB 는 JDBC 로 읽어 검증: `elasticore-template-ddd` `BoardEncryptTest` (command 가 인덱스를 다시 씀),
+  `elasticore-template-mybatis` `ShopApi.anEncryptedColumnHoldsCiphertextAndIsFoundByItsIndex`; Kotlin 은 `elasticore-template-kt`
+  `CommentEncryptTest` (부분 수정, PUT /batch, 조건 수정); Hibernate 아래의 리스너는 런타임의
+  `EncryptConverterHibernateTest`.
 
 ## @deleted — 삭제해도 행을 남김 (v3)
 > **동작:** v3 (JPA, MyBatis), Kotlin · **안 됨:** 2.x-compatible output (output = 'v2') - 삭제가 행을 지움 (경고); 2.x generator (생성 안 됨); mapping: xml + Spring Boot 3 (빌드 중단)

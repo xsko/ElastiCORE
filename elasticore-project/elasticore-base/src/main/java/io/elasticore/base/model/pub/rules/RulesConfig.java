@@ -75,7 +75,7 @@ public final class RulesConfig {
      * mongo - so that one word, not two, names it.
      *
      * The rule engine writes JPA, MyBatis and MongoDB code - MongoDB as layered
-     * Java only (mongoRefusal says what else is asked of it).
+     * Java or Kotlin only (mongoRefusal says what else is asked of it).
      */
     public enum Persistence {
         JPA, MYBATIS, MONGO;
@@ -94,16 +94,16 @@ public final class RulesConfig {
         return persistenceOfMode(mode) == Persistence.MONGO;
     }
 
+    /** The MongoDB bundle in Kotlin: the same layered code, written in Kotlin. */
+    public static final String MONGO_BUNDLE_KT = "mongo-springboot-kt";
+
     /**
      * Why an architecture and language cannot be generated as MongoDB code, or
-     * null when they can. MongoDB code is layered Java so far; the client
-     * (TypeScript) is shaped as for any server.
+     * null when they can. MongoDB code is layered, in Java or Kotlin, so far;
+     * the client (TypeScript) is shaped as for any server.
      */
     public static String mongoRefusal(Architecture architecture, Language language) {
         if (language == Language.TYPESCRIPT) return null;
-        if (language == Language.KOTLIN) {
-            return "MongoDB code is written in Java, layered; language = 'kotlin' is generated for JPA only";
-        }
         if (architecture == Architecture.DOMAIN_MODEL || architecture == Architecture.HEXAGONAL) {
             return "MongoDB code is written layered (architecture = 'layered'); architecture = '"
                     + (architecture == Architecture.HEXAGONAL ? "hexagonal" : "ddd")
@@ -165,6 +165,18 @@ public final class RulesConfig {
     }
 
     /**
+     * As mongoBundleOf, for the language being written: a Kotlin run reads
+     * the Kotlin layered bundles (jpa-springboot-kt, mongo-springboot-kt) as
+     * the Kotlin MongoDB one. Null for any other name.
+     */
+    public static String mongoBundleOf(String bundle, Language language) {
+        if (language != Language.KOTLIN) return mongoBundleOf(bundle);
+        if (bundle == null) return null;
+        String name = bundle.trim();
+        return DEFAULT_BUNDLE_KT.equals(name) || MONGO_BUNDLE_KT.equals(name) ? MONGO_BUNDLE_KT : null;
+    }
+
+    /**
      * The persistence the rule engine writes for a domain's mode, or null
      * when the mode names none.
      *
@@ -214,7 +226,7 @@ public final class RulesConfig {
         }
         String refusal = mongoRefusal(architecture, language);
         if (refusal != null) throw new IllegalArgumentException(refusal + ".");
-        return MONGO_BUNDLE;
+        return language == Language.KOTLIN ? MONGO_BUNDLE_KT : MONGO_BUNDLE;
     }
 
     /**
@@ -256,21 +268,6 @@ public final class RulesConfig {
         }
     }
 
-    /** The bundles written in Java: every one but the Kotlin and TypeScript ones. */
-    private static final String[] JAVA_BUNDLES = {
-        DEFAULT_BUNDLE,
-        DEFAULT_BUNDLE_V3,
-        "ddd-springboot",
-        "hexagonal-springboot",
-        MYBATIS_BUNDLE,
-        MYBATIS_DDD_BUNDLE,
-        MYBATIS_HEXAGONAL_BUNDLE,
-        MONGO_BUNDLE
-    };
-
-    /** The Kotlin bundles. */
-    private static final String[] KOTLIN_BUNDLES = {DEFAULT_BUNDLE_KT, "ddd-springboot-kt", "hexagonal-springboot-kt"};
-
     /**
      * The rule set of a name (a set or a bundle) that writes Java and only
      * Java, or null when it has none - a Kotlin bundle, a language-neutral set
@@ -278,14 +275,17 @@ public final class RulesConfig {
      *
      * A set the Java bundles hold and the Kotlin ones do not is Java's: a
      * file shell, a Lombok value object. Asked of the bundles rather than
-     * listed, so a set joining them is placed by where it is put. The two
-     * Java shells no bundle names are said by name.
+     * listed - a Kotlin bundle is named -kt, the TypeScript one ts-, every
+     * other one is Java - so a set or a bundle joining them is placed by
+     * where it is put. The two Java shells no bundle names are said by name.
      */
     public static String javaOnlySetOf(RuleCatalog catalog, String name) {
         java.util.Set<String> kotlinSets = new java.util.HashSet<String>();
-        for (String b : KOTLIN_BUNDLES) kotlinSets.addAll(catalog.setNamesOf(b));
         java.util.Set<String> javaSets = new java.util.LinkedHashSet<String>();
-        for (String b : JAVA_BUNDLES) javaSets.addAll(catalog.setNamesOf(b));
+        for (String b : catalog.bundleNames()) {
+            if (b.endsWith("-kt")) kotlinSets.addAll(catalog.setNamesOf(b));
+            else if (!b.startsWith("ts-")) javaSets.addAll(catalog.setNamesOf(b));
+        }
         javaSets.add("jpa-identity");
         javaSets.add("jpa-service-compat");
         javaSets.removeAll(kotlinSets);

@@ -8,8 +8,11 @@ ${importList}
  * The wiring of a process manager, regenerated from the DSL on every build:
  * it reacts to ${reactsTo}. Each event arrives after its transaction has
  * committed, in a transaction of its own, and is handed to handle(...) in
- * ${ownerName}, which is yours. An event added to 'on' is a new handle(...)
- * the compiler asks for there; a name added to 'uses' is a property here.
+ * ${ownerName}, which is yours. An event added to 'on' puts an empty
+ * handle(...) there, merged into your edits, and the build passes; only a file
+ * the merge does not reach (KEPT, SKIP(user-owned)) fails to compile until you
+ * write it. A handle(...) you edited for an event removed from 'on' stays and
+ * fails to compile: delete it. A name added to 'uses' is a property here.
  */
 abstract class ${className} {
 

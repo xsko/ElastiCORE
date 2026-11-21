@@ -54,6 +54,8 @@ entities:
       name: string(100) @Column(name = "name", length = 100)
       price: Long @Column(name = "price")
       stock: Integer @Column(name = "stock")
+      description: string @Column(name = "description")
+      descriptionText: string @Column(name = "description_text")
 
   PurchaseOrder:
     meta: entity @java(io.elasticore.sample.mongo.shop.domain.model.PurchaseOrder) -- order

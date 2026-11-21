@@ -260,6 +260,13 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.base.HtmlRules();
             }
         });
+        // @encrypt fields kept encrypted in their column (the runtime's converter or type handler), blind indexes.
+        c.register("jpa-encrypt", new Factory() {
+            @Override
+            public CodeRules create() {
+                return new io.elasticore.base.model.pub.rules.base.EncryptRules();
+            }
+        });
         c.register("jpa-on-delete", new Factory() {
             @Override
             public CodeRules create() {
@@ -589,6 +596,7 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
+                "jpa-encrypt",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -632,6 +640,7 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
+                "jpa-encrypt",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -669,6 +678,7 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
+                "jpa-encrypt",
                 "mybatis-schema",
                 "port",
                 "proto",
@@ -708,6 +718,45 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
+                "jpa-encrypt",
+                "port",
+                "proto",
+                "grpc-stub");
+        // The same over MongoDB in Kotlin: the Kotlin file shells (entity,
+        // DTOs, enums, mapper) with the MongoDB entity mapping, repository and
+        // service, whose skeletons are under kt/ (mongo_*.tmpl).
+        c.bundle(
+                "mongo-springboot-kt",
+                "jpa-entity",
+                "mongo-entity-file",
+                "jpa-entity-file-kt",
+                "jpa-dto",
+                "jpa-dto-file-kt",
+                "jpa-searchdto",
+                "jpa-searchdto-file-kt",
+                "jpa-enum-kt",
+                "jpa-views",
+                "jpa-support-types",
+                "mongo-repository",
+                "mybatis-search",
+                "jpa-repository-helper",
+                "jpa-mapper",
+                "jpa-mapper-assemble-kt",
+                "jpa-mapper-file",
+                "mybatis-mapper-members",
+                "mongo-service-file",
+                "spring-service-extend",
+                "spring-controller",
+                "spring-api-errors",
+                "spring-graphql",
+                "jpa-write-guard",
+                "jpa-value-object-boundary",
+                "jpa-service-access",
+                "spring-signin-refresh",
+                "jpa-on-delete",
+                "jpa-count",
+                "jpa-html",
+                "jpa-encrypt",
                 "port",
                 "proto",
                 "grpc-stub");
@@ -790,6 +839,7 @@ public final class RuleCatalog {
                 "jpa-on-delete",
                 "jpa-count",
                 "jpa-html",
+                "jpa-encrypt",
                 "jpa-views",
                 "jpa-support-types");
 
