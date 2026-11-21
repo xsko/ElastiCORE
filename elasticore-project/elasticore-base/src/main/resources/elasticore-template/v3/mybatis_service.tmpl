@@ -193,7 +193,7 @@ public class ${className} {
         ${entityClassName} entity = ${cmdRef}.findById(${pkDtoInfo}).map(this::loaded).orElse(null);
         ${accessUpdate}
         if (entity == null)
-            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${membersBefore}
+            throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${maskKeep}${membersBefore}
         ${mapperName}.mapping(dto, entity, ${isSkipNull});
         ${deriveBeforeSave}
         beforeSave(entity, dto);

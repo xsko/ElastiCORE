@@ -355,7 +355,8 @@ public abstract class ShopApi {
                 jdbc.queryForObject("SELECT serial_no_bidx FROM gadget WHERE gadget_id = ?", String.class, id));
 
         JsonNode read = body(perform(get(API + "/gadget/" + id), 200));
-        assertEquals(dashed, read.get("serialNo").asText(), read.toString());
+        // Also @Mask(CARD): the response shows the first and the last four digits.
+        assertEquals(dashed.substring(0, 5) + "****" + dashed.substring(9), read.get("serialNo").asText(), read.toString());
         assertFalse(read.has("serialNoBidx"), read.toString());
 
         assertEquals(2, total("gadget", "{\"serialNo\":\"" + serial + "\"}"));
@@ -371,6 +372,51 @@ public abstract class ShopApi {
                 .content("[{\"gadgetId\":" + id + ",\"name\":\"Sealed\",\"serialNo\":\"" + serial + "8\"}]"), 200);
         assertEquals(0, total("gadget", "{\"serialNo\":\"" + dashed + "\"}"));
         assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "8\"}"));
+    }
+
+    /**
+     * Issue 270: serialNo is @encrypt and @Mask(CARD). The read DTO sent back as it is carries the masked text, which
+     * is the stored value - decrypted by the type handler - masked: PUT and PUT /batch keep the stored value and its
+     * index. A new value is written, and so is masked text that is not the stored value masked.
+     */
+    @Test
+    public void aMaskedColumnSentBackAsShownKeepsTheStoredValue() throws Exception {
+        String serial = "66" + String.format("%010d", Math.abs(System.nanoTime() % 10_000_000_000L));
+        String dashed = serial.substring(0, 4) + "-" + serial.substring(4, 8) + "-" + serial.substring(8);
+        String masked = dashed.substring(0, 5) + "****" + dashed.substring(9);
+        long id = id(create("gadget", "{\"name\":\"Masked\",\"serialNo\":\"" + dashed + "\"}"), "gadgetId");
+
+        com.fasterxml.jackson.databind.node.ObjectNode read =
+                (com.fasterxml.jackson.databind.node.ObjectNode) body(perform(get(API + "/gadget/" + id), 200));
+        assertEquals(masked, read.get("serialNo").asText(), read.toString());
+
+        read.put("name", "Masked renamed");
+        JsonNode updated = body(perform(put(API + "/gadget").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(read)), 200));
+        assertEquals("Masked renamed", updated.get("name").asText(), updated.toString());
+        assertEquals(masked, updated.get("serialNo").asText(), updated.toString());
+        assertEquals(dashed, io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(
+                jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id)));
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "\"}"));
+
+        read.put("name", "Masked batched");
+        perform(put(API + "/gadget/batch").contentType(MediaType.APPLICATION_JSON)
+                .content("[" + json.writeValueAsString(read) + "]"), 200);
+        assertEquals(dashed, io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(
+                jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id)));
+        assertEquals(1, total("gadget", "{\"serialNo\":\"" + serial + "\"}"));
+
+        read.put("serialNo", serial + "7");
+        perform(put(API + "/gadget").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(read)), 200);
+        assertEquals(serial + "7", io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(
+                jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id)));
+        assertEquals(0, total("gadget", "{\"serialNo\":\"" + serial + "\"}"));
+
+        // The old masked text is not the new value masked: written as sent, as any other text.
+        read.put("serialNo", masked);
+        perform(put(API + "/gadget").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(read)), 200);
+        assertEquals(masked, io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(
+                jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id)));
     }
 
     // ---- helpers ------------------------------------------------------------------
