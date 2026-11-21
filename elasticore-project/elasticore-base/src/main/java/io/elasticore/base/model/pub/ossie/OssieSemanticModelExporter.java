@@ -331,7 +331,11 @@ public final class OssieSemanticModelExporter {
         }
         if (description != null)
             b.append("    description: ").append(yaml(description)).append('\n');
-        List<String> terms = termsOf(entity.getMetaInfo().getMetaAnnotationValue("terms"));
+        List<String> terms = withTranslations(
+                termsOf(entity.getMetaInfo().getMetaAnnotationValue("terms")),
+                entity.getMetaInfo().getMetaAnnotationMap() == null
+                        ? null
+                        : entity.getMetaInfo().getMetaAnnotationMap().get("label"));
         if (!terms.isEmpty())
             b.append("    ai_context:\n      synonyms: ").append(list(terms)).append('\n');
 
@@ -700,7 +704,7 @@ public final class OssieSemanticModelExporter {
             b.append("        description: ").append(yaml(description)).append('\n');
         }
         String codes = stored == null ? null : stored.codes();
-        List<String> terms = termsOf(f.getAnnotationValue("terms"));
+        List<String> terms = withTranslations(termsOf(f.getAnnotationValue("terms")), f.getAnnotation("label"));
         if (!terms.isEmpty()) {
             b.append("        ai_context:\n");
             if (codes != null) b.append("          instructions: ").append(yaml(codes)).append('\n');
@@ -1085,6 +1089,20 @@ public final class OssieSemanticModelExporter {
     /** @terms(order, purchase): the business's words for a thing, as Ossie synonyms. */
     private static List<String> termsOf(String value) {
         return value == null ? new ArrayList<String>() : OssieMetrics.terms("@terms(" + value + ")");
+    }
+
+    /**
+     * The business's words, then the label in each other language
+     * (@label(en="Unit cost")): another name the same thing is asked by, so a
+     * question in that language finds it. Each once.
+     */
+    private static List<String> withTranslations(List<String> terms, io.elasticore.base.model.core.Annotation label) {
+        List<String> out = new ArrayList<String>(terms);
+        for (String t :
+                io.elasticore.base.model.core.LabelTranslations.of(label).values()) {
+            if (!out.contains(t)) out.add(t);
+        }
+        return out;
     }
 
     private static String list(List<String> items) {

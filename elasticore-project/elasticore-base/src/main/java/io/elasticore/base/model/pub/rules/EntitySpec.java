@@ -704,6 +704,24 @@ public final class EntitySpec {
                 : java.util.Collections.unmodifiableMap(props);
     }
 
+    /**
+     * The meta label in other languages, meta: entity @label(en="Pet") -- ...:
+     * language -> text, by language in name order; empty when none is written.
+     */
+    public java.util.Map<String, String> labelTranslations() {
+        return labelTranslations;
+    }
+
+    private java.util.Map<String, String> labelTranslations = java.util.Collections.emptyMap();
+
+    /** The meta label's translations, as the loader read them (LabelTranslations.of). */
+    public EntitySpec labelTranslations(java.util.Map<String, String> translations) {
+        this.labelTranslations = translations == null
+                ? java.util.Collections.<String, String>emptyMap()
+                : java.util.Collections.unmodifiableMap(new java.util.TreeMap<String, String>(translations));
+        return this;
+    }
+
     private final java.util.Map<String, java.util.List<String>> repeatedMeta =
             new java.util.LinkedHashMap<String, java.util.List<String>>();
 

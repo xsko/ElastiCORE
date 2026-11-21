@@ -1222,7 +1222,7 @@ validate 가 거절합니다(`ddl.databases` 에 oracle 이 있으면 경고) - 
 주석을 달든, 문장을 더하든, 줄을 고치든 종류는 상관없습니다. Since: 3.0.261030-rc5
 
 **대상**: 생성 파일 전부 - Java·Kotlin 소스, MyBatis 매퍼 XML, `orm.xml`(`mapping: xml`), `db/schema-{db}.sql`,
-`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, gRPC `.proto`, TypeScript 클라이언트(`.ts`).
+`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, `i18n/*-labels*.properties`, gRPC `.proto`, TypeScript 클라이언트(`.ts`).
 첫 줄 표시(`//ecd:`)가 붙지 않습니다 - `<!DOCTYPE mapper ...>` 나 `package` 가 그대로 첫 줄입니다. Flyway 마이그레이션은 한
 번 쓰면 다시 쓰지 않는 이력이고(9-1), `blueprint/schema.yml` 은 매번 새로 씁니다. 멀티 모듈에서 모듈이 프로젝트 폴더 밖에
 있으면 그 모듈의 파일은 첫 줄 표시로 다룹니다(`elasticore-rule-guide.md` 7.5).

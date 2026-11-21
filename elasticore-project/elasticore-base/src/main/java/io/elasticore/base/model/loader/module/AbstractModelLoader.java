@@ -427,6 +427,9 @@ public class AbstractModelLoader implements ConstantParam {
         fieldLine = replaceEnvVariables(fieldLine);
 
         boolean chk = false;
+        // Where the annotations built from the "--" comment start: what comes
+        // before is written by the developer, what comes after by this loader.
+        int fromComment = Integer.MAX_VALUE;
         int p0 = fieldLine.indexOf(" --");
         if(p0<0) {
             p0 = fieldLine.indexOf("--");
@@ -445,6 +448,7 @@ public class AbstractModelLoader implements ConstantParam {
                 comment = fieldLine.substring(p0+3).trim();
             if(!comment.isEmpty() && comment.indexOf("@")<0) {
                 fieldLine = fieldLine.substring(0,p0);
+                fromComment = fieldLine.length();
 
                 String label = comment;
                 String desc = null;
@@ -503,7 +507,18 @@ public class AbstractModelLoader implements ConstantParam {
                 annotation = Annotation.create(annotationName, annotationFullTxt, null);
             }
             else if (attributeParameters != null && !attributeParameters.isEmpty()) {
-                annotation = parseParameters(annotationName, attributeParameters);
+                // @label(en="Unit cost", ja=...) the developer wrote: the label in
+                // other languages. Never the @label built from "--": a comment
+                // such as "-- sum = price" is read as it always was.
+                if ("label".equals(annotationName) && matcher.start() < fromComment) {
+                    annotation = io.elasticore.base.model.core.LabelTranslations.parse(annotationName, attributeParameters);
+                    if (annotation == null && attributeParameters.indexOf('=') >= 0) {
+                        ConsoleLog.storeLog("DSL_WARN", String.format(
+                                "@label(%s): a key=value key is not a language tag (en, ja, pt-BR), so no part of it"
+                                        + " is a translation and it is read as before", attributeParameters));
+                    }
+                }
+                if (annotation == null) annotation = parseParameters(annotationName, attributeParameters);
             } else {
                 annotation = Annotation.create(annotationName);
 
@@ -516,6 +531,10 @@ public class AbstractModelLoader implements ConstantParam {
             }
 
         }
+        // "@label(en=Unit cost) -- Stueckpreis": the "--" text is the label, the
+        // explicit @label its translations - one label, not two.
+        Annotation merged = io.elasticore.base.model.core.LabelTranslations.merged(annotationMap.get("label"));
+        if (merged != null) annotationMap.put("label", merged);
         return annotationMap;
     }
 

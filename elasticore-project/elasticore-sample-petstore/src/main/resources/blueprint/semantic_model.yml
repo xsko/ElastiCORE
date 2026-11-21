@@ -75,7 +75,7 @@ datasets:
     primary_key: [item_id]
     description: "판매 단위 (Large, Male Puppy ...)"
     ai_context:
-      synonyms: ["pet", "반려동물", "상품"]
+      synonyms: ["pet", "반려동물", "상품", "Item for sale", "販売単位"]
     fields:
       - name: item_id
         expression:
@@ -97,8 +97,9 @@ datasets:
         expression:
           sql: "unit_cost"
         datatype: Decimal
+        description: "단가"
         ai_context:
-          synonyms: ["price", "가격"]
+          synonyms: ["price", "가격", "Unit cost", "単価"]
         nonportable_extensions:
           - vendor_name: ELASTICORE
             data: {"value_type": "money"}

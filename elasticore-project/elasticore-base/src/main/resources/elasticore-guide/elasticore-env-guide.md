@@ -1222,7 +1222,7 @@ You may edit a generated file. The next build **keeps your edits and also applie
 It does not matter whether you added a comment, added a statement, or changed a line. Since: 3.0.261030-rc5
 
 **Scope**: all generated files - Java and Kotlin sources, MyBatis mapper XML, `orm.xml` (`mapping: xml`), `db/schema-{db}.sql`,
-`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, gRPC `.proto`, the TypeScript client (`.ts`).
+`{domain}-schema.sql`, `*-http-services.properties`, `i18n/*-messages.properties`, `i18n/*-labels*.properties`, gRPC `.proto`, the TypeScript client (`.ts`).
 The first-line marker (`//ecd:`) is not added - `<!DOCTYPE mapper ...>` or `package` stays as the first line. A Flyway migration is a history that is not written again
 once written (9-1), and `blueprint/schema.yml` is rewritten every time. In a multi-module project, if a module is
 outside the project folder, that module's files are handled by the first-line marker (`elasticore-rule-guide.md` 7.5).

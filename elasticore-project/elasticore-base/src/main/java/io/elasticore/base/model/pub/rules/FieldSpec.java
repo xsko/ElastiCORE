@@ -152,6 +152,14 @@ public final class FieldSpec {
         return dslValueAny(DTO_TYPE);
     }
 
+    /**
+     * The label in other languages, @label(en="Unit cost"): language -> text,
+     * by language in name order; empty when none is written.
+     */
+    public java.util.Map<String, String> labelTranslations() {
+        return io.elasticore.base.model.core.LabelTranslations.of(field.getAnnotation("label"));
+    }
+
     /** The declared label alone, without the spec-level description. */
     public String dslLabel() {
         return dslValueAny(LABEL);
