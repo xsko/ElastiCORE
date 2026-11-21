@@ -4868,19 +4868,24 @@ public final class RulesGenRunner {
      * src/main/resources/i18n/<domain>-labels.properties and one
      * <domain>-labels_<language>.properties for each language a label is
      * written in (@label(en="Unit cost") -- ...): the model's labels as a
-     * resource bundle, beside the message bundle. Nothing when no label has a
+     * resource bundle, beside the message bundle; an enumeration's label_en
+     * columns count as translations too. Nothing when no label has a
      * translation, so a model without one writes what it always did.
      */
     private void writeLabels(String domainName, ArtifactTarget handler, ECoreModel model) {
         if (typescript || captured != null || model == null) return;
         java.util.Set<String> languages = io.elasticore.base.model.pub.rules.LabelCatalog.languages(model);
         if (languages.isEmpty()) return;
+        boolean constants = io.elasticore.base.model.pub.rules.LabelCatalog.hasConstants(model);
         java.util.List<String> all = new java.util.ArrayList<String>();
         all.add(null);
         all.addAll(languages);
         for (String language : all) {
             String text = io.elasticore.base.model.pub.rules.LabelCatalog.properties(
-                    domainName, language, io.elasticore.base.model.pub.rules.LabelCatalog.labels(model, language));
+                    domainName,
+                    language,
+                    io.elasticore.base.model.pub.rules.LabelCatalog.labels(model, language),
+                    constants);
             File file = new File(rootFor(handler) + "/src/main/resources/i18n/"
                     + io.elasticore.base.model.pub.rules.LabelCatalog.fileName(domainName, language) + ".properties");
             writeResource("labels", file, text);

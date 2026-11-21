@@ -1569,6 +1569,11 @@ public final class SpecFactory {
 
         spec.jsonField(model.getMetaInfo().getMetaAnnotationValue("json"));
         spec.dbField(model.getMetaInfo().getMetaAnnotationValue("db"));
+        // label_en, label_ja: the label column the screen shows, in other languages.
+        spec.labelTranslations(io.elasticore.base.model.pub.rules.EnumLabelColumns.translations(
+                model,
+                io.elasticore.base.model.pub.rules.EnumLabelColumns.labelColumn(
+                        model.getFieldItems().getItemList(), spec.jsonFieldName())));
         return spec;
     }
 

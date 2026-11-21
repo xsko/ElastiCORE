@@ -101,19 +101,42 @@ public class TypeScriptEnumRules implements CodeRules {
             out.append(String.format("    [%s.%s]: %s,%n", e.getName(), c.name(), RuleText.quote(text == null ? c.name() : text.trim())));
         }
         out.append("};");
+        translations(e, out);
         return out.toString();
     }
 
+    /**
+     * The label in other languages, from the enumeration's label_en, label_ja
+     * columns: by the same keys as XxxLabel, each language a key ("zh-TW"
+     * quoted). Nothing when the enumeration has no such column.
+     */
+    private void translations(EnumSpec e, StringBuilder out) {
+        java.util.Map<String, java.util.Map<String, String>> all = e.labelTranslations();
+        if (all.isEmpty()) return;
+        out.append(String.format(
+                "%n%n/** What a screen shows for each value in other languages: language -> label. */%n"));
+        out.append(String.format(
+                "export const %sLabels: Record<%s, Record<string, string>> = {%n", e.getName(), e.getName()));
+        for (EnumSpec.Constant c : e.constants()) {
+            java.util.Map<String, String> texts = all.get(c.name());
+            out.append(String.format(
+                    "    [%s.%s]: %s,%n",
+                    e.getName(),
+                    c.name(),
+                    TypeScriptDtoFileRules.languages(
+                            texts == null ? java.util.Collections.<String, String>emptyMap() : texts)));
+        }
+        out.append("};");
+    }
+
     private FieldSpec labelField(EnumSpec e, FieldSpec wire) {
-        for (FieldSpec f : e.fields()) {
-            if (f.hasDsl("label")) return f;
-        }
-        for (String name : new String[]{"label", "name", "desc", "description", "title"}) {
-            for (FieldSpec f : e.fields()) {
-                if (f != wire && f.name().equalsIgnoreCase(name)) return f;
-            }
-        }
-        return null;
+        java.util.List<io.elasticore.base.model.entity.Field> fields =
+                new java.util.ArrayList<io.elasticore.base.model.entity.Field>();
+        for (FieldSpec f : e.fields()) fields.add(f.raw());
+        io.elasticore.base.model.entity.Field label = io.elasticore.base.model.pub.rules.EnumLabelColumns.labelColumn(
+                fields, wire == null ? null : wire.name());
+        int at = fields.indexOf(label);
+        return at < 0 ? null : e.fields().get(at);
     }
 
     /** MASTER_CARD -> Master card. */

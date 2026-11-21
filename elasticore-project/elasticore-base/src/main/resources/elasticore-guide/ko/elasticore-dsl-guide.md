@@ -103,8 +103,8 @@ entity:
 ### 다른 언어의 라벨 (`@label(en=...)`)
 
 > **동작 범위:** 생성기가 쓰는 모든 모드·언어·아키텍처(JPA, MyBatis, MongoDB; Java, Kotlin) - 모델 정보이다.
-> 라벨 번들은 v3 번들이 API 가 있는 도메인(`@expose`)에 쓰고, TypeScript 클라이언트의 `labels` 는 `ts-model`,
-> synonyms 는 `ossie-export` 가 쓴다.
+> 라벨 번들은 v3 번들이 API 가 있는 도메인(`@expose`)에 쓰고, TypeScript 클라이언트의 `labels`, `XxxMeta`,
+> `XxxLabels` 는 `ts-model`, synonyms 는 `ossie-export` 가 쓴다(enumeration 컬럼은 아직 아님).
 
 `--` 텍스트가 도메인 언어의 라벨이다. 같은 라벨을 다른 언어로는 같은 줄의 `@label` 에 `언어=텍스트` 로 쓴다 -
 필드 줄과 `meta:` 줄(entity, DTO, enumeration) 모두:
@@ -144,7 +144,8 @@ entity:
    Item.name=Name
    Item.unitCost=Unit cost
    ```
-   키: 타입의 라벨은 `Type`, 필드의 라벨은 `Type.field` (entity 와 DTO 의 필드, enumeration 은 자체 라벨만). 번역이 없는 라벨은
+   키: 타입의 라벨은 `Type`, 필드의 라벨은 `Type.field` (entity 와 DTO 의 필드, enumeration 은 자체 라벨),
+   `label_en` 컬럼이 있는 enumeration 의 상수는 `Enum.CONSTANT` (아래). 번역이 없는 라벨은
    `ResourceBundle` 처럼 기본 파일로 간다. 둘 다 생성 파일이다 - 파일이 아니라 DSL 을 고친다. Spring 은 다른 번들처럼
    읽는다 - `spring.messages.basename` 에 이름을 더하고(`messages,i18n/petstore-labels`) `MessageSource` 에
    요청의 `Locale` 로 `Item.unitCost` 를 물으면 된다(서버가 그리는 화면, 내보내기 파일의 열 제목 등).
@@ -156,13 +157,56 @@ entity:
    unitCost: { label: "단가", labels: { en: "Unit cost", ja: "単価", "zh-TW": "單價" }, required: true },
    ```
    화면은 `ItemFields.unitCost.labels.en` 을 쓰고, 번역이 없는 언어에서는 `label` 을 쓴다.
+   타입 자체의 라벨은 `XxxMeta` (`XxxFields` 와 같은 `Xxx`)이고, 타입에 `meta:` 라벨이 있을 때만 쓴다 - 자기 라벨이
+   없는 DTO 는 엔티티의 것을 쓴다. 라벨에 번역이 없으면 `labels` 는 `{}` 이다:
+   ```ts
+   export const ItemMeta: { label: string; labels: Record<string, string> } = { label: "판매 단위", labels: { en: "Item for sale", ja: "販売単位" } };
+   ```
 3. **Apache Ossie 시맨틱 모델** - 번역은 필드(와 데이터셋)의 `ai_context.synonyms` 에 `@terms` 단어 다음으로 들어간다.
    그 언어로 물어도 같은 필드를 찾는다. `description` 은 `--` 라벨 그대로다.
 
 번역되지 않고 도메인 언어로 남는 것: Javadoc, `@Schema(description)`, `@Comment` 와 DB 컬럼 주석, 서버가 쓰는 오류
 문장(`"<label> is not in the expected form"`) - 응답 문장은 메시지 번들로 번역한다(`elasticore-rule-guide.md`,
-"오류 코드와 다국어"). enumeration 의 상수 줄(`SHIPPED: SHP, Shipped`)에는 `@label` 을 쓰지 않는다 - 언어별 라벨이
-필요하면 enumeration 의 컬럼으로 둔다.
+"오류 코드와 다국어"). 화면이 그 문장을 자기 말로 쓰려면 TypeScript 클라이언트의
+`validateXxxCodes` 를 읽는다(같은 절).
+
+#### enumeration 의 다른 언어 라벨 (`label_en` 컬럼)
+
+enumeration 의 상수 줄(`SHIPPED: SHP, Shipped`)에는 `@label` 을 쓰지 않는다: 다른 언어의 라벨은 enumeration 의
+컬럼이고, 이름은 라벨 컬럼을 따른다 - `<라벨 컬럼>_<언어>`:
+
+```yaml
+enumeration:
+  OrderStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:       string(3) @code
+      name:       string(30)
+      name_en:    string(30)
+      name_zh_TW: string(30)
+    enum:
+      PENDING: PEN, 대기, Pending, 待處理
+      SHIPPED: SHP, 배송, Shipped
+```
+
+- 라벨 컬럼은 TypeScript 클라이언트의 `XxxLabel` 이 보여 주는 컬럼이다: `@label` 이 붙은 필드(enumeration 필드의 `--`
+  주석도 그렇다), 없으면 이름이 `label`, `name`, `desc`, `description`, `title` 인 첫 필드.
+- 스네이크 꼴만 읽는다: `name_en`, `name_ja`, `name_pt_BR` (`pt-BR`). `nameEn` 은 보통 컬럼이다. 언어는 `@label(xx=...)`
+  키처럼 읽으므로 `name_id` 는 인도네시아어, `name_no` 는 노르웨이어다 - 그런 컬럼은 다른 이름으로 둔다. 언어 태그가
+  아닌 접미사(`name_long`)는 보통 컬럼으로 남고, 빌드가 경고한다(`DSL_WARN`).
+- 컬럼을 빠뜨린 줄(위의 `SHIPPED` 는 `zh-TW` 가 없다)은 그 언어의 라벨이 없다: 라벨 컬럼을 보여 준다.
+  컬럼은 enumeration 의 컬럼 그대로다 - Java, Kotlin enum 에는 속성으로 들어간다.
+- TypeScript 클라이언트는 그대로인 `OrderStatusLabel` 옆에 같은 키로 `OrderStatusLabels` 를 받는다:
+  ```ts
+  export const OrderStatusLabels: Record<OrderStatus, Record<string, string>> = {
+      [OrderStatus.PENDING]: { en: "Pending", "zh-TW": "待處理" },
+      [OrderStatus.SHIPPED]: { en: "Shipped" },
+  };
+  ```
+- 라벨 번들에는 `OrderStatus.PENDING` (상수 이름이고, 저장 코드 `PEN` 이 아니다)이 들어간다 - 기본 파일에는 라벨 컬럼,
+  언어별 파일에는 그 번역. 이런 컬럼만 있어도 번들을 쓴다.
+- 아직 아님: Apache Ossie 내보내기와 메시지 번들은 라벨 컬럼만 읽는다.
+- 이런 컬럼이 없는 enumeration 은 전과 똑같이 생성된다.
 
 ### Meta 어노테이션
 | 어노테이션 | 설명 |

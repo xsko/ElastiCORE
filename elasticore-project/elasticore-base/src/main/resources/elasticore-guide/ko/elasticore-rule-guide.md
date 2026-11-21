@@ -1165,6 +1165,10 @@ HTTP/1.1 409                       (헤더 없음)
 `[{ "field": "lines", "code": "Size", "message": "장바구니가 비어 있습니다" }]`. 필드 메시지는 Spring 의
 메시지 코드(`Size.lines`, `NotNull.customerDTO.login`, `NotNull` ...)로 같은 번들에서 찾습니다.
 생성된 TypeScript 클라이언트의 `ApiError` 는 `code` 와 `fieldErrors` (필드 -> 메시지)를 읽습니다.
+`validateXxx` (필드 -> 메시지, 그대로) 옆의 `validateXxxCodes(value, partial)` 는 보내기 전에 같은 검사를 하고
+`fieldErrors` 가 부르는 이름으로 답합니다: `[{ field: "name", code: "Size", values: { max: 30 } }]` - `NotNull`, `Size`
+(`min`, `max`), `Min`/`Max` (`value`, 소수형이나 소수 값이면 `DecimalMin`/`DecimalMax`), `Pattern` (`regexp`), `Email`.
+다른 언어의 화면은 코드와 값으로 자기 말로 씁니다.
 본문 없는 2xx - 204, 또는 `PUT /batch` 의 200(`ResponseEntity.ok().build()`) - 는 클라이언트에서 `undefined`(조회는 `null`)이고, JSON 파싱 오류가 아닙니다.
 
 - 런타임: `io.elasticore.springboot3.validation.ErrorMessages` (`text`, 서비스 측 검증의 `violation`),

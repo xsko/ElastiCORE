@@ -83,6 +83,26 @@ public final class EnumSpec {
         return jsonFieldName;
     }
 
+    private Map<String, Map<String, String>> labelTranslations = java.util.Collections.emptyMap();
+
+    /**
+     * Each constant's label in other languages, from the columns named
+     * {@code <label column>_<language>} (label_en, name_ja): constant name ->
+     * language -> text. Empty when the enumeration has no such column
+     * (EnumLabelColumns).
+     */
+    public Map<String, Map<String, String>> labelTranslations() {
+        return labelTranslations;
+    }
+
+    /** The constants' translations, as EnumLabelColumns read them. */
+    public EnumSpec labelTranslations(Map<String, Map<String, String>> translations) {
+        this.labelTranslations = translations == null
+                ? java.util.Collections.<String, Map<String, String>>emptyMap()
+                : java.util.Collections.unmodifiableMap(new LinkedHashMap<String, Map<String, String>>(translations));
+        return this;
+    }
+
     public String dbFieldName() {
         return dbFieldName;
     }
