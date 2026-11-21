@@ -28,9 +28,6 @@ public final class LabelTranslations {
 
     /** A language tag as a key: a language, then optional script, region or variant parts. */
     private static final Pattern LANGUAGE = Pattern.compile("[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*");
-
-    private static final Pattern SEPARATOR = Pattern.compile("[-_]");
-
     /**
      * The key as one form of the tag: the language in lower case, a script
      * title-cased, a region in upper case, joined with '-' (pt_BR -> pt-BR,
@@ -38,10 +35,17 @@ public final class LabelTranslations {
      * the bundle file is the name a ResourceBundle looks for.
      */
     public static String normalized(String key) {
-        String[] parts = SEPARATOR.split(key);
-        StringBuilder sb = new StringBuilder(parts[0].toLowerCase(Locale.ROOT));
-        for (int i = 1; i < parts.length; i++) {
-            String p = parts[i];
+        List<String> parts = new ArrayList<String>();
+        int from = 0;
+        for (int i = 0; i <= key.length(); i++) {
+            if (i == key.length() || key.charAt(i) == '-' || key.charAt(i) == '_') {
+                parts.add(key.substring(from, i));
+                from = i + 1;
+            }
+        }
+        StringBuilder sb = new StringBuilder(parts.get(0).toLowerCase(Locale.ROOT));
+        for (int i = 1; i < parts.size(); i++) {
+            String p = parts.get(i);
             sb.append('-');
             if (p.length() == 4 && Character.isLetter(p.charAt(0))) {
                 sb.append(p.substring(0, 1).toUpperCase(Locale.ROOT))
