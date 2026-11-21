@@ -1055,6 +1055,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `maxLength()` | `string(100)` 또는 `@length` (없으면 0) |
 | `description()` | `--` 뒤의 설명 |
 | `label()` | `--` 설명, 없으면 `@label` |
+| `labelTranslations()` | 다른 언어의 라벨 `@label(en=...)`: 언어 -> 텍스트, 언어 이름순. 없으면 빈 맵 (`EntitySpec` 에도 있음, `meta:` 라벨) |
 | `dbColumnName()` | `@column` 또는 snake_case 이름 |
 | `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | 컬렉션 / 다른 엔티티 참조 / 기본 타입 / 문자열 |
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |

@@ -42,8 +42,31 @@ public class Annotation {
         this.siblings.add(this);
     }
 
+    /** True for a label whose parameters are its translations (LabelTranslations). */
+    private boolean translatedLabel;
+
+    private Annotation(String name, String value, Properties properties) {
+        this(name, properties);
+        this.value = value;
+        this.translatedLabel = true;
+    }
+
     public static Annotation create(String name) {
         return new Annotation(name);
+    }
+
+    /**
+     * A label and its translations: the value and language=text parameters
+     * together (LabelTranslations). {@link #create(String, String, Properties)}
+     * keeps only the parameters when both are given, as it always has.
+     */
+    public static Annotation createTranslatedLabel(String name, String value, Properties translations) {
+        return new Annotation(name, value, translations);
+    }
+
+    /** True when the parameters are the label in other languages, not 2.x key=value pairs. */
+    public boolean isTranslatedLabel() {
+        return translatedLabel;
     }
 
     public static Annotation create(String name, String value) {

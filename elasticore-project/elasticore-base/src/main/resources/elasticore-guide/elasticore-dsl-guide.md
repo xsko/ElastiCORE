@@ -100,6 +100,70 @@ entity:
 - `field.getDescription()` -> returns the `--` comment text (label first, falls back to desc if there is no label). Supported from `v2.2.260421-2+`
 - `field.getAnnotationValue("label")`, `field.getAnnotationValue("desc")` -> read each annotation value directly (the existing way, still valid)
 
+### A label in other languages (`@label(en=...)`)
+
+> **Works in:** every mode, language and architecture the generator writes (JPA, MyBatis, MongoDB; Java, Kotlin) - it is model information.
+> The label bundle is written by the v3 bundles for a domain that has an API (`@expose`); the `labels` of the
+> TypeScript client by `ts-model`; the synonyms by `ossie-export`.
+
+The `--` text is the label in the domain's own language. Write the same label in other languages as `language=text`
+in `@label` on the same line - on a field line and on a `meta:` line (entity, DTO, enumeration):
+
+```yaml
+entity:
+  Item:
+    meta: entity @root @expose(50) @label(en=Item for sale, ja=販売単位) -- 판매 단위
+    fields:
+      name:     string(30)!   @label(en=Name) -- 이름
+      unitCost: money(10.2)!  @label(en=Unit cost, ja=単価, zh-TW=單價) -- 단가 | VAT 포함 판매가
+```
+
+- The key is a language tag: `en`, `ja`, `pt-BR`, `zh-TW`. It is read in one form - `pt_BR` and `PT-br` are `pt-BR`,
+  the TypeScript key; the bundle file takes it with `_` (`_pt_BR`), the name a `ResourceBundle` looks for.
+- A value runs to the next comma, spaces and apostrophes included (`en=Owner's name`); quote it when it holds a comma
+  (`en="Cost, per unit"`). Several `@label(...)` on one line are one label.
+- Only a `@label` you write is read this way, never the `--` text: `-- sum = price * qty` is a label, as before. A
+  `@label(...)` with a key that is not a language tag (`@label(en=Unit cost, note=x)`) is read as in 2.x, and the build
+  warns (`DSL_WARN`).
+- Write only the languages you have. A field without `@label(...)` keeps its `--` label in every language.
+- The `--` label and `| description` are read as before; `field.getAnnotationValue("label")` is still `단가`, and
+  `field.getAnnotationValue("label.en")` is `Unit cost`. A rule reads all of them with `FieldSpec.labelTranslations()`
+  and `EntitySpec.labelTranslations()` (language -> text).
+- A domain with no translation generates exactly what it did before.
+
+What it generates:
+
+1. **The label bundle** - beside the message bundle (`i18n/<domain>-messages.properties`):
+   ```properties
+   # src/main/resources/i18n/petstore-labels.properties - every label, as the "--" text says it
+   Item=판매 단위
+   Item.name=이름
+   Item.unitCost=단가
+   # petstore-labels_en.properties, _ja, _zh_TW - the labels written in that language
+   Item=Item for sale
+   Item.name=Name
+   Item.unitCost=Unit cost
+   ```
+   Keys: `Type` for a type's label, `Type.field` for a field's (entities, DTOs; an enumeration's own label). A label
+   with no translation falls back to the default file, as a `ResourceBundle` does. Both are generated: change the DSL,
+   not the files. Spring reads them as any bundle - add the basename to `spring.messages.basename`
+   (`messages,i18n/petstore-labels`) and ask `MessageSource` for `Item.unitCost` in the request's `Locale`, for example
+   for a server-rendered page or an export's column headers. Set `spring.messages.fallback-to-system-locale: false`
+   too: with Spring Boot's default (`true`), a language with no file of its own gets the file of the server machine's
+   language (English on an English server), not the `--` label.
+2. **The TypeScript client** - each field's entry in `XxxFields` gets `labels`:
+   ```ts
+   unitCost: { label: "단가", labels: { en: "Unit cost", ja: "単価", "zh-TW": "單價" }, required: true },
+   ```
+   A screen shows `ItemFields.unitCost.labels.en`, and `label` for a language the field has no translation in.
+3. **The Apache Ossie semantic model** - the translations are the field's (and the dataset's) `ai_context.synonyms`,
+   after the `@terms` words, so a question in that language finds the same field. The `description` stays the `--` label.
+
+Not translated, they stay in the domain's language: Javadoc, `@Schema(description)`, `@Comment` and the database column
+comments; and the error sentences the server writes (`"<label> is not in the expected form"`) - translate a response's
+sentences with the message bundle (`elasticore-rule-guide.md`, "Error codes and languages"). The constants of an
+enumeration (`SHIPPED: SHP, Shipped`) take no `@label`: a label column per language is a column of the enumeration.
+
 ### Meta annotations
 | Annotation | Description |
 |-----------|------|
