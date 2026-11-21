@@ -7,7 +7,7 @@ This repository holds the 3.x line. The 2.x line (2.2) is maintained outside it;
 | Branch | Line | What goes in |
 |---|---|---|
 | `main` | 3.x mainline | Features and fixes through pull requests whose CI passes |
-| `release/3.0` | 3.0 maintenance | Cut from `main` at the first stable 3.0 release, 3.0.261119. Bug and security fixes only; tags `v3.0.YYMMDD` |
+| `release/3.0` | 3.0 maintenance | Cut from `main` at the first stable 3.0 release, 3.0.261119. Bug and security fixes, and from 3.0.261121 the features too: a change goes to both lines; tags `v3.0.YYMMDD` |
 | `feature/*`, `fix/*` | - | Branched from the line they change; a 3.0 fix branches from `release/3.0` |
 | `version/*` | - | One release's version commit, or the next `-SNAPSHOT`, merged into the line it is for (`RELEASING.md`) |
 
