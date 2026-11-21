@@ -103,8 +103,8 @@ entity:
 ### A label in other languages (`@label(en=...)`)
 
 > **Works in:** every mode, language and architecture the generator writes (JPA, MyBatis, MongoDB; Java, Kotlin) - it is model information.
-> The label bundle is written by the v3 bundles for a domain that has an API (`@expose`); the `labels` of the
-> TypeScript client by `ts-model`; the synonyms by `ossie-export`.
+> The label bundle is written by the v3 bundles for a domain that has an API (`@expose`); the `labels`, `XxxMeta` and
+> `XxxLabels` of the TypeScript client by `ts-model`; the synonyms by `ossie-export` (not yet for enumeration columns).
 
 The `--` text is the label in the domain's own language. Write the same label in other languages as `language=text`
 in `@label` on the same line - on a field line and on a `meta:` line (entity, DTO, enumeration):
@@ -144,7 +144,8 @@ What it generates:
    Item.name=Name
    Item.unitCost=Unit cost
    ```
-   Keys: `Type` for a type's label, `Type.field` for a field's (entities, DTOs; an enumeration's own label). A label
+   Keys: `Type` for a type's label, `Type.field` for a field's (entities, DTOs; an enumeration's own label),
+   `Enum.CONSTANT` for an enumeration's constants when it has `label_en` columns (below). A label
    with no translation falls back to the default file, as a `ResourceBundle` does. Both are generated: change the DSL,
    not the files. Spring reads them as any bundle - add the basename to `spring.messages.basename`
    (`messages,i18n/petstore-labels`) and ask `MessageSource` for `Item.unitCost` in the request's `Locale`, for example
@@ -156,13 +157,56 @@ What it generates:
    unitCost: { label: "단가", labels: { en: "Unit cost", ja: "単価", "zh-TW": "單價" }, required: true },
    ```
    A screen shows `ItemFields.unitCost.labels.en`, and `label` for a language the field has no translation in.
+   The type's own label is `XxxMeta` (the same `Xxx` as `XxxFields`), written only when the type has a `meta:` label - a
+   DTO without one of its own takes its entity's; `labels` is `{}` when the label has no translation:
+   ```ts
+   export const ItemMeta: { label: string; labels: Record<string, string> } = { label: "판매 단위", labels: { en: "Item for sale", ja: "販売単位" } };
+   ```
 3. **The Apache Ossie semantic model** - the translations are the field's (and the dataset's) `ai_context.synonyms`,
    after the `@terms` words, so a question in that language finds the same field. The `description` stays the `--` label.
 
 Not translated, they stay in the domain's language: Javadoc, `@Schema(description)`, `@Comment` and the database column
 comments; and the error sentences the server writes (`"<label> is not in the expected form"`) - translate a response's
-sentences with the message bundle (`elasticore-rule-guide.md`, "Error codes and languages"). The constants of an
-enumeration (`SHIPPED: SHP, Shipped`) take no `@label`: a label column per language is a column of the enumeration.
+sentences with the message bundle (`elasticore-rule-guide.md`, "Error codes and languages"); a screen that says them in
+its own words reads `validateXxxCodes` of the TypeScript client (same section).
+
+#### An enumeration's labels in other languages (`label_en` columns)
+
+The constants of an enumeration (`SHIPPED: SHP, Shipped`) take no `@label`: the label in another language is a column
+of the enumeration, named after its label column - `<label column>_<language>`:
+
+```yaml
+enumeration:
+  OrderStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:       string(3) @code
+      name:       string(30)
+      name_en:    string(30)
+      name_zh_TW: string(30)
+    enum:
+      PENDING: PEN, 대기, Pending, 待處理
+      SHIPPED: SHP, 배송, Shipped
+```
+
+- The label column is the one `XxxLabel` of the TypeScript client shows: the field marked `@label` (a `--` comment on
+  an enumeration field is one), else the first named `label`, `name`, `desc`, `description` or `title`.
+- Snake form only: `name_en`, `name_ja`, `name_pt_BR` (`pt-BR`); `nameEn` is an ordinary column. The language is read as
+  an `@label(xx=...)` key is, so `name_id` is Indonesian and `name_no` Norwegian - name such a column otherwise. A suffix
+  that is not a language tag (`name_long`) leaves an ordinary column, and the build warns (`DSL_WARN`).
+- A line that leaves a column out (`SHIPPED` has no `zh-TW` above) has no label in that language: show the label column.
+  The columns stay columns of the enumeration - the Java and Kotlin enums get them as properties.
+- The TypeScript client gets `OrderStatusLabels` beside `OrderStatusLabel`, which is unchanged, by the same keys:
+  ```ts
+  export const OrderStatusLabels: Record<OrderStatus, Record<string, string>> = {
+      [OrderStatus.PENDING]: { en: "Pending", "zh-TW": "待處理" },
+      [OrderStatus.SHIPPED]: { en: "Shipped" },
+  };
+  ```
+- The label bundle gets `OrderStatus.PENDING` - the constant's name, not the stored code `PEN` - with the label column in
+  the default file and each translation in its language's file. Such columns alone are reason to write the bundle.
+- Not yet: the Apache Ossie export and the message bundle read the label column only.
+- An enumeration without such a column generates exactly what it did before.
 
 ### Meta annotations
 | Annotation | Description |

@@ -28,6 +28,14 @@ public final class LabelTranslations {
 
     /** A language tag as a key: a language, then optional script, region or variant parts. */
     private static final Pattern LANGUAGE = Pattern.compile("[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*");
+
+    /**
+     * Whether a key is read as a language tag, as an @label(xx=...) key is:
+     * en, ja, pt_BR, zh-TW are; long, short, desc are not.
+     */
+    public static boolean isLanguage(String key) {
+        return key != null && LANGUAGE.matcher(key).matches();
+    }
     /**
      * The key as one form of the tag: the language in lower case, a script
      * title-cased, a region in upper case, joined with '-' (pt_BR -> pt-BR,

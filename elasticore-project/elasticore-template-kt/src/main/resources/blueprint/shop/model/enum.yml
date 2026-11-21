@@ -4,14 +4,17 @@ enumeration:
     fields:
       code: string(3) @code
       name: string(30)
+      # The label in other languages: OrderStatusLabels in the TypeScript client, the label bundle.
+      name_ko: string(30)
+      name_zh_TW: string(30)
     enum:
-      PENDING: PEN,Pending
-      CONFIRMED: CFM,Confirmed
-      PROCESSING: PRC,Processing
-      SHIPPED: SHP,Shipped
-      DELIVERED: DLV,Delivered
-      CANCELLED: CAN,Cancelled
-      REFUNDED: RFD,Refunded
+      PENDING: PEN,Pending,대기,待處理
+      CONFIRMED: CFM,Confirmed,확인,已確認
+      PROCESSING: PRC,Processing,처리 중,處理中
+      SHIPPED: SHP,Shipped,배송,已出貨
+      DELIVERED: DLV,Delivered,배송 완료,已送達
+      CANCELLED: CAN,Cancelled,취소,已取消
+      REFUNDED: RFD,Refunded,환불
 
   PaymentMethod:
     meta: enum @db(code) @json(code)

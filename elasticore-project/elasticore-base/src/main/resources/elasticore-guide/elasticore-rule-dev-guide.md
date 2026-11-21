@@ -1063,7 +1063,7 @@ Within one file, the order is `HEAD` file rules -> field rules (for each field) 
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
 
 `DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")` (`null` if missing), `config("a.b")`, `isOn("a.b")`.
-`EnumSpec`: `getName()`, `constants()` -> `name()`, `values()`, `fields()`.
+`EnumSpec`: `getName()`, `constants()` -> `name()`, `values()`, `fields()`, `labelTranslations()` (constant -> language -> label, from the `label_en` columns; empty when none).
 `PortSpec`: `getName()`, `protocol()`, `url()`, `operations()` -> `name()`, `httpMethod()`, `url()`, `returnType()`, `params()`.
 
 ### `SourceCode` - the file being built now, returned by `ctx(spec)`
