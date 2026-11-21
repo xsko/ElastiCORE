@@ -419,6 +419,9 @@ public final class SpecFactory {
                 spec.meta(en.getKey(), a == null ? null : a.getValue());
                 if (a != null) spec.metaKeyValues(en.getKey(), keyValues(a));
                 if (a != null) metaPropertiesOf(spec, en.getKey(), a);
+                if (a != null && "label".equals(en.getKey())) {
+                    spec.labelTranslations(io.elasticore.base.model.core.LabelTranslations.of(a));
+                }
 
                 // The loader keeps a second and further occurrence of the same
                 // annotation as siblings of the first. Nothing in 2.x read
@@ -790,6 +793,9 @@ public final class SpecFactory {
                 spec.meta(en.getKey(), a == null ? null : a.getValue());
                 if (a != null) spec.metaKeyValues(en.getKey(), keyValues(a));
                 if (a != null) metaPropertiesOf(spec, en.getKey(), a);
+                if (a != null && "label".equals(en.getKey())) {
+                    spec.labelTranslations(io.elasticore.base.model.core.LabelTranslations.of(a));
+                }
             }
         }
 

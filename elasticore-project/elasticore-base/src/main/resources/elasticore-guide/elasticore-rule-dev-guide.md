@@ -1055,6 +1055,7 @@ Within one file, the order is `HEAD` file rules -> field rules (for each field) 
 | `maxLength()` | `string(100)` or `@length` (0 if none) |
 | `description()` | The description after `--` |
 | `label()` | The `--` description, or `@label` if there is none |
+| `labelTranslations()` | The label in other languages, `@label(en=...)`: language -> text, in name order; empty when none (also on `EntitySpec`, for the `meta:` label) |
 | `dbColumnName()` | `@column` or the snake_case name |
 | `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | Collection / reference to another entity / basic type / string |
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |

@@ -220,6 +220,22 @@ public class TypeScriptDtoFileRules implements CodeRules {
         for (FieldSpec f : shown) {
             StringBuilder m = new StringBuilder();
             m.append("label: ").append(RuleText.quote(labelOf(f)));
+            // @label(en="Unit cost"): the label in the other languages the DSL gives it.
+            java.util.Map<String, String> translations = f.labelTranslations();
+            if (!translations.isEmpty()) {
+                m.append(", labels: { ");
+                boolean first = true;
+                for (java.util.Map.Entry<String, String> t : translations.entrySet()) {
+                    if (!first) m.append(", ");
+                    first = false;
+                    // zh-TW is not a name: quoted, as a TypeScript key must be.
+                    m.append(t.getKey().indexOf('-') < 0 ? t.getKey() : RuleText.quote(t.getKey()));
+                    m.append(": ")
+                            .append(RuleText.quote(
+                                    t.getValue().replace("\\", "\\\\").replace("\"", "\\\"")));
+                }
+                m.append(" }");
+            }
             // Markup the server cleaned before saving: a screen may render it as HTML.
             if (f.hasDsl(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)) m.append(", html: true");
             if (!writable(f)) {

@@ -100,6 +100,68 @@ entity:
 - `field.getDescription()` → `--` 주석 텍스트 반환 (label 우선, 없으면 desc 로 폴백). `v2.2.260421-2+` 부터 지원
 - `field.getAnnotationValue("label")`, `field.getAnnotationValue("desc")` → 각 어노테이션 값 직접 조회 (기존 방식, 계속 유효)
 
+### 다른 언어의 라벨 (`@label(en=...)`)
+
+> **동작 범위:** 모든 모드(JPA, MyBatis, MongoDB), Java 와 Kotlin, 모든 아키텍처 - 모델 정보이다.
+> 라벨 번들은 v3 번들이 API 가 있는 도메인(`@expose`)에 쓰고, TypeScript 클라이언트의 `labels` 는 `ts-model`,
+> synonyms 는 `ossie-export` 가 쓴다.
+
+`--` 텍스트가 도메인 언어의 라벨이다. 같은 라벨을 다른 언어로는 같은 줄의 `@label` 에 `언어=텍스트` 로 쓴다 -
+필드 줄과 `meta:` 줄(entity, DTO, enumeration) 모두:
+
+```yaml
+entity:
+  Item:
+    meta: entity @root @expose(50) @label(en=Item for sale, ja=販売単位) -- 판매 단위
+    fields:
+      name:     string(30)!   @label(en=Name) -- 이름
+      unitCost: money(10.2)!  @label(en=Unit cost, ja=単価, zh-TW=單價) -- 단가 | VAT 포함 판매가
+```
+
+- 키는 언어 태그다: `en`, `ja`, `pt-BR`, `zh-TW`. 한 가지 꼴로 읽는다 - `pt_BR`, `PT-br` 도 `pt-BR` 이고, 이것이
+  TypeScript 키다. 번들 파일은 `_` 로 쓴다(`_pt_BR`) - `ResourceBundle` 이 찾는 이름이다.
+- 값은 다음 쉼표까지(공백과 아포스트로피 포함, `en=Owner's name`)이고, 쉼표가 들어가면 따옴표로 감싼다
+  (`en="Cost, per unit"`). 한 줄의 `@label(...)` 여러 개는 하나의 라벨이다.
+- 직접 쓴 `@label` 만 이렇게 읽고, `--` 텍스트는 아니다: `-- sum = price * qty` 는 전처럼 라벨이다. 언어 태그가 아닌
+  키가 있는 `@label(...)` (`@label(en=Unit cost, note=x)`) 은 2.x 처럼 읽고, 빌드가 경고한다(`DSL_WARN`).
+- 있는 언어만 쓴다. `@label(...)` 이 없는 필드는 모든 언어에서 `--` 라벨이다.
+- `--` 라벨과 `| 설명` 은 전과 같이 읽힌다. `field.getAnnotationValue("label")` 은 여전히 `단가`,
+  `field.getAnnotationValue("label.en")` 은 `Unit cost`. 룰은 `FieldSpec.labelTranslations()`,
+  `EntitySpec.labelTranslations()` (언어 -> 텍스트) 로 모두 읽는다.
+- 번역이 하나도 없는 도메인은 전과 똑같이 생성된다.
+
+생성되는 것:
+
+1. **라벨 번들** - 메시지 번들(`i18n/<domain>-messages.properties`) 옆에:
+   ```properties
+   # src/main/resources/i18n/petstore-labels.properties - 모든 라벨, "--" 텍스트 그대로
+   Item=판매 단위
+   Item.name=이름
+   Item.unitCost=단가
+   # petstore-labels_en.properties, _ja, _zh_TW - 그 언어로 쓴 라벨
+   Item=Item for sale
+   Item.name=Name
+   Item.unitCost=Unit cost
+   ```
+   키: 타입의 라벨은 `Type`, 필드의 라벨은 `Type.field` (entity 와 DTO 의 필드, enumeration 은 자체 라벨만). 번역이 없는 라벨은
+   `ResourceBundle` 처럼 기본 파일로 간다. 둘 다 생성 파일이다 - 파일이 아니라 DSL 을 고친다. Spring 은 다른 번들처럼
+   읽는다 - `spring.messages.basename` 에 이름을 더하고(`messages,i18n/petstore-labels`) `MessageSource` 에
+   요청의 `Locale` 로 `Item.unitCost` 를 물으면 된다(서버가 그리는 화면, 내보내기 파일의 열 제목 등).
+   `spring.messages.fallback-to-system-locale: false` 도 둔다 - Spring Boot 의 기본값(`true`)이면 파일이 없는 언어는
+   `--` 라벨이 아니라 서버 머신 언어의 파일을 받는다(영어 서버면 영어).
+2. **TypeScript 클라이언트** - `XxxFields` 의 각 필드 항목에 `labels` 가 붙는다:
+   ```ts
+   unitCost: { label: "단가", labels: { en: "Unit cost", ja: "単価", "zh-TW": "單價" }, required: true },
+   ```
+   화면은 `ItemFields.unitCost.labels.en` 을 쓰고, 번역이 없는 언어에서는 `label` 을 쓴다.
+3. **Apache Ossie 시맨틱 모델** - 번역은 필드(와 데이터셋)의 `ai_context.synonyms` 에 `@terms` 단어 다음으로 들어간다.
+   그 언어로 물어도 같은 필드를 찾는다. `description` 은 `--` 라벨 그대로다.
+
+번역되지 않고 도메인 언어로 남는 것: Javadoc, `@Schema(description)`, `@Comment` 와 DB 컬럼 주석, 서버가 쓰는 오류
+문장(`"<label> is not in the expected form"`) - 응답 문장은 메시지 번들로 번역한다(`elasticore-rule-guide.md`,
+"오류 코드와 다국어"). enumeration 의 상수 줄(`SHIPPED: SHP, Shipped`)에는 `@label` 을 쓰지 않는다 - 언어별 라벨이
+필요하면 enumeration 의 컬럼으로 둔다.
+
 ### Meta 어노테이션
 | 어노테이션 | 설명 |
 |-----------|------|

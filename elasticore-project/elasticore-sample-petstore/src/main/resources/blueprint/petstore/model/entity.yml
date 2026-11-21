@@ -22,13 +22,13 @@ entity:
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) -- 판매 단위 (Large, Male Puppy ...)
+    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
       description: string(3000)!
       imagePath:   string(100)
-      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격)
+      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격) @label(en=Unit cost, ja=単価) -- 단가
       product:     Product @ManyToOne          # -> productId
 
   Country:

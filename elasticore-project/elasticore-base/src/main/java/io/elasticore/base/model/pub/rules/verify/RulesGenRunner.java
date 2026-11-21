@@ -3737,6 +3737,7 @@ public final class RulesGenRunner {
                     // The handler says its messages through the domain's bundle.
                     if ("apiErrors".equals(a.target())) {
                         writeMessages(domain.getName(), target(namespaceFor(a, model), a.className()));
+                        writeLabels(domain.getName(), target(namespaceFor(a, model), a.className()), model);
                     }
                 }
             }
@@ -4855,7 +4856,35 @@ public final class RulesGenRunner {
                 io.elasticore.base.model.pub.rules.ErrorCatalog.shared(),
                 io.elasticore.base.model.pub.rules.ErrorCatalog.recorded());
         File file = new File(rootFor(handler) + "/src/main/resources/i18n/" + domainName + "-messages.properties");
-        String label = String.format("    %-12s %s", "messages", relative(file));
+        writeResource("messages", file, text);
+    }
+
+    /**
+     * src/main/resources/i18n/<domain>-labels.properties and one
+     * <domain>-labels_<language>.properties for each language a label is
+     * written in (@label(en="Unit cost") -- ...): the model's labels as a
+     * resource bundle, beside the message bundle. Nothing when no label has a
+     * translation, so a model without one writes what it always did.
+     */
+    private void writeLabels(String domainName, ArtifactTarget handler, ECoreModel model) {
+        if (typescript || captured != null || model == null) return;
+        java.util.Set<String> languages = io.elasticore.base.model.pub.rules.LabelCatalog.languages(model);
+        if (languages.isEmpty()) return;
+        java.util.List<String> all = new java.util.ArrayList<String>();
+        all.add(null);
+        all.addAll(languages);
+        for (String language : all) {
+            String text = io.elasticore.base.model.pub.rules.LabelCatalog.properties(
+                    domainName, language, io.elasticore.base.model.pub.rules.LabelCatalog.labels(model, language));
+            File file = new File(rootFor(handler) + "/src/main/resources/i18n/"
+                    + io.elasticore.base.model.pub.rules.LabelCatalog.fileName(domainName, language) + ".properties");
+            writeResource("labels", file, text);
+        }
+    }
+
+    /** A generated resource file: merged against the cache base when there is one, else written when it differs. */
+    private void writeResource(String what, File file, String text) {
+        String label = String.format("    %-12s %s", what, relative(file));
         String key = cache != null ? cacheKey(file) : null;
         if (key != null) {
             writeMerged(label, file, key, text, true);
