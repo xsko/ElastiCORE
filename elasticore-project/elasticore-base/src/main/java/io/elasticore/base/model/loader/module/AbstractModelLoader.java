@@ -511,11 +511,15 @@ public class AbstractModelLoader implements ConstantParam {
                 // other languages. Never the @label built from "--": a comment
                 // such as "-- sum = price" is read as it always was.
                 if ("label".equals(annotationName) && matcher.start() < fromComment) {
-                    annotation = io.elasticore.base.model.core.LabelTranslations.parse(annotationName, attributeParameters);
+                    annotation =
+                            io.elasticore.base.model.core.LabelTranslations.parse(annotationName, attributeParameters);
                     if (annotation == null && attributeParameters.indexOf('=') >= 0) {
-                        ConsoleLog.storeLog("DSL_WARN", String.format(
-                                "@label(%s): a key=value key is not a language tag (en, ja, pt-BR), so no part of it"
-                                        + " is a translation and it is read as before", attributeParameters));
+                        ConsoleLog.storeLog(
+                                "DSL_WARN",
+                                String.format(
+                                        "@label(%s): a key=value key is not a language tag (en, ja, pt-BR), so no part of it"
+                                                + " is a translation and it is read as before",
+                                        attributeParameters));
                     }
                 }
                 if (annotation == null) annotation = parseParameters(annotationName, attributeParameters);
