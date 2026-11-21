@@ -177,8 +177,13 @@ public class LabelTranslationGenerationTest {
         File project = generate(TRANSLATED);
         try {
             assertTrue(find(project, "desk-labels_ja.properties") != null);
-            generateInto(project, TRANSLATED.replace(", ja=販売単位", "").replace(", ja=単価", ""),
-                    "jpa", "hexagonal", "java", "[hexagonal-springboot, ossie-export]");
+            generateInto(
+                    project,
+                    TRANSLATED.replace(", ja=販売単位", "").replace(", ja=単価", ""),
+                    "jpa",
+                    "hexagonal",
+                    "java",
+                    "[hexagonal-springboot, ossie-export]");
             assertNull(find(project, "desk-labels_ja.properties"), "the Japanese file is left");
             assertTrue(find(project, "desk-labels_zh_TW.properties") != null);
         } finally {
@@ -193,8 +198,9 @@ public class LabelTranslationGenerationTest {
         return project;
     }
 
-    private static void generateInto(File project, String model, String mode, String architecture, String language,
-            String rules) throws Exception {
+    private static void generateInto(
+            File project, String model, String mode, String architecture, String language, String rules)
+            throws Exception {
         File dir = new File(project, "src/main/resources/blueprint/desk");
         assertTrue(new File(dir, "model").isDirectory() || new File(dir, "model").mkdirs());
         String env = String.join(

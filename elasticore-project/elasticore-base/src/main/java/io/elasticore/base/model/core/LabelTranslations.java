@@ -24,11 +24,12 @@ import java.util.regex.Pattern;
  */
 public final class LabelTranslations {
 
-    private LabelTranslations() {
-    }
+    private LabelTranslations() {}
 
     /** A language tag as a key: a language, then optional script, region or variant parts. */
     private static final Pattern LANGUAGE = Pattern.compile("[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*");
+
+    private static final Pattern SEPARATOR = Pattern.compile("[-_]");
 
     /**
      * The key as one form of the tag: the language in lower case, a script
@@ -37,13 +38,14 @@ public final class LabelTranslations {
      * the bundle file is the name a ResourceBundle looks for.
      */
     public static String normalized(String key) {
-        String[] parts = key.split("[-_]");
+        String[] parts = SEPARATOR.split(key);
         StringBuilder sb = new StringBuilder(parts[0].toLowerCase(Locale.ROOT));
         for (int i = 1; i < parts.length; i++) {
             String p = parts[i];
             sb.append('-');
             if (p.length() == 4 && Character.isLetter(p.charAt(0))) {
-                sb.append(p.substring(0, 1).toUpperCase(Locale.ROOT)).append(p.substring(1).toLowerCase(Locale.ROOT));
+                sb.append(p.substring(0, 1).toUpperCase(Locale.ROOT))
+                        .append(p.substring(1).toLowerCase(Locale.ROOT));
             } else if (p.length() == 2 || (p.length() == 3 && Character.isDigit(p.charAt(0)))) {
                 sb.append(p.toUpperCase(Locale.ROOT));
             } else {
@@ -92,7 +94,7 @@ public final class LabelTranslations {
         for (String key : label.getProperties().stringPropertyNames()) {
             out.put(key, label.getProperties().getProperty(key));
         }
-        return out;
+        return Collections.unmodifiableMap(out);
     }
 
     /**
