@@ -419,6 +419,7 @@ public final class SpecFactory {
                 spec.meta(en.getKey(), a == null ? null : a.getValue());
                 if (a != null) spec.metaKeyValues(en.getKey(), keyValues(a));
                 if (a != null) metaPropertiesOf(spec, en.getKey(), a);
+                if (a != null) spec.metaFlags(en.getKey(), a.getFlags());
                 if (a != null && "label".equals(en.getKey())) {
                     spec.labelTranslations(io.elasticore.base.model.core.LabelTranslations.of(a));
                 }
@@ -793,6 +794,7 @@ public final class SpecFactory {
                 spec.meta(en.getKey(), a == null ? null : a.getValue());
                 if (a != null) spec.metaKeyValues(en.getKey(), keyValues(a));
                 if (a != null) metaPropertiesOf(spec, en.getKey(), a);
+                if (a != null) spec.metaFlags(en.getKey(), a.getFlags());
                 if (a != null && "label".equals(en.getKey())) {
                     spec.labelTranslations(io.elasticore.base.model.core.LabelTranslations.of(a));
                 }

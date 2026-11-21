@@ -1032,6 +1032,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `getName()`, `domainName()`, `domainClassName()` | 엔티티 이름, 도메인 (`"erp"`, `"Erp"`) |
 | `hasMeta("x")`, `metaValue("x")`, `metaValues("x")` | `meta:` 의 `@x`, `@x(값)` 의 값, 여러 번 쓴 값 모두 |
 | `metaText("access")` | `@access(read=public, update=owner)` 처럼 짝으로 된 값의 원문 |
+| `metaProperty("ui", "menu")`, `metaProperties("ui")`, `metaFlags("ui")` | `@ui(menu=sales, order=30, staff)` 같은 표시의 짝 하나, 모든 짝(이름순), `=` 없는 값: `sales`, `{menu=sales, order=30}`, `[staff]` |
 | `aggregateRoot()`, `containedIn()` | 루트인가 / 멤버면 소속 루트 이름 |
 | `isSplitForBehavior(e.getName())` | 두 파일로 나뉘는 루트인가 (`XxxBase` + 개발자 클래스) |
 | `fields()`, `allFields()`, `dtoFields()`, `pkFields()` | 자기 필드 / 상속 포함 / DTO 쪽 / 식별자 |
@@ -1052,6 +1053,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `hasDsl("x")`, `hasDslAny("x", "y")` | `@x` 가 있나 (대소문자 무시) |
 | `dslValue("x")`, `dslValueAny(...)` | `@x(값)` 의 값 - `dslValue("search")` → `"like"` |
 | `dslProperty("onetomany", "mappedBy")` | `@OneToMany(mappedBy="parent")` 처럼 이름 붙은 속성 |
+| `dslProperties("ui")`, `dslFlags("ui")` | `@ui(title=true, wide)` 같은 표시의 모든 짝(쓴 순서)과 `=` 없는 값: `{title=true}`, `[wide]` |
 | `maxLength()` | `string(100)` 또는 `@length` (없으면 0) |
 | `description()` | `--` 뒤의 설명 |
 | `label()` | `--` 설명, 없으면 `@label` |

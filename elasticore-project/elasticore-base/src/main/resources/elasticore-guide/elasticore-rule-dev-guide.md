@@ -1032,6 +1032,7 @@ Within one file, the order is `HEAD` file rules -> field rules (for each field) 
 | `getName()`, `domainName()`, `domainClassName()` | The entity name, the domain (`"erp"`, `"Erp"`) |
 | `hasMeta("x")`, `metaValue("x")`, `metaValues("x")` | `@x` in `meta:`, the value of `@x(value)`, all values when written several times |
 | `metaText("access")` | The original text of a paired value such as `@access(read=public, update=owner)` |
+| `metaProperty("ui", "menu")`, `metaProperties("ui")`, `metaFlags("ui")` | One pair, every pair (by name) and the values without `=` of a marker such as `@ui(menu=sales, order=30, staff)`: `sales`, `{menu=sales, order=30}`, `[staff]` |
 | `aggregateRoot()`, `containedIn()` | Is it a root / for a member, the name of its root |
 | `isSplitForBehavior(e.getName())` | Is it a root split into two files (`XxxBase` + a developer class) |
 | `fields()`, `allFields()`, `dtoFields()`, `pkFields()` | Own fields / including inherited / DTO side / identifiers |
@@ -1052,6 +1053,7 @@ Within one file, the order is `HEAD` file rules -> field rules (for each field) 
 | `hasDsl("x")`, `hasDslAny("x", "y")` | Is `@x` there (case-insensitive) |
 | `dslValue("x")`, `dslValueAny(...)` | The value of `@x(value)` - `dslValue("search")` -> `"like"` |
 | `dslProperty("onetomany", "mappedBy")` | A named attribute such as `@OneToMany(mappedBy="parent")` |
+| `dslProperties("ui")`, `dslFlags("ui")` | Every pair in the order written, and the values without `=`, of a marker such as `@ui(title=true, wide)`: `{title=true}`, `[wide]` |
 | `maxLength()` | `string(100)` or `@length` (0 if none) |
 | `description()` | The description after `--` |
 | `label()` | The `--` description, or `@label` if there is none |

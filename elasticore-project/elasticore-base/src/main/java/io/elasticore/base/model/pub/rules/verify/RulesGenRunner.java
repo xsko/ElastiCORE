@@ -1529,8 +1529,13 @@ public final class RulesGenRunner {
 
             if (typescript) {
                 generateEnums(model);
-                emitDomain(SpecFactory.fromDomain(domainDirName, model, specs),
-                        "apiSupport", target("", "apiSupport"), "ts-api");
+                io.elasticore.base.model.pub.rules.DomainSpec tsDomain =
+                        SpecFactory.fromDomain(domainDirName, model, specs);
+                emitDomain(tsDomain, "apiSupport", target("", "apiSupport"), "ts-api");
+                // A domain-level file a rule set listed for TypeScript declares
+                // (DomainArtifactContributor), as its per-entity files are asked
+                // for above (issue 266: the TypeScript run never asked).
+                emitContributedDomain(tsDomain, model);
                 continue;
             }
 

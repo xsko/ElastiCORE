@@ -160,6 +160,30 @@ public final class FieldSpec {
         return io.elasticore.base.model.core.LabelTranslations.of(field.getAnnotation("label"));
     }
 
+    /**
+     * The key=value pairs of a DSL annotation on the field, in the order written:
+     * {@code @ui(title=true, width=20)} -> title=true, width=20. Empty when it has none.
+     */
+    public java.util.Map<String, String> dslProperties(String name) {
+        io.elasticore.base.model.core.Annotation a = field.getAnnotation(name);
+        if (a == null || a.getProperties() == null) return java.util.Collections.emptyMap();
+        if (a.getParametersAsWritten() != null) return a.getParametersAsWritten();
+        java.util.Map<String, String> out = new java.util.TreeMap<String, String>();
+        for (String key : a.getProperties().stringPropertyNames())
+            out.put(key, a.getProperties().getProperty(key));
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
+    /**
+     * The values written without '=' beside key=value pairs, in order:
+     * {@code @ui(title=true, staff)} -> [staff]. Empty when there are none; an
+     * annotation without pairs holds its value in {@link #dslValue}.
+     */
+    public java.util.List<String> dslFlags(String name) {
+        io.elasticore.base.model.core.Annotation a = field.getAnnotation(name);
+        return a == null ? java.util.Collections.<String>emptyList() : a.getFlags();
+    }
+
     /** The declared label alone, without the spec-level description. */
     public String dslLabel() {
         return dslValueAny(LABEL);
