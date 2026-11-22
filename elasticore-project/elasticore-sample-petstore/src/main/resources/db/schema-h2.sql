@@ -11,6 +11,7 @@ CREATE TABLE ps_category (
     story CLOB,
     icon BLOB,
     product_count BIGINT,
+    featured_until TIMESTAMP,
     PRIMARY KEY (category_id)
 );
 

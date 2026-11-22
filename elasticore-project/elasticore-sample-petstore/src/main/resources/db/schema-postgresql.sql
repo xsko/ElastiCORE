@@ -11,6 +11,7 @@ CREATE TABLE ps_category (
     story TEXT,
     icon BYTEA,
     product_count BIGINT,
+    featured_until TIMESTAMP(6),
     PRIMARY KEY (category_id)
 );
 

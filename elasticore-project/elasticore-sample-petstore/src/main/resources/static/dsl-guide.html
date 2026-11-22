@@ -128,9 +128,9 @@
         그리고 <b>DSL 로 아직 표현할 수 없는 것</b>까지 적습니다. "확인한 결과" 열은 실행 중인 애플리케이션에 HTTP 로 요청해서 본 응답입니다.
         DSL 과 생성 코드 발췌는 빌드 결과물에서 그대로 읽어 왔습니다.</p>
       <div class="stats">
-        <div class="stat"><b>171</b><span>DSL 줄 (4개 파일)</span></div>
-        <div class="stat"><b>158 · 12,468</b><span>생성된 Java 파일 · 줄</span></div>
-        <div class="stat"><b>50 · 1,753</b><span>생성된 TypeScript 파일 · 줄</span></div>
+        <div class="stat"><b>172</b><span>DSL 줄 (4개 파일)</span></div>
+        <div class="stat"><b>158 · 12,529</b><span>생성된 Java 파일 · 줄</span></div>
+        <div class="stat"><b>50 · 1,767</b><span>생성된 TypeScript 파일 · 줄</span></div>
         <div class="stat"><b>7 · 228</b><span>손으로 쓴 Java 파일 · 줄</span></div>
         <!-- counted by build_guide.py; line counts leave out blank lines; the screens (web/src) are hand-written too -->
       </div>
@@ -487,6 +487,7 @@
       story:       clob -- 긴 소개 글 (행 안의 긴 문자열 - PostgreSQL text, Oracle clob)
       icon:        blob -- 아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)
       productCount: long @count(Product.category) -- 판매 중인 상품 수 (단종된 상품은 세지 않음)
+      featuredUntil: datetime @future -- 추천 노출이 끝나는 시각 (지난 시각은 받지 않음)
 
   Product:
     meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
@@ -548,9 +549,9 @@ UPDATE ps_category c SET product_count = (SELECT COUNT(*) FROM ps_product p WHER
     fields:
       customerId:  long @id @sequence
       login:       string(10)! @search(eq) @login
-      password:    string(255)! @password        # 저장은 해시로만, 응답·검색에 없음
+      password:    string(255)! @password @pattern('^(?=.*[A-Za-z]).+$', 'a password needs a letter')   # 저장은 해시로만, 응답·검색에 없음
       firstName:   string(50)! @search(like)
-      lastName:    string(50)! @search(like)
+      lastName:    string(50)! @search(like) @notblank     # 공백만으로는 받지 않음
       telephone:   string(30)
       email:       string(100) @email
       dateOfBirth: date @past
@@ -909,6 +910,7 @@ datasets:
     framework: springboot
     mode: jpa
     j2ee: jakarta
+    testCode: "contract"      # the tests of what the DSL declares, over the API (PetstoreContractSupport)
     apiPath: "/api"             # REST 주소는 /api/petstore/...
     table:
       prefix: ps_
@@ -962,6 +964,7 @@ datasets:
       story:       clob -- 긴 소개 글 (행 안의 긴 문자열 - PostgreSQL text, Oracle clob)
       icon:        blob -- 아이콘 이미지 (행 안의 바이트 - PostgreSQL bytea, Oracle blob)
       productCount: long @count(Product.category) -- 판매 중인 상품 수 (단종된 상품은 세지 않음)
+      featuredUntil: datetime @future -- 추천 노출이 끝나는 시각 (지난 시각은 받지 않음)
 
   Product:
     meta: entity @root @editable @expose(20) @access(read=public) @sort(name+) -- 상품 (Angelfish, Bulldog ...)
@@ -1020,9 +1023,9 @@ datasets:
     fields:
       customerId:  long @id @sequence
       login:       string(10)! @search(eq) @login
-      password:    string(255)! @password        # 저장은 해시로만, 응답·검색에 없음
+      password:    string(255)! @password @pattern('^(?=.*[A-Za-z]).+$', 'a password needs a letter')   # 저장은 해시로만, 응답·검색에 없음
       firstName:   string(50)! @search(like)
-      lastName:    string(50)! @search(like)
+      lastName:    string(50)! @search(like) @notblank     # 공백만으로는 받지 않음
       telephone:   string(30)
       email:       string(100) @email
       dateOfBirth: date @past

@@ -40,7 +40,14 @@ import java.util.Set;
  *   min, max           the bound passes, one past it is refused (400, Min/Max or
  *                      DecimalMin/DecimalMax)
  *   pattern            a value that matches passes, one that does not is refused
- *                      (400, Pattern)
+ *                      (400, Pattern); with leading lookaheads, one that matches the
+ *                      rest and misses a lookahead
+ *   notblank, email    text passes, blank text is refused (400, NotBlank); an
+ *                      address passes, the address without its @ is refused (400,
+ *                      Email)
+ *   past, future       a year ago (a year from now) passes, two days ahead (ago) on
+ *                      a date, a day on a datetime or timestamp, is
+ *                      refused (400, Past, PastOrPresent, Future, FutureOrPresent)
  *   minsize            that many members pass, one fewer is refused (400, Size)
  *   invariant          a field compared with a number, a collection's size, a
  *                      field that must be set: the boundary passes, one past it is
@@ -109,6 +116,9 @@ final class ContractTestSource {
 
     /** What the summary says: the tests written, and what was not with why. */
     int written;
+
+    /** Why the sign-in's principal of the last domain asked was not built, as the summary says it; null when it was. */
+    private String principalProblem;
 
     final List<String> skipped = new ArrayList<String>();
 
@@ -291,6 +301,37 @@ final class ContractTestSource {
             if (m.field().equals(f.name()) && DddBehaviorRules.splits(e)) return false;
         }
         return true;
+    }
+
+    /**
+     * Whether the DTO refuses the field blank - and null: @notblank on text, as
+     * dto-validation writes it, less where v3-dto-system-managed takes it off
+     * again (a field the server sets, which a request cannot send).
+     */
+    private static boolean blankRefused(FieldSpec f) {
+        return f.isStringType()
+                && f.hasDsl("notblank")
+                && !io.elasticore.base.model.pub.rules.base.WriteGuardRules.serverSet(f);
+    }
+
+    /** The expression of the field's @pattern as the DTO's @Pattern reads it (PatternSample.unescape); null without one. */
+    private static String regex(FieldSpec f) {
+        return f.hasDsl("pattern") ? PatternSample.unescape(f.patternRegexp()) : null;
+    }
+
+    /** Whether a valid row sends the field: '!', or @notblank, which refuses null too. */
+    private static boolean sent(FieldSpec f) {
+        return f.required() || blankRefused(f);
+    }
+
+    /** What a temporal field is, as the marks read it: date, datetime, time, instant; null for any other. */
+    static String temporalKind(FieldSpec f) {
+        String base = f.baseTypeName();
+        if ("DATE".equals(base) || "LocalDate".equals(base)) return "date";
+        if ("DATETIME".equals(base) || "LocalDateTime".equals(base)) return "datetime";
+        if ("TIME".equals(base) || "LocalTime".equals(base)) return "time";
+        if ("INSTANT".equals(base)) return "instant";
+        return null;
     }
 
     /**
@@ -662,7 +703,18 @@ final class ContractTestSource {
         private boolean declaresAnything(EntitySpec e) {
             if (!e.stateMachines().isEmpty() || e.hasMeta("invariant")) return true;
             for (FieldSpec f : e.fields()) {
-                if (f.required() || f.validationMaxLength() >= 0 || f.hasDslAny("min", "max", "pattern")) return true;
+                if (f.required()
+                        || f.validationMaxLength() >= 0
+                        || f.hasDslAny(
+                                "min",
+                                "max",
+                                "pattern",
+                                "notblank",
+                                "email",
+                                "past",
+                                "pastorpresent",
+                                "future",
+                                "futureorpresent")) return true;
             }
             return false;
         }
@@ -794,7 +846,7 @@ final class ContractTestSource {
                     out.add(new String[] {json(f), list});
                     continue;
                 }
-                boolean needed = f.required() || isKey || promise != null;
+                boolean needed = sent(f) || isKey || promise != null;
                 if (!needed) continue;
                 String value = value(target, targetDto, f, rules, visiting, into);
                 if (value == null) {
@@ -911,7 +963,7 @@ final class ContractTestSource {
                 if (value == null) return null;
                 List<String[]> parts = new ArrayList<String[]>();
                 for (FieldSpec part : value.fields()) {
-                    if (!part.required() || !writable(value, part)) continue;
+                    if (!sent(part) || !writable(value, part)) continue;
                     String v =
                             this.value(value, value, part, java.util.Collections.<Promise>emptyList(), visiting, into);
                     if (v == null) return null;
@@ -944,9 +996,7 @@ final class ContractTestSource {
             }
             String base = f.baseTypeName();
             if ("P_BOOLEAN".equals(base) || "BOOLEAN".equals(base)) return "true";
-            String temporal = temporal(f);
-            if (temporal != null) return lang.string(temporal);
-            return null;
+            return temporal(f, lang);
         }
 
         /**
@@ -958,7 +1008,7 @@ final class ContractTestSource {
             int max = f.validationMaxLength();
             if (max < 0) max = f.rawLength() > 0 ? f.rawLength() : 0;
             int min = Math.max(0, f.minLength());
-            String regexp = f.hasDsl("pattern") ? f.patternRegexp() : null;
+            String regexp = regex(f);
             if (regexp != null) {
                 PatternSample.Sample sample = PatternSample.sample(regexp, min, max > 0 ? max : 64);
                 if (sample == null) return null;
@@ -1147,7 +1197,7 @@ final class ContractTestSource {
                 if (cmd.dtoName() == null) return "null";
                 List<String[]> parts = new ArrayList<String[]>();
                 for (FieldSpec p : cmd.params()) {
-                    if (!p.required()) continue;
+                    if (!sent(p)) continue;
                     String v = value(
                             e,
                             dto,
@@ -1203,24 +1253,125 @@ final class ContractTestSource {
                 String type = simple(f.typeName());
                 if (dto.isKnownEnum(type) || dto.isEmbeddableType(type)) continue;
                 if (f.isStringType()) {
+                    textMarks(f, pathConstant);
                     strings(f, pathConstant);
+                    continue;
+                }
+                if (temporalKind(f) != null) {
+                    clockMarks(f, pathConstant);
                     continue;
                 }
                 if (numeric(f)) bounds(f, pathConstant);
             }
         }
 
+        /**
+         * The marks @notblank and @email, as the DTO writes them on text: a value passes,
+         * blank text is refused (400 NotBlank), and the address without its @
+         * (400 Email).
+         */
+        private void textMarks(FieldSpec f, String pathConstant) {
+            String name = json(f);
+            boolean blank = blankRefused(f);
+            boolean email = f.hasDsl("email");
+            if (!blank && !email) return;
+            String passes = value(e, dto, f, promises, new ArrayDeque<String>(), new Builder(e));
+            if (passes == null) {
+                skip(e.getName() + "." + f.name() + " @" + (blank ? "notblank" : "email") + ": no value of "
+                        + f.typeName() + " can be built");
+                return;
+            }
+            if (blank) {
+                Test t = test(f.name() + "NotBlank", f.name() + ": text passes, blank text is refused (400 NotBlank)");
+                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                        + lang.string(name) + ", " + passes + ")))"));
+                t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                        + lang.string(name) + ", \"   \")), " + lang.string(f.name()) + ", \"NotBlank\")"));
+            }
+            if (!email) return;
+            if (f.hasDsl("pattern")) {
+                // The value is the pattern's: an address only where the pattern makes one.
+                int max = f.validationMaxLength();
+                String sample = PatternSample.matching(regex(f), Math.max(0, f.minLength()), max >= 0 ? max : 64);
+                if (sample == null || sample.indexOf('@') <= 0) {
+                    skip(e.getName() + "." + f.name() + " @email: the value its @pattern makes is no address");
+                    return;
+                }
+            }
+            Test t = test(
+                    f.name() + "Email",
+                    f.name() + ": an address passes, the address without its @ is refused (400 Email)");
+            t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                    + lang.string(name) + ", " + passes + ")))"));
+            t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                    + lang.string(name) + ", " + passes + ".replace(\"@\", \"\"))), " + lang.string(f.name())
+                    + ", \"Email\")"));
+        }
+
+        /**
+         * The marks @past, @pastorpresent, @future and @futureorpresent on a date or a
+         * time: a year ago (from now) passes, a moment past now the other way is
+         * refused - read from the clock when the test runs, so no time zone moves
+         * it across now: a date two days from today (a midnight passing during
+         * the request leaves it a day away), a datetime or a timestamp one day.
+         */
+        private void clockMarks(FieldSpec f, String pathConstant) {
+            String name = json(f);
+            String[][] marks = {
+                {"past", "Past"},
+                {"pastorpresent", "PastOrPresent"},
+                {"future", "Future"},
+                {"futureorpresent", "FutureOrPresent"}
+            };
+            boolean past = f.hasDslAny("past", "pastorpresent");
+            boolean future = f.hasDslAny("future", "futureorpresent");
+            if (past && future) {
+                skip(e.getName() + "." + f.name() + ": @past and @future together - no value is both");
+                return;
+            }
+            for (String[] mark : marks) {
+                if (!f.hasDsl(mark[0])) continue;
+                boolean before = mark[0].startsWith("past");
+                String passes = moment(f, before ? -365 : 365, lang);
+                int days = "date".equals(temporalKind(f)) ? 2 : 1;
+                String refused = moment(f, before ? days : -days, lang);
+                if (passes == null || refused == null) {
+                    skip(e.getName() + "." + f.name() + " @" + mark[0] + ": "
+                            + ("time".equals(temporalKind(f))
+                                    ? "a time of day is past or future by the hour the test runs at"
+                                    : "its format writes no date"));
+                    continue;
+                }
+                Test t = test(
+                        f.name() + mark[1],
+                        f.name() + ": a year " + (before ? "ago" : "from now") + " passes, "
+                                + (days == 2
+                                        ? (before ? "two days ahead" : "two days ago")
+                                        : (before ? "tomorrow" : "yesterday"))
+                                + " is refused (400 " + mark[1] + ")");
+                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                        + lang.string(name) + ", " + passes + ")))"));
+                t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                        + lang.string(name) + ", " + refused + ")), " + lang.string(f.name()) + ", "
+                        + lang.string(mark[1]) + ")"));
+            }
+        }
+
         private void strings(FieldSpec f, String pathConstant) {
             String name = json(f);
-            String regexp = f.hasDsl("pattern") ? f.patternRegexp() : null;
+            String regexp = regex(f);
             int max = f.validationMaxLength();
             int min = f.minLength();
             if (regexp != null) {
                 String matching = PatternSample.matching(regexp, Math.max(min, 0), max >= 0 ? max : 64);
                 String other = PatternSample.notMatching(regexp, matching);
-                if (matching == null || other == null) {
+                if (matching != null && other == null && PatternSample.lookaheads(regexp)) {
+                    // What a lookahead refuses is what is tested: a value the rest refuses would not show it.
+                    skip(e.getName() + "." + f.name() + " @pattern: no value the generator can build matches the rest"
+                            + " of " + f.patternRegexp() + " and misses one of its lookaheads");
+                } else if (matching == null || other == null) {
                     skip(e.getName() + "." + f.name() + " @pattern: no value the generator can build "
-                            + (matching == null ? "matches" : "fails") + " " + regexp);
+                            + (matching == null ? "matches" : "fails") + " " + f.patternRegexp());
                 } else {
                     Test t = test(
                             f.name() + "Pattern",
@@ -1787,31 +1938,86 @@ final class ContractTestSource {
         return t;
     }
 
-    /** A date or a time the field takes, formatted as its DTO reads it; null for a field that is not one. */
-    static String temporal(FieldSpec f) {
-        String base = f.baseTypeName();
+    /**
+     * A date or a time the field takes, as an expression of the test class,
+     * formatted as its DTO reads it; null for a field that is not one. One the
+     * DTO checks against the clock (@past, @future) is a year from it, read
+     * when the test runs, so it holds whenever the test runs and in any time
+     * zone; any other is a fixed one.
+     */
+    static String temporal(FieldSpec f, Lang lang) {
+        String kind = temporalKind(f);
+        if (kind == null) return null;
         boolean past = f.hasDslAny("past", "pastorpresent");
         boolean future = f.hasDslAny("future", "futureorpresent");
-        int year = past ? 2000 : future ? 2100 : 2026;
-        java.time.LocalDateTime at = java.time.LocalDateTime.of(year, 1, 15, 10, 0, 0);
+        if (past != future && !"time".equals(kind)) return moment(f, past ? -365 : 365, lang);
         String pattern = FieldDoc.formatPattern(f);
-        try {
-            if ("DATE".equals(base) || "LocalDate".equals(base)) {
-                return pattern == null
-                        ? at.toLocalDate().toString()
-                        : at.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern(pattern));
-            }
-            if ("DATETIME".equals(base) || "LocalDateTime".equals(base)) {
-                return pattern == null
-                        ? at.toString() + ":00"
-                        : at.format(java.time.format.DateTimeFormatter.ofPattern(pattern));
-            }
-        } catch (IllegalArgumentException | java.time.DateTimeException notAPattern) {
-            return null;
+        if (!formats(f, pattern)) return null;
+        java.time.LocalDateTime at = java.time.LocalDateTime.of(2026, 1, 15, 10, 0, 0);
+        switch (kind) {
+            case "date":
+                return lang.string(
+                        pattern == null
+                                ? at.toLocalDate().toString()
+                                : at.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern(pattern)));
+            case "datetime":
+                return lang.string(
+                        pattern == null
+                                ? at.toString() + ":00"
+                                : at.format(java.time.format.DateTimeFormatter.ofPattern(pattern)));
+            case "time":
+                // A time of day against the clock is past or future by the hour the test runs at: no value is made.
+                return past || future ? null : lang.string("10:00:00");
+            default:
+                return lang.string("2026-01-15T10:00:00Z");
         }
-        if ("TIME".equals(base) || "LocalTime".equals(base)) return "10:00:00";
-        if ("INSTANT".equals(base)) return year + "-01-15T10:00:00Z";
-        return null;
+    }
+
+    /** Whether the field's format, if it has one, formats its type (a pattern the DTO's @JsonFormat would refuse is not). */
+    private static boolean formats(FieldSpec f, String pattern) {
+        if (pattern == null) return true;
+        String kind = temporalKind(f);
+        try {
+            java.time.format.DateTimeFormatter format = java.time.format.DateTimeFormatter.ofPattern(pattern);
+            String written = "date".equals(kind)
+                    ? java.time.LocalDate.of(2026, 1, 15).format(format)
+                    : "datetime".equals(kind)
+                            ? java.time.LocalDateTime.of(2026, 1, 15, 10, 0, 0).format(format)
+                            : "";
+            return written != null;
+        } catch (IllegalArgumentException | java.time.DateTimeException notAPattern) {
+            return false;
+        }
+    }
+
+    /**
+     * The expression of a moment days from the test's now, as the DTO reads
+     * the field: java.time.LocalDate.now().minusYears(1).toString(). A year is
+     * written plusYears(1); null for a time of day, or a format that formats
+     * no date.
+     */
+    static String moment(FieldSpec f, int days, Lang lang) {
+        String kind = temporalKind(f);
+        if (kind == null || "time".equals(kind)) return null;
+        if ("instant".equals(kind)) {
+            return "java.time.Instant.now()." + (days < 0 ? "minus" : "plus") + "(java.time.Duration.ofDays("
+                    + Math.abs(days) + ")).toString()";
+        }
+        String pattern = FieldDoc.formatPattern(f);
+        if (!formats(f, pattern)) return null;
+        String shift = days == 365
+                ? "plusYears(1)"
+                : days == -365 ? "minusYears(1)" : (days < 0 ? "minusDays(" : "plusDays(") + Math.abs(days) + ")";
+        // A date's ISO form is what toString() writes.
+        if ("date".equals(kind) && "yyyy-MM-dd".equals(pattern)) pattern = null;
+        String format = pattern != null
+                ? ".format(java.time.format.DateTimeFormatter.ofPattern(" + lang.string(pattern) + "))"
+                : "date".equals(kind)
+                        ? ".toString()"
+                        : ".format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)";
+        return "date".equals(kind)
+                ? "java.time.LocalDate.now()." + shift + format
+                : "java.time.LocalDateTime.now()." + shift + ".withNano(0)" + format;
     }
 
     // ---- the principal ---------------------------------------------------------------
@@ -1828,14 +2034,32 @@ final class ContractTestSource {
         String entity;
     }
 
-    /** The run's generated sign-in: the one entity that @signin and has it; null when there is none. */
+    /**
+     * The run's generated sign-in: the one entity that @signin and has it;
+     * null when there is none, or when no principal of it can be built - then
+     * principalProblem says why, as the summary does.
+     */
     private Principal principal(Lang lang) {
+        principalProblem = null;
+        Principal found = signInPrincipal(lang);
+        if (found != null) principalProblem = null;
+        else if (principalProblem != null) skip(principalProblem);
+        return found;
+    }
+
+    private Principal signInPrincipal(Lang lang) {
         for (ECoreModel m : models) {
             if (m.getEntityModels() == null) continue;
             ModelComponentItems<Entity> items = m.getEntityModels().getItems();
             for (int i = 0; i < items.size(); i++) {
                 EntitySpec p = entityIn(m, items.get(i).getIdentity().getName());
-                if (p == null || !ServiceAccessRules.signsIn(p) || !creates(p)) continue;
+                if (p == null || !ServiceAccessRules.signsIn(p)) continue;
+                if (!creates(p)) {
+                    if (principalProblem == null)
+                        principalProblem = p.getName() + " (signing in): its API takes no create, so no administrator"
+                                + " is made to sign in as";
+                    continue;
+                }
                 Principal out = new Principal();
                 out.entity = p.getName();
                 out.path = path(p);
@@ -1856,18 +2080,21 @@ final class ContractTestSource {
                 }
                 EntityTests plan = new EntityTests(p, lang, new Settings());
                 plan.dto = dto(p);
-                if (plan.dto == null) return null;
+                if (plan.dto == null) {
+                    principalProblem = p.getName() + " (signing in): no " + p.dtoClassName() + " to send";
+                    return null;
+                }
                 Builder b = plan.builder(p, new ArrayDeque<String>());
                 if (b.problem != null) {
-                    skip(p.getName() + " (signing in): " + b.problem);
+                    principalProblem = p.getName() + " (signing in): " + b.problem;
                     return null;
                 }
                 // What the principal needs made first is made as the application too: the support class has no
                 // builders of its own beside this one.
                 for (String[] kv : b.fields) {
                     if (kv[1].contains("createdId(")) {
-                        skip(p.getName() + " (signing in): it needs other rows made first, which the support class"
-                                + " does not make");
+                        principalProblem = p.getName() + " (signing in): it needs other rows made first, which the"
+                                + " support class does not make";
                         return null;
                     }
                 }
@@ -1878,8 +2105,8 @@ final class ContractTestSource {
                     hasPassword |= kv[0].equals(out.password);
                 }
                 if (!hasLogin || !hasPassword) {
-                    skip(p.getName() + " (signing in): its " + out.login + " and password are not both required, so"
-                            + " the support class does not know what to sign in with");
+                    principalProblem = p.getName() + " (signing in): its " + out.login + " and password are not both"
+                            + " required, so the support class does not know what to sign in with";
                     return null;
                 }
                 out.body = plan.obj(b.fields, "                ");
@@ -1900,12 +2127,18 @@ final class ContractTestSource {
                 : "org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc";
         boolean system = guarded && principal == null;
         boolean tx = !s.mongo;
+        String why = system ? principalProblem : null;
         return lang.kotlin
-                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx)
-                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx);
+                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why)
+                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why);
     }
 
-    private static String doc(String domainName, Settings s, boolean guarded, boolean system, Principal principal) {
+    /**
+     * The support class's comment. Without a sign-in it says why: the run has
+     * no @signin, or its principal cannot be built - with the summary's reason.
+     */
+    private static String doc(
+            String domainName, Settings s, boolean guarded, boolean system, Principal principal, String why) {
         StringBuilder d = new StringBuilder();
         d.append("/**\n")
                 .append(" * What every contract test of the ")
@@ -1918,6 +2151,11 @@ final class ContractTestSource {
                 .append(" * nothing as generated; a project that asks every write for a CSRF token adds its\n")
                 .append(" * cookie and header there. signIn() is how a test signs in");
         if (!guarded) d.append(" - nobody, as no operation of\n * the domain asks who is calling (@access).\n");
+        else if (system && why != null)
+            d.append(": the generated sign-in's\n * principal cannot be built (")
+                    .append(comment(why))
+                    .append("),\n * so the requests run as the application itself (CurrentUser.runAsSystem); sign\n"
+                            + " * in your way there and set the session.\n");
         else if (system)
             d.append(": the run has no generated\n * sign-in (@signin), so the requests run as the application itself\n"
                     + " * (CurrentUser.runAsSystem); sign in your way there and set the session.\n");
@@ -1946,6 +2184,17 @@ final class ContractTestSource {
         d.append(s.mongo ? ".\n" : " and H2.\n");
         d.append(" */\n");
         return d.toString();
+    }
+
+    /**
+     * Text safe inside a Java or Kotlin block comment: a reason may quote a
+     * pattern, whose * / would end the comment, whose / * would open one in
+     * Kotlin (they nest there), and whose backslash-u Java reads as a
+     * character before it reads the comment - every backslash is doubled, so
+     * none starts one, however many stand before a u.
+     */
+    static String comment(String text) {
+        return text.replace("*/", "* /").replace("/*", "/ *").replace("\\", "\\\\");
     }
 
     /**
@@ -2002,7 +2251,8 @@ final class ContractTestSource {
             boolean guarded,
             boolean system,
             Principal principal,
-            boolean tx) {
+            boolean tx,
+            String why) {
         Lang lang = new Lang(false);
         StringBuilder j = new StringBuilder();
         j.append(OWNED).append('\n').append("package ").append(pkg).append(";\n\n");
@@ -2037,7 +2287,7 @@ final class ContractTestSource {
                 .append("import java.util.Map;\n")
                 .append("import java.util.concurrent.ThreadLocalRandom;\n")
                 .append("import java.util.concurrent.atomic.AtomicLong;\n\n");
-        j.append(doc(domainName, s, guarded, system, principal));
+        j.append(doc(domainName, s, guarded, system, principal, why));
         j.append(springBootTest(s, lang));
         j.append("@AutoConfigureMockMvc\n");
         if (tx) j.append("@Transactional\n");
@@ -2423,7 +2673,8 @@ final class ContractTestSource {
             boolean guarded,
             boolean system,
             Principal principal,
-            boolean tx) {
+            boolean tx,
+            String why) {
         Lang lang = new Lang(true);
         StringBuilder k = new StringBuilder();
         k.append(OWNED).append('\n').append("package ").append(pkg).append("\n\n");
@@ -2451,7 +2702,7 @@ final class ContractTestSource {
                 .append("import java.nio.charset.StandardCharsets\n")
                 .append("import java.util.concurrent.ThreadLocalRandom\n")
                 .append("import java.util.concurrent.atomic.AtomicLong\n\n");
-        k.append(doc(domainName, s, guarded, system, principal));
+        k.append(doc(domainName, s, guarded, system, principal, why));
         k.append(springBootTest(s, lang));
 
         k.append("@AutoConfigureMockMvc\n");

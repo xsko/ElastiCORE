@@ -763,6 +763,258 @@ public class ContractTestsTest {
         assertFalse(log.contains("ContractTest"), log);
     }
 
+    // ---- the marks of Bean Validation --------------------------------------------------
+
+    private static final String MARKS = String.join(
+            "\n",
+            "entity:",
+            "  Member:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      memberId: long @id @sequence",
+            "      nick:     string(20)! @notblank",
+            "      alias:    string(20) @notblank",
+            "      hidden:   string(20) @notblank @readonly",
+            "      mail:     string(60) @email",
+            "      born:     date @past",
+            "      seen:     datetime @pastorpresent",
+            "      due:      date! @future",
+            "      renew:    datetime @futureorpresent",
+            "      at:       timestamp @past",
+            "      wakeAt:   time @future",
+            "      day:      date @past @pattern(yyyyMMdd)",
+            "      pin:      string(6) @pattern('^(?=.*\\\\d)\\\\d+$')",
+            "      tag:      string(10) @pattern('^(?!.*x).+$')",
+            "      word:     string(20) @pattern('^(?=.*[A-Z])(?=.*\\\\d)[A-Za-z0-9]{6}$')",
+            "      handle:   string(20) @email @pattern('[a-z]{4}')",
+            "");
+
+    @Test
+    public void eachMarkIsRefusedOnceByItsCode() throws Exception {
+        File project = project(MARKS, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/MemberContractTest.java");
+        // The row each test starts from satisfies the marks: @notblank sent (it refuses null too), @future a year
+        // ahead.
+        assertTrue(
+                t.contains("\"nick\", text(12)")
+                        && t.contains("\"alias\", text(12)")
+                        && t.contains("\"due\", java.time.LocalDate.now().plusYears(1).toString()"),
+                t);
+        assertTrue(
+                t.contains(
+                        "assertFieldError(post(MEMBER, withValue(newMember(), \"nick\", \"   \")), \"nick\", \"NotBlank\");"),
+                t);
+        assertTrue(
+                t.contains(
+                        "assertFieldError(post(MEMBER, withValue(newMember(), \"alias\", \"   \")), \"alias\", \"NotBlank\");"),
+                t);
+        // @notblank with no '!': null is refused by NotBlank, not NotNull - no test of a NotNull it does not have.
+        assertFalse(t.contains("aliasIsRequired"), t);
+        assertTrue(
+                t.contains(
+                        "assertCreated(post(MEMBER, withValue(newMember(), \"mail\", email(24))));\n"
+                                + "        assertFieldError(post(MEMBER, withValue(newMember(), \"mail\", email(24).replace(\"@\", \"\"))), \"mail\", \"Email\");"),
+                t);
+        // A year from the clock passes, a day past now is refused - each by its own code.
+        assertTrue(
+                t.contains(
+                        "assertCreated(post(MEMBER, withValue(newMember(), \"born\", java.time.LocalDate.now().minusYears(1).toString())));\n"
+                                + "        assertFieldError(post(MEMBER, withValue(newMember(), \"born\", java.time.LocalDate.now().plusDays(2).toString())), \"born\", \"Past\");"),
+                t);
+        assertTrue(
+                t.contains(
+                        "\"seen\", java.time.LocalDateTime.now().plusDays(1).withNano(0)"
+                                + ".format(java.time.format.DateTimeFormatter.ofPattern(\"yyyy-MM-dd HH:mm:ss\")))), \"seen\", \"PastOrPresent\");"),
+                t);
+        assertTrue(
+                t.contains("\"due\", java.time.LocalDate.now().minusDays(2).toString())), \"due\", \"Future\");"), t);
+        assertTrue(
+                t.contains(
+                        "\"renew\", java.time.LocalDateTime.now().minusDays(1).withNano(0)"
+                                + ".format(java.time.format.DateTimeFormatter.ofPattern(\"yyyy-MM-dd HH:mm:ss\")))), \"renew\", \"FutureOrPresent\");"),
+                t);
+        assertTrue(
+                t.contains(
+                        "\"at\", java.time.Instant.now().plus(java.time.Duration.ofDays(1)).toString())), \"at\", \"Past\");"),
+                t);
+        // In the DTO's format.
+        assertTrue(
+                t.contains("\"day\", java.time.LocalDate.now().plusDays(2)"
+                        + ".format(java.time.format.DateTimeFormatter.ofPattern(\"yyyyMMdd\")))), \"day\", \"Past\");"),
+                t);
+        // A mark the DTO does not carry is not tested: @notblank on what the server sets is taken off the DTO.
+        assertFalse(t.contains("hiddenNotBlank"), t);
+        assertFalse(t.contains("\"hidden\""), t);
+        // A time of day against the clock: said, not tested.
+        assertFalse(t.contains("wakeAtFuture"), t);
+        assertFalse(t.contains("23:59:59"), t);
+        assertTrue(t.contains("@DisplayName(\"born: a year ago passes, two days ahead is refused (400 Past)\")"), t);
+        assertTrue(t.contains("@DisplayName(\"seen: a year ago passes, tomorrow is refused (400 PastOrPresent)\")"), t);
+        assertTrue(
+                log.contains("Member.wakeAt @future: a time of day is past or future by the hour the test runs at"),
+                log);
+        // A lookahead the rest always holds cannot be missed; any other lookaround is no sample - each counted.
+        assertFalse(t.contains("pinPattern"), t);
+        assertTrue(
+                log.contains(
+                        "Member.pin @pattern: no value the generator can build matches the rest of ^(?=.*\\\\d)\\\\d+$"
+                                + " and misses one of its lookaheads"),
+                log);
+        assertFalse(t.contains("tagPattern"), t);
+        assertTrue(log.contains("Member.tag @pattern: no value the generator can build matches ^(?!.*x).+$"), log);
+        // A lookahead pattern: a value made from it passes, one that matches the rest and misses a lookahead is
+        // refused.
+        assertTrue(t.contains("void wordPattern()"), t);
+        java.util.regex.Matcher refused = java.util.regex.Pattern.compile(
+                        "withValue\\(newMember\\(\\), \"word\", \"([^\"]*)\"\\)\\), \"word\", \"Pattern\"\\);")
+                .matcher(t);
+        assertTrue(refused.find(), t);
+        assertTrue(refused.group(1).matches("[A-Za-z0-9]{6}"), refused.group(1));
+        assertFalse(refused.group(1).matches("^(?=.*[A-Z])(?=.*\\d)[A-Za-z0-9]{6}$"), refused.group(1));
+        // @email whose @pattern makes no address: said, not tested.
+        assertFalse(t.contains("handleEmail"), t);
+        assertTrue(log.contains("Member.handle @email: the value its @pattern makes is no address"), log);
+        // The summary counts what was written: every @Test of the class.
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("=== contract tests: (\\d+) written")
+                .matcher(log);
+        assertTrue(m.find(), log);
+        assertEquals(tests(project, "src/test/java/com/acme/shop"), Integer.parseInt(m.group(1)), log);
+    }
+
+    @Test
+    public void kotlinGetsTheSameMarks() throws Exception {
+        File project = project(MARKS, "contract");
+        run(project, "hexagonal", "kotlin");
+        String t = read(project, "src/test/kotlin/com/acme/shop/MemberContractTest.kt");
+        assertTrue(
+                t.contains(
+                        "        assertFieldError(post(MEMBER, withValue(newMember(), \"nick\", \"   \")), \"nick\", \"NotBlank\")\n"),
+                t);
+        assertTrue(t.contains("\"mail\", email(24).replace(\"@\", \"\"))), \"mail\", \"Email\")\n"), t);
+        assertTrue(
+                t.contains("\"born\", java.time.LocalDate.now().plusDays(2).toString())), \"born\", \"Past\")\n"), t);
+        assertTrue(t.contains("\"due\", java.time.LocalDate.now().plusYears(1).toString()"), t);
+        assertFalse(t.contains(";\n"), t);
+    }
+
+    /** The sign-in's principal with a password's rule: built from the pattern, and signed in with the value it sent. */
+    @Test
+    public void aPasswordWithLookaheadsIsBuiltForTheSignIn() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Agent:",
+                "    meta: entity @root @editable @expose(20) @signin @owner(agentId) @access(read=owner, create=public, update=owner)",
+                "    fields:",
+                "      agentId: long @id @sequence",
+                "      login:   string(20)! @login @unique",
+                "      secret:  string(255)! @password @length(min=8) @pattern('^(?=.*[A-Za-z])(?=.*[0-9]).+$')",
+                "      grade:   string(10) @access(admin) @role",
+                "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        java.util.regex.Matcher secret = java.util.regex.Pattern.compile(
+                        "Map<String, Object> principal = obj\\(\"login\", text\\(12\\), \"secret\", \"([^\"]+)\"\\);")
+                .matcher(s);
+        assertTrue(secret.find(), s);
+        assertTrue(
+                secret.group(1).matches("^(?=.*[A-Za-z])(?=.*[0-9]).+$")
+                        && secret.group(1).length() >= 8,
+                s);
+        // The plain value the principal was made with is what signs in (the password is hashed on save).
+        assertTrue(
+                s.contains(
+                        ".content(json(obj(\"login\", principal.get(\"login\"), \"secret\", principal.get(\"secret\"))))"),
+                s);
+        assertTrue(s.contains(": as an administrator, through the\n * generated sign-in of Agent"), s);
+        assertFalse(log.contains("(signing in)"), log);
+        String t = read(project, "src/test/java/com/acme/shop/AgentContractTest.java");
+        assertTrue(t.contains("void secretPattern()"), t);
+    }
+
+    @Test
+    public void theSupportClassSaysWhyThereIsNoSignIn() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Agent:",
+                "    meta: entity @root @editable @expose(20) @signin @owner(agentId) @access(read=owner, create=public, update=owner)",
+                "    fields:",
+                "      agentId: long @id @sequence",
+                "      login:   string(20)! @login @unique",
+                "      secret:  string(255)! @password @pattern('^(?!.*\\\\s).+$')",
+                "  Note:",
+                "    meta: entity @root @editable @expose(20) @access(read=public)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      text:   string(40)!",
+                "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains(
+                        ": the generated sign-in's\n * principal cannot be built (Agent (signing in): secret: no value of"),
+                s);
+        assertTrue(s.contains("so the requests run as the application itself (CurrentUser.runAsSystem)"), s);
+        assertTrue(s.contains("        if (session == null) return asSystem(builder);\n"), s);
+        assertTrue(log.contains("Agent (signing in): secret: no value of"), log);
+        // No @signin at all: said so.
+        String none = String.join(
+                "\n",
+                "entity:",
+                "  Note:",
+                "    meta: entity @root @editable @expose(20) @access(read=public)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      text:   string(40)!",
+                "");
+        File other = project(none, "contract");
+        run(other, "hexagonal", "java");
+        String n = read(other, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(n.contains(": the run has no generated\n * sign-in (@signin)"), n);
+        assertFalse(n.contains("cannot be built"), n);
+        // A @signin entity the API does not create: no administrator is made, and the reason is said.
+        File readOnly = project(
+                model.replace(
+                        "@editable @expose(20) @signin", "@editable @expose(20, methods=\"read,search\") @signin"),
+                "contract");
+        String readOnlyLog = run(readOnly, "hexagonal", "java");
+        String r = read(readOnly, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(r.contains("principal cannot be built (Agent (signing in): its API takes no create"), r);
+        assertTrue(
+                readOnlyLog.contains("Agent (signing in): its API takes no create, so no administrator is made"),
+                readOnlyLog);
+    }
+
+    /** A required time of day against the clock: no value is made of it, and the row is counted as skipped. */
+    @Test
+    public void aRequiredTimeOfDayAgainstTheClockIsSaid() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Shift:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      shiftId: long @id @sequence",
+                "      opensAt: time! @future",
+                "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertFalse(new File(project, "src/test/java/com/acme/shop/ShiftContractTest.java").exists(), log);
+        assertTrue(log.contains("Shift: opensAt: no value of"), log);
+    }
+
+    /** A reason quoting a pattern cannot end the comment it is written in, nor open one in Kotlin. */
+    @Test
+    public void aReasonInTheCommentIsSafe() {
+        assertEquals("a* /b/ *c\\\\u0041", ContractTestSource.comment("a*/b/*c\\u0041"));
+        // Two backslashes before a u were safe, and stay so: four, never three.
+        assertEquals("\\\\\\\\u0041", ContractTestSource.comment("\\\\u0041"));
+    }
+
     // ---- the pattern's values --------------------------------------------------------
 
     @Test

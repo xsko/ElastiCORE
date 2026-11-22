@@ -759,7 +759,9 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 | `!` (required) | sent as null: 400, the field, `NotNull` |
 | `string(n)`, `@length` | n characters pass, n + 1 are refused: 400 `Size` (and the least length, where one is given) |
 | `@min`, `@max` | the bound passes, one step past it is refused: 400 `Min` / `Max` (`DecimalMin` / `DecimalMax` on a decimal) |
-| `@pattern` | a value made from the expression - checked with it - passes, one that does not match is refused: 400 `Pattern` |
+| `@pattern` | a value made from the expression - checked with it - passes, one that does not match is refused: 400 `Pattern`. A password's rule - `^` then lookaheads `(?=.*X)`: a value with a character of each X passes, one that matches the rest but misses one is refused |
+| `@notblank`, `@email` | text passes, blank text (`"   "`) is refused: 400 `NotBlank`; an address passes, the address without its `@` is refused: 400 `Email` |
+| `@past`, `@future` | on a date, a datetime or a timestamp: a year ago (from now) passes; past now the other way is refused - a date by two days (a midnight during the request leaves it past), a datetime or timestamp by one: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`), read from the clock when the test runs |
 | `@minsize(n)` | n members pass, n - 1 are refused: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: the boundary passes, one past it is refused: 422 `invariant.<Entity>.<rule>` |
 
@@ -769,6 +771,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   CSRF cookie and header go there - and `signIn()` how a test signs in. Where an operation asks who is calling (`@access`), it signs in
   an administrator made for the test as the application itself, through the generated sign-in (`@signin`); without a generated
   sign-in the requests run as the application (`CurrentUser.runAsSystem`). Tests of `@access` itself come later.
+  The support class's comment says why there is none: the run has no `@signin`, or its principal cannot be built - with the
+  summary's reason (`Member (signing in): password: ...`, a `@pattern` the generator cannot sample, say).
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
@@ -791,7 +795,10 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - Covered: the field constraints in every mode, language and architecture; the lifecycles and the invariants where they are written -
   ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `@access` (who is let in), `@Mask` and `@encrypt`, `export`, the
   `delete:` states of a lifecycle, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
-  a float holds no exact 0.1, and its check compares it widened to a double.
+  a float holds no exact 0.1, and its check compares it widened to a double. So are a `@past` / `@future` time of day (past or
+  future by the hour the test runs at), a lookahead the rest always holds (`@pattern('^(?=.*\\d)\\d+$')`: nothing matches the rest
+  and misses it) and any other lookaround - a negative lookahead, a lookbehind, a lookahead further in.
+  A mark the DTO does not write is not tested: `@notblank` on a field the server sets (`@readonly`), which a request cannot send.
 - Test dependencies, not added for you: `testImplementation 'org.springframework.boot:spring-boot-starter-test'` and, over JPA and
   MyBatis, H2 (`testRuntimeOnly 'com.h2database:h2'`); on Spring Boot 4 also `spring-boot-starter-webmvc-test`.
 - Change a test where you changed a rule on purpose, and a row's builder (`newPurchaseOrder()`) where the application needs more than
