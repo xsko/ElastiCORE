@@ -81,8 +81,9 @@ class SemanticModelTest {
         }
         // @password and @writeonly: in the table, never in a reply - and never in the semantic model.
         assertThat(text).doesNotContain("- name: password").doesNotContain("- name: credit_card_number");
-        // The status column holds a code; what it means is said beside it.
-        assertThat(text).contains("Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled");
+        // The status column holds a code; what it means is said beside it, in every language of its label columns.
+        assertThat(text).contains("Codes: PLC = Placed (ko: 주문됨), SHP = Shipped (ko: 배송됨), CAN = Cancelled (ko: 취소됨)");
+        assertThat(text).contains("\"code_labels\": {\"PLC\": {\"ko\": \"주문됨\"}, \"SHP\": {\"ko\": \"배송됨\"}, \"CAN\": {\"ko\": \"취소됨\"}}");
     }
 
     private static Set<String> columns(DatabaseMetaData md, String table) throws Exception {
