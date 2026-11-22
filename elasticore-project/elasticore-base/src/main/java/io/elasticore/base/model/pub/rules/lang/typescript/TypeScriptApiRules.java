@@ -35,6 +35,48 @@ public class TypeScriptApiRules implements CodeRules {
         // the artifact has one, and so a domain with no exposed entity still
         // gets the runtime its siblings import.
         ctx(d).var("domainName", d.getName());
+        // The export's body and the call that answers a file (issue 271): only in a
+        // domain with an entity that lists export, so every other file is as before.
+        SourceCode c = ctx(d);
+        c.slot("exportSupport");
+        boolean exports = false;
+        for (EntitySpec e : d.entities()) exports |= exports(e);
+        if (!exports) return;
+        for (String line : EXPORT_SUPPORT) c.varLine("exportSupport", "%s", line);
+    }
+
+    /** What apiSupport.ts gains in a domain with an export: its body's type and the call that answers a Blob. */
+    private static final String[] EXPORT_SUPPORT = {
+        "",
+        "/** The body of an export (POST .../export): the search, its order, the columns, their titles, the format. */",
+        "export interface ExportRequest<S> {",
+        "    /** The search's conditions, as search takes them; none: every row the caller may see. */",
+        "    search?: S;",
+        "    /** The order, as search takes it ('name+,price-'); none: the search's own. */",
+        "    sortCode?: string;",
+        "    /** The response's properties to write, in this order; none: every one, in the DTO's order. */",
+        "    columns?: string[];",
+        "    /** The column titles, one a column; none: each column's label in the request's language. */",
+        "    headers?: string[];",
+        "    /** 'csv' (the default) or 'xlsx' (where the server has Apache POI; else 406). */",
+        "    format?: 'csv' | 'xlsx';",
+        "}",
+        "",
+        "/** A file the server answers with, as a Blob - an export. Raises ApiError as request does. */",
+        "export async function requestFile(method: string, path: string, body?: unknown, init?: RequestInit): Promise<Blob> {",
+        "    const res = await send(method, path, body, init);",
+        "    if (!res.ok) {",
+        "        throw new ApiError(res.status, path, await res.text());",
+        "    }",
+        "    return res.blob();",
+        "}"
+    };
+
+    /** Whether the server serves POST /export for the entity: a 3.0 server, and @expose(methods) lists it. */
+    private static boolean exports(EntitySpec e) {
+        return !io.elasticore.base.model.pub.rules.verify.SpecFactory.compatibleServer()
+                && !e.pkFields().isEmpty()
+                && io.elasticore.base.model.pub.rules.base.ControllerBaseRules.exports(e);
     }
 
     @Rule(value = "ts-api", target = "api", order = 10)
@@ -129,6 +171,18 @@ public class TypeScriptApiRules implements CodeRules {
                     "boolean",
                     String.format("request<boolean>('DELETE', BASE + %s, undefined, init)", idPath),
                     "Deletes the " + e.getName() + " with this identifier.");
+
+        // POST /export, where @expose(methods) lists it (issue 271). Named for the entity:
+        // export is a word of the language.
+        boolean exports = exports(e);
+        if (exports)
+            method(
+                    c,
+                    "export" + e.getName(),
+                    String.format("body: ExportRequest<%s>", srchDto),
+                    "Blob",
+                    "requestFile('POST', BASE + '/export', body, init)",
+                    "The rows the search finds as a file: CSV, or an .xlsx workbook (format: 'xlsx').");
 
         // A lifecycle's commands, asked before they are given: which buttons a
         // screen shows. The same test the entity's canShip() makes.
@@ -280,7 +334,8 @@ public class TypeScriptApiRules implements CodeRules {
                 || signsIn;
         uses.requestOrNull = !gone.contains("read");
         uses.seg = !gone.contains("read") || !gone.contains("deleteById") || commands;
-        if (!uses.request && !uses.requestOrNull) {
+        uses.export = exports;
+        if (!uses.request && !uses.requestOrNull && !uses.export) {
             // Nothing to call: @expose(methods) named nothing the controller serves.
             // A file of a BASE nobody reads does not compile under noUnusedLocals -
             // a canDelete() alone included, so the file goes with its calls.
@@ -292,7 +347,7 @@ public class TypeScriptApiRules implements CodeRules {
 
     /** Which of the client's imports its functions read. */
     private static final class Uses {
-        boolean dto, keyDto, search, commands, request, requestOrNull, seg;
+        boolean dto, keyDto, search, commands, request, requestOrNull, seg, export;
     }
 
     /**
@@ -379,7 +434,7 @@ public class TypeScriptApiRules implements CodeRules {
         Set<String> models = new LinkedHashSet<String>();
         if (uses.dto) models.add(dto);
         if (uses.keyDto) models.add(keyDto);
-        if (uses.search) models.add(srchDto);
+        if (uses.search || uses.export) models.add(srchDto);
         if (uses.search) models.add(result);
         if (uses.commands) {
             for (EntitySpec.CommandSpec cmd : e.commands()) {
@@ -393,6 +448,10 @@ public class TypeScriptApiRules implements CodeRules {
         if (uses.requestOrNull) runtime.add("requestOrNull");
         if (uses.seg) runtime.add("seg");
         if (paged && uses.search) runtime.add("Page");
+        if (uses.export) {
+            runtime.add("requestFile");
+            runtime.add("ExportRequest");
+        }
         if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) runtime.add("ApiError");
         sb.append(String.format("import { %s } from './apiSupport';%n",
                 String.join(", ", runtime)));

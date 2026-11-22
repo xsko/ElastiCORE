@@ -419,6 +419,98 @@ public abstract class ShopApi {
                 jdbc.queryForObject("SELECT serial_no FROM gadget WHERE gadget_id = ?", String.class, id)));
     }
 
+    // ---- export (issue 271) --------------------------------------------------------
+
+    /**
+     * POST /gadget/export: the rows the search finds, in the columns asked for, each value as the response's JSON
+     * shows it - serialNo masked by @Mask(CARD) as the application's ObjectMapper masks it, a number as a number -
+     * and a text a spreadsheet would run (=SUM...) written as text.
+     */
+    @Test
+    public void anExportWritesWhatTheSearchFindsAsTheResponseShowsIt() throws Exception {
+        String tag = unique().substring(0, 10);
+        String serial = "55" + String.format("%010d", Math.abs(System.nanoTime() % 10_000_000_000L));
+        String dashed = serial.substring(0, 4) + "-" + serial.substring(4, 8) + "-" + serial.substring(8);
+        String masked = dashed.substring(0, 5) + "****" + dashed.substring(9);
+        long id = id(create("gadget", "{\"name\":\"=SUM(A1) " + tag + "\",\"serialNo\":\"" + dashed
+                + "\",\"weight\":-1.5,\"price\":1200.50,\"active\":true,\"madeOn\":\"2026-11-02\"}"), "gadgetId");
+        create("gadget", "{\"name\":\"" + tag + " plain\"}");
+
+        String body = "{\"search\":{\"name\":\"" + tag + "\"},\"columns\":[\"gadgetId\",\"name\",\"serialNo\",\"weight\","
+                + "\"price\",\"active\",\"madeOn\"]}";
+        MvcResult r = perform(post(API + "/gadget/export").contentType(MediaType.APPLICATION_JSON).content(body), 200);
+        assertEquals("text/csv;charset=UTF-8", r.getResponse().getContentType());
+        assertEquals("attachment; filename=\"Gadget.csv\"", r.getResponse().getHeader("Content-Disposition"));
+        String csv = new String(r.getResponse().getContentAsByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        String[] lines = csv.split("\r\n", -1);
+        assertEquals("﻿gadgetId,name,serialNo,weight,price,active,madeOn", lines[0]);
+        assertEquals(id + ",'=SUM(A1) " + tag + "," + masked + ",-1.5,1200.50,true,2026-11-02", lines[1], csv);
+        assertEquals(4, lines.length, csv);
+        assertFalse(csv.contains(serial.substring(4, 8)), "the card is masked: " + csv);
+
+        // Every column, in the DTO's order - the blind index is not one of the response's.
+        String all = new String(perform(post(API + "/gadget/export").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"search\":{\"gadgetId\":" + id + "}}"), 200).getResponse().getContentAsByteArray(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals("﻿gadgetId,name,active,weight,ratio,amount,price,count,notes,body,page,pageText,serialNo,image,"
+                + "madeOn,madeAt,opensAt,stampedAt", all.split("\r\n")[0]);
+        assertTrue(all.contains(masked) && !all.contains(dashed), all);
+    }
+
+    /** As an .xlsx workbook (Apache POI is on this module's test classpath): numbers, dates, text, never a formula. */
+    @Test
+    public void anExportAsAWorkbook() throws Exception {
+        String tag = unique().substring(0, 10);
+        String serial = "44" + String.format("%010d", Math.abs(System.nanoTime() % 10_000_000_000L));
+        String dashed = serial.substring(0, 4) + "-" + serial.substring(4, 8) + "-" + serial.substring(8);
+        create("gadget", "{\"name\":\"=SUM(A1) " + tag + "\",\"serialNo\":\"" + dashed
+                + "\",\"weight\":-1.5,\"madeOn\":\"2026-11-02\"}");
+        String body = "{\"search\":{\"name\":\"" + tag + "\"},\"columns\":[\"name\",\"serialNo\",\"weight\",\"madeOn\"],"
+                + "\"headers\":[\"Name\",\"Serial\",\"Weight\",\"Made on\"]}";
+        // Asked for by the Accept header.
+        MvcResult r = perform(post(API + "/gadget/export").contentType(MediaType.APPLICATION_JSON)
+                .accept("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").content(body), 200);
+        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", r.getResponse().getContentType());
+        try (org.apache.poi.xssf.usermodel.XSSFWorkbook book = new org.apache.poi.xssf.usermodel.XSSFWorkbook(
+                new java.io.ByteArrayInputStream(r.getResponse().getContentAsByteArray()))) {
+            org.apache.poi.ss.usermodel.Sheet sheet = book.getSheet("Gadget");
+            assertEquals("Made on", sheet.getRow(0).getCell(3).getStringCellValue());
+            org.apache.poi.ss.usermodel.Row row = sheet.getRow(1);
+            assertEquals(org.apache.poi.ss.usermodel.CellType.STRING, row.getCell(0).getCellType());
+            assertEquals("=SUM(A1) " + tag, row.getCell(0).getStringCellValue());
+            assertEquals(dashed.substring(0, 5) + "****" + dashed.substring(9), row.getCell(1).getStringCellValue());
+            assertEquals(-1.5d, row.getCell(2).getNumericCellValue());
+            assertTrue(org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(row.getCell(3)));
+            assertEquals(java.time.LocalDate.of(2026, 11, 2), row.getCell(3).getLocalDateTimeCellValue().toLocalDate());
+            assertEquals(1, sheet.getLastRowNum());
+        }
+    }
+
+    /** More rows than a page holds: every page is written, each row once, in the key's order where none is asked. */
+    @Test
+    public void anExportWritesEveryPage() throws Exception {
+        String tag = unique().substring(0, 10);
+        List<Object[]> rows = new ArrayList<Object[]>();
+        for (int i = 0; i < 1_100; i++) rows.add(new Object[] {tag + "-" + i});
+        jdbc.batchUpdate("INSERT INTO gadget (name) VALUES (?)", rows);
+
+        String csv = new String(perform(post(API + "/gadget/export").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"search\":{\"name\":\"" + tag + "\"},\"columns\":[\"gadgetId\",\"name\"]}"), 200)
+                .getResponse().getContentAsByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        String[] lines = csv.split("\r\n");
+        assertEquals(1_101, lines.length);
+        java.util.Set<String> names = new java.util.HashSet<String>();
+        long last = 0;
+        for (int i = 1; i < lines.length; i++) {
+            String[] cells = lines[i].split(",");
+            long id = Long.parseLong(cells[0]);
+            assertTrue(id > last, "in the key's order: " + lines[i]);
+            last = id;
+            assertTrue(names.add(cells[1]), "once: " + lines[i]);
+        }
+        assertEquals(1_100, names.size());
+    }
+
     // ---- helpers ------------------------------------------------------------------
 
     private static String order(long customer, String product, String status, int amount, String memo) {

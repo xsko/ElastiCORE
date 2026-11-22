@@ -70,6 +70,8 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.23.2'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	// Gadget's export as an .xlsx workbook: the runtime writes one where Apache POI is on the classpath.
+	testImplementation 'org.apache.poi:poi-ooxml:5.5.1'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testRuntimeOnly 'com.h2database:h2'
 	// The databases dbTest runs on.

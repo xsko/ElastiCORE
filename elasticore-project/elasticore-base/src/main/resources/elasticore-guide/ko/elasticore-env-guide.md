@@ -787,6 +787,22 @@ config:
 - 없으면 `@label(<언어>=...)` 이 없는 언어는 그 문장에서 필드·엔티티 이름을 받고, `--` 문구는 쓰지 않습니다.
   영어는 늘 `@label(en=...)` 아니면 이름입니다. 언어 태그가 아닌 값(`korean`)은 `DSL_WARN` 이고 무시됩니다.
 - 아직 다른 곳은 읽지 않습니다: `--` 문구는 Javadoc, `@Schema(description)`, 컬럼 주석, Ossie description 그대로입니다.
+  내보내기의 열 제목(6-4)은 같은 라벨 파일에서 읽습니다.
+
+## 6-4. 내보내기가 쓰는 최대 행 수 (`elasticore.export.max-rows`, 3.0)
+> **동작:** `@expose(methods="...,export")` 의 내보내기(`elasticore-annotation-guide.md`), 모든 모드·언어·아키텍처 · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (내보내기 없음)
+
+```yaml
+# application.yml - env.yml 키가 아니라 애플리케이션의 Spring 속성
+elasticore:
+  export:
+    max-rows: 20000        # 기본값 100000
+```
+
+- 내보내기는 먼저 검색의 행 수를 셉니다 - 첫 페이지의 total, 같은 조건·접근 검사·`@owner` 필터 - 그리고 그보다 많으면
+  아무것도 쓰기 전에 400(`code: export.too-many-rows`, detail 에 건수)으로 거부합니다.
+- 요청마다 읽고, 애플리케이션 전체에 값 하나입니다. .xlsx 통합 문서는 값과 상관없이 1,048,575 행까지 씁니다.
+- 예제: 펫스토어의 `ExportLimitTest`(`max-rows=10`: 32 개 품목은 거부되고, 더 좁은 검색은 써집니다).
 
 ## 7. apiPath 설정
 
