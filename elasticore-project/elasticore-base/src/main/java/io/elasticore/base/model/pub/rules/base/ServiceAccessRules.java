@@ -104,9 +104,8 @@ public class ServiceAccessRules implements CodeRules {
                     io.elasticore.base.util.ConsoleLog.storeLog(
                             "DSL_WARN",
                             String.format(
-                                    "[%s] %s @access: '%s' is not operation=level (public, user, owner, admin, none, or a"
-                                            + " role name that starts with a capital letter, joined by | and &); the"
-                                            + " application would refuse to start.",
+                                    "[%s] %s @access: '%s' is not operation=level (public, user, owner, admin, none);"
+                                            + " the application would refuse to start.",
                                     e.domainClassName(), e.getName(), part.trim()));
                 }
                 continue;
@@ -1152,7 +1151,12 @@ public class ServiceAccessRules implements CodeRules {
                         }
                         continue;
                     }
-                    if (roleEnum == null || constants == null || !word.matches("\\w+") || constants.contains(word)) {
+                    // Only a word that can be a role name (a capital first) is checked against the enum: any
+                    // other word that is no level (read=owners) stays the warning levels() says, as it was.
+                    if (roleEnum == null
+                            || constants == null
+                            || !word.matches("[A-Z]\\w*")
+                            || constants.contains(word)) {
                         continue;
                     }
                     io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(

@@ -18,8 +18,9 @@
   read, and the search filter of JPA (the `Specification`), MyBatis (the mapper's owner argument) and MongoDB (the
   `Criteria`). `AccessPolicy.level(op)` answers null for an entry that names a role or joins words.
 - Build checks: where the application has a role enum - the `@signin` entity's role field is an enum, in this domain
-  or another domain of the application (counted per application, as `@signin` is) - a name that is neither a level
-  nor one of its constants stops the build, naming the entity, the entry and the name: `[Shop] Ticket
+  or another domain of the application (counted per application, as `@signin` is) - a role name (a word with a
+  capital first that is no level) that is not one of its constants stops the build, naming the entity, the entry and
+  the name: `[Shop] Ticket
   @access(create=REP|MANGER): MANGER is neither a level (public, user, owner, admin, none) nor a constant of the role
   enum UserRole (USER, MANAGER, REP, ADMIN).` Without one (no `@signin`, a string role, two `@signin` entities) a name
   is not checked. DSL warnings: a role constant named `PUBLIC`, `USER`, `OWNER` or `NONE`, once an entry names a role
@@ -33,15 +34,16 @@
   bytes, and the runtime's refusals keep their messages (401 for a visitor, "is for the administrator", "is not
   allowed"); the 2.x-compatible output; a field's `@access(admin)` (a field takes only `admin`); the TypeScript
   client, which exposes no access levels. The loader reads `@access` values with `|` and `&`, spaced or not, as one
-  value; other annotations keep the 2.x reading. Changed for a wrong entry: the runtime's parse error and the build's
-  "is not operation=level" warning name role names too, and where the application has a role enum a lower-case word
-  that is no level (`read=owners`) now stops the build instead of only warning.
+  value; other annotations keep the 2.x reading. A word that is no level and cannot be a role name (no capital first,
+  `read=owners`) is what it was: the build's "is not operation=level" warning with its message, the build goes on -
+  with a role enum too - and the application refuses to start with the same message as before.
 - Checked: `AccessPolicyTest` (springboot3 and springboot4 share it) - parsing, either, both, `&` before `|`, the
   administrator passing all but `none`, a visitor's 401, the search filter of `owner|MANAGER` and `REP&owner`,
-  `requireAll`, a lower-case non-level word refused. `AccessRolesTest` - the entry in the generated service of JPA
+  `requireAll`, a lower-case non-level word refused with the message it had before. `AccessRolesTest` - the entry in the generated service of JPA
   hexagonal Java and Kotlin, MyBatis layered Java and MongoDB Java and Kotlin with the owner filter; the service of a
   role entry equal to that of a level entry but for the declaration text; the build error for an unknown name, also
-  when the role enum is in another domain; no check without a role enum; the warnings (`&` with user, none and
+  when the role enum is in another domain; `read=owners` and `update=rep&owner` with a role enum: the warning as
+  before and a build that passes; no check without a role enum; the warnings (`&` with user, none and
   public; the hidden `USER` said where an entry names a role or writes `USER`, not in a model that names none); the
   refused sign-in of `update=owner|MANAGER`, and of `update=REP&owner` when `@owner` is not the key, the kept sign-in
   of `update=REP&owner` on the key. `StarParameterTest` - the loader keeps a spaced entry whole. The pet store (Boot 4,
