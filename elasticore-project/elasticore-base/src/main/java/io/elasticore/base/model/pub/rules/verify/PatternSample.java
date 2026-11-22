@@ -11,8 +11,13 @@ import java.util.List;
  * escaped character), classes ([a-z0-9_], [^...]), the dot, groups and the
  * first of their alternatives, the quantifiers ? * + {n} {n,} {n,m}, and
  * inline flags ((?i), read past - the whole pattern checks the value).
- * Anything else (a lookaround, a back reference) is no sample - the caller
- * says so. Every value is checked with java.util.regex, the engine Bean
+ *
+ * A password's rule - ^ and then lookaheads (?=.*X) or (?=.*?X), X one class,
+ * one escape or one character - is read too: the rest is sampled as any
+ * pattern, and a character of each X put where the rest lets it (see
+ * Lookaheads). Any other lookaround (a negative lookahead, a lookbehind, a
+ * lookahead further in) and a back reference are no sample - the caller says
+ * so. Every value is checked with java.util.regex, the engine Bean
  * Validation's @Pattern runs, before it is offered: a sample that would not
  * match is never written into a test.
  */
@@ -20,10 +25,127 @@ final class PatternSample {
 
     private PatternSample() {}
 
+    /** The characters a lookahead's class is filled from, and a value made to miss one: letters and digits first. */
+    private static final String CANDIDATES =
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#%&*+-.=?@_~";
+
     /** A value that matches, of a length in [min, max]; null when none is found. */
     static String matching(String regexp, int min, int max) {
         Sample s = sample(regexp, min, max);
         return s == null ? null : s.text;
+    }
+
+    /**
+     * The expression @pattern names, as the DTO's @Pattern hands it to the
+     * engine: the DSL writes the content of a string literal (FieldSpec.patternRegexp,
+     * a backslash doubled: \\d), which the compiler reads - \\ is one
+     * backslash, \" a quote, \t a tab, a backslash-u escape its character.
+     * A lone backslash before anything else (which the loader warns of) stays.
+     */
+    static String unescape(String literal) {
+        if (literal == null) return null;
+        StringBuilder sb = new StringBuilder(literal.length());
+        int i = 0;
+        while (i < literal.length()) {
+            char ch = literal.charAt(i);
+            if (ch != '\\' || i + 1 >= literal.length()) {
+                sb.append(ch);
+                i++;
+                continue;
+            }
+            char next = literal.charAt(i + 1);
+            String hex = next == 'u' && i + 6 <= literal.length() ? literal.substring(i + 2, i + 6) : null;
+            if (hex != null && hex.matches("[0-9A-Fa-f]{4}")) {
+                sb.append((char) Integer.parseInt(hex, 16));
+                i += 6;
+                continue;
+            }
+            i += 2;
+            switch (next) {
+                case '\\':
+                case '"':
+                case '\'':
+                    sb.append(next);
+                    break;
+                case 't':
+                    sb.append('\t');
+                    break;
+                case 'n':
+                    sb.append('\n');
+                    break;
+                case 'r':
+                    sb.append('\r');
+                    break;
+                case 'b':
+                    sb.append('\b');
+                    break;
+                case 'f':
+                    sb.append('\f');
+                    break;
+                default:
+                    sb.append('\\').append(next);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Whether the pattern starts with the lookaheads the sample reads: ^(?=.*[A-Z])(?=.*\d)... */
+    static boolean lookaheads(String regexp) {
+        return Lookaheads.read(regexp) != null;
+    }
+
+    /**
+     * A pattern read as ^, its leading lookaheads (?=.*X) and the rest: each X
+     * as a pattern of one character, and the rest as a pattern of its own
+     * (^ and what follows the lookaheads). A value matches the whole when it
+     * matches the rest and holds a character of each X.
+     */
+    static final class Lookaheads {
+        /** (?=.*X) or (?=.*?X): X a class, an escape or a character that is no operator. */
+        private static final java.util.regex.Pattern ONE = java.util.regex.Pattern.compile(
+                "\\(\\?=\\.\\*\\??(\\[(?:\\\\.|[^\\]\\\\])+\\]|\\\\.|[^\\\\\\[\\]()|*+?{}.^$])\\)");
+
+        final List<java.util.regex.Pattern> needs = new ArrayList<java.util.regex.Pattern>();
+        final String rest;
+
+        private Lookaheads(String rest) {
+            this.rest = rest;
+        }
+
+        /** The pattern's leading lookaheads; null when it does not start with ^ and at least one it reads. */
+        static Lookaheads read(String regexp) {
+            if (regexp == null || !regexp.startsWith("^")) return null;
+            java.util.regex.Matcher m = ONE.matcher(regexp);
+            int at = 1;
+            List<String> classes = new ArrayList<String>();
+            while (at < regexp.length()) {
+                m.region(at, regexp.length());
+                if (!m.lookingAt()) break;
+                classes.add(m.group(1));
+                at = m.end();
+            }
+            if (classes.isEmpty()) return null;
+            Lookaheads out = new Lookaheads("^" + regexp.substring(at));
+            for (String c : classes) {
+                java.util.regex.Pattern one = compile(c);
+                // A class no character can fill (\b, an empty range) is not one the sample reads.
+                if (one == null || first(one, CANDIDATES) < 0) return null;
+                out.needs.add(one);
+            }
+            return out;
+        }
+
+        /** Whether the character fills the lookahead. */
+        static boolean fills(java.util.regex.Pattern need, char ch) {
+            return need.matcher(String.valueOf(ch)).matches();
+        }
+
+        private static int first(java.util.regex.Pattern need, String among) {
+            for (int i = 0; i < among.length(); i++) {
+                if (fills(need, among.charAt(i))) return i;
+            }
+            return -1;
+        }
     }
 
     /**
@@ -51,9 +173,12 @@ final class PatternSample {
     static Sample sample(String regexp, int min, int max) {
         java.util.regex.Pattern compiled = compile(regexp);
         if (compiled == null) return null;
+        Lookaheads lookaheads = Lookaheads.read(regexp);
+        java.util.regex.Pattern rest = lookaheads == null ? compiled : compile(lookaheads.rest);
+        if (rest == null) return null;
         Node node;
         try {
-            node = new Parser(regexp).parse();
+            node = new Parser(lookaheads == null ? regexp : lookaheads.rest).parse();
         } catch (RuntimeException unsupported) {
             return null;
         }
@@ -69,13 +194,97 @@ final class PatternSample {
             }
             if (max > 0 && text.length() > max) continue;
             if (text.length() < min) continue;
-            if (compiled.matcher(text).matches()) return new Sample(text, alphabets(compiled, text, from));
+            List<List<java.util.regex.Pattern>> held = null;
+            if (lookaheads != null) {
+                held = new ArrayList<List<java.util.regex.Pattern>>();
+                text = fill(text, lookaheads, rest, held);
+                if (text == null) continue;
+            }
+            if (compiled.matcher(text).matches()) return new Sample(text, alphabets(compiled, text, from, held));
         }
         return null;
     }
 
-    /** The characters that may stand at each position the classes wrote, kept only where the pattern still matches. */
-    private static List<String> alphabets(java.util.regex.Pattern compiled, String text, List<CharClass> from) {
+    /**
+     * The rest's value with a character of each lookahead in it: one already
+     * there is kept, else one is put - from the end - at a position whose
+     * change the rest still matches. held gets, for each position, the
+     * lookaheads it holds (that position varies only within them). Null when
+     * a lookahead finds no such position.
+     */
+    private static String fill(
+            String text,
+            Lookaheads lookaheads,
+            java.util.regex.Pattern rest,
+            List<List<java.util.regex.Pattern>> held) {
+        char[] t = text.toCharArray();
+        for (int i = 0; i < t.length; i++) held.add(new ArrayList<java.util.regex.Pattern>());
+        for (java.util.regex.Pattern need : lookaheads.needs) {
+            int at = -1;
+            for (int i = t.length - 1; i >= 0 && at < 0; i--) {
+                if (Lookaheads.fills(need, t[i])) at = i;
+            }
+            for (int i = t.length - 1; i >= 0 && at < 0; i--) {
+                // A position another lookahead holds keeps its character.
+                if (!held.get(i).isEmpty()) continue;
+                char was = t[i];
+                for (int k = 0; k < CANDIDATES.length() && at < 0; k++) {
+                    char ch = CANDIDATES.charAt(k);
+                    if (!Lookaheads.fills(need, ch)) continue;
+                    t[i] = ch;
+                    if (rest.matcher(new String(t)).matches()) at = i;
+                    else t[i] = was;
+                }
+            }
+            if (at < 0) return null;
+            held.get(at).add(need);
+        }
+        return new String(t);
+    }
+
+    /**
+     * A value that matches the rest of a pattern with leading lookaheads but
+     * misses one of them: each character of that lookahead in the matching
+     * value changed for one the rest takes there. Null when no lookahead can
+     * be missed so - the rest itself holds it (^(?=.*\d)\d+$).
+     */
+    private static String missingOne(java.util.regex.Pattern compiled, Lookaheads lookaheads, String matching) {
+        java.util.regex.Pattern rest = compile(lookaheads.rest);
+        if (rest == null || matching == null) return null;
+        for (java.util.regex.Pattern need : lookaheads.needs) {
+            char[] t = matching.toCharArray();
+            boolean changed = true;
+            for (int i = 0; i < t.length && changed; i++) {
+                if (!Lookaheads.fills(need, t[i])) continue;
+                changed = false;
+                char was = t[i];
+                for (int k = 0; k < CANDIDATES.length() && !changed; k++) {
+                    char ch = CANDIDATES.charAt(k);
+                    if (Lookaheads.fills(need, ch)) continue;
+                    t[i] = ch;
+                    if (rest.matcher(new String(t)).matches()) changed = true;
+                    else t[i] = was;
+                }
+            }
+            String missing = new String(t);
+            if (changed
+                    && rest.matcher(missing).matches()
+                    && !compiled.matcher(missing).matches()) return missing;
+        }
+        return null;
+    }
+
+    /**
+     * The characters that may stand at each position the classes wrote, kept
+     * only where the pattern still matches. A position that holds a lookahead
+     * (held) varies only among the characters that fill it, so every
+     * combination still holds each lookahead.
+     */
+    private static List<String> alphabets(
+            java.util.regex.Pattern compiled,
+            String text,
+            List<CharClass> from,
+            List<List<java.util.regex.Pattern>> held) {
         String candidates = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         List<String> out = new ArrayList<String>();
         int last = -1;
@@ -86,6 +295,7 @@ final class PatternSample {
                 for (int k = 0; k < candidates.length(); k++) {
                     char ch = candidates.charAt(k);
                     if (c.holds(ch) == c.negated) continue;
+                    if (held != null && !fillsAll(held.get(i), ch)) continue;
                     String one = text.substring(0, i) + ch + text.substring(i + 1);
                     if (compiled.matcher(one).matches()) alphabet.append(ch);
                 }
@@ -114,10 +324,24 @@ final class PatternSample {
         return kept;
     }
 
-    /** A value that does not match; null when none of the candidates fails it. */
+    private static boolean fillsAll(List<java.util.regex.Pattern> needs, char ch) {
+        for (java.util.regex.Pattern need : needs) {
+            if (!Lookaheads.fills(need, ch)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * A value that does not match; null when none of the candidates fails it.
+     * For a pattern with leading lookaheads: one that matches the rest and
+     * misses a lookahead (missingOne), so that what is refused is the
+     * lookahead's rule; null when no lookahead can be missed.
+     */
     static String notMatching(String regexp, String matching) {
         java.util.regex.Pattern compiled = compile(regexp);
         if (compiled == null) return null;
+        Lookaheads lookaheads = Lookaheads.read(regexp);
+        if (lookaheads != null) return missingOne(compiled, lookaheads, matching);
         List<String> candidates = new ArrayList<String>();
         candidates.add("!");
         candidates.add("~~");

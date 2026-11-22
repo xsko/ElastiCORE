@@ -39,6 +39,11 @@ datasets:
           sql: "product_count"
         datatype: Integer
         description: "판매 중인 상품 수 (단종된 상품은 세지 않음)"
+      - name: featured_until
+        expression:
+          sql: "featured_until"
+        datatype: DateTime
+        description: "추천 노출이 끝나는 시각 (지난 시각은 받지 않음)"
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Category", "domain": "petstore", "access": {"*": "admin", "read": "public"}}

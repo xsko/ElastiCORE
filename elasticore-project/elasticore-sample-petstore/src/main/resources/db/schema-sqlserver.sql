@@ -11,6 +11,7 @@ CREATE TABLE ps_category (
     story VARCHAR(MAX),
     icon VARBINARY(MAX),
     product_count BIGINT,
+    featured_until DATETIME2(6),
     PRIMARY KEY (category_id)
 );
 
