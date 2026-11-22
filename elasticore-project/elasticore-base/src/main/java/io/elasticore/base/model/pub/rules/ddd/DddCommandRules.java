@@ -420,7 +420,7 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
     }
 
     /** shipPartially -> ship-partially, the way a path segment is spelled. */
-    static String kebab(String name) {
+    public static String kebab(String name) {
         return name.replaceAll("([a-z0-9])([A-Z])", "$1-$2").toLowerCase();
     }
 

@@ -7,6 +7,10 @@
 !/src/main/java/io/elasticore/sample/petstore/application/PurchaseOrderService.java
 !/src/main/java/io/elasticore/sample/petstore/application/CustomerService.java
 !/src/main/java/io/elasticore/sample/petstore/adapter/in/web/shop/*.java
+# The contract tests (testCode: contract) are regenerated too; the one the sample edited is kept.
+/src/test/java/io/elasticore/sample/petstore/*ContractSupport.java
+/src/test/java/io/elasticore/sample/petstore/*ContractTest.java
+!/src/test/java/io/elasticore/sample/petstore/PurchaseOrderContractTest.java
 
 /src/main/ts/
 /src/main/resources/blueprint/*.md

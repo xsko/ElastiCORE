@@ -78,7 +78,7 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /** Whether the key is generated - a sequence, @genid, or a raw @jpa:GeneratedValue - rather than sent. */
-    static boolean keyGenerated(FieldSpec pk) {
+    public static boolean keyGenerated(FieldSpec pk) {
         if (pk.generationType() != null
                 || pk.hasDslAny("sequence", "genid", "generated", "identity", "autoincrement")) return true;
         for (String line : pk.nativeAnnotationLines()) {
@@ -944,7 +944,7 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /** The level an operation is at, as AccessPolicy reads it: its own entry, else "*", else admin; public with no @access. */
-    static String level(EntitySpec e, String operation) {
+    public static String level(EntitySpec e, String operation) {
         String declared = e.metaText("access");
         if (declared == null || declared.trim().isEmpty()) return "public";
         Map<String, String> levels = levels(e, false);

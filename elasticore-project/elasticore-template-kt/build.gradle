@@ -117,6 +117,12 @@ sourceSets {
 
 test {
 	useJUnitPlatform()
+	filter {
+		// Product maps PostgreSQL's xml and jsonb columns - this model's type coverage - and H2, which the
+		// tests run on, refuses that table: its contract test needs PostgreSQL (the sample's other tests
+		// never store a Product).
+		excludeTestsMatching 'io.elasticore.blueprint.domain.shop.ProductContractTest'
+	}
 	// The sources under test are generated, not committed.
 	dependsOn 'elcore3kt'
 	testLogging { events 'passed', 'failed' }
@@ -135,7 +141,9 @@ task elcore3clean(type: Delete) {
 	// The files rather than the directories: on Windows a handle held on a
 	// generated tree by the daemon that just compiled it fails a directory
 	// delete, and the clean is not worth a flaky build.
-	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io'),
+	// The contract tests' support class is the sample's own (written once, then edited: it names the
+	// application the tests start), so it stays; the tests beside it are regenerated.
+	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io') { exclude '**/*ContractSupport.kt' },
 			fileTree('src/main/ts') { include '*.ts' }
 }
 
