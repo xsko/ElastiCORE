@@ -2178,6 +2178,7 @@ public final class RulesGenRunner {
         emitContributedDomain(domain, model);
         generateSupportTypes(domainDirName, model, specs);
         emitArchitectureTest(domain, model);
+        emitContractTests(domain, model, specs);
     }
 
     /**
@@ -2728,6 +2729,80 @@ public final class RulesGenRunner {
         write(label, out, ArchitectureTestSource.render(model, name, pkg, kotlin, xmlMapping(), layers, layered));
     }
 
+    /** The entities whose controller this run wrote: what the contract tests make rows through. */
+    private final java.util.Set<String> contractServed = new java.util.HashSet<String>();
+
+    /** The contract tests of the run (testCode: contract), and the summary they leave; null until a domain asks. */
+    private ContractTestSource contract;
+
+    /**
+     * testCode: contract - the tests of what the DSL declares, over the API:
+     * a support class for the domain and a test class per entity, written
+     * once and merged as the architecture test is (ContractTestSource).
+     */
+    private void emitContractTests(
+            io.elasticore.base.model.pub.rules.DomainSpec domain, ECoreModel model, List<EntitySpec> specs) {
+        if (typescript
+                || !"contract"
+                        .equalsIgnoreCase(String.valueOf(model.getConfig("testCode", "false"))
+                                .trim())) {
+            return;
+        }
+        if (!v3 && !kotlin) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] testCode: contract is written for the 3.0 output and Kotlin - this domain generates the 2.x"
+                            + " code (output = 'v2'), and gets no contract tests.",
+                    model.getInternalDomainName()));
+            return;
+        }
+        String pkg = ArchitectureTestSource.basePackage(model);
+        if (pkg == null) return;
+        if (contract == null) contract = new ContractTestSource(runModels, contractServed);
+        ContractTestSource.Settings s = new ContractTestSource.Settings();
+        s.kotlin = kotlin;
+        s.boot4 = RulesConfig.springBootMajor() >= 4;
+        s.mongo = persistence() == RulesConfig.Persistence.MONGO;
+        s.lifecycles = selects(io.elasticore.base.model.pub.rules.ddd.DddStateRules.class);
+        s.invariants = selects(io.elasticore.base.model.pub.rules.ddd.DddInvariantRules.class);
+        s.application = applicationFor(pkg);
+        for (ContractTestSource.Source src : contract.domain(model, domain.className(), specs, pkg, s)) {
+            ArtifactTarget out = kotlin
+                    ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, src.className, true)
+                    : ArtifactTarget.of("java", "src/test/java", "java", pkg, src.className, true);
+            write(String.format("    %-12s %s", "contract", out.relativePath()), out, src.text);
+        }
+    }
+
+    /**
+     * The application class the contract tests start, when Spring's own search
+     * - up the packages from the test's - would not find one: the project's
+     * one @SpringBootApplication (src/main first). Null when the search finds
+     * it, or when there is no single one to name - then the support class is
+     * where the project names it.
+     */
+    private String applicationFor(String pkg) {
+        java.util.List<String> main = new ArrayList<String>();
+        java.util.List<String> test = new ArrayList<String>();
+        java.util.regex.Pattern declared =
+                java.util.regex.Pattern.compile("@SpringBootApplication\\b[\\s\\S]*?\\bclass\\s+(\\w+)");
+        for (Map.Entry<File, String> src : projectSources().entrySet()) {
+            if (!src.getValue().contains("@SpringBootApplication")) continue;
+            String text = src.getValue().replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+            String owner = declaredPackage(text);
+            java.util.regex.Matcher m = declared.matcher(text);
+            while (m.find()) {
+                // Spring finds one in the test's package or above it.
+                if (owner.isEmpty() || pkg.equals(owner) || pkg.startsWith(owner + ".")) return null;
+                String fqcn = owner + "." + m.group(1);
+                if (src.getKey().getPath().replace('\\', '/').contains("/src/main/")) main.add(fqcn);
+                else test.add(fqcn);
+            }
+        }
+        if (main.size() == 1) return main.get(0);
+        if (main.isEmpty() && test.size() == 1) return test.get(0);
+        return null;
+    }
+
     /** The packages the project's main sources (src/main) declare - what its own code adds among them. */
     private java.util.Set<String> mainSourcePackages() {
         java.util.Set<String> packages = new java.util.TreeSet<String>();
@@ -2821,6 +2896,7 @@ public final class RulesGenRunner {
                 "jpa-repository-helper");
         emitContributedDomain(domain, model);
         emitArchitectureTest(domain, model);
+        emitContractTests(domain, model, specs);
     }
 
     /**
@@ -3333,6 +3409,7 @@ public final class RulesGenRunner {
                     "control",
                     target(model.getNamespace("control"), String.format("%sController", name)),
                     "spring-controller");
+            contractServed.add(name);
         }
     }
 
@@ -3459,6 +3536,7 @@ public final class RulesGenRunner {
                         target(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
+                contractServed.add(name);
             }
             // The generated test sits in the test tree, in the language it
             // exercises. Only a domain that asks for it in env.yml gets one.
@@ -3526,6 +3604,7 @@ public final class RulesGenRunner {
                         ArtifactTarget.java(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
+                contractServed.add(name);
             }
             return;
         }
@@ -3563,6 +3642,7 @@ public final class RulesGenRunner {
                         ArtifactTarget.java(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
+                contractServed.add(name);
             }
             return;
         }
@@ -6887,6 +6967,8 @@ public final class RulesGenRunner {
                         + (cache.existed() ? "" : " - the cache is missing: take it from git and run again"));
             }
         }
+        // testCode: contract - what was written, and what the generator knew it could not test, with why.
+        if (contract != null) System.out.println("=== " + contract.summary() + " ===");
         for (String n : notes) {
             System.out.println("  " + n);
         }

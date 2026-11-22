@@ -2,6 +2,8 @@
 # MongoDB rules produce, not to keep it. What is committed is the blueprint
 # and the tests.
 src/main/java/
+# the contract tests (testCode: contract), written by the same build
+/src/test/java/io/elasticore/sample/mongo/shop/*Contract*.java
 
 # The message bundle the generator writes beside the error handler.
 /src/main/resources/i18n/*-messages.properties

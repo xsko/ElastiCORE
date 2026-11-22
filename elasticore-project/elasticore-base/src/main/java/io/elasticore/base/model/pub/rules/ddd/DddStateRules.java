@@ -445,6 +445,16 @@ public class DddStateRules implements CodeRules {
         return out;
     }
 
+    /**
+     * The stamps the moves write, as {field, lifecycle field, state}: the field set when the lifecycle enters
+     * the state. For the contract tests (testCode: contract); says nothing about a stamp it cannot write.
+     */
+    public static List<String[]> stampedStates(EntitySpec e) {
+        List<String[]> out = new ArrayList<String[]>();
+        for (Stamp s : stamps(e, false)) out.add(new String[] {s.field.name(), s.machine.field(), s.state});
+        return out;
+    }
+
     private static void warnStamp(EntitySpec e, FieldSpec f, String why) {
         io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
                 "[elcore3] %s.%s @stamp %s - nothing else writes the field (it is the lifecycle's), so fix the @stamp.",
