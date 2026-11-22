@@ -136,6 +136,51 @@ class ExportTest {
         mvc.perform(json(post("/api/petstore/purchaseOrder/export"), body)).andExpect(status().isUnauthorized());
     }
 
+    /**
+     * labels (issue 289): the enumeration columns it names by their label in the request's language - OrderStatus's
+     * label_ko in Korean, its label column in English (it has no label_en) - and the others by their code.
+     */
+    @Test
+    void anEnumerationByItsLabelWhereLabelsNamesIt() throws Exception {
+        MockHttpSession user = signIn("user", "user");
+        String cart = "{\"lines\":[{\"itemId\":1000,\"quantity\":1}]," + CARD + "}";
+        String placed = JsonPath.read(mvc.perform(json(post("/api/petstore/purchaseOrder"), cart).session(user))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.orderId");
+        String shipped = JsonPath.read(mvc.perform(json(post("/api/petstore/purchaseOrder"), cart).session(user))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.orderId");
+        MockHttpSession admin = signIn("admin", "admin");
+        mvc.perform(post("/api/petstore/purchaseOrder/" + shipped + "/ship").session(admin))
+                .andExpect(status().isOk());
+
+        String search = "{\"search\":{\"customerId\":2},\"columns\":[\"orderId\",\"status\"],\"labels\":";
+        List<String> ko = csv(json(post("/api/petstore/purchaseOrder/export"), search + "[\"status\"]}")
+                .session(user).header("Accept-Language", "ko"));
+        assertEquals("orderId,주문 상태", ko.get(0));
+        assertTrue(ko.contains(placed + ",주문됨"), ko.toString());
+        assertTrue(ko.contains(shipped + ",배송됨"), ko.toString());
+
+        List<String> en = csv(json(post("/api/petstore/purchaseOrder/export"), search + "\"*\"}")
+                .session(user).header("Accept-Language", "en"));
+        assertEquals("orderId,Order status", en.get(0));
+        assertTrue(en.contains(placed + ",Placed"), en.toString());
+        assertTrue(en.contains(shipped + ",Shipped"), en.toString());
+
+        // Without labels: the code, as before.
+        List<String> codes = csv(json(post("/api/petstore/purchaseOrder/export"),
+                "{\"search\":{\"customerId\":2},\"columns\":[\"orderId\",\"status\"]}").session(user));
+        assertTrue(codes.contains(placed + ",PLC") && codes.contains(shipped + ",SHP"), codes.toString());
+
+        // A column that is not an enumeration, or not in the export: 400 naming it.
+        mvc.perform(json(post("/api/petstore/purchaseOrder/export"), search + "[\"orderId\"]}").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("export.labels"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("orderId")));
+        mvc.perform(json(post("/api/petstore/purchaseOrder/export"), search + "[\"total\"]}").session(user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("export.labels"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("total")));
+    }
+
     @Test
     void aTextASpreadsheetWouldRunIsWrittenAsText() throws Exception {
         MockHttpSession admin = signIn("admin", "admin");

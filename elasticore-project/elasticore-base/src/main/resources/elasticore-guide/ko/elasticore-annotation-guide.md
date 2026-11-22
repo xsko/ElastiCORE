@@ -51,7 +51,11 @@ Notice:
 - `columns`: 응답 DTO 의 속성을 그 순서로(`@ref` 는 그 이름으로, `productName`). 없으면 모든 속성을 DTO 의 순서로. `headers`:
   열마다 하나씩 제목. 없으면 열마다 요청 언어(`Accept-Language`)의 라벨 - `i18n/<domain>-labels_<lang>.properties`
   (`@label(en=...)`, `labelLanguage`. 응답 DTO 의 키, 다음에 엔티티의 키) - 이고, 라벨이 없으면 이름입니다.
-- 값은 응답 JSON 이 보여 주는 그대로입니다: `@Mask` 로 가린 값, enum 은 코드(라벨이 아님), 금액과 날짜도 쓰인 그대로.
+- `labels`: 코드가 아니라 요청 언어의 라벨로 쓸 enumeration 열 - `["status"]`, 모두는 `"*"`(`"labels": "*"`).
+  `label_<lang>` 컬럼(`ko` 는 `label_ko`, 라벨 파일에서), 없으면 라벨 컬럼(라벨 파일의 기본 파일, 없으면 enumeration 의
+  `label`, `name`, `desc`, `description`, `title`), 그것도 없으면 코드입니다. 내보내기의 열이 아니거나 enumeration 이 아닌
+  이름은 400(`export.labels`)입니다. 통합 문서에서 라벨은 문자열 셀입니다.
+- 값은 응답 JSON 이 보여 주는 그대로입니다: `@Mask` 로 가린 값, enum 은 코드(`labels` 가 고르지 않으면), 금액과 날짜도 쓰인 그대로.
   `=`, `+`, `-`, `@`, 탭, 캐리지 리턴으로 시작하는 문자열은 앞에 `'` 를 붙여 스프레드시트가 실행하지 않게 합니다
   (CSV injection). 숫자에는 붙이지 않습니다.
 - CSV: BOM 이 붙은 UTF-8, RFC 4180 따옴표, CRLF. `"format": "xlsx"` 나 `Accept:

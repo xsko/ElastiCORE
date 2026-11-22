@@ -105,6 +105,18 @@ final class JsonRows {
         return out;
     }
 
+    /** The type a column's property is declared as; null for a column without a bean property of its own. */
+    Class<?> typeOf(String column) {
+        BeanPropertyWriter writer = writers.get(column);
+        return writer == null ? null : writer.getType().getRawClass();
+    }
+
+    /** A column's value in the row itself, before the JSON writes it; null for a column without a bean property. */
+    Object rawOf(String column, Object row) {
+        BeanPropertyWriter writer = writers.get(column);
+        return writer == null ? null : raw(writer, row);
+    }
+
     private static Object raw(BeanPropertyWriter writer, Object row) {
         try {
             return writer.get(row);
