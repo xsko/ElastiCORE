@@ -162,6 +162,7 @@ entity:
    ```ts
    export const ItemMeta: { label: string; labels: Record<string, string> } = { label: "판매 단위", labels: { en: "Item for sale", ja: "販売単位" } };
    ```
+   파일이 그 이름을 이미 import 하거나 선언하면(`ItemMeta` 라는 타입의 필드) 쓰지 않는다.
 3. **Apache Ossie 시맨틱 모델** - 번역은 필드(와 데이터셋)의 `ai_context.synonyms` 에 `@terms` 단어 다음으로 들어간다.
    그 언어로 물어도 같은 필드를 찾는다. `description` 은 `--` 라벨 그대로다.
 
@@ -191,9 +192,10 @@ enumeration:
 
 - 라벨 컬럼은 TypeScript 클라이언트의 `XxxLabel` 이 보여 주는 컬럼이다: `@label` 이 붙은 필드(enumeration 필드의 `--`
   주석도 그렇다), 없으면 이름이 `label`, `name`, `desc`, `description`, `title` 인 첫 필드.
-- 스네이크 꼴만 읽는다: `name_en`, `name_ja`, `name_pt_BR` (`pt-BR`). `nameEn` 은 보통 컬럼이다. 언어는 `@label(xx=...)`
-  키처럼 읽으므로 `name_id` 는 인도네시아어, `name_no` 는 노르웨이어다 - 그런 컬럼은 다른 이름으로 둔다. 언어 태그가
-  아닌 접미사(`name_long`)는 보통 컬럼으로 남고, 빌드가 경고한다(`DSL_WARN`).
+- 스네이크 꼴이고 접미사가 두 글자 ISO 639-1 언어로 시작하는 텍스트 컬럼만 읽는다: `name_en`, `name_ja`,
+  `name_pt_BR` (`pt-BR`). `nameEn`, `name_kor`, `name_old`, 숫자 컬럼(`name_no: int`)은 보통 컬럼이다.
+  텍스트 `name_id` 는 인도네시아어, `name_no` 는 노르웨이어다 - 그런 컬럼은 다른 이름으로 둔다. 번역 컬럼 옆에서
+  접미사가 언어가 아닌 텍스트 컬럼(`name_en` 옆의 `name_kor`)은 보통 컬럼이고, 빌드가 경고한다(`DSL_WARN`).
 - 컬럼을 빠뜨린 줄(위의 `SHIPPED` 는 `zh-TW` 가 없다)은 그 언어의 라벨이 없다: 라벨 컬럼을 보여 준다.
   컬럼은 enumeration 의 컬럼 그대로다 - Java, Kotlin enum 에는 속성으로 들어간다.
 - TypeScript 클라이언트는 그대로인 `OrderStatusLabel` 옆에 같은 키로 `OrderStatusLabels` 를 받는다:

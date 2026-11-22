@@ -239,17 +239,35 @@ public class ScreenLabelsTypeScriptTest {
                 "nameJa", "string(20)",
                 "name_id", "string(20)",
                 "name_long", "string(20)",
-                "name_EN", "string(20)");
+                "name_EN", "string(20)",
+                "name_no", "int",
+                "name_kor", "string(20)",
+                "name_old", "string(20)",
+                "name_cd", "string(20)",
+                "name_seq", "long");
         Field label = EnumLabelColumns.labelColumn(f, "code");
         assertTrue(label == f.get(1), "name is the label column");
         Map<String, Integer> columns = EnumLabelColumns.columns(f, label, "code");
         assertTrue(
                 columns.toString().equals("{en=2, id=5, pt-BR=3}"),
-                "camelCase is not read; the first en is kept: " + columns);
+                "camelCase, a number, three letters and a non-ISO pair are not read; the first en is kept: " + columns);
         assertTrue(
                 EnumLabelColumns.notLanguages(f, label, "code")
-                        .equals(java.util.Collections.singletonList("name_long")),
-                EnumLabelColumns.notLanguages(f, label, "code").toString());
+                        .equals(java.util.Arrays.asList("name_long", "name_kor", "name_old", "name_cd")),
+                "the text columns only: " + EnumLabelColumns.notLanguages(f, label, "code"));
+    }
+
+    @Test
+    public void aLanguageIsAnIsoLanguageFirst() {
+        assertTrue(EnumLabelColumns.isLanguage("en"));
+        assertTrue(EnumLabelColumns.isLanguage("pt_BR"));
+        assertTrue(EnumLabelColumns.isLanguage("zh_TW"));
+        assertTrue(EnumLabelColumns.isLanguage("no"), "Norwegian");
+        assertTrue(EnumLabelColumns.isLanguage("id"), "Indonesian");
+        assertFalse(EnumLabelColumns.isLanguage("kor"));
+        assertFalse(EnumLabelColumns.isLanguage("old"));
+        assertFalse(EnumLabelColumns.isLanguage("cd"));
+        assertFalse(EnumLabelColumns.isLanguage("long"));
     }
 
     @Test

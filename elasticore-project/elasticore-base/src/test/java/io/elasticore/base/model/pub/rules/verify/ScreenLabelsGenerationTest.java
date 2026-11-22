@@ -119,7 +119,7 @@ public class ScreenLabelsGenerationTest {
             assertTrue(header.contains("Enum.CONSTANT for a constant's"), header);
 
             String said = "[desk] enum PetStatus: column 'label_remark' is not a translation of 'label'"
-                    + " - 'remark' is not a language tag";
+                    + " - 'remark' is not an ISO 639-1 language";
             assertTrue(log.contains(said), log);
             assertEquals(log.indexOf(said), log.lastIndexOf(said), "said once:\n" + log);
 
@@ -193,6 +193,78 @@ public class ScreenLabelsGenerationTest {
             String dto = read(find(project, "PetDTO.ts"));
             assertFalse(dto.contains("PetMeta"), dto);
             assertTrue(dto.contains("export function validatePetCodes("), "the codes beside validatePet:\n" + dto);
+        } finally {
+            delete(project);
+        }
+    }
+
+    /** Columns that only look like translations, in a model that never asked for one. */
+    private static final String LOOK_ALIKE = String.join(
+            "\n",
+            "enumeration:",
+            "  PetSize:",
+            "    meta: enum @db(code) @json(code)",
+            "    fields:",
+            "      code:       string(1) @code",
+            "      name:       string(20)",
+            "      name_no:    int",
+            "      name_kor:   string(20)",
+            "      name_short: string(10)",
+            "      name_kana:  string(20)",
+            "    enum:",
+            "      SMALL: S, 소형, 1, 소, S, ショウ",
+            "      LARGE: L, 대형, 2, 대, L, ダイ",
+            "entity:",
+            "  Pet:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      petId: long @id @sequence",
+            "      size:  PetSize",
+            "");
+
+    @Test
+    public void columnsThatOnlyLookLikeTranslationsAreOrdinaryAndSaidNothingOf() throws Exception {
+        File project = Files.createTempDirectory("elcore-enum-look-alike").toFile();
+        try {
+            String log = generateInto(project, LOOK_ALIKE, "java", false);
+            assertNull(find(project, "desk-labels.properties"), "no translation: no bundle");
+            assertFalse(log.contains("enum PetSize:"), "nothing to warn of without a translation:\n" + log);
+            generateInto(project, LOOK_ALIKE, "java", true);
+            String ts = read(find(project, "PetSize.ts"));
+            assertFalse(ts.contains("PetSizeLabels"), ts);
+        } finally {
+            delete(project);
+        }
+    }
+
+    /** A field of a type named PetMeta: the file imports the name, so it declares no const of it. */
+    private static final String META_TAKEN = String.join(
+            "\n",
+            "enumeration:",
+            "  PetMeta:",
+            "    meta: enum @db(code) @json(code)",
+            "    fields:",
+            "      code: string(1) @code",
+            "      name: string(20)",
+            "    enum:",
+            "      NEW: N, New",
+            "entity:",
+            "  Pet:",
+            "    meta: entity @root @expose(20) -- 반려동물",
+            "    fields:",
+            "      petId: long @id @sequence",
+            "      meta:  PetMeta",
+            "");
+
+    @Test
+    public void aMetaNameTheFileImportsIsNotDeclaredAgain() throws Exception {
+        File project = Files.createTempDirectory("elcore-meta-taken").toFile();
+        try {
+            generateInto(project, META_TAKEN, "java", true);
+            String dto = read(find(project, "PetDTO.ts"));
+            assertTrue(dto.contains("from './PetMeta'"), dto);
+            assertFalse(dto.contains("export const PetMeta"), dto);
+            assertTrue(dto.contains("export const PetFields"), dto);
         } finally {
             delete(project);
         }

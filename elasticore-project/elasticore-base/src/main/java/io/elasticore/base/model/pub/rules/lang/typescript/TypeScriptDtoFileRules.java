@@ -183,7 +183,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
          .var("importList", imports.length() == 0 ? "" : imports.toString())
          .varLines("fieldList", RuleText.linesOf(fields));
         c.slot("metaList");
-        if (withMeta) meta(c, e, className, fields);
+        if (withMeta) meta(c, e, className, fields, declaredTypesIn(fields));
     }
 
     /**
@@ -194,7 +194,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
      * what is wrong beside the field, in the DSL's own words, before the
      * round trip. Only what a request may write is checked.
      */
-    private void meta(SourceCode c, EntitySpec e, String className, String rendered) {
+    private void meta(SourceCode c, EntitySpec e, String className, String rendered, Set<String> named) {
         // shown: the fields the constant describes - not a list. checked: the
         // fields validate() looks at - those, and a list with a @minsize the
         // server refuses (400) when it is missing or shorter.
@@ -222,7 +222,11 @@ public class TypeScriptDtoFileRules implements CodeRules {
             typeLabel = entityLabel == null ? null : entityLabel.getValue();
             typeLabels = io.elasticore.base.model.core.LabelTranslations.of(entityLabel);
         }
-        if (typeLabel != null && !typeLabel.trim().isEmpty()) {
+        // A name the file already imports or declares - a type ItemMeta a field holds - is left
+        // to it: a second declaration of it does not compile (TS2440).
+        String metaName = base + "Meta";
+        boolean taken = metaName.equals(className) || named.contains(metaName);
+        if (!taken && typeLabel != null && !typeLabel.trim().isEmpty()) {
             c.varLine("metaList", "")
                     .varLine(
                             "metaList",
