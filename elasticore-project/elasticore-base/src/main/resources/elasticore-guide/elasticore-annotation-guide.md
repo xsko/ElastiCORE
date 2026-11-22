@@ -2090,8 +2090,8 @@ Ticket:
 
 - A word that is a level is the level, in any case (`USER` is `user`). Any other word is a role name: it starts with a capital letter and is
   compared with the session's role as written (`CurrentUser.hasRole`). **The admin passes every term without `none`**, as it passes `owner`.
-- **Checked where the application has a role enum** - the `@signin` entity's role field is an enum, in this domain or another. A name that is
-  neither a level nor one of its constants stops the build: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
+- **Checked where the application has a role enum** - the `@signin` entity's role field is an enum, in this domain or another. A role name (capital
+  first) that is not one of its constants stops the build: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
   user, owner, admin, none) nor a constant of the role enum UserRole (USER, MANAGER, REP, ADMIN).` Without one - no `@signin` (Spring
   Security, say), or a string role - a name is not checked.
 - A role constant named `PUBLIC`, `USER`, `OWNER` or `NONE` cannot be named: the word is the level - a DSL warning once an entry names a role
@@ -2127,7 +2127,7 @@ If an order DTO carried a whole customer with `read=owner`, the customer data wo
 drops that field and warns (the identifier `customerId` stays).
 
 The build reports `@access` syntax errors (`read=owners`, `read=owner|`, `@access(admin)` on an entity) as warnings - if you leave them,
-the application does not start (where the application has a role enum, `read=owners` stops the build, as above). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),
+the application does not start (a word with a capital first is a role name and is checked as above: `read=MANGER`). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),
 using `@access`, `@owner` or `@password` checks and hashes nothing, so the build warns.
 **The 2.x generator (`elcore`, the annotation processor) does not handle these annotations** - use the 3.0 rule engine.
 

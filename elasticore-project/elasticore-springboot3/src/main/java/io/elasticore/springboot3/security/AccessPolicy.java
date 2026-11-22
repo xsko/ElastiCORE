@@ -133,9 +133,9 @@ public final class AccessPolicy {
             return Level.valueOf(word.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             if (ROLE.matcher(word).matches()) return word;
-            throw new IllegalArgumentException(entity + " @access: '" + (word.isEmpty() ? text : word)
-                    + "' is not one of public, user, owner, admin, none - nor a role name, which starts with"
-                    + " a capital letter");
+            // A word that cannot be a role name (no capital first) is refused as it always was.
+            throw new IllegalArgumentException(
+                    entity + " @access: '" + text + "' is not one of public, user, owner, admin, none");
         }
     }
 

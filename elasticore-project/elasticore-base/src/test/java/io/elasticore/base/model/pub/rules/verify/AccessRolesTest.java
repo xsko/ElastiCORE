@@ -137,14 +137,31 @@ public class AccessRolesTest {
     @Test
     public void aNameTheRoleEnumDoesNotHaveStopsTheBuild() throws Exception {
         String[] log = new String[1];
-        String model = MODEL.replace("create=REP|MANAGER", "create=REP|MANGER")
-                .replace("update=REP&owner", "update=rep&owner");
+        String model = MODEL.replace("create=REP|MANAGER", "create=REP|MANGER");
         run("elcore-roles-typo", one(model), "hexagonal", "java", "jpa", 1, log);
         assertTrue(
                 log[0].contains("ArTicket @access(create=REP|MANGER): MANGER is neither a level (public, user, owner,"
                         + " admin, none) nor a constant of the role enum ArRole (USER, MANAGER, REP, ADMIN)"),
                 log[0]);
-        assertTrue(log[0].contains("ArTicket @access(update=rep&owner): rep is neither a level"), log[0]);
+    }
+
+    /**
+     * A word that is no level and cannot be a role name (no capital first) is what it was before role names:
+     * the warning, and the build goes on - with a role enum too. A model that built keeps building.
+     */
+    @Test
+    public void aLowerCaseWordThatIsNoLevelStaysAWarning() throws Exception {
+        String[] log = new String[1];
+        String model =
+                MODEL.replace("read=owner | MANAGER", "read=owners").replace("update=REP&owner", "update=rep&owner");
+        File project = run("elcore-roles-lower", one(model), "hexagonal", "java", "jpa", 0, log);
+        assertTrue(
+                log[0].contains("ArTicket @access: 'read=owners' is not operation=level (public, user, owner, admin,"
+                        + " none); the application would refuse to start."),
+                log[0]);
+        assertTrue(log[0].contains("ArTicket @access: 'update=rep&owner' is not operation=level"), log[0]);
+        assertFalse(log[0].contains("is neither a level"), log[0]);
+        assertTrue(holding(project, "AccessPolicy.parse(\"ArTicket\"").contains("read=owners"));
     }
 
     /** The @signin entity of another domain of the application gives the names; its update must stay its own. */

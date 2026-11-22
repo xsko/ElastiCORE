@@ -94,7 +94,12 @@ public class AccessPolicyTest {
         AccessPolicy open = AccessPolicy.parse("Item", "read=public, *=user", null);
         assertEquals(AccessPolicy.Level.USER, open.level("delete"));
         assertEquals(AccessPolicy.Level.PUBLIC, AccessPolicy.parse("Item", null, null).level("delete"));
-        assertThrows(IllegalArgumentException.class, () -> AccessPolicy.parse("Item", "read=everyone", null));
+        IllegalArgumentException wrong =
+                assertThrows(IllegalArgumentException.class, () -> AccessPolicy.parse("Item", "read=everyone", null));
+        assertEquals(
+                "Item @access: 'everyone' is not one of public, user, owner, admin, none",
+                wrong.getMessage(),
+                "a word that cannot be a role name is refused as it was before role names");
     }
 
     // ---- role names, | and & (issue 269) ----------------------------------------------

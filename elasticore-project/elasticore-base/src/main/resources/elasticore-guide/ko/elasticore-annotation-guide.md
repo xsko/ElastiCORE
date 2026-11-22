@@ -2090,8 +2090,8 @@ Ticket:
 
 - 수준인 단어는 대소문자와 상관없이 그 수준입니다(`USER` 는 `user`). 그 밖의 단어는 역할 이름: 대문자로 시작하고, 세션의 역할과
   적힌 그대로 비교합니다(`CurrentUser.hasRole`). **관리자는 `none` 이 없는 모든 항(term)을 통과**합니다 - `owner` 를 통과하듯이.
-- **애플리케이션에 역할 enum 이 있으면 검사합니다** - `@signin` 엔티티의 역할 필드가 enum (이 도메인이든 다른 도메인이든). 수준도
-  그 상수도 아닌 이름은 빌드를 멈춥니다: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
+- **애플리케이션에 역할 enum 이 있으면 검사합니다** - `@signin` 엔티티의 역할 필드가 enum (이 도메인이든 다른 도메인이든). 그 상수가
+  아닌 역할 이름(대문자로 시작)은 빌드를 멈춥니다: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
   user, owner, admin, none) nor a constant of the role enum UserRole (USER, MANAGER, REP, ADMIN).` 역할 enum 이 없으면 - `@signin` 이
   없거나(Spring Security 등) 역할이 문자열 - 이름을 검사하지 않습니다.
 - 이름이 `PUBLIC`, `USER`, `OWNER`, `NONE` 인 역할 상수는 적을 수 없습니다: 그 단어는 수준입니다 - 항목이 역할을 적거나 그 단어를
@@ -2127,7 +2127,7 @@ CurrentUser.runAsSystem(() -> customers.save(admin));
 그 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음).
 
 `@access` 문법 오류(`read=owners`, `read=owner|`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
-애플리케이션이 시작하지 않습니다 (역할 enum 이 있는 애플리케이션에서 `read=owners` 는 위처럼 빌드를 멈춤). 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로
+애플리케이션이 시작하지 않습니다 (대문자로 시작하는 단어는 역할 이름이라 위처럼 검사함: `read=MANGER`). 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로
 `@access`·`@owner`·`@password` 를 쓰면 아무것도 검사·해시되지 않으므로 빌드 경고가 납니다.
 **2.x 생성기(`elcore`, 어노테이션 프로세서)는 이 어노테이션들을 처리하지 않습니다** - 3.0 규칙 엔진을 쓰세요.
 
