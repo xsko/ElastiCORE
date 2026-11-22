@@ -820,7 +820,7 @@ public class ContractTestsTest {
         assertTrue(
                 t.contains(
                         "assertCreated(post(MEMBER, withValue(newMember(), \"born\", java.time.LocalDate.now().minusYears(1).toString())));\n"
-                                + "        assertFieldError(post(MEMBER, withValue(newMember(), \"born\", java.time.LocalDate.now().plusDays(1).toString())), \"born\", \"Past\");"),
+                                + "        assertFieldError(post(MEMBER, withValue(newMember(), \"born\", java.time.LocalDate.now().plusDays(2).toString())), \"born\", \"Past\");"),
                 t);
         assertTrue(
                 t.contains(
@@ -828,7 +828,7 @@ public class ContractTestsTest {
                                 + ".format(java.time.format.DateTimeFormatter.ofPattern(\"yyyy-MM-dd HH:mm:ss\")))), \"seen\", \"PastOrPresent\");"),
                 t);
         assertTrue(
-                t.contains("\"due\", java.time.LocalDate.now().minusDays(1).toString())), \"due\", \"Future\");"), t);
+                t.contains("\"due\", java.time.LocalDate.now().minusDays(2).toString())), \"due\", \"Future\");"), t);
         assertTrue(
                 t.contains(
                         "\"renew\", java.time.LocalDateTime.now().minusDays(1).withNano(0)"
@@ -840,7 +840,7 @@ public class ContractTestsTest {
                 t);
         // In the DTO's format.
         assertTrue(
-                t.contains("\"day\", java.time.LocalDate.now().plusDays(1)"
+                t.contains("\"day\", java.time.LocalDate.now().plusDays(2)"
                         + ".format(java.time.format.DateTimeFormatter.ofPattern(\"yyyyMMdd\")))), \"day\", \"Past\");"),
                 t);
         // A mark the DTO does not carry is not tested: @notblank on what the server sets is taken off the DTO.
@@ -848,6 +848,9 @@ public class ContractTestsTest {
         assertFalse(t.contains("\"hidden\""), t);
         // A time of day against the clock: said, not tested.
         assertFalse(t.contains("wakeAtFuture"), t);
+        assertFalse(t.contains("23:59:59"), t);
+        assertTrue(t.contains("@DisplayName(\"born: a year ago passes, two days ahead is refused (400 Past)\")"), t);
+        assertTrue(t.contains("@DisplayName(\"seen: a year ago passes, tomorrow is refused (400 PastOrPresent)\")"), t);
         assertTrue(
                 log.contains("Member.wakeAt @future: a time of day is past or future by the hour the test runs at"),
                 log);
@@ -890,7 +893,7 @@ public class ContractTestsTest {
                 t);
         assertTrue(t.contains("\"mail\", email(24).replace(\"@\", \"\"))), \"mail\", \"Email\")\n"), t);
         assertTrue(
-                t.contains("\"born\", java.time.LocalDate.now().plusDays(1).toString())), \"born\", \"Past\")\n"), t);
+                t.contains("\"born\", java.time.LocalDate.now().plusDays(2).toString())), \"born\", \"Past\")\n"), t);
         assertTrue(t.contains("\"due\", java.time.LocalDate.now().plusYears(1).toString()"), t);
         assertFalse(t.contains(";\n"), t);
     }
@@ -984,6 +987,24 @@ public class ContractTestsTest {
         assertTrue(
                 readOnlyLog.contains("Agent (signing in): its API takes no create, so no administrator is made"),
                 readOnlyLog);
+    }
+
+    /** A required time of day against the clock: no value is made of it, and the row is counted as skipped. */
+    @Test
+    public void aRequiredTimeOfDayAgainstTheClockIsSaid() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Shift:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      shiftId: long @id @sequence",
+                "      opensAt: time! @future",
+                "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertFalse(new File(project, "src/test/java/com/acme/shop/ShiftContractTest.java").exists(), log);
+        assertTrue(log.contains("Shift: opensAt: no value of"), log);
     }
 
     /** A reason quoting a pattern cannot end the comment it is written in, nor open one in Kotlin. */

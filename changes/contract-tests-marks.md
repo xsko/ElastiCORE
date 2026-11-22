@@ -14,10 +14,12 @@
     `string(255)! @length(min=8)` and `^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$`.
   - Each mark the DTO writes on what a request sends gets one refusal, by status, field and code, after its valid value
     passes: `@notblank` - `"   "`, 400 `NotBlank`; `@email` - the address without its `@`, 400 `Email`; `@past` /
-    `@pastorpresent` - tomorrow, 400 `Past` / `PastOrPresent`; `@future` / `@futureorpresent` - yesterday, 400 `Future` /
-    `FutureOrPresent`. The dates are read from the clock when the test runs - a year ago or ahead for the valid value, a day
-    for the refused one - so no time zone moves them across now; on a date, a datetime and a timestamp (Instant), in the DTO's
-    format. A time of day is counted as skipped (past or future by the hour of the run). A mark the DTO does not write is not
+    `@pastorpresent` - ahead of now, 400 `Past` / `PastOrPresent`; `@future` / `@futureorpresent` - behind now, 400 `Future` /
+    `FutureOrPresent`. The dates are read from the clock when the test runs - a year ago or ahead for the valid value; for
+    the refused one two days on a date (a midnight passing during the request leaves it past now), a day on a datetime or a
+    timestamp - so no time zone moves them across now; on a date, a datetime and a timestamp (Instant), in the DTO's
+    format. A time of day is counted as skipped (past or future by the hour of the run), and no value of one is
+    made: a required one leaves its row counted as skipped. A mark the DTO does not write is not
     tested: `@notblank` on a field the server sets (`@readonly`), which `v3-dto-system-managed` takes off; `@email` with a
     `@pattern` whose value is no address is counted.
   - Every other test's row satisfies the marks: a `@notblank` field is sent (it refuses null), a required `@past` /
@@ -49,4 +51,4 @@
   literal, a varied value keeping every lookahead (2000 combinations), the impossible refusal, the other lookarounds, the
   unescaping.
 - Files: `verify/ContractTestSource.java`, `verify/PatternSample.java`, `ContractTestsTest.java`, `PatternSampleTest.java`
-  (new), the env guide 6.2.1 (en, ko), the pet store's `entity.yml`, `semantic_model.yml` and `db/schema-*.sql`.
+  (new), the env guide 6.2.1 (en, ko), the pet store's `entity.yml`, `semantic_model.yml`, `db/schema-*.sql` and its site guide page `static/dsl-guide.html` (rebuilt by `guide/build_guide.py`).

@@ -761,7 +761,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 | `@min`, `@max` | 경계값은 통과, 한 단계 넘으면 거부: 400 `Min` / `Max` (소수 타입은 `DecimalMin` / `DecimalMax`) |
 | `@pattern` | 식에서 만들어 - 그 식으로 확인한 - 값은 통과, 맞지 않는 값은 거부: 400 `Pattern`. 비밀번호 규칙 - `^` 다음 lookahead `(?=.*X)`: 각 X 의 문자를 담은 값은 통과, 나머지 식에는 맞지만 하나를 빠뜨린 값은 거부 |
 | `@notblank`, `@email` | 텍스트는 통과, 공백뿐인 텍스트(`"   "`)는 거부: 400 `NotBlank`; 주소는 통과, `@` 를 뺀 그 주소는 거부: 400 `Email` |
-| `@past`, `@future` | date, datetime, timestamp 에서: 1년 전(후)은 통과, 내일(어제)은 거부: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`) - 테스트가 실행될 때의 시계로 |
+| `@past`, `@future` | date, datetime, timestamp 에서: 1년 전(후)은 통과, 반대쪽으로 지금을 넘은 값은 거부 - date 는 이틀(요청 중 자정이 지나도 넘은 채로), datetime·timestamp 는 하루: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`) - 테스트가 실행될 때의 시계로 |
 | `@minsize(n)` | 멤버 n 개는 통과, n - 1 개는 거부: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: 경계는 통과, 하나 넘으면 거부: 422 `invariant.<Entity>.<rule>` |
 
