@@ -119,8 +119,9 @@ public class DddStateRules implements CodeRules {
                 if (machines.size() > 1 && e.lifecycleAccepts(move.command())) shares = true;
                 // Every lifecycle a command moves can refuse it, each with its own code.
                 if (e.lifecycleAccepts(move.command())) {
-                    ErrorCatalog.record(refusalCode(e, m.field(), move.command()),
-                            String.format("%s cannot %s when %s is {0}; it must be {1}", e.getName(), move.command(), m.field()));
+                    ErrorCatalog.record(
+                            refusalCode(e, m.field(), move.command()),
+                            String.format("{3} cannot %s when {2} is {4}; it must be {5}", move.command()));
                 }
                 if (!e.lifecycleAccepts(move.command()) || !written.add(move.command())) continue;
                 if (machines.size() > 1) {
@@ -179,25 +180,54 @@ public class DddStateRules implements CodeRules {
             for (String line : lifecycle(e, m, type)) c.varLine("fieldList", "%s", line.isEmpty() ? " *" : " * " + line);
             c.varLine("fieldList", " */");
             if (kt) {
-                c.varLine("fieldList", "private fun %s(command: String, to: %s, vararg from: %s) {", mover, type, type)
-                 .varLine("fieldList", "    if (this.%s !in from)", m.field())
-                 .varLine("fieldList", "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,", refusalCode(e, m.field(), ""))
-                 .varLine("fieldList", "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + from.joinToString(\" or \"),", e.getName(), m.field(), m.field())
-                 .varLine("fieldList", "            this.%s.toString(), from.joinToString(\" or \"))", m.field())
-                 .varLine("fieldList", "    this.%s = to", m.field())
-                 .varLine("fieldList", "}");
+                    c.varLine(
+                                    "fieldList",
+                                    "private fun %s(command: String, to: %s, vararg from: %s) {",
+                                    mover,
+                                    type,
+                                    type)
+                            .varLine("fieldList", "    if (this.%s !in from)", m.field())
+                            .varLine(
+                                    "fieldList",
+                                    "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,",
+                                    refusalCode(e, m.field(), ""))
+                            .varLine(
+                                    "fieldList",
+                                    "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + from.joinToString(\" or \"),",
+                                    e.getName(),
+                                    m.field(),
+                                    m.field())
+                            .varLine(
+                                    "fieldList",
+                                    "            this.%s.toString(), from.joinToString(\" or \"),",
+                                    m.field())
+                            .varLine("fieldList", "            %s)", labels(e, m.field(), type, true))
+                            .varLine("fieldList", "    this.%s = to", m.field())
+                            .varLine("fieldList", "}");
             } else {
-                c.varLine("fieldList", "private void %s(String command, %s to, %s... from) {", mover, type, type)
-                 .varLine("fieldList", "    for (%s allowed : from) {", type)
-                 .varLine("fieldList", "        if (allowed == this.%s) {", m.field())
-                 .varLine("fieldList", "            this.%s = to;", m.field())
-                 .varLine("fieldList", "            return;")
-                 .varLine("fieldList", "        }")
-                 .varLine("fieldList", "    }")
-                 .varLine("fieldList", "    throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,", refusalCode(e, m.field(), ""))
-                 .varLine("fieldList", "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + java.util.Arrays.toString(from),", e.getName(), m.field(), m.field())
-                 .varLine("fieldList", "            String.valueOf(this.%s), java.util.Arrays.toString(from));", m.field())
-                 .varLine("fieldList", "}");
+                    c.varLine("fieldList", "private void %s(String command, %s to, %s... from) {", mover, type, type)
+                            .varLine("fieldList", "    for (%s allowed : from) {", type)
+                            .varLine("fieldList", "        if (allowed == this.%s) {", m.field())
+                            .varLine("fieldList", "            this.%s = to;", m.field())
+                            .varLine("fieldList", "            return;")
+                            .varLine("fieldList", "        }")
+                            .varLine("fieldList", "    }")
+                            .varLine(
+                                    "fieldList",
+                                    "    throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,",
+                                    refusalCode(e, m.field(), ""))
+                            .varLine(
+                                    "fieldList",
+                                    "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + java.util.Arrays.toString(from),",
+                                    e.getName(),
+                                    m.field(),
+                                    m.field())
+                            .varLine(
+                                    "fieldList",
+                                    "            String.valueOf(this.%s), java.util.Arrays.toString(from),",
+                                    m.field())
+                            .varLine("fieldList", "            %s);", labels(e, m.field(), type, false))
+                            .varLine("fieldList", "}");
             }
             }
             // Where no command uses the mover, the lifecycle is said above the check instead.
@@ -533,8 +563,9 @@ public class DddStateRules implements CodeRules {
         for (EntitySpec.StateMachine m : guards) {
             String type = simple(field(e, m.field()).typeName());
             tests.add(m.deletable().isEmpty() ? "false" : anyOf(m.field(), qualified(type, m.deletable())));
-            ErrorCatalog.record(refusalCode(e, m.field(), EntitySpec.DELETE),
-                    String.format("%s cannot be deleted when %s is {0}; it must be {1}", e.getName(), m.field()));
+            ErrorCatalog.record(
+                    refusalCode(e, m.field(), EntitySpec.DELETE),
+                    "{3} cannot be deleted when {2} is {4}; it must be {5}");
         }
         String test = tests.size() == 1 ? tests.get(0) : "(" + join(tests, ") && (") + ")";
 
@@ -552,14 +583,34 @@ public class DddStateRules implements CodeRules {
         for (EntitySpec.StateMachine m : guards) {
             String type = simple(field(e, m.field()).typeName());
             String allowed = "[" + join(m.deletable(), ", ") + "]";
-            c.varLine("fieldList", "    if (!(%s))", m.deletable().isEmpty() ? "false" : anyOf(m.field(), qualified(type, m.deletable())))
-             .varLine("fieldList", kt
-                     ? "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\","
-                     : "        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\",",
-                     refusalCode(e, m.field(), EntitySpec.DELETE))
-             .varLine("fieldList", "            \"%s cannot be deleted when %s is \" + this.%s + \"; it must be %s\",",
-                     e.getName(), m.field(), m.field(), allowed)
-             .varLine("fieldList", kt ? "            this.%s.toString(), \"%s\")" : "            String.valueOf(this.%s), \"%s\");", m.field(), allowed);
+            c.varLine(
+                            "fieldList",
+                            "    if (!(%s))",
+                            m.deletable().isEmpty() ? "false" : anyOf(m.field(), qualified(type, m.deletable())))
+                    .varLine(
+                            "fieldList",
+                            kt
+                                    ? "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\","
+                                    : "        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\",",
+                            refusalCode(e, m.field(), EntitySpec.DELETE))
+                    .varLine(
+                            "fieldList",
+                            "            \"%s cannot be deleted when %s is \" + this.%s + \"; it must be %s\",",
+                            e.getName(),
+                            m.field(),
+                            m.field(),
+                            allowed)
+                    .varLine(
+                            "fieldList",
+                            kt
+                                    ? "            this.%s.toString(), \"%s\","
+                                    : "            String.valueOf(this.%s), \"%s\",",
+                            m.field(),
+                            allowed)
+                    .varLine(
+                            "fieldList",
+                            kt ? "            %s)" : "            %s);",
+                            labels(e, m.field(), type, kt, qualified(type, m.deletable())));
         }
         c.varLine("fieldList", "}");
     }
@@ -568,6 +619,31 @@ public class DddStateRules implements CodeRules {
         List<String> out = new ArrayList<String>();
         for (String s : states) out.add(type + "." + s);
         return out;
+    }
+
+    /**
+     * The values a refusal adds after the two codes, said by their labels in
+     * the response's language: {2} the field, {3} the entity, {4} the state
+     * it is in, {5} the states the step needs - here the mover's "from".
+     */
+    private static String labels(EntitySpec e, String field, String type, boolean kt) {
+        return labels(e, field, type, kt, null);
+    }
+
+    /** The same, the states the step needs named (a delete's); null for the method's "from". */
+    private static String labels(EntitySpec e, String field, String type, boolean kt, List<String> allowed) {
+        String label = "io.elasticore.springboot3.validation.Label";
+        String states = allowed == null ? (kt ? "*from" : "from") : join(allowed, ", ");
+        return String.format(
+                "%s, %s, %s.of(\"%s\", this.%s), %s.anyOf(\"%s\"%s)",
+                DddInvariantRules.label(DddInvariantRules.fieldKey(e, field(e, field)), kt),
+                DddInvariantRules.label(e.getName(), kt),
+                label,
+                type,
+                field,
+                label,
+                type,
+                states.isEmpty() ? "" : ", " + states);
     }
 
     /** The message code of a refused lifecycle step: state.<Entity>.<field>.<command>. */
@@ -589,20 +665,39 @@ public class DddStateRules implements CodeRules {
         }
         if (kt) {
             c.varLine("fieldList", "private fun require%s(command: String, vararg from: %s) {", cap(field), type)
-             .varLine("fieldList", "    if (this.%s !in from)", field)
-             .varLine("fieldList", "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,", refusalCode(e, field, ""))
-             .varLine("fieldList", "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + from.joinToString(\" or \"),", e.getName(), field, field)
-             .varLine("fieldList", "            this.%s.toString(), from.joinToString(\" or \"))", field)
-             .varLine("fieldList", "}");
+                    .varLine("fieldList", "    if (this.%s !in from)", field)
+                    .varLine(
+                            "fieldList",
+                            "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,",
+                            refusalCode(e, field, ""))
+                    .varLine(
+                            "fieldList",
+                            "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + from.joinToString(\" or \"),",
+                            e.getName(),
+                            field,
+                            field)
+                    .varLine("fieldList", "            this.%s.toString(), from.joinToString(\" or \"),", field)
+                    .varLine("fieldList", "            %s)", labels(e, field, type, true))
+                    .varLine("fieldList", "}");
         } else {
             c.varLine("fieldList", "private void require%s(String command, %s... from) {", cap(field), type)
-             .varLine("fieldList", "    for (%s allowed : from) {", type)
-             .varLine("fieldList", "        if (allowed == this.%s) return;", field)
-             .varLine("fieldList", "    }")
-             .varLine("fieldList", "    throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,", refusalCode(e, field, ""))
-             .varLine("fieldList", "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + java.util.Arrays.toString(from),", e.getName(), field, field)
-             .varLine("fieldList", "            String.valueOf(this.%s), java.util.Arrays.toString(from));", field)
-             .varLine("fieldList", "}");
+                    .varLine("fieldList", "    for (%s allowed : from) {", type)
+                    .varLine("fieldList", "        if (allowed == this.%s) return;", field)
+                    .varLine("fieldList", "    }")
+                    .varLine(
+                            "fieldList",
+                            "    throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\" + command,",
+                            refusalCode(e, field, ""))
+                    .varLine(
+                            "fieldList",
+                            "            \"%s cannot \" + command + \" when %s is \" + this.%s + \"; it must be \" + java.util.Arrays.toString(from),",
+                            e.getName(),
+                            field,
+                            field)
+                    .varLine(
+                            "fieldList", "            String.valueOf(this.%s), java.util.Arrays.toString(from),", field)
+                    .varLine("fieldList", "            %s);", labels(e, field, type, false))
+                    .varLine("fieldList", "}");
         }
     }
 

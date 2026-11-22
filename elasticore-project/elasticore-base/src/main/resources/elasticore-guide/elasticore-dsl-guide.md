@@ -166,10 +166,10 @@ What it generates:
 3. **The Apache Ossie semantic model** - the translations are the field's (and the dataset's) `ai_context.synonyms`,
    after the `@terms` words, so a question in that language finds the same field. The `description` stays the `--` label.
 
-Not translated, they stay in the domain's language: Javadoc, `@Schema(description)`, `@Comment` and the database column
-comments; and the error sentences the server writes (`"<label> is not in the expected form"`) - translate a response's
-sentences with the message bundle (`elasticore-rule-guide.md`, "Error codes and languages"); a screen that says them in
-its own words reads `validateXxxCodes` of the TypeScript client (same section).
+Not translated, they stay in the domain's language: Javadoc, `@Schema(description)`, `@Comment`, the database column
+comments and a check's default sentence (`"<label> is not in the expected form"`) - translate a response's sentences with
+the message bundle (`elasticore-rule-guide.md`, "Error codes and languages"), whose lifecycle and invariant refusals name the
+field, entity and state by these labels in the response's language; a screen in its own words reads `validateXxxCodes` (same section).
 
 #### An enumeration's labels in other languages (`label_en` columns)
 
@@ -212,7 +212,7 @@ enumeration:
   `@terms`), and beside `codes` in the field's `ELASTICORE` extension, as data:
   `"code_labels": {"PEN": {"en": "Pending", "zh-TW": "待處理"}, "SHP": {"en": "Shipped"}}`. Its label column is the
   first field named `label`, `name` or `desc`, as for `codes`.
-- Not yet: the message bundle reads the label column only.
+- The lifecycle refusals name a state by these columns (`elasticore-rule-guide.md`).
 - An enumeration without such a column generates exactly what it did before.
 
 ### Meta annotations
@@ -425,7 +425,7 @@ entity:
 
 - **A state with no outgoing arrow is an end (final) state.** In the example above, `SHIPPED` and `CANCELLED` accept
   no command. For example, sending `cancel` to a shipped order returns 409 (conflict with the current state):
-  `PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]` (Kotlin: `... it must be PLACED`)
+  `PurchaseOrder cannot cancel when status is SHIPPED; it must be PLACED` (the exception's `getMessage()`: `... it must be [PLACED]`)
 - If you need a step after SHIPPED, add a state to the enum and one more command line:
 
 ```yaml
@@ -542,7 +542,7 @@ public void cancel() {
 ```
 
 - **All or nothing**: if any one is not in a start state, the command is refused (409) and **no field changes.**
-  Example: cancelling a shipment whose fee is unpaid (`DUE`) gives `Shipment cannot cancel when fee is DUE; it must be [PAID]`,
+  Example: cancelling a shipment whose fee is unpaid (`DUE`) gives `Shipment cannot cancel when fee is DUE; it must be PAID`,
   and `status` stays `READY`.
 - TypeScript `ShipmentApi.canCancel(dto)` also checks both conditions.
 - The lifecycle comment of the generated class marks the fields that change together, as in `cancel: READY -> CANCELLED  (with fee)`.
@@ -581,7 +581,7 @@ In the Pet Store (`ShopFlowTest.onlyACancelledOrderIsDeleted`):
 DELETE /api/petstore/purchaseOrder/{shipped order}
 HTTP/1.1 409
 { "code": "state.PurchaseOrder.status.delete",
-  "detail": "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]" }
+  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be CANCELLED" }
 ```
 
 - With several state fields, the row is deleted only if **all** of them are in an allowed state (`canDelete()` is an AND). Example: a ticket only when `status: CLOSED` and

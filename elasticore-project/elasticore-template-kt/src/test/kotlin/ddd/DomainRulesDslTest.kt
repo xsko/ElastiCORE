@@ -16,6 +16,7 @@ import io.elasticore.springboot3.security.ForbiddenException
 import io.elasticore.springboot3.security.NotSignedInException
 import io.elasticore.springboot3.security.SessionCurrentUser
 import io.elasticore.springboot3.validation.InvariantViolationException
+import io.elasticore.springboot3.validation.Label
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -79,6 +80,10 @@ class DomainRulesDslTest {
         val refused = assertThrows<InvariantViolationException> { billed.cancel() }
         assertThat(refused.message).contains("cannot cancel when billing is BILLED")
         assertThat(billed.status).isEqualTo(TicketStatus.OPEN)
+        // The codes, then the labels the answer says in its language (issue 274).
+        assertThat(refused.args.map { it.toString() })
+            .containsExactly("BILLED", "UNBILLED", "billing", "Ticket", "BILLED", "UNBILLED")
+        assertThat(refused.args[5]).isEqualTo(Label.anyOf("BillingStatus", BillingStatus.UNBILLED))
     }
 
     @Test
@@ -178,6 +183,9 @@ class DomainRulesDslTest {
         val refused = assertThrows<InvariantViolationException> { open.checkDeletable() }
         assertThat(refused.code).isEqualTo("state.Ticket.status.delete")
         assertThat(refused.message).isEqualTo("Ticket cannot be deleted when status is OPEN; it must be [CLOSED]")
+        assertThat(refused.args.toList()).containsExactly("OPEN", "[CLOSED]",
+            Label.of("Ticket.status"), Label.of("Ticket"),
+            Label.of("TicketStatus", TicketStatus.OPEN), Label.anyOf("TicketStatus", TicketStatus.CLOSED))
 
         val cancelled = Ticket()
         cancelled.cancel()

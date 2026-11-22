@@ -422,7 +422,7 @@ For the DSL syntax and the table of generated code, see "Business commands" in `
 When an entity's `states:` declares the state field and the move for each command, the command is generated as a **concrete method of
 `XxxBase`, not an abstract method**. For the syntax, see "Lifecycle" in `elasticore-dsl-guide.md`.
 
-- If the command arrives when the entity is not in a starting state, it throws `InvariantViolationException` - the API returns 409 (conflict with the current state): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
+- If the command arrives when the entity is not in a starting state, it throws `InvariantViolationException` - the API returns 409 (conflict with the current state): "PurchaseOrder cannot ship when status is CANCELLED; it must be PLACED" (field, entity and states by their labels - "Error codes and languages").
   The code is `state.PurchaseOrder.status.ship`, and it can be translated into the request language (see "Error codes and multiple languages" below).
 - If `@event` has an event with the same name as the target state, it is published (`SHIPPED` -> `raiseShipped()`).
 - `canShip()` is generated too, and the TypeScript client also gets `canShip(dto)` (for showing buttons).
@@ -1059,23 +1059,38 @@ From 3.0.261022-rc1, a lifecycle refusal is 409 and a missing referenced row is 
 fix any client that branched on 422 too - and if you **have edited** it, it stays as it is, so a lifecycle refusal and a missing reference both
 still answer 422. Change the `refused(...)` in that file as if it had been newly generated: `state.` to 409, `reference.` to 404.
 
-With no `Accept-Language`, or a language with no translation, it is
-`"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"`.
+With no `Accept-Language`, or a language with no translation, it is (the field by its `@label(en=Order status)`, the rest by name)
+`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be PLACED"`.
 
 **The code scheme**
 
-| Code | When | Values (`{0}`, `{1}`) |
+| Code | When | Values (`{0}`, `{1}` ...) |
 |---|---|---|
 | `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `check`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | Common to all domains (title `error.<code>.title`, sentence `error.<code>`) | - |
-| `state.<Entity>.<field>.<command>` | Lifecycle: a command came when not in a start state (`states:`) | current state, allowed states |
-| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | Field range invariant | - |
-| `invariant.<Entity>.<condition>` | `@invariant(condition, 'sentence')` - a name made from the condition expression (`items.size > 0` -> `items-size-gt-0`) | - |
+| `state.<Entity>.<field>.<command>` | Lifecycle: a command came when not in a start state (`states:`) | `{0}` current state, `{1}` allowed states (codes); by their labels: `{2}` field, `{3}` entity, `{4}` current state, `{5}` allowed states |
+| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | Field range invariant | by their labels: `{0}` field, `{1}` entity |
+| `invariant.<Entity>.<condition>` | `@invariant(condition, 'sentence')` - a name made from the condition expression (`items.size > 0` -> `items-size-gt-0`) | by their labels: `{0}` the first field the condition reads, `{1}` entity |
 | `reference.<Entity>.<relation>` | The row the request pointed to by id does not exist - reference to another aggregate (checked before save), the source of a `@snapshot` (404) | identifier |
 | `upstream` | A call to another system failed (`PortCallException`, 502) | - |
 | `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable` | Refusal before the controller (`RequestShapeErrors`; title `error.<code>.title`, sentence `error.<code>`) | 405 `{0}` method, 415 `{0}` body format, 406 `{0}` formats it can give |
 | `error.no-such-path`, `error.missing-value` | The sentence for a path that does not exist (404 `not-found`), the field message for a missing parameter | `{0}` path / - |
 | `typeMismatch.<field>` | The field message for a value the type does not accept. `typeMismatch.lines[0].quantity` is that line only, `typeMismatch.lines.quantity` is all lines. If neither exists, the message the type refused with (`Quantity`, `fromCode` of an enum - English), and if that does not exist either, `error.type.number` / `.boolean` / `.text` / `.datetime` / `.enum` / `.other` | `{0}` of `.enum` is the allowed values |
 | (hand-written code) | The message code given to a hand-written refusal (below) | the values given |
+
+**The labels in the values** (`invariant.*` `{0}` `{1}`, `state.*` `{2}`-`{5}`) are said in the one language of the response:
+
+- English (the bundle's default text): `@label(en=...)`, else the field or entity name - never the `--` text.
+- Another language, say `ko`: `@label(ko=...)`; else the `--` label when the domain's `env.yml` has `config: labelLanguage: ko`
+  (`elasticore-env-guide.md`); else the name.
+- A state: the enumeration's `<label column>_ko` column (`label_ko`, `elasticore-dsl-guide.md`), the label column itself in the
+  `labelLanguage`, else the constant (`SHIPPED`). Several allowed states are joined with `, `.
+- They come from the label bundle beside the message bundle (`i18n/<domain>-labels_<language>.properties`, generated): the
+  generated refusal passes them as `io.elasticore.springboot3.validation.Label` values - Java and Kotlin, every mode and architecture.
+- The default text names them (`invariant.Account.annualRevenue.min={0} must be at least 0`,
+  `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). A sentence written in the DSL
+  (`@min(0.01, 'price must be positive')`) stays as written, and a translation uses the values or not.
+- A translation written before keeps its meaning: `{0}` and `{1}` of `state.*` are still the codes. The exception's
+  `getMessage()` (a log) is the English sentence with the names, as before.
 
 **How to translate**
 
@@ -1088,6 +1103,7 @@ With no `Accept-Language`, or a language with no translation, it is
 # src/main/resources/i18n/petstore-messages_ko.properties
 error.state.title=지금 상태에서는 할 수 없는 요청
 state.PurchaseOrder.status.cancel=주문 상태가 {0}이면 취소할 수 없습니다 (가능한 상태: {1})
+state.PurchaseOrder.status.delete={2}이(가) {4}인 {3}은(는) 지울 수 없습니다 (지울 수 있는 상태: {5})
 invariant.PurchaseOrder.lines.minsize=장바구니가 비어 있습니다
 Size.lines=장바구니가 비어 있습니다
 NotNull.lines=장바구니가 비어 있습니다
@@ -1114,8 +1130,9 @@ So even with several domains (`billing`, `shop`), a translation of `error.unread
 But a translation in a bundle changed with `spring.messages.basename` is looked up after the domain bundle (the English default text), so put the translations of domain codes in
 `messages_<language>.properties` or in the file next to the domain bundle.
 
-- **Single quotes**: a sentence that takes values (`{0}`) (`state.*`, `reference.*`) follows the Java `MessageFormat` rule and writes `'` as
-  `''` (`can''t`). A sentence with no values is written as it is.
+- **Single quotes**: the values reach only a sentence that holds a `{`. A sentence with placeholders (`{0}`) follows the Java
+  `MessageFormat` rule and writes `'` as `''` (`can''t`); one without a placeholder is said as written (`can't`) - so a translation of
+  `invariant.*` written before it had values keeps its apostrophes. Any other `'` in a sentence with values is written `''`.
 - If two `@invariant`s of the same entity get the same name, `-2` is added to the second. The `+ - * /` and Korean letters and so on in a condition expression
   are put into the name in a distinguishable form (`a + b > 0` -> `a-plus-b-gt-0`).
 

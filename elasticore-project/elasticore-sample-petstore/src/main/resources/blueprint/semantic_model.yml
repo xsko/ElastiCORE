@@ -241,7 +241,10 @@ datasets:
         expression:
           sql: "status"
         datatype: String
-        ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+        description: "주문 상태"
+        ai_context:
+          instructions: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+          synonyms: ["Order status"]
         nonportable_extensions:
           - vendor_name: ELASTICORE
             data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}}

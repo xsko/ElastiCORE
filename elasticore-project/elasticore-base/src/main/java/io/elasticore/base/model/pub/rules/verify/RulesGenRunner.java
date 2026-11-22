@@ -4874,9 +4874,10 @@ public final class RulesGenRunner {
      */
     private void writeLabels(String domainName, ArtifactTarget handler, ECoreModel model) {
         if (typescript || captured != null || model == null) return;
-        java.util.Set<String> languages = io.elasticore.base.model.pub.rules.LabelCatalog.languages(model);
+        String labelLanguage = labelLanguage(domainName, model);
+        java.util.Set<String> languages =
+                io.elasticore.base.model.pub.rules.LabelCatalog.languages(model, labelLanguage);
         if (languages.isEmpty()) return;
-        boolean constants = io.elasticore.base.model.pub.rules.LabelCatalog.hasConstants(model);
         java.util.List<String> all = new java.util.ArrayList<String>();
         all.add(null);
         all.addAll(languages);
@@ -4884,12 +4885,33 @@ public final class RulesGenRunner {
             String text = io.elasticore.base.model.pub.rules.LabelCatalog.properties(
                     domainName,
                     language,
-                    io.elasticore.base.model.pub.rules.LabelCatalog.labels(model, language),
-                    constants);
+                    io.elasticore.base.model.pub.rules.LabelCatalog.labels(model, language, labelLanguage),
+                    io.elasticore.base.model.pub.rules.LabelCatalog.hasConstants(model, language, labelLanguage),
+                    labelLanguage);
             File file = new File(rootFor(handler) + "/src/main/resources/i18n/"
                     + io.elasticore.base.model.pub.rules.LabelCatalog.fileName(domainName, language) + ".properties");
             writeResource("labels", file, text);
         }
+    }
+
+    /**
+     * env.yml {@code config: labelLanguage: ko}: the language the DSL's "--"
+     * labels are written in, as an @label key is read (ko_KR is ko-KR); null
+     * when it is not set, or not a language tag - which is said, and ignored.
+     */
+    private static String labelLanguage(String domainName, ECoreModel model) {
+        String value = model.getConfig("labelLanguage");
+        if (value == null || value.trim().isEmpty()) return null;
+        String tag = value.trim();
+        if (!io.elasticore.base.model.core.LabelTranslations.isLanguage(tag)) {
+            io.elasticore.base.util.ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "[%s] env.yml config.labelLanguage '%s' is not a language tag (ko, en, pt-BR); it is ignored",
+                            domainName, tag));
+            return null;
+        }
+        return io.elasticore.base.model.core.LabelTranslations.normalized(tag);
     }
 
     /** A generated resource file: merged against the cache base when there is one, else written when it differs. */
