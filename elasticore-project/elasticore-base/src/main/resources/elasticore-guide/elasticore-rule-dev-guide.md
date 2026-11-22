@@ -1061,6 +1061,7 @@ Within one file, the order is `HEAD` file rules -> field rules (for each field) 
 | `dbColumnName()` | `@column` or the snake_case name |
 | `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | Collection / reference to another entity / basic type / string |
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
+| `blindIndexOf()` | `fields()` also holds the blind index added beside an `@encrypt @search(eq)` field: for it (`emailBidx`) the field it indexes (`"email"`), for every other field `null`. A rule describing a screen leaves it out: `if (f.blindIndexOf() != null) continue;` |
 
 `DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")` (`null` if missing), `config("a.b")`, `isOn("a.b")`.
 `EnumSpec`: `getName()`, `constants()` -> `name()`, `values()`, `fields()`, `labelTranslations()` (constant -> language -> label, from the `label_en` columns; empty when none).

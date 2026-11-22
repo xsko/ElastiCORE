@@ -129,7 +129,7 @@ public class EncryptRules implements CodeRules {
     public static List<FieldSpec> indexes(EntitySpec e) {
         List<FieldSpec> out = new ArrayList<FieldSpec>();
         for (FieldSpec f : e.allFields()) {
-            if (f.hasDsl(INDEX_OF)) out.add(f);
+            if (f.blindIndexOf() != null) out.add(f);
         }
         return out;
     }
@@ -137,7 +137,7 @@ public class EncryptRules implements CodeRules {
     /** The blind index of an entity field among a spec's fields, or null when it has none. */
     public static FieldSpec indexOf(EntitySpec e, String field) {
         for (FieldSpec f : e.allFields()) {
-            if (f.hasDsl(INDEX_OF) && field.equals(f.dslValue(INDEX_OF))) return f;
+            if (field.equals(f.blindIndexOf())) return f;
         }
         return null;
     }

@@ -279,6 +279,16 @@ public final class FieldSpec {
         return false;
     }
 
+    /**
+     * For the blind index the generator adds beside an {@code @encrypt @search(eq)} field (emailBidx), the name of the
+     * field it indexes (email); null for every other field. A rule describing what a user sees or sends leaves such
+     * fields out: the index is written with the row and never shown.
+     */
+    public String blindIndexOf() {
+        String of = field.getAnnotationValue(io.elasticore.base.model.pub.rules.base.EncryptRules.INDEX_OF);
+        return of == null || of.trim().isEmpty() ? null : of.trim();
+    }
+
     /** Free-text description of the field, or null. */
     public String description() {
         return field.getDescription();
