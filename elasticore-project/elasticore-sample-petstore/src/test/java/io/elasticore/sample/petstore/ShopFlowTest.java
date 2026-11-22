@@ -245,9 +245,12 @@ class ShopFlowTest {
         mvc.perform(post("/api/petstore/purchaseOrder/" + id + "/cancel").session(user))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("state.PurchaseOrder.status.cancel"))
-                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"));
+                // The field by its English label (@label(en=Order status)); the entity and the states,
+                // which have none in English, by their names (issue 274).
+                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"));
 
-        // And in the caller's language, from i18n/petstore-messages_ko.properties.
+        // And in the caller's language, from i18n/petstore-messages_ko.properties - a translation
+        // written before the labels: {0} and {1} are still the codes.
         mvc.perform(post("/api/petstore/purchaseOrder/" + id + "/cancel").session(user).header("Accept-Language", "ko"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.title").value("지금 상태에서는 할 수 없는 요청"))
@@ -264,7 +267,20 @@ class ShopFlowTest {
         mvc.perform(delete("/api/petstore/purchaseOrder/" + shipped).session(admin))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("state.PurchaseOrder.status.delete"))
-                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]"));
+                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be [CANCELLED]"));
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + shipped).session(admin).header("Accept-Language", "en"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be [CANCELLED]"));
+        // In Korean every value by its Korean label: the "--" text (env.yml labelLanguage: ko) for the
+        // entity and the field, the label_ko column for the states - one language in one answer.
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + shipped).session(admin).header("Accept-Language", "ko"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("지금 상태에서는 할 수 없는 요청"))
+                .andExpect(jsonPath("$.detail").value("주문 상태이(가) 배송됨인 주문은(는) 지울 수 없습니다 (지울 수 있는 상태: [취소됨])"));
+        // A language nobody translated: the default wording, and the labels in English with it.
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + shipped).session(admin).header("Accept-Language", "fr"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be [CANCELLED]"));
         mvc.perform(get("/api/petstore/purchaseOrder/" + shipped).session(admin)).andExpect(status().isOk());
 
         String cancelled = placeOrder(user, 1005);

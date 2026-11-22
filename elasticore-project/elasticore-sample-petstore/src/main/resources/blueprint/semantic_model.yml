@@ -241,10 +241,13 @@ datasets:
         expression:
           sql: "status"
         datatype: String
-        ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+        description: "주문 상태"
+        ai_context:
+          instructions: "Codes: PLC = Placed (ko: 주문됨), SHP = Shipped (ko: 배송됨), CAN = Cancelled (ko: 취소됨)"
+          synonyms: ["Order status"]
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}}
+            data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}, "code_labels": {"PLC": {"ko": "주문됨"}, "SHP": {"ko": "배송됨"}, "CAN": {"ko": "취소됨"}}}
       - name: street1
         expression:
           sql: "street1"

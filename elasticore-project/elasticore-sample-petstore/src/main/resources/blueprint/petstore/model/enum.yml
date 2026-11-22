@@ -21,9 +21,10 @@ enumeration:
   OrderStatus:
     meta: enum @db(code) @json(code) -- 주문 상태
     fields:
-      code:  string(3) @code
-      label: string(20)
+      code:     string(3) @code
+      label:    string(20)
+      label_ko: string(20)      # 한국어 응답이 상태를 부르는 말
     enum:
-      PLACED:    PLC, Placed
-      SHIPPED:   SHP, Shipped
-      CANCELLED: CAN, Cancelled
+      PLACED:    PLC, Placed, 주문됨
+      SHIPPED:   SHP, Shipped, 배송됨
+      CANCELLED: CAN, Cancelled, 취소됨

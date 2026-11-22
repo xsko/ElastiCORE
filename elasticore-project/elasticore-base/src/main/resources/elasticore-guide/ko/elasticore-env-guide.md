@@ -769,6 +769,25 @@ config:
   있으면 관리자입니다. 엔티티 줄의 `@signin` 으로 생성되는 `signin` 은 그 엔티티의 `role` 필드(또는 `@role` 필드)가
   `@access(admin)` 인 enum·문자열일 때 그 값을 넣습니다.
 
+## 6-3. `--` 라벨의 언어 (`labelLanguage`, 3.0)
+> **동작:** 라벨 파일 - API 가 있는 도메인(`@expose`)의 v3 번들, JPA, MyBatis, MongoDB, Java, Kotlin, 모든 아키텍처; 그것을 읽는 거절 - ddd·hexagonal 번들이 쓰는 불변식·생명주기 거절 (JPA, MyBatis; Java, Kotlin) · **안 됨:** layered 와 MongoDB (그런 거절이 없음), 2.x-compatible output (output = 'v2'), 2.x generator
+
+```yaml
+config:
+  labelLanguage: ko        # 이 도메인의 "--" 라벨은 한국어 (선택; @label 키처럼 언어 태그: ko, pt-BR)
+```
+
+- 언어만 적으세요(`ko-KR` 이 아니라 `ko`): `Accept-Language: ko` 인 요청은 `_ko` 를 찾고, `ko-KR` 도 `_ko` 를 찾습니다.
+- 거절 문장 안에서는 `--` 문구가 그대로 라벨이 됩니다 - 긴 설명은 어색하게 읽히니 `@label(ko=...)` 로 짧은 것을 주세요.
+
+- DSL 의 `--` 문구가 어느 언어인지 말합니다. 도메인 전체에 적용됩니다. 그러면 라벨 번들에 그 언어의 파일
+  (`i18n/<domain>-labels_ko.properties`)이 생기고 모든 라벨이 들어갑니다 - `@label(ko=...)`, 없으면 `--` 문구, enumeration 은
+  `label_ko` 컬럼, 없으면 라벨 컬럼 - 그리고 한국어로 답하는 거절 문장이 필드·엔티티·상태를 이것으로 부릅니다
+  (`elasticore-rule-guide.md`, "오류 코드와 다국어").
+- 없으면 `@label(<언어>=...)` 이 없는 언어는 그 문장에서 필드·엔티티 이름을 받고, `--` 문구는 쓰지 않습니다.
+  영어는 늘 `@label(en=...)` 아니면 이름입니다. 언어 태그가 아닌 값(`korean`)은 `DSL_WARN` 이고 무시됩니다.
+- 아직 다른 곳은 읽지 않습니다: `--` 문구는 Javadoc, `@Schema(description)`, 컬럼 주석, Ossie description 그대로입니다.
+
 ## 7. apiPath 설정
 
 ```yaml

@@ -38,6 +38,32 @@ class LabelBundleTest {
         assertThat(source.getMessage("Category", null, Locale.ENGLISH)).isEqualTo("분류 (Fish, Dogs ...)");
     }
 
+    /**
+     * env.yml labelLanguage: ko - the "--" labels have a file of their own
+     * language, which a refusal said in Korean reads; English has only what
+     * is written in English, so an English answer never says the Korean text.
+     */
+    @Test
+    void theLabelLanguageHasAFileOfItsOwn() throws Exception {
+        java.util.Properties ko = file("i18n/petstore-labels_ko.properties");
+        assertThat(ko.getProperty("PurchaseOrder")).isEqualTo("주문");
+        assertThat(ko.getProperty("PurchaseOrder.status")).isEqualTo("주문 상태");
+        assertThat(ko.getProperty("OrderStatus.SHIPPED")).isEqualTo("배송됨");
+        java.util.Properties en = file("i18n/petstore-labels_en.properties");
+        assertThat(en.getProperty("PurchaseOrder.status")).isEqualTo("Order status");
+        assertThat(en.getProperty("PurchaseOrder")).isNull();
+        assertThat(en.getProperty("OrderStatus.SHIPPED")).isNull();
+    }
+
+    private static java.util.Properties file(String name) throws Exception {
+        java.util.Properties p = new java.util.Properties();
+        try (InputStream in = LabelBundleTest.class.getClassLoader().getResourceAsStream(name)) {
+            assertThat(in).as(name).isNotNull();
+            p.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return p;
+    }
+
     /** Why the guide says fallback-to-system-locale: false - Spring Boot's default answers in the machine's language. */
     @Test
     void withTheSystemLocaleFallbackALanguageWithoutAFileGetsTheMachinesOne() {

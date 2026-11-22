@@ -128,9 +128,9 @@
         그리고 <b>DSL 로 아직 표현할 수 없는 것</b>까지 적습니다. "확인한 결과" 열은 실행 중인 애플리케이션에 HTTP 로 요청해서 본 응답입니다.
         DSL 과 생성 코드 발췌는 빌드 결과물에서 그대로 읽어 왔습니다.</p>
       <div class="stats">
-        <div class="stat"><b>164</b><span>DSL 줄 (4개 파일)</span></div>
-        <div class="stat"><b>157 · 12,367</b><span>생성된 Java 파일 · 줄</span></div>
-        <div class="stat"><b>50 · 1,486</b><span>생성된 TypeScript 파일 · 줄</span></div>
+        <div class="stat"><b>167</b><span>DSL 줄 (4개 파일)</span></div>
+        <div class="stat"><b>158 · 12,437</b><span>생성된 Java 파일 · 줄</span></div>
+        <div class="stat"><b>50 · 1,722</b><span>생성된 TypeScript 파일 · 줄</span></div>
         <div class="stat"><b>7 · 228</b><span>손으로 쓴 Java 파일 · 줄</span></div>
         <!-- counted by build_guide.py; line counts leave out blank lines; the screens (web/src) are hand-written too -->
       </div>
@@ -343,7 +343,7 @@
       <p class="biz">고객은 자기 주문을 <b>배송 전(접수 상태)</b> 에만 취소할 수 있습니다. 화면은 취소할 수 있을 때만 버튼을 보입니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
 <tr><td>자기 주문만</td><td><code>cancel=owner</code></td><td>남의 주문 → 404</td></tr>
-<tr><td>접수 상태에서만</td><td><code>states: status: cancel: PLACED -> CANCELLED</code></td><td>두 번째 취소·배송 후 취소 → 409 "cannot cancel when status is SHIPPED; it must be [PLACED]"</td></tr>
+<tr><td>접수 상태에서만</td><td><code>states: status: cancel: PLACED -> CANCELLED</code></td><td>두 번째 취소·배송 후 취소 → 409 "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"</td></tr>
 <tr><td>취소되면 알린다</td><td><code>@event(… Cancelled)</code></td><td><code>PurchaseOrderCancelledEvent</code></td></tr>
 <tr><td>버튼은 할 수 있을 때만</td><td>(생성) TypeScript <code>Orders.canCancel(order)</code></td><td>서버의 <code>canCancel()</code> 과 같은 판단</td></tr>
 </tbody></table>
@@ -414,7 +414,7 @@
           <tr><td>403</td><td>이 사람에게 허락되지 않음</td><td>"ship PurchaseOrder is for the administrator"</td></tr>
           <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음, 또는 없는 경로</td><td>남의 주문·고객 정보, "Item 99999 does not exist", 없는 상품 GET ("Item not found")</td></tr>
           <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT (<code>method-not-allowed</code>, <code>Allow: POST</code>)</td></tr>
-          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when status is SHIPPED…"</td></tr>
+          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when Order status is SHIPPED…"</td></tr>
           <tr><td>422</td><td>도메인의 다른 규칙이 거절 (불변식)</td><td>-</td></tr>
         </tbody>
       </table>
@@ -495,13 +495,13 @@
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) -- 판매 단위 (Large, Male Puppy ...)
+    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
       description: string(3000)!
       imagePath:   string(100)
-      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격)
+      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격) @label(en=Unit cost, ja=単価) -- 단가
       product:     Product @ManyToOne          # -> productId
 
   Country:
@@ -537,7 +537,9 @@ UPDATE ps_category c SET product_count = (SELECT COUNT(*) FROM ps_product p WHER
 
   Customer:
     # 가입은 누구나, 읽기·수정은 본인(과 관리자), 삭제는 관리자
-    meta: entity @root @editable @expose(20) @signin @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
+    # refresh=password: 관리자가 바꾼 역할과 삭제가 다시 로그인하지 않아도 다음 요청부터 세션에 반영되고,
+    # 비밀번호가 바뀌면 그 전에 열린 세션은 끝난다 (바꾼 세션은 유지)
+    meta: entity @root @editable @expose(20) @signin(refresh=password) @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
           @Index(name="uk_ps_customer_login", columnList="login", unique="true") -- 고객
     fields:
       customerId:  long @id @sequence
@@ -564,6 +566,7 @@ private void accessUpdate(Customer entity, CustomerDTO dto) {
         dto.setRole(entity.getRole());
     }
     hashPasswords(dto);
+    if (dto.getPassword() != null) io.elasticore.springboot3.security.PasswordRefreshFilter.written(entity.getCustomerId(), dto.getPassword());
 }</script>
   <script type="text/plain" id="src-gen-account">// adapter/in/web/shop/AccountController (손으로)
 public CustomerDTO signUp(@Valid @RequestBody CustomerDTO customer, HttpServletRequest request) {
@@ -608,7 +611,7 @@ public CustomerDTO me() {
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId
       orderDate:       date @behavior
-      status:          OrderStatus
+      status:          OrderStatus @label(en=Order status) -- 주문 상태
       deliveryAddress: Address @Embedded
       creditCard:      CreditCard! @Embedded
       totalWithoutVat: money(12.2) @default(0) @compute(sum(lines.subTotal))
@@ -740,7 +743,8 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
     }
     throw new io.elasticore.springboot3.validation.InvariantViolationException("state.PurchaseOrder.status." + command,
             "PurchaseOrder cannot " + command + " when status is " + this.status + "; it must be " + java.util.Arrays.toString(from),
-            String.valueOf(this.status), java.util.Arrays.toString(from));
+            String.valueOf(this.status), java.util.Arrays.toString(from),
+            io.elasticore.springboot3.validation.Label.of("PurchaseOrder.status"), io.elasticore.springboot3.validation.Label.of("PurchaseOrder"), io.elasticore.springboot3.validation.Label.of("OrderStatus", this.status), io.elasticore.springboot3.validation.Label.listOf("OrderStatus", from));
 }</script>
   <script type="text/plain" id="src-ossie">  - name: PurchaseOrder
     source: ps_purchase_order
@@ -761,7 +765,10 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         expression:
           sql: "status"
         datatype: String
-        ai_context: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+        description: "주문 상태"
+        ai_context:
+          instructions: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+          synonyms: ["Order status"]
         nonportable_extensions:
           - vendor_name: ELASTICORE
             data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}}
@@ -900,6 +907,7 @@ datasets:
     table:
       prefix: ps_
     referenceColumn: short      # 다른 애그리거트 참조 컬럼: category_id (기본은 2.x 식 category_category_id)
+    labelLanguage: ko           # "--" 라벨은 한국어: 한국어 응답의 거절 문장이 그 라벨로 필드·엔티티를 부른다
     annotations:
       genid: "genid(io.elasticore.springboot3.util.IdUtils.newId)"
   namespace:
@@ -927,12 +935,13 @@ datasets:
   OrderStatus:
     meta: enum @db(code) @json(code) -- 주문 상태
     fields:
-      code:  string(3) @code
-      label: string(20)
+      code:     string(3) @code
+      label:    string(20)
+      label_ko: string(20)      # 한국어 응답이 상태를 부르는 말
     enum:
-      PLACED:    PLC, Placed
-      SHIPPED:   SHP, Shipped
-      CANCELLED: CAN, Cancelled</script>
+      PLACED:    PLC, Placed, 주문됨
+      SHIPPED:   SHP, Shipped, 배송됨
+      CANCELLED: CAN, Cancelled, 취소됨</script>
   <script type="text/plain" id="src-entity">entity:
 
   # ---- catalog: reference data, edited by the shop ----------------------
@@ -957,13 +966,13 @@ datasets:
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) -- 판매 단위 (Large, Male Puppy ...)
+    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
       description: string(3000)!
       imagePath:   string(100)
-      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격)
+      unitCost:    money(10.2)! @min(0.01, 'price must be positive') @terms(price, 가격) @label(en=Unit cost, ja=単価) -- 단가
       product:     Product @ManyToOne          # -> productId
 
   Country:
@@ -996,7 +1005,9 @@ datasets:
 
   Customer:
     # 가입은 누구나, 읽기·수정은 본인(과 관리자), 삭제는 관리자
-    meta: entity @root @editable @expose(20) @signin @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
+    # refresh=password: 관리자가 바꾼 역할과 삭제가 다시 로그인하지 않아도 다음 요청부터 세션에 반영되고,
+    # 비밀번호가 바뀌면 그 전에 열린 세션은 끝난다 (바꾼 세션은 유지)
+    meta: entity @root @editable @expose(20) @signin(refresh=password) @owner(customerId) @access(read=owner, create=public, update=owner) @terms(member, 회원, 손님)
           @Index(name="uk_ps_customer_login", columnList="login", unique="true") -- 고객
     fields:
       customerId:  long @id @sequence
@@ -1020,7 +1031,7 @@ datasets:
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId
       orderDate:       date @behavior
-      status:          OrderStatus
+      status:          OrderStatus @label(en=Order status) -- 주문 상태
       deliveryAddress: Address @Embedded
       creditCard:      CreditCard! @Embedded
       totalWithoutVat: money(12.2) @default(0) @compute(sum(lines.subTotal))

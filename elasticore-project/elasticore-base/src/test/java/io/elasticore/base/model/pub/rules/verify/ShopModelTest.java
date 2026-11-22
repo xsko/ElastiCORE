@@ -403,10 +403,19 @@ public class ShopModelTest {
     public void everyRefusalHasACodeTheBundleLists() throws Exception {
         String base = java("domain/model/PtOrderBase.java");
         assertTrue(base.contains("InvariantViolationException(\"state.PtOrder.status.\" + command,"), base);
-        assertTrue(base.contains("String.valueOf(this.status), java.util.Arrays.toString(from));"), base);
+        // The codes {0} {1} as before, then the labels {2}..{5} the answer says in its language (issue 274).
+        assertTrue(base.contains("String.valueOf(this.status), java.util.Arrays.toString(from),"), base);
+        assertTrue(
+                base.contains("io.elasticore.springboot3.validation.Label.of(\"PtOrder.status\"),"
+                        + " io.elasticore.springboot3.validation.Label.of(\"PtOrder\"),"
+                        + " io.elasticore.springboot3.validation.Label.of(\"PtOrderStatus\", this.status),"
+                        + " io.elasticore.springboot3.validation.Label.listOf(\"PtOrderStatus\", from));"),
+                base);
 
         String bundle = read("src/main/resources/i18n/ptshop-messages.properties");
-        assertTrue(bundle.contains("state.PtOrder.status.ship=PtOrder cannot ship when status is {0}; it must be {1}"), bundle);
+        assertTrue(
+                bundle.contains("state.PtOrder.status.ship={3} cannot ship when {2} is {4}; it must be {5}"), bundle);
+        assertTrue(bundle.contains("# state.*: {0} the state, {1} the states it must be (codes)"), bundle);
         // One command of two lifecycles: either can refuse it, each by its own code.
         assertTrue(bundle.contains("state.PtBill.status.cancel="), bundle);
         assertTrue(bundle.contains("state.PtBill.payment.cancel="), bundle);
@@ -451,7 +460,12 @@ public class ShopModelTest {
         assertFalse(base.contains("void delete(") || base.contains("abstract void delete"), base);
         assertFalse(java("adapter/in/web/PtOrderController.java").contains("}/delete\""), "delete is no command");
         assertTrue(read("src/main/resources/i18n/ptshop-messages.properties")
-                .contains("state.PtOrder.status.delete=PtOrder cannot be deleted when status is {0}; it must be {1}"));
+                .contains("state.PtOrder.status.delete={3} cannot be deleted when {2} is {4}; it must be {5}"));
+        assertTrue(
+                base.contains(
+                        "io.elasticore.springboot3.validation.Label.listOf(\"PtOrderStatus\", PtOrderStatus.PLACED,"
+                                + " PtOrderStatus.LOST));"),
+                base);
     }
 
     /** Two promises with one condition get two codes; a message keeps its backslash; delete: needs a split root. */

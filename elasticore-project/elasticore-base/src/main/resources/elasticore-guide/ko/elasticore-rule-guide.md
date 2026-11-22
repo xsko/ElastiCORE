@@ -422,7 +422,7 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
 엔티티의 `states:` 가 상태 필드와 명령마다의 이동을 선언하면, 명령은 **추상 메서드가 아니라
 `XxxBase` 의 구체 메서드**로 생성됩니다. 문법은 `elasticore-dsl-guide.md` 의 "생명주기" 를 보세요.
 
-- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]".
+- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]" (필드·엔티티·상태는 라벨로 - "오류 코드와 다국어").
   코드는 `state.PurchaseOrder.status.ship` 이고 요청 언어로 번역할 수 있습니다 (아래 "오류 코드와 다국어").
 - 대상 상태와 같은 이름의 이벤트가 `@event` 에 있으면 발행합니다 (`SHIPPED` -> `raiseShipped()`).
 - `canShip()` 이 함께 생기고, TypeScript 클라이언트에도 `canShip(dto)` 가 생깁니다 (버튼 표시용).
@@ -1059,23 +1059,39 @@ HTTP/1.1 409
 422 로 분기하던 클라이언트가 있으면 함께 고칩니다 - **손댄 적이 있으면** 그대로라 생명주기 거절도, 없는 참조도 422 로
 답합니다. 그 파일의 `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고치세요.
 
-`Accept-Language` 가 없거나 번역이 없는 언어면
-`"detail": "PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]"` 입니다.
+`Accept-Language` 가 없거나 번역이 없는 언어면 (필드는 `@label(en=Order status)` 로, 나머지는 이름으로)
+`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"` 입니다.
 
 **코드 체계**
 
-| 코드 | 언제 | 값 (`{0}`, `{1}`) |
+| 코드 | 언제 | 값 (`{0}`, `{1}` ...) |
 |---|---|---|
 | `not-found`, `already-exists`, `stale`, `required`, `unique`, `referenced`, `check`, `conflict`, `invalid`, `refused`, `state`, `not-signed-in`, `forbidden`, `bad-request`, `no-such-property` | 모든 도메인 공통 (제목 `error.<code>.title`, 문장 `error.<code>`) | - |
-| `state.<Entity>.<field>.<command>` | 생명주기: 시작 상태가 아닌데 명령이 옴 (`states:`) | 지금 상태, 가능한 상태 |
-| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | - |
-| `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | - |
+| `state.<Entity>.<field>.<command>` | 생명주기: 시작 상태가 아닌데 명령이 옴 (`states:`) | `{0}` 지금 상태, `{1}` 가능한 상태 (코드); 라벨로: `{2}` 필드, `{3}` 엔티티, `{4}` 지금 상태, `{5}` 가능한 상태 |
+| `invariant.<Entity>.<field>.min` / `.max` / `.minsize` / `.maxsize` | 필드 범위 불변식 | 라벨로: `{0}` 필드, `{1}` 엔티티 |
+| `invariant.<Entity>.<조건>` | `@invariant(조건, '문장')` — 조건식으로 만든 이름 (`items.size > 0` -> `items-size-gt-0`) | 라벨로: `{0}` 조건이 처음 읽는 필드, `{1}` 엔티티 |
 | `reference.<Entity>.<relation>` | 요청이 id 로 가리킨 행이 없음 - 다른 애그리거트 참조(저장 전 확인), `@snapshot` 의 원본 (404) | 식별자 |
 | `upstream` | 다른 시스템 호출 실패 (`PortCallException`, 502) | - |
 | `unreadable`, `method-not-allowed`, `unsupported-media-type`, `not-acceptable` | 컨트롤러 전의 거절 (`RequestShapeErrors`; 제목 `error.<code>.title`, 문장 `error.<code>`) | 405 `{0}` 메서드, 415 `{0}` 본문 형식, 406 `{0}` 낼 수 있는 형식 |
 | `error.no-such-path`, `error.missing-value` | 없는 경로(404 `not-found`)의 문장, 없는 파라미터의 필드 메시지 | `{0}` 경로 / - |
 | `typeMismatch.<필드>` | 타입이 받지 않는 값의 필드 메시지. `typeMismatch.lines[0].quantity` 그 줄만, `typeMismatch.lines.quantity` 모든 줄. 둘 다 없으면 타입이 거절한 메시지(`Quantity`, enum 의 `fromCode` - 영어), 그것도 없으면 `error.type.number` / `.boolean` / `.text` / `.datetime` / `.enum` / `.other` | `.enum` 의 `{0}` 가능한 값 |
 | (손으로 쓴 코드) | 손으로 쓴 거절에 준 메시지 코드 (아래) | 준 값 |
+
+**값에 든 라벨** (`invariant.*` 의 `{0}` `{1}`, `state.*` 의 `{2}`-`{5}`) 은 응답의 한 언어로 나갑니다:
+
+- 영어(번들의 기본 문구): `@label(en=...)`, 없으면 필드·엔티티 이름 - `--` 문구는 쓰지 않습니다.
+- 다른 언어, 예를 들어 `ko`: `@label(ko=...)`; 없으면 도메인의 `env.yml` 에 `config: labelLanguage: ko` 가 있을 때 `--` 라벨
+  (`elasticore-env-guide.md`); 그것도 아니면 이름.
+- 상태: enumeration 의 `<라벨 컬럼>_ko` 컬럼(`label_ko`, `elasticore-dsl-guide.md`), `labelLanguage` 에서는 라벨 컬럼 그 자체,
+  없으면 `{0}` 이 말하는 코드(`SHIPPED`); 가능한 상태는 `{1}` 의 틀을 그대로 씁니다(`[PLACED, SHIPPED]`).
+- 메시지 번들 옆의 라벨 번들(`i18n/<domain>-labels_<언어>.properties`, 생성)에서 읽습니다. 생성된 거절은 이것을
+  `io.elasticore.springboot3.validation.Label` 값으로 넘깁니다 - 이 거절이 쓰이는 곳 어디서나: ddd·hexagonal 번들, JPA 와 MyBatis, Java 와 Kotlin.
+- 기본 문구는 이 값으로 부릅니다 (`invariant.Account.annualRevenue.min={0} must be at least 0`,
+  `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). DSL 에 적은 문장
+  (`@min(0.01, 'price must be positive')`) 은 적은 그대로이고, 번역은 값을 써도 되고 안 써도 됩니다.
+- 전에 쓴 번역은 뜻이 그대로입니다: `state.*` 의 `{0}` 과 `{1}` 은 여전히 코드이고, 라벨이 없는 모델은 영어로
+  전과 글자 하나 다르지 않게 답합니다(`... it must be [PLACED]`). 예외의
+  `getMessage()` (로그) 는 전처럼 이름이 든 영어 문장입니다.
 
 **번역하는 법**
 
@@ -1088,6 +1104,7 @@ HTTP/1.1 409
 # src/main/resources/i18n/petstore-messages_ko.properties
 error.state.title=지금 상태에서는 할 수 없는 요청
 state.PurchaseOrder.status.cancel=주문 상태가 {0}이면 취소할 수 없습니다 (가능한 상태: {1})
+state.PurchaseOrder.status.delete={2}이(가) {4}인 {3}은(는) 지울 수 없습니다 (지울 수 있는 상태: {5})
 invariant.PurchaseOrder.lines.minsize=장바구니가 비어 있습니다
 Size.lines=장바구니가 비어 있습니다
 NotNull.lines=장바구니가 비어 있습니다
@@ -1114,8 +1131,9 @@ typeMismatch.lines.quantity=수량은 0 이상의 정수입니다
 다만 `spring.messages.basename` 을 바꿔 둔 번역은 도메인 번들(영어 기본 문구)보다 뒤에 찾으므로, 도메인 코드의
 번역은 `messages_<언어>.properties` 나 도메인 번들 옆 파일에 두세요.
 
-- **작은따옴표**: 값(`{0}`)이 들어가는 문장(`state.*`, `reference.*`)은 Java `MessageFormat` 규칙을 따라 `'` 를
-  `''` 로 적습니다 (`can''t`). 값이 없는 문장은 그대로 적습니다.
+- **작은따옴표**: 값이 들어가는 문장(`state.*`, `reference.*`, 값을 준 손으로 쓴 코드)은 자리가 있든 없든 Java
+  `MessageFormat` 규칙을 따라 `'` 를 `''` 로 적습니다 (`can''t`). `invariant.*` 문장은 `{` 가 있을 때만 값을 받습니다:
+  자리가 없는 문장은 값이 생기기 전처럼 적은 그대로 나가고 (`can't`), `{0}` 이 있는 문장은 `''` 로 적습니다.
 - 같은 엔티티의 두 `@invariant` 가 같은 이름이 되면 두 번째에 `-2` 가 붙습니다. 조건식의 `+ - * /` 와 한글 등은
   이름에 구분되어 들어갑니다 (`a + b > 0` -> `a-plus-b-gt-0`).
 
@@ -1156,7 +1174,8 @@ HTTP/1.1 409                       (헤더 없음)
 - 값이 있는 문장은 `'` 를 `''` 로 적습니다 (기본 문구도). 예외의 `getMessage()` 는 값을 넣은 기본 문구입니다(로그에 그대로).
 - 코드 없이 던지면(`new ConflictException("...")`) 예전처럼 그 메시지 그대로 나가고 `code` 는 표의 마지막 칸입니다.
 - 불변식처럼 상태를 코드로 고르는 거절은 `InvariantViolationException(code, message, args...)` 입니다 (`state.` 409,
-  `reference.` 404, 그 밖 422).
+  `reference.` 404, 그 밖 422). 생성된 코드를 손으로 던지면서 그 문장이 부르는 것보다 값을 적게 주면 (`state.*` 에
+  코드 둘만), 응답은 준 메시지입니다 - `{3}` 이 남은 문장은 나가지 않습니다.
 - 확인: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (테스트용 컨트롤러가 던진 것).
 - 고친 적이 있는 `XxxApiErrors` 는 다시 생성되지 않아 처리기가 `ex.getMessage()` 만 씁니다. 새로 생성된 파일처럼
   `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())` 로 고치세요.

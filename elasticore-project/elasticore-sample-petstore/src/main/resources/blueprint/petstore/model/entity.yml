@@ -87,7 +87,7 @@ entity:
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId
       orderDate:       date @behavior
-      status:          OrderStatus
+      status:          OrderStatus @label(en=Order status) -- 주문 상태
       deliveryAddress: Address @Embedded
       creditCard:      CreditCard! @Embedded
       totalWithoutVat: money(12.2) @default(0) @compute(sum(lines.subTotal))

@@ -521,7 +521,7 @@ page.append('''
       <p class="biz">고객은 자기 주문을 <b>배송 전(접수 상태)</b> 에만 취소할 수 있습니다. 화면은 취소할 수 있을 때만 버튼을 보입니다.</p>
 ''' + rules([
     ('자기 주문만', '<code>cancel=owner</code>', '남의 주문 → 404'),
-    ('접수 상태에서만', '<code>states: status: cancel: PLACED -> CANCELLED</code>', '두 번째 취소·배송 후 취소 → 409 "cannot cancel when status is SHIPPED; it must be [PLACED]"'),
+    ('접수 상태에서만', '<code>states: status: cancel: PLACED -> CANCELLED</code>', '두 번째 취소·배송 후 취소 → 409 "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"'),
     ('취소되면 알린다', '<code>@event(… Cancelled)</code>', '<code>PurchaseOrderCancelledEvent</code>'),
     ('버튼은 할 수 있을 때만', '(생성) TypeScript <code>Orders.canCancel(order)</code>', '서버의 <code>canCancel()</code> 과 같은 판단'),
 ]) + '''
@@ -598,7 +598,7 @@ page.append('''
           <tr><td>403</td><td>이 사람에게 허락되지 않음</td><td>"ship PurchaseOrder is for the administrator"</td></tr>
           <tr><td>404</td><td>없음 - 또는 남의 것, 또는 요청이 가리킨 행이 없음, 또는 없는 경로</td><td>남의 주문·고객 정보, "Item 99999 does not exist", 없는 상품 GET ("Item not found")</td></tr>
           <tr><td>405</td><td>그런 연산이 없음</td><td>주문 PUT (<code>method-not-allowed</code>, <code>Allow: POST</code>)</td></tr>
-          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when status is SHIPPED…"</td></tr>
+          <tr><td>409</td><td>저장된 데이터나 지금 상태와 충돌</td><td>"A unique value is already taken." (같은 로그인 ID), 품목이 남은 상품 삭제, "cannot cancel when Order status is SHIPPED…"</td></tr>
           <tr><td>422</td><td>도메인의 다른 규칙이 거절 (불변식)</td><td>-</td></tr>
         </tbody>
       </table>
