@@ -11,6 +11,8 @@ import java.util.Map;
  * What the DSL declares of PurchaseOrder, checked over its API (testCode: contract): each
  * move of its lifecycles, and the constraints of what a request writes - by
  * status and code, never by message. Every request goes through PetstoreContractSupport.
+ * Who @access lets in is checked too: for each operation, a caller each of its
+ * terms lets in, and those it refuses - each signed in for the test.
  *
  * Written once, then merged when the DSL changes: yours from here. Change a test
  * where you changed a rule on purpose.
@@ -105,5 +107,162 @@ class PurchaseOrderContractTest extends PetstoreContractSupport {
     void linesSize() throws Exception {
         assertCreated(post(PURCHASE_ORDER, newPurchaseOrder()));
         assertFieldError(post(PURCHASE_ORDER, withValue(newPurchaseOrder(), "lines", list())), "lines", "Size");
+    }
+
+    @Test
+    @DisplayName("read=owner|MANAGER: a USER is let in on a row of theirs")
+    void readLetsInAUserOnTheirRow() throws Exception {
+        Caller caller = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", caller.id), "orderId");
+        assertAllowed(sentBy(caller, reading(PURCHASE_ORDER, id)));
+    }
+
+    @Test
+    @DisplayName("read=owner|MANAGER: a MANAGER is let in")
+    void readLetsInAManager() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Caller caller = signIn("M");
+        assertAllowed(sentBy(caller, reading(PURCHASE_ORDER, id)));
+    }
+
+    @Test
+    @DisplayName("read=owner|MANAGER: a visitor is refused (401 not-signed-in)")
+    void readRefusesAVisitor() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        assertDenied(sentBy(null, reading(PURCHASE_ORDER, id)), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("read=owner|MANAGER: a USER is refused on another's row (404 not-found)")
+    void readRefusesAUserOnAnothersRow() throws Exception {
+        Caller owner = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", owner.id), "orderId");
+        Caller caller = signIn("U");
+        assertDenied(sentBy(caller, reading(PURCHASE_ORDER, id)), 404, "not-found");
+    }
+
+    @Test
+    @DisplayName("search, read=owner|MANAGER: a USER finds a row of theirs")
+    void searchLetsInAUserOnTheirRow() throws Exception {
+        Caller caller = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", caller.id), "orderId");
+        assertFinds(sentBy(caller, searching(PURCHASE_ORDER, obj("orderId", id))), "orderId", id);
+    }
+
+    @Test
+    @DisplayName("search, read=owner|MANAGER: a MANAGER finds the row")
+    void searchLetsInAManager() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Caller caller = signIn("M");
+        assertFinds(sentBy(caller, searching(PURCHASE_ORDER, obj("orderId", id))), "orderId", id);
+    }
+
+    @Test
+    @DisplayName("search, read=owner|MANAGER: a visitor is refused (401 not-signed-in)")
+    void searchRefusesAVisitor() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        assertDenied(sentBy(null, searching(PURCHASE_ORDER, obj("orderId", id))), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("search, read=owner|MANAGER: a USER does not find another's row")
+    void searchHidesAnothersRowFromAUser() throws Exception {
+        Caller owner = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", owner.id), "orderId");
+        Caller caller = signIn("U");
+        assertMisses(sentBy(caller, searching(PURCHASE_ORDER, obj("orderId", id))), "orderId", id);
+    }
+
+    @Test
+    @DisplayName("create=user: a USER is let in")
+    void createLetsInAUser() throws Exception {
+        Caller caller = signIn("U");
+        assertAllowed(sentBy(caller, creating(PURCHASE_ORDER, newPurchaseOrder())));
+    }
+
+    @Test
+    @DisplayName("create=user: a visitor is refused (401 not-signed-in)")
+    void createRefusesAVisitor() throws Exception {
+        assertDenied(sentBy(null, creating(PURCHASE_ORDER, newPurchaseOrder())), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("delete=MANAGER&owner: a MANAGER is let in on a row of theirs")
+    void deleteLetsInAManagerOnTheirRow() throws Exception {
+        Caller caller = signIn("M");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", caller.id), "orderId");
+        given(command(PURCHASE_ORDER, id, "cancel", null));
+        assertAllowed(sentBy(caller, deleting(PURCHASE_ORDER, id)));
+    }
+
+    @Test
+    @DisplayName("delete=MANAGER&owner: a visitor is refused (401 not-signed-in)")
+    void deleteRefusesAVisitor() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        assertDenied(sentBy(null, deleting(PURCHASE_ORDER, id)), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("delete=MANAGER&owner: a USER is refused on a row of theirs (403 forbidden)")
+    void deleteRefusesAUserOnTheirRow() throws Exception {
+        Caller caller = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", caller.id), "orderId");
+        assertDenied(sentBy(caller, deleting(PURCHASE_ORDER, id)), 403, "forbidden");
+    }
+
+    @Test
+    @DisplayName("delete=MANAGER&owner: a MANAGER is refused on another's row (404 not-found)")
+    void deleteRefusesAManagerOnAnothersRow() throws Exception {
+        Caller owner = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", owner.id), "orderId");
+        Caller caller = signIn("M");
+        assertDenied(sentBy(caller, deleting(PURCHASE_ORDER, id)), 404, "not-found");
+    }
+
+    @Test
+    @DisplayName("ship=admin (the default): the administrator is let in")
+    void shipLetsInTheAdministrator() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Caller caller = signIn("A");
+        assertAllowed(sentBy(caller, commanding(PURCHASE_ORDER, id, "ship", null)));
+    }
+
+    @Test
+    @DisplayName("ship=admin (the default): a visitor is refused (401 not-signed-in)")
+    void shipRefusesAVisitor() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        assertDenied(sentBy(null, commanding(PURCHASE_ORDER, id, "ship", null)), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("ship=admin (the default): a USER is refused (403 forbidden)")
+    void shipRefusesAUser() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Caller caller = signIn("U");
+        assertDenied(sentBy(caller, commanding(PURCHASE_ORDER, id, "ship", null)), 403, "forbidden");
+    }
+
+    @Test
+    @DisplayName("cancel=owner: a USER is let in on a row of theirs")
+    void cancelLetsInAUserOnTheirRow() throws Exception {
+        Caller caller = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", caller.id), "orderId");
+        assertAllowed(sentBy(caller, commanding(PURCHASE_ORDER, id, "cancel", null)));
+    }
+
+    @Test
+    @DisplayName("cancel=owner: a visitor is refused (401 not-signed-in)")
+    void cancelRefusesAVisitor() throws Exception {
+        Object id = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        assertDenied(sentBy(null, commanding(PURCHASE_ORDER, id, "cancel", null)), 401, "not-signed-in");
+    }
+
+    @Test
+    @DisplayName("cancel=owner: a USER is refused on another's row (404 not-found)")
+    void cancelRefusesAUserOnAnothersRow() throws Exception {
+        Caller owner = signIn("U");
+        Object id = createdId(PURCHASE_ORDER, withValue(newPurchaseOrder(), "customerId", owner.id), "orderId");
+        Caller caller = signIn("U");
+        assertDenied(sentBy(caller, commanding(PURCHASE_ORDER, id, "cancel", null)), 404, "not-found");
     }
 }

@@ -764,15 +764,24 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 | `@past`, `@future` | on a date, a datetime or a timestamp: a year ago (from now) passes; past now the other way is refused - a date by two days (a midnight during the request leaves it past), a datetime or timestamp by one: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`), read from the clock when the test runs |
 | `@minsize(n)` | n members pass, n - 1 are refused: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: the boundary passes, one past it is refused: 422 `invariant.<Entity>.<rule>` |
+| `@access` | each operation the API serves - read, search, create, update, delete, each command - at its entry, else `*`, else `admin`: a caller each term lets in passes (2xx; a search finds the row); a visitor is refused 401 `not-signed-in`, a caller of a role no term lets in 403 `forbidden`, and where `owner` is a word a caller on another's row 404 `not-found` (a search does not find it). `REP&owner` refuses another role on a row of theirs and a REP on another's; `owner\|MANAGER` lets in either |
 
 - Files: `<Domain>ContractSupport` and a `<Entity>ContractTest` for each entity the API creates, in `src/test/java/<base package>/`
   (`src/test/kotlin` for Kotlin). Written once, then merged when the DSL changes - kept where you changed them - as the architecture test.
 - Every request goes through the support class: `request(builder)` is what every request gets added - nothing as generated; a
   CSRF cookie and header go there - and `signIn()` how a test signs in. Where an operation asks who is calling (`@access`), it signs in
   an administrator made for the test as the application itself, through the generated sign-in (`@signin`); without a generated
-  sign-in the requests run as the application (`CurrentUser.runAsSystem`). Tests of `@access` itself come later.
+  sign-in the requests run as the application (`CurrentUser.runAsSystem`), and no test of `@access` is written.
   The support class's comment says why there is none: the run has no `@signin`, or its principal cannot be built - with the
   summary's reason (`Member (signing in): password: ...`, a `@pattern` the generator cannot sample, say).
+- The tests of `@access` sign in principals of their own: `signIn(role)` makes one as the application itself, with that role in the
+  `@signin` entity's role field (`"M"` for `UserRole.MANAGER` written `@json(code)`), signs it in through the generated sign-in and
+  returns a `Caller` - its key, which a row's `@owner` holds, and its session; `sentBy(caller, ...)` sends a request as it, or as a
+  visitor for `null`. A row of a caller's is made by the administrator with the owner sent, or by the caller where the server sets
+  `@owner` or no administrator signs in; the `@signin` entity's own row is the caller's. Sign in your way in `signIn(role)`.
+- Not tested of `@access`, counted in the summary and listed in the support class's comment: no principal to sign in, a role the
+  role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds one), `owner` where `@owner` names no field, an entry
+  not read (`read=owners`), a delete or a command no sequence of commands brings a new row to.
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
@@ -792,8 +801,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - `testCode` is read exactly: `"true"`, `"contract"` or `"false"`; another value (`"Contract"`, `"contracts"`) is a DSL warning.
 - MongoDB: the tests run on the server `ELASTICORE_IT_MONGODB_URI` names (`mongodb://host:port`, database `elasticore_contract`) and are
   skipped without it; their rows stay, with unique values.
-- Covered: the field constraints in every mode, language and architecture; the lifecycles and the invariants where they are written -
-  ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `@access` (who is let in), `@Mask` and `@encrypt`, `export`, the
+- Covered: the field constraints and `@access` in every mode, language and architecture; the lifecycles and the invariants where
+  they are written - ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `@Mask` and `@encrypt`, `export`, the
   `delete:` states of a lifecycle, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
   a float holds no exact 0.1, and its check compares it widened to a double. So are a `@past` / `@future` time of day (past or
   future by the hour the test runs at), a lookahead the rest always holds (`@pattern('^(?=.*\\d)\\d+$')`: nothing matches the rest
@@ -803,7 +812,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   MyBatis, H2 (`testRuntimeOnly 'com.h2database:h2'`); on Spring Boot 4 also `spring-boot-starter-webmvc-test`.
 - Change a test where you changed a rule on purpose, and a row's builder (`newPurchaseOrder()`) where the application needs more than
   the model says: the pet store's `PurchaseOrderContractTest` adds a delivery address, without which its `place` refuses the order.
-- Examples: `elasticore-template-ddd` (Java, hexagonal, JPA), `-ddd-mybatis` (MyBatis), `-kt` (Kotlin), the pet store (Spring Boot 4, sign-in).
+- Examples: `elasticore-template-ddd` (Java, hexagonal, JPA), `-ddd-mybatis` (MyBatis), `-kt` (Kotlin; `cancel=owner|LEAD`,
+  `bill=LEAD&owner`), the pet store (Spring Boot 4, sign-in; `read=owner|MANAGER`, `delete=MANAGER&owner`).
 
 ---
 
