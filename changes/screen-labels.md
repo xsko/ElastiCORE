@@ -28,14 +28,15 @@
     the unchanged `XxxLabel`, only for an enumeration with such columns; the label bundle gets `Enum.CONSTANT` (the
     constant's name) - the label column in the default file, each translation in its language's file - and is now
     written also when such columns are the only translations of the model. The shared reading is
-    `EnumLabelColumns` (label column, translation columns, values per constant), for the Ossie export later (issue 272);
+    `EnumLabelColumns` (label column, translation columns, values per constant), which the Ossie export reads too
+    (`ossie-code-labels.md`);
     rules read it as `EnumSpec.labelTranslations()`.
 - On by default, as agreed on the issue (the owner: an added function with `validateXxx` kept as it is; `XxxMeta` with
   `label` and `labels`): a model without any translation still gains `validateXxxCodes` in every DTO file that has
   `validateXxx`, and `XxxMeta` in each DTO file whose type has a meta label (a `--` comment on the `meta:` line
   included). Nothing else in its TypeScript output changes, and it writes no label bundle and no `XxxLabels`.
 - Unchanged: `validateXxx`, `XxxFields`, `XxxLabel`. The columns stay columns of the enumeration
-  (properties of the Java and Kotlin enums). The Ossie export and the message bundle do not read them yet. The
+  (properties of the Java and Kotlin enums). The generated messages (`<domain>-messages.properties`) do not read them yet. The
   2.x-compatible output and the 2.x generator are untouched.
 - Checked: `ScreenLabelsTypeScriptTest` (`XxxMeta` with and without translations, none without a label; the codes of
   each constraint - `NotNull`, `Size` with both lengths, `Min`/`Max`, `DecimalMin`/`DecimalMax`, `Pattern`, `Email`, a
