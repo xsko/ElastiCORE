@@ -128,9 +128,9 @@
         그리고 <b>DSL 로 아직 표현할 수 없는 것</b>까지 적습니다. "확인한 결과" 열은 실행 중인 애플리케이션에 HTTP 로 요청해서 본 응답입니다.
         DSL 과 생성 코드 발췌는 빌드 결과물에서 그대로 읽어 왔습니다.</p>
       <div class="stats">
-        <div class="stat"><b>167</b><span>DSL 줄 (4개 파일)</span></div>
-        <div class="stat"><b>158 · 12,437</b><span>생성된 Java 파일 · 줄</span></div>
-        <div class="stat"><b>50 · 1,722</b><span>생성된 TypeScript 파일 · 줄</span></div>
+        <div class="stat"><b>169</b><span>DSL 줄 (4개 파일)</span></div>
+        <div class="stat"><b>158 · 12,438</b><span>생성된 Java 파일 · 줄</span></div>
+        <div class="stat"><b>50 · 1,724</b><span>생성된 TypeScript 파일 · 줄</span></div>
         <div class="stat"><b>7 · 228</b><span>손으로 쓴 Java 파일 · 줄</span></div>
         <!-- counted by build_guide.py; line counts leave out blank lines; the screens (web/src) are hand-written too -->
       </div>
@@ -139,10 +139,12 @@
       <div class="roles">
         <div class="role"><h4>방문자</h4>로그인 전. 상품을 보고 검색하고, 가입합니다.</div>
         <div class="role"><h4>고객 (USER)</h4>가입하면 이 역할. 자기 정보와 자기 주문만 보고 고칩니다.</div>
+        <div class="role"><h4>매니저 (MANAGER)</h4>관리자가 역할을 바꿔 줍니다. 모든 주문을 보고, 취소된 자기 주문을 지웁니다.</div>
         <div class="role"><h4>관리자 (ADMIN)</h4>모든 것을 봅니다. 배송, 상품 관리, 고객 역할 변경, 삭제.</div>
       </div>
       <p>DSL 은 엔티티마다 <code>@access(연산=수준)</code> 으로 말합니다. 수준은 <code>public</code>(방문자도) · <code>user</code>(로그인) ·
-        <code>owner</code>(본인 것만, <code>@owner(필드)</code> 로 주인을 정함) · <code>admin</code>. <b>적지 않은 연산은 관리자만</b> 할 수 있습니다.</p>
+        <code>owner</code>(본인 것만, <code>@owner(필드)</code> 로 주인을 정함) · <code>admin</code>. <b>적지 않은 연산은 관리자만</b> 할 수 있습니다.
+        역할 이름(<code>MANAGER</code>)도 쓸 수 있고, <code>|</code>(어느 하나) · <code>&amp;</code>(둘 다)로 묶습니다: <code>read=owner|MANAGER</code>, <code>delete=MANAGER&amp;owner</code>.</p>
       <table class="map matrix">
         <thead><tr><th>할 일</th><th>방문자</th><th>고객 (본인 것)</th><th>고객 (남의 것)</th><th>관리자</th><th>DSL</th></tr></thead>
         <tbody>
@@ -154,10 +156,10 @@
           <tr><td>고객 역할 바꾸기</td><td>-</td><td>무시됨</td><td>-</td><td>200</td><td><code>role … @access(admin)</code></td></tr>
           <tr><td>탈퇴(고객 삭제)</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
           <tr><td>주문하기</td><td>401</td><td>200</td><td>-</td><td>200</td><td><code>create=user</code></td></tr>
-          <tr><td>주문 보기</td><td>401</td><td>200</td><td>404</td><td>200</td><td><code>read=owner</code></td></tr>
+          <tr><td>주문 보기</td><td>401</td><td>200</td><td>404 (매니저 200)</td><td>200</td><td><code>read=owner|MANAGER</code></td></tr>
           <tr><td>주문 취소</td><td>401</td><td>200</td><td>404</td><td>200</td><td><code>cancel=owner</code></td></tr>
           <tr><td>배송</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
-          <tr><td>주문 삭제</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
+          <tr><td>주문 삭제</td><td>401</td><td>403 (매니저 200)</td><td>403 (매니저 404)</td><td>200</td><td><code>delete=MANAGER&amp;owner</code></td></tr>
         </tbody>
       </table>
       <p>남의 것은 403 이 아니라 <b>404</b> 입니다 - 남의 주문이 있다는 사실도 알리지 않습니다. 검사는 재생성되는 서비스(<code>…CoreService</code>)에
@@ -330,9 +332,10 @@
         <br>• <b>결제 승인·재고</b> - 모델에 없습니다 (원본 Java EE pet store 에도 없음). 카드사 연동은 DSL 의 <code>port.yml</code>(HTTP 포트)로 선언할 수 있지만 이 샘플은 쓰지 않습니다.</div>
 
       <h2 id="orders">8. 주문 조회 <span class="cov all">DSL 로 전부</span></h2>
-      <p class="biz">고객은 자기 주문 목록과 상세(줄·금액·배송지·카드 종류)를 봅니다. 관리자는 모든 주문을 봅니다.</p>
+      <p class="biz">고객은 자기 주문 목록과 상세(줄·금액·배송지·카드 종류)를 봅니다. 매니저와 관리자는 모든 주문을 봅니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
-<tr><td>자기 주문만</td><td><code>@owner(customerId) @access(read=owner)</code></td><td>검색은 본인 것만. <code>{"customerId":1}</code> 로 찾아도 0건. 남의 주문 404, 방문자 401</td></tr>
+<tr><td>자기 주문만</td><td><code>@owner(customerId) @access(read=owner|MANAGER)</code></td><td>검색은 본인 것만. <code>{"customerId":1}</code> 로 찾아도 0건. 남의 주문 404, 방문자 401</td></tr>
+<tr><td>매니저는 전부</td><td><code>read=owner|MANAGER</code> - 역할 이름, <code>|</code> 는 어느 하나</td><td>매니저의 검색은 좁혀지지 않음, 남의 주문 GET 200</td></tr>
 <tr><td>관리자는 전부</td><td>(관리자는 모든 수준을 가짐)</td><td>관리자 검색은 모든 고객의 주문</td></tr>
 <tr><td>줄에 품목 이름</td><td>dto.yml <code>itemName: string @ref(item.name)</code></td><td>줄마다 <code>itemName</code> ("Large")</td></tr>
 <tr><td>최신순</td><td><b>화면이</b> <code>sortColumn: orderDate</code> 를 보냄</td><td>DSL 에 기본 정렬 없음</td></tr>
@@ -351,14 +354,14 @@
         같은 <code>cancel</code> 명령이 두 생명주기(주문·결제)를 함께 바꾸게 쓸 수 있습니다 - <a href="#lifecycle">주문 생명주기</a> 참고.</div>
 
       <h2 id="ship">10. 배송 (백오피스) <span class="cov all">DSL 로 전부</span></h2>
-      <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자뿐입니다.</p>
+      <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자와 - 취소된 자기 주문이면 - 매니저입니다.</p>
 <table class="map"><thead><tr><th>업무 규칙</th><th>DSL</th><th>확인한 결과</th></tr></thead><tbody>
 <tr><td>관리자만</td><td><code>@access</code> 에 ship 을 적지 않음</td><td>고객 → 403 "ship PurchaseOrder is for the administrator"</td></tr>
 <tr><td>접수 상태에서만</td><td><code>states: status: ship: PLACED -> SHIPPED</code></td><td>취소된 주문 배송 → 409</td></tr>
 <tr><td>배송되면 알린다</td><td><code>@event(… Shipped)</code></td><td><code>PurchaseOrderShippedEvent</code></td></tr>
 <tr><td>버튼은 할 수 있을 때만</td><td>(생성) TypeScript <code>Orders.canShip(order)</code></td><td>-</td></tr>
 <tr><td>주문은 고칠 수 없다</td><td><code>@editable</code> 이 아닌 루트 → 수정 API 없음</td><td>PUT → 405</td></tr>
-<tr><td>삭제는 관리자만</td><td>delete 를 적지 않음</td><td>고객 403, 관리자 200</td></tr>
+<tr><td>삭제는 관리자, 자기 주문을 지우는 매니저</td><td><code>delete=MANAGER&amp;owner</code> - <code>&amp;</code> 는 둘 다</td><td>고객 403, 매니저는 자기 것 200·남의 것 404, 관리자 200</td></tr>
 </tbody></table>
 
       <h2 id="lifecycle">주문 생명주기 (<code>states:</code>)</h2>
@@ -433,7 +436,7 @@
       </table>
 
       <h2 id="review">검토: 이 가게의 업무를 DSL 로 다 표현할 수 있나</h2>
-      <p>위 업무별 표의 규칙 <b>60개</b>(표의 행) 중 DSL 로 쓴 것 <b>55개</b>, 손으로 쓴 것 <b>4개</b>,
+      <p>위 업무별 표의 규칙 <b>61개</b>(표의 행) 중 DSL 로 쓴 것 <b>56개</b>, 손으로 쓴 것 <b>4개</b>,
         DSL 에 쓸 곳이 없어 DB 제약으로만 지켜지는 것 <b>0개</b>, 화면이 정하는 것 <b>1개</b>입니다.
         표에 행으로 넣지 않은 빈 곳 - 비밀번호 최소 길이, 비밀번호 변경 때 현재 비밀번호 확인, 결제 승인·환불·재고(모델에 없음),
         장바구니(브라우저에만, 의도) - 은 각 업무의 상자에 적었습니다. DSL 에 넣으려면 필요한 것:</p>
@@ -604,9 +607,10 @@ public CustomerDTO me() {
     return customerService.me().orElseThrow(() -> new io.elasticore.springboot3.security.NotSignedInException("Sign in first"));
 }</script>
   <script type="text/plain" id="src-order">  PurchaseOrder:
-    # 주문은 로그인한 고객이 자기 것으로, 조회·취소는 본인, 배송·삭제는 관리자
+    # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
+    # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
     meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
-          @access(read=owner, create=user, cancel=owner) @terms(order, purchase, 구매) -- 주문
+          @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId
@@ -694,7 +698,7 @@ public void place(LocalDate today, Function<Long, Address> homeOf, BigDecimal va
     setTotal(withoutVat.plus(vat).minus(discount).rounded(2));
     raisePlaced();
 }</script>
-  <script type="text/plain" id="src-gen-owned">// PurchaseOrderCoreService (생성) - read=owner, create=user
+  <script type="text/plain" id="src-gen-owned">// PurchaseOrderCoreService (생성) - read=owner|MANAGER, create=user
 /** A search narrowed to the caller's own rows where read is the owner's: an equality, whatever the field searches by. */
 private Specification<PurchaseOrder> ownedOnly(Specification<PurchaseOrder> spec) {
     Object owner = ACCESS.ownerFilter(currentUser, "read");
@@ -767,11 +771,11 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         datatype: String
         description: "주문 상태"
         ai_context:
-          instructions: "Codes: PLC = Placed, SHP = Shipped, CAN = Cancelled"
+          instructions: "Codes: PLC = Placed (ko: 주문됨), SHP = Shipped (ko: 배송됨), CAN = Cancelled (ko: 취소됨)"
           synonyms: ["Order status"]
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}}
+            data: {"lifecycle": true, "enumeration": "OrderStatus", "codes": {"PLC": "Placed", "SHP": "Shipped", "CAN": "Cancelled"}, "code_labels": {"PLC": {"ko": "주문됨"}, "SHP": {"ko": "배송됨"}, "CAN": {"ko": "취소됨"}}}
       - name: street1
         expression:
           sql: "street1"
@@ -862,7 +866,7 @@ private void moveStatus(String command, OrderStatus to, OrderStatus... from) {
         datatype: Integer
     nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "read": "owner"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}</script>
+        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "delete": "MANAGER&owner", "read": "owner|MANAGER"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}</script>
   <script type="text/plain" id="src-metrics"># The shop's measures - what the business means by revenue, an order, the average order.
 # Exported to the Apache Ossie semantic model (blueprint/semantic_model.yml) as metrics,
 # so a BI or AI tool asks for "revenue" and gets this definition, not its own guess.
@@ -929,8 +933,9 @@ datasets:
       code:  string(1) @code
       label: string(20)
     enum:
-      USER:  U, User
-      ADMIN: A, Administrator
+      USER:    U, User           # @access의 user는 레벨(로그인한 누구나) - 이 역할만으로는 규칙을 쓸 수 없다 (빌드 경고)
+      MANAGER: M, Manager        # @access(read=owner|MANAGER): 모든 주문을 본다
+      ADMIN:   A, Administrator
 
   OrderStatus:
     meta: enum @db(code) @json(code) -- 주문 상태
@@ -1024,9 +1029,10 @@ datasets:
   # ---- orders -----------------------------------------------------------------
 
   PurchaseOrder:
-    # 주문은 로그인한 고객이 자기 것으로, 조회·취소는 본인, 배송·삭제는 관리자
+    # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
+    # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
     meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
-          @access(read=owner, create=user, cancel=owner) @terms(order, purchase, 구매) -- 주문
+          @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId
