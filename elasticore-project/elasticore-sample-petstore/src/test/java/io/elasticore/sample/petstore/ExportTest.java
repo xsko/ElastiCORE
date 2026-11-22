@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class ExportTest {
 
-    private static final String BOM = "﻿";
+    private static final String BOM = "\uFEFF";
 
     private static final String CARD = "\"creditCard\":{\"creditCardNumber\":\"4111111111111111\",\"creditCardType\":\"VISA\",\"creditCardExpDate\":\"12/30\"}";
 
@@ -160,6 +160,10 @@ class ExportTest {
                 .andExpect(status().isNotAcceptable());
         // A column the response does not have, or a format there is none of: 400.
         mvc.perform(json(post("/api/petstore/item/export"), "{\"columns\":[\"password\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("export.no-such-column"));
+        // Asked with Accept: text/csv, a refusal is still the problem body.
+        mvc.perform(json(post("/api/petstore/item/export"), "{\"columns\":[\"password\"]}").accept("text/csv"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("export.no-such-column"));
         mvc.perform(json(post("/api/petstore/item/export"), "{\"format\":\"pdf\"}"))

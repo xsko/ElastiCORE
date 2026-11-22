@@ -312,8 +312,12 @@ public class ControllerBaseRules implements CodeRules {
      * methods the entity keeps the five it has; export comes only where it is listed.
      */
     public static boolean exports(EntitySpec e) {
-        String text = exposeMethodsText(e);
-        return text != null && namesOf(text).contains(EXPORT);
+        return listsExport(exposeMethodsText(e));
+    }
+
+    /** Whether a methods list, as @expose(methods="...") writes it, names export. */
+    public static boolean listsExport(String methodsText) {
+        return methodsText != null && namesOf(methodsText).contains(EXPORT);
     }
 
     /**
@@ -358,8 +362,10 @@ public class ControllerBaseRules implements CodeRules {
                     .append("               httpResponse: jakarta.servlet.http.HttpServletResponse) {\n")
                     .append(String.format("        val searchDTO = request.search ?: %s()%n", srch))
                     .append(String.format(
-                            "        searchDTO.sortCode = %s.sortCode(request.sortCode, searchDTO.sortCode%s)%n",
-                            runtime, keys));
+                            "        searchDTO.sortCode = %s.sortCode(request.sortCode, searchDTO.sortCode,"
+                                    + " searchDTO.sortColumn, searchDTO.sortAscending%s)%n",
+                            runtime, keys))
+                    .append("        searchDTO.sortColumn = null\n");
             m.append(String.format("        %s%n", of));
             if (paged) {
                 m.append("            .pages(request, httpRequest, httpResponse) { page, size ->\n")
@@ -383,8 +389,11 @@ public class ControllerBaseRules implements CodeRules {
                             "        %s searchDTO = request.getSearch() != null ? request.getSearch() : new %s();%n",
                             srch, srch))
                     .append(String.format(
-                            "        searchDTO.setSortCode(%s.sortCode(request.getSortCode(), searchDTO.getSortCode()%s));%n",
-                            runtime, keys));
+                            "        searchDTO.setSortCode(%s.sortCode(request.getSortCode(), searchDTO.getSortCode(),"
+                                    + " searchDTO.getSortColumn(), searchDTO.getSortAscending()%s));%n",
+                            runtime, keys))
+                    // The order is the sort code now: a sortColumn left beside it would win over it, key and all.
+                    .append("        searchDTO.setSortColumn(null);\n");
             if (paged) {
                 m.append(String.format("        %s%n", of))
                         .append("                .pages(request, httpRequest, httpResponse, (page, size) -> {\n")

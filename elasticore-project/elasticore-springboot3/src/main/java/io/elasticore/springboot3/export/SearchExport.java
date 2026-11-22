@@ -129,7 +129,9 @@ public final class SearchExport {
         Plan plan = plan(request, httpRequest);
         Page<?> first = page.apply(0, PAGE_SIZE);
         plan.limit(first.getTotalElements());
-        try (ExportSheet sheet = plan.open(httpResponse)) {
+        ExportSheet sheet = plan.open(httpResponse);
+        boolean complete = false;
+        try {
             long written = plan.write(sheet, first.getContent(), 0);
             Page<?> current = first;
             int number = 0;
@@ -138,6 +140,9 @@ public final class SearchExport {
                 written = plan.write(sheet, current.getContent(), written);
                 sheet.flush();
             }
+            complete = true;
+        } finally {
+            plan.finish(sheet, httpResponse, complete);
         }
     }
 
@@ -151,8 +156,48 @@ public final class SearchExport {
         Plan plan = plan(request, httpRequest);
         List<?> all = search.get();
         plan.limit(all.size());
-        try (ExportSheet sheet = plan.open(httpResponse)) {
+        ExportSheet sheet = plan.open(httpResponse);
+        boolean complete = false;
+        try {
             plan.write(sheet, all, 0);
+            complete = true;
+        } finally {
+            plan.finish(sheet, httpResponse, complete);
+        }
+    }
+
+    /** The response's stream, asked for only when the first byte is written: a workbook that is never written leaves it alone. */
+    private static final class LazyOutput extends OutputStream {
+        private final HttpServletResponse response;
+        private OutputStream out;
+
+        LazyOutput(HttpServletResponse response) {
+            this.response = response;
+        }
+
+        private OutputStream out() throws IOException {
+            if (out == null) out = new BufferedOutputStream(response.getOutputStream());
+            return out;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            out().write(b);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            out().write(b, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            if (out != null) out.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (out != null) out.close();
         }
     }
 
@@ -162,13 +207,27 @@ public final class SearchExport {
      * The key alone where nothing was asked for.
      */
     public static String sortCode(String asked, String own, String... key) {
-        String sort = asked != null && !asked.trim().isEmpty() ? asked.trim() : own;
+        return sortCode(asked, own, null, null, key);
+    }
+
+    /**
+     * As {@link #sortCode(String, String, String...)}, where the search may name its order the old way, by
+     * {@code sortColumn} and {@code sortAscending} - which win over its own sort code there - so that the order stays
+     * the search's and the key still goes after it. The caller clears sortColumn, so that the code is what is read.
+     */
+    public static String sortCode(String asked, String own, String column, Boolean ascending, String... key) {
+        String sort;
+        if (asked != null && !asked.trim().isEmpty()) sort = asked.trim();
+        else if (column != null && !column.trim().isEmpty())
+            sort = column.trim() + (Boolean.FALSE.equals(ascending) ? "-" : "+");
+        else sort = own;
         StringBuilder out = new StringBuilder(sort == null ? "" : sort.trim());
+        // A term orders only with its + or -: the search reads no other (name alone is no order).
         List<String> named = new ArrayList<String>();
         for (String term : COMMA.split(out, -1)) {
             String t = term.trim();
-            if (t.endsWith("+") || t.endsWith("-")) t = t.substring(0, t.length() - 1);
-            named.add(t);
+            if (t.endsWith("+") || t.endsWith("-"))
+                named.add(t.substring(0, t.length() - 1).trim());
         }
         for (String k : key) {
             if (k == null || k.isEmpty() || named.contains(k)) continue;
@@ -201,56 +260,84 @@ public final class SearchExport {
         List<String> known = json.columns(rowType, view);
         List<String> columns = columns(body.getColumns(), known);
         List<String> titles = titles(body.getHeaders(), columns);
-        return new Plan(json, xlsx, xlsx ? Math.min(max, XlsxWriter.MAX_ROWS - 1L) : max, columns, titles);
+        return new Plan(json, xlsx, max, columns, titles);
     }
 
     private final class Plan {
         final JsonRows json;
         final boolean xlsx;
+        /** The rows elasticore.export.max-rows lets an export write. */
+        final long maxRows;
+        /** The rows this one writes at most: maxRows, and for a workbook what one sheet holds below its title row. */
         final long max;
+
         final List<String> columns;
         final List<String> titles;
 
-        Plan(JsonRows json, boolean xlsx, long max, List<String> columns, List<String> titles) {
+        Plan(JsonRows json, boolean xlsx, long maxRows, List<String> columns, List<String> titles) {
             this.json = json;
             this.xlsx = xlsx;
-            this.max = max;
+            this.maxRows = maxRows;
+            this.max = xlsx ? Math.min(maxRows, XlsxWriter.MAX_ROWS - 1L) : maxRows;
             this.columns = columns;
             this.titles = titles;
         }
 
         /** 400 with the count when the search matches more rows than an export writes. */
         void limit(long count) {
-            if (count > max) {
+            if (count <= max) return;
+            if (max < maxRows) {
                 throw new BadRequestException(
                         "export.too-many-rows",
-                        "The search matches {0} rows; an export writes at most {1} ({2}). Narrow the search.",
+                        "The search matches {0} rows; an .xlsx sheet holds at most {1}. Narrow the search, or export"
+                                + " it as CSV.",
                         String.valueOf(count),
-                        String.valueOf(max),
-                        MAX_ROWS);
+                        String.valueOf(max));
             }
+            throw new BadRequestException(
+                    "export.too-many-rows",
+                    "The search matches {0} rows; an export writes at most {1} ({2}). Narrow the search.",
+                    String.valueOf(count),
+                    String.valueOf(max),
+                    MAX_ROWS);
         }
 
+        /**
+         * The sheet, its title row written. A CSV file goes out as it is written, so its answer is set now; a
+         * workbook is written whole when every page is in (finish), so its answer - and the response's stream - wait
+         * until then: an export that fails on the way answers the error, not a workbook of fewer rows.
+         */
         ExportSheet open(HttpServletResponse response) throws IOException {
+            ExportSheet sheet;
+            if (xlsx) {
+                sheet = new XlsxWriter(new LazyOutput(response), type);
+            } else {
+                answer(response);
+                sheet = new CsvWriter(response.getOutputStream());
+            }
+            sheet.header(titles);
+            return sheet;
+        }
+
+        /** The status and the headers of the file. */
+        void answer(HttpServletResponse response) {
             String file = (type == null || type.isEmpty() ? "export" : type) + (xlsx ? ".xlsx" : ".csv");
             response.setStatus(HttpServletResponse.SC_OK);
             // The entity's name: a Java identifier, plain ASCII.
             response.setHeader(
                     "Content-Disposition",
                     ContentDisposition.attachment().filename(file).build().toString());
-            OutputStream out;
-            ExportSheet sheet;
-            if (xlsx) {
-                response.setContentType(XLSX);
-                out = new BufferedOutputStream(response.getOutputStream());
-                sheet = new XlsxWriter(out, type);
-            } else {
-                response.setContentType(CSV + ";charset=UTF-8");
-                out = response.getOutputStream();
-                sheet = new CsvWriter(out);
+            response.setContentType(xlsx ? XLSX : CSV + ";charset=UTF-8");
+        }
+
+        /** Every page is in: the file is completed (a workbook written). Otherwise it is abandoned. */
+        void finish(ExportSheet sheet, HttpServletResponse response, boolean complete) throws IOException {
+            if (!complete) {
+                sheet.abandon();
+                return;
             }
-            sheet.header(titles);
-            return sheet;
+            if (xlsx) answer(response);
+            sheet.close();
         }
 
         /** The rows, up to the limit; the count written so far. */

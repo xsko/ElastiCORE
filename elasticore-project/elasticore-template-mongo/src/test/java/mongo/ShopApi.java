@@ -275,7 +275,7 @@ public abstract class ShopApi {
                 "{\"search\":{\"name\":\"" + tag + "\"},\"columns\":[\"customerId\",\"name\",\"email\"]}", 200);
         assertEquals("text/csv;charset=UTF-8", response.headers().firstValue("Content-Type").orElse(""));
         String[] lines = response.body().split("\r\n", -1);
-        assertEquals("﻿customerId,name,email", lines[0]);
+        assertEquals("\uFEFFcustomerId,name,email", lines[0]);
         String masked = local.substring(0, 2) + "*".repeat(local.length() - 2) + "@a.com";
         assertEquals(first + ",'=" + tag + " One," + masked, lines[1], response.body());
         assertEquals(second + "," + tag + " Two,", lines[2], response.body());

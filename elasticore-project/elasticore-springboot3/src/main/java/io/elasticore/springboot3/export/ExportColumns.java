@@ -63,6 +63,24 @@ final class ExportColumns {
                 || value instanceof Date;
     }
 
+    /**
+     * Whether a sheet may write the date itself for what the JSON writes as text: a date the property's own format
+     * (a {@code @JsonFormat} pattern) shows in full - the year, month and day, and for a date with a time its hours
+     * and minutes too - or shows without a pattern. A pattern that leaves a part out ({@code yyyy-MM}) keeps the text,
+     * as the response shows it.
+     */
+    static boolean dateInFull(Object raw, com.fasterxml.jackson.annotation.JsonFormat format) {
+        if (!isDate(raw)) return false;
+        String pattern = format == null ? "" : format.pattern().replaceAll("'[^']*'", "");
+        if (pattern.isEmpty()) return true;
+        boolean day = (pattern.contains("yyyy") || pattern.contains("uuuu"))
+                && pattern.contains("MM")
+                && pattern.contains("dd");
+        if (!day) return false;
+        if (raw instanceof LocalDate) return true;
+        return pattern.contains("HH") && pattern.contains("mm");
+    }
+
     /** A JSON number as written: a BigDecimal, or the text itself where it is not one (NaN). */
     static Object number(String text) {
         try {

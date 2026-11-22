@@ -93,7 +93,7 @@ public class SearchExportTest {
         LocaleContextHolder.resetLocaleContext();
     }
 
-    private static final String BOM = "﻿";
+    private static final String BOM = "\uFEFF";
 
     private static AccountDTO account(long id, String name) {
         return new AccountDTO(id, name, new BigDecimal("1200.50"), LocalDate.of(2026, 11, 2), "7712-3456-7890-3456");
@@ -135,12 +135,12 @@ public class SearchExportTest {
             csv.header(Arrays.asList("name", "note"));
             csv.row(Arrays.asList("Kim, Ann", "said \"hi\""));
             csv.row(Arrays.asList("two\nlines", null));
-            csv.row(Arrays.asList("plain", "한글"));
+            csv.row(Arrays.asList("plain", "\uD55C\uAE00"));
         }
         byte[] raw = bytes.toByteArray();
         assertArrayEquals(new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}, Arrays.copyOf(raw, 3));
         assertEquals(
-                BOM + "name,note\r\n\"Kim, Ann\",\"said \"\"hi\"\"\"\r\n\"two\nlines\",\r\nplain,한글\r\n",
+                BOM + "name,note\r\n\"Kim, Ann\",\"said \"\"hi\"\"\"\r\n\"two\nlines\",\r\nplain,\uD55C\uAE00\r\n",
                 new String(raw, StandardCharsets.UTF_8));
     }
 
@@ -262,7 +262,7 @@ public class SearchExportTest {
                         new MockHttpServletRequest(),
                         ko,
                         Collections::emptyList);
-        assertEquals(BOM + "name,연 매출\r\n", csv(ko));
+        assertEquals(BOM + "name,\uC5F0 \uB9E4\uCD9C\r\n", csv(ko));
 
         // A language without a label file: the names.
         LocaleContextHolder.setLocale(Locale.JAPANESE);
@@ -390,6 +390,80 @@ public class SearchExportTest {
         assertTrue(SearchExport.xlsxAvailable(), "POI is on this test's classpath");
     }
 
+    /**
+     * A page that fails after the first: a workbook is not written - a sheet of fewer rows would look complete - and
+     * the response is left as it was, so the error is what is answered. A CSV file is cut short where it failed.
+     */
+    @Test
+    public void anExportThatFailsOnTheWayAnswersTheErrorNotAShortWorkbook() {
+        List<AccountDTO> all = new ArrayList<AccountDTO>();
+        for (int i = 1; i <= SearchExport.PAGE_SIZE + 3; i++) all.add(account(i, "a" + i));
+        java.util.function.BiFunction<Integer, Integer, Page<?>> failing = (page, size) -> {
+            if (page > 0) throw new IllegalStateException("the database went away");
+            return pagesOf(all, new AtomicInteger()).apply(page, size);
+        };
+        MockHttpServletResponse sheet = new MockHttpServletResponse();
+        assertThrows(IllegalStateException.class, () -> export(10_000, true)
+                .pages(body("xlsx", null, null), new MockHttpServletRequest(), sheet, failing));
+        assertEquals(0, sheet.getContentAsByteArray().length);
+        assertNull(sheet.getContentType());
+        assertNull(sheet.getHeader("Content-Disposition"));
+        assertTrue(!sheet.isCommitted());
+
+        MockHttpServletResponse csv = new MockHttpServletResponse();
+        assertThrows(IllegalStateException.class, () -> export(10_000, true)
+                .pages(body(null, null, null), new MockHttpServletRequest(), csv, failing));
+        assertEquals("text/csv;charset=UTF-8", csv.getContentType());
+    }
+
+    /** One sheet holds 1,048,575 rows below its title: a larger search is refused as an .xlsx, naming the sheet. */
+    @Test
+    public void aWorkbookIsRefusedAboveWhatASheetHolds() {
+        java.util.function.BiFunction<Integer, Integer, Page<?>> huge = (page, size) -> new PageImpl<AccountDTO>(
+                Collections.singletonList(account(1, "a")), PageRequest.of(page, size), 2_000_000L);
+        BadRequestException sheet = assertThrows(BadRequestException.class, () -> export(5_000_000, true)
+                .pages(body("xlsx", null, null), new MockHttpServletRequest(), new MockHttpServletResponse(), huge));
+        assertTrue(sheet.getMessage().contains("an .xlsx sheet holds at most 1048575"), sheet.getMessage());
+        BadRequestException csv = assertThrows(BadRequestException.class, () -> export(1_000_000, true)
+                .pages(body(null, null, null), new MockHttpServletRequest(), new MockHttpServletResponse(), huge));
+        assertTrue(csv.getMessage().contains("at most 1000000 (elasticore.export.max-rows)"), csv.getMessage());
+    }
+
+    public static class PeriodDTO {
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM")
+        private final LocalDate month = LocalDate.of(2026, 11, 2);
+
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd")
+        private final LocalDate day = LocalDate.of(2026, 11, 2);
+
+        public LocalDate getMonth() {
+            return month;
+        }
+
+        public LocalDate getDay() {
+            return day;
+        }
+    }
+
+    /** A date is a date cell only where the JSON shows it in full: a yyyy-MM pattern keeps its text, as the response. */
+    @Test
+    public void aDateTheResponseShowsInPartStaysItsText() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        SearchExport.of("crm", "Period", PeriodDTO.class, null)
+                .with(JsonRows.of(null), 10, true)
+                .list(
+                        body("xlsx", null, null),
+                        new MockHttpServletRequest(),
+                        response,
+                        () -> Collections.singletonList(new PeriodDTO()));
+        try (XSSFWorkbook book = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+            Row row = book.getSheetAt(0).getRow(1);
+            assertEquals(CellType.STRING, row.getCell(0).getCellType());
+            assertEquals("2026-11", row.getCell(0).getStringCellValue());
+            assertTrue(DateUtil.isCellDateFormatted(row.getCell(1)));
+        }
+    }
+
     // ---- the order the pages are read in -------------------------------------------------
 
     @Test
@@ -401,5 +475,11 @@ public class SearchExportTest {
         assertEquals("id-", SearchExport.sortCode("id-", null, "id"));
         assertEquals("a+,b+", SearchExport.sortCode(null, null, "a", "b"));
         assertEquals("b-,a+", SearchExport.sortCode("b-", null, "a", "b"));
+        // The old sortColumn / sortAscending of the search: its order, as getSort() reads it, then the key.
+        assertEquals("amount+,id+", SearchExport.sortCode(null, "price-", "amount", (Boolean) null, "id"));
+        assertEquals("amount-,id+", SearchExport.sortCode(null, "price-", "amount", Boolean.FALSE, "id"));
+        assertEquals("name+,id+", SearchExport.sortCode("name+", null, "amount", Boolean.FALSE, "id"));
+        // A term without + or - orders nothing: it does not stand for the key.
+        assertEquals("id,id+", SearchExport.sortCode("id", null, "id"));
     }
 }

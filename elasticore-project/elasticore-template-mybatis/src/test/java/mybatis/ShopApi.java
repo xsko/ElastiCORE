@@ -443,7 +443,7 @@ public abstract class ShopApi {
         assertEquals("attachment; filename=\"Gadget.csv\"", r.getResponse().getHeader("Content-Disposition"));
         String csv = new String(r.getResponse().getContentAsByteArray(), java.nio.charset.StandardCharsets.UTF_8);
         String[] lines = csv.split("\r\n", -1);
-        assertEquals("﻿gadgetId,name,serialNo,weight,price,active,madeOn", lines[0]);
+        assertEquals("\uFEFFgadgetId,name,serialNo,weight,price,active,madeOn", lines[0]);
         assertEquals(id + ",'=SUM(A1) " + tag + "," + masked + ",-1.5,1200.50,true,2026-11-02", lines[1], csv);
         assertEquals(4, lines.length, csv);
         assertFalse(csv.contains(serial.substring(4, 8)), "the card is masked: " + csv);
@@ -452,7 +452,7 @@ public abstract class ShopApi {
         String all = new String(perform(post(API + "/gadget/export").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"search\":{\"gadgetId\":" + id + "}}"), 200).getResponse().getContentAsByteArray(),
                 java.nio.charset.StandardCharsets.UTF_8);
-        assertEquals("﻿gadgetId,name,active,weight,ratio,amount,price,count,notes,body,page,pageText,serialNo,image,"
+        assertEquals("\uFEFFgadgetId,name,active,weight,ratio,amount,price,count,notes,body,page,pageText,serialNo,image,"
                 + "madeOn,madeAt,opensAt,stampedAt", all.split("\r\n")[0]);
         assertTrue(all.contains(masked) && !all.contains(dashed), all);
     }

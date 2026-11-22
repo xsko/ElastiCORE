@@ -284,7 +284,7 @@ class ShopApiContractTest {
         assertThat(response.status).isEqualTo(200)
         assertThat(response.contentType).isEqualTo("text/csv;charset=UTF-8")
         val csv = String(response.contentAsByteArray, Charsets.UTF_8)
-        val lines = csv.removePrefix("﻿").trimEnd().split("\r\n")
+        val lines = csv.removePrefix("\uFEFF").trimEnd().split("\r\n")
         assertThat(lines[0]).isEqualTo("ticketId,subject,status")
         // Guarded as text; the status as the JSON writes it, its code.
         assertThat(lines).contains("$mine,'=warp core,OPN")

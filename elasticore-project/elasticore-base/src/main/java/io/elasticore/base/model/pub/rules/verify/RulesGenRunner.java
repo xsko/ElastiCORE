@@ -1459,6 +1459,33 @@ public final class RulesGenRunner {
     /** The model being generated, for the configuration a rule selection reads. */
     private ECoreModel currentModel;
 
+    /** Whether an entity of any of the models lists export in @expose(methods="...") (issue 271). */
+    static boolean anyListsExport(List<ECoreModel> models) {
+        if (models == null) return false;
+        for (ECoreModel m : models) {
+            if (m == null || m.getEntityModels() == null) continue;
+            ModelComponentItems<Entity> items = m.getEntityModels().getItems();
+            for (int i = 0; i < items.size(); i++) {
+                Entity entity = items.get(i);
+                if (entity.getMetaInfo() == null || entity.getMetaInfo().getMetaAnnotationMap() == null) continue;
+                for (java.util.Map.Entry<String, io.elasticore.base.model.core.Annotation> meta :
+                        entity.getMetaInfo().getMetaAnnotationMap().entrySet()) {
+                    io.elasticore.base.model.core.Annotation expose = meta.getValue();
+                    if (!"expose".equalsIgnoreCase(meta.getKey()) || expose == null || expose.getProperties() == null)
+                        continue;
+                    for (String key : expose.getProperties().stringPropertyNames()) {
+                        if ("methods".equalsIgnoreCase(key)
+                                && io.elasticore.base.model.pub.rules.base.ControllerBaseRules.listsExport(
+                                        expose.getProperties().getProperty(key))) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private void generate(String domainDirName, List<ECoreModel> models, List<ECoreModel> allModels) {
         if (allModels != null) runModels = allModels;
         System.out.println();
@@ -1548,7 +1575,15 @@ public final class RulesGenRunner {
                 generateEnums(model);
                 io.elasticore.base.model.pub.rules.DomainSpec tsDomain =
                         SpecFactory.fromDomain(domainDirName, model, specs);
-                emitDomain(tsDomain, "apiSupport", target("", "apiSupport"), "ts-api");
+                // apiSupport.ts is one file of the whole run: it carries the export's types
+                // when an entity of any domain lists export (issue 271), not only this one's.
+                io.elasticore.base.model.pub.rules.lang.typescript.TypeScriptApiRules.exportsInRun(
+                        anyListsExport(allModels));
+                try {
+                    emitDomain(tsDomain, "apiSupport", target("", "apiSupport"), "ts-api");
+                } finally {
+                    io.elasticore.base.model.pub.rules.lang.typescript.TypeScriptApiRules.exportsInRun(null);
+                }
                 // A domain-level file a rule set listed for TypeScript declares
                 // (DomainArtifactContributor), as its per-entity files are asked
                 // for above (issue 266: the TypeScript run never asked).
