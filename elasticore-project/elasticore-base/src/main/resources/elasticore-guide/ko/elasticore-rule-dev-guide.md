@@ -1061,6 +1061,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `dbColumnName()` | `@column` 또는 snake_case 이름 |
 | `isList()`, `isEntityRef()`, `isBaseType()`, `isStringType()` | 컬렉션 / 다른 엔티티 참조 / 기본 타입 / 문자열 |
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
+| `blindIndexOf()` | `fields()` 에는 `@encrypt @search(eq)` 필드 옆에 생성되는 블라인드 인덱스도 들어 있다: 그 필드(`emailBidx`)면 인덱스하는 필드 이름(`"email"`), 다른 필드면 `null`. 화면을 그리는 규칙은 이것을 뺀다: `if (f.blindIndexOf() != null) continue;` |
 
 `DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")`(없으면 `null`), `config("a.b")`, `isOn("a.b")`.
 `EnumSpec`: `getName()`, `constants()` → `name()`, `values()`, `fields()`, `labelTranslations()` (상수 -> 언어 -> 라벨, `label_en` 컬럼에서. 없으면 빈 맵).

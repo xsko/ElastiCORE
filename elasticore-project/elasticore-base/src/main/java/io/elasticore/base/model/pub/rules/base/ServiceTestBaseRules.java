@@ -258,7 +258,7 @@ public class ServiceTestBaseRules implements CodeRules {
             // A field only the entity's own methods write has no setter here.
             if (entity && c.isSystemManaged(f.name())) continue;
             // An encrypted field's blind index is written when the row is (EncryptRules), never a sample value.
-            if (f.hasDsl(EncryptRules.INDEX_OF)) continue;
+            if (f.blindIndexOf() != null) continue;
             String value = sampleValue(c, f);
             if (value == null) continue;
             String target = entity ? c.writeTarget(variable, f.name()) : variable;
