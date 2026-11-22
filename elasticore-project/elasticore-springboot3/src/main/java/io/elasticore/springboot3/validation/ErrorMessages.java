@@ -134,23 +134,44 @@ public final class ErrorMessages {
      * twice), as it always was. A refusal whose values are all {@link Label}s -
      * an invariant's, which carried none before - passes them only to a
      * sentence that holds an opening brace: a translation written without a
-     * placeholder is said as written, apostrophes and all, as before.
+     * placeholder is said as written, apostrophes and all, as before, and so
+     * is one that is not a MessageFormat pattern at all.
      * A Label among the values is said in the response's language.
+     *
+     * A sentence that names a value the refusal did not give ({3} of a
+     * generated code thrown by hand with two values) is not said with a hole
+     * in it: the default as given is said instead, when there is one.
      */
     public String text(String code, String defaultText, Object... args) {
         if (code == null) return defaultText;
+        String sentence = null;
+        boolean asWritten = false;
         try {
             Locale language = language();
-            if (args != null && args.length > 0 && onlyLabels(args)) {
-                String sentence = source.getMessage(code, null, null, language);
-                if (sentence == null) return defaultText;
-                if (sentence.indexOf('{') < 0) return sentence;
-            }
-            String found = source.getMessage(code, args == null ? null : said(args, language), null, language);
+            int given = args == null ? 0 : args.length;
+            sentence = source.getMessage(code, null, null, language);
+            if (sentence == null) return defaultText;
+            // No values, or only labels: what a sentence without values was said as before.
+            asWritten = given == 0 || onlyLabels(args);
+            if (asWritten && sentence.indexOf('{') < 0) return sentence;
+            int named = valuesNamed(sentence, language);
+            if (asWritten && named < 0) return sentence;
+            if (named > given && defaultText != null) return defaultText;
+            if (given == 0) return sentence;
+            String found = source.getMessage(code, said(args, language), null, language);
             return found != null ? found : defaultText;
         } catch (RuntimeException ex) {
             // A translation with a broken pattern must not turn a 4xx into a 500.
-            return defaultText;
+            return asWritten && sentence != null ? sentence : defaultText;
+        }
+    }
+
+    /** How many values a sentence names (its highest {n} plus one); -1 when it is no MessageFormat pattern. */
+    private static int valuesNamed(String sentence, Locale language) {
+        try {
+            return new MessageFormat(sentence, language).getFormatsByArgumentIndex().length;
+        } catch (IllegalArgumentException notAPattern) {
+            return -1;
         }
     }
 

@@ -496,9 +496,14 @@ public class DddInvariantRules implements CodeRules,
         return e.getName();
     }
 
-    /** Text as a MessageFormat pattern says it literally: an apostrophe doubled, a brace quoted. */
-    private static String literalPattern(String text) {
-        return text.replace("'", "''").replace("{", "'{'").replace("}", "'}'");
+    /**
+     * Text as a MessageFormat pattern says it literally: an apostrophe
+     * doubled; text with a brace quoted whole (quoting each brace apart would
+     * join two neighbours into an apostrophe: '}''{').
+     */
+    static String literalPattern(String text) {
+        String doubled = text.replace("'", "''");
+        return text.indexOf('{') < 0 && text.indexOf('}') < 0 ? doubled : "'" + doubled + "'";
     }
 
     /**

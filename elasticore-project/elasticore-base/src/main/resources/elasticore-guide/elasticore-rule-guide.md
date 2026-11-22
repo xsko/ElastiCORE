@@ -1085,7 +1085,7 @@ With no `Accept-Language`, or a language with no translation, it is (the field b
 - A state: the enumeration's `<label column>_ko` column (`label_ko`, `elasticore-dsl-guide.md`), the label column itself in the
   `labelLanguage`, else the code as `{0}` says it (`SHIPPED`); the allowed states keep the frame of `{1}` (`[PLACED, SHIPPED]`).
 - They come from the label bundle beside the message bundle (`i18n/<domain>-labels_<language>.properties`, generated): the
-  generated refusal passes them as `io.elasticore.springboot3.validation.Label` values - Java and Kotlin, every mode and architecture.
+  generated refusal passes them as `io.elasticore.springboot3.validation.Label` values - wherever these refusals are written: the ddd and hexagonal bundles, JPA and MyBatis, Java and Kotlin.
 - The default text names them (`invariant.Account.annualRevenue.min={0} must be at least 0`,
   `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). A sentence written in the DSL
   (`@min(0.01, 'price must be positive')`) stays as written, and a translation uses the values or not.
@@ -1174,7 +1174,8 @@ HTTP/1.1 409                       (no header)
 - Write `'` as `''` in a sentence that has values (the default text too). The `getMessage()` of the exception is the default text with the values filled in (as it is in the log).
 - If you throw without a code (`new ConflictException("...")`), that message goes out as it did before, and `code` is the last column of the table.
 - A refusal that picks the state by code, like an invariant, is `InvariantViolationException(code, message, args...)` (`state.` is 409,
-  `reference.` is 404, anything else 422).
+  `reference.` is 404, anything else 422). Thrown by hand with a generated code and fewer values than its sentence names
+  (`state.*` with the two codes), the answer is the message you gave - never a sentence with `{3}` left in it.
 - Checked in: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (what a test controller threw).
 - An `XxxApiErrors` that has been edited is not regenerated, so the handler uses only `ex.getMessage()`. Change it, as in a newly generated file, to
   `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())`.

@@ -1085,7 +1085,7 @@ HTTP/1.1 409
 - 상태: enumeration 의 `<라벨 컬럼>_ko` 컬럼(`label_ko`, `elasticore-dsl-guide.md`), `labelLanguage` 에서는 라벨 컬럼 그 자체,
   없으면 `{0}` 이 말하는 코드(`SHIPPED`); 가능한 상태는 `{1}` 의 틀을 그대로 씁니다(`[PLACED, SHIPPED]`).
 - 메시지 번들 옆의 라벨 번들(`i18n/<domain>-labels_<언어>.properties`, 생성)에서 읽습니다. 생성된 거절은 이것을
-  `io.elasticore.springboot3.validation.Label` 값으로 넘깁니다 - Java 와 Kotlin, 모든 mode 와 아키텍처.
+  `io.elasticore.springboot3.validation.Label` 값으로 넘깁니다 - 이 거절이 쓰이는 곳 어디서나: ddd·hexagonal 번들, JPA 와 MyBatis, Java 와 Kotlin.
 - 기본 문구는 이 값으로 부릅니다 (`invariant.Account.annualRevenue.min={0} must be at least 0`,
   `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). DSL 에 적은 문장
   (`@min(0.01, 'price must be positive')`) 은 적은 그대로이고, 번역은 값을 써도 되고 안 써도 됩니다.
@@ -1174,7 +1174,8 @@ HTTP/1.1 409                       (헤더 없음)
 - 값이 있는 문장은 `'` 를 `''` 로 적습니다 (기본 문구도). 예외의 `getMessage()` 는 값을 넣은 기본 문구입니다(로그에 그대로).
 - 코드 없이 던지면(`new ConflictException("...")`) 예전처럼 그 메시지 그대로 나가고 `code` 는 표의 마지막 칸입니다.
 - 불변식처럼 상태를 코드로 고르는 거절은 `InvariantViolationException(code, message, args...)` 입니다 (`state.` 409,
-  `reference.` 404, 그 밖 422).
+  `reference.` 404, 그 밖 422). 생성된 코드를 손으로 던지면서 그 문장이 부르는 것보다 값을 적게 주면 (`state.*` 에
+  코드 둘만), 응답은 준 메시지입니다 - `{3}` 이 남은 문장은 나가지 않습니다.
 - 확인: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (테스트용 컨트롤러가 던진 것).
 - 고친 적이 있는 `XxxApiErrors` 는 다시 생성되지 않아 처리기가 `ex.getMessage()` 만 씁니다. 새로 생성된 파일처럼
   `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())` 로 고치세요.
