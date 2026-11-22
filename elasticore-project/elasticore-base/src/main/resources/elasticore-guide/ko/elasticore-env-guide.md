@@ -734,11 +734,11 @@ config:
 - 예제: `elasticore-template-ddd`의 `shop`과 `billing`(`GraphQlApiTest`), `elasticore-template-kt`의 `shop`(`ShopGraphQlTest`).
 
 ### 6.2 테스트 코드 생성
-> **동작:** 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin · **안 됨:** v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨); Kotlin 의 MongoDB (mode: mongo) (경고, 생성 안 됨)
+> **동작:** `"true"`: 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin; `"contract"`: v3 Java 와 Kotlin - 모든 아키텍처, JPA, MyBatis, MongoDB · **안 됨:** `"true"`: v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (생성 안 됨), Kotlin 의 MongoDB (mode: mongo) (경고, 생성 안 됨); `"contract"`: 2.x generator (생성 안 됨), 2.x-compatible output (경고, 생성 안 됨)
 
 ```yaml
 config:
-  testCode: "true"      # 테스트 코드 자동 생성 (기본값: "false")
+  testCode: "true"      # "true": 서비스 단위 테스트; "contract": 계약 테스트 (6.2.1); 기본값 "false"
 ```
 
 - `"true"` 설정 시 JUnit 5 + Mockito 기반 서비스 단위 테스트 자동 생성 - 2.x 코드(`output = 'v2'`)와 Kotlin 에서만, v3 Java 번들과 MyBatis 는 만들지 않음
@@ -747,6 +747,56 @@ config:
 - CRUD 및 검색(List/Page) 메서드에 대한 완전한 테스트 커버리지 제공
 
 생성된 테스트 파일은 `src/test/java/` 하위에 서비스 패키지 경로로 배치된다.
+
+#### 6.2.1 계약 테스트 (`testCode: "contract"`, 3.0)
+
+DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. `"contract"` 는 이것만 쓴다 - Mockito 도, 서비스 단위 테스트도
+없다. `"true"` 의 뜻은 그대로이고, `"contract"` 를 쓰지 않는 모델은 이전과 똑같은 것을 생성한다.
+
+| DSL 이 말하는 것 | 테스트 |
+|---|---|
+| `states:` 의 이동 | 나열한 각 상태에서 허용: 2xx, 상태가 바뀌고 들어간 상태의 `@stamp` 가 채워짐; 행이 도달할 수 있는 다른 각 상태에서 거부: 409 `state.<Entity>.<field>.<command>`. 새 행은 `initial` 에서 시작 |
+| `!` (필수) | null 로 보내면: 400, 그 필드, `NotNull` |
+| `string(n)`, `@length` | n 자는 통과, n + 1 자는 거부: 400 `Size` (최소 길이가 있으면 그것도) |
+| `@min`, `@max` | 경계값은 통과, 한 단계 넘으면 거부: 400 `Min` / `Max` (소수 타입은 `DecimalMin` / `DecimalMax`) |
+| `@pattern` | 식에서 만들어 - 그 식으로 확인한 - 값은 통과, 맞지 않는 값은 거부: 400 `Pattern` |
+| `@minsize(n)` | 멤버 n 개는 통과, n - 1 개는 거부: 400 `Size` |
+| `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: 경계는 통과, 하나 넘으면 거부: 422 `invariant.<Entity>.<rule>` |
+
+- 파일: `<Domain>ContractSupport` 와, API 가 생성하는 엔티티마다 `<Entity>ContractTest` - `src/test/java/<base package>/`
+  (Kotlin 은 `src/test/kotlin`). 한 번 쓰고, 그 뒤 DSL 이 바뀌면 병합한다 - 고친 곳은 유지 - 아키텍처 테스트와 같다.
+- 모든 요청은 support 클래스를 거친다: `request(builder)` 는 모든 요청에 덧붙는 것 - 생성 시에는 없음; CSRF 쿠키와
+  헤더를 여기에 - 이고, `signIn()` 은 테스트가 로그인하는 방법이다. 작업이 호출자를 묻는 곳(`@access`)에서는 애플리케이션
+  자신으로서 테스트용으로 만든 관리자를 생성된 로그인(`@signin`)으로 로그인시킨다; 생성된 로그인이 없으면 요청은
+  애플리케이션으로서 실행된다(`CurrentUser.runAsSystem`). `@access` 자체의 테스트는 다음 단계다.
+- support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
+  Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
+  애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
+- JPA 와 MyBatis 테스트는 애플리케이션의 데이터소스가 무엇이든 자기만의 인메모리 H2 에 쓴다: support 클래스의
+  `@SpringBootTest` 속성이 URL 과 드라이버를 정하고, JPA 에서는 Hibernate 가 테이블을 만든다(`ddl-auto=create-drop`, Flyway 와
+  Liquibase 끔); MyBatis 에서는 스키마가 애플리케이션의 것이다(`spring.sql.init`, Flyway). 다른 데이터베이스는 거기서 바꾼다.
+  H2 가 만들 수 없는 테이블 - `@columnDef('jsonb')` 나 `xml` 컬럼 - 은 건너뛴 것으로 센다.
+- 각 테스트는 자기 행을 만든다: 모델이 요구하는 것, 참조가 가리키는 행을 먼저(그 행의 API 로), 그리고 유일해야 하는 곳
+  (`@unique`, 유일 인덱스, 키)에는 행마다 자기 값: 텍스트, 패턴 값의 변형, 단계별 숫자.
+  시드 데이터를 읽거나 행 수를 세지 않고, 상태 코드와 problem 의 `code` (와 필드) 를 확인한다 - 메시지는 보지 않으므로
+  번역된 API 도 통과한다.
+- 생성기가 만들 수 없는 행은 빌드 요약이 센다:
+  `contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test; ...)`.
+  실행 중 애플리케이션 자신의 규칙에 의한 거부 - 그 코드의 검사, 이미 쓰인 유일 값 - 는 이유와 함께 테스트를 중단한다
+  (`Assumptions.abort`, Gradle XML 보고서는 이유를 남기지 않으므로 출력도 함). 모델이 선언한 거부 - 필드(`invalid`), 불변식,
+  상태 - 는 실패다: 테스트가 필요로 하는 행이든 확인하는 행이든; 5xx 도 실패다.
+- `testCode` 는 정확히 읽는다: `"true"`, `"contract"`, `"false"`; 다른 값(`"Contract"`, `"contracts"`)은 DSL 경고다.
+- MongoDB: 테스트는 `ELASTICORE_IT_MONGODB_URI` 가 가리키는 서버(`mongodb://host:port`, 데이터베이스 `elasticore_contract`)에서 실행되고
+  없으면 건너뛴다; 행은 남는다(유일한 값).
+- 다루는 범위: 필드 제약은 모든 모드, 언어, 아키텍처에서; 생명주기와 불변식은 그것이 생성되는 곳 -
+  ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: `@access` (누가 들어가는가), `@Mask` 와 `@encrypt`, `export`, 생명주기의
+  `delete:` 상태, 멤버 자체의 제약. float 의 소수 경계(`@max(0.1)`)는 건너뛴 것으로 센다:
+  float 는 0.1 을 정확히 담지 못하고, 그 검사는 double 로 넓힌 값을 비교한다.
+- 테스트 의존성은 추가해 주지 않는다: `testImplementation 'org.springframework.boot:spring-boot-starter-test'` 와, JPA 와
+  MyBatis 에서는 H2(`testRuntimeOnly 'com.h2database:h2'`); Spring Boot 4 에서는 `spring-boot-starter-webmvc-test` 도.
+- 규칙을 일부러 바꾼 곳은 테스트를, 애플리케이션이 모델보다 더 요구하는 곳은 행 빌더(`newPurchaseOrder()`)를 고친다:
+  pet store 의 `PurchaseOrderContractTest` 는 배송지 주소를 더한다 - 없으면 `place` 가 주문을 거부한다.
+- 예: `elasticore-template-ddd` (Java, hexagonal, JPA), `-ddd-mybatis` (MyBatis), `-kt` (Kotlin), pet store (Spring Boot 4, 로그인).
 
 ---
 

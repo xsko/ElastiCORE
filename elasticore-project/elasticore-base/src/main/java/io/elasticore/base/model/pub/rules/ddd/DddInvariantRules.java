@@ -453,6 +453,8 @@ public class DddInvariantRules implements CodeRules,
         private final String field;
         /** The bundle's default sentence: the DSL's as written, or a pattern naming {0} the field, {1} the entity. */
         private final String sentence;
+        /** The condition as @invariant declares it; null for a field's bound (@min, @max, @minsize, @maxsize). */
+        private String declared;
 
         private Invariant(String violation, String message, String code, String field, String sentence) {
             this.violation = violation;
@@ -463,8 +465,23 @@ public class DddInvariantRules implements CodeRules,
         }
 
         Invariant coded(String other) {
-            return new Invariant(violation, message, other, field, sentence);
+            Invariant copy = new Invariant(violation, message, other, field, sentence);
+            copy.declared = declared;
+            return copy;
         }
+    }
+
+    /**
+     * The conditions the root's @invariant declares that the listener checks, in order, each with the code a
+     * refusal carries: {condition, code}. The bounds of its fields are left out - a request is refused for those
+     * by the DTO (400) before the root is written. For the contract tests (testCode: contract).
+     */
+    public static List<String[]> declaredPromises(EntitySpec e) {
+        List<String[]> out = new ArrayList<String[]>();
+        for (Invariant i : invariantsOf(e, e.varName(), Syntax.JAVA)) {
+            if (i.declared != null) out.add(new String[] {i.declared, i.code});
+        }
+        return out;
     }
 
     /** The runtime's Label of a key of the label bundle: Order, Order.total. */
@@ -516,14 +533,10 @@ public class DddInvariantRules implements CodeRules,
      * silent either - the run says so in the generated source, where the
      * developer who wrote the annotation will see it.
      */
-    private List<Invariant> invariantsOf(EntitySpec e) {
-        return invariantsOf(e, e.varName(), Syntax.JAVA);
-    }
-
-    private List<Invariant> invariantsOf(EntitySpec e, String var, Syntax syntax) {
-        if (!e.aggregateRoot()) return Collections.emptyList();
-
+    private static List<Invariant> invariantsOf(EntitySpec e, String var, Syntax syntax) {
         List<Invariant> out = new ArrayList<Invariant>();
+        if (!e.aggregateRoot()) return out;
+
         // The field bounds first: they read one value each, and a violated one
         // is the plainer thing to report.
         for (FieldSpec f : e.fields()) {
@@ -559,7 +572,7 @@ public class DddInvariantRules implements CodeRules,
      * none - so it is checked the way an @invariant is, as a promise; a
      * maximum is not, since nothing is fewer than any number.
      */
-    private void addSizeBounds(List<Invariant> out, EntitySpec e, FieldSpec f, String var, Syntax syntax) {
+    private static void addSizeBounds(List<Invariant> out, EntitySpec e, FieldSpec f, String var, Syntax syntax) {
         String min = f.dslValueAny("minsize");
         if (min != null) {
             String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(min);
@@ -602,8 +615,16 @@ public class DddInvariantRules implements CodeRules,
                 "{0} " + literalPattern(words + " " + bound[0]));
     }
 
-    private void addBound(List<Invariant> out, EntitySpec e, FieldSpec f, String declared,
-                          String violatingOperator, String words, String kind, String var, Syntax syntax) {
+    private static void addBound(
+            List<Invariant> out,
+            EntitySpec e,
+            FieldSpec f,
+            String declared,
+            String violatingOperator,
+            String words,
+            String kind,
+            String var,
+            Syntax syntax) {
         if (declared == null) return;
         String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(declared);
         // Null is not a breach here: whether the value is required is said by
@@ -621,7 +642,7 @@ public class DddInvariantRules implements CodeRules,
      * The message is separated by the last comma rather than the first, so a
      * condition may contain one and a message certainly may.
      */
-    private Invariant parse(EntitySpec e, String declared, String var, Syntax syntax) {
+    private static Invariant parse(EntitySpec e, String declared, String var, Syntax syntax) {
         if (declared == null) return null;
 
         String text = declared.trim();
@@ -644,17 +665,21 @@ public class DddInvariantRules implements CodeRules,
 
         String code = codeOf(e, ErrorCatalog.slug(condition));
         String field = fieldKeyOf(e, condition);
+        Invariant read;
         if (message == null || message.isEmpty()) {
             String written = condition.replace("\"", "'");
-            return new Invariant(
+            read = new Invariant(
                     violation,
                     String.format("%s violates %s", e.getName(), written),
                     code,
                     field,
                     "{1} violates " + literalPattern(written));
+        } else {
+            String said = message.replace("\"", "'");
+            read = new Invariant(violation, said, code, field, said);
         }
-        String said = message.replace("\"", "'");
-        return new Invariant(violation, said, code, field, said);
+        read.declared = condition;
+        return read;
     }
 
     /**
@@ -672,11 +697,11 @@ public class DddInvariantRules implements CodeRules,
     }
 
     /** The condition turned round: true exactly when the promise is broken. */
-    private String violationOf(EntitySpec e, String condition, String var, Syntax syntax) {
+    private static String violationOf(EntitySpec e, String condition, String var, Syntax syntax) {
         return DddCondition.expression(e, condition, var, true, syntax);
     }
 
-    private int firstQuote(String text) {
+    private static int firstQuote(String text) {
         int single = text.indexOf('\'');
         int doubleQuote = text.indexOf('"');
         if (single < 0) return doubleQuote;
@@ -684,7 +709,7 @@ public class DddInvariantRules implements CodeRules,
         return Math.min(single, doubleQuote);
     }
 
-    private String unquote(String text) {
+    private static String unquote(String text) {
         if (text.length() < 2) return text;
 
         char first = text.charAt(0);

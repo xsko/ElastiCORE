@@ -135,7 +135,9 @@ task elcore3clean(type: Delete) {
 	// The files rather than the directories: on Windows a handle held on a
 	// generated tree by the daemon that just compiled it fails a directory
 	// delete, and the clean is not worth a flaky build.
-	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io'),
+	// The contract tests' support class is the sample's own (written once, then edited: it names the
+	// application the tests start), so it stays; the tests beside it are regenerated.
+	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io') { exclude '**/*ContractSupport.kt' },
 			fileTree('src/main/ts') { include '*.ts' }
 }
 
