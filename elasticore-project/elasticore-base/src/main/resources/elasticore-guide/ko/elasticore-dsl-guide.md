@@ -758,7 +758,7 @@ Item:
 
 | 어디에 | 어노테이션 | 뜻 |
 |---|---|---|
-| 엔티티 meta | `@access(read=owner, create=user, ship=admin)` | 연산별 허용 수준 (public/user/owner/admin/none, 안 적으면 admin) |
+| 엔티티 meta | `@access(read=owner, create=user, ship=admin)` | 연산별 허용 수준 (public/user/owner/admin/none, 또는 역할 이름; `\|` 어느 하나, `&` 둘 다 - `read=owner\|MANAGER`; 안 적으면 admin) |
 | 엔티티 meta | `@owner(customerId)` | 행의 주인을 담는 필드 |
 | 엔티티 meta | `@signin` | 로그인 API: `me()`, 컨트롤러의 `signin`·`signout`·`me`, TypeScript `signIn`·`signOut`·`me`. `@login`·`@password`·`@expose`, 키 하나, 본인·관리자만 수정(`update=owner` + 키의 `@owner`, 또는 `update=admin`), 요청이 정하는 키면 삭제도 본인·관리자만, 애플리케이션에 하나일 때만 - 아니면 DSL 경고. 로그인 컬럼 unique 는 `@signin` 만으로 (거절되어도) |
 | 엔티티 meta | `@signin(refresh=request)` | 세션이 행을 따라감: 로그인한 요청마다 먼저 `me()` 로 행을 다시 읽어, 없으면(또는 `@deleted`) 세션을 끝내고 바뀐 역할은 세션에 넣음 |

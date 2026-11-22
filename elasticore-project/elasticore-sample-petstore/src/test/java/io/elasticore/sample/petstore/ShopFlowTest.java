@@ -289,6 +289,52 @@ class ShopFlowTest {
         mvc.perform(get("/api/petstore/purchaseOrder/" + cancelled).session(admin)).andExpect(status().isNotFound());
     }
 
+    /**
+     * {@code @access(read=owner|MANAGER, ..., delete=MANAGER&owner)} (issue 269): a MANAGER reads and
+     * searches every order, a plain customer only their own; a MANAGER deletes a cancelled order of their
+     * own, a plain customer none - not even their own - and a MANAGER not someone else's.
+     */
+    @Test
+    void aManagerReadsEveryOrderAndDeletesOnlyTheirOwn() throws Exception {
+        MockHttpSession user = signIn("user", "user");
+        String usersOrder = placeOrder(user, 1006);
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/cancel").session(user)).andExpect(status().isOk());
+
+        MockHttpSession manager = signUp("leia");
+        MockHttpSession other = signUp("chewie");
+        long managerId = ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/petstore/customer/me").session(manager))
+                .andReturn().getResponse().getContentAsString(), "$.customerId")).longValue();
+        MockHttpSession admin = signIn("admin", "admin");
+        mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + managerId + ",\"role\":\"M\"}").session(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("M"));
+
+        // read=owner|MANAGER: the manager reads the user's order; another customer does not see it at all.
+        mvc.perform(get("/api/petstore/purchaseOrder/" + usersOrder).session(manager))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.customerId").value(2));
+        mvc.perform(get("/api/petstore/purchaseOrder/" + usersOrder).session(other)).andExpect(status().isNotFound());
+        // The search: the manager's is not narrowed, the other customer's is (they have none).
+        mvc.perform(json(post("/api/petstore/purchaseOrder/search"), "{\"customerId\":2}").session(manager))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(org.hamcrest.Matchers.greaterThan(0)))
+                .andExpect(jsonPath("$.content[*].customerId", everyItem(is(2))));
+        mvc.perform(json(post("/api/petstore/purchaseOrder/search"), "{}").session(other))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
+
+        // delete=MANAGER&owner: the owner who is no MANAGER is refused (403) ...
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + usersOrder).session(user)).andExpect(status().isForbidden());
+        // ... a MANAGER does not delete someone else's (it is not theirs: 404) ...
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + usersOrder).session(manager)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/petstore/purchaseOrder/" + usersOrder).session(user)).andExpect(status().isOk());
+        // ... and deletes a cancelled order of their own.
+        String managersOrder = placeOrder(manager, 1007);
+        mvc.perform(post("/api/petstore/purchaseOrder/" + managersOrder + "/cancel").session(manager)).andExpect(status().isOk());
+        mvc.perform(delete("/api/petstore/purchaseOrder/" + managersOrder).session(manager)).andExpect(status().isOk());
+        mvc.perform(get("/api/petstore/purchaseOrder/" + managersOrder).session(admin)).andExpect(status().isNotFound());
+    }
+
     private String placeOrder(MockHttpSession user, int itemId) throws Exception {
         MvcResult placed = mvc.perform(json(post("/api/petstore/purchaseOrder"),
                         "{\"lines\":[{\"itemId\":" + itemId + ",\"quantity\":1}]," + CARD + "}").session(user))
