@@ -255,4 +255,40 @@ class ShopApiContractTest {
         assertThat(mvc.perform(get("$agents/me").session(admin)).andReturn().response.status).isEqualTo(200)
         signIn("worf", "by-admin")
     }
+
+    @Test
+    @DisplayName("export (issue 271), in Kotlin: an agent's CSV holds the agent's own tickets only, as the search does")
+    fun anAgentExportsTheirOwnTicketsOnly() {
+        val agents = "/api/v1/shop/agent"
+        val tickets = "/api/v1/shop/ticket"
+        fun session(login: String): org.springframework.mock.web.MockHttpSession {
+            assertThat(mvc.perform(post(agents).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"login":"$login","secret":"pw-$login"}""")).andReturn().response.status).isEqualTo(200)
+            val r = mvc.perform(post("$agents/signin").contentType(MediaType.APPLICATION_JSON)
+                .content("""{"login":"$login","secret":"pw-$login"}""")).andReturn()
+            return r.request.session as org.springframework.mock.web.MockHttpSession
+        }
+        fun ticket(by: org.springframework.mock.web.MockHttpSession, subject: String): String {
+            val r = mvc.perform(post(tickets).session(by).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"subject":"$subject"}""")).andReturn().response
+            assertThat(r.status).describedAs(r.contentAsString).isEqualTo(200)
+            return json.readTree(r.contentAsString).path("ticketId").asText()
+        }
+        val data = session("data")
+        val geordi = session("geordi")
+        val mine = ticket(data, "=warp core")
+        val theirs = ticket(geordi, "visor")
+
+        val response = mvc.perform(post("$tickets/export").session(data).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"columns":["ticketId","subject","status"]}""")).andReturn().response
+        assertThat(response.status).isEqualTo(200)
+        assertThat(response.contentType).isEqualTo("text/csv;charset=UTF-8")
+        val csv = String(response.contentAsByteArray, Charsets.UTF_8)
+        val lines = csv.removePrefix("\uFEFF").trimEnd().split("\r\n")
+        assertThat(lines[0]).isEqualTo("ticketId,subject,status")
+        // Guarded as text; the status as the JSON writes it, its code.
+        assertThat(lines).contains("$mine,'=warp core,OPN")
+        assertThat(csv).doesNotContain(theirs)
+        assertThat(lines).hasSize(2)
+    }
 }

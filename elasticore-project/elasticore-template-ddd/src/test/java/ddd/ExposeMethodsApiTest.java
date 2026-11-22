@@ -51,5 +51,16 @@ class ExposeMethodsApiTest {
         assertThat(mvc.perform(post(RECEIPTS + "/delete").contentType(MediaType.APPLICATION_JSON)
                 .content("[{\"receiptId\":" + id + "}]")).andReturn().getResponse().getStatus()).isEqualTo(405);
         assertThat(receipts.findById(id)).isPresent();
+
+        // export is listed too (issue 271): the receipt the search finds, as a CSV file.
+        org.springframework.mock.web.MockHttpServletResponse export = mvc.perform(post(RECEIPTS + "/export")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"search\":{\"orderId\":\"order-expose-1\"},\"columns\":[\"receiptId\",\"orderId\",\"amount\"]}"))
+                .andReturn().getResponse();
+        assertThat(export.getStatus()).isEqualTo(200);
+        assertThat(export.getContentType()).isEqualTo("text/csv;charset=UTF-8");
+        String csv = export.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).startsWith("\uFEFFreceiptId,orderId,amount\r\n" + id + ",order-expose-1,12.5");
+        assertThat(csv.split("\r\n")).hasSize(2);
     }
 }

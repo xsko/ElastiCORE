@@ -258,6 +258,31 @@ public abstract class ShopApi {
         assertEquals(masked, storedEmail(id));
     }
 
+    /**
+     * POST /customer/export (issue 271) over MongoDB: the documents the search finds, every page of them, in the
+     * columns asked for - the email masked as the response masks it (@Mask(EMAIL)), a text a spreadsheet would run
+     * written as text.
+     */
+    @Test
+    public void anExportWritesWhatTheSearchFindsMasked() throws Exception {
+        String tag = unique();
+        String local = "exp" + unique();
+        long first = id(create("customer", "{\"name\":\"=" + tag + " One\",\"email\":\"" + local + "@a.com\"}"),
+                "customerId");
+        long second = id(create("customer", "{\"name\":\"" + tag + " Two\"}"), "customerId");
+
+        HttpResponse<String> response = send("POST", "/customer/export",
+                "{\"search\":{\"name\":\"" + tag + "\"},\"columns\":[\"customerId\",\"name\",\"email\"]}", 200);
+        assertEquals("text/csv;charset=UTF-8", response.headers().firstValue("Content-Type").orElse(""));
+        String[] lines = response.body().split("\r\n", -1);
+        assertEquals("\uFEFFcustomerId,name,email", lines[0]);
+        String masked = local.substring(0, 2) + "*".repeat(local.length() - 2) + "@a.com";
+        assertEquals(first + ",'=" + tag + " One," + masked, lines[1], response.body());
+        assertEquals(second + "," + tag + " Two,", lines[2], response.body());
+        assertEquals(4, lines.length, response.body());
+        assertFalse(response.body().contains(local + "@"), response.body());
+    }
+
     private String storedEmail(long customerId) {
         Document stored = mongo.getCollection("customer").find(new Document("_id", customerId)).first();
         assertNotNull(stored);

@@ -18,7 +18,7 @@ entity:
       zip: string(10)
 
   Customer:
-    meta: entity @expose(20) @access(*=public) -- customer
+    meta: entity @expose(pageSize=20, methods="create,read,search,update,delete,export") @access(*=public) -- customer
     fields:
       customerId: long @id @sequence
       name: string(50)! @search(like)

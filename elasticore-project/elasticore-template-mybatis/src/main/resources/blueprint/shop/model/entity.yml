@@ -45,7 +45,8 @@ entity:
 
   # Every column type, written and read back alike on each database (TypesTest).
   Gadget:
-    meta: entity @expose(20) @access(*=public) -- every column type
+    # export: POST /api/shop/gadget/export - the search as a CSV file, or an .xlsx workbook (the tests have Apache POI)
+    meta: entity @expose(pageSize=20, methods="create,read,search,update,delete,export") @access(*=public) -- every column type
     fields:
       gadgetId: long @id @sequence
       name: string(40)! @search(like)

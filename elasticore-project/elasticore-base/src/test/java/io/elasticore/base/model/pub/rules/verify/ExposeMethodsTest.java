@@ -298,8 +298,9 @@ public class ExposeMethodsTest {
     @Test
     public void aNameItDoesNotKnowIsSaidAndServesNothing() throws Exception {
         assertTrue(
-                javaLog.contains("[EmTypo] @expose(methods=\"raed,search\"): raed is not one of create, read, search,"
-                        + " update, delete, updateOne, updateBatch, deleteOne, deleteBatch; it serves nothing."),
+                javaLog.contains(
+                        "[EmTypo] @expose(methods=\"raed,search\"): raed is not one of create, read, search,"
+                                + " update, delete, export, updateOne, updateBatch, deleteOne, deleteBatch; it serves nothing."),
                 javaLog);
         String control = found(java, "EmTypoController.java");
         assertTrue(control.contains("@PostMapping(\"/search\")"), control);

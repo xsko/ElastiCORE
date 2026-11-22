@@ -21,7 +21,7 @@ entity:
 
   # A member's notes: read and written by their owner only.
   Note:
-    meta: entity @expose(20) @owner(ownerId) @access(read=owner, update=owner, delete=owner, create=public) -- note
+    meta: entity @expose(pageSize=20, methods="create,read,search,update,delete,export") @owner(ownerId) @access(read=owner, update=owner, delete=owner, create=public) -- note
     fields:
       noteId: long @id @sequence
       ownerId: int

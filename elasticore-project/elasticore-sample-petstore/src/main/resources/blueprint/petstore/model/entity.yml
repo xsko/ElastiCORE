@@ -22,7 +22,8 @@ entity:
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
+    # export: POST /api/petstore/item/export - the search's rows as a CSV file (an .xlsx workbook needs Apache POI)
+    meta: entity @root @editable @expose(pageSize=50, methods="create,read,search,update,delete,export") @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
@@ -82,7 +83,8 @@ entity:
   PurchaseOrder:
     # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
     # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
-    meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
+    # export: what the search gives - a customer's own orders, every order for a MANAGER (@owner, read=owner|MANAGER)
+    meta: entity @root @expose(pageSize=20, methods="create,read,search,update,delete,export") @event(Placed(total), Shipped, Cancelled) @owner(customerId)
           @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid

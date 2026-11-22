@@ -20,9 +20,9 @@ Product:
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
-`delete` - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117-rc17). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
+`delete`·`export`(아래) - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117-rc17). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
 TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD 유스케이스(`XxxUseCase`)도 적은 쓰기만 약속합니다.
-Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 입니다.
+Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 이고, `export` 는 적은 곳에만 생깁니다.
 ```yaml
 Country:
   meta: entity @root @expose(pageSize=300, methods="read,search")   # 애플리케이션이 채우는 조회용: 조회·검색만
@@ -35,6 +35,33 @@ Notice:
   줄일 뿐 늘리지 않습니다. `methods=""` 는 다섯 가지 중 아무것도 제공하지 않습니다.
 - 나중에 줄이면, 고치지 않았거나 다른 곳만 고친(merge 되는) 생성 Controller 에서 엔드포인트가 빠집니다. 빠질 엔드포인트를
   직접 고친 Controller 는 그대로 남고, 빌드가 아직 제공하는 엔드포인트를 짚어 줍니다.
+
+#### export - 검색 결과를 CSV 파일이나 .xlsx 통합 문서로
+> **Since: 3.0** (3.0 규칙엔진. 2.x 생성기는 읽지 않음)
+> **동작:** JPA, MyBatis, MongoDB; Java, Kotlin; layered, ddd, hexagonal; TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
+
+`methods` 에 적은 곳에만 생깁니다 - `methods` 가 없으면 다섯 가지 그대로입니다. `POST .../search` 옆에
+`POST /api/<domain>/<entity>/export` 가 생기고, TypeScript 클라이언트에 `exportXxx(body)`(`Blob`)가 생깁니다. 본문은 모두 생략할 수 있습니다:
+```json
+{ "search": { "name": "Puppy" }, "sortCode": "name+", "columns": ["itemId", "name", "unitCost"], "headers": ["번호", "펫", "가격"], "format": "csv" }
+```
+- 행: `search`(같은 검색 DTO)로 `POST .../search` 가 하는 검색 - 그 조건, 검색의 `@access`, `@owner` 필터 - 의 모든 페이지를
+  `sortCode` 순서로 씁니다(없으면 검색 자신의 순서, `sortColumn` 도. 그 뒤에 키를 붙여, 같은 값의 행이 두 페이지 사이에서 움직이지 않게 합니다).
+  페이지는 차례로 읽으므로, 그 사이에 바뀐 행은 들어갈 수도 빠질 수도 있습니다.
+- `columns`: 응답 DTO 의 속성을 그 순서로(`@ref` 는 그 이름으로, `productName`). 없으면 모든 속성을 DTO 의 순서로. `headers`:
+  열마다 하나씩 제목. 없으면 열마다 요청 언어(`Accept-Language`)의 라벨 - `i18n/<domain>-labels_<lang>.properties`
+  (`@label(en=...)`, `labelLanguage`. 응답 DTO 의 키, 다음에 엔티티의 키) - 이고, 라벨이 없으면 이름입니다.
+- 값은 응답 JSON 이 보여 주는 그대로입니다: `@Mask` 로 가린 값, enum 은 코드(라벨이 아님), 금액과 날짜도 쓰인 그대로.
+  `=`, `+`, `-`, `@`, 탭, 캐리지 리턴으로 시작하는 문자열은 앞에 `'` 를 붙여 스프레드시트가 실행하지 않게 합니다
+  (CSV injection). 숫자에는 붙이지 않습니다.
+- CSV: BOM 이 붙은 UTF-8, RFC 4180 따옴표, CRLF. `"format": "xlsx"` 나 `Accept:
+  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` 이면 .xlsx 이고, 애플리케이션에 Apache POI 가 있어야
+  합니다(`implementation 'org.apache.poi:poi-ooxml:5.5.1'`. 런타임은 가져오지 않습니다) - 없으면 406. 통합 문서에서 숫자는 숫자
+  (15자리를 넘으면 문자열), 날짜는 날짜(`@format` 이 일부만 보여 주면 그 문자열), 문자열은 수식이 되지 않습니다. 시트 하나는 1,048,575 행까지입니다.
+- `elasticore.export.max-rows`(`application.yml`, 정하지 않으면 100,000. `elasticore-env-guide.md` 6-4)보다 많으면 아무것도
+  쓰기 전에 건수와 함께 400 입니다. 응답에 없는 열, 길이가 다른 `headers`, csv·xlsx 가 아닌 `format` 도
+  400 입니다. 도중의 실패(데이터베이스 연결이 끊기는 등): CSV 파일은 중간에서 끝나고, .xlsx 는 오류로 응답합니다.
+- 예제: 펫스토어의 `Item`, `PurchaseOrder`(`ExportTest`, `ExportLimitTest`), `elasticore-template-mybatis` 의 `Gadget`.
 
 ### @service
 `@expose`와 동일하나 Controller 생성 제외. 내부 서비스 용도.

@@ -152,7 +152,8 @@ public class ControllerMethodRulesTest {
         assertTrue(
                 said.contains(
                         "[Order] @expose(methods=\"read,serch,create\"): serch is not one of create, read, search,"
-                                + " update, delete, updateOne, updateBatch, deleteOne, deleteBatch; it serves nothing."),
+                                + " update, delete, export, updateOne, updateBatch, deleteOne, deleteBatch; it serves"
+                                + " nothing."),
                 said.toString());
         assertTrue(
                 said.contains("[Order] @expose(methods=\"read,serch,create\") lists create, which @readonly takes away;"
@@ -252,6 +253,91 @@ public class ControllerMethodRulesTest {
         assertTrue(approveIdx < braceIdx, "custom method must sit inside the class:\n" + out);
         // default endpoints untouched
         assertTrue(out.contains("@DeleteMapping"), out);
+    }
+
+    // ---- export (issue 271) --------------------------------------------------------------
+
+    @Test
+    public void export_isServedOnlyWhereListed() {
+        EntitySpec listed = order().meta("expose", "20").metaProperty("expose", "methods", "read,search,Export");
+        String out = renderV3(listed);
+        assertTrue(out.contains("@PostMapping(\"/export\")"), out);
+        assertTrue(
+                out.contains("public void export(@Valid @RequestBody io.elasticore.springboot3.export.SearchExport"
+                        + ".Request<OrderSrchDTO> request,"),
+                out);
+        // The order asked for, with the key after it; the service's own search.
+        assertTrue(
+                out.contains("searchDTO.setSortCode(io.elasticore.springboot3.export.SearchExport.sortCode("
+                        + "request.getSortCode(), searchDTO.getSortCode(), searchDTO.getSortColumn(),"
+                        + " searchDTO.getSortAscending(), \"orderId\"));"),
+                out);
+        // The old sortColumn is folded into the code, so it cannot win over it and drop the key.
+        assertTrue(out.contains("searchDTO.setSortColumn(null);"), out);
+        assertTrue(
+                out.contains("io.elasticore.springboot3.export.SearchExport.of(\"shop\", \"Order\", OrderDTO.class,"
+                        + " null)"),
+                out);
+        // Not paged (no page size on this spec): the one list the search answers.
+        assertTrue(
+                out.contains(".list(request, httpRequest, httpResponse, () -> orderService.findBySearch(searchDTO));"),
+                out);
+        EntitySpec paged = order().pageable(true).meta("expose", "20").metaProperty("expose", "methods", "export");
+        String pages = renderV3(paged);
+        assertTrue(pages.contains(".pages(request, httpRequest, httpResponse, (page, size) -> {"), pages);
+        assertTrue(
+                pages.contains("searchDTO.setPageNumber(page);") && pages.contains("searchDTO.setPageSize(size);"),
+                pages);
+        assertTrue(pages.contains("return orderService.findBySearch(searchDTO);"), pages);
+        // Listed among others: the names it lists are still the only endpoints.
+        assertFalse(out.contains("@PutMapping") || out.contains("@DeleteMapping"), out);
+        assertTrue(ControllerBaseRules.exports(listed));
+        assertTrue(
+                ControllerBaseRules.exposeProblems(listed).isEmpty(),
+                ControllerBaseRules.exposeProblems(listed).toString());
+
+        // Without methods, or with a list that leaves it out: no export, and nothing else changes.
+        for (EntitySpec without : new EntitySpec[] {
+            order().meta("expose", "20"), order().meta("expose", "20").metaProperty("expose", "methods", "read,search")
+        }) {
+            String plain = renderV3(without);
+            assertFalse(plain.contains("export"), plain);
+            assertFalse(ControllerBaseRules.exports(without));
+            assertFalse(ControllerBaseRules.exposeOmitted(without).contains("export"));
+        }
+        // The five without export omit nothing, so the controller is rendered as before.
+        assertTrue(ControllerBaseRules.exposeOmitted(order().meta("expose", "20")
+                        .metaProperty("expose", "methods", "create,read,search,update,delete"))
+                .isEmpty());
+
+        // The 2.x-compatible output does not read it.
+        assertFalse(render(listed).contains("/export"), render(listed));
+    }
+
+    @Test
+    public void export_alone_isAName() {
+        EntitySpec only = order().meta("expose", "20").metaProperty("expose", "methods", "export");
+        assertTrue(
+                ControllerBaseRules.exposeProblems(only).isEmpty(),
+                ControllerBaseRules.exposeProblems(only).toString());
+        String out = renderV3(only);
+        assertTrue(out.contains("@PostMapping(\"/export\")"), out);
+        assertFalse(out.contains("@PostMapping(\"/search\")"), out);
+        // A rule set that excludes it keeps it out.
+        String excluded = new RuleEngine()
+                .templateSet(SourceCode.TemplateSet.V3)
+                .register(new ControllerBaseRules())
+                .register(new NoExport())
+                .run(only, "control")
+                .render();
+        assertFalse(excluded.contains("/export"), excluded);
+    }
+
+    public static class NoExport implements CodeRules {
+        @Rule(value = "no-export", target = "control", order = 25)
+        void noExport(EntitySpec e) {
+            ctx(e).excludeMethod("export");
+        }
     }
 
     @Test

@@ -70,6 +70,10 @@ dependencies {
     // generated code names - an application with such a field adds jsoup itself.
     compileOnly 'org.jsoup:jsoup:1.23.2'
     testImplementation 'org.jsoup:jsoup:1.23.2'
+    // Only compiled against: an export written as an .xlsx workbook (export/XlsxWriter), where the application
+    // has Apache POI - checked by class name before it is used; without it an .xlsx export answers 406.
+    compileOnly 'org.apache.poi:poi-ooxml:5.5.1'
+    testImplementation 'org.apache.poi:poi-ooxml:5.5.1'
     // Only compiled against: BeanValidation checks for a provider at run time
     // and does nothing where the application has none.
     compileOnly 'jakarta.validation:jakarta.validation-api'

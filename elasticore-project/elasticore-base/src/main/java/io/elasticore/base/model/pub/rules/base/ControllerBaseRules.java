@@ -218,6 +218,8 @@ public class ControllerBaseRules implements CodeRules {
         m.put("search", new String[] {"search"});
         m.put("update", new String[] {"update", "batchUpdate"});
         m.put("delete", new String[] {"deleteBatch", "deleteById"});
+        // POST /export (issue 271): only where listed - not a section of the skeleton, a method added to it.
+        m.put("export", new String[] {EXPORT});
         // One of the two each (issue 172): edited and deleted a row at a time, or in batches.
         m.put("updateOne", new String[] {"update"});
         m.put("updateBatch", new String[] {"batchUpdate"});
@@ -294,10 +296,120 @@ public class ControllerBaseRules implements CodeRules {
         }
         for (String[] ids : EXPOSE_METHODS.values()) {
             for (String id : ids) {
-                if (!served.contains(id)) out.add(id);
+                // export is added where listed (exports), not taken out where not: the skeleton has no such
+                // section, and naming it here would narrow - and so re-render - every listed controller.
+                if (!served.contains(id) && !EXPORT.equals(id)) out.add(id);
             }
         }
         return out;
+    }
+
+    /** The section id, and the @expose(methods) name, of POST /export. */
+    public static final String EXPORT = "export";
+
+    /**
+     * Whether @expose(methods="...") lists export (issue 271): POST /export is served - in the 3.0 output only. Without
+     * methods the entity keeps the five it has; export comes only where it is listed.
+     */
+    public static boolean exports(EntitySpec e) {
+        return listsExport(exposeMethodsText(e));
+    }
+
+    /** Whether a methods list, as @expose(methods="...") writes it, names export. */
+    public static boolean listsExport(String methodsText) {
+        return methodsText != null && namesOf(methodsText).contains(EXPORT);
+    }
+
+    /**
+     * POST /export where @expose(methods) lists it (issue 271): the search's rows as a CSV file, or an .xlsx workbook
+     * where Apache POI is on the application's classpath, written by the runtime's SearchExport. The controller only
+     * wires it: the body's search DTO, the order with the key after it, and every page of the service's own
+     * findBySearch - the same conditions, access check and @owner filter as POST /search. After the method filter (20);
+     * a rule set that excludes "export" keeps it out.
+     */
+    @Rule(value = "controller-export", target = "control", order = 30)
+    void export(EntitySpec e) {
+        SourceCode c = ctx(e);
+        if (c.compatible()
+                || !exports(e)
+                || c.isMethodExcluded(EXPORT)
+                || e.pkFields().isEmpty()) return;
+        boolean kotlin = c.syntax() == Syntax.KOTLIN;
+        boolean paged = "Page".equals(c.varValue("searchReturnType"));
+        String srch = c.varValue("searchDTOClassName");
+        String row = c.varValue("searchResultDTOClassName");
+        String service = e.varName() + "Service";
+        String runtime = "io.elasticore.springboot3.export.SearchExport";
+        StringBuilder keys = new StringBuilder();
+        for (FieldSpec f : e.pkFields()) keys.append(", ").append(RuleText.quote(f.name()));
+        String view = e.jsonView()
+                ? String.format(kotlin ? "%s.Views.Read::class.java" : "%s.Views.Read.class", e.pkg("dto"))
+                : "null";
+        String rowClass = kotlin ? row + "::class.java" : row + ".class";
+        String of = String.format(
+                "%s.of(%s, %s, %s, %s)",
+                runtime, RuleText.quote(e.domainName()), RuleText.quote(e.getName()), rowClass, view);
+
+        StringBuilder m = new StringBuilder();
+        m.append(String.format(
+                        "    @Operation(summary = \"Export the %s search as a CSV file, or as an .xlsx workbook"
+                                + " where Apache POI is present\")%n",
+                        e.getName()))
+                .append(String.format("    @PostMapping(\"/%s\")%n", EXPORT));
+        if (kotlin) {
+            m.append(String.format("    fun export(@Valid @RequestBody request: %s.Request<%s>,%n", runtime, srch))
+                    .append("               httpRequest: jakarta.servlet.http.HttpServletRequest,\n")
+                    .append("               httpResponse: jakarta.servlet.http.HttpServletResponse) {\n")
+                    .append(String.format("        val searchDTO = request.search ?: %s()%n", srch))
+                    .append(String.format(
+                            "        searchDTO.sortCode = %s.sortCode(request.sortCode, searchDTO.sortCode,"
+                                    + " searchDTO.sortColumn, searchDTO.sortAscending%s)%n",
+                            runtime, keys))
+                    .append("        searchDTO.sortColumn = null\n");
+            m.append(String.format("        %s%n", of));
+            if (paged) {
+                m.append("            .pages(request, httpRequest, httpResponse) { page, size ->\n")
+                        .append("                searchDTO.pageNumber = page\n")
+                        .append("                searchDTO.pageSize = size\n")
+                        .append(String.format("                %s.findBySearch(searchDTO)%n", service))
+                        .append("            }\n");
+            } else {
+                m.append(String.format(
+                        "            .list(request, httpRequest, httpResponse) { %s.findBySearch(searchDTO) }%n",
+                        service));
+            }
+            m.append("    }");
+        } else {
+            m.append(String.format(
+                            "    public void export(@Valid @RequestBody %s.Request<%s> request,%n", runtime, srch))
+                    .append("                       jakarta.servlet.http.HttpServletRequest httpRequest,\n")
+                    .append("                       jakarta.servlet.http.HttpServletResponse httpResponse)"
+                            + " throws Exception {\n")
+                    .append(String.format(
+                            "        %s searchDTO = request.getSearch() != null ? request.getSearch() : new %s();%n",
+                            srch, srch))
+                    .append(String.format(
+                            "        searchDTO.setSortCode(%s.sortCode(request.getSortCode(), searchDTO.getSortCode(),"
+                                    + " searchDTO.getSortColumn(), searchDTO.getSortAscending()%s));%n",
+                            runtime, keys))
+                    // The order is the sort code now: a sortColumn left beside it would win over it, key and all.
+                    .append("        searchDTO.setSortColumn(null);\n");
+            if (paged) {
+                m.append(String.format("        %s%n", of))
+                        .append("                .pages(request, httpRequest, httpResponse, (page, size) -> {\n")
+                        .append("                    searchDTO.setPageNumber(page);\n")
+                        .append("                    searchDTO.setPageSize(size);\n")
+                        .append(String.format("                    return %s.findBySearch(searchDTO);%n", service))
+                        .append("                });\n");
+            } else {
+                m.append(String.format("        %s%n", of))
+                        .append(String.format(
+                                "                .list(request, httpRequest, httpResponse, () -> %s.findBySearch(searchDTO));%n",
+                                service));
+            }
+            m.append("    }");
+        }
+        c.addMethod(m.toString().replace("\r\n", "\n"));
     }
 
     /**
