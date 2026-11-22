@@ -422,7 +422,7 @@ For the DSL syntax and the table of generated code, see "Business commands" in `
 When an entity's `states:` declares the state field and the move for each command, the command is generated as a **concrete method of
 `XxxBase`, not an abstract method**. For the syntax, see "Lifecycle" in `elasticore-dsl-guide.md`.
 
-- If the command arrives when the entity is not in a starting state, it throws `InvariantViolationException` - the API returns 409 (conflict with the current state): "PurchaseOrder cannot ship when status is CANCELLED; it must be PLACED" (field, entity and states by their labels - "Error codes and languages").
+- If the command arrives when the entity is not in a starting state, it throws `InvariantViolationException` - the API returns 409 (conflict with the current state): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]" (field, entity and states by their labels - "Error codes and languages").
   The code is `state.PurchaseOrder.status.ship`, and it can be translated into the request language (see "Error codes and multiple languages" below).
 - If `@event` has an event with the same name as the target state, it is published (`SHIPPED` -> `raiseShipped()`).
 - `canShip()` is generated too, and the TypeScript client also gets `canShip(dto)` (for showing buttons).
@@ -1060,7 +1060,7 @@ fix any client that branched on 422 too - and if you **have edited** it, it stay
 still answer 422. Change the `refused(...)` in that file as if it had been newly generated: `state.` to 409, `reference.` to 404.
 
 With no `Accept-Language`, or a language with no translation, it is (the field by its `@label(en=Order status)`, the rest by name)
-`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be PLACED"`.
+`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"`.
 
 **The code scheme**
 
@@ -1083,13 +1083,14 @@ With no `Accept-Language`, or a language with no translation, it is (the field b
 - Another language, say `ko`: `@label(ko=...)`; else the `--` label when the domain's `env.yml` has `config: labelLanguage: ko`
   (`elasticore-env-guide.md`); else the name.
 - A state: the enumeration's `<label column>_ko` column (`label_ko`, `elasticore-dsl-guide.md`), the label column itself in the
-  `labelLanguage`, else the constant (`SHIPPED`). Several allowed states are joined with `, `.
+  `labelLanguage`, else the code as `{0}` says it (`SHIPPED`); the allowed states keep the frame of `{1}` (`[PLACED, SHIPPED]`).
 - They come from the label bundle beside the message bundle (`i18n/<domain>-labels_<language>.properties`, generated): the
   generated refusal passes them as `io.elasticore.springboot3.validation.Label` values - Java and Kotlin, every mode and architecture.
 - The default text names them (`invariant.Account.annualRevenue.min={0} must be at least 0`,
   `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). A sentence written in the DSL
   (`@min(0.01, 'price must be positive')`) stays as written, and a translation uses the values or not.
-- A translation written before keeps its meaning: `{0}` and `{1}` of `state.*` are still the codes. The exception's
+- A translation written before keeps its meaning: `{0}` and `{1}` of `state.*` are still the codes; a model without labels
+  answers in English word for word as before (`... it must be [PLACED]`). The exception's
   `getMessage()` (a log) is the English sentence with the names, as before.
 
 **How to translate**
@@ -1130,9 +1131,9 @@ So even with several domains (`billing`, `shop`), a translation of `error.unread
 But a translation in a bundle changed with `spring.messages.basename` is looked up after the domain bundle (the English default text), so put the translations of domain codes in
 `messages_<language>.properties` or in the file next to the domain bundle.
 
-- **Single quotes**: the values reach only a sentence that holds a `{`. A sentence with placeholders (`{0}`) follows the Java
-  `MessageFormat` rule and writes `'` as `''` (`can''t`); one without a placeholder is said as written (`can't`) - so a translation of
-  `invariant.*` written before it had values keeps its apostrophes. Any other `'` in a sentence with values is written `''`.
+- **Single quotes**: a sentence that takes values (`state.*`, `reference.*`, a hand-written code with values) follows the Java
+  `MessageFormat` rule and writes `'` as `''` (`can''t`), placeholder or not. An `invariant.*` sentence gets its values only when it
+  holds a `{`: one without a placeholder is said as written (`can't`), as before it had values; one with `{0}` writes `''`.
 - If two `@invariant`s of the same entity get the same name, `-2` is added to the second. The `+ - * /` and Korean letters and so on in a condition expression
   are put into the name in a distinguishable form (`a + b > 0` -> `a-plus-b-gt-0`).
 

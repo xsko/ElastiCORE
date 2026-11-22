@@ -15,6 +15,7 @@ import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
@@ -60,7 +61,7 @@ public class RefusalLabelsTest {
                 Label.of("Opportunity.stage"),
                 Label.of("Opportunity"),
                 Label.of("OpportunityStage", now),
-                Label.anyOf("OpportunityStage", from));
+                Label.listOf("OpportunityStage", from));
     }
 
     @Test
@@ -68,9 +69,10 @@ public class RefusalLabelsTest {
         LocaleContextHolder.setLocale(Locale.ENGLISH);
         assertEquals("Annual revenue must be at least 0", minimum());
         // Opportunity and stage have only "--" labels (Korean): their names. LOST has no _en label.
-        assertEquals("Opportunity cannot win when stage is LOST; it must be Open", step("win", Stage.LOST, Stage.OPEN));
         assertEquals(
-                "Opportunity cannot lose when stage is Won; it must be Open, LOST",
+                "Opportunity cannot win when stage is LOST; it must be [Open]", step("win", Stage.LOST, Stage.OPEN));
+        assertEquals(
+                "Opportunity cannot lose when stage is Won; it must be [Open, LOST]",
                 step("lose", Stage.WON, Stage.OPEN, Stage.LOST));
     }
 
@@ -78,7 +80,7 @@ public class RefusalLabelsTest {
     public void anotherLanguageSaysItsOwnFile() {
         LocaleContextHolder.setLocale(Locale.KOREAN);
         assertEquals("거래처의 연 매출은(는) 0 이상이어야 합니다", minimum());
-        assertEquals("영업 기회의 단계이(가) 수주이면 실주할 수 없습니다 (가능한 상태: 진행 중)", step("lose", Stage.WON, Stage.OPEN));
+        assertEquals("영업 기회의 단계이(가) 수주이면 실주할 수 없습니다 (가능한 상태: [진행 중])", step("lose", Stage.WON, Stage.OPEN));
         LocaleContextHolder.setLocale(Locale.KOREA);
         assertEquals("거래처의 연 매출은(는) 0 이상이어야 합니다", minimum());
     }
@@ -117,10 +119,34 @@ public class RefusalLabelsTest {
     }
 
     /**
-     * The values reach only a sentence that holds a '{': a translation
-     * without a placeholder is said as written, its apostrophe kept, as when
-     * an invariant carried no values; one with placeholders is a
-     * MessageFormat pattern, '' an apostrophe.
+     * A refusal that carried values before labels - state.*, a hand-written
+     * code with values - is a MessageFormat pattern as it always was, with or
+     * without a placeholder: '' is an apostrophe.
+     */
+    @Test
+    public void aRefusalThatHadValuesIsAPatternAsBefore() {
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals("지금은 다시 열 수 없습니다 (can't)", step("reopen", Stage.WON, Stage.LOST));
+        ConflictException handWritten = new ConflictException("deal.closed", "Deal {0} is closed", "D-1");
+        assertEquals(
+                "닫힌 거래는 바꿀 수 없습니다 (can't)",
+                messages.text(handWritten.getCode(), handWritten.getMessage(), handWritten.getArgs()));
+        // What the same call said before labels: Spring's MessageFormat with the codes alone.
+        org.springframework.context.support.ResourceBundleMessageSource before =
+                new org.springframework.context.support.ResourceBundleMessageSource();
+        before.setBasenames("i18n/crm-messages");
+        before.setDefaultEncoding("UTF-8");
+        before.setFallbackToSystemLocale(false);
+        assertEquals(
+                before.getMessage("state.Opportunity.stage.reopen", new Object[] {"WON", "[LOST]"}, Locale.KOREAN),
+                step("reopen", Stage.WON, Stage.LOST));
+    }
+
+    /**
+     * A refusal whose values are all labels - an invariant's, which had none
+     * before - passes them only to a sentence that holds a '{': a translation
+     * without a placeholder is said as written, its apostrophe kept; one with
+     * placeholders is a MessageFormat pattern, '' an apostrophe.
      */
     @Test
     public void onlyASentenceWithAPlaceholderIsAPattern() {
@@ -155,8 +181,16 @@ public class RefusalLabelsTest {
         assertEquals("annualRevenue", Label.of("Account.annualRevenue").toString());
         assertEquals("Account", Label.of("Account").toString());
         assertEquals(
-                "OPEN, WON",
+                "[OPEN, WON]",
+                Label.listOf("OpportunityStage", Stage.OPEN, Stage.WON).toString());
+        // As Arrays.toString and Kotlin's joinToString(" or ") say the same states: byte for byte.
+        assertEquals(
+                java.util.Arrays.toString(new Stage[] {Stage.OPEN, Stage.WON}),
+                Label.listOf("OpportunityStage", Stage.OPEN, Stage.WON).toString());
+        assertEquals(
+                "OPEN or WON",
                 Label.anyOf("OpportunityStage", Stage.OPEN, Stage.WON).toString());
+        assertEquals("[]", Label.listOf("OpportunityStage").toString());
         assertEquals("null", Label.of("OpportunityStage", null).toString());
         assertEquals("", Label.anyOf("OpportunityStage").toString());
         assertEquals(
@@ -167,6 +201,11 @@ public class RefusalLabelsTest {
                 new String[] {"Account.annualRevenue"},
                 Label.of("Account.annualRevenue").getCodes());
         assertNull(Label.anyOf("OpportunityStage", Stage.OPEN, Stage.WON).getCodes());
+        assertNull(Label.listOf("OpportunityStage", Stage.OPEN).getCodes());
+        assertArrayEquals(
+                new String[] {"OpportunityStage.OPEN"},
+                Label.of("OpportunityStage", Stage.OPEN).getCodes());
+        assertNotEquals(Label.listOf("OpportunityStage", Stage.OPEN), Label.anyOf("OpportunityStage", Stage.OPEN));
         assertEquals(Label.of("Account"), Label.of("Account"));
         assertEquals(Label.of("Account").hashCode(), Label.of("Account").hashCode());
 

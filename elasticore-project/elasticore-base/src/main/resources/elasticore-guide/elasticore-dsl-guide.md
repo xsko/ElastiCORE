@@ -425,7 +425,7 @@ entity:
 
 - **A state with no outgoing arrow is an end (final) state.** In the example above, `SHIPPED` and `CANCELLED` accept
   no command. For example, sending `cancel` to a shipped order returns 409 (conflict with the current state):
-  `PurchaseOrder cannot cancel when status is SHIPPED; it must be PLACED` (the exception's `getMessage()`: `... it must be [PLACED]`)
+  `PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]` (Kotlin: `... it must be PLACED`)
 - If you need a step after SHIPPED, add a state to the enum and one more command line:
 
 ```yaml
@@ -542,7 +542,7 @@ public void cancel() {
 ```
 
 - **All or nothing**: if any one is not in a start state, the command is refused (409) and **no field changes.**
-  Example: cancelling a shipment whose fee is unpaid (`DUE`) gives `Shipment cannot cancel when fee is DUE; it must be PAID`,
+  Example: cancelling a shipment whose fee is unpaid (`DUE`) gives `Shipment cannot cancel when fee is DUE; it must be [PAID]`,
   and `status` stays `READY`.
 - TypeScript `ShipmentApi.canCancel(dto)` also checks both conditions.
 - The lifecycle comment of the generated class marks the fields that change together, as in `cancel: READY -> CANCELLED  (with fee)`.
@@ -581,7 +581,7 @@ In the Pet Store (`ShopFlowTest.onlyACancelledOrderIsDeleted`):
 DELETE /api/petstore/purchaseOrder/{shipped order}
 HTTP/1.1 409
 { "code": "state.PurchaseOrder.status.delete",
-  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be CANCELLED" }
+  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be [CANCELLED]" }
 ```
 
 - With several state fields, the row is deleted only if **all** of them are in an allowed state (`canDelete()` is an AND). Example: a ticket only when `status: CLOSED` and

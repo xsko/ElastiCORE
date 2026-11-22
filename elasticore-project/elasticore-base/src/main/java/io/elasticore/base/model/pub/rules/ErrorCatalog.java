@@ -114,15 +114,14 @@ public final class ErrorCatalog {
             sb.append("\n# This domain's rules ({0}, {1}: the values the refusal carries)\n");
             // Said only where the values are there: a domain with references alone reads as before.
             if (has(domain, "invariant.")) {
-                sb.append("# invariant.*: {0} the field, {1} the entity, by their labels in the answer's language\n");
+                sb.append("# invariant.*: {0} the field, {1} the entity, by their labels in the answer's language;\n")
+                        .append(
+                                "#   a sentence without '{' is said as written, one with values is a MessageFormat pattern\n");
             }
             if (has(domain, "state.")) {
                 sb.append("# state.*: {0} the state, {1} the states it must be (codes); by their labels in the\n")
                         .append(
                                 "#   answer's language {2} the field, {3} the entity, {4} the state, {5} the states it must be\n");
-            }
-            if (has(domain, "invariant.") || has(domain, "state.")) {
-                sb.append("# A sentence without '{' is said as written; one with values is a MessageFormat pattern.\n");
             }
             for (Map.Entry<String, String> en : domain.entrySet()) line(sb, en.getKey(), en.getValue());
         }

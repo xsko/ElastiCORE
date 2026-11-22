@@ -425,7 +425,7 @@ entity:
 
 - **화살표가 나가지 않는 상태는 끝(최종) 상태**입니다. 위 예에서 `SHIPPED` 와 `CANCELLED` 에서는
   어떤 명령도 받지 않습니다. 예를 들어 배송된 주문에 `cancel` 을 보내면 409 (지금 상태와 충돌):
-  `PurchaseOrder cannot cancel when status is SHIPPED; it must be PLACED` (예외의 `getMessage()`: `... it must be [PLACED]`)
+  `PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]` (Kotlin: `... it must be PLACED`)
 - SHIPPED 다음 단계가 필요하면 enum 에 상태를 더하고 명령 한 줄을 더합니다:
 
 ```yaml
@@ -542,7 +542,7 @@ public void cancel() {
 ```
 
 - **모두 아니면 아무것도**: 하나라도 시작 상태가 아니면 거부하고(409) **어느 필드도 바뀌지 않습니다.**
-  예) 배송비를 안 낸(`DUE`) 배송을 취소하면 `Shipment cannot cancel when fee is DUE; it must be PAID`,
+  예) 배송비를 안 낸(`DUE`) 배송을 취소하면 `Shipment cannot cancel when fee is DUE; it must be [PAID]`,
   `status` 는 `READY` 그대로.
 - TypeScript `ShipmentApi.canCancel(dto)` 도 두 조건을 모두 봅니다.
 - 생성 클래스의 생명주기 주석에 `cancel: READY -> CANCELLED  (with fee)` 처럼 함께 바뀌는 필드가 표시됩니다.
@@ -581,7 +581,7 @@ Pet Store 에서 (`ShopFlowTest.onlyACancelledOrderIsDeleted`):
 DELETE /api/petstore/purchaseOrder/{배송된 주문}
 HTTP/1.1 409
 { "code": "state.PurchaseOrder.status.delete",
-  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be CANCELLED" }
+  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be [CANCELLED]" }
 ```
 
 - 상태 필드가 여러 개면 **모두** 허용 상태여야 지워집니다 (`canDelete()` 는 AND). 예) 티켓은 `status: CLOSED` 이고

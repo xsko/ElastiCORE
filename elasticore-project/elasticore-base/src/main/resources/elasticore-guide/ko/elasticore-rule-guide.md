@@ -422,7 +422,7 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
 엔티티의 `states:` 가 상태 필드와 명령마다의 이동을 선언하면, 명령은 **추상 메서드가 아니라
 `XxxBase` 의 구체 메서드**로 생성됩니다. 문법은 `elasticore-dsl-guide.md` 의 "생명주기" 를 보세요.
 
-- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be PLACED" (필드·엔티티·상태는 라벨로 - "오류 코드와 다국어").
+- 시작 상태가 아닌데 명령이 오면 `InvariantViolationException` - API 는 409 (지금 상태와 충돌): "PurchaseOrder cannot ship when status is CANCELLED; it must be [PLACED]" (필드·엔티티·상태는 라벨로 - "오류 코드와 다국어").
   코드는 `state.PurchaseOrder.status.ship` 이고 요청 언어로 번역할 수 있습니다 (아래 "오류 코드와 다국어").
 - 대상 상태와 같은 이름의 이벤트가 `@event` 에 있으면 발행합니다 (`SHIPPED` -> `raiseShipped()`).
 - `canShip()` 이 함께 생기고, TypeScript 클라이언트에도 `canShip(dto)` 가 생깁니다 (버튼 표시용).
@@ -1060,7 +1060,7 @@ HTTP/1.1 409
 답합니다. 그 파일의 `refused(...)` 를 새로 생성된 것처럼 `state.` 는 409, `reference.` 는 404 로 고치세요.
 
 `Accept-Language` 가 없거나 번역이 없는 언어면 (필드는 `@label(en=Order status)` 로, 나머지는 이름으로)
-`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be PLACED"` 입니다.
+`"detail": "PurchaseOrder cannot cancel when Order status is SHIPPED; it must be [PLACED]"` 입니다.
 
 **코드 체계**
 
@@ -1083,13 +1083,14 @@ HTTP/1.1 409
 - 다른 언어, 예를 들어 `ko`: `@label(ko=...)`; 없으면 도메인의 `env.yml` 에 `config: labelLanguage: ko` 가 있을 때 `--` 라벨
   (`elasticore-env-guide.md`); 그것도 아니면 이름.
 - 상태: enumeration 의 `<라벨 컬럼>_ko` 컬럼(`label_ko`, `elasticore-dsl-guide.md`), `labelLanguage` 에서는 라벨 컬럼 그 자체,
-  없으면 상수(`SHIPPED`). 가능한 상태가 여럿이면 `, ` 로 잇습니다.
+  없으면 `{0}` 이 말하는 코드(`SHIPPED`); 가능한 상태는 `{1}` 의 틀을 그대로 씁니다(`[PLACED, SHIPPED]`).
 - 메시지 번들 옆의 라벨 번들(`i18n/<domain>-labels_<언어>.properties`, 생성)에서 읽습니다. 생성된 거절은 이것을
   `io.elasticore.springboot3.validation.Label` 값으로 넘깁니다 - Java 와 Kotlin, 모든 mode 와 아키텍처.
 - 기본 문구는 이 값으로 부릅니다 (`invariant.Account.annualRevenue.min={0} must be at least 0`,
   `state.PurchaseOrder.status.cancel={3} cannot cancel when {2} is {4}; it must be {5}`). DSL 에 적은 문장
   (`@min(0.01, 'price must be positive')`) 은 적은 그대로이고, 번역은 값을 써도 되고 안 써도 됩니다.
-- 전에 쓴 번역은 뜻이 그대로입니다: `state.*` 의 `{0}` 과 `{1}` 은 여전히 코드입니다. 예외의
+- 전에 쓴 번역은 뜻이 그대로입니다: `state.*` 의 `{0}` 과 `{1}` 은 여전히 코드이고, 라벨이 없는 모델은 영어로
+  전과 글자 하나 다르지 않게 답합니다(`... it must be [PLACED]`). 예외의
   `getMessage()` (로그) 는 전처럼 이름이 든 영어 문장입니다.
 
 **번역하는 법**
@@ -1130,9 +1131,9 @@ typeMismatch.lines.quantity=수량은 0 이상의 정수입니다
 다만 `spring.messages.basename` 을 바꿔 둔 번역은 도메인 번들(영어 기본 문구)보다 뒤에 찾으므로, 도메인 코드의
 번역은 `messages_<언어>.properties` 나 도메인 번들 옆 파일에 두세요.
 
-- **작은따옴표**: 값은 `{` 가 든 문장에만 들어갑니다. 자리(`{0}`)가 있는 문장은 Java `MessageFormat` 규칙을 따라
-  `'` 를 `''` 로 적고 (`can''t`), 자리가 없는 문장은 적은 그대로 나갑니다 (`can't`) - 그래서 값이 생기기 전에 쓴
-  `invariant.*` 번역도 작은따옴표가 그대로입니다. 값이 있는 문장의 다른 `'` 는 `''` 로 적습니다.
+- **작은따옴표**: 값이 들어가는 문장(`state.*`, `reference.*`, 값을 준 손으로 쓴 코드)은 자리가 있든 없든 Java
+  `MessageFormat` 규칙을 따라 `'` 를 `''` 로 적습니다 (`can''t`). `invariant.*` 문장은 `{` 가 있을 때만 값을 받습니다:
+  자리가 없는 문장은 값이 생기기 전처럼 적은 그대로 나가고 (`can't`), `{0}` 이 있는 문장은 `''` 로 적습니다.
 - 같은 엔티티의 두 `@invariant` 가 같은 이름이 되면 두 번째에 `-2` 가 붙습니다. 조건식의 `+ - * /` 와 한글 등은
   이름에 구분되어 들어갑니다 (`a + b > 0` -> `a-plus-b-gt-0`).
 

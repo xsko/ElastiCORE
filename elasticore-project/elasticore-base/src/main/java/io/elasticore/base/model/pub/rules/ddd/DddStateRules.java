@@ -625,17 +625,23 @@ public class DddStateRules implements CodeRules {
      * The values a refusal adds after the two codes, said by their labels in
      * the response's language: {2} the field, {3} the entity, {4} the state
      * it is in, {5} the states the step needs - here the mover's "from".
+     * Without a label each reads as {0} and {1} do: the list framed as the
+     * code list beside it (Java: Arrays.toString, Kotlin: joinToString(" or ")).
      */
     private static String labels(EntitySpec e, String field, String type, boolean kt) {
         return labels(e, field, type, kt, null);
     }
 
-    /** The same, the states the step needs named (a delete's); null for the method's "from". */
+    /**
+     * The same, the states the step needs named (a delete's, whose {1} is
+     * "[A, B]" in both languages); null for the method's "from".
+     */
     private static String labels(EntitySpec e, String field, String type, boolean kt, List<String> allowed) {
         String label = "io.elasticore.springboot3.validation.Label";
         String states = allowed == null ? (kt ? "*from" : "from") : join(allowed, ", ");
+        String list = allowed == null && kt ? "anyOf" : "listOf";
         return String.format(
-                "%s, %s, %s.of(\"%s\", this.%s), %s.anyOf(\"%s\"%s)",
+                "%s, %s, %s.of(\"%s\", this.%s), %s." + list + "(\"%s\"%s)",
                 DddInvariantRules.label(DddInvariantRules.fieldKey(e, field(e, field)), kt),
                 DddInvariantRules.label(e.getName(), kt),
                 label,
