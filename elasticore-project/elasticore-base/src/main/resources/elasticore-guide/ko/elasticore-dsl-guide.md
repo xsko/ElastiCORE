@@ -104,7 +104,7 @@ entity:
 
 > **동작 범위:** 생성기가 쓰는 모든 모드·언어·아키텍처(JPA, MyBatis, MongoDB; Java, Kotlin) - 모델 정보이다.
 > 라벨 번들은 v3 번들이 API 가 있는 도메인(`@expose`)에 쓰고, TypeScript 클라이언트의 `labels`, `XxxMeta`,
-> `XxxLabels` 는 `ts-model`, synonyms 는 `ossie-export` 가 쓴다(enumeration 컬럼은 아직 아님).
+> `XxxLabels` 는 `ts-model`, synonyms 는 `ossie-export` 가 쓴다(enumeration 의 코드: 아래).
 
 `--` 텍스트가 도메인 언어의 라벨이다. 같은 라벨을 다른 언어로는 같은 줄의 `@label` 에 `언어=텍스트` 로 쓴다 -
 필드 줄과 `meta:` 줄(entity, DTO, enumeration) 모두:
@@ -207,7 +207,12 @@ enumeration:
   ```
 - 라벨 번들에는 `OrderStatus.PENDING` (상수 이름이고, 저장 코드 `PEN` 이 아니다)이 들어간다 - 기본 파일에는 라벨 컬럼,
   언어별 파일에는 그 번역. 이런 컬럼만 있어도 번들을 쓴다.
-- 아직 아님: Apache Ossie 내보내기와 메시지 번들은 라벨 컬럼만 읽는다.
+- Apache Ossie 내보내기(`ossie-export`)는 코드마다 그 라벨들을, 라벨 다음에 언어 이름 순으로 준다:
+  `ai_context: "Codes: PEN = 대기 (en: Pending, zh-TW: 待處理), SHP = 배송 (en: Shipped)"` (`@terms` 가 있으면
+  `instructions`), 그리고 필드의 `ELASTICORE` 확장에 `codes` 옆에 데이터로:
+  `"code_labels": {"PEN": {"en": "Pending", "zh-TW": "待處理"}, "SHP": {"en": "Shipped"}}`. 라벨 컬럼은 `codes` 와
+  같이 `label`, `name`, `desc` 라는 이름의 첫 필드다.
+- 아직 아님: 메시지 번들은 라벨 컬럼만 읽는다.
 - 이런 컬럼이 없는 enumeration 은 전과 똑같이 생성된다.
 
 ### Meta 어노테이션
@@ -805,7 +810,7 @@ Ossie 의 DataType 은 10개뿐입니다: `String`, `Integer`, `Decimal`, `Float
 | `datetime` / `LocalDateTime` | `LocalDateTime` | `"2026-10-03 09:30:00"` | `string` | `DateTime` | 시간대 없음. DTO 에 `@JsonFormat("yyyy-MM-dd HH:mm:ss")` |
 | `timestamp` | `java.time.Instant` | `"2026-10-03T00:30:00Z"` | `string` | `DateTimeTz` | 한 순간. `+09:00` 을 붙여 보내도 같은 순간으로 저장, UTC 로 돌려줌 |
 | `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | 행 안의 긴 바이트 (`@JdbcTypeCode(LONG32VARBINARY)`) |
-| `EnumName` | 그 enum | 코드 (`"PLC"`) | enum | `String` | `@db(code)` 의 값이 저장됨. Ossie 에는 코드와 라벨을 `ai_context` 로 |
+| `EnumName` | 그 enum | 코드 (`"PLC"`) | enum | `String` | `@db(code)` 의 값이 저장됨. Ossie 에는 코드와 라벨(과 `label_en` 컬럼)을 `ai_context` 로 |
 | `EntityName` | 엔티티 참조 | (식별자 필드) | - | 관계 | `@ManyToOne` 자동. Ossie `relationships` 로 |
 
 - **어느 시간 타입을 쓰나**: 사람이 보는 날짜·시각(영업일, 예약 시각)은 `date`·`datetime`, "언제 일어났나"
