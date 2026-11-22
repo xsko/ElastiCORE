@@ -128,9 +128,9 @@
         그리고 <b>DSL 로 아직 표현할 수 없는 것</b>까지 적습니다. "확인한 결과" 열은 실행 중인 애플리케이션에 HTTP 로 요청해서 본 응답입니다.
         DSL 과 생성 코드 발췌는 빌드 결과물에서 그대로 읽어 왔습니다.</p>
       <div class="stats">
-        <div class="stat"><b>169</b><span>DSL 줄 (4개 파일)</span></div>
-        <div class="stat"><b>158 · 12,438</b><span>생성된 Java 파일 · 줄</span></div>
-        <div class="stat"><b>50 · 1,724</b><span>생성된 TypeScript 파일 · 줄</span></div>
+        <div class="stat"><b>171</b><span>DSL 줄 (4개 파일)</span></div>
+        <div class="stat"><b>158 · 12,468</b><span>생성된 Java 파일 · 줄</span></div>
+        <div class="stat"><b>50 · 1,753</b><span>생성된 TypeScript 파일 · 줄</span></div>
         <div class="stat"><b>7 · 228</b><span>손으로 쓴 Java 파일 · 줄</span></div>
         <!-- counted by build_guide.py; line counts leave out blank lines; the screens (web/src) are hand-written too -->
       </div>
@@ -498,7 +498,8 @@
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
+    # export: POST /api/petstore/item/export - the search's rows as a CSV file (an .xlsx workbook needs Apache POI)
+    meta: entity @root @editable @expose(pageSize=50, methods="create,read,search,update,delete,export") @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
@@ -609,7 +610,8 @@ public CustomerDTO me() {
   <script type="text/plain" id="src-order">  PurchaseOrder:
     # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
     # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
-    meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
+    # export: what the search gives - a customer's own orders, every order for a MANAGER (@owner, read=owner|MANAGER)
+    meta: entity @root @expose(pageSize=20, methods="create,read,search,update,delete,export") @event(Placed(total), Shipped, Cancelled) @owner(customerId)
           @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid
@@ -971,7 +973,8 @@ datasets:
       discontinuedAt: timestamp @deleted       # taken off the catalog: kept, since items and orders still name it
 
   Item:
-    meta: entity @root @editable @expose(50) @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
+    # export: POST /api/petstore/item/export - the search's rows as a CSV file (an .xlsx workbook needs Apache POI)
+    meta: entity @root @editable @expose(pageSize=50, methods="create,read,search,update,delete,export") @access(read=public) @terms(pet, 반려동물, 상품) @label(en=Item for sale, ja=販売単位) -- 판매 단위 (Large, Male Puppy ...)
     fields:
       itemId:      long @id @sequence
       name:        string(30)! @search(like)
@@ -1031,7 +1034,8 @@ datasets:
   PurchaseOrder:
     # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
     # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
-    meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
+    # export: what the search gives - a customer's own orders, every order for a MANAGER (@owner, read=owner|MANAGER)
+    meta: entity @root @expose(pageSize=20, methods="create,read,search,update,delete,export") @event(Placed(total), Shipped, Cancelled) @owner(customerId)
           @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid
