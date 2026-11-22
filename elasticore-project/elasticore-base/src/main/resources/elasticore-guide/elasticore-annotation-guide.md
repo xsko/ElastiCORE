@@ -19,10 +19,10 @@ Product:
 > **Since: 3.0** (3.0.261105-rc10. 3.0 rule engine. The 2.x generator does not read it)
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (not generated)
 
-Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update` and
-`delete` - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117-rc17). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
+Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update`,
+`delete` and `export` (below) - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117-rc17). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
 The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use case (`XxxUseCase`) promises only the writes listed.
-The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before.
+The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before - and no `export`, which comes only where it is listed.
 ```yaml
 Country:
   meta: entity @root @expose(pageSize=300, methods="read,search")   # a lookup the application seeds: read and search only
@@ -35,6 +35,33 @@ Notice:
   endpoints, never more. `methods=""` serves none of the five.
 - Narrowing it later takes the endpoints out of a generated Controller you have not edited, or edited elsewhere (merged). A Controller
   edited in an endpoint that goes is kept as it is, and the build names the endpoints it still serves.
+
+#### export - the search as a CSV file or an .xlsx workbook
+> **Since: 3.0** (3.0 rule engine. The 2.x generator does not read it)
+> **Works in:** JPA, MyBatis, MongoDB; Java, Kotlin; layered, ddd, hexagonal; TypeScript client · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (not generated)
+
+Listed in `methods` - and only there: without `methods` an entity keeps the five - it adds `POST /api/<domain>/<entity>/export` beside
+`POST .../search`, and `exportXxx(body)` (a `Blob`) to the TypeScript client. Every part of the body is optional:
+```json
+{ "search": { "name": "Puppy" }, "sortCode": "name+", "columns": ["itemId", "name", "unitCost"], "headers": ["No.", "Pet", "Price"], "format": "csv" }
+```
+- The rows: the search `POST .../search` makes with `search` (the same search DTO) - its conditions, the search's `@access` and the
+  `@owner` filter - every page of it, in `sortCode`'s order (absent: the search's own; the key goes after it, so a row does not move
+  between two pages). The pages are read one after another: a row changed meanwhile may be in or out.
+- `columns`: properties of the response DTO, in that order (a `@ref` one by its name, `productName`); absent: all of them, in the
+  DTO's order. `headers`: the titles, one a column; absent: each column's label in the request's language (`Accept-Language`) from
+  `i18n/<domain>-labels_<lang>.properties` (`@label(en=...)`, `labelLanguage`; the response DTO's key, then the entity's), else its name.
+- A value is what the response's JSON shows: masked by `@Mask`, an enumeration by its code (not its label), money and a date as
+  written. A text that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a `'` before it, so that a spreadsheet does
+  not run it (CSV injection); a number does not.
+- CSV: UTF-8 with a BOM, fields quoted as RFC 4180, CRLF. An `.xlsx` workbook for `"format": "xlsx"` or `Accept:
+  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, where the application has Apache POI
+  (`implementation 'org.apache.poi:poi-ooxml:5.5.1'`; the runtime does not bring it) - else 406. In a workbook a number is a number
+  (one of more than 15 digits is text), a date a date, a text never a formula; a sheet holds 1,048,575 rows.
+- More rows than `elasticore.export.max-rows` (`application.yml`, 100,000 unless set; `elasticore-env-guide.md` 6-4) is 400
+  with the count, before anything is written. A column the response does not have, `headers` of another length, a `format`
+  other than csv or xlsx: 400. A failure after the first row (the database goes away) leaves the file cut short.
+- Example: `Item` and `PurchaseOrder` of the pet store (`ExportTest`, `ExportLimitTest`), `Gadget` of `elasticore-template-mybatis`.
 
 ### @service
 Same as `@expose`, but no Controller is generated. For internal services.

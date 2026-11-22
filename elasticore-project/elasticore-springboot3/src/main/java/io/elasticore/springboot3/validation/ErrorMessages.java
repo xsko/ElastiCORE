@@ -193,6 +193,14 @@ public final class ErrorMessages {
     }
 
     /**
+     * A label in the language this request is answered in, as a refusal's
+     * value is said: what an export titles its columns with.
+     */
+    public String label(Label label) {
+        return label(label, language());
+    }
+
+    /**
      * A label in the response's language: the label bundle's file for that
      * language itself - {@code _en} for the bundles' own wording (English) -
      * never its default file, which holds the DSL's "--" text; else the name,

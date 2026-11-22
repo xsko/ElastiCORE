@@ -912,7 +912,7 @@ versions) check the following before writing. The 2.x-compatible bundle (`jpa-sp
 | Batch update `batchUpdate` (`PUT /batch`) | Calls `update(dto)` for each row in one transaction (from 3.0.261022-rc1) - a rule that overrides `update()` in the extension service also applies to the batch update, and each row gets the same checks, `readBack` and 409 conversion | Same as a single update |
 
 **`@expose(methods="read,search")`** lists what the controller serves (`create`, `read`, `search`, `update` with `batchUpdate`,
-`delete` with `deleteBatch`); the TypeScript client follows it and the use case drops the writes not listed, while the service keeps
+`delete` with `deleteBatch`, and `export`, `POST /export` - only where listed); the TypeScript client follows it and the use case drops the writes not listed, while the service keeps
 every method. It replaces `@restExclude`, which is deprecated and still applies as below (the build names the `methods` list to use).
 
 **`@restExclude(...)`** removes methods from the service, controller, use case and TypeScript client. The names are the service methods
