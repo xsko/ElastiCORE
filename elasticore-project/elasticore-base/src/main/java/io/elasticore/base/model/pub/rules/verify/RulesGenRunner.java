@@ -2768,8 +2768,7 @@ public final class RulesGenRunner {
         s.boot4 = RulesConfig.springBootMajor() >= 4;
         s.mongo = persistence() == RulesConfig.Persistence.MONGO;
         s.mybatis = persistence() == RulesConfig.Persistence.MYBATIS;
-        s.lifecycles = selects(io.elasticore.base.model.pub.rules.ddd.DddStateRules.class);
-        s.invariants = selects(io.elasticore.base.model.pub.rules.ddd.DddInvariantRules.class);
+        s.readRuleSets(this::selects);
         s.application = applicationFor(pkg);
         for (ContractTestSource.Source src : contract.domain(model, domain.className(), specs, pkg, s)) {
             ArtifactTarget out = kotlin

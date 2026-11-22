@@ -91,6 +91,15 @@ final class ContractTestSource {
         boolean mybatis;
         /** The application the tests start, when Spring would not find it from their package; null when it would. */
         String application;
+
+        /**
+         * Reads which of the domain-model rule sets the run selected. The rule
+         * sets are named here, not in the runner, which knows none of them.
+         */
+        void readRuleSets(java.util.function.Predicate<Class<?>> selected) {
+            lifecycles = selected.test(DddStateRules.class);
+            invariants = selected.test(DddInvariantRules.class);
+        }
     }
 
     private final List<ECoreModel> models;
