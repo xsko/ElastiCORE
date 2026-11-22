@@ -162,6 +162,7 @@ What it generates:
    ```ts
    export const ItemMeta: { label: string; labels: Record<string, string> } = { label: "판매 단위", labels: { en: "Item for sale", ja: "販売単位" } };
    ```
+   It is not written when the file already imports or declares that name (a field of a type called `ItemMeta`).
 3. **The Apache Ossie semantic model** - the translations are the field's (and the dataset's) `ai_context.synonyms`,
    after the `@terms` words, so a question in that language finds the same field. The `description` stays the `--` label.
 
@@ -191,9 +192,10 @@ enumeration:
 
 - The label column is the one `XxxLabel` of the TypeScript client shows: the field marked `@label` (a `--` comment on
   an enumeration field is one), else the first named `label`, `name`, `desc`, `description` or `title`.
-- Snake form only: `name_en`, `name_ja`, `name_pt_BR` (`pt-BR`); `nameEn` is an ordinary column. The language is read as
-  an `@label(xx=...)` key is, so `name_id` is Indonesian and `name_no` Norwegian - name such a column otherwise. A suffix
-  that is not a language tag (`name_long`) leaves an ordinary column, and the build warns (`DSL_WARN`).
+- A text column in snake form whose suffix starts with a two-letter ISO 639-1 language: `name_en`, `name_ja`,
+  `name_pt_BR` (`pt-BR`). `nameEn`, `name_kor`, `name_old` and a number column (`name_no: int`) are ordinary columns.
+  A text `name_id` is Indonesian and `name_no` Norwegian - name such a column otherwise. Beside a translation column, a
+  text column whose suffix is not a language (`name_kor` beside `name_en`) is ordinary, and the build warns (`DSL_WARN`).
 - A line that leaves a column out (`SHIPPED` has no `zh-TW` above) has no label in that language: show the label column.
   The columns stay columns of the enumeration - the Java and Kotlin enums get them as properties.
 - The TypeScript client gets `OrderStatusLabels` beside `OrderStatusLabel`, which is unchanged, by the same keys:

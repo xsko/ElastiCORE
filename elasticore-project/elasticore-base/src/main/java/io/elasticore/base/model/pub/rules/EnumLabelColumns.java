@@ -22,8 +22,10 @@ import java.util.TreeMap;
  *
  * Which column is the label is each output's own choice and is passed in;
  * {@link #labelColumn} is the one the TypeScript client and the label bundle
- * show. A column whose suffix is not a language (label_long) is not a
- * translation, and the build says so once.
+ * show. Only a text column whose suffix starts with an ISO 639-1 language
+ * is a translation; another one (label_long, name_kor, name_no as a number)
+ * is an ordinary column, and beside a real translation column the build says
+ * so once for a text one - likely a typo.
  */
 public final class EnumLabelColumns {
 
@@ -60,38 +62,68 @@ public final class EnumLabelColumns {
         Map<String, Integer> out = new TreeMap<String, Integer>();
         for (int i = 0; fields != null && label != null && i < fields.size(); i++) {
             String suffix = suffix(fields.get(i), label, except);
-            if (suffix == null || !LabelTranslations.isLanguage(suffix)) continue;
+            if (suffix == null || !isText(fields.get(i)) || !isLanguage(suffix)) continue;
             String language = LabelTranslations.normalized(suffix);
             if (!out.containsKey(language)) out.put(language, i);
         }
         return out;
     }
 
-    /** The columns named {@code <label column>_<suffix>} whose suffix is not a language tag. */
+    /**
+     * The text columns named {@code <label column>_<suffix>} whose suffix is
+     * not a language - beside a translation column, likely a typo (name_kor
+     * beside name_en).
+     */
     public static List<String> notLanguages(List<Field> fields, Field label, String... except) {
         List<String> out = new ArrayList<String>();
         for (int i = 0; fields != null && label != null && i < fields.size(); i++) {
             String suffix = suffix(fields.get(i), label, except);
-            if (suffix != null && !LabelTranslations.isLanguage(suffix))
+            if (suffix != null && isText(fields.get(i)) && !isLanguage(suffix))
                 out.add(fields.get(i).getName());
         }
         return out;
+    }
+
+    /** The two-letter ISO 639-1 languages (en, ja, pt, no, id). */
+    private static final java.util.Set<String> ISO_LANGUAGES =
+            new java.util.HashSet<String>(java.util.Arrays.asList(Locale.getISOLanguages()));
+
+    /**
+     * A suffix that names a language: a language tag as an @label(xx=...) key
+     * is, whose first part is an ISO 639-1 language - pt_BR and zh_TW are,
+     * old, kor, cd and seq are not.
+     */
+    static boolean isLanguage(String suffix) {
+        if (!LabelTranslations.isLanguage(suffix)) return false;
+        String language = LabelTranslations.normalized(suffix);
+        int dash = language.indexOf('-');
+        String first = dash < 0 ? language : language.substring(0, dash);
+        return first.length() == 2 && ISO_LANGUAGES.contains(first);
+    }
+
+    /** A label is text: a number or a date column is never one, whatever its name. */
+    private static boolean isText(Field f) {
+        return f.getTypeInfo() != null && f.getTypeInfo().isStringType();
     }
 
     /**
      * Each constant's label in the other languages: constant name -> language
      * -> text, in the order the constants are declared; a constant whose line
      * gives no value for a language has none in it. Empty when the
-     * enumeration has no translation column. Warns once for a column whose
-     * suffix is not a language.
+     * enumeration has no translation column. Warns once for a text column
+     * whose suffix is not a language, when the enumeration has a translation.
      */
     public static Map<String, Map<String, String>> translations(EnumModel en, Field label) {
         if (en == null || label == null || en.getFieldItems() == null) return Collections.emptyMap();
         List<Field> fields = en.getFieldItems().getItemList();
         String[] except = codeFields(en);
-        for (String column : notLanguages(fields, label, except)) {
+        Map<String, Integer> columns = columns(fields, label, except);
+        // Said only beside a real translation column: an enumeration that never asked for
+        // translations (name_short, name_kana) keeps its columns without a word.
+        for (String column :
+                columns.isEmpty() ? Collections.<String>emptyList() : notLanguages(fields, label, except)) {
             SourceCode.dslWarnOnce(String.format(
-                    "[%s] enum %s: column '%s' is not a translation of '%s' - '%s' is not a language tag;"
+                    "[%s] enum %s: column '%s' is not a translation of '%s' - '%s' is not an ISO 639-1 language;"
                             + " a label in another language is a column named %s_<language> (%s_en, %s_pt_BR)",
                     en.getIdentity().getDomainId(),
                     en.getIdentity().getName(),
@@ -102,7 +134,6 @@ public final class EnumLabelColumns {
                     label.getName(),
                     label.getName()));
         }
-        Map<String, Integer> columns = columns(fields, label, except);
         if (columns.isEmpty() || en.getEnumConstantItems() == null) return Collections.emptyMap();
         Map<String, Map<String, String>> out = new LinkedHashMap<String, Map<String, String>>();
         for (EnumConstant c : en.getEnumConstantItems().getItemList()) {
