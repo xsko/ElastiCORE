@@ -87,13 +87,15 @@ final class ContractTestSource {
         boolean lifecycles;
         /** The root's @invariant is checked (the domain-model rule sets). */
         boolean invariants;
+        /** mode: mybatis - the schema is the application's, no Hibernate makes it. */
+        boolean mybatis;
         /** The application the tests start, when Spring would not find it from their package; null when it would. */
         String application;
     }
 
     private final List<ECoreModel> models;
 
-    /** The entities whose controller this run wrote, by name. */
+    /** The entities whose controller this run wrote, as domain:Entity (key). */
     private final Set<String> served;
 
     /** What the summary says: the tests written, and what was not with why. */
@@ -101,11 +103,23 @@ final class ContractTestSource {
 
     final List<String> skipped = new ArrayList<String>();
 
+    /** The specs of the run's entities, as domain:Entity - two domains may each have a Customer. */
     private final Map<String, EntitySpec> specs = new HashMap<String, EntitySpec>();
-    private final Map<String, EntitySpec> dtos = new HashMap<String, EntitySpec>();
 
-    /** The entities of the domain being written. */
-    private final Set<String> ownNames = new java.util.HashSet<String>();
+    /** Each spec's DTO, and the model each spec was read from: by the spec itself, never by a name. */
+    private final java.util.IdentityHashMap<EntitySpec, EntitySpec> dtos =
+            new java.util.IdentityHashMap<EntitySpec, EntitySpec>();
+
+    private final java.util.IdentityHashMap<EntitySpec, ECoreModel> modelOf =
+            new java.util.IdentityHashMap<EntitySpec, ECoreModel>();
+
+    /** The model of the domain being written: an entity's name is looked up there first. */
+    private ECoreModel current;
+
+    /** The key an entity is known by in the run: its domain and its name. */
+    static String key(ECoreModel model, String entityName) {
+        return model.getInternalDomainName() + ":" + entityName;
+    }
 
     ContractTestSource(List<ECoreModel> models, Set<String> served) {
         this.models = models;
@@ -119,10 +133,10 @@ final class ContractTestSource {
      * with something to test. Empty when there is nothing.
      */
     List<Source> domain(ECoreModel model, String domainName, List<EntitySpec> own, String pkg, Settings s) {
-        ownNames.clear();
+        current = model;
         for (EntitySpec e : own) {
-            specs.put(e.getName(), e);
-            ownNames.add(e.getName());
+            specs.put(key(model, e.getName()), e);
+            modelOf.put(e, model);
         }
         String domainClass = classNameOf(domainName, own);
         String support = domainClass + "ContractSupport";
@@ -155,42 +169,57 @@ final class ContractTestSource {
     /** An entity of the domain with an endpoint to create its rows through: a root the API serves. */
     private boolean testable(EntitySpec e) {
         if (e.hasMeta("embeddable") || e.hasMeta("abstract") || e.isMappedSuperclass()) return false;
-        return served.contains(e.getName());
+        return served.contains(key(current, e.getName()));
     }
 
     // ---- the model --------------------------------------------------------------------
 
-    /** The entity of that name in any domain of the run, as a spec; null when there is none. */
+    /** The entity of that name - the domain being written's first, then any other of the run - or null. */
     private EntitySpec entity(String name) {
         if (name == null) return null;
-        if (specs.containsKey(name)) return specs.get(name);
-        EntitySpec found = null;
+        List<ECoreModel> order = new ArrayList<ECoreModel>();
+        if (current != null) order.add(current);
         for (ECoreModel m : models) {
-            if (m.getEntityModels() == null) continue;
-            Entity entity = m.getEntityModels().findByName(name);
-            if (entity != null) {
-                found = SpecFactory.fromEntity(entity, m, m.getInternalDomainName());
-                break;
-            }
+            if (!java.util.Objects.equals(m, current)) order.add(m);
         }
-        specs.put(name, found);
+        for (ECoreModel m : order) {
+            EntitySpec found = entityIn(m, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /** The entity of that name in that domain, as a spec; null when it has none. */
+    private EntitySpec entityIn(ECoreModel m, String name) {
+        if (m.getEntityModels() == null) return null;
+        String k = key(m, name);
+        if (specs.containsKey(k)) return specs.get(k);
+        Entity entity = m.getEntityModels().findByName(name);
+        if (entity == null) return null;
+        EntitySpec found = SpecFactory.fromEntity(entity, m, m.getInternalDomainName());
+        specs.put(k, found);
+        modelOf.put(found, m);
         return found;
     }
 
-    /** The DTO the entity's API reads and answers: its fields as the request sends them. */
+    /** The DTO the entity's API reads and answers, from the entity's own domain: its fields as a request sends them. */
     private EntitySpec dto(EntitySpec e) {
-        if (dtos.containsKey(e.getName())) return dtos.get(e.getName());
+        if (dtos.containsKey(e)) return dtos.get(e);
         EntitySpec found = null;
-        for (ECoreModel m : models) {
-            if (m.getEntityModels() == null || m.getEntityModels().findByName(e.getName()) == null) continue;
-            if (m.getDataTransferModels() == null) break;
+        ECoreModel m = modelOf.get(e);
+        if (m != null && m.getDataTransferModels() != null) {
             io.elasticore.base.model.dto.DataTransfer d =
                     m.getDataTransferModels().findByName(e.dtoClassName());
             if (d != null) found = SpecFactory.fromDto(d, m, m.getInternalDomainName());
-            break;
         }
-        dtos.put(e.getName(), found);
+        dtos.put(e, found);
         return found;
+    }
+
+    /** Whether the entity's controller is written: as this run recorded it for its domain. */
+    private boolean servedHere(EntitySpec e) {
+        ECoreModel m = modelOf.get(e);
+        return m != null && served.contains(key(m, e.getName()));
     }
 
     /** Whether the API serves a create of the entity: its controller is written and create is not left out. */
@@ -321,6 +350,49 @@ final class ContractTestSource {
             }
             return admits(v) ? v : null;
         }
+
+        /** A whole value inside: the least one, else 1 or the greatest; null when none is. */
+        BigDecimal pickWhole() {
+            BigDecimal v;
+            if (low != null) {
+                v = lowOpen
+                        ? low.setScale(0, java.math.RoundingMode.FLOOR).add(BigDecimal.ONE)
+                        : low.setScale(0, java.math.RoundingMode.CEILING);
+            } else {
+                v = BigDecimal.ONE;
+                if (high != null && !admits(v)) {
+                    v = highOpen
+                            ? high.setScale(0, java.math.RoundingMode.CEILING).subtract(BigDecimal.ONE)
+                            : high.setScale(0, java.math.RoundingMode.FLOOR);
+                }
+            }
+            return admits(v) ? v : null;
+        }
+
+        /** For a float: a value inside, never a fractional end, which a float holds only approximately. */
+        BigDecimal pickFloat() {
+            BigDecimal v = pick(BigDecimal.ONE);
+            boolean atEnd = (low != null && v != null && v.compareTo(low) == 0)
+                    || (high != null && v != null && v.compareTo(high) == 0);
+            if (v == null || !fractional(v) || !atEnd) return v;
+            if (low != null && admits(low.add(BigDecimal.ONE))) return low.add(BigDecimal.ONE);
+            if (low != null && high != null) {
+                BigDecimal mid = low.add(high).divide(BigDecimal.valueOf(2));
+                if (admits(mid)) return mid;
+            }
+            return null;
+        }
+
+        /** How many values from v in whole steps the range holds, up to a billion. */
+        long wholeSteps(BigDecimal v) {
+            long most = 1000000000L;
+            if (high == null) return most;
+            BigDecimal room = high.subtract(v).setScale(0, java.math.RoundingMode.FLOOR);
+            long n = room.compareTo(BigDecimal.valueOf(most)) > 0 ? most : room.longValue() + 1;
+            // An open end is not a value: high itself is left out when v reaches it in whole steps.
+            if (highOpen && v.add(BigDecimal.valueOf(n - 1)).compareTo(high) >= 0) n--;
+            return n;
+        }
     }
 
     /** A number type's step: 1 for a whole number and a floating one, the scale's for a decimal. */
@@ -350,6 +422,89 @@ final class ContractTestSource {
                 || "P_DOUBLE".equals(t)
                 || "FLOAT".equals(t)
                 || "DOUBLE".equals(t);
+    }
+
+    /** A float, which keeps a fraction only approximately: its checks compare it widened to a double. */
+    private static boolean float32(FieldSpec f) {
+        String t = f.baseTypeName();
+        return "P_FLOAT".equals(t) || "FLOAT".equals(t);
+    }
+
+    private static boolean fractional(BigDecimal v) {
+        return v.stripTrailingZeros().scale() > 0;
+    }
+
+    /** A whole number's {passes, fails} at a promise's bound: qty > 0.5 is 1 and 0; null where none is (== 0.5). */
+    static BigDecimal[] wholeEnds(String operator, BigDecimal bound) {
+        BigDecimal floor = bound.setScale(0, java.math.RoundingMode.FLOOR);
+        BigDecimal ceil = bound.setScale(0, java.math.RoundingMode.CEILING);
+        switch (operator) {
+            case ">":
+                return new BigDecimal[] {floor.add(BigDecimal.ONE), floor};
+            case ">=":
+                return new BigDecimal[] {ceil, ceil.subtract(BigDecimal.ONE)};
+            case "<":
+                return new BigDecimal[] {ceil.subtract(BigDecimal.ONE), ceil};
+            case "<=":
+                return new BigDecimal[] {floor, floor.add(BigDecimal.ONE)};
+            default:
+                return fractional(bound) ? null : new BigDecimal[] {bound, bound.add(BigDecimal.ONE)};
+        }
+    }
+
+    private static final java.util.regex.Pattern NOT_ON_H2 = java.util.regex.Pattern.compile(
+            "(?i)\\b(jsonb|xml|hstore|inet|cidr|macaddr|tsvector|citext|geometry|geography)\\b");
+
+    private static final java.util.regex.Pattern COLUMN_DEFINITION =
+            java.util.regex.Pattern.compile("columnDefinition\\s*=\\s*\"([^\"]*)\"");
+
+    /**
+     * Why H2 - the database the tests write - cannot make the entity's table: a column declared with a
+     * type it has not (@columnDef('jsonb'), xml ...); null when none is.
+     */
+    static String h2Refuses(EntitySpec e) {
+        for (FieldSpec f : e.allFields()) {
+            List<String> definitions = new ArrayList<String>();
+            String def = f.dslValueAny("columnDef", "columndef", "columnDefinition", "columndefinition");
+            if (def != null) definitions.add(def);
+            for (String line : f.nativeAnnotationLines()) {
+                java.util.regex.Matcher m = COLUMN_DEFINITION.matcher(line);
+                while (m.find()) definitions.add(m.group(1));
+            }
+            for (String d : definitions) {
+                java.util.regex.Matcher m = NOT_ON_H2.matcher(d);
+                if (m.find()) {
+                    return f.name() + "'s column is " + m.group(1).toLowerCase(java.util.Locale.ROOT)
+                            + ", which H2 - the tests' database - cannot make";
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Whether each row needs its own value of the field: @unique, a unique index on it alone, or the key. */
+    static boolean unique(EntitySpec e, FieldSpec f) {
+        if (declaresUnique(f)) return true;
+        FieldSpec declared = field(e, f.name());
+        if (declared != null && declaresUnique(declared)) return true;
+        if (e.pkFields().size() == 1 && e.pkFields().get(0).name().equals(f.name())) return true;
+        String column = declared == null ? null : declared.dbColumnName();
+        String snake = f.name().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+        for (EntitySpec.IndexSpec idx : e.indexes()) {
+            if (idx.unique() == null
+                    || !"true".equalsIgnoreCase(idx.unique().replace("\"", "").trim())) continue;
+            if (idx.columnList() == null) continue;
+            String c = idx.columnList().replace("\"", "").trim();
+            if (c.equalsIgnoreCase(f.name())
+                    || c.equalsIgnoreCase(snake)
+                    || (column != null && c.equalsIgnoreCase(column))) return true;
+        }
+        return false;
+    }
+
+    private static boolean declaresUnique(FieldSpec f) {
+        return f.hasDsl("unique")
+                && !"false".equals(String.valueOf(f.dslValue("unique")).trim());
     }
 
     private static BigDecimal number(String text) {
@@ -533,6 +688,12 @@ final class ContractTestSource {
                         "its references come back to " + target.getName() + " (" + String.join(" -> ", visiting) + ")";
                 return b;
             }
+            // Hibernate makes the tables on H2 (JPA): a column type H2 has not is a table it cannot make.
+            String refused = s.mongo || s.mybatis ? null : h2Refuses(target);
+            if (refused != null) {
+                b.problem = refused;
+                return b;
+            }
             EntitySpec targetDto = target == e ? dto : dto(target);
             if (targetDto == null) {
                 b.problem = "no " + target.dtoClassName() + " to send";
@@ -560,7 +721,7 @@ final class ContractTestSource {
 
         /** Whether its controller is written: as this run wrote it for the domain, as the DSL says for another. */
         private boolean servedAnywhere(EntitySpec target) {
-            return !ownNames.contains(target.getName()) || served.contains(target.getName());
+            return !java.util.Objects.equals(modelOf.get(target), current) || servedHere(target);
         }
 
         /**
@@ -726,6 +887,12 @@ final class ContractTestSource {
                 Deque<String> visiting,
                 Builder into) {
             String type = simple(f.typeName());
+            boolean unique = unique(target, f);
+            if (unique && !f.isStringType() && !numeric(f)) {
+                // An enumeration, a boolean, a date: too few values, or none the generator varies, to make one per row.
+                into.problem = f.name() + " is unique, and the generator makes no value of " + type + " for each row";
+                return null;
+            }
             if (targetDto.isKnownEnum(type) || target.isKnownEnum(type)) {
                 String v = enumValue(targetDto.isKnownEnum(type) ? targetDto : target, type, null);
                 return v == null ? null : lang.string(v);
@@ -743,15 +910,28 @@ final class ContractTestSource {
                 }
                 return obj(parts);
             }
-            if (f.isStringType()) return text(f);
+            if (f.isStringType()) {
+                String v = text(f, unique);
+                if (v == null && unique && f.hasDsl("pattern") && into.problem == null) {
+                    into.problem = f.name() + " is unique, and its @pattern lets the generator make one value only";
+                }
+                return v;
+            }
             if (numeric(f)) {
                 Range r = dtoRange(f);
                 for (Promise p : rules) {
                     if (f.name().equals(p.field) && !p.size && p.bound != null) bound(r, p.operator, p.bound);
                 }
-                BigDecimal v = r.pick(step(f));
+                BigDecimal v = whole(f) ? r.pickWhole() : float32(f) ? r.pickFloat() : r.pick(step(f));
                 if (v == null || (whole(f) && v.stripTrailingZeros().scale() > 0)) return null;
-                return "num(" + lang.string(plain(v)) + ")";
+                if (!unique) return "num(" + lang.string(plain(v)) + ")";
+                // One value per row: whole steps up from the first, as many as the range holds.
+                long span = r.wholeSteps(v);
+                if (span < 2) {
+                    into.problem = f.name() + " is unique, and its bounds let one value only";
+                    return null;
+                }
+                return "serial(" + lang.string(plain(v)) + ", " + span + "L)";
             }
             String base = f.baseTypeName();
             if ("P_BOOLEAN".equals(base) || "BOOLEAN".equals(base)) return "true";
@@ -760,15 +940,23 @@ final class ContractTestSource {
             return null;
         }
 
-        /** A string the field takes: its pattern's, an email, or unique text of a length it allows. */
-        private String text(FieldSpec f) {
+        /**
+         * A string the field takes: its pattern's - varied per row where the
+         * pattern lets it, which a unique one needs - an email, or unique text of
+         * a length it allows.
+         */
+        private String text(FieldSpec f, boolean unique) {
             int max = f.validationMaxLength();
             if (max < 0) max = f.rawLength() > 0 ? f.rawLength() : 0;
             int min = Math.max(0, f.minLength());
             String regexp = f.hasDsl("pattern") ? f.patternRegexp() : null;
             if (regexp != null) {
-                String sample = PatternSample.matching(regexp, min, max > 0 ? max : 64);
-                return sample == null ? null : lang.string(sample);
+                PatternSample.Sample sample = PatternSample.sample(regexp, min, max > 0 ? max : 64);
+                if (sample == null) return null;
+                if (!sample.varies()) return unique ? null : lang.string(sample.text);
+                StringBuilder call = new StringBuilder("vary(").append(lang.string(sample.text));
+                for (String alphabet : sample.alphabets) call.append(", ").append(lang.string(alphabet));
+                return call.append(")").toString();
             }
             boolean email = f.hasDsl("email");
             int length = max > 0 ? Math.min(max, email ? 24 : 12) : (email ? 24 : 12);
@@ -1029,8 +1217,10 @@ final class ContractTestSource {
                             f.name() + "Pattern",
                             f.name() + ": a value that matches passes, one that does not is"
                                     + " refused (400 Pattern)");
+                    // Varied per row where the pattern lets it: a unique field takes a value of its own each time.
+                    String passes = text(f, false);
                     t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + lang.string(matching) + ")))"));
+                            + lang.string(name) + ", " + (passes != null ? passes : lang.string(matching)) + ")))"));
                     t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
                             + lang.string(name) + ", " + lang.string(other) + ")), " + lang.string(f.name())
                             + ", \"Pattern\")"));
@@ -1108,6 +1298,11 @@ final class ContractTestSource {
                 if (v == null) continue;
                 if (whole(f) && v.stripTrailingZeros().scale() > 0) {
                     skip(e.getName() + "." + f.name() + " @" + end[0] + "(" + plain(v) + "): a whole number field");
+                    continue;
+                }
+                if (float32(f) && fractional(v)) {
+                    skip(e.getName() + "." + f.name() + " @" + end[0] + "(" + plain(v) + "): a float holds no exact "
+                            + plain(v) + ", and its check compares the float widened to a double");
                     continue;
                 }
                 BigDecimal past = "min".equals(end[0]) ? v.subtract(step(f)) : v.add(step(f));
@@ -1205,10 +1400,24 @@ final class ContractTestSource {
                     skip(e.getName() + " @invariant(" + p.condition + "): " + f.name() + " is not a number");
                     continue;
                 }
+                if (float32(f) && fractional(p.bound)) {
+                    skip(e.getName() + " @invariant(" + p.condition + "): a float holds no exact " + plain(p.bound));
+                    continue;
+                }
+                BigDecimal[] whole = whole(f) ? wholeEnds(p.operator, p.bound) : null;
+                if (whole(f) && whole == null) {
+                    skip(e.getName() + " @invariant(" + p.condition + "): no whole number of " + f.name() + " is "
+                            + plain(p.bound));
+                    continue;
+                }
                 BigDecimal step = step(f);
                 BigDecimal passes;
                 BigDecimal fails;
-                switch (p.operator) {
+                switch (whole != null ? "whole" : p.operator) {
+                    case "whole":
+                        passes = whole[0];
+                        fails = whole[1];
+                        break;
                     case ">":
                         passes = p.bound.add(step);
                         fails = p.bound;
@@ -1616,7 +1825,7 @@ final class ContractTestSource {
             if (m.getEntityModels() == null) continue;
             ModelComponentItems<Entity> items = m.getEntityModels().getItems();
             for (int i = 0; i < items.size(); i++) {
-                EntitySpec p = entity(items.get(i).getIdentity().getName());
+                EntitySpec p = entityIn(m, items.get(i).getIdentity().getName());
                 if (p == null || !ServiceAccessRules.signsIn(p) || !creates(p)) continue;
                 Principal out = new Principal();
                 out.entity = p.getName();
@@ -1715,10 +1924,64 @@ final class ContractTestSource {
         } else {
             d.append("; each test's rows are rolled back.\n");
         }
+        if (!s.mongo) {
+            d.append(" * The tests write an in-memory H2 of their own, whatever the application's\n")
+                    .append(" * datasource is - the properties below")
+                    .append(
+                            s.mybatis
+                                    ? "; the schema is the application's (spring.sql.init, Flyway).\n"
+                                    : ", Hibernate making the tables.\n")
+                    .append(" * Change them here to test on another database.\n");
+        }
         d.append(" * The project's test classpath needs spring-boot-starter-test");
-        d.append(s.mongo ? ".\n" : " and a database the\n * tests can write (H2).\n");
+        d.append(s.mongo ? ".\n" : " and H2.\n");
         d.append(" */\n");
         return d.toString();
+    }
+
+    /**
+     * The @SpringBootTest of the support class: the application, when the
+     * build names it, and - over JPA and MyBatis - the in-memory H2 the
+     * tests write, whatever datasource the application's own properties
+     * name. Plain properties, so it compiles on Spring Boot 3 and 4 with
+     * spring-boot-starter-test alone.
+     */
+    static String springBootTest(Settings s, Lang lang) {
+        List<String> properties = new ArrayList<String>();
+        if (!s.mongo) {
+            properties.add("spring.datasource.url=jdbc:h2:mem:elasticore-contract-${random.uuid};DB_CLOSE_DELAY=-1");
+            properties.add("spring.datasource.driver-class-name=org.h2.Driver");
+            properties.add("spring.datasource.username=sa");
+            properties.add("spring.datasource.password=");
+            if (!s.mybatis) {
+                // Hibernate makes the tables; a migration written for another database would not run here.
+                properties.add("spring.jpa.hibernate.ddl-auto=create-drop");
+                properties.add("spring.jpa.database-platform=org.hibernate.dialect.H2Dialect");
+                properties.add("spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect");
+                properties.add("spring.flyway.enabled=false");
+                properties.add("spring.liquibase.enabled=false");
+            }
+        }
+        List<String> args = new ArrayList<String>();
+        if (s.application != null) {
+            args.add(
+                    lang.kotlin ? "classes = [" + s.application + "::class]" : "classes = " + s.application + ".class");
+        }
+        if (!properties.isEmpty()) {
+            StringBuilder p = new StringBuilder(lang.kotlin ? "properties = [\n" : "properties = {\n");
+            for (int i = 0; i < properties.size(); i++) {
+                p.append(lang.kotlin ? "        " : "            ").append(lang.string(properties.get(i)));
+                p.append(i < properties.size() - 1 ? ",\n" : "\n");
+            }
+            p.append(lang.kotlin ? "    ]" : "        }");
+            args.add(p.toString());
+        }
+        if (args.isEmpty()) return "@SpringBootTest\n";
+        StringBuilder a = new StringBuilder("@SpringBootTest(\n");
+        for (int i = 0; i < args.size(); i++) {
+            a.append(lang.kotlin ? "    " : "        ").append(args.get(i)).append(i < args.size() - 1 ? ",\n" : ")\n");
+        }
+        return a.toString();
     }
 
     private static String javaSupport(
@@ -1766,10 +2029,7 @@ final class ContractTestSource {
                 .append("import java.util.concurrent.ThreadLocalRandom;\n")
                 .append("import java.util.concurrent.atomic.AtomicLong;\n\n");
         j.append(doc(domainName, s, guarded, system, principal));
-        j.append(
-                s.application == null
-                        ? "@SpringBootTest\n"
-                        : "@SpringBootTest(classes = " + s.application + ".class)\n");
+        j.append(springBootTest(s, lang));
         j.append("@AutoConfigureMockMvc\n");
         if (tx) j.append("@Transactional\n");
         j.append("public abstract class ").append(name).append(" {\n\n");
@@ -1804,6 +2064,8 @@ final class ContractTestSource {
                             "        String uri = (server.endsWith(\"/\") ? server : server + \"/\") + \"elasticore_contract\";\n")
                     .append("        registry.add(\"spring.data.mongodb.uri\", () -> uri);\n")
                     .append("        registry.add(\"spring.mongodb.uri\", () -> uri);\n")
+                    .append("        registry.add(\"spring.data.mongodb.database\", () -> \"elasticore_contract\");\n")
+                    .append("        registry.add(\"spring.mongodb.database\", () -> \"elasticore_contract\");\n")
                     .append("    }\n\n");
         }
         j.append("    /**\n")
@@ -1922,8 +2184,7 @@ final class ContractTestSource {
             + "     */\n"
             + "    protected MvcResult create(String path, Object body) throws Exception {\n"
             + "        MvcResult made = post(path, body);\n"
-            + "        if (refused(made)) skip(\"no row of \" + path + \" could be made for the test: \" + answer(made));\n"
-            + "        Assertions.assertTrue(ok(made), () -> \"POST \" + path + \": \" + answer(made));\n"
+            + "        succeeded(made, \"POST \" + path + \", a row the test needs,\");\n"
             + "        return made;\n"
             + "    }\n"
             + "\n"
@@ -1945,27 +2206,27 @@ final class ContractTestSource {
             + "        succeeded(result, \"the command\");\n"
             + "    }\n"
             + "\n"
+            + "    /**\n"
+            + "     * 2xx. Refused by a rule of the application's own - a check its code makes, a unique value\n"
+            + "     * someone holds - the test is aborted with the reason; refused for what the model declares (a\n"
+            + "     * field, an invariant, a state) or failed (5xx), it fails: that is what the tests are about.\n"
+            + "     */\n"
             + "    private void succeeded(MvcResult result, String what) throws Exception {\n"
             + "        if (ok(result)) return;\n"
-            + "        String code = code(result);\n"
-            + "        // A lifecycle's refusal is what the test is about; another refusal is a rule of the application's.\n"
-            + "        if (refused(result) && (code == null || !code.startsWith(\"state.\"))) {\n"
+            + "        if (refused(result) && !declared(code(result))) {\n"
             + "            skip(what + \" was refused by a rule of the application: \" + answer(result));\n"
             + "        }\n"
             + "        Assertions.fail(what + \" failed: \" + answer(result));\n"
             + "    }\n"
             + "\n"
-            + "    /**\n"
-            + "     * The row was made: 2xx. Refused by a rule of the application's own - a unique value\n"
-            + "     * someone holds, a check its code makes - the test is aborted; refused for a field, an\n"
-            + "     * invariant or a state, it fails.\n"
-            + "     */\n"
+            + "    /** Whether a refusal is one the model declares: a field's constraint (invalid), an invariant, a lifecycle. */\n"
+            + "    protected static boolean declared(String code) {\n"
+            + "        return \"invalid\".equals(code) || (code != null && (code.startsWith(\"invariant.\") || code.startsWith(\"state.\")));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The row was made: 2xx (refused as succeeded says). */\n"
             + "    protected void assertCreated(MvcResult result) throws Exception {\n"
-            + "        if (ok(result)) return;\n"
-            + "        String code = code(result);\n"
-            + "        boolean declared = \"invalid\".equals(code) || (code != null && (code.startsWith(\"invariant.\") || code.startsWith(\"state.\")));\n"
-            + "        if (refused(result) && !declared) skip(\"the row was refused by a rule of the application: \" + answer(result));\n"
-            + "        Assertions.fail(\"expected the row to be made: \" + answer(result));\n"
+            + "        succeeded(result, \"the row\");\n"
             + "    }\n"
             + "\n"
             + "    /** Aborts the test with the reason - in the report, and in the output, which a build's XML report keeps. */\n"
@@ -2076,6 +2337,27 @@ final class ContractTestSource {
             + "        return new BigDecimal(value);\n"
             + "    }\n"
             + "\n"
+            + "    /** A number of its own for each row: from the first, in whole steps, within as many as the bounds hold. */\n"
+            + "    protected BigDecimal serial(String first, long span) {\n"
+            + "        return new BigDecimal(first).add(BigDecimal.valueOf(SEQUENCE.incrementAndGet() % span));\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The pattern's value, of its own for each row: each position given an alphabet takes one of\n"
+            + "     * its characters (each was checked against the pattern when the test was written).\n"
+            + "     */\n"
+            + "    protected String vary(String sample, String... alphabets) {\n"
+            + "        long n = SEQUENCE.incrementAndGet();\n"
+            + "        char[] text = sample.toCharArray();\n"
+            + "        for (int i = alphabets.length - 1; i >= 0 && n > 0; i--) {\n"
+            + "            String alphabet = alphabets[i];\n"
+            + "            if (alphabet.isEmpty()) continue;\n"
+            + "            text[i] = alphabet.charAt((int) (n % alphabet.length()));\n"
+            + "            n /= alphabet.length();\n"
+            + "        }\n"
+            + "        return new String(text);\n"
+            + "    }\n"
+            + "\n"
             + "    /** A JSON object: name, value, name, value ... */\n"
             + "    protected Map<String, Object> obj(Object... namesAndValues) {\n"
             + "        Map<String, Object> object = new LinkedHashMap<>();\n"
@@ -2161,10 +2443,8 @@ final class ContractTestSource {
                 .append("import java.util.concurrent.ThreadLocalRandom\n")
                 .append("import java.util.concurrent.atomic.AtomicLong\n\n");
         k.append(doc(domainName, s, guarded, system, principal));
-        k.append(
-                s.application == null
-                        ? "@SpringBootTest\n"
-                        : "@SpringBootTest(classes = [" + s.application + "::class])\n");
+        k.append(springBootTest(s, lang));
+
         k.append("@AutoConfigureMockMvc\n");
         if (tx) k.append("@Transactional\n");
         k.append("abstract class ").append(name).append(" {\n\n");
@@ -2202,6 +2482,8 @@ final class ContractTestSource {
                             "            val uri = (if (server.endsWith(\"/\")) server else \"$server/\") + \"elasticore_contract\"\n")
                     .append("            registry.add(\"spring.data.mongodb.uri\") { uri }\n")
                     .append("            registry.add(\"spring.mongodb.uri\") { uri }\n")
+                    .append("            registry.add(\"spring.data.mongodb.database\") { \"elasticore_contract\" }\n")
+                    .append("            registry.add(\"spring.mongodb.database\") { \"elasticore_contract\" }\n")
                     .append("        }\n");
         }
         k.append("    }\n\n");
@@ -2305,8 +2587,7 @@ final class ContractTestSource {
             + "     */\n"
             + "    protected fun create(path: String, body: Any?): MvcResult {\n"
             + "        val made = post(path, body)\n"
-            + "        if (refused(made)) skip(\"no row of $path could be made for the test: \" + answer(made))\n"
-            + "        Assertions.assertTrue(ok(made)) { \"POST $path: \" + answer(made) }\n"
+            + "        succeeded(made, \"POST $path, a row the test needs,\")\n"
             + "        return made\n"
             + "    }\n"
             + "\n"
@@ -2322,28 +2603,25 @@ final class ContractTestSource {
             + "    /** The command was given: 2xx. */\n"
             + "    protected fun assertMoved(result: MvcResult) = succeeded(result, \"the command\")\n"
             + "\n"
+            + "    /**\n"
+            + "     * 2xx. Refused by a rule of the application's own - a check its code makes, a unique value\n"
+            + "     * someone holds - the test is aborted with the reason; refused for what the model declares (a\n"
+            + "     * field, an invariant, a state) or failed (5xx), it fails: that is what the tests are about.\n"
+            + "     */\n"
             + "    private fun succeeded(result: MvcResult, what: String) {\n"
             + "        if (ok(result)) return\n"
-            + "        val code = code(result)\n"
-            + "        // A lifecycle's refusal is what the test is about; another refusal is a rule of the application's.\n"
-            + "        if (refused(result) && (code == null || !code.startsWith(\"state.\"))) {\n"
+            + "        if (refused(result) && !declared(code(result))) {\n"
             + "            skip(\"$what was refused by a rule of the application: \" + answer(result))\n"
             + "        }\n"
             + "        Assertions.fail<Unit>(\"$what failed: \" + answer(result))\n"
             + "    }\n"
             + "\n"
-            + "    /**\n"
-            + "     * The row was made: 2xx. Refused by a rule of the application's own - a unique value\n"
-            + "     * someone holds, a check its code makes - the test is aborted; refused for a field, an\n"
-            + "     * invariant or a state, it fails.\n"
-            + "     */\n"
-            + "    protected fun assertCreated(result: MvcResult) {\n"
-            + "        if (ok(result)) return\n"
-            + "        val code = code(result)\n"
-            + "        val declared = code == \"invalid\" || (code != null && (code.startsWith(\"invariant.\") || code.startsWith(\"state.\")))\n"
-            + "        if (refused(result) && !declared) skip(\"the row was refused by a rule of the application: \" + answer(result))\n"
-            + "        Assertions.fail<Unit>(\"expected the row to be made: \" + answer(result))\n"
-            + "    }\n"
+            + "    /** Whether a refusal is one the model declares: a field's constraint (invalid), an invariant, a lifecycle. */\n"
+            + "    protected fun declared(code: String?): Boolean =\n"
+            + "        code == \"invalid\" || (code != null && (code.startsWith(\"invariant.\") || code.startsWith(\"state.\")))\n"
+            + "\n"
+            + "    /** The row was made: 2xx (refused as succeeded says). */\n"
+            + "    protected fun assertCreated(result: MvcResult) = succeeded(result, \"the row\")\n"
             + "\n"
             + "    /** Aborts the test with the reason - in the report, and in the output, which a build's XML report keeps. */\n"
             + "    protected fun skip(reason: String) {\n"
@@ -2427,6 +2705,29 @@ final class ContractTestSource {
             + "    }\n"
             + "\n"
             + "    protected fun num(value: String): BigDecimal = BigDecimal(value)\n"
+            + "\n"
+            + "    /** A number of its own for each row: from the first, in whole steps, within as many as the bounds hold. */\n"
+            + "    protected fun serial(first: String, span: Long): BigDecimal =\n"
+            + "        BigDecimal(first).add(BigDecimal.valueOf(SEQUENCE.incrementAndGet() % span))\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The pattern's value, of its own for each row: each position given an alphabet takes one of\n"
+            + "     * its characters (each was checked against the pattern when the test was written).\n"
+            + "     */\n"
+            + "    protected fun vary(sample: String, vararg alphabets: String): String {\n"
+            + "        var n = SEQUENCE.incrementAndGet()\n"
+            + "        val text = sample.toCharArray()\n"
+            + "        var i = alphabets.size - 1\n"
+            + "        while (i >= 0 && n > 0) {\n"
+            + "            val alphabet = alphabets[i]\n"
+            + "            if (alphabet.isNotEmpty()) {\n"
+            + "                text[i] = alphabet[(n % alphabet.length).toInt()]\n"
+            + "                n /= alphabet.length\n"
+            + "            }\n"
+            + "            i--\n"
+            + "        }\n"
+            + "        return String(text)\n"
+            + "    }\n"
             + "\n"
             + "    /** A JSON object: name, value, name, value ... */\n"
             + "    protected fun obj(vararg namesAndValues: Any?): MutableMap<String, Any?> {\n"

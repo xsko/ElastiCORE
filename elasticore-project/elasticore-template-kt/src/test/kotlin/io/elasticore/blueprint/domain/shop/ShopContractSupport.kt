@@ -32,14 +32,28 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Every test class extends this one, so all of them start the same application and
  * Spring keeps one context for the suite; each test's rows are rolled back.
- * The project's test classpath needs spring-boot-starter-test and a database the
- * tests can write (H2).
+ * The tests write an in-memory H2 of their own, whatever the application's
+ * datasource is - the properties below, Hibernate making the tables.
+ * Change them here to test on another database.
+ * The project's test classpath needs spring-boot-starter-test and H2.
  *
  * The sample's edit: its tests each start an application of their own, so this
  * class names the one of the shop domain (ddd.KotlinShopApp) - Spring finds none
  * above the tests' package.
  */
-@SpringBootTest(classes = [ddd.KotlinShopApp::class])
+@SpringBootTest(
+    classes = [ddd.KotlinShopApp::class],
+    properties = [
+        "spring.datasource.url=jdbc:h2:mem:elasticore-contract-\${random.uuid};DB_CLOSE_DELAY=-1",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+        "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
+        "spring.flyway.enabled=false",
+        "spring.liquibase.enabled=false"
+    ])
 @AutoConfigureMockMvc
 @Transactional
 abstract class ShopContractSupport {
@@ -115,8 +129,7 @@ abstract class ShopContractSupport {
      */
     protected fun create(path: String, body: Any?): MvcResult {
         val made = post(path, body)
-        if (refused(made)) skip("no row of $path could be made for the test: " + answer(made))
-        Assertions.assertTrue(ok(made)) { "POST $path: " + answer(made) }
+        succeeded(made, "POST $path, a row the test needs,")
         return made
     }
 
@@ -132,28 +145,25 @@ abstract class ShopContractSupport {
     /** The command was given: 2xx. */
     protected fun assertMoved(result: MvcResult) = succeeded(result, "the command")
 
+    /**
+     * 2xx. Refused by a rule of the application's own - a check its code makes, a unique value
+     * someone holds - the test is aborted with the reason; refused for what the model declares (a
+     * field, an invariant, a state) or failed (5xx), it fails: that is what the tests are about.
+     */
     private fun succeeded(result: MvcResult, what: String) {
         if (ok(result)) return
-        val code = code(result)
-        // A lifecycle's refusal is what the test is about; another refusal is a rule of the application's.
-        if (refused(result) && (code == null || !code.startsWith("state."))) {
+        if (refused(result) && !declared(code(result))) {
             skip("$what was refused by a rule of the application: " + answer(result))
         }
         Assertions.fail<Unit>("$what failed: " + answer(result))
     }
 
-    /**
-     * The row was made: 2xx. Refused by a rule of the application's own - a unique value
-     * someone holds, a check its code makes - the test is aborted; refused for a field, an
-     * invariant or a state, it fails.
-     */
-    protected fun assertCreated(result: MvcResult) {
-        if (ok(result)) return
-        val code = code(result)
-        val declared = code == "invalid" || (code != null && (code.startsWith("invariant.") || code.startsWith("state.")))
-        if (refused(result) && !declared) skip("the row was refused by a rule of the application: " + answer(result))
-        Assertions.fail<Unit>("expected the row to be made: " + answer(result))
-    }
+    /** Whether a refusal is one the model declares: a field's constraint (invalid), an invariant, a lifecycle. */
+    protected fun declared(code: String?): Boolean =
+        code == "invalid" || (code != null && (code.startsWith("invariant.") || code.startsWith("state.")))
+
+    /** The row was made: 2xx (refused as succeeded says). */
+    protected fun assertCreated(result: MvcResult) = succeeded(result, "the row")
 
     /** Aborts the test with the reason - in the report, and in the output, which a build's XML report keeps. */
     protected fun skip(reason: String) {
@@ -237,6 +247,29 @@ abstract class ShopContractSupport {
     }
 
     protected fun num(value: String): BigDecimal = BigDecimal(value)
+
+    /** A number of its own for each row: from the first, in whole steps, within as many as the bounds hold. */
+    protected fun serial(first: String, span: Long): BigDecimal =
+        BigDecimal(first).add(BigDecimal.valueOf(SEQUENCE.incrementAndGet() % span))
+
+    /**
+     * The pattern's value, of its own for each row: each position given an alphabet takes one of
+     * its characters (each was checked against the pattern when the test was written).
+     */
+    protected fun vary(sample: String, vararg alphabets: String): String {
+        var n = SEQUENCE.incrementAndGet()
+        val text = sample.toCharArray()
+        var i = alphabets.size - 1
+        while (i >= 0 && n > 0) {
+            val alphabet = alphabets[i]
+            if (alphabet.isNotEmpty()) {
+                text[i] = alphabet[(n % alphabet.length).toInt()]
+                n /= alphabet.length
+            }
+            i--
+        }
+        return String(text)
+    }
 
     /** A JSON object: name, value, name, value ... */
     protected fun obj(vararg namesAndValues: Any?): MutableMap<String, Any?> {

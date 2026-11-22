@@ -9,7 +9,8 @@ import java.util.List;
  *
  * Read from the expression itself: literals, escapes (\d \w \s and an
  * escaped character), classes ([a-z0-9_], [^...]), the dot, groups and the
- * first of their alternatives, and the quantifiers ? * + {n} {n,} {n,m}.
+ * first of their alternatives, the quantifiers ? * + {n} {n,} {n,m}, and
+ * inline flags ((?i), read past - the whole pattern checks the value).
  * Anything else (a lookaround, a back reference) is no sample - the caller
  * says so. Every value is checked with java.util.regex, the engine Bean
  * Validation's @Pattern runs, before it is offered: a sample that would not
@@ -21,6 +22,33 @@ final class PatternSample {
 
     /** A value that matches, of a length in [min, max]; null when none is found. */
     static String matching(String regexp, int min, int max) {
+        Sample s = sample(regexp, min, max);
+        return s == null ? null : s.text;
+    }
+
+    /**
+     * A value that matches, and the characters each position may take instead
+     * - so that each row gets a value of its own. alphabets[i] is what position
+     * i may hold ("" where it stays); every character of it was checked in
+     * place, and a set of combinations of them together, against the pattern.
+     */
+    static final class Sample {
+        final String text;
+        final List<String> alphabets;
+
+        Sample(String text, List<String> alphabets) {
+            this.text = text;
+            this.alphabets = alphabets;
+        }
+
+        /** Whether more than one value can be made: some position varies. */
+        boolean varies() {
+            return !alphabets.isEmpty();
+        }
+    }
+
+    /** As matching, with the positions that may vary; null when no value is found. */
+    static Sample sample(String regexp, int min, int max) {
         java.util.regex.Pattern compiled = compile(regexp);
         if (compiled == null) return null;
         Node node;
@@ -30,19 +58,60 @@ final class PatternSample {
             return null;
         }
         for (int extra : new int[] {0, 1, 2, 4, 8, 16, 32}) {
-            String sample;
+            String text;
+            List<CharClass> from = new ArrayList<CharClass>();
             try {
                 StringBuilder sb = new StringBuilder();
-                node.write(sb, extra);
-                sample = sb.toString();
+                node.write(sb, from, extra);
+                text = sb.toString();
             } catch (RuntimeException unsupported) {
                 return null;
             }
-            if (max > 0 && sample.length() > max) continue;
-            if (sample.length() < min) continue;
-            if (compiled.matcher(sample).matches()) return sample;
+            if (max > 0 && text.length() > max) continue;
+            if (text.length() < min) continue;
+            if (compiled.matcher(text).matches()) return new Sample(text, alphabets(compiled, text, from));
         }
         return null;
+    }
+
+    /** The characters that may stand at each position the classes wrote, kept only where the pattern still matches. */
+    private static List<String> alphabets(java.util.regex.Pattern compiled, String text, List<CharClass> from) {
+        String candidates = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        List<String> out = new ArrayList<String>();
+        int last = -1;
+        for (int i = 0; i < text.length(); i++) {
+            CharClass c = i < from.size() ? from.get(i) : null;
+            StringBuilder alphabet = new StringBuilder();
+            if (c != null) {
+                for (int k = 0; k < candidates.length(); k++) {
+                    char ch = candidates.charAt(k);
+                    if (c.holds(ch) == c.negated) continue;
+                    String one = text.substring(0, i) + ch + text.substring(i + 1);
+                    if (compiled.matcher(one).matches()) alphabet.append(ch);
+                }
+            }
+            String a = alphabet.length() >= 2 ? alphabet.toString() : "";
+            out.add(a);
+            if (!a.isEmpty()) last = i;
+        }
+        List<String> kept = new ArrayList<String>(out.subList(0, last + 1));
+        // Positions checked one at a time; a pattern that ties them together is checked over combinations too.
+        long n = 7919;
+        for (int round = 0; round < 64 && !kept.isEmpty(); round++) {
+            char[] combined = text.toCharArray();
+            long m = n;
+            for (int i = kept.size() - 1; i >= 0; i--) {
+                String a = kept.get(i);
+                if (a.isEmpty()) continue;
+                combined[i] = a.charAt((int) (m % a.length()));
+                m /= a.length();
+                m += 31L * (i + 1);
+            }
+            if (!compiled.matcher(new String(combined)).matches()) return new ArrayList<String>();
+            n = n * 6364136223846793005L + 1442695040888963407L;
+            if (n < 0) n = -n;
+        }
+        return kept;
     }
 
     /** A value that does not match; null when none of the candidates fails it. */
@@ -77,8 +146,12 @@ final class PatternSample {
     // ---- the expression, read --------------------------------------------------------
 
     private interface Node {
-        /** Writes a matching value; extra is how many more repetitions an open quantifier takes. */
-        void write(StringBuilder out, int extra);
+        /**
+         * Writes a matching value; extra is how many more repetitions an open
+         * quantifier takes. from gets, for each character written, the class it
+         * came from, or null for a literal.
+         */
+        void write(StringBuilder out, List<CharClass> from, int extra);
     }
 
     private static final class Literal implements Node {
@@ -89,8 +162,9 @@ final class PatternSample {
         }
 
         @Override
-        public void write(StringBuilder out, int extra) {
+        public void write(StringBuilder out, List<CharClass> from, int extra) {
             out.append(ch);
+            from.add(null);
         }
     }
 
@@ -107,8 +181,9 @@ final class PatternSample {
         }
 
         @Override
-        public void write(StringBuilder out, int extra) {
+        public void write(StringBuilder out, List<CharClass> from, int extra) {
             out.append(pick());
+            from.add(this);
         }
 
         char pick() {
@@ -129,8 +204,8 @@ final class PatternSample {
         final List<Node> items = new ArrayList<Node>();
 
         @Override
-        public void write(StringBuilder out, int extra) {
-            for (Node n : items) n.write(out, extra);
+        public void write(StringBuilder out, List<CharClass> from, int extra) {
+            for (Node n : items) n.write(out, from, extra);
         }
     }
 
@@ -139,8 +214,8 @@ final class PatternSample {
         final List<Node> options = new ArrayList<Node>();
 
         @Override
-        public void write(StringBuilder out, int extra) {
-            options.get(0).write(out, extra);
+        public void write(StringBuilder out, List<CharClass> from, int extra) {
+            options.get(0).write(out, from, extra);
         }
     }
 
@@ -157,16 +232,16 @@ final class PatternSample {
         }
 
         @Override
-        public void write(StringBuilder out, int extra) {
+        public void write(StringBuilder out, List<CharClass> from, int extra) {
             int times = min + extra;
             if (max >= 0) times = Math.min(times, max);
-            for (int i = 0; i < times; i++) item.write(out, extra);
+            for (int i = 0; i < times; i++) item.write(out, from, extra);
         }
     }
 
     private static final class Empty implements Node {
         @Override
-        public void write(StringBuilder out, int extra) {}
+        public void write(StringBuilder out, List<CharClass> from, int extra) {}
     }
 
     /** A recursive reader of the subset the class comment names. */
@@ -258,8 +333,15 @@ final class PatternSample {
                         int close = re.indexOf('>', at);
                         if (close < 0) throw new IllegalArgumentException("group");
                         at = close + 1;
+                    } else if (re.startsWith("?", at) && flagsAt(at + 1) > 0) {
+                        // (?i) or (?i:...): flags only. A value written as the sample is still matched (the
+                        // pattern is checked whole), so they are read past.
+                        int end = flagsAt(at + 1);
+                        char after = re.charAt(end);
+                        at = end + 1;
+                        if (after == ')') return new Empty();
                     } else if (at < re.length() && re.charAt(at) == '?') {
-                        throw new IllegalArgumentException("lookaround or flags");
+                        throw new IllegalArgumentException("lookaround");
                     }
                     Node inner = alternatives();
                     if (at >= re.length() || re.charAt(at) != ')') throw new IllegalArgumentException("unclosed group");
@@ -273,6 +355,14 @@ final class PatternSample {
                     if (ch == '*' || ch == '+' || ch == '?') throw new IllegalArgumentException("quantifier");
                     return new Literal(ch);
             }
+        }
+
+        /** The index of the ')' or ':' ending inline flags (i, -i, im) that start here; -1 when none do. */
+        private int flagsAt(int i) {
+            int k = i;
+            while (k < re.length() && (Character.isLetter(re.charAt(k)) || re.charAt(k) == '-')) k++;
+            if (k == i || k >= re.length()) return -1;
+            return re.charAt(k) == ')' || re.charAt(k) == ':' ? k : -1;
         }
 
         private Node escape() {

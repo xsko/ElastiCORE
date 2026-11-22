@@ -734,7 +734,7 @@ config:
 - Example: `shop` and `billing` of `elasticore-template-ddd` (`GraphQlApiTest`), `shop` of `elasticore-template-kt` (`ShopGraphQlTest`).
 
 ### 6.2 Test code generation
-> **Works in:** `"true"`: 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin; `"contract"`: v3 Java and Kotlin - every architecture, JPA, MyBatis, MongoDB · **Not in:** `"true"`: v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated), MongoDB (mode: mongo) in Kotlin (warning, not generated); `"contract"`: 2.x generator, 2.x-compatible output (warning, not generated)
+> **Works in:** `"true"`: 2.x generator, 2.x-compatible output (output = 'v2'), Kotlin; `"contract"`: v3 Java and Kotlin - every architecture, JPA, MyBatis, MongoDB · **Not in:** `"true"`: v3 Java (layered, ddd, hexagonal), MyBatis (mode: mybatis) (not generated), MongoDB (mode: mongo) in Kotlin (warning, not generated); `"contract"`: 2.x generator (not generated), 2.x-compatible output (warning, not generated)
 
 ```yaml
 config:
@@ -772,20 +772,28 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
-- Each test makes its own rows: what the model requires, a row a reference names first (through its own API), unique text where a
-  value must be unique. It never reads the seeded data or counts rows, and it checks the status and the problem's `code` (and the
-  field) - never the message, so a translated API passes.
+- The JPA and MyBatis tests write an in-memory H2 of their own, whatever datasource the application names: the support class's
+  `@SpringBootTest` properties set its URL and driver, and over JPA Hibernate makes the tables (`ddl-auto=create-drop`, Flyway and
+  Liquibase off); over MyBatis the schema is the application's (`spring.sql.init`, Flyway). Change them there for another database.
+  A table H2 cannot make - a column `@columnDef('jsonb')` or `xml` - is counted as skipped.
+- Each test makes its own rows: what the model requires, a row a reference names first (through its own API), and a value of its
+  own for each row where one must be unique (`@unique`, a unique index, the key): text, a pattern's value varied, a number in steps.
+  It never reads the seeded data or counts rows, and it checks the status and the problem's `code` (and the field) - never the
+  message, so a translated API passes.
 - A row the generator cannot build is counted in the build's summary:
   `contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test; ...)`.
-  One the application refuses at run time - a rule of its own, a 4xx - aborts the test with the reason (`Assumptions.abort`, and
-  printed, since a Gradle XML report keeps no reason); never a failure. A 5xx fails.
+  A refusal at run time by a rule of the application's own - a check its code makes, a unique value taken - aborts the test with
+  the reason (`Assumptions.abort`, and printed, since a Gradle XML report keeps no reason). A refusal the model declares - a field
+  (`invalid`), an invariant, a state - fails it, on a row the test needs as on the one it checks; so does a 5xx.
+- `testCode` is read exactly: `"true"`, `"contract"` or `"false"`; another value (`"Contract"`, `"contracts"`) is a DSL warning.
 - MongoDB: the tests run on the server `ELASTICORE_IT_MONGODB_URI` names (`mongodb://host:port`, database `elasticore_contract`) and are
   skipped without it; their rows stay, with unique values.
 - Covered: the field constraints in every mode, language and architecture; the lifecycles and the invariants where they are written -
   ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `@access` (who is let in), `@Mask` and `@encrypt`, `export`, the
-  `delete:` states of a lifecycle, a member's own constraints.
-- Test dependencies, not added for you: `testImplementation 'org.springframework.boot:spring-boot-starter-test'` and a database the
-  tests write (`testRuntimeOnly 'com.h2database:h2'`); on Spring Boot 4 also `spring-boot-starter-webmvc-test`.
+  `delete:` states of a lifecycle, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
+  a float holds no exact 0.1, and its check compares it widened to a double.
+- Test dependencies, not added for you: `testImplementation 'org.springframework.boot:spring-boot-starter-test'` and, over JPA and
+  MyBatis, H2 (`testRuntimeOnly 'com.h2database:h2'`); on Spring Boot 4 also `spring-boot-starter-webmvc-test`.
 - Change a test where you changed a rule on purpose, and a row's builder (`newPurchaseOrder()`) where the application needs more than
   the model says: the pet store's `PurchaseOrderContractTest` adds a delivery address, without which its `place` refuses the order.
 - Examples: `elasticore-template-ddd` (Java, hexagonal, JPA), `-ddd-mybatis` (MyBatis), `-kt` (Kotlin), the pet store (Spring Boot 4, sign-in).

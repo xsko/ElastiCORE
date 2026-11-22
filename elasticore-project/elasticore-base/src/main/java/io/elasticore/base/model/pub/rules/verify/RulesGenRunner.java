@@ -2742,12 +2742,17 @@ public final class RulesGenRunner {
      */
     private void emitContractTests(
             io.elasticore.base.model.pub.rules.DomainSpec domain, ECoreModel model, List<EntitySpec> specs) {
-        if (typescript
-                || !"contract"
-                        .equalsIgnoreCase(String.valueOf(model.getConfig("testCode", "false"))
-                                .trim())) {
+        if (typescript) return;
+        String testCode = String.valueOf(model.getConfig("testCode", "false")).trim();
+        // As "true" is read: exactly. A value it does not take is said, and writes nothing.
+        if (!"true".equals(testCode) && !"false".equals(testCode) && !"contract".equals(testCode)) {
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] testCode: '%s' is not a value it takes - \"true\" (the service unit tests), \"contract\""
+                            + " (the contract tests) or \"false\"; no test code is written for it.",
+                    model.getInternalDomainName(), testCode));
             return;
         }
+        if (!"contract".equals(testCode)) return;
         if (!v3 && !kotlin) {
             io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                     "[%s] testCode: contract is written for the 3.0 output and Kotlin - this domain generates the 2.x"
@@ -2762,6 +2767,7 @@ public final class RulesGenRunner {
         s.kotlin = kotlin;
         s.boot4 = RulesConfig.springBootMajor() >= 4;
         s.mongo = persistence() == RulesConfig.Persistence.MONGO;
+        s.mybatis = persistence() == RulesConfig.Persistence.MYBATIS;
         s.lifecycles = selects(io.elasticore.base.model.pub.rules.ddd.DddStateRules.class);
         s.invariants = selects(io.elasticore.base.model.pub.rules.ddd.DddInvariantRules.class);
         s.application = applicationFor(pkg);
@@ -3409,7 +3415,7 @@ public final class RulesGenRunner {
                     "control",
                     target(model.getNamespace("control"), String.format("%sController", name)),
                     "spring-controller");
-            contractServed.add(name);
+            contractServed.add(ContractTestSource.key(model, name));
         }
     }
 
@@ -3536,7 +3542,7 @@ public final class RulesGenRunner {
                         target(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
-                contractServed.add(name);
+                contractServed.add(ContractTestSource.key(model, name));
             }
             // The generated test sits in the test tree, in the language it
             // exercises. Only a domain that asks for it in env.yml gets one.
@@ -3604,7 +3610,7 @@ public final class RulesGenRunner {
                         ArtifactTarget.java(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
-                contractServed.add(name);
+                contractServed.add(ContractTestSource.key(model, name));
             }
             return;
         }
@@ -3642,7 +3648,7 @@ public final class RulesGenRunner {
                         ArtifactTarget.java(model.getNamespace("control"),
                                 String.format("%sController", name)),
                         "spring-controller");
-                contractServed.add(name);
+                contractServed.add(ContractTestSource.key(model, name));
             }
             return;
         }

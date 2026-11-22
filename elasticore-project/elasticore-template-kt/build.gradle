@@ -117,12 +117,6 @@ sourceSets {
 
 test {
 	useJUnitPlatform()
-	filter {
-		// Product maps PostgreSQL's xml and jsonb columns - this model's type coverage - and H2, which the
-		// tests run on, refuses that table: its contract test needs PostgreSQL (the sample's other tests
-		// never store a Product).
-		excludeTestsMatching 'io.elasticore.blueprint.domain.shop.ProductContractTest'
-	}
 	// The sources under test are generated, not committed.
 	dependsOn 'elcore3kt'
 	testLogging { events 'passed', 'failed' }

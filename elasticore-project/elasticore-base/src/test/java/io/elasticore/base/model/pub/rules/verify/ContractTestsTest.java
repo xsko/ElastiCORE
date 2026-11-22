@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -205,7 +206,8 @@ public class ContractTestsTest {
         // A value made from the pattern, and checked against it, passes; one that does not match is refused.
         assertTrue(
                 t.contains(
-                        "assertCreated(post(SHIPMENT, withValue(newShipment(), \"code\", \"AA000\")));\n"
+                        "assertCreated(post(SHIPMENT, withValue(newShipment(), \"code\", vary(\"AA000\", \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\","
+                                + " \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\", \"0123456789\", \"0123456789\", \"0123456789\"))));\n"
                                 + "        assertFieldError(post(SHIPMENT, withValue(newShipment(), \"code\", \"!\")), \"code\", \"Pattern\");"),
                 t);
         // Its length: no value of 8 characters matches, so only one past it is sent - refused whatever it holds.
@@ -259,7 +261,7 @@ public class ContractTestsTest {
         String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
         assertTrue(
                 s.contains(
-                        "@SpringBootTest\n@AutoConfigureMockMvc\n@Transactional\npublic abstract class ShopContractSupport {"),
+                        "        })\n@AutoConfigureMockMvc\n@Transactional\npublic abstract class ShopContractSupport {"),
                 s);
         assertTrue(
                 s.contains("import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;"), s);
@@ -287,7 +289,8 @@ public class ContractTestsTest {
                         .getBytes(StandardCharsets.UTF_8));
         run(project, "hexagonal", "java");
         String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
-        assertTrue(s.contains("@SpringBootTest(classes = sample.SampleApp.class)\n"), s);
+        assertTrue(
+                s.contains("@SpringBootTest(\n        classes = sample.SampleApp.class,\n        properties = {\n"), s);
     }
 
     @Test
@@ -301,7 +304,8 @@ public class ContractTestsTest {
                         .getBytes(StandardCharsets.UTF_8));
         run(project, "hexagonal", "java");
         String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
-        assertTrue(s.contains("@SpringBootTest\n@AutoConfigureMockMvc\n"), s);
+        assertTrue(s.contains("@SpringBootTest(\n        properties = {\n"), s);
+        assertFalse(s.contains("classes ="), s);
     }
 
     @Test
@@ -338,9 +342,7 @@ public class ContractTestsTest {
         assertFalse(t.contains(";\n"), t);
         String s = read(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
         assertTrue(
-                s.contains(
-                        "@SpringBootTest\n@AutoConfigureMockMvc\n@Transactional\nabstract class ShopContractSupport {"),
-                s);
+                s.contains("    ])\n@AutoConfigureMockMvc\n@Transactional\nabstract class ShopContractSupport {"), s);
         assertTrue(
                 s.contains(
                         "    protected open fun request(builder: MockHttpServletRequestBuilder): MockHttpServletRequestBuilder = builder\n"),
@@ -468,10 +470,48 @@ public class ContractTestsTest {
 
     @Test
     public void contractAddsItsTestsAndChangesNothingElse() throws Exception {
-        File plain = project(MODEL, null);
-        run(plain, "hexagonal", "java");
-        File contract = project(MODEL, "contract");
-        run(contract, "hexagonal", "java");
+        onlyTheTestsAreAdded(MODEL, "jpa", "hexagonal", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractChangesNothingElseInKotlin() throws Exception {
+        onlyTheTestsAreAdded(MODEL, "jpa", "hexagonal", "kotlin", "src/test/kotlin/com/acme/shop/", "kt");
+    }
+
+    @Test
+    public void contractChangesNothingElseInTheLayeredCode() throws Exception {
+        onlyTheTestsAreAdded(MODEL, "jpa", "layered", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractChangesNothingElseOverMyBatis() throws Exception {
+        onlyTheTestsAreAdded(MODEL, "mybatis", "hexagonal", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractChangesNothingElseOverMongoDb() throws Exception {
+        onlyTheTestsAreAdded(MONGO_MODEL, "mongo", "layered", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    private static final String MONGO_MODEL = String.join(
+            "\n",
+            "entity:",
+            "  Member:",
+            "    meta: entity @expose(20)",
+            "    fields:",
+            "      memberId: string(24) @id",
+            "      name:     string(30)!",
+            "      rank:     int @min(1) @max(9)",
+            "");
+
+    /** A run with testCode: contract and one without differ in the test files it adds, and in nothing else. */
+    private void onlyTheTestsAreAdded(
+            String model, String mode, String architecture, String language, String dir, String extension)
+            throws Exception {
+        File plain = project(model, null, mode);
+        run(plain, architecture, language);
+        File contract = project(model, "contract", mode);
+        run(contract, architecture, language);
         Map<String, String> before = tree(plain);
         Map<String, String> after = tree(contract);
         List<String> added = new ArrayList<String>();
@@ -487,10 +527,231 @@ public class ContractTestsTest {
         for (String key : before.keySet()) assertTrue(after.containsKey(key), key);
         assertFalse(added.isEmpty());
         for (String key : added) {
-            assertTrue(
-                    key.startsWith("src/test/java/com/acme/shop/") && key.matches(".*Contract(Test|Support)\\.java"),
-                    key);
+            assertTrue(key.startsWith(dir) && key.matches(".*Contract(Test|Support)\\." + extension), key);
         }
+    }
+
+    // ---- what the support class pins -----------------------------------------------------------------
+
+    @Test
+    public void theTestsWriteAnInMemoryH2OfTheirOwn() throws Exception {
+        File project = project(MODEL, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains("@SpringBootTest(\n        properties = {\n"
+                        + "            \"spring.datasource.url=jdbc:h2:mem:elasticore-contract-${random.uuid};DB_CLOSE_DELAY=-1\",\n"
+                        + "            \"spring.datasource.driver-class-name=org.h2.Driver\",\n"),
+                s);
+        assertTrue(s.contains("\"spring.jpa.hibernate.ddl-auto=create-drop\""), s);
+        assertTrue(s.contains("\"spring.flyway.enabled=false\""), s);
+        File kotlin = project(MODEL, "contract");
+        run(kotlin, "hexagonal", "kotlin");
+        String k = read(kotlin, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(
+                k.contains(
+                        "@SpringBootTest(\n    properties = [\n"
+                                + "        \"spring.datasource.url=jdbc:h2:mem:elasticore-contract-\\${random.uuid};DB_CLOSE_DELAY=-1\",\n"),
+                k);
+    }
+
+    @Test
+    public void overMyBatisTheSchemaStaysTheApplications() throws Exception {
+        File project = project(MODEL, "contract", "mybatis");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains(
+                        "\"spring.datasource.url=jdbc:h2:mem:elasticore-contract-${random.uuid};DB_CLOSE_DELAY=-1\""),
+                s);
+        assertFalse(s.contains("ddl-auto"), s);
+        assertFalse(s.contains("flyway"), s);
+    }
+
+    @Test
+    public void aMongoDomainNamesItsOwnDatabase() throws Exception {
+        File project = project(MONGO_MODEL, "contract", "mongo");
+        run(project, "layered", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("registry.add(\"spring.data.mongodb.database\", () -> \"elasticore_contract\");"), s);
+        assertFalse(s.contains("spring.datasource"), s);
+        assertTrue(s.contains("@SpringBootTest\n"), s);
+    }
+
+    @Test
+    public void aRefusalTheModelDeclaresFailsARowTheTestNeedsAndAnyOtherAborts() throws Exception {
+        File project = project(MODEL, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        // create() - a row the test needs - goes through the same judgement as the command and the boundary.
+        assertTrue(
+                s.contains("        MvcResult made = post(path, body);\n"
+                        + "        succeeded(made, \"POST \" + path + \", a row the test needs,\");\n"),
+                s);
+        assertTrue(
+                s.contains("        if (refused(result) && !declared(code(result))) {\n"
+                        + "            skip(what + \" was refused by a rule of the application: \" + answer(result));\n"
+                        + "        }\n"
+                        + "        Assertions.fail(what + \" failed: \" + answer(result));\n"),
+                s);
+        assertTrue(
+                s.contains(
+                        "        return \"invalid\".equals(code) || (code != null && (code.startsWith(\"invariant.\")"
+                                + " || code.startsWith(\"state.\")));\n"),
+                s);
+        assertTrue(
+                s.contains("    protected void assertCreated(MvcResult result) throws Exception {\n"
+                        + "        succeeded(result, \"the row\");\n"),
+                s);
+    }
+
+    // ---- values -----------------------------------------------------------------------------------------
+
+    private static final String VALUES = String.join(
+            "\n",
+            "enumeration:",
+            "  Tier:",
+            "    meta: enum",
+            "    fields:",
+            "      label: string(10)",
+            "    enum:",
+            "      GOLD: Gold",
+            "      SILVER: Silver",
+            "",
+            "entity:",
+            "  Part:",
+            "    meta: entity @root @expose(20) @invariant(qty > 0.5) @invariant(weight > 0.25)",
+            "    fields:",
+            "      partId: long @id @sequence",
+            "      code:   string(8)! @unique @pattern('[A-Z]{2}[0-9]{3}')",
+            "      qty:    int",
+            "      weight: float @min(0.1) @max(9.5)",
+            "      seat:   int! @unique @min(1) @max(500)",
+            "  Badge:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      badgeId: long @id @sequence",
+            "      tier:    Tier! @unique",
+            "  Stamp:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      stampId: long @id @sequence",
+            "      code:    string(4)! @unique @pattern('AB12')",
+            "  Doc:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      docId: long @id @sequence",
+            "      body:  string! @columnDef('jsonb')",
+            "");
+
+    @Test
+    public void aUniqueValueIsOneOfItsOwnForEachRow() throws Exception {
+        File project = project(VALUES, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/PartContractTest.java");
+        // The pattern's value, varied per row; a number in whole steps within its bounds.
+        assertTrue(
+                t.contains("\"code\", vary(\"AA000\", \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\", \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\","
+                        + " \"0123456789\", \"0123456789\", \"0123456789\")"),
+                t);
+        assertTrue(t.contains("\"seat\", serial(\"1\", 500L)"), t);
+        // What cannot be made one per row is said, not sent.
+        assertTrue(log.contains("Badge: tier is unique, and the generator makes no value of Tier for each row"), log);
+        assertTrue(log.contains("Stamp: code is unique, and its @pattern lets the generator make one value only"), log);
+        assertFalse(new File(project, "src/test/java/com/acme/shop/BadgeContractTest.java").exists());
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("    protected String vary(String sample, String... alphabets) {\n"), s);
+        assertTrue(s.contains("    protected BigDecimal serial(String first, long span) {\n"), s);
+    }
+
+    @Test
+    public void aFloatsFractionalBoundIsSaidNotTested() throws Exception {
+        // What Hibernate Validator compares: the float widened to a double, which is not the decimal written.
+        assertTrue(BigDecimal.valueOf((double) 0.1f).compareTo(new BigDecimal("0.1")) > 0);
+        File project = project(VALUES, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/PartContractTest.java");
+        assertFalse(t.contains("weightMin"), t);
+        assertFalse(t.contains("weightMax"), t);
+        assertTrue(log.contains("Part.weight @min(0.1): a float holds no exact 0.1"), log);
+        assertTrue(log.contains("Part.weight @max(9.5): a float holds no exact 9.5"), log);
+        assertTrue(log.contains("Part @invariant(weight > 0.25): a float holds no exact 0.25"), log);
+        // The row's own value stays off the fractional ends.
+        assertTrue(t.contains("\"weight\", num(\"1.25\")") || t.contains("\"weight\", num(\"1.1\")"), t);
+    }
+
+    @Test
+    public void aWholeNumbersInvariantIsTestedAtWholeNumbers() throws Exception {
+        File project = project(VALUES, "contract");
+        run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/PartContractTest.java");
+        assertTrue(t.contains("@DisplayName(\"@invariant(qty > 0.5): 1 passes, 0 is refused (422 invariant.Part."), t);
+        assertTrue(t.contains("\"qty\", num(\"1\")"), t);
+    }
+
+    @Test
+    public void aTableH2CannotMakeIsSaid() throws Exception {
+        File project = project(VALUES, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("Doc: body's column is jsonb, which H2 - the tests' database - cannot make"), log);
+        assertFalse(new File(project, "src/test/java/com/acme/shop/DocContractTest.java").exists());
+    }
+
+    @Test
+    public void testCodeIsReadExactlyAndAnUnknownValueIsSaid() throws Exception {
+        for (String value : new String[] {"contracts", "Contract"}) {
+            File project = project(MODEL, value);
+            String log = run(project, "hexagonal", "java");
+            assertTrue(log.contains("testCode: '" + value + "' is not a value it takes"), log);
+            assertFalse(log.contains("ContractTest"), log);
+        }
+    }
+
+    @Test
+    public void twoDomainsWithAnEntityOfOneNameEachTestTheirOwn() throws Exception {
+        File project = project(
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Customer:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      customerId: long @id @sequence",
+                        "      nickname:   string(20)!",
+                        "  Order:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      orderId:  long @id @sequence",
+                        "      customer: Customer! @ManyToOne",
+                        ""),
+                "contract");
+        addDomain(
+                project,
+                "crm",
+                "com.acme.crm",
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Customer:",
+                        "    meta: entity @root @expose(20)",
+                        "    fields:",
+                        "      customerId: long @id @sequence",
+                        "      segment:    string(12)!",
+                        ""));
+        run(project, "hexagonal", "java");
+        String shop = read(project, "src/test/java/com/acme/shop/CustomerContractTest.java");
+        String crm = read(project, "src/test/java/com/acme/crm/CustomerContractTest.java");
+        String order = read(project, "src/test/java/com/acme/shop/OrderContractTest.java");
+        assertTrue(shop.contains("obj(\"nickname\", text(12))") && !shop.contains("segment"), shop);
+        // crm's test sends what crm's DTO as generated requires - whichever Customer its @template resolved to (the
+        // DTO pass's business, not the tests').
+        String crmDto = find(project, "com/acme/crm", "CustomerDTO.java");
+        String required = crmDto.contains("private String segment;") ? "segment" : "nickname";
+        assertTrue(crm.contains("obj(\"" + required + "\", text(12))"), crm + "\n" + crmDto);
+        assertTrue(crm.contains("\"/api/crm/customer\""), crm);
+        // Order's Customer is its own domain's.
+        assertTrue(order.contains("private static final String CUSTOMER = \"/api/shop/customer\";"), order);
+        assertTrue(order.contains("obj(\"nickname\", text(12))"), order);
     }
 
     @Test
@@ -520,6 +781,46 @@ public class ContractTestsTest {
         assertEquals(null, PatternSample.matching("(?=x)x", 0, 5));
         assertEquals(null, PatternSample.matching("[a-z]{10}", 0, 5));
         assertEquals("!", PatternSample.notMatching("[0-9]*", null));
+    }
+
+    @Test
+    public void aPatternsValueVariesWhereThePatternLetsIt() {
+        PatternSample.Sample code = PatternSample.sample("[A-Z]{2}[0-9]{3}", 0, 8);
+        assertEquals("AA000", code.text);
+        assertEquals(5, code.alphabets.size());
+        assertEquals("0123456789", code.alphabets.get(4));
+        // A negated class, \w and \S: what may stand there, each checked against the pattern.
+        PatternSample.Sample negated = PatternSample.sample("[^0-9]{3}", 0, 5);
+        assertNotNull(negated);
+        assertTrue(negated.varies());
+        assertFalse(negated.alphabets.get(0).contains("5"), negated.alphabets.get(0));
+        PatternSample.Sample word = PatternSample.sample("\\w+-\\S{2,}", 0, 20);
+        assertNotNull(word);
+        assertTrue(word.text.matches("\\w+-\\S{2,}"), word.text);
+        assertTrue(word.varies());
+        // Inline flags are read past; the pattern, checked whole, still matches.
+        PatternSample.Sample flagged = PatternSample.sample("(?i)[a-c]{2}x", 0, 5);
+        assertNotNull(flagged);
+        assertTrue(
+                java.util.regex.Pattern.compile("(?i)[a-c]{2}x")
+                        .matcher(flagged.text)
+                        .matches(),
+                flagged.text);
+        // A literal pattern has one value only.
+        PatternSample.Sample literal = PatternSample.sample("AB12", 0, 4);
+        assertEquals("AB12", literal.text);
+        assertFalse(literal.varies());
+        // {n,}: at least n, more where the length asks for it.
+        assertEquals(4, PatternSample.matching("[0-9]{4,}", 4, 9).length());
+        // Every combination the alphabets make matches: a pattern that ties positions together varies no more.
+        PatternSample.Sample tied = PatternSample.sample("(AA|BB)[0-9]", 0, 3);
+        assertNotNull(tied);
+        for (int i = 0; i < tied.alphabets.size(); i++) {
+            for (char ch : tied.alphabets.get(i).toCharArray()) {
+                String one = tied.text.substring(0, i) + ch + tied.text.substring(i + 1);
+                assertTrue(one.matches("(AA|BB)[0-9]"), one);
+            }
+        }
     }
 
     // ---- helpers ----------------------------------------------------------------------
@@ -603,6 +904,40 @@ public class ContractTestsTest {
                 new File(blueprint, "env.yml").toPath(), String.join("\n", env).getBytes(StandardCharsets.UTF_8));
         Files.write(new File(blueprint, "model/entity.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
         return dir;
+    }
+
+    /** The text of the generated file of that name under the package's directory. */
+    private static String find(File project, String packageDir, String name) throws IOException {
+        try (Stream<Path> all = Files.walk(project.toPath())) {
+            for (Path p : (Iterable<Path>) all::iterator) {
+                String path = p.toString().replace('\\', '/');
+                if (path.contains("/src/main/") && path.contains(packageDir) && path.endsWith("/" + name)) {
+                    return new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
+                }
+            }
+        }
+        return "";
+    }
+
+    /** A second domain in the same project. */
+    private static void addDomain(File project, String domain, String base, String model) throws IOException {
+        File blueprint = new File(project, "src/main/resources/blueprint/" + domain);
+        assertTrue(new File(blueprint, "model").mkdirs());
+        String env = String.join(
+                "\n",
+                "elasticore:",
+                "  enable: true",
+                "  config:",
+                "    domainName: " + domain,
+                "    framework: springboot",
+                "    mode: jpa",
+                "    j2ee: jakarta",
+                "    testCode: \"contract\"",
+                "  namespace:",
+                "    base: " + base,
+                "");
+        Files.write(new File(blueprint, "env.yml").toPath(), env.getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(blueprint, "model/entity.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String[] save() {
