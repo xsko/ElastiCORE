@@ -502,6 +502,28 @@ public final class EntitySpec {
         return otherLoginEntities;
     }
 
+    private String roleEnum;
+    private java.util.List<String> roleConstants;
+
+    /**
+     * The enum the application's @signin entity holds its role in, and its
+     * constants - the role names @access may use. Null when there is none to
+     * check a name against: no @signin entity, or a string role.
+     */
+    public EntitySpec knownRoles(String enumName, java.util.List<String> constants) {
+        this.roleEnum = enumName;
+        this.roleConstants = constants;
+        return this;
+    }
+
+    public String roleEnum() {
+        return roleEnum;
+    }
+
+    public java.util.List<String> roleConstants() {
+        return roleConstants;
+    }
+
     private final java.util.Set<String> optionalEmbeddables = new java.util.HashSet<String>();
 
     /** Registers a value type (@embeddable) some entity of the model embeds without requiring it. */

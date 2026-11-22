@@ -53,8 +53,15 @@ public class ServiceAccessRules implements CodeRules {
 
     private static final String RT = "io.elasticore.springboot3.security.";
     private static final java.util.regex.Pattern ENTRY =
-            java.util.regex.Pattern.compile("^\\s*([\\w*]+)\\s*=\\s*(public|user|owner|admin|none)\\s*$",
-                    java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Pattern.compile("^\\s*([\\w*]+)\\s*=\\s*(\\S.*?)\\s*$");
+
+    /** An entry's operation and its level expression (AccessExpression), or null when it is not one. */
+    private static String[] entry(String part) {
+        java.util.regex.Matcher m = ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+        if (!m.matches()) return null;
+        AccessExpression level = AccessExpression.parse(m.group(2));
+        return level == null ? null : new String[] {m.group(1), level.text()};
+    }
 
     /** Whether the entity's service has anything to check or hash. */
     public static boolean guarded(EntitySpec e) {
@@ -91,17 +98,19 @@ public class ServiceAccessRules implements CodeRules {
         if (declared == null || declared.trim().isEmpty()) return out;
         for (String part : declared.split(",")) {
             if (part.trim().isEmpty()) continue;
-            java.util.regex.Matcher m = ENTRY.matcher(part.replace("'", "").replace("\"", ""));
-            if (!m.matches()) {
+            String[] entry = entry(part);
+            if (entry == null) {
                 if (warn) {
-                    io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                            "[%s] %s @access: '%s' is not operation=level (public, user, owner, admin, none);"
-                                    + " the application would refuse to start.",
-                            e.domainClassName(), e.getName(), part.trim()));
+                    io.elasticore.base.util.ConsoleLog.storeLog(
+                            "DSL_WARN",
+                            String.format(
+                                    "[%s] %s @access: '%s' is not operation=level (public, user, owner, admin, none);"
+                                            + " the application would refuse to start.",
+                                    e.domainClassName(), e.getName(), part.trim()));
                 }
                 continue;
             }
-            out.put(m.group(1), m.group(2).toLowerCase(java.util.Locale.ROOT));
+            out.put(entry[0], entry[1]);
         }
         return out;
     }
@@ -111,18 +120,20 @@ public class ServiceAccessRules implements CodeRules {
         if (declaration == null || declaration.trim().isEmpty()) return "public";
         String star = null;
         for (String part : declaration.split(",")) {
-            java.util.regex.Matcher m = ENTRY.matcher(part.replace("'", "").replace("\"", ""));
-            if (!m.matches()) continue;
-            if ("read".equals(m.group(1))) return m.group(2).toLowerCase(java.util.Locale.ROOT);
-            if ("*".equals(m.group(1))) star = m.group(2).toLowerCase(java.util.Locale.ROOT);
+            String[] entry = entry(part);
+            if (entry == null) continue;
+            if ("read".equals(entry[0])) return entry[1];
+            if ("*".equals(entry[0])) star = entry[1];
         }
         return star != null ? star : "admin";
     }
 
-    /** A DTO field carrying a whole row of an entity not every reader may see. */
+    /** A DTO field carrying a whole row of an entity not every reader may see: read=public|MANAGER is anyone's. */
     public static boolean nestsGuarded(EntitySpec e, FieldSpec f) {
         String level = nestedReadLevel(e, f);
-        return level != null && !"public".equals(level);
+        if (level == null) return false;
+        AccessExpression read = AccessExpression.parse(level);
+        return read == null || !read.isPublic();
     }
 
     /** The read level of the entity a DTO field carries a whole row of - as the entity or as its DTO - or null. */
@@ -363,7 +374,7 @@ public class ServiceAccessRules implements CodeRules {
                             + " operations are the administrator's.", e.domainClassName(), entity, owner.name(), owner.typeName()));
             owner = null;
         }
-        if (owner == null && levels.containsValue("owner")) {
+        if (owner == null && mentionsOwner(levels)) {
             io.elasticore.base.util.ConsoleLog.storeLog(
                     "DSL_WARN",
                     String.format(
@@ -883,9 +894,22 @@ public class ServiceAccessRules implements CodeRules {
      */
     static boolean keyReusable(EntitySpec e) {
         if (e.pkFields().size() != 1 || keyGenerated(e.pkFields().get(0))) return false;
-        String level = level(e, "delete");
-        if ("admin".equals(level) || "none".equals(level)) return false;
-        return !("owner".equals(level) && ownerIsTheKey(e));
+        return !ownerOrAdminOnly(e, level(e, "delete"));
+    }
+
+    /** Whether a level (an AccessExpression's text) lets in only the administrator, or the row's own user. */
+    private static boolean ownerOrAdminOnly(EntitySpec e, String level) {
+        AccessExpression read = AccessExpression.parse(level);
+        return read != null && read.ownerOrAdminOnly(ownerIsTheKey(e));
+    }
+
+    /** Whether an entry of @access names the owner: read=owner, read=owner|MANAGER. */
+    private static boolean mentionsOwner(Map<String, String> levels) {
+        for (String level : levels.values()) {
+            AccessExpression read = AccessExpression.parse(level);
+            if (read != null && read.mentions("owner")) return true;
+        }
+        return false;
     }
 
     /** Why an entity that says @signin gets no sign-in endpoints; null when it gets them or does not ask. */
@@ -936,9 +960,7 @@ public class ServiceAccessRules implements CodeRules {
      * someone else set the administrator's password and sign in as them.
      */
     static boolean credentialsGuarded(EntitySpec e) {
-        String level = updateLevel(e);
-        if ("admin".equals(level) || "none".equals(level)) return true;
-        return "owner".equals(level) && ownerIsTheKey(e);
+        return ownerOrAdminOnly(e, updateLevel(e));
     }
 
     private static boolean ownerIsTheKey(EntitySpec e) {
@@ -957,10 +979,18 @@ public class ServiceAccessRules implements CodeRules {
         for (FieldSpec f : e.fields()) {
             if (f.hasDsl("password")) password = f.name();
         }
-        String who = "owner".equals(level)
-                ? "update is owner, but @owner" + (e.metaValue("owner") == null ? " is not given" : "(" + trim(e.metaValue("owner"))
-                        + ") is not the key " + key) + ", so the row's owner is not the one who signs in with it"
-                : "update is " + level + source + ", so " + ("user".equals(level) ? "anyone signed in" : "anyone")
+        // Owner in every term (owner, REP&owner): it would hold were the owner the key.
+        AccessExpression update = AccessExpression.parse(level);
+        String who = update != null && update.ownerOrAdminOnly(true)
+                ? "update is " + level + ", but @owner"
+                        + (e.metaValue("owner") == null
+                                ? " is not given"
+                                : "(" + trim(e.metaValue("owner")) + ") is not the key " + key)
+                        + ", so the row's owner is not the one who signs in with it"
+                : "update is " + level + source + ", so "
+                        + ("user".equals(level)
+                                ? "anyone signed in"
+                                : "public".equals(level) ? "anyone" : "someone other than the row's own user")
                         + " may change another row's " + password + " and " + loginField(e);
         String fix = declared == null || declared.trim().isEmpty()
                 ? "@owner(" + key + ") @access(read=owner, create=public, update=owner) - an operation @access does not"
@@ -1015,6 +1045,7 @@ public class ServiceAccessRules implements CodeRules {
      */
     @Rule(value = "access-signin-check", target = "entity", order = 0)
     void signInCheck(EntitySpec e) {
+        checkRoles(e);
         String why = whyNoSignIn(e);
         if (why != null) warnSignIn(e, "@signin generates no sign-in: " + why);
         for (String problem : signInOptionProblems(e)) warnSignIn(e, problem);
@@ -1059,6 +1090,104 @@ public class ServiceAccessRules implements CodeRules {
                     e.getName(), String.join(", ", others), one ? "has" : "have", other, e.getName(),
                     one ? other : "them", one ? "its" : "their", e.getName()));
         }
+    }
+
+    /** Words of @access that a role enum constant cannot be named by: they are levels (admin is the administrator's). */
+    private static final List<String> LEVEL_NAMES = java.util.Arrays.asList("public", "user", "owner", "none");
+
+    /**
+     * The role names of @access (issue 269), checked where the domain has a
+     * role enum to check them by: the @signin entity's role field, of this
+     * domain or another of the application. A name that is neither a level
+     * nor one of its constants stops the build - a misspelt MANAGER would let
+     * nobody in. Without one (no @signin, a string role) a name is not
+     * checked. Said too: a constant that a level's word hides, and an &amp;
+     * that adds nothing (public, user) or lets nobody in (none).
+     */
+    static void checkRoles(EntitySpec e) {
+        String declared = e.metaText("access");
+        if (declared == null || declared.trim().isEmpty()) return;
+        String roleEnum = e.roleEnum();
+        List<String> constants = e.roleConstants();
+        if (roleEnum != null && constants != null) {
+            List<String> hidden = new ArrayList<String>();
+            for (String c : constants) {
+                if (LEVEL_NAMES.contains(c.toLowerCase(java.util.Locale.ROOT))) hidden.add(c);
+            }
+            // Said where it may mislead: the entity names a role, or writes a hidden constant's word as the
+            // constant is written (read=USER) - a model that names no role is not told about its enum.
+            if (!hidden.isEmpty() && !namesRoles(declared, hidden)) hidden.clear();
+            if (!hidden.isEmpty()) {
+                io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                        "[%s] %s.%s cannot be named in @access: %s is a level there (any case), so a rule for the"
+                                + " role alone needs a role named otherwise.",
+                        e.domainClassName(),
+                        roleEnum,
+                        String.join(", ", hidden),
+                        hidden.size() == 1 ? "the word" : "each word"));
+            }
+        }
+        for (String part : declared.split(",", -1)) {
+            java.util.regex.Matcher m = ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+            if (!m.matches()) continue;
+            String operation = m.group(1);
+            String text = m.group(2);
+            for (String term : text.split("\\|", -1)) {
+                String[] words = term.split("&", -1);
+                for (String raw : words) {
+                    String word = raw.trim();
+                    String lower = word.toLowerCase(java.util.Locale.ROOT);
+                    if (AccessExpression.LEVELS.contains(lower)) {
+                        if (words.length > 1 && !"owner".equals(lower) && !"admin".equals(lower)) {
+                            String why = "none".equals(lower)
+                                    ? "none with & lets nobody in: it contradicts every other word"
+                                    : "user".equals(lower)
+                                            ? "user with & adds nothing: the other words let in only someone signed in"
+                                            : "public with & adds nothing: anyone passes it, so the other words alone"
+                                                    + " decide";
+                            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                                    "[%s] %s @access(%s=%s): %s.",
+                                    e.domainClassName(), e.getName(), operation, text, why));
+                        }
+                        continue;
+                    }
+                    // Only a word that can be a role name (a capital first) is checked against the enum: any
+                    // other word that is no level (read=owners) stays the warning levels() says, as it was.
+                    if (roleEnum == null
+                            || constants == null
+                            || !word.matches("[A-Z]\\w*")
+                            || constants.contains(word)) {
+                        continue;
+                    }
+                    io.elasticore.base.model.pub.rules.ModelCheck.fail(String.format(
+                            "[%s] %s @access(%s=%s): %s is neither a level (public, user, owner, admin, none) nor a"
+                                    + " constant of the role enum %s (%s).",
+                            e.domainClassName(),
+                            e.getName(),
+                            operation,
+                            text,
+                            word,
+                            roleEnum,
+                            String.join(", ", constants)));
+                }
+            }
+        }
+    }
+
+    /** Whether an entry of the declaration names a role, or writes one of these constants exactly as it is written. */
+    private static boolean namesRoles(String declared, List<String> hidden) {
+        for (String part : declared.split(",", -1)) {
+            java.util.regex.Matcher m = ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+            if (!m.matches()) continue;
+            for (String word : m.group(2).split("[|&]", -1)) {
+                String w = word.trim();
+                if (hidden.contains(w)) return true;
+                if (!AccessExpression.LEVELS.contains(w.toLowerCase(java.util.Locale.ROOT)) && w.matches("\\w+")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

@@ -2071,6 +2071,37 @@ PurchaseOrder:
 Operation names: `read` (get and search), `create`, `update`, `delete`, and command names (`ship`, `cancel`...).
 **An operation that is not listed is `admin`** (set a default with `*=user`). Without `@access`, nothing is checked.
 
+**Role names, `|` and `&`.** A level may also name a role of the session - a constant of the `@signin` entity's role field (see "The
+session holds the row's key and the role" below) - and words combine with `|` (either) and `&` (both). `&` binds tighter than `|`, there
+are no parentheses, and spaces around `|` and `&` are allowed:
+
+```yaml
+Ticket:
+  meta: entity @root @expose @owner(memberId)
+        @access(read=owner|MANAGER, create=REP|MANAGER, update=REP&owner, close=REP&owner|MANAGER)
+```
+
+| Entry | Who |
+|---|---|
+| `read=owner\|MANAGER` | The row's owner, or a `MANAGER` on every row: a MANAGER's search is not narrowed, anyone else's has their own rows only |
+| `create=REP\|MANAGER` | A `REP` or a `MANAGER` |
+| `update=REP&owner` | A `REP`, on a row of their own; an owner who is no `REP` is refused (403). A search at `REP&owner` has a REP's own rows |
+| `close=REP&owner\|MANAGER` | A `REP` on their own row, or a `MANAGER` on any (`&` first) |
+
+- A word that is a level is the level, in any case (`USER` is `user`). Any other word is a role name: it starts with a capital letter and is
+  compared with the session's role as written (`CurrentUser.hasRole`). **The admin passes every term without `none`**, as it passes `owner`.
+- **Checked where the application has a role enum** - the `@signin` entity's role field is an enum, in this domain or another. A role name (capital
+  first) that is not one of its constants stops the build: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
+  user, owner, admin, none) nor a constant of the role enum UserRole (USER, MANAGER, REP, ADMIN).` Without one - no `@signin` (Spring
+  Security, say), or a string role - a name is not checked.
+- A role constant named `PUBLIC`, `USER`, `OWNER` or `NONE` cannot be named: the word is the level - a DSL warning once an entry names a role
+  or writes the word as the constant (`read=USER`): `UserRole.USER cannot be named in @access` (the pet store has it). `ADMIN` is the admin
+  anyway. `&` with `user` or `public` adds nothing and with `none` lets nobody in - DSL warnings.
+- `findAll` and a conditional delete or update of an entry that names `owner` are for whoever passes it on every row (a MANAGER under
+  `owner|MANAGER`) and the admin. The `@signin` entity's own `update` must still let in only the row's own user and the admin
+  (`update=owner|MANAGER` would let a MANAGER set the admin's password, so no sign-in is generated - a DSL warning).
+- Only entity-level operations take roles; a field's `@access(admin)` stays as it is.
+
 Generated behavior (CoreService):
 
 | Situation | Result |
@@ -2081,7 +2112,7 @@ Generated behavior (CoreService):
 | `owner` search | Adds an **equality condition** (`=`) on the owner field to the search - only your own rows come back (regardless of the field's `@search` mode) |
 | `create` | Overwrites the owner field with the login ID - a value sent by the visitor is erased too (the admin's request value is kept as it is). If the owner is the primary key and it is not generated, the primary key becomes the login ID. If the owner field is `@readonly` or `@noinput` (a value the request cannot send), the signed-in person is the owner, the admin included - inside `runAsSystem` it is left alone |
 | `update` | The owner field and `@access(admin)` fields take the **row's current value** (the sent value is ignored, and they are not erased even with `@dynamicupdate(false)`). A `@readonly` owner stays as it is even when the admin updates |
-| `findAll`, conditional delete and conditional update at `owner` | Admin only (rows cannot be checked one by one) |
+| `findAll`, conditional delete and conditional update at `owner` | Admin only (rows cannot be checked one by one) - and, at `owner\|MANAGER`, a MANAGER |
 | `owner` level but `@owner` does not resolve | Build warning (DSL_WARN) + admin only at run time (search is 403). So in layered for `@owner(customerId)` with `customer: Customer @ManyToOne` - only ddd and hexagonal hold the identity as a field, and the warning says what to write: `customerId: long @db(customer_customer_id)` + `customer: Customer @ManyToOne @joinBy(customerId)` |
 | A call that is not signed in (including outside a request, WebFlux, gRPC, `@Async`) | **Visitor** - fail-closed |
 | Inside `CurrentUser.runAsSystem(() -> ...)` | The application itself - everything is allowed (start-up data, batches) |
@@ -2095,8 +2126,8 @@ The **whole row** of another entity (a nested DTO) is carried in a DTO only when
 If an order DTO carried a whole customer with `read=owner`, the customer data would be visible to whoever reads the order, so the build
 drops that field and warns (the identifier `customerId` stays).
 
-The build reports `@access` syntax errors (`read=owners`, `@access(admin)` on an entity) as warnings - if you leave them,
-the application does not start. In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),
+The build reports `@access` syntax errors (`read=owners`, `read=owner|`, `@access(admin)` on an entity) as warnings - if you leave them,
+the application does not start (a word with a capital first is a role name and is checked as above: `read=MANGER`). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),
 using `@access`, `@owner` or `@password` checks and hashes nothing, so the build warns.
 **The 2.x generator (`elcore`, the annotation processor) does not handle these annotations** - use the 3.0 rule engine.
 
@@ -2136,7 +2167,8 @@ only `authenticate` (see "@password / @login" below).
 The session holds the row's key and the **role**. The role is the value of the field marked `@role`, or, if there is none, of the field named `role`,
 and **only an enum or string field with `@access(admin)`** is used (for an enum it is the constant name - `ADMIN` for `UserRole.ADMIN`, compared with
 `adminRole`). If it is not an admin-only field, a new user could send `"role":"ADMIN"`, sign in and become the admin,
-so the build gives a DSL warning and signs in without a role. Without a role field, everyone is an ordinary user.
+so the build gives a DSL warning and signs in without a role. Without a role field, everyone is an ordinary user. The constants of an enum
+role field are the role names `@access` may use (`read=owner|MANAGER`, see "Role names" above).
 
 **`@signin(refresh=request)` - the session follows the row.** Without it, the session keeps the key and the role from sign-in until the next
 sign-in: a role the admin changes waits for that sign-in, and a deleted member keeps a working session. With it, the entity also gets

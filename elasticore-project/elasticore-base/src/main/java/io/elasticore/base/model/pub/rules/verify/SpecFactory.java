@@ -352,6 +352,8 @@ public final class SpecFactory {
         spec.knownCounts(countsOf(model));
         spec.knownSignInEntities(signInsFor(model));
         spec.knownOtherLoginEntities(otherLoginsFor(model));
+        java.util.List<String> roles = rolesFor(model);
+        if (roles != null) spec.knownRoles(roles.get(0), roles.subList(1, roles.size()));
         registerReadLevels(spec, model);
         if (entity.getCommands() != null) {
             for (java.util.Map.Entry<String, io.elasticore.base.model.core.Items<Field>> cmd
@@ -2512,6 +2514,83 @@ public final class SpecFactory {
     static void applicationSignIns(int count, java.util.List<String> otherLogins) {
         applicationSignIns = count;
         applicationOtherLogins = otherLogins;
+        applicationRoles = null;
+        applicationRolesSaid = false;
+    }
+
+    /** The application's role enum, said with its sign-ins: its name, then its constants; null when none. */
+    private static java.util.List<String> applicationRoles;
+
+    private static boolean applicationRolesSaid;
+
+    static void applicationRoles(java.util.List<String> roles) {
+        applicationRoles = roles;
+        applicationRolesSaid = true;
+    }
+
+    /** What a spec is told: the application's role enum when the runner said it, this model's otherwise. */
+    private static java.util.List<String> rolesFor(ECoreModel model) {
+        if (applicationRolesSaid) return applicationRoles;
+        return roleEnumOf(java.util.Collections.singletonList(model));
+    }
+
+    /**
+     * The role enum of the one entity of these models that says @signin: its
+     * name, then its constants - the role names @access may use (issue 269).
+     * The role field is the one marked @role, else the one named role, and
+     * only an administrator writes it (@access(admin)), as the sign-in reads
+     * it. Null when there is no such entity, more than one, or its role is no
+     * enum of the model (a string, say): there is nothing to check a name by.
+     */
+    static java.util.List<String> roleEnumOf(java.util.List<ECoreModel> models) {
+        Entity signIn = null;
+        ECoreModel holder = null;
+        for (ECoreModel model : models) {
+            if (model.getEntityModels() == null) continue;
+            ModelComponentItems<Entity> all = model.getEntityModels().getItems();
+            for (int i = 0; i < all.size(); i++) {
+                if (!all.get(i).getMetaInfo().hasMetaAnnotation("signin")) continue;
+                if (signIn != null) return null;
+                signIn = all.get(i);
+                holder = model;
+            }
+        }
+        if (signIn == null) return null;
+        Field role = null;
+        for (Field f : fieldsOf(signIn)) {
+            if (role == null && f.hasAnnotation("role")) role = f;
+        }
+        for (Field f : fieldsOf(signIn)) {
+            if (role == null && "role".equals(f.getName())) role = f;
+        }
+        if (role == null
+                || role.getTypeInfo() == null
+                || role.getTypeInfo().isList()
+                || !"admin"
+                        .equalsIgnoreCase(String.valueOf(role.getAnnotationValue("access"))
+                                .trim())) return null;
+        String type = role.getTypeInfo().getDefaultTypeName();
+        if (type == null) return null;
+        type = type.substring(type.lastIndexOf('.') + 1);
+        io.elasticore.base.model.enums.EnumModel em =
+                holder.getEnumModels() == null ? null : holder.getEnumModels().findByName(type);
+        if (em == null) {
+            try {
+                io.elasticore.base.ECoreModelContext ctx =
+                        io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+                em = ctx == null ? null : ctx.findModelComponent(type, io.elasticore.base.model.enums.EnumModel.class);
+            } catch (Throwable t) {
+                em = null;
+            }
+        }
+        if (em == null || em.getEnumConstantItems() == null) return null;
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        out.add(em.getIdentity().getName());
+        for (io.elasticore.base.model.enums.EnumConstant c :
+                em.getEnumConstantItems().getItemList()) {
+            out.add(c.getIdentity().getName());
+        }
+        return out;
     }
 
     /** What a spec is told: the application's count when the runner said it, this model's otherwise. */

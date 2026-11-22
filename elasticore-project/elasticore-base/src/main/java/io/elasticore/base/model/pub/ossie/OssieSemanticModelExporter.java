@@ -393,6 +393,14 @@ public final class OssieSemanticModelExporter {
         if (owner != null) ext.put("owner", owner);
         Map<String, String> access = keyValues(entity.getMetaInfo().getMetaAnnotation("access"));
         if (!access.isEmpty()) {
+            // An entry that joins words (owner | MANAGER) is exported as the runtime reads it: owner|MANAGER.
+            for (Map.Entry<String, String> en : access.entrySet()) {
+                String value = en.getValue();
+                if (value == null || (value.indexOf('|') < 0 && value.indexOf('&') < 0)) continue;
+                io.elasticore.base.model.pub.rules.base.AccessExpression read =
+                        io.elasticore.base.model.pub.rules.base.AccessExpression.parse(value);
+                if (read != null) en.setValue(read.text());
+            }
             access.put("*", access.containsKey("*") ? access.get("*") : "admin");
             ext.put("access", access);
         }
