@@ -2164,6 +2164,7 @@ using `@access`, `@owner` or `@password` checks and hashes nothing, so the build
 
 The generated service test (`testCode: true`, Kotlin - v3 Java writes none) adds `RunAsSystemExtension` to an entity that has access rules, so it runs
 as the application itself. A test that checks the permissions themselves signs in as a user and does not use this extension.
+`testCode: "contract"` writes those tests over the API: each entry's callers let in and refused (env guide 6.2.1).
 
 Put `@access(admin)` on a field and it is a **field only the admin writes**. A value sent by anyone else is replaced by the entity
 default (`@default`) on create and by the row's current value on update. This field has no default in the DTO, so when the admin edits only

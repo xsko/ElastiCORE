@@ -2164,6 +2164,7 @@ CurrentUser.runAsSystem(() -> customers.save(admin));
 
 생성되는 서비스 테스트(`testCode: true`, Kotlin - v3 Java 는 쓰지 않음)는 접근 규칙이 있는 엔티티에 `RunAsSystemExtension` 을 붙여
 애플리케이션 자신으로 실행합니다. 권한 자체를 시험하는 테스트는 이 확장 없이 사용자로 로그인해서 씁니다.
+`testCode: "contract"` 는 그런 테스트를 API 로 씁니다: 각 항목이 들이는 호출자와 거부하는 호출자 (env 가이드 6.2.1).
 
 필드에 `@access(admin)` 을 붙이면 **관리자만 쓰는 필드** 입니다. 다른 사람이 보낸 값은 생성 시 엔티티
 기본값(`@default`)으로, 수정 시 행의 현재 값으로 바뀝니다. 이 필드는 DTO 에 기본값을 두지 않아, 관리자가
