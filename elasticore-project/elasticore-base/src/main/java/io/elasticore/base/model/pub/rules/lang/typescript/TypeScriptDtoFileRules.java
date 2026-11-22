@@ -183,7 +183,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
          .var("importList", imports.length() == 0 ? "" : imports.toString())
          .varLines("fieldList", RuleText.linesOf(fields));
         c.slot("metaList");
-        if (withMeta) meta(c, e, className, fields);
+        if (withMeta) meta(c, e, className, fields, declaredTypesIn(fields));
     }
 
     /**
@@ -194,7 +194,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
      * what is wrong beside the field, in the DSL's own words, before the
      * round trip. Only what a request may write is checked.
      */
-    private void meta(SourceCode c, EntitySpec e, String className, String rendered) {
+    private void meta(SourceCode c, EntitySpec e, String className, String rendered, Set<String> named) {
         // shown: the fields the constant describes - not a list. checked: the
         // fields validate() looks at - those, and a list with a @minsize the
         // server refuses (400) when it is missing or shorter.
@@ -214,6 +214,31 @@ public class TypeScriptDtoFileRules implements CodeRules {
         }
         String base = className.endsWith("DTO") ? className.substring(0, className.length() - 3) : className;
 
+        // The type's own label, for a page title or a column of types: only where the DSL gives one.
+        String typeLabel = e.metaValue("label");
+        java.util.Map<String, String> typeLabels = e.labelTranslations();
+        if (typeLabel == null || typeLabel.trim().isEmpty()) {
+            io.elasticore.base.model.core.Annotation entityLabel = entityLabel(e);
+            typeLabel = entityLabel == null ? null : entityLabel.getValue();
+            typeLabels = io.elasticore.base.model.core.LabelTranslations.of(entityLabel);
+        }
+        // A name the file already imports or declares - a type ItemMeta a field holds - is left
+        // to it: a second declaration of it does not compile (TS2440).
+        String metaName = base + "Meta";
+        boolean taken = metaName.equals(className) || named.contains(metaName);
+        if (!taken && typeLabel != null && !typeLabel.trim().isEmpty()) {
+            c.varLine("metaList", "")
+                    .varLine(
+                            "metaList",
+                            "/** The type's label, as the DSL declares it, and in other languages: language -> label. */")
+                    .varLine(
+                            "metaList",
+                            "export const %sMeta: { label: string; labels: Record<string, string> } = { label: %s, labels: %s };",
+                            base,
+                            string(typeLabel.trim()),
+                            languages(typeLabels));
+        }
+
         c.varLine("metaList", "")
          .varLine("metaList", "/** Each field's label and limits, as the DSL declares them. */")
          .varLine("metaList", "export const %sFields = {", base);
@@ -222,20 +247,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
             m.append("label: ").append(RuleText.quote(labelOf(f)));
             // @label(en="Unit cost"): the label in the other languages the DSL gives it.
             java.util.Map<String, String> translations = f.labelTranslations();
-            if (!translations.isEmpty()) {
-                m.append(", labels: { ");
-                boolean first = true;
-                for (java.util.Map.Entry<String, String> t : translations.entrySet()) {
-                    if (!first) m.append(", ");
-                    first = false;
-                    // zh-TW is not a name: quoted, as a TypeScript key must be.
-                    m.append(t.getKey().indexOf('-') < 0 ? t.getKey() : RuleText.quote(t.getKey()));
-                    m.append(": ")
-                            .append(RuleText.quote(
-                                    t.getValue().replace("\\", "\\\\").replace("\"", "\\\"")));
-                }
-                m.append(" }");
-            }
+            if (!translations.isEmpty()) m.append(", labels: ").append(languages(translations));
             // Markup the server cleaned before saving: a screen may render it as HTML.
             if (f.hasDsl(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)) m.append(", html: true");
             if (!writable(f)) {
@@ -261,73 +273,223 @@ public class TypeScriptDtoFileRules implements CodeRules {
          .varLine("metaList", "export function validate%s(value: Partial<%s> | null | undefined, partial = false): Record<string, string> {", base, className)
          .varLine("metaList", "    const errors: Record<string, string> = {};")
          .varLine("metaList", "    if (value == null) return errors;");
+        // What validateXxxCodes says for the same checks: the code and values per field, in order.
+        List<String> codeLines = new ArrayList<String>();
         for (FieldSpec f : checked) {
             if (!writable(f)) continue;
             String name = c.syntax().escapeName(f.name());
             String v = "value." + name;
             String label = labelOf(f);
-            List<String> checks = new ArrayList<String>();
+            Checks checks = new Checks(name, f.name());
             if (f.isList()) {
                 // @minsize(1, '...'): what the server's @NotNull and @Size refuse with 400, said first.
                 // Missing counts as too short, so it also says what "!" on the list would.
                 int least = minSize(f);
                 String message = DtoBaseRules.Bound.split(f.dslValueAny("minsize"))[1];
-                checks.add(String.format("if (!partial && (%s == null || %s.length < %d)) errors.%s = %s;",
-                        v, v, least, name, RuleText.quote(message != null ? message : label + " needs at least " + least)));
-                c.varLine("metaList", "    %s", checks.get(0));
+                c.varLine(
+                        "metaList",
+                        "    %s",
+                        String.format(
+                                "if (!partial && (%s == null || %s.length < %d)) errors.%s = %s;",
+                                v,
+                                v,
+                                least,
+                                name,
+                                RuleText.quote(message != null ? message : label + " needs at least " + least)));
+                // The server's two constraints, each by its own code.
+                checks.add(String.format("!partial && %s == null", v), null, "NotNull", "{}");
+                checks.add(
+                        String.format("!partial && %s != null && %s.length < %d", v, v, least),
+                        null,
+                        "Size",
+                        String.format("{ min: %d }", least));
+                codeLines.addAll(checks.codes());
                 continue;
             }
             if (f.required()) {
                 // Only a string can be empty; comparing anything else with '' does not compile.
-                checks.add(f.isStringType()
-                        ? String.format("if (partial ? %s === '' : (%s == null || %s === '')) errors.%s = %s;", v, v, v, name, RuleText.quote(label + " is required"))
-                        : String.format("if (!partial && %s == null) errors.%s = %s;", v, name, RuleText.quote(label + " is required")));
+                checks.add(
+                        f.isStringType()
+                                ? String.format("partial ? %s === '' : (%s == null || %s === '')", v, v, v)
+                                : String.format("!partial && %s == null", v),
+                        RuleText.quote(label + " is required"),
+                        "NotNull",
+                        "{}");
             }
             if (f.isStringType()) {
+                // One @Size carries both lengths, so a value too long and one too short name both.
+                String size = sizeValues(f);
                 if (f.validationMaxLength() >= 0) {
-                    checks.add(String.format("else if (%s != null && String(%s).length > %d) errors.%s = %s;",
-                            v, v, f.validationMaxLength(), name,
-                            RuleText.quote(label + " is at most " + f.validationMaxLength() + " characters")));
+                    checks.add(
+                            String.format("%s != null && String(%s).length > %d", v, v, f.validationMaxLength()),
+                            RuleText.quote(label + " is at most " + f.validationMaxLength() + " characters"),
+                            "Size",
+                            size);
                 }
                 if (f.minLength() > 0) {
-                    checks.add(String.format("else if (%s != null && %s !== '' && String(%s).length < %d) errors.%s = %s;",
-                            v, v, v, f.minLength(), name,
-                            RuleText.quote(label + " is at least " + f.minLength() + " characters")));
+                    checks.add(
+                            String.format("%s != null && %s !== '' && String(%s).length < %d", v, v, v, f.minLength()),
+                            RuleText.quote(label + " is at least " + f.minLength() + " characters"),
+                            "Size",
+                            size);
                 }
                 if (f.hasDsl("email")) {
-                    checks.add(String.format("else if (%s && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(%s))) errors.%s = 'Email format invalid';",
-                            v, v, name));
+                    checks.add(
+                            String.format("%s && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(%s))", v, v),
+                            "'Email format invalid'",
+                            "Email",
+                            "{}");
                 }
                 // Read as the DTO's @Pattern reads it, so the two check the same thing.
                 String regexp = f.hasDsl("pattern") ? f.patternRegexp() : null;
                 if (regexp != null) {
                     String msg = f.patternMessage();
-                    checks.add(String.format("else if (%s && !new RegExp(%s).test(String(%s))) errors.%s = %s;",
-                            v, RuleText.quote("^(?:" + regexp + ")$"), v, name,
-                            RuleText.quote(msg == null ? DtoBaseRules.notInTheExpectedForm(f) : msg)));
+                    checks.add(
+                            String.format(
+                                    "%s && !new RegExp(%s).test(String(%s))",
+                                    v, RuleText.quote("^(?:" + regexp + ")$"), v),
+                            RuleText.quote(msg == null ? DtoBaseRules.notInTheExpectedForm(f) : msg),
+                            "Pattern",
+                            String.format("{ regexp: %s }", RuleText.quote(regexp)));
                 }
             }
             String minDecl = f.dslValueAny("min", "minval", "minvalue");
             String min = bound(minDecl);
             if (min != null) {
-                checks.add(String.format("else if (%s != null && Number(%s) < %s) errors.%s = %s;", v, v, min, name,
-                        RuleText.quote(message(minDecl, label + " must be at least " + min))));
+                checks.add(
+                        String.format("%s != null && Number(%s) < %s", v, v, min),
+                        RuleText.quote(message(minDecl, label + " must be at least " + min)),
+                        DtoBaseRules.decimalBound(f, min, false) ? "DecimalMin" : "Min",
+                        String.format("{ value: %s }", min));
             }
             String maxDecl = f.dslValueAny("max", "maxval", "maxvalue");
             String max = bound(maxDecl);
             if (max != null) {
-                checks.add(String.format("else if (%s != null && Number(%s) > %s) errors.%s = %s;", v, v, max, name,
-                        RuleText.quote(message(maxDecl, label + " must be at most " + max))));
+                checks.add(
+                        String.format("%s != null && Number(%s) > %s", v, v, max),
+                        RuleText.quote(message(maxDecl, label + " must be at most " + max)),
+                        DtoBaseRules.decimalBound(f, max, false) ? "DecimalMax" : "Max",
+                        String.format("{ value: %s }", max));
             }
-            // A chain of else-ifs reports the first thing wrong with a field.
-            for (int i = 0; i < checks.size(); i++) {
-                String line = checks.get(i);
-                if (i == 0 && line.startsWith("else ")) line = line.substring(5);
-                c.varLine("metaList", "    %s", line);
-            }
+            for (String line : checks.messages()) c.varLine("metaList", "    %s", line);
+            codeLines.addAll(checks.codes());
         }
         c.varLine("metaList", "    return errors;")
          .varLine("metaList", "}");
+
+        // The same checks as the server's fieldErrors say them: a screen in another
+        // language says each in its own words, from the code and the constraint's values.
+        String fieldError = "Array<{ field: string; code: string; values: Record<string, number | string> }>";
+        c.varLine("metaList", "")
+                .varLine("metaList", "/**")
+                .varLine(
+                        "metaList",
+                        " * The same checks as validate%s, as the server's fieldErrors codes: the field,",
+                        base)
+                .varLine(
+                        "metaList",
+                        " * the constraint (NotNull, Size, Min, Max, Pattern ...) and its values (Size: min,")
+                .varLine("metaList", " * max; Min, Max: value; Pattern: regexp). Empty when nothing is wrong.")
+                .varLine("metaList", " */")
+                .varLine(
+                        "metaList",
+                        "export function validate%sCodes(value: Partial<%s> | null | undefined, partial = false): %s {",
+                        base,
+                        className,
+                        fieldError)
+                .varLine("metaList", "    const errors: %s = [];", fieldError)
+                .varLine("metaList", "    if (value == null) return errors;");
+        for (String line : codeLines) c.varLine("metaList", "    %s", line);
+        c.varLine("metaList", "    return errors;").varLine("metaList", "}");
+    }
+
+    /**
+     * The checks of one field: each a condition, the message validateXxx sets
+     * and the code validateXxxCodes adds. A chain of else-ifs reports the
+     * first thing wrong with a field, in both.
+     */
+    private static final class Checks {
+        private final String name;
+        private final String field;
+        private final List<String> messages = new ArrayList<String>();
+        private final List<String> codes = new ArrayList<String>();
+
+        Checks(String name, String field) {
+            this.name = name;
+            this.field = field;
+        }
+
+        /** message: the TypeScript expression validateXxx sets, or null when it says the field another way. */
+        void add(String condition, String message, String code, String values) {
+            String start = codes.isEmpty() ? "if" : "else if";
+            if (message != null) {
+                messages.add(String.format(
+                        "%s (%s) errors.%s = %s;", messages.isEmpty() ? "if" : "else if", condition, name, message));
+            }
+            codes.add(String.format(
+                    "%s (%s) errors.push({ field: %s, code: %s, values: %s });",
+                    start, condition, RuleText.quote(field), RuleText.quote(code), values));
+        }
+
+        List<String> messages() {
+            return messages;
+        }
+
+        List<String> codes() {
+            return codes;
+        }
+    }
+
+    /** The values of the server's @Size on a text: the least and the most length it declares. */
+    private static String sizeValues(FieldSpec f) {
+        List<String> values = new ArrayList<String>();
+        if (f.minLength() > 0) values.add("min: " + f.minLength());
+        if (f.validationMaxLength() >= 0) values.add("max: " + f.validationMaxLength());
+        StringBuilder sb = new StringBuilder("{ ");
+        for (int i = 0; i < values.size(); i++) sb.append(i == 0 ? "" : ", ").append(values.get(i));
+        return sb.append(" }").toString();
+    }
+
+    /** A language -> text map as a TypeScript object: { en: "Unit cost", "zh-TW": "..." }; {} when empty. */
+    static String languages(java.util.Map<String, String> translations) {
+        if (translations.isEmpty()) return "{}";
+        StringBuilder m = new StringBuilder("{ ");
+        boolean first = true;
+        for (java.util.Map.Entry<String, String> t : translations.entrySet()) {
+            if (!first) m.append(", ");
+            first = false;
+            m.append(key(t.getKey())).append(": ").append(string(t.getValue()));
+        }
+        return m.append(" }").toString();
+    }
+
+    /** A language as an object key: zh-TW is not a name, so it is quoted, as a TypeScript key must be. */
+    static String key(String language) {
+        return language.indexOf('-') < 0 ? language : RuleText.quote(language);
+    }
+
+    /** A text as a TypeScript string, its backslashes and double quotes escaped. */
+    static String string(String text) {
+        return RuleText.quote(text.replace("\\", "\\\\").replace("\"", "\\\""));
+    }
+
+    /**
+     * The meta label of the entity a DTO stands for, or null: a DTO without a
+     * label of its own is shown by its entity's.
+     */
+    private static io.elasticore.base.model.core.Annotation entityLabel(EntitySpec e) {
+        io.elasticore.base.model.DataModelComponent named;
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            named = ctx == null ? null : ctx.findModelComponent(e.getName());
+        } catch (RuntimeException notInTheModel) {
+            return null;
+        }
+        if (!(named instanceof io.elasticore.base.model.entity.Entity)) return null;
+        io.elasticore.base.model.MetaInfo meta = ((io.elasticore.base.model.entity.Entity) named).getMetaInfo();
+        java.util.Map<String, io.elasticore.base.model.core.Annotation> map =
+                meta == null ? null : meta.getMetaAnnotationMap();
+        return map == null ? null : map.get("label");
     }
 
     /** What a request may write: not shown-only, not derived, not the persistence layer's. */

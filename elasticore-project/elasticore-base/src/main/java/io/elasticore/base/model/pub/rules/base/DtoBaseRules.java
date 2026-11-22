@@ -170,10 +170,7 @@ public class DtoBaseRules implements CodeRules {
         // does not compile there; it is a DecimalMin/DecimalMax, which Hibernate
         // Validator checks on any Number. A whole bound stays @Min/@Max, and the
         // compatible output keeps what 2.x writes.
-        boolean arbitraryPrecision = f.isBigDecimal()
-                || f.isMoney()
-                || "BIGINTEGER".equals(f.baseTypeName())
-                || (!ctx(e).compatible() && isFloating(f) && !isWhole(value));
+        boolean arbitraryPrecision = decimalBound(f, value, ctx(e).compatible());
         AnnoCode a;
         if (message == null) {
             // As 2.x writes it: the bare value.
@@ -187,6 +184,18 @@ public class DtoBaseRules implements CodeRules {
             a.val("message", message);
         }
         ctx(e).field(f).ensure(a);
+    }
+
+    /**
+     * Whether a numeric bound is a DecimalMin/DecimalMax rather than a
+     * Min/Max: on BigDecimal, money and BigInteger, and - outside the
+     * compatible output - a fraction on a double or a float.
+     */
+    public static boolean decimalBound(FieldSpec f, String value, boolean compatible) {
+        return f.isBigDecimal()
+                || f.isMoney()
+                || "BIGINTEGER".equals(f.baseTypeName())
+                || (!compatible && isFloating(f) && !isWhole(value));
     }
 
     /** A double or a float, boxed or not. */

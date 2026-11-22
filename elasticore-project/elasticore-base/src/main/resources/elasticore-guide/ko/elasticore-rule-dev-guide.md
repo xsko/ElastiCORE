@@ -1063,7 +1063,7 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
 | `isMoney()`, `isDate()`, `isDateTime()` | `money`, `date`, `datetime` |
 
 `DomainSpec`: `getName()`, `className()`, `entities()`, `namespace("event")`(없으면 `null`), `config("a.b")`, `isOn("a.b")`.
-`EnumSpec`: `getName()`, `constants()` → `name()`, `values()`, `fields()`.
+`EnumSpec`: `getName()`, `constants()` → `name()`, `values()`, `fields()`, `labelTranslations()` (상수 -> 언어 -> 라벨, `label_en` 컬럼에서. 없으면 빈 맵).
 `PortSpec`: `getName()`, `protocol()`, `url()`, `operations()` → `name()`, `httpMethod()`, `url()`, `returnType()`, `params()`.
 
 ### `SourceCode` - `ctx(spec)` 이 돌려주는 지금 만드는 파일
