@@ -36,7 +36,8 @@
   `validateXxx`, and `XxxMeta` in each DTO file whose type has a meta label (a `--` comment on the `meta:` line
   included). Nothing else in its TypeScript output changes, and it writes no label bundle and no `XxxLabels`.
 - Unchanged: `validateXxx`, `XxxFields`, `XxxLabel`. The columns stay columns of the enumeration
-  (properties of the Java and Kotlin enums). The generated messages (`<domain>-messages.properties`) do not read them yet. The
+  (properties of the Java and Kotlin enums); the Ossie export and the generated messages read them too
+  (`ossie-code-labels.md`, `message-labels.md`). The
   2.x-compatible output and the 2.x generator are untouched.
 - Checked: `ScreenLabelsTypeScriptTest` (`XxxMeta` with and without translations, none without a label; the codes of
   each constraint - `NotNull`, `Size` with both lengths, `Min`/`Max`, `DecimalMin`/`DecimalMax`, `Pattern`, `Email`, a

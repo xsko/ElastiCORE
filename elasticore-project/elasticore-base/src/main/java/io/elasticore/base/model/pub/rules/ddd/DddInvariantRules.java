@@ -363,11 +363,18 @@ public class DddInvariantRules implements CodeRules,
             c.varLine("bodyList", "    if (%s) {", invariant.violation);
             // Still an IllegalStateException, but one the API can recognize:
             // a broken promise is the request's fault (422), not the program's.
-            c.varLine("bodyList", kotlin
-                            ? "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s\")"
-                            : "        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s\");",
-                    literal(invariant.code, kotlin), literal(invariant.message, kotlin));
-            ErrorCatalog.record(invariant.code, invariant.message);
+            // Its values, {0} the field and {1} the entity, are said by their
+            // labels in the response's language.
+            c.varLine(
+                    "bodyList",
+                    kotlin
+                            ? "        throw io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s\", %s, %s)"
+                            : "        throw new io.elasticore.springboot3.validation.InvariantViolationException(\"%s\", \"%s\", %s, %s);",
+                    literal(invariant.code, kotlin),
+                    literal(invariant.message, kotlin),
+                    label(invariant.field, kotlin),
+                    label(e.getName(), kotlin));
+            ErrorCatalog.record(invariant.code, invariant.sentence);
             c.varLine("bodyList", "    }");
         }
 
@@ -438,15 +445,60 @@ public class DddInvariantRules implements CodeRules,
     /** One promise: the condition that breaks it, and what to say when it does. */
     private static final class Invariant {
         private final String violation;
+        /** What is said where no bundle has the code: the DSL's sentence, or one naming the field. */
         private final String message;
         /** The message code a translation is found by: invariant.<Entity>.<what>. */
         private final String code;
+        /** The label bundle's key of the field the promise is about ({0}): Order.total, or the entity's. */
+        private final String field;
+        /** The bundle's default sentence: the DSL's as written, or a pattern naming {0} the field, {1} the entity. */
+        private final String sentence;
 
-        private Invariant(String violation, String message, String code) {
+        private Invariant(String violation, String message, String code, String field, String sentence) {
             this.violation = violation;
             this.message = message;
             this.code = code;
+            this.field = field;
+            this.sentence = sentence;
         }
+
+        Invariant coded(String other) {
+            return new Invariant(violation, message, other, field, sentence);
+        }
+    }
+
+    /** The runtime's Label of a key of the label bundle: Order, Order.total. */
+    static String label(String key, boolean kotlin) {
+        return "io.elasticore.springboot3.validation.Label.of(\"" + literal(key, kotlin) + "\")";
+    }
+
+    /**
+     * The label bundle's key of a field: Type.field, by the type that
+     * declares it - an inherited field is its parent's.
+     */
+    static String fieldKey(EntitySpec e, FieldSpec f) {
+        String type = f.isParentField() && e.parentName() != null ? e.parentName() : e.getName();
+        return type + "." + f.name();
+    }
+
+    /** A word of a condition that may name a field. */
+    private static final java.util.regex.Pattern WORD = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    /** The key of the first field a condition reads (items.size > 0: items); the entity's when it reads none. */
+    private static String fieldKeyOf(EntitySpec e, String condition) {
+        String code = condition.replaceAll("'[^']*'|\"[^\"]*\"", " ");
+        java.util.regex.Matcher m = WORD.matcher(code);
+        while (m.find()) {
+            for (FieldSpec f : e.fields()) {
+                if (f.name().equals(m.group())) return fieldKey(e, f);
+            }
+        }
+        return e.getName();
+    }
+
+    /** Text as a MessageFormat pattern says it literally: an apostrophe doubled, a brace quoted. */
+    private static String literalPattern(String text) {
+        return text.replace("'", "''").replace("{", "'{'").replace("}", "'}'");
     }
 
     /**
@@ -490,7 +542,7 @@ public class DddInvariantRules implements CodeRules,
             Invariant inv = out.get(i);
             String code = inv.code;
             for (int n = 2; !codes.add(code); n++) code = inv.code + "-" + n;
-            if (!code.equals(inv.code)) out.set(i, new Invariant(inv.violation, inv.message, code));
+            if (!code.equals(inv.code)) out.set(i, inv.coded(code));
         }
         return out;
     }
@@ -506,8 +558,6 @@ public class DddInvariantRules implements CodeRules,
         String min = f.dslValueAny("minsize");
         if (min != null) {
             String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(min);
-            String message = bound[1] != null ? bound[1]
-                    : String.format("%s must hold at least %s", f.name(), bound[0]);
             int least;
             try {
                 least = Integer.parseInt(bound[0].trim());
@@ -516,18 +566,35 @@ public class DddInvariantRules implements CodeRules,
             }
             // The condition grammar compares with > and <: at least n is more than n - 1.
             Invariant i = parse(e, String.format("%s.size > %d, 'x'", f.name(), least - 1), var, syntax);
-            if (i != null) out.add(new Invariant(i.violation, message.replace("\"", "'"),
-                    codeOf(e, f.name() + ".minsize")));
+            if (i != null) out.add(bounded(e, f, i.violation, bound, "must hold at least", "minsize"));
         }
         String max = f.dslValueAny("maxsize");
         if (max != null) {
             String[] bound = io.elasticore.base.model.pub.rules.base.DtoBaseRules.Bound.split(max);
             String violation = DddCondition.expression(e, f.name() + ".size > " + bound[0], var, false, syntax);
             if (violation == null) return;
-            String message = bound[1] != null ? bound[1]
-                    : String.format("%s must hold at most %s", f.name(), bound[0]);
-            out.add(new Invariant(violation, message.replace("\"", "'"), codeOf(e, f.name() + ".maxsize")));
+            out.add(bounded(e, f, violation, bound, "must hold at most", "maxsize"));
         }
+    }
+
+    /**
+     * A bound of one field: the DSL's sentence as written, else "<field>
+     * <words> <bound>" - in the bundle with {0} for the field, which the
+     * response says by its label.
+     */
+    private static Invariant bounded(
+            EntitySpec e, FieldSpec f, String violation, String[] bound, String words, String kind) {
+        String code = codeOf(e, f.name() + "." + kind);
+        if (bound[1] != null) {
+            String said = bound[1].replace("\"", "'");
+            return new Invariant(violation, said, code, fieldKey(e, f), said);
+        }
+        return new Invariant(
+                violation,
+                String.format("%s %s %s", f.name(), words, bound[0]),
+                code,
+                fieldKey(e, f),
+                "{0} " + literalPattern(words + " " + bound[0]));
     }
 
     private void addBound(List<Invariant> out, EntitySpec e, FieldSpec f, String declared,
@@ -539,9 +606,7 @@ public class DddInvariantRules implements CodeRules,
         String violation = DddCondition.expression(e, f.name() + " " + violatingOperator + " " + bound[0],
                 var, false, syntax);
         if (violation == null) return;
-        String message = bound[1] != null ? bound[1]
-                : String.format("%s must be %s %s", f.name(), words, bound[0]);
-        out.add(new Invariant(violation, message.replace("\"", "'"), codeOf(e, f.name() + "." + kind)));
+        out.add(bounded(e, f, violation, bound, "must be " + words, kind));
     }
 
     /**
@@ -572,11 +637,19 @@ public class DddInvariantRules implements CodeRules,
         String violation = violationOf(e, condition, var, syntax);
         if (violation == null) return null;
 
-        return new Invariant(violation,
-                message == null || message.isEmpty()
-                        ? String.format("%s violates %s", e.getName(), condition.replace("\"", "'"))
-                        : message.replace("\"", "'"),
-                codeOf(e, ErrorCatalog.slug(condition)));
+        String code = codeOf(e, ErrorCatalog.slug(condition));
+        String field = fieldKeyOf(e, condition);
+        if (message == null || message.isEmpty()) {
+            String written = condition.replace("\"", "'");
+            return new Invariant(
+                    violation,
+                    String.format("%s violates %s", e.getName(), written),
+                    code,
+                    field,
+                    "{1} violates " + literalPattern(written));
+        }
+        String said = message.replace("\"", "'");
+        return new Invariant(violation, said, code, field, said);
     }
 
     /**

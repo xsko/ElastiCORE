@@ -44,6 +44,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * built-in message (Size, NotNull ...) that no bundle translates is said again
  * in the same language, with its numbers, so one answer is in one language.
  *
+ * A value that is a {@link Label} - the field, the entity, the state a
+ * generated refusal names - is said in that same language, by the domain's
+ * label bundle beside its message bundle ({@code i18n/<domain>-labels_<lang>});
+ * where that language has no label, by its name.
+ *
  * The language, for an application on Spring MVC's default locale resolver:
  * <ul>
  *   <li>the first Accept-Language entry that has a translation - a
@@ -105,18 +110,72 @@ public final class ErrorMessages {
         if (application != null) source.setParentMessageSource(application);
         names.add("ValidationMessages");
         this.translations = names.toArray(new String[0]);
+        // Each domain's label bundle sits beside its message bundle: i18n/shop-messages -> i18n/shop-labels.
+        Set<String> labels = new LinkedHashSet<String>();
+        if (bundles != null) {
+            for (String b : bundles) {
+                if (b != null && b.endsWith(MESSAGES))
+                    labels.add(b.substring(0, b.length() - MESSAGES.length()) + "-labels");
+            }
+        }
+        this.labelBundles = labels.toArray(new String[0]);
     }
 
-    /** The message for a code, or the default as given (not formatted) when no bundle has it. */
+    /** The end of a domain's message bundle name: i18n/shop-messages. */
+    private static final String MESSAGES = "-messages";
+
+    /** The domains' label bundles, beside their message bundles: what a {@link Label} is said by. */
+    private final String[] labelBundles;
+
+    /**
+     * The message for a code, or the default as given (not formatted) when no bundle has it.
+     *
+     * The values reach only a sentence that holds an opening brace: one
+     * without a placeholder is said as written, apostrophes and all, and one
+     * with placeholders is a MessageFormat pattern (an apostrophe written twice).
+     * A {@link Label} among the values is said in the response's language.
+     */
     public String text(String code, String defaultText, Object... args) {
         if (code == null) return defaultText;
         try {
-            String found = source.getMessage(code, args, null, language());
+            Locale language = language();
+            String sentence = source.getMessage(code, null, null, language);
+            if (sentence == null) return defaultText;
+            if (args == null || args.length == 0 || sentence.indexOf('{') < 0) return sentence;
+            String found = source.getMessage(code, said(args, language), null, language);
             return found != null ? found : defaultText;
         } catch (RuntimeException ex) {
             // A translation with a broken pattern must not turn a 4xx into a 500.
             return defaultText;
         }
+    }
+
+    /** The values as the sentence says them: each {@link Label} by its label in the language, the rest as given. */
+    private Object[] said(Object[] args, Locale language) {
+        Object[] out = args.clone();
+        for (int i = 0; i < out.length; i++) {
+            if (out[i] instanceof Label value) out[i] = label(value, language);
+        }
+        return out;
+    }
+
+    /**
+     * A label in the response's language: the label bundle's file for that
+     * language itself - {@code _en} for the bundles' own wording (English) -
+     * never its default file, which holds the DSL's "--" text; else the name.
+     */
+    String label(Label label, Locale language) {
+        Locale in = Locale.ROOT.equals(language) || language == null ? Locale.ENGLISH : language;
+        List<String> parts = new ArrayList<String>();
+        for (int i = 0; i < label.keys().size(); i++) {
+            String key = label.keys().get(i);
+            String text = null;
+            for (int b = 0; key != null && text == null && b < labelBundles.length; b++) {
+                text = source.ownText(labelBundles[b], key, in);
+            }
+            parts.add(text != null ? text : label.names().get(i));
+        }
+        return String.join(Label.SEPARATOR, parts);
     }
 
     /**
@@ -174,7 +233,7 @@ public final class ErrorMessages {
         if (found != null) return found;
         if (args == null || args.length == 0) return defaultPattern;
         try {
-            return new MessageFormat(defaultPattern, Locale.ROOT).format(args);
+            return new MessageFormat(defaultPattern, Locale.ROOT).format(said(args, language()));
         } catch (RuntimeException ex) {
             return defaultPattern;
         }
@@ -374,6 +433,13 @@ public final class ErrorMessages {
                 }
             }
             return super.resolveCode(code, locale);
+        }
+
+        /** The text a bundle's own file for the locale or its language has for a key; null without one. */
+        String ownText(String basename, String key, Locale locale) {
+            ResourceBundle own = ownFileWith(basename, key, locale);
+            Object text = own == null ? null : ((PropertyResourceBundle) own).handleGetObject(key);
+            return text instanceof String said ? said : null;
         }
 
         /**

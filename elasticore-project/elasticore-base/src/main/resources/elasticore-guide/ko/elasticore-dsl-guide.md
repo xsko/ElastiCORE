@@ -166,10 +166,10 @@ entity:
 3. **Apache Ossie 시맨틱 모델** - 번역은 필드(와 데이터셋)의 `ai_context.synonyms` 에 `@terms` 단어 다음으로 들어간다.
    그 언어로 물어도 같은 필드를 찾는다. `description` 은 `--` 라벨 그대로다.
 
-번역되지 않고 도메인 언어로 남는 것: Javadoc, `@Schema(description)`, `@Comment` 와 DB 컬럼 주석, 서버가 쓰는 오류
-문장(`"<label> is not in the expected form"`) - 응답 문장은 메시지 번들로 번역한다(`elasticore-rule-guide.md`,
-"오류 코드와 다국어"). 화면이 그 문장을 자기 말로 쓰려면 TypeScript 클라이언트의
-`validateXxxCodes` 를 읽는다(같은 절).
+번역되지 않고 도메인 언어로 남는 것: Javadoc, `@Schema(description)`, `@Comment`, DB 컬럼 주석, 검사의 기본 문장
+(`"<label> is not in the expected form"`) - 응답 문장은 메시지 번들로 번역한다(`elasticore-rule-guide.md`, "오류 코드와 다국어").
+그 번들의 생명주기·불변식 거절 문장은 필드·엔티티·상태를 응답 언어의 이 라벨로 부른다. 화면이 자기 말로 쓰려면
+TypeScript 클라이언트의 `validateXxxCodes` 를 읽는다(같은 절).
 
 #### enumeration 의 다른 언어 라벨 (`label_en` 컬럼)
 
@@ -212,7 +212,7 @@ enumeration:
   `instructions`), 그리고 필드의 `ELASTICORE` 확장에 `codes` 옆에 데이터로:
   `"code_labels": {"PEN": {"en": "Pending", "zh-TW": "待處理"}, "SHP": {"en": "Shipped"}}`. 라벨 컬럼은 `codes` 와
   같이 `label`, `name`, `desc` 라는 이름의 첫 필드다.
-- 아직 아님: 메시지 번들은 라벨 컬럼만 읽는다.
+- 생명주기 거절 문장은 상태를 이 컬럼으로 부른다(`elasticore-rule-guide.md`).
 - 이런 컬럼이 없는 enumeration 은 전과 똑같이 생성된다.
 
 ### Meta 어노테이션
@@ -425,7 +425,7 @@ entity:
 
 - **화살표가 나가지 않는 상태는 끝(최종) 상태**입니다. 위 예에서 `SHIPPED` 와 `CANCELLED` 에서는
   어떤 명령도 받지 않습니다. 예를 들어 배송된 주문에 `cancel` 을 보내면 409 (지금 상태와 충돌):
-  `PurchaseOrder cannot cancel when status is SHIPPED; it must be [PLACED]` (Kotlin: `... it must be PLACED`)
+  `PurchaseOrder cannot cancel when status is SHIPPED; it must be PLACED` (예외의 `getMessage()`: `... it must be [PLACED]`)
 - SHIPPED 다음 단계가 필요하면 enum 에 상태를 더하고 명령 한 줄을 더합니다:
 
 ```yaml
@@ -542,7 +542,7 @@ public void cancel() {
 ```
 
 - **모두 아니면 아무것도**: 하나라도 시작 상태가 아니면 거부하고(409) **어느 필드도 바뀌지 않습니다.**
-  예) 배송비를 안 낸(`DUE`) 배송을 취소하면 `Shipment cannot cancel when fee is DUE; it must be [PAID]`,
+  예) 배송비를 안 낸(`DUE`) 배송을 취소하면 `Shipment cannot cancel when fee is DUE; it must be PAID`,
   `status` 는 `READY` 그대로.
 - TypeScript `ShipmentApi.canCancel(dto)` 도 두 조건을 모두 봅니다.
 - 생성 클래스의 생명주기 주석에 `cancel: READY -> CANCELLED  (with fee)` 처럼 함께 바뀌는 필드가 표시됩니다.
@@ -581,7 +581,7 @@ Pet Store 에서 (`ShopFlowTest.onlyACancelledOrderIsDeleted`):
 DELETE /api/petstore/purchaseOrder/{배송된 주문}
 HTTP/1.1 409
 { "code": "state.PurchaseOrder.status.delete",
-  "detail": "PurchaseOrder cannot be deleted when status is SHIPPED; it must be [CANCELLED]" }
+  "detail": "PurchaseOrder cannot be deleted when Order status is SHIPPED; it must be CANCELLED" }
 ```
 
 - 상태 필드가 여러 개면 **모두** 허용 상태여야 지워집니다 (`canDelete()` 는 AND). 예) 티켓은 `status: CLOSED` 이고

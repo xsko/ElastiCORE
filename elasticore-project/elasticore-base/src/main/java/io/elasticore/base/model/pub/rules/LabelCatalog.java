@@ -39,6 +39,8 @@ public final class LabelCatalog {
         final Map<String, String> constants;
         /** An enumeration's constants: name -> language -> label, from its label_en columns. */
         final Map<String, Map<String, String>> translations;
+        /** An enumeration's constants: name -> the label column, whether or not it has label_en columns. */
+        final Map<String, String> own;
 
         Type(String name, MetaInfo meta, List<Field> fields) {
             this(
@@ -46,6 +48,7 @@ public final class LabelCatalog {
                     meta,
                     fields,
                     Collections.<String, Map<String, String>>emptyMap(),
+                    Collections.<String, String>emptyMap(),
                     Collections.<String, String>emptyMap());
         }
 
@@ -54,12 +57,14 @@ public final class LabelCatalog {
                 MetaInfo meta,
                 List<Field> fields,
                 Map<String, Map<String, String>> translations,
-                Map<String, String> constants) {
+                Map<String, String> constants,
+                Map<String, String> own) {
             this.name = name;
             this.meta = meta;
             this.fields = fields;
             this.translations = translations;
             this.constants = constants;
+            this.own = own;
         }
 
         Annotation label() {
@@ -80,10 +85,32 @@ public final class LabelCatalog {
         return out;
     }
 
+    /**
+     * Every language the bundle has a file for: the languages labels are
+     * written in, and the language of the "--" labels (config: labelLanguage)
+     * when it is set - a file of its own, so an answer in that language finds
+     * them without falling back to the default file, which English never reads.
+     */
+    public static Set<String> languages(ECoreModel model, String labelLanguage) {
+        Set<String> out = languages(model);
+        if (labelLanguage != null) out.add(labelLanguage);
+        return out;
+    }
+
     /** Whether an enumeration's constants are in the bundle: it has label_en columns. */
     public static boolean hasConstants(ECoreModel model) {
         for (Type t : types(model)) {
             if (!t.constants.isEmpty()) return true;
+        }
+        return false;
+    }
+
+    /** Whether the file of a language holds constants: label_en columns, or the label columns in the labelLanguage file. */
+    public static boolean hasConstants(ECoreModel model, String language, String labelLanguage) {
+        if (hasConstants(model)) return true;
+        if (language == null || !language.equals(labelLanguage)) return false;
+        for (Type t : types(model)) {
+            if (!t.own.isEmpty()) return true;
         }
         return false;
     }
@@ -93,14 +120,26 @@ public final class LabelCatalog {
      * written in that language. In the order the model declares them.
      */
     public static Map<String, String> labels(ECoreModel model, String language) {
+        return labels(model, language, null);
+    }
+
+    /**
+     * key -> label, as {@link #labels(ECoreModel, String)}; the file of the
+     * labelLanguage holds every label: the one written in that language, else
+     * the "--" text - and every constant's label column where it has no
+     * column of that language.
+     */
+    public static Map<String, String> labels(ECoreModel model, String language, String labelLanguage) {
+        boolean own = language != null && language.equals(labelLanguage);
         Map<String, String> out = new LinkedHashMap<String, String>();
         for (Type t : types(model)) {
-            put(out, t.name, t.label(), language);
-            for (Field f : t.fields) put(out, t.name + "." + f.getName(), f.getAnnotation("label"), language);
+            put(out, t.name, t.label(), language, own);
+            for (Field f : t.fields) put(out, t.name + "." + f.getName(), f.getAnnotation("label"), language, own);
             // Status.ACTIVE: a constant by its name, the label column or its label_<language> column.
-            for (Map.Entry<String, String> c : t.constants.entrySet()) {
+            for (Map.Entry<String, String> c : (own ? t.own : t.constants).entrySet()) {
                 Map<String, String> texts = t.translations.get(c.getKey());
                 String text = language == null ? c.getValue() : texts == null ? null : texts.get(language);
+                if (own && (text == null || text.trim().isEmpty())) text = c.getValue();
                 if (text != null && !text.trim().isEmpty()) out.put(t.name + "." + c.getKey(), text.trim());
             }
         }
@@ -122,12 +161,28 @@ public final class LabelCatalog {
      * columns, whose constants the file holds too - the header says so only then.
      */
     public static String properties(String domainName, String language, Map<String, String> labels, boolean constants) {
+        return properties(domainName, language, labels, constants, null);
+    }
+
+    /** The properties file; the labelLanguage file says that it holds the "--" text too. */
+    public static String properties(
+            String domainName, String language, Map<String, String> labels, boolean constants, String labelLanguage) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Generated by ElastiCORE - the labels of the ")
                 .append(domainName)
                 .append(" model");
         if (language == null) {
             sb.append(", as the DSL's \"--\" text says them.\n");
+        } else if (language.equals(labelLanguage)) {
+            sb.append(" in ")
+                    .append(language)
+                    .append(", the language of the \"--\" text (config: labelLanguage): from @label(")
+                    .append(language)
+                    .append(
+                            constants
+                                    ? "=...) and the _" + language.replace('-', '_')
+                                            + " columns, else the \"--\" text and the label columns.\n"
+                                    : "=...), else the \"--\" text.\n");
         } else {
             sb.append(" in ")
                     .append(language)
@@ -152,11 +207,12 @@ public final class LabelCatalog {
         return sb.toString();
     }
 
-    private static void put(Map<String, String> out, String key, Annotation label, String language) {
+    private static void put(Map<String, String> out, String key, Annotation label, String language, boolean own) {
         if (label == null) return;
         String text = language == null
                 ? label.getValue()
                 : LabelTranslations.of(label).get(language);
+        if (own && (text == null || text.trim().isEmpty())) text = label.getValue();
         if (text != null && !text.trim().isEmpty()) out.put(key, text.trim());
     }
 
@@ -192,14 +248,14 @@ public final class LabelCatalog {
                                 m.getFieldItems().getItemList(),
                                 m.getMetaInfo() == null ? null : m.getMetaInfo().getMetaAnnotationValue("json"));
                 Map<String, Map<String, String>> translations = EnumLabelColumns.translations(m, label);
+                Map<String, String> own = EnumLabelColumns.labels(m, label);
                 out.add(new Type(
                         m.getIdentity().getName(),
                         m.getMetaInfo(),
                         Collections.<Field>emptyList(),
                         translations,
-                        translations.isEmpty()
-                                ? Collections.<String, String>emptyMap()
-                                : EnumLabelColumns.labels(m, label)));
+                        translations.isEmpty() ? Collections.<String, String>emptyMap() : own,
+                        own));
             }
         }
         return out;
