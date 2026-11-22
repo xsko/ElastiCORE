@@ -221,6 +221,26 @@ public final class ErrorMessages {
     }
 
     /**
+     * A label in the language this request is answered in, as {@link #label(Label)} reads it; where that
+     * language's file has none, the label bundle's default file - the DSL's own text, an enumeration's label
+     * column. Null when neither has the key. What an export writes an enumeration by, where it is asked to.
+     */
+    public String labelOrDefault(String key) {
+        if (key == null) return null;
+        Locale language = language();
+        Locale in = Locale.ROOT.equals(language) || language == null ? Locale.ENGLISH : language;
+        for (String bundle : labelBundles) {
+            String text = source.ownText(bundle, key, in);
+            if (text != null) return text;
+        }
+        for (String bundle : labelBundles) {
+            String text = source.defaultText(bundle, key);
+            if (text != null) return text;
+        }
+        return null;
+    }
+
+    /**
      * A field error, a binding error: Spring's own codes (NotNull.customerDTO.login ... NotNull);
      * then a built-in constraint message said again in the request's language; then its default.
      */
@@ -481,6 +501,14 @@ public final class ErrorMessages {
         String ownText(String basename, String key, Locale locale) {
             ResourceBundle own = ownFileWith(basename, key, locale);
             Object text = own == null ? null : ((PropertyResourceBundle) own).handleGetObject(key);
+            return text instanceof String said ? said : null;
+        }
+
+        /** The text the bundle's default file - the one without a language - has for a key; null without one. */
+        String defaultText(String basename, String key) {
+            ResourceBundle base = getResourceBundle(basename, Locale.ROOT);
+            if (!(base instanceof PropertyResourceBundle file) || !Locale.ROOT.equals(file.getLocale())) return null;
+            Object text = file.handleGetObject(key);
             return text instanceof String said ? said : null;
         }
 

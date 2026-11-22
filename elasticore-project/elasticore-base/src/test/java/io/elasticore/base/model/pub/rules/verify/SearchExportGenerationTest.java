@@ -218,6 +218,8 @@ public class SearchExportGenerationTest {
 
         String support = found(ts, "apiSupport.ts");
         assertTrue(support.contains("export interface ExportRequest<S> {"), support);
+        // The enumeration columns by their label (issue 289): a list of them, or '*'.
+        assertTrue(support.replace("\r\n", "\n").contains("    labels?: string[] | '*';\n}"), support);
         assertTrue(support.contains("export async function requestFile("), support);
         // Without an export in the domain, the file is what it was: the same text without the two.
         String before = found(tsWithout, "apiSupport.ts").replace("\r\n", "\n");

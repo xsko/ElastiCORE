@@ -51,7 +51,11 @@ Listed in `methods` - and only there: without `methods` an entity keeps the five
 - `columns`: properties of the response DTO, in that order (a `@ref` one by its name, `productName`); absent: all of them, in the
   DTO's order. `headers`: the titles, one a column; absent: each column's label in the request's language (`Accept-Language`) from
   `i18n/<domain>-labels_<lang>.properties` (`@label(en=...)`, `labelLanguage`; the response DTO's key, then the entity's), else its name.
-- A value is what the response's JSON shows: masked by `@Mask`, an enumeration by its code (not its label), money and a date as
+- `labels`: the enumeration columns written by their label in the request's language, not their code - `["status"]`, or `"*"`
+  for every one (`"labels": "*"`): its `label_<lang>` column (`label_ko` for `ko`, from the label file), else its label column
+  (the label file's default, else the enumeration's `label`, `name`, `desc`, `description` or `title`), else the code. A name
+  that is not a column of the export or not an enumeration: 400 (`export.labels`). In a workbook a label is a text cell.
+- A value is what the response's JSON shows: masked by `@Mask`, an enumeration by its code (unless `labels` names it), money and a date as
   written. A text that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a `'` before it, so that a spreadsheet does
   not run it (CSV injection); a number does not.
 - CSV: UTF-8 with a BOM, fields quoted as RFC 4180, CRLF. An `.xlsx` workbook for `"format": "xlsx"` or `Accept:
