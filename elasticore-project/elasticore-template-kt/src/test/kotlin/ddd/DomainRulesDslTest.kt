@@ -15,6 +15,7 @@ import io.elasticore.springboot3.security.CurrentUser
 import io.elasticore.springboot3.security.ForbiddenException
 import io.elasticore.springboot3.security.NotSignedInException
 import io.elasticore.springboot3.security.SessionCurrentUser
+import io.elasticore.springboot3.validation.ErrorMessages
 import io.elasticore.springboot3.validation.InvariantViolationException
 import io.elasticore.springboot3.validation.Label
 import org.assertj.core.api.Assertions.assertThat
@@ -63,6 +64,47 @@ class DomainRulesDslTest {
         assertThat(ticket.canClose()).isFalse()
         val refused = assertThrows<InvariantViolationException> { ticket.close() }
         assertThat(refused.message).contains("cannot close when status is CLOSED")
+    }
+
+    /**
+     * A model with no English label: every refusal is answered in English
+     * exactly as before the labels (issue 274) - the sentence of the default
+     * bundle with the values the runtime says, equal to the exception's own
+     * message, which is the sentence the answer had.
+     */
+    @Test
+    fun withoutEnglishLabelsTheEnglishAnswerIsAsBefore() {
+        val messages = ErrorMessages(null, "i18n/shop-messages")
+        org.springframework.context.i18n.LocaleContextHolder.setLocale(java.util.Locale.ENGLISH)
+        try {
+            val closed = Ticket()
+            closed.close()
+            val move = assertThrows<InvariantViolationException> { closed.close() }
+            val billed = Ticket()
+            billed.bill()
+            val together = assertThrows<InvariantViolationException> { billed.cancel() }
+            val delete = assertThrows<InvariantViolationException> { Ticket().checkDeletable() }
+            val below = assertThrows<InvariantViolationException> {
+                io.elasticore.blueprint.domain.shop.entity.CategoryInvariants()
+                    .check(io.elasticore.blueprint.domain.shop.entity.Category().apply { sortOrder = -1 })
+            }
+            val above = assertThrows<InvariantViolationException> {
+                io.elasticore.blueprint.domain.shop.entity.CategoryInvariants()
+                    .check(io.elasticore.blueprint.domain.shop.entity.Category().apply { sortOrder = 1000 })
+            }
+            assertThat(messages.text(below.code, "x", *below.args)).isEqualTo("sortOrder must be at least 0")
+            assertThat(messages.text(above.code, "x", *above.args)).isEqualTo("sortOrder must be at most 999")
+            for (refused in listOf(move, together, delete, below, above)) {
+                assertThat(messages.text(refused.code, "not in the bundle", *refused.args)).isEqualTo(refused.message)
+            }
+            assertThat(messages.text(move.code, "x", *move.args)).isEqualTo("Ticket cannot close when status is CLOSED; it must be OPEN")
+            assertThat(messages.text(together.code, "x", *together.args))
+                .isEqualTo("Ticket cannot cancel when billing is BILLED; it must be UNBILLED")
+            assertThat(messages.text(delete.code, "x", *delete.args))
+                .isEqualTo("Ticket cannot be deleted when status is OPEN; it must be [CLOSED]")
+        } finally {
+            org.springframework.context.i18n.LocaleContextHolder.resetLocaleContext()
+        }
     }
 
     @Test
@@ -185,7 +227,7 @@ class DomainRulesDslTest {
         assertThat(refused.message).isEqualTo("Ticket cannot be deleted when status is OPEN; it must be [CLOSED]")
         assertThat(refused.args.toList()).containsExactly("OPEN", "[CLOSED]",
             Label.of("Ticket.status"), Label.of("Ticket"),
-            Label.of("TicketStatus", TicketStatus.OPEN), Label.anyOf("TicketStatus", TicketStatus.CLOSED))
+            Label.of("TicketStatus", TicketStatus.OPEN), Label.listOf("TicketStatus", TicketStatus.CLOSED))
 
         val cancelled = Ticket()
         cancelled.cancel()

@@ -66,10 +66,17 @@ public class ErrorCatalogTest {
         String invariants = ErrorCatalog.properties("shop", Collections.<String, String>emptyMap(), rules);
         assertTrue(invariants.contains("# invariant.*: {0} the field, {1} the entity"), invariants);
         assertFalse(invariants.contains("# state.*"), invariants);
-        assertTrue(invariants.contains("# A sentence without '{' is said as written"), invariants);
+        assertTrue(invariants.contains("#   a sentence without '{' is said as written"), invariants);
 
         rules.put("state.Order.status.ship", "{3} cannot ship when {2} is {4}; it must be {5}");
         String both = ErrorCatalog.properties("shop", Collections.<String, String>emptyMap(), rules);
         assertTrue(both.contains("# state.*: {0} the state, {1} the states it must be (codes)"), both);
+
+        // A lifecycle alone: its sentences are patterns as they always were, no word about '{'.
+        String states = ErrorCatalog.properties(
+                "shop",
+                Collections.<String, String>emptyMap(),
+                Collections.singletonMap("state.Order.status.ship", "{3} cannot ship when {2} is {4}; it must be {5}"));
+        assertFalse(states.contains("is said as written"), states);
     }
 }

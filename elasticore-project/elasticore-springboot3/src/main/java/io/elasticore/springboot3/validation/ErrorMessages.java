@@ -130,24 +130,36 @@ public final class ErrorMessages {
     /**
      * The message for a code, or the default as given (not formatted) when no bundle has it.
      *
-     * The values reach only a sentence that holds an opening brace: one
-     * without a placeholder is said as written, apostrophes and all, and one
-     * with placeholders is a MessageFormat pattern (an apostrophe written twice).
-     * A {@link Label} among the values is said in the response's language.
+     * A sentence with values is a MessageFormat pattern (an apostrophe written
+     * twice), as it always was. A refusal whose values are all {@link Label}s -
+     * an invariant's, which carried none before - passes them only to a
+     * sentence that holds an opening brace: a translation written without a
+     * placeholder is said as written, apostrophes and all, as before.
+     * A Label among the values is said in the response's language.
      */
     public String text(String code, String defaultText, Object... args) {
         if (code == null) return defaultText;
         try {
             Locale language = language();
-            String sentence = source.getMessage(code, null, null, language);
-            if (sentence == null) return defaultText;
-            if (args == null || args.length == 0 || sentence.indexOf('{') < 0) return sentence;
-            String found = source.getMessage(code, said(args, language), null, language);
+            if (args != null && args.length > 0 && onlyLabels(args)) {
+                String sentence = source.getMessage(code, null, null, language);
+                if (sentence == null) return defaultText;
+                if (sentence.indexOf('{') < 0) return sentence;
+            }
+            String found = source.getMessage(code, args == null ? null : said(args, language), null, language);
             return found != null ? found : defaultText;
         } catch (RuntimeException ex) {
             // A translation with a broken pattern must not turn a 4xx into a 500.
             return defaultText;
         }
+    }
+
+    /** Whether every value is a {@link Label}: the values of a refusal that had none before labels. */
+    private static boolean onlyLabels(Object[] args) {
+        for (Object a : args) {
+            if (!(a instanceof Label)) return false;
+        }
+        return true;
     }
 
     /** The values as the sentence says them: each {@link Label} by its label in the language, the rest as given. */
@@ -162,7 +174,8 @@ public final class ErrorMessages {
     /**
      * A label in the response's language: the label bundle's file for that
      * language itself - {@code _en} for the bundles' own wording (English) -
-     * never its default file, which holds the DSL's "--" text; else the name.
+     * never its default file, which holds the DSL's "--" text; else the name,
+     * framed as the value frames its parts ({@code [PLACED]}).
      */
     String label(Label label, Locale language) {
         Locale in = Locale.ROOT.equals(language) || language == null ? Locale.ENGLISH : language;
@@ -175,7 +188,7 @@ public final class ErrorMessages {
             }
             parts.add(text != null ? text : label.names().get(i));
         }
-        return String.join(Label.SEPARATOR, parts);
+        return label.framed(parts);
     }
 
     /**

@@ -113,10 +113,10 @@ public class MessageLabelsGenerationTest {
             assertTrue(base.contains("String.valueOf(this.stage), java.util.Arrays.toString(from),"), base);
             assertTrue(
                     base.contains(LABEL + ".of(\"Account.stage\"), " + LABEL + ".of(\"Account\"), " + LABEL
-                            + ".of(\"Stage\", this.stage), " + LABEL + ".anyOf(\"Stage\", from));"),
+                            + ".of(\"Stage\", this.stage), " + LABEL + ".listOf(\"Stage\", from));"),
                     base);
             assertTrue(base.contains("String.valueOf(this.stage), \"[LOST]\","), base);
-            assertTrue(base.contains(LABEL + ".anyOf(\"Stage\", Stage.LOST));"), base);
+            assertTrue(base.contains(LABEL + ".listOf(\"Stage\", Stage.LOST));"), base);
         } finally {
             delete(project);
         }
@@ -136,7 +136,75 @@ public class MessageLabelsGenerationTest {
             assertTrue(base.contains("this.stage.toString(), from.joinToString(\" or \"),"), base);
             assertTrue(
                     base.contains(LABEL + ".of(\"Stage\", this.stage), " + LABEL + ".anyOf(\"Stage\", *from))"), base);
-            assertTrue(base.contains(LABEL + ".anyOf(\"Stage\", Stage.LOST))"), base);
+            assertTrue(base.contains(LABEL + ".listOf(\"Stage\", Stage.LOST))"), base);
+        } finally {
+            delete(project);
+        }
+    }
+
+    /**
+     * A model without any label: each default sentence, with the values the
+     * runtime gives it where no label is found (the names, the states as the
+     * codes beside them), reads exactly as the sentence before labels did -
+     * "Account cannot win when stage is {0}; it must be {1}" with {0} {1} the
+     * codes, the invariant sentences as written.
+     */
+    @Test
+    public void withoutLabelsTheDefaultSentencesReadAsBefore() throws Exception {
+        String unlabelled = MODEL.replace(" @label(en=Customer account) -- 거래처", "")
+                .replace(" @label(en=Name) -- 이름", "")
+                .replace(" -- 연 매출", "")
+                .replace(" -- 단계", "")
+                .replace("      label_en: string(20)\n", "")
+                .replace(", Open\n", "\n")
+                .replace(", Won\n", "\n");
+        assertFalse(
+                unlabelled.contains("@label") || unlabelled.contains("--") || unlabelled.contains("label_en"),
+                unlabelled);
+        File project = generate(unlabelled, null, "hexagonal", "java");
+        try {
+            Properties bundle = bundle(project, "desk-messages.properties");
+            assertEquals(
+                    MessageFormat.format("Account cannot win when stage is {0}; it must be {1}", "LOST", "[OPEN]"),
+                    MessageFormat.format(
+                            bundle.getProperty("state.Account.stage.win"),
+                            "LOST",
+                            "[OPEN]",
+                            "stage",
+                            "Account",
+                            "LOST",
+                            "[OPEN]"));
+            assertEquals(
+                    MessageFormat.format(
+                            "Account cannot be deleted when stage is {0}; it must be {1}", "OPEN", "[LOST]"),
+                    MessageFormat.format(
+                            bundle.getProperty("state.Account.stage.delete"),
+                            "OPEN",
+                            "[LOST]",
+                            "stage",
+                            "Account",
+                            "OPEN",
+                            "[LOST]"));
+            // Kotlin's code list is "OPEN or WON"; the label list beside it is framed the same.
+            assertEquals(
+                    MessageFormat.format("Account cannot lose when stage is {0}; it must be {1}", "WON", "OPEN"),
+                    MessageFormat.format(
+                            bundle.getProperty("state.Account.stage.lose"),
+                            "WON",
+                            "OPEN",
+                            "stage",
+                            "Account",
+                            "WON",
+                            "OPEN"));
+            assertEquals(
+                    "annualRevenue must be at least 0",
+                    MessageFormat.format(
+                            bundle.getProperty("invariant.Account.annualRevenue.min"), "annualRevenue", "Account"));
+            assertEquals(
+                    "Account violates name notNull",
+                    MessageFormat.format(bundle.getProperty("invariant.Account.name-notNull"), "name", "Account"));
+            assertNull(
+                    find(project, "desk-labels.properties"), "no label, no label bundle: the runtime says the names");
         } finally {
             delete(project);
         }

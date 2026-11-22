@@ -18,15 +18,17 @@ import java.util.List;
  * the default file; without one, the name. Anywhere else - a log, a
  * MessageFormat, another MessageSource - it is its name ({@link #toString()}).
  *
+ * Where no label is found the value reads exactly as the refusal's own
+ * values did before labels: a field or an entity by its name, a state as
+ * {@code String.valueOf(state)}, a list of states framed as the code list it
+ * stands beside ({@code [PLACED, SHIPPED]}, or {@code PLACED or SHIPPED}).
+ *
  * Keys as the label bundle has them: {@code Account} for an entity,
  * {@code Account.annualRevenue} for a field, {@code Stage.WON} for a constant.
  */
 public final class Label implements MessageSourceResolvable, Serializable {
 
-    private static final long serialVersionUID = 1L;
-
-    /** What several states are joined with: no word of any language. */
-    static final String SEPARATOR = ", ";
+    private static final long serialVersionUID = 2L;
 
     /** The label bundle's key of each part; null for a part with no label (a missing state). */
     private final List<String> keys;
@@ -34,9 +36,19 @@ public final class Label implements MessageSourceResolvable, Serializable {
     /** The name of each part: what is said where no label is found. */
     private final List<String> names;
 
-    private Label(List<String> keys, List<String> names) {
+    /** What comes before the parts, between two of them, and after them. */
+    private final String prefix;
+
+    private final String separator;
+
+    private final String suffix;
+
+    private Label(List<String> keys, List<String> names, String prefix, String separator, String suffix) {
         this.keys = Collections.unmodifiableList(keys);
         this.names = Collections.unmodifiableList(names);
+        this.prefix = prefix;
+        this.separator = separator;
+        this.suffix = suffix;
     }
 
     /**
@@ -46,31 +58,42 @@ public final class Label implements MessageSourceResolvable, Serializable {
     public static Label of(String key) {
         List<String> keys = new ArrayList<String>();
         List<String> names = new ArrayList<String>();
-        add(keys, names, key, nameOf(key));
-        return new Label(keys, names);
+        keys.add(key);
+        names.add(nameOf(key));
+        return new Label(keys, names, "", "", "");
     }
 
-    /** A constant of an enumeration: {@code Stage.WON}, named WON; a null constant is "null". */
+    /** A constant of an enumeration: key {@code Stage.WON}, named as String.valueOf says it; null is "null". */
     public static Label of(String type, Enum<?> constant) {
-        return anyOf(type, constant);
+        return parts(type, new Enum<?>[] {constant}, "", "", "");
     }
 
-    /** Several constants of one enumeration, joined with ", " - the states a step needs. */
+    /**
+     * Several constants of one enumeration, framed as {@code java.util.Arrays.toString}
+     * frames them: {@code [PLACED, SHIPPED]} - the states a step needs, beside that list as a code.
+     */
+    public static Label listOf(String type, Enum<?>... constants) {
+        return parts(type, constants, "[", ", ", "]");
+    }
+
+    /**
+     * Several constants of one enumeration joined with " or ", as Kotlin's
+     * {@code joinToString(" or ")} joins them: {@code PLACED or SHIPPED}.
+     */
     public static Label anyOf(String type, Enum<?>... constants) {
+        return parts(type, constants, "", " or ", "");
+    }
+
+    private static Label parts(String type, Enum<?>[] constants, String prefix, String separator, String suffix) {
         List<String> keys = new ArrayList<String>();
         List<String> names = new ArrayList<String>();
         if (constants != null) {
             for (Enum<?> c : constants) {
-                if (c == null) add(keys, names, null, "null");
-                else add(keys, names, type + "." + c.name(), c.name());
+                keys.add(c == null ? null : type + "." + c.name());
+                names.add(String.valueOf(c));
             }
         }
-        return new Label(keys, names);
-    }
-
-    private static void add(List<String> keys, List<String> names, String key, String name) {
-        keys.add(key);
-        names.add(name);
+        return new Label(keys, names, prefix, separator, suffix);
     }
 
     private static String nameOf(String key) {
@@ -89,10 +112,15 @@ public final class Label implements MessageSourceResolvable, Serializable {
         return names;
     }
 
-    /** One part's key as a code (for another MessageSource); none for several parts. */
+    /** The parts' texts, one per key, framed as this value frames its parts. */
+    public String framed(List<String> texts) {
+        return prefix + String.join(separator, texts) + suffix;
+    }
+
+    /** One part's key as a code (for another MessageSource); none for a list. */
     @Override
     public String[] getCodes() {
-        if (keys.size() != 1 || keys.get(0) == null) return null;
+        if (keys.size() != 1 || keys.get(0) == null || !prefix.isEmpty()) return null;
         return new String[] {keys.get(0)};
     }
 
@@ -106,19 +134,24 @@ public final class Label implements MessageSourceResolvable, Serializable {
         return toString();
     }
 
-    /** The names, joined: how the value reads where no label bundle is asked. */
+    /** The names, framed: how the value reads where no label bundle is asked. */
     @Override
     public String toString() {
-        return String.join(SEPARATOR, names);
+        return framed(names);
     }
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof Label label && keys.equals(label.keys) && names.equals(label.names);
+        return other instanceof Label label
+                && keys.equals(label.keys)
+                && names.equals(label.names)
+                && prefix.equals(label.prefix)
+                && separator.equals(label.separator)
+                && suffix.equals(label.suffix);
     }
 
     @Override
     public int hashCode() {
-        return 31 * keys.hashCode() + names.hashCode();
+        return 31 * (31 * keys.hashCode() + names.hashCode()) + (prefix + separator + suffix).hashCode();
     }
 }

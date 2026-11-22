@@ -409,7 +409,7 @@ public class ShopModelTest {
                 base.contains("io.elasticore.springboot3.validation.Label.of(\"PtOrder.status\"),"
                         + " io.elasticore.springboot3.validation.Label.of(\"PtOrder\"),"
                         + " io.elasticore.springboot3.validation.Label.of(\"PtOrderStatus\", this.status),"
-                        + " io.elasticore.springboot3.validation.Label.anyOf(\"PtOrderStatus\", from));"),
+                        + " io.elasticore.springboot3.validation.Label.listOf(\"PtOrderStatus\", from));"),
                 base);
 
         String bundle = read("src/main/resources/i18n/ptshop-messages.properties");
@@ -463,7 +463,7 @@ public class ShopModelTest {
                 .contains("state.PtOrder.status.delete={3} cannot be deleted when {2} is {4}; it must be {5}"));
         assertTrue(
                 base.contains(
-                        "io.elasticore.springboot3.validation.Label.anyOf(\"PtOrderStatus\", PtOrderStatus.PLACED,"
+                        "io.elasticore.springboot3.validation.Label.listOf(\"PtOrderStatus\", PtOrderStatus.PLACED,"
                                 + " PtOrderStatus.LOST));"),
                 base);
     }
