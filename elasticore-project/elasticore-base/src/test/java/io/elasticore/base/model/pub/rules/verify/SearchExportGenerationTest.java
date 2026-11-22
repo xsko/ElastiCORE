@@ -83,6 +83,61 @@ public class SearchExportGenerationTest {
         runTs(ts, "hexagonal");
         tsWithout = project("elcore-export-ts-none", "jpa", "entity:\n" + FULL);
         runTs(tsWithout, "hexagonal");
+        // Domains beside the exporting one, before and after it: they write the same apiSupport.ts.
+        tsDomains = project("elcore-export-ts-domains", "jpa", MODEL);
+        domain(tsDomains, "aaplain", plain("AaNote"));
+        domain(tsDomains, "zzplain", plain("ZzNote"));
+        runTs(tsDomains, "hexagonal");
+    }
+
+    private static String plain(String entity) {
+        return String.join(
+                "\n",
+                "entity:",
+                "  " + entity + ":",
+                "    meta: entity @root @editable @expose(20)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      text:   string(20)",
+                "");
+    }
+
+    private static File tsDomains;
+
+    /** Another domain of the project. */
+    private static void domain(File project, String name, String model) throws Exception {
+        File blueprint = new File(project, "src/main/resources/blueprint/" + name);
+        assertTrue(new File(blueprint, "model").mkdirs());
+        Files.write(
+                new File(blueprint, "env.yml").toPath(),
+                String.join(
+                                "\n",
+                                "elasticore:",
+                                "  enable: true",
+                                "  config:",
+                                "    domainName: " + name,
+                                "    framework: springboot",
+                                "    mode: jpa",
+                                "    j2ee: jakarta",
+                                "  namespace:",
+                                "    base: io.acme." + name,
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(blueprint, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Every domain of a run writes the one apiSupport.ts (src/main/ts): it keeps the export's types whichever domain
+     * is written last, so the exporting domain's client compiles beside domains that do not export.
+     */
+    @Test
+    public void theSharedApiSupportKeepsTheExportWhicheverDomainIsWrittenLast() throws Exception {
+        String support = found(tsDomains, "apiSupport.ts");
+        assertTrue(
+                support.contains("export async function requestFile(") && support.contains("ExportRequest<S>"),
+                support);
+        assertTrue(found(tsDomains, "ExItemApi.ts").contains("requestFile, ExportRequest"));
+        assertFalse(found(tsDomains, "ZzNoteApi.ts").contains("requestFile"));
     }
 
     // ---- the controller -------------------------------------------------------------------
@@ -113,8 +168,10 @@ public class SearchExportGenerationTest {
                 assertTrue(control.contains("val searchDTO = request.search ?: ExItemSrchDTO()"), where);
                 assertTrue(
                         control.contains("searchDTO.sortCode = io.elasticore.springboot3.export.SearchExport.sortCode("
-                                + "request.sortCode, searchDTO.sortCode, \"itemId\")"),
+                                + "request.sortCode, searchDTO.sortCode, searchDTO.sortColumn, searchDTO.sortAscending,"
+                                + " \"itemId\")"),
                         where);
+                assertTrue(control.contains("searchDTO.sortColumn = null"), where);
                 assertTrue(control.contains("searchDTO.pageNumber = page"), where);
             } else {
                 assertTrue(

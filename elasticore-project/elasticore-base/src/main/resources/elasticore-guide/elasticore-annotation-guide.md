@@ -46,7 +46,7 @@ Listed in `methods` - and only there: without `methods` an entity keeps the five
 { "search": { "name": "Puppy" }, "sortCode": "name+", "columns": ["itemId", "name", "unitCost"], "headers": ["No.", "Pet", "Price"], "format": "csv" }
 ```
 - The rows: the search `POST .../search` makes with `search` (the same search DTO) - its conditions, the search's `@access` and the
-  `@owner` filter - every page of it, in `sortCode`'s order (absent: the search's own; the key goes after it, so a row does not move
+  `@owner` filter - every page of it, in `sortCode`'s order (absent: the search's own, `sortColumn` too; the key goes after it, so a row does not move
   between two pages). The pages are read one after another: a row changed meanwhile may be in or out.
 - `columns`: properties of the response DTO, in that order (a `@ref` one by its name, `productName`); absent: all of them, in the
   DTO's order. `headers`: the titles, one a column; absent: each column's label in the request's language (`Accept-Language`) from
@@ -57,10 +57,10 @@ Listed in `methods` - and only there: without `methods` an entity keeps the five
 - CSV: UTF-8 with a BOM, fields quoted as RFC 4180, CRLF. An `.xlsx` workbook for `"format": "xlsx"` or `Accept:
   application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, where the application has Apache POI
   (`implementation 'org.apache.poi:poi-ooxml:5.5.1'`; the runtime does not bring it) - else 406. In a workbook a number is a number
-  (one of more than 15 digits is text), a date a date, a text never a formula; a sheet holds 1,048,575 rows.
+  (one of more than 15 digits is text), a date a date (one a `@format` shows in part keeps its text), a text never a formula; a sheet holds 1,048,575 rows.
 - More rows than `elasticore.export.max-rows` (`application.yml`, 100,000 unless set; `elasticore-env-guide.md` 6-4) is 400
   with the count, before anything is written. A column the response does not have, `headers` of another length, a `format`
-  other than csv or xlsx: 400. A failure after the first row (the database goes away) leaves the file cut short.
+  other than csv or xlsx: 400. A failure on the way (the database goes away): a CSV file is cut short, an .xlsx answers the error.
 - Example: `Item` and `PurchaseOrder` of the pet store (`ExportTest`, `ExportLimitTest`), `Gadget` of `elasticore-template-mybatis`.
 
 ### @service

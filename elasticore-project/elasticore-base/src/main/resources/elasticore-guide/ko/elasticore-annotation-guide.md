@@ -46,7 +46,7 @@ Notice:
 { "search": { "name": "Puppy" }, "sortCode": "name+", "columns": ["itemId", "name", "unitCost"], "headers": ["번호", "펫", "가격"], "format": "csv" }
 ```
 - 행: `search`(같은 검색 DTO)로 `POST .../search` 가 하는 검색 - 그 조건, 검색의 `@access`, `@owner` 필터 - 의 모든 페이지를
-  `sortCode` 순서로 씁니다(없으면 검색 자신의 순서. 그 뒤에 키를 붙여, 같은 값의 행이 두 페이지 사이에서 움직이지 않게 합니다).
+  `sortCode` 순서로 씁니다(없으면 검색 자신의 순서, `sortColumn` 도. 그 뒤에 키를 붙여, 같은 값의 행이 두 페이지 사이에서 움직이지 않게 합니다).
   페이지는 차례로 읽으므로, 그 사이에 바뀐 행은 들어갈 수도 빠질 수도 있습니다.
 - `columns`: 응답 DTO 의 속성을 그 순서로(`@ref` 는 그 이름으로, `productName`). 없으면 모든 속성을 DTO 의 순서로. `headers`:
   열마다 하나씩 제목. 없으면 열마다 요청 언어(`Accept-Language`)의 라벨 - `i18n/<domain>-labels_<lang>.properties`
@@ -57,10 +57,10 @@ Notice:
 - CSV: BOM 이 붙은 UTF-8, RFC 4180 따옴표, CRLF. `"format": "xlsx"` 나 `Accept:
   application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` 이면 .xlsx 이고, 애플리케이션에 Apache POI 가 있어야
   합니다(`implementation 'org.apache.poi:poi-ooxml:5.5.1'`. 런타임은 가져오지 않습니다) - 없으면 406. 통합 문서에서 숫자는 숫자
-  (15자리를 넘으면 문자열), 날짜는 날짜, 문자열은 수식이 되지 않습니다. 시트 하나는 1,048,575 행까지입니다.
+  (15자리를 넘으면 문자열), 날짜는 날짜(`@format` 이 일부만 보여 주면 그 문자열), 문자열은 수식이 되지 않습니다. 시트 하나는 1,048,575 행까지입니다.
 - `elasticore.export.max-rows`(`application.yml`, 정하지 않으면 100,000. `elasticore-env-guide.md` 6-4)보다 많으면 아무것도
   쓰기 전에 건수와 함께 400 입니다. 응답에 없는 열, 길이가 다른 `headers`, csv·xlsx 가 아닌 `format` 도
-  400 입니다. 첫 행을 쓴 뒤의 실패(데이터베이스 연결이 끊기는 등)는 파일을 중간에서 끝냅니다.
+  400 입니다. 도중의 실패(데이터베이스 연결이 끊기는 등): CSV 파일은 중간에서 끝나고, .xlsx 는 오류로 응답합니다.
 - 예제: 펫스토어의 `Item`, `PurchaseOrder`(`ExportTest`, `ExportLimitTest`), `elasticore-template-mybatis` 의 `Gadget`.
 
 ### @service

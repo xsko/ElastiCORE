@@ -1,5 +1,6 @@
 package io.elasticore.springboot3.export;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
@@ -7,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.BeanPropertyWriter;
 import com.fasterxml.jackson.databind.ser.PropertyWriter;
 import io.elasticore.springboot3.mask.Mask;
@@ -95,9 +97,12 @@ final class JsonRows {
             Object value = found.get(column);
             if (typed && value instanceof String) {
                 BeanPropertyWriter writer = writers.get(column);
-                if (writer != null && writer.getAnnotation(Mask.class) == null) {
+                // Not where the response writes it its own way: masked, by a serializer of its own.
+                if (writer != null
+                        && writer.getAnnotation(Mask.class) == null
+                        && writer.getAnnotation(JsonSerialize.class) == null) {
                     Object raw = raw(writer, row);
-                    if (ExportColumns.isDate(raw)) value = raw;
+                    if (ExportColumns.dateInFull(raw, writer.getAnnotation(JsonFormat.class))) value = raw;
                 }
             }
             out.add(value);

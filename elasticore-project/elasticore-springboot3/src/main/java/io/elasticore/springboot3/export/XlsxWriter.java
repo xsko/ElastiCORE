@@ -142,6 +142,20 @@ public final class XlsxWriter implements ExportSheet {
         // The workbook is written whole by close(); the rows wait in its temporary file.
     }
 
+    /**
+     * A failed export: the workbook is not written - a sheet of fewer rows would look complete - and its temporary
+     * file is deleted; nothing has reached the output.
+     */
+    @Override
+    public void abandon() {
+        workbook.dispose();
+        try {
+            workbook.close();
+        } catch (IOException ignored) {
+            // Nothing was written; the failure that abandoned it is the one to report.
+        }
+    }
+
     /** Writes the workbook to the output, closes it and deletes the temporary file. */
     @Override
     public void close() throws IOException {

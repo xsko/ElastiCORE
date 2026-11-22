@@ -60,7 +60,7 @@ class ExposeMethodsApiTest {
         assertThat(export.getStatus()).isEqualTo(200);
         assertThat(export.getContentType()).isEqualTo("text/csv;charset=UTF-8");
         String csv = export.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-        assertThat(csv).startsWith("﻿receiptId,orderId,amount\r\n" + id + ",order-expose-1,12.5");
+        assertThat(csv).startsWith("\uFEFFreceiptId,orderId,amount\r\n" + id + ",order-expose-1,12.5");
         assertThat(csv.split("\r\n")).hasSize(2);
     }
 }

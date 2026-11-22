@@ -13,4 +13,7 @@ interface ExportSheet extends Closeable, Flushable {
 
     /** One row of values, a column each. */
     void row(List<?> values) throws IOException;
+
+    /** Gives up on a failed export: what is not written yet is not written, and nothing is left open. */
+    void abandon();
 }

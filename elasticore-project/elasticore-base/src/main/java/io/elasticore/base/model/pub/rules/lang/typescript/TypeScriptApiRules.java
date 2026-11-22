@@ -35,14 +35,29 @@ public class TypeScriptApiRules implements CodeRules {
         // the artifact has one, and so a domain with no exposed entity still
         // gets the runtime its siblings import.
         ctx(d).var("domainName", d.getName());
-        // The export's body and the call that answers a file (issue 271): only in a
-        // domain with an entity that lists export, so every other file is as before.
+        // The export's body and the call that answers a file (issue 271): only where an
+        // entity lists export, so every other file is as before. Every domain of a run
+        // writes the same apiSupport.ts (src/main/ts): the run says whether any of them
+        // exports, so the domain written last does not take them away from the others.
         SourceCode c = ctx(d);
         c.slot("exportSupport");
-        boolean exports = false;
+        boolean exports = Boolean.TRUE.equals(EXPORTS_IN_RUN.get())
+                && !io.elasticore.base.model.pub.rules.verify.SpecFactory.compatibleServer();
         for (EntitySpec e : d.entities()) exports |= exports(e);
         if (!exports) return;
         for (String line : EXPORT_SUPPORT) c.varLine("exportSupport", "%s", line);
+    }
+
+    /** Whether an entity of any domain of the TypeScript run lists export; null outside a run. */
+    private static final ThreadLocal<Boolean> EXPORTS_IN_RUN = new ThreadLocal<Boolean>();
+
+    /**
+     * Set by the runner around writing apiSupport.ts - one file every domain of the run writes -
+     * whether any domain of the run has an entity that lists export; null clears it.
+     */
+    public static void exportsInRun(Boolean any) {
+        if (any == null) EXPORTS_IN_RUN.remove();
+        else EXPORTS_IN_RUN.set(any);
     }
 
     /** What apiSupport.ts gains in a domain with an export: its body's type and the call that answers a Blob. */

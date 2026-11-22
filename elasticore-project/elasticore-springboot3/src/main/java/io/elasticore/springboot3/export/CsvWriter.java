@@ -23,7 +23,7 @@ import java.util.List;
 public final class CsvWriter implements ExportSheet {
 
     /** The byte order mark a UTF-8 file opens with, for the spreadsheets that look for it. */
-    private static final String BOM = "﻿";
+    private static final String BOM = "\uFEFF";
 
     private static final String CRLF = "\r\n";
 
@@ -92,6 +92,15 @@ public final class CsvWriter implements ExportSheet {
     @Override
     public void flush() throws IOException {
         out.flush();
+    }
+
+    /**
+     * A failed export: the rows not flushed yet are dropped and the output is left to the response - what was
+     * already sent stays sent, a file cut short.
+     */
+    @Override
+    public void abandon() {
+        // Nothing to release: the writer holds only the response's stream.
     }
 
     /** Flushes what is written and closes the output - with the byte order mark alone when no row was written. */

@@ -269,8 +269,11 @@ public class ControllerMethodRulesTest {
         // The order asked for, with the key after it; the service's own search.
         assertTrue(
                 out.contains("searchDTO.setSortCode(io.elasticore.springboot3.export.SearchExport.sortCode("
-                        + "request.getSortCode(), searchDTO.getSortCode(), \"orderId\"));"),
+                        + "request.getSortCode(), searchDTO.getSortCode(), searchDTO.getSortColumn(),"
+                        + " searchDTO.getSortAscending(), \"orderId\"));"),
                 out);
+        // The old sortColumn is folded into the code, so it cannot win over it and drop the key.
+        assertTrue(out.contains("searchDTO.setSortColumn(null);"), out);
         assertTrue(
                 out.contains("io.elasticore.springboot3.export.SearchExport.of(\"shop\", \"Order\", OrderDTO.class,"
                         + " null)"),
