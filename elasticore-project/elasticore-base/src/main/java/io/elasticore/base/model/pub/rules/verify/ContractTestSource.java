@@ -2184,10 +2184,11 @@ final class ContractTestSource {
      * Text safe inside a Java or Kotlin block comment: a reason may quote a
      * pattern, whose * / would end the comment, whose / * would open one in
      * Kotlin (they nest there), and whose backslash-u Java reads as a
-     * character before it reads the comment.
+     * character before it reads the comment - every backslash is doubled, so
+     * none starts one, however many stand before a u.
      */
     static String comment(String text) {
-        return text.replace("*/", "* /").replace("/*", "/ *").replace("\\u", "\\\\u");
+        return text.replace("*/", "* /").replace("/*", "/ *").replace("\\", "\\\\");
     }
 
     /**

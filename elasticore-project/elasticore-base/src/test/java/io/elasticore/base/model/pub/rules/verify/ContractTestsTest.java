@@ -990,6 +990,8 @@ public class ContractTestsTest {
     @Test
     public void aReasonInTheCommentIsSafe() {
         assertEquals("a* /b/ *c\\\\u0041", ContractTestSource.comment("a*/b/*c\\u0041"));
+        // Two backslashes before a u were safe, and stay so: four, never three.
+        assertEquals("\\\\\\\\u0041", ContractTestSource.comment("\\\\u0041"));
     }
 
     // ---- the pattern's values --------------------------------------------------------
