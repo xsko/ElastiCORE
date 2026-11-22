@@ -787,7 +787,7 @@ config:
 - Without it, a language with no `@label(<language>=...)` gets the field or entity name in those sentences, never the `--`
   text; English always takes `@label(en=...)` or the name. A value that is not a language tag (`korean`) is a `DSL_WARN` and ignored.
 - Nothing else reads it yet: the `--` text stays the Javadoc, `@Schema(description)`, the column comments and the Ossie description.
-  An export's column titles (6-4) are read from the same label files.
+  An export's column titles (6-4), and the enumerations its `labels` names, are read from the same label files.
 
 ## 6-4. The rows an export writes at most (`elasticore.export.max-rows`, 3.0)
 > **Works in:** the export of `@expose(methods="...,export")` (`elasticore-annotation-guide.md`), every mode, language and architecture · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (no export)
@@ -802,6 +802,9 @@ elasticore:
 - An export counts the rows of its search first - the first page's total, the same conditions, access check and `@owner`
   filter - and refuses one of more rows with 400 (`code: export.too-many-rows`, the count in the detail) before it writes anything.
 - Read on each request; one value for the whole application. An `.xlsx` workbook writes 1,048,575 rows at most whatever it says.
+- The body's `labels` (3.0, issue 289) writes the enumeration columns it names - `"*"`: every one - by their label in the
+  request's language: the `label_<lang>` column (from the label file of that language: `labelLanguage`, `label_en`), else
+  the label column, else the code. It needs no setting; the body is in `elasticore-annotation-guide.md` (export).
 - Example: `ExportLimitTest` of the pet store (`max-rows=10`: the 32 items are refused, a narrower search is written).
 
 ## 7. apiPath setting

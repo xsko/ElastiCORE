@@ -464,6 +464,223 @@ public class SearchExportTest {
         }
     }
 
+    // ---- an enumeration by its label (issue 289) ------------------------------------------
+
+    /** As the generator writes an enumeration: its code in the JSON, a getter a column. */
+    public enum OpportunityStage {
+        OPEN("OPN", "진행 중"),
+        WON("WON", "수주"),
+        LOST("LST", "실주");
+
+        private final String code;
+        private final String label;
+
+        OpportunityStage(String code, String label) {
+            this.code = code;
+            this.label = label;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonValue
+        public String getCode() {
+            return code;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+    }
+
+    /** An enumeration the label bundle does not hold (no label_en column): its own label column. */
+    public enum Channel {
+        WEB("W", "Web"),
+        PHONE("P", "Phone");
+
+        private final String code;
+        private final String label;
+
+        Channel(String code, String label) {
+            this.code = code;
+            this.label = label;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonValue
+        public String getCode() {
+            return code;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+    }
+
+    /** An enumeration with no label at all. */
+    public enum Priority {
+        HIGH("H"),
+        LOW("L");
+
+        private final String code;
+
+        Priority(String code) {
+            this.code = code;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonValue
+        public String getCode() {
+            return code;
+        }
+    }
+
+    public static class OpportunityDTO {
+        private final String name;
+        private final OpportunityStage stage;
+        private final Channel channel;
+        private final Priority priority;
+
+        OpportunityDTO(String name, OpportunityStage stage, Channel channel, Priority priority) {
+            this.name = name;
+            this.stage = stage;
+            this.channel = channel;
+            this.priority = priority;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public OpportunityStage getStage() {
+            return stage;
+        }
+
+        public Channel getChannel() {
+            return channel;
+        }
+
+        public Priority getPriority() {
+            return priority;
+        }
+    }
+
+    private static final List<OpportunityDTO> DEALS = Arrays.asList(
+            new OpportunityDTO("a", OpportunityStage.OPEN, Channel.WEB, Priority.HIGH),
+            new OpportunityDTO("b", OpportunityStage.LOST, Channel.PHONE, Priority.LOW),
+            new OpportunityDTO("c", null, null, null));
+
+    private static String deals(String format, List<String> labels) throws Exception {
+        return csv(deals(format, labels, null));
+    }
+
+    private static MockHttpServletResponse deals(String format, List<String> labels, List<String> columns)
+            throws Exception {
+        SearchExport.Request<Object> body = body(format, columns, null);
+        body.setLabels(labels);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        SearchExport.of("crm", "Opportunity", OpportunityDTO.class, null)
+                .with(JsonRows.of(null), 10, true)
+                .list(body, new MockHttpServletRequest(), response, () -> DEALS);
+        return response;
+    }
+
+    /** Without labels, or with an empty list: every enumeration by its code, as before. */
+    @Test
+    public void withoutLabelsAnEnumerationIsItsCode() throws Exception {
+        String codes = BOM + "name,stage,channel,priority\r\na,OPN,W,H\r\nb,LST,P,L\r\nc,,,\r\n";
+        assertEquals(codes, deals(null, null));
+        assertEquals(codes, deals(null, Collections.<String>emptyList()));
+    }
+
+    /**
+     * The columns labels names, by their label in the request's language: the language's file (label_en), else the
+     * default file (the label column); the others by their code.
+     */
+    @Test
+    public void theColumnsLabelsNamesAreWrittenByTheirLabel() throws Exception {
+        // English: OPEN has a label_en, LOST has none - the label column, from the default file.
+        assertEquals(
+                BOM + "name,stage,channel,priority\r\na,Open,W,H\r\nb,실주,P,L\r\nc,,,\r\n",
+                deals(null, Collections.singletonList("stage")));
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals(
+                BOM + "name,단계,channel,priority\r\na,진행 중,W,H\r\nb,실주,P,L\r\nc,,,\r\n",
+                deals(null, Collections.singletonList("stage")));
+        // A language without a label file: the default file's label column.
+        LocaleContextHolder.setLocale(Locale.JAPANESE);
+        assertEquals(
+                BOM + "name,stage,channel,priority\r\na,진행 중,W,H\r\nb,실주,P,L\r\nc,,,\r\n",
+                deals(null, Collections.singletonList("stage")));
+    }
+
+    /**
+     * "*": every enumeration column - one the bundle does not hold by the label column the enumeration holds, one
+     * with no label at all by its code.
+     */
+    @Test
+    public void everyEnumerationColumnForAStar() throws Exception {
+        assertEquals(
+                BOM + "name,stage,channel,priority\r\na,Open,Web,H\r\nb,실주,Phone,L\r\nc,,,\r\n",
+                deals(null, Collections.singletonList("*")));
+        assertEquals(
+                csv(deals(null, Collections.singletonList("*"), null)),
+                csv(deals(null, Arrays.asList("stage", "channel", "priority"), null)));
+        // Only the columns written: the labels of those.
+        assertEquals(
+                BOM + "channel,name\r\nWeb,a\r\nPhone,b\r\n,c\r\n",
+                csv(deals(null, Collections.singletonList("*"), Arrays.asList("channel", "name"))));
+    }
+
+    /** A name that is not a column of this export, or not an enumeration: 400 naming it, as columns refuses one. */
+    @Test
+    public void aLabelThatIsNotAnEnumerationColumnOfTheExportIsRefused() {
+        BadRequestException absent = assertThrows(
+                BadRequestException.class,
+                () -> deals(null, Collections.singletonList("channel"), Arrays.asList("name", "stage")));
+        assertEquals("export.labels", absent.getCode());
+        assertTrue(
+                absent.getMessage().startsWith("labels names channel, which is not a column of this export"),
+                absent.getMessage());
+        BadRequestException unknown =
+                assertThrows(BadRequestException.class, () -> deals(null, Collections.singletonList("owner"), null));
+        assertTrue(unknown.getMessage().startsWith("labels names owner, which is not a column"), unknown.getMessage());
+        BadRequestException text =
+                assertThrows(BadRequestException.class, () -> deals(null, Arrays.asList("stage", "name"), null));
+        assertEquals("export.labels", text.getCode());
+        assertTrue(
+                text.getMessage().startsWith("labels names name, which is not an enumeration;")
+                        && text.getMessage().endsWith("stage, channel, priority"),
+                text.getMessage());
+        // Refused before the search runs or anything is written, also for a workbook.
+        assertThrows(BadRequestException.class, () -> deals("xlsx", Collections.singletonList("name"), null));
+    }
+
+    /** In a workbook a label is a text cell. */
+    @Test
+    public void aWorkbookWritesTheLabelAsText() throws Exception {
+        MockHttpServletResponse response = deals("xlsx", Collections.singletonList("*"), null);
+        try (XSSFWorkbook book = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+            Row first = book.getSheetAt(0).getRow(1);
+            assertEquals(CellType.STRING, first.getCell(1).getCellType());
+            assertEquals("Open", first.getCell(1).getStringCellValue());
+            assertEquals("Web", first.getCell(2).getStringCellValue());
+            assertEquals("H", first.getCell(3).getStringCellValue());
+            assertNull(book.getSheetAt(0).getRow(3).getCell(1));
+        }
+        MockHttpServletResponse codes = deals("xlsx", null, null);
+        try (XSSFWorkbook book = new XSSFWorkbook(new ByteArrayInputStream(codes.getContentAsByteArray()))) {
+            assertEquals("OPN", book.getSheetAt(0).getRow(1).getCell(1).getStringCellValue());
+        }
+    }
+
+    /** The body takes a list or "*" alone. */
+    @Test
+    public void theBodyTakesAListOrAStar() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        SearchExport.Request<?> star = mapper.readValue("{\"labels\":\"*\"}", SearchExport.Request.class);
+        assertEquals(Collections.singletonList("*"), star.getLabels());
+        SearchExport.Request<?> list =
+                mapper.readValue("{\"labels\":[\"stage\",\"channel\"]}", SearchExport.Request.class);
+        assertEquals(Arrays.asList("stage", "channel"), list.getLabels());
+        assertNull(mapper.readValue("{}", SearchExport.Request.class).getLabels());
+    }
+
     // ---- the order the pages are read in -------------------------------------------------
 
     @Test

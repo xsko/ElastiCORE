@@ -1,6 +1,7 @@
 package io.elasticore.springboot3.export;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** What the two Jackson generations' JsonRows share: the columns' order, views, and the values a sheet types. */
 final class ExportColumns {
@@ -79,6 +81,48 @@ final class ExportColumns {
         if (!day) return false;
         if (raw instanceof LocalDate) return true;
         return pattern.contains("HH") && pattern.contains("mm");
+    }
+
+    /** The names an enumeration's label column goes by, in the order the generator looks for one. */
+    private static final String[] LABEL_NAMES = {"label", "name", "desc", "description", "title"};
+
+    /** Each enumeration's getters of those names that answer text, in that order. */
+    private static final Map<Class<?>, List<Method>> LABEL_GETTERS = new ConcurrentHashMap<Class<?>, List<Method>>();
+
+    /**
+     * A constant's label column as the generated enumeration holds it: the first of label, name, desc, description
+     * and title that is not the code the JSON shows - the column the label bundle's default file holds where it holds
+     * the enumeration. Null when it has none (or it is empty there).
+     */
+    static String labelColumn(Enum<?> constant, Object shown) {
+        Class<?> type = constant.getDeclaringClass();
+        for (Method getter : LABEL_GETTERS.computeIfAbsent(type, ExportColumns::labelGetters)) {
+            Object text;
+            try {
+                text = getter.invoke(constant);
+            } catch (ReflectiveOperationException | RuntimeException unreadable) {
+                continue;
+            }
+            // The column the JSON carries is the code, not a label.
+            if (text == null || text.equals(shown)) continue;
+            String said = text.toString().trim();
+            return said.isEmpty() ? null : said;
+        }
+        return null;
+    }
+
+    private static List<Method> labelGetters(Class<?> type) {
+        List<Method> out = new ArrayList<Method>();
+        for (String name : LABEL_NAMES) {
+            try {
+                Method getter = type.getMethod("get" + Character.toUpperCase(name.charAt(0)) + name.substring(1));
+                if (getter.getReturnType() == String.class && !Modifier.isStatic(getter.getModifiers()))
+                    out.add(getter);
+            } catch (NoSuchMethodException none) {
+                // Not a column of this enumeration.
+            }
+        }
+        return out;
     }
 
     /** A JSON number as written: a BigDecimal, or the text itself where it is not one (NaN). */

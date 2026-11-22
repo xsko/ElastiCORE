@@ -34,7 +34,9 @@ import org.springframework.web.HttpMediaTypeNotAcceptableException;
  *       {@code @owner} filter - every page of it, in the order asked for ({@code sortCode}).
  *   <li>The columns: the response DTO's properties as its JSON writes them, in the order the DTO declares them, or
  *       those the body lists ({@code columns}); a value as the JSON shows it - masked where {@code @Mask} masks it,
- *       an enumeration as its code.
+ *       an enumeration as its code - or, for the columns the body's {@code labels} names ({@code "*"}: every
+ *       enumeration column), by its label in the request's language: the label bundle's {@code Enum.CONSTANT}, else
+ *       the enumeration's label column, else its code.
  *   <li>The titles: the body's {@code headers}; else each column's label in the request's language, from the
  *       domain's label bundle ({@code i18n/<domain>-labels_<lang>.properties}, {@code Type.field} keys - the
  *       response DTO's, then the entity's), as a refusal names a field; else the column's name.
@@ -260,7 +262,65 @@ public final class SearchExport {
         List<String> known = json.columns(rowType, view);
         List<String> columns = columns(body.getColumns(), known);
         List<String> titles = titles(body.getHeaders(), columns);
-        return new Plan(json, xlsx, max, columns, titles);
+        return new Plan(json, xlsx, max, columns, titles, labelled(body.getLabels(), columns, json));
+    }
+
+    /** Every enumeration column, in {@code labels}: {@code "*"}. */
+    static final String ALL = "*";
+
+    /**
+     * The positions of the columns written by their label: those {@code labels} names - each a column of this export
+     * and an enumeration - or, for {@code "*"}, every enumeration column. Null when none is asked for.
+     */
+    private int[] labelled(List<String> asked, List<String> columns, JsonRows json) {
+        if (asked == null || asked.isEmpty()) return null;
+        List<String> enumerations = new ArrayList<String>();
+        for (String c : columns) {
+            Class<?> declared = json.typeOf(c);
+            if (declared != null && declared.isEnum()) enumerations.add(c);
+        }
+        List<String> named = new ArrayList<String>();
+        boolean all = false;
+        for (String l : asked) {
+            String name = l == null ? "" : l.trim();
+            if (ALL.equals(name)) {
+                all = true;
+                continue;
+            }
+            if (!columns.contains(name)) {
+                throw new BadRequestException(
+                        "export.labels",
+                        "labels names {0}, which is not a column of this export; its columns are {1}",
+                        name,
+                        String.join(", ", columns));
+            }
+            if (!enumerations.contains(name)) {
+                throw new BadRequestException(
+                        "export.labels",
+                        "labels names {0}, which is not an enumeration; the enumeration columns are {1}",
+                        name,
+                        enumerations.isEmpty() ? "none" : String.join(", ", enumerations));
+            }
+            if (!named.contains(name)) named.add(name);
+        }
+        if (all) named = enumerations;
+        int[] out = new int[named.size()];
+        for (int i = 0; i < out.length; i++) out[i] = columns.indexOf(named.get(i));
+        return out;
+    }
+
+    /**
+     * An enumeration by its label in the request's language: the label bundle's file for it ({@code Enum.CONSTANT},
+     * as {@code label_<lang>} writes it), else its default file (the label column), else the label column the
+     * enumeration itself holds; with no label at all, as the JSON shows it - its code.
+     */
+    private String labelOf(ErrorMessages labels, Enum<?> constant, Object shown) {
+        String key = constant.getDeclaringClass().getSimpleName() + "." + constant.name();
+        String said = labels == null ? null : labels.labelOrDefault(key);
+        if (said != null && !said.trim().isEmpty()) return said.trim();
+        String own = ExportColumns.labelColumn(constant, shown);
+        if (own != null) return own;
+        return shown == null ? constant.name() : String.valueOf(shown);
     }
 
     private final class Plan {
@@ -274,13 +334,21 @@ public final class SearchExport {
         final List<String> columns;
         final List<String> titles;
 
-        Plan(JsonRows json, boolean xlsx, long maxRows, List<String> columns, List<String> titles) {
+        /** The positions of the enumeration columns written by their label; null: every one by its code. */
+        final int[] labelled;
+
+        /** The labels those are said by. */
+        final ErrorMessages labels;
+
+        Plan(JsonRows json, boolean xlsx, long maxRows, List<String> columns, List<String> titles, int[] labelled) {
             this.json = json;
             this.xlsx = xlsx;
             this.maxRows = maxRows;
             this.max = xlsx ? Math.min(maxRows, XlsxWriter.MAX_ROWS - 1L) : maxRows;
             this.columns = columns;
             this.titles = titles;
+            this.labelled = labelled == null || labelled.length == 0 ? null : labelled;
+            this.labels = this.labelled == null ? null : labels();
         }
 
         /** 400 with the count when the search matches more rows than an export writes. */
@@ -345,7 +413,15 @@ public final class SearchExport {
             long count = written;
             for (Object row : rows) {
                 if (count >= max) break;
-                sheet.row(json.values(row, view, columns, xlsx));
+                List<Object> values = json.values(row, view, columns, xlsx);
+                if (labelled != null) {
+                    for (int at : labelled) {
+                        Object raw = json.rawOf(columns.get(at), row);
+                        // A text: a text cell in a workbook.
+                        if (raw instanceof Enum<?> constant) values.set(at, labelOf(labels, constant, values.get(at)));
+                    }
+                }
+                sheet.row(values);
                 count++;
             }
             return count;
@@ -471,6 +547,14 @@ public final class SearchExport {
         /** {@code csv} (none: CSV, unless Accept asks for an .xlsx workbook) or {@code xlsx}. */
         private String format;
 
+        /**
+         * The enumeration columns written by their label in the request's language, not their code; {@code "*"}:
+         * every one. None: each by its code, as the JSON shows it.
+         */
+        @com.fasterxml.jackson.annotation.JsonFormat(
+                with = com.fasterxml.jackson.annotation.JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+        private List<String> labels;
+
         public S getSearch() {
             return search;
         }
@@ -509,6 +593,14 @@ public final class SearchExport {
 
         public void setFormat(String format) {
             this.format = format;
+        }
+
+        public List<String> getLabels() {
+            return labels;
+        }
+
+        public void setLabels(List<String> labels) {
+            this.labels = labels;
         }
     }
 }

@@ -63,7 +63,7 @@ public class TypeScriptApiRules implements CodeRules {
     /** What apiSupport.ts gains in a domain with an export: its body's type and the call that answers a Blob. */
     private static final String[] EXPORT_SUPPORT = {
         "",
-        "/** The body of an export (POST .../export): the search, its order, the columns, their titles, the format. */",
+        "/** The body of an export (POST .../export): the search, its order, the columns, their titles, the format, the labels. */",
         "export interface ExportRequest<S> {",
         "    /** The search's conditions, as search takes them; none: every row the caller may see. */",
         "    search?: S;",
@@ -75,6 +75,8 @@ public class TypeScriptApiRules implements CodeRules {
         "    headers?: string[];",
         "    /** 'csv' (the default) or 'xlsx' (where the server has Apache POI; else 406). */",
         "    format?: 'csv' | 'xlsx';",
+        "    /** The enumeration columns written by their label in the request's language, '*' every one; none: by their code. */",
+        "    labels?: string[] | '*';",
         "}",
         "",
         "/** A file the server answers with, as a Blob - an export. Raises ApiError as request does. */",

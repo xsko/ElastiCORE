@@ -290,5 +290,21 @@ class ShopApiContractTest {
         assertThat(lines).contains("$mine,'=warp core,OPN")
         assertThat(csv).doesNotContain(theirs)
         assertThat(lines).hasSize(2)
+
+        // labels (issue 289): the enumerations by their label column - this domain has no label bundle - "*" every one.
+        val labelled = mvc.perform(post("$tickets/export").session(data).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"columns":["ticketId","status","billing"],"labels":"*"}""")).andReturn().response
+        assertThat(labelled.status).isEqualTo(200)
+        assertThat(String(labelled.contentAsByteArray, Charsets.UTF_8).removePrefix("﻿").trimEnd().split("\r\n"))
+            .containsExactly("ticketId,status,billing", "$mine,Open,Unbilled")
+        val named = mvc.perform(post("$tickets/export").session(data).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"columns":["ticketId","status","billing"],"labels":["billing"]}""")).andReturn().response
+        assertThat(String(named.contentAsByteArray, Charsets.UTF_8)).contains("$mine,OPN,Unbilled")
+        // Not an enumeration: 400 naming it.
+        val refused = mvc.perform(post("$tickets/export").session(data).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"labels":["subject"]}""")).andReturn().response
+        assertThat(refused.status).isEqualTo(400)
+        assertThat(json.readTree(refused.contentAsString).path("code").asText()).isEqualTo("export.labels")
+        assertThat(json.readTree(refused.contentAsString).path("detail").asText()).contains("subject")
     }
 }
