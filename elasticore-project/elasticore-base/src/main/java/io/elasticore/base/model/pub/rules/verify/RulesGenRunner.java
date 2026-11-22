@@ -1256,6 +1256,12 @@ public final class RulesGenRunner {
     /** Application root -> its entities with @login and @password that do not say @signin. */
     private final Map<String, List<String>> otherLoginsByApplication = new java.util.LinkedHashMap<String, List<String>>();
 
+    /** Application root -> its models, and the role enum of its @signin entity (name, then constants) or null. */
+    private final Map<String, List<ECoreModel>> modelsByApplication =
+            new java.util.LinkedHashMap<String, List<ECoreModel>>();
+
+    private final Map<String, List<String>> rolesByApplication = new java.util.LinkedHashMap<String, List<String>>();
+
     /**
      * Counts @signin per application, once per run. The session belongs to
      * the running application, so one entity of it may sign in through it.
@@ -1275,7 +1281,17 @@ public final class RulesGenRunner {
                 applicationOf.put(model, application);
                 listOf(signInsByApplication, application).addAll(SpecFactory.signInEntities(model));
                 listOf(otherLoginsByApplication, application).addAll(SpecFactory.otherLoginEntities(model));
+                List<ECoreModel> models = modelsByApplication.get(application);
+                if (models == null) {
+                    models = new ArrayList<ECoreModel>();
+                    modelsByApplication.put(application, models);
+                }
+                models.add(model);
             }
+        }
+        // The role names @access may use are the application's: its @signin entity may be in another domain.
+        for (Map.Entry<String, List<ECoreModel>> en : modelsByApplication.entrySet()) {
+            rolesByApplication.put(en.getKey(), SpecFactory.roleEnumOf(en.getValue()));
         }
         // Each module's sign-in is counted on its own, so two modules that are
         // in fact deployed as one application both sign in - one session with
@@ -1329,6 +1345,7 @@ public final class RulesGenRunner {
         List<String> others = otherLoginsByApplication.get(application);
         SpecFactory.applicationSignIns(signIns == null ? 0 : signIns.size(),
                 others == null ? java.util.Collections.<String>emptyList() : others);
+        SpecFactory.applicationRoles(rolesByApplication.get(application));
     }
 
     /**

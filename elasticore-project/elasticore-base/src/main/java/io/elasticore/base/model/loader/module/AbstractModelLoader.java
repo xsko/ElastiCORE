@@ -258,9 +258,13 @@ public class AbstractModelLoader implements ConstantParam {
     private static final Pattern KV =
             Pattern.compile("(\\w+)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
 
-    /** The same for @access, whose key may also be '*', the default level. */
+    /**
+     * The same for @access, whose key may also be '*', the default level, and
+     * whose value may join words with | and &amp;, spaced or not:
+     * read=owner | MANAGER is one value.
+     */
     private static final Pattern KV_ACCESS =
-            Pattern.compile("(\\w+|\\*)\\s*=\\s*(?:\"([^\"]*)\"|([^,\\s]+))|([^,\\s]+)");
+            Pattern.compile("(\\w+|\\*)\\s*=\\s*(?:\"([^\"]*)\"|((?:[^,\\s]|\\s+(?=[|&])|(?<=[|&])\\s+)+))|([^,\\s]+)");
 
     /**
      * Parses annotation parameters from a string representation.

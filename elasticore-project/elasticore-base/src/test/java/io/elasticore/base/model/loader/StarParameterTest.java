@@ -50,6 +50,19 @@ public class StarParameterTest {
         assertNull(a.getValue());
     }
 
+    /** Issue 269: a level joins words with | and &, spaced or not - one value, not a value and two strays. */
+    @Test
+    public void wordsJoinedByBarsAndAmpersandsAreOneValue() {
+        Annotation a = new Loader().parse("read=owner | MANAGER, update=REP&owner, close=REP & owner|MANAGER, *=admin");
+        assertEquals("owner | MANAGER", a.getProperties().getProperty("read"));
+        assertEquals("REP&owner", a.getProperties().getProperty("update"));
+        assertEquals("REP & owner|MANAGER", a.getProperties().getProperty("close"));
+        assertEquals("admin", a.getProperties().getProperty("*"));
+        assertNull(a.getValue());
+        Annotation other = new Loader().parse("ui", "menu=a | b, staff");
+        assertEquals("a", other.getProperties().getProperty("menu"), "outside @access the 2.x reading stays");
+    }
+
     @Test
     public void wordsAreReadAsBefore() {
         Annotation a = new Loader().parse("min=7,max=23");

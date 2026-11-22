@@ -15,8 +15,9 @@ enumeration:
       code:  string(1) @code
       label: string(20)
     enum:
-      USER:  U, User
-      ADMIN: A, Administrator
+      USER:    U, User           # @access의 user는 레벨(로그인한 누구나) - 이 역할만으로는 규칙을 쓸 수 없다 (빌드 경고)
+      MANAGER: M, Manager        # @access(read=owner|MANAGER): 모든 주문을 본다
+      ADMIN:   A, Administrator
 
   OrderStatus:
     meta: enum @db(code) @json(code) -- 주문 상태

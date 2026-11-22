@@ -2071,6 +2071,37 @@ PurchaseOrder:
 연산 이름: `read`(조회·검색), `create`, `update`, `delete`, 그리고 명령 이름(`ship`, `cancel`...).
 **적지 않은 연산은 `admin`** 입니다 (`*=user` 로 기본값 지정). `@access` 가 없으면 아무것도 검사하지 않습니다.
 
+**역할 이름, `|` 와 `&`.** 수준 자리에 세션의 역할 - `@signin` 엔티티 역할 필드의 상수(아래 "세션에는 행의 키와 역할이" 참고) - 도
+적을 수 있고, 단어를 `|`(어느 하나) 와 `&`(둘 다) 로 묶습니다. `&` 가 `|` 보다 먼저 묶이고, 괄호는 없으며,
+`|`·`&` 앞뒤의 공백은 괜찮습니다:
+
+```yaml
+Ticket:
+  meta: entity @root @expose @owner(memberId)
+        @access(read=owner|MANAGER, create=REP|MANAGER, update=REP&owner, close=REP&owner|MANAGER)
+```
+
+| 항목 | 누가 |
+|---|---|
+| `read=owner\|MANAGER` | 그 행의 주인, 또는 모든 행에서 `MANAGER`: MANAGER 의 검색은 좁혀지지 않고, 나머지는 자기 행만 나옴 |
+| `create=REP\|MANAGER` | `REP` 또는 `MANAGER` |
+| `update=REP&owner` | 자기 행에서 `REP`. `REP` 가 아닌 주인은 거절(403). `REP&owner` 검색은 REP 자기 행만 |
+| `close=REP&owner\|MANAGER` | 자기 행의 `REP`, 또는 어느 행이든 `MANAGER` (`&` 먼저) |
+
+- 수준인 단어는 대소문자와 상관없이 그 수준입니다(`USER` 는 `user`). 그 밖의 단어는 역할 이름: 대문자로 시작하고, 세션의 역할과
+  적힌 그대로 비교합니다(`CurrentUser.hasRole`). **관리자는 `none` 이 없는 모든 항(term)을 통과**합니다 - `owner` 를 통과하듯이.
+- **애플리케이션에 역할 enum 이 있으면 검사합니다** - `@signin` 엔티티의 역할 필드가 enum (이 도메인이든 다른 도메인이든). 수준도
+  그 상수도 아닌 이름은 빌드를 멈춥니다: `[Shop] Ticket @access(create=REP|MANGER): MANGER is neither a level (public,
+  user, owner, admin, none) nor a constant of the role enum UserRole (USER, MANAGER, REP, ADMIN).` 역할 enum 이 없으면 - `@signin` 이
+  없거나(Spring Security 등) 역할이 문자열 - 이름을 검사하지 않습니다.
+- 이름이 `PUBLIC`, `USER`, `OWNER`, `NONE` 인 역할 상수는 적을 수 없습니다: 그 단어는 수준입니다 - 항목이 역할을 적거나 그 단어를
+  상수 그대로(`read=USER`) 적으면 DSL 경고: `UserRole.USER cannot be named in @access` (펫스토어에 있음). `ADMIN` 은 어차피
+  관리자입니다. `&` 에 `user`·`public` 은 아무것도 더하지 않고 `none` 은 아무도 들이지 않습니다 - DSL 경고.
+- `owner` 를 적은 항목의 `findAll`·조건 삭제·조건 수정은 모든 행에서 통과하는 사람(`owner|MANAGER` 의 MANAGER)과 관리자의 것입니다.
+  `@signin` 엔티티 자신의 `update` 는 여전히 본인과 관리자만 들여야 합니다(`update=owner|MANAGER` 면 MANAGER 가 관리자의
+  비밀번호를 바꿀 수 있으므로 로그인이 생성되지 않음 - DSL 경고).
+- 역할은 엔티티 단위 연산에만 적습니다. 필드의 `@access(admin)` 은 그대로입니다.
+
 생성되는 동작 (CoreService):
 
 | 상황 | 결과 |
@@ -2081,7 +2112,7 @@ PurchaseOrder:
 | `owner` 검색 | 소유자 필드 **동등 조건**(`=`)을 검색에 덧붙임 - 내 것만 나옴 (필드의 `@search` 방식과 무관) |
 | `create` | 소유자 필드를 로그인 ID 로 덮어씀 - 방문자가 보낸 값도 지움 (관리자는 요청 값 그대로). 소유자가 기본키이고 자동 생성이 아니면 기본키를 로그인 ID 로. 소유자 필드가 `@readonly`·`@noinput` 이면(요청이 보낼 수 없는 값) 관리자를 포함해 로그인한 사람이 소유자 - `runAsSystem` 안에서는 손대지 않음 |
 | `update` | 소유자 필드와 `@access(admin)` 필드는 **행의 현재 값** 으로 (보낸 값 무시, `@dynamicupdate(false)` 에서도 지워지지 않음). `@readonly` 소유자는 관리자의 수정에서도 그대로 |
-| `owner` 의 `findAll`·조건 삭제·조건 수정 | 관리자만 (한 건씩 확인할 수 없으므로) |
+| `owner` 의 `findAll`·조건 삭제·조건 수정 | 관리자만 (한 건씩 확인할 수 없으므로) - `owner\|MANAGER` 면 MANAGER 도 |
 | `owner` 수준인데 `@owner` 가 안 풀림 | 빌드 경고(DSL_WARN) + 실행 시 관리자만 (검색은 403). layered 에서 `customer: Customer @ManyToOne` 의 `@owner(customerId)` 가 그렇습니다 - 식별자를 필드로 두는 것은 ddd·hexagonal 뿐이라, 경고가 적을 줄을 알려 줍니다: `customerId: long @db(customer_customer_id)` + `customer: Customer @ManyToOne @joinBy(customerId)` |
 | 로그인 안 한 호출 (요청 밖·WebFlux·gRPC·`@Async` 포함) | **방문자** - fail-closed |
 | `CurrentUser.runAsSystem(() -> ...)` 안 | 애플리케이션 자신 - 모두 허용 (시작 시 데이터, 배치) |
@@ -2095,8 +2126,8 @@ CurrentUser.runAsSystem(() -> customers.save(admin));
 `read=owner` 인 고객을 주문 DTO 가 통째로 담으면 주문을 읽는 사람에게 고객 정보가 보이므로, 빌드가
 그 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음).
 
-`@access` 문법 오류(`read=owners`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
-애플리케이션이 시작하지 않습니다. 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로
+`@access` 문법 오류(`read=owners`, `read=owner|`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
+애플리케이션이 시작하지 않습니다 (역할 enum 이 있는 애플리케이션에서 `read=owners` 는 위처럼 빌드를 멈춤). 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로
 `@access`·`@owner`·`@password` 를 쓰면 아무것도 검사·해시되지 않으므로 빌드 경고가 납니다.
 **2.x 생성기(`elcore`, 어노테이션 프로세서)는 이 어노테이션들을 처리하지 않습니다** - 3.0 규칙 엔진을 쓰세요.
 
@@ -2136,7 +2167,8 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
 세션에는 행의 키와 **역할**이 들어갑니다. 역할은 `@role` 을 붙인 필드, 없으면 `role` 이라는 필드의 값으로,
 **`@access(admin)` 인 enum 이나 문자열 필드만** 씁니다 (enum 이면 상수 이름 - `UserRole.ADMIN` 이면 `ADMIN`,
 `adminRole` 과 비교). 관리자만 쓰는 필드가 아니면 가입자가 `"role":"ADMIN"` 을 보내고 로그인해 관리자가 되므로,
-빌드가 DSL 경고를 내고 역할 없이 로그인합니다. 역할 필드가 없으면 모두 일반 사용자입니다.
+빌드가 DSL 경고를 내고 역할 없이 로그인합니다. 역할 필드가 없으면 모두 일반 사용자입니다. enum 역할 필드의
+상수가 `@access` 에 적을 수 있는 역할 이름입니다 (`read=owner|MANAGER`, 위 "역할 이름" 참고).
 
 **`@signin(refresh=request)` - 세션이 행을 따라갑니다.** 이것이 없으면 세션은 로그인 때 받은 키와 역할을 다음 로그인까지 그대로 가집니다.
 관리자가 바꾼 역할은 다음 로그인을 기다리고, 삭제된 회원의 세션도 계속 동작합니다. 이것을 쓰면 엔티티에 컨트롤러 옆의 필터

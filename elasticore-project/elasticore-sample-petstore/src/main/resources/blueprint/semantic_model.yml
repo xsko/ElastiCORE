@@ -174,10 +174,10 @@ datasets:
         expression:
           sql: "role"
         datatype: String
-        ai_context: "Codes: U = User, A = Administrator"
+        ai_context: "Codes: U = User, M = Manager, A = Administrator"
         nonportable_extensions:
           - vendor_name: ELASTICORE
-            data: {"enumeration": "UserRole", "codes": {"U": "User", "A": "Administrator"}}
+            data: {"enumeration": "UserRole", "codes": {"U": "User", "M": "Manager", "A": "Administrator"}}
       - name: street1
         expression:
           sql: "street1"
@@ -441,7 +441,7 @@ datasets:
             data: {"domain": "petstore", "declared": "count(distinct PurchaseOrder.customerId) where status != CANCELLED -- 취소되지 않은 주문이 있는 고객 수"}
     nonportable_extensions:
       - vendor_name: ELASTICORE
-        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "read": "owner"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}
+        data: {"entity": "PurchaseOrder", "domain": "petstore", "owner": "customerId", "access": {"*": "admin", "cancel": "owner", "create": "user", "delete": "MANAGER&owner", "read": "owner|MANAGER"}, "states": {"status": {"initial": "PLACED", "ship": "PLACED -> SHIPPED", "cancel": "PLACED -> CANCELLED", "delete": "CANCELLED"}}, "events": "Placed(total), Shipped, Cancelled", "omitted_columns": ["credit_card_number"]}
   - name: OrderLine
     source: ps_order_line
     primary_key: [line_id]

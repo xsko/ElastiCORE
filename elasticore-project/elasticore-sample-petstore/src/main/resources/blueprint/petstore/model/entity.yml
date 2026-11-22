@@ -80,9 +80,10 @@ entity:
   # ---- orders -----------------------------------------------------------------
 
   PurchaseOrder:
-    # 주문은 로그인한 고객이 자기 것으로, 조회·취소는 본인, 배송·삭제는 관리자
+    # 주문은 로그인한 고객이 자기 것으로, 조회는 본인과 매니저(MANAGER - 모든 주문), 취소는 본인, 배송은 관리자,
+    # 삭제는 자기 주문을 지우는 매니저(MANAGER&owner)와 관리자
     meta: entity @root @expose(20) @event(Placed(total), Shipped, Cancelled) @owner(customerId)
-          @access(read=owner, create=user, cancel=owner) @terms(order, purchase, 구매) -- 주문
+          @access(read=owner|MANAGER, create=user, cancel=owner, delete=MANAGER&owner) @terms(order, purchase, 구매) -- 주문
     fields:
       orderId:         string(36) @id @genid
       customer:        Customer @ManyToOne                 # -> customerId

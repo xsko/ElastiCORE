@@ -276,10 +276,12 @@ page.append('''<!doctype html>
       <div class="roles">
         <div class="role"><h4>방문자</h4>로그인 전. 상품을 보고 검색하고, 가입합니다.</div>
         <div class="role"><h4>고객 (USER)</h4>가입하면 이 역할. 자기 정보와 자기 주문만 보고 고칩니다.</div>
+        <div class="role"><h4>매니저 (MANAGER)</h4>관리자가 역할을 바꿔 줍니다. 모든 주문을 보고, 취소된 자기 주문을 지웁니다.</div>
         <div class="role"><h4>관리자 (ADMIN)</h4>모든 것을 봅니다. 배송, 상품 관리, 고객 역할 변경, 삭제.</div>
       </div>
       <p>DSL 은 엔티티마다 <code>@access(연산=수준)</code> 으로 말합니다. 수준은 <code>public</code>(방문자도) · <code>user</code>(로그인) ·
-        <code>owner</code>(본인 것만, <code>@owner(필드)</code> 로 주인을 정함) · <code>admin</code>. <b>적지 않은 연산은 관리자만</b> 할 수 있습니다.</p>
+        <code>owner</code>(본인 것만, <code>@owner(필드)</code> 로 주인을 정함) · <code>admin</code>. <b>적지 않은 연산은 관리자만</b> 할 수 있습니다.
+        역할 이름(<code>MANAGER</code>)도 쓸 수 있고, <code>|</code>(어느 하나) · <code>&amp;</code>(둘 다)로 묶습니다: <code>read=owner|MANAGER</code>, <code>delete=MANAGER&amp;owner</code>.</p>
       <table class="map matrix">
         <thead><tr><th>할 일</th><th>방문자</th><th>고객 (본인 것)</th><th>고객 (남의 것)</th><th>관리자</th><th>DSL</th></tr></thead>
         <tbody>
@@ -291,10 +293,10 @@ page.append('''<!doctype html>
           <tr><td>고객 역할 바꾸기</td><td>-</td><td>무시됨</td><td>-</td><td>200</td><td><code>role … @access(admin)</code></td></tr>
           <tr><td>탈퇴(고객 삭제)</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
           <tr><td>주문하기</td><td>401</td><td>200</td><td>-</td><td>200</td><td><code>create=user</code></td></tr>
-          <tr><td>주문 보기</td><td>401</td><td>200</td><td>404</td><td>200</td><td><code>read=owner</code></td></tr>
+          <tr><td>주문 보기</td><td>401</td><td>200</td><td>404 (매니저 200)</td><td>200</td><td><code>read=owner|MANAGER</code></td></tr>
           <tr><td>주문 취소</td><td>401</td><td>200</td><td>404</td><td>200</td><td><code>cancel=owner</code></td></tr>
           <tr><td>배송</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
-          <tr><td>주문 삭제</td><td>401</td><td>403</td><td>403</td><td>200</td><td>(적지 않음 → 관리자)</td></tr>
+          <tr><td>주문 삭제</td><td>401</td><td>403 (매니저 200)</td><td>403 (매니저 404)</td><td>200</td><td><code>delete=MANAGER&amp;owner</code></td></tr>
         </tbody>
       </table>
       <p>남의 것은 403 이 아니라 <b>404</b> 입니다 - 남의 주문이 있다는 사실도 알리지 않습니다. 검사는 재생성되는 서비스(<code>…CoreService</code>)에
@@ -504,16 +506,17 @@ SECTIONS.append(src('gen-place', '// domain/model/PurchaseOrder (손으로)\n' +
 # ---- 8 orders ------------------------------------------------------------------------------------------
 page.append('''
       <h2 id="orders">8. 주문 조회 ''' + cov('all') + '''</h2>
-      <p class="biz">고객은 자기 주문 목록과 상세(줄·금액·배송지·카드 종류)를 봅니다. 관리자는 모든 주문을 봅니다.</p>
+      <p class="biz">고객은 자기 주문 목록과 상세(줄·금액·배송지·카드 종류)를 봅니다. 매니저와 관리자는 모든 주문을 봅니다.</p>
 ''' + rules([
-    ('자기 주문만', '<code>@owner(customerId) @access(read=owner)</code>', '검색은 본인 것만. <code>{"customerId":1}</code> 로 찾아도 0건. 남의 주문 404, 방문자 401'),
+    ('자기 주문만', '<code>@owner(customerId) @access(read=owner|MANAGER)</code>', '검색은 본인 것만. <code>{"customerId":1}</code> 로 찾아도 0건. 남의 주문 404, 방문자 401'),
+    ('매니저는 전부', '<code>read=owner|MANAGER</code> - 역할 이름, <code>|</code> 는 어느 하나', '매니저의 검색은 좁혀지지 않음, 남의 주문 GET 200'),
     ('관리자는 전부', '(관리자는 모든 수준을 가짐)', '관리자 검색은 모든 고객의 주문'),
     ('줄에 품목 이름', 'dto.yml <code>itemName: string @ref(item.name)</code>', '줄마다 <code>itemName</code> ("Large")'),
     ('최신순', '<b>화면이</b> <code>sortColumn: orderDate</code> 를 보냄', 'DSL 에 기본 정렬 없음'),
 ]) + '''
       ''' + code('gen-owned', 'java') + '''
 ''')
-SECTIONS.append(src('gen-owned', '// PurchaseOrderCoreService (생성) - read=owner, create=user\n' + G_OWNED))
+SECTIONS.append(src('gen-owned', '// PurchaseOrderCoreService (생성) - read=owner|MANAGER, create=user\n' + G_OWNED))
 
 # ---- 9 cancel ------------------------------------------------------------------------------------------
 page.append('''
@@ -532,14 +535,14 @@ page.append('''
 # ---- 10 ship --------------------------------------------------------------------------------------------
 page.append('''
       <h2 id="ship">10. 배송 (백오피스) ''' + cov('all') + '''</h2>
-      <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자뿐입니다.</p>
+      <p class="biz">관리자는 백오피스에서 모든 주문을 보고, 접수된 주문을 배송 처리합니다. 주문은 고칠 수 없고, 지우는 것은 관리자와 - 취소된 자기 주문이면 - 매니저입니다.</p>
 ''' + rules([
     ('관리자만', '<code>@access</code> 에 ship 을 적지 않음', '고객 → 403 "ship PurchaseOrder is for the administrator"'),
     ('접수 상태에서만', '<code>states: status: ship: PLACED -> SHIPPED</code>', '취소된 주문 배송 → 409'),
     ('배송되면 알린다', '<code>@event(… Shipped)</code>', '<code>PurchaseOrderShippedEvent</code>'),
     ('버튼은 할 수 있을 때만', '(생성) TypeScript <code>Orders.canShip(order)</code>', '-'),
     ('주문은 고칠 수 없다', '<code>@editable</code> 이 아닌 루트 → 수정 API 없음', 'PUT → 405'),
-    ('삭제는 관리자만', 'delete 를 적지 않음', '고객 403, 관리자 200'),
+    ('삭제는 관리자, 자기 주문을 지우는 매니저', '<code>delete=MANAGER&amp;owner</code> - <code>&amp;</code> 는 둘 다', '고객 403, 매니저는 자기 것 200·남의 것 404, 관리자 200'),
 ]) + '''
 ''')
 
