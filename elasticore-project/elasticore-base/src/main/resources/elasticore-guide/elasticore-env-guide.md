@@ -761,7 +761,7 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 | `@min`, `@max` | the bound passes, one step past it is refused: 400 `Min` / `Max` (`DecimalMin` / `DecimalMax` on a decimal) |
 | `@pattern` | a value made from the expression - checked with it - passes, one that does not match is refused: 400 `Pattern`. A password's rule - `^` then lookaheads `(?=.*X)`: a value with a character of each X passes, one that matches the rest but misses one is refused |
 | `@notblank`, `@email` | text passes, blank text (`"   "`) is refused: 400 `NotBlank`; an address passes, the address without its `@` is refused: 400 `Email` |
-| `@past`, `@future` | on a date, a datetime or a timestamp: a year ago (from now) passes, tomorrow (yesterday) is refused: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`), read from the clock when the test runs |
+| `@past`, `@future` | on a date, a datetime or a timestamp: a year ago (from now) passes; past now the other way is refused - a date by two days (a midnight during the request leaves it past), a datetime or timestamp by one: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`), read from the clock when the test runs |
 | `@minsize(n)` | n members pass, n - 1 are refused: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: the boundary passes, one past it is refused: 422 `invariant.<Entity>.<rule>` |
 

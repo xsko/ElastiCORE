@@ -45,7 +45,8 @@ import java.util.Set;
  *   notblank, email    text passes, blank text is refused (400, NotBlank); an
  *                      address passes, the address without its @ is refused (400,
  *                      Email)
- *   past, future       a year ago (a year from now) passes, tomorrow (yesterday) is
+ *   past, future       a year ago (a year from now) passes, two days ahead (ago) on
+ *                      a date, a day on a datetime or timestamp, is
  *                      refused (400, Past, PastOrPresent, Future, FutureOrPresent)
  *   minsize            that many members pass, one fewer is refused (400, Size)
  *   invariant          a field compared with a number, a collection's size, a
@@ -1309,9 +1310,10 @@ final class ContractTestSource {
 
         /**
          * The marks @past, @pastorpresent, @future and @futureorpresent on a date or a
-         * time: a year ago (from now) passes, tomorrow (yesterday) is refused -
-         * read from the clock when the test runs, a day from it, so no time zone
-         * moves it across now.
+         * time: a year ago (from now) passes, a moment past now the other way is
+         * refused - read from the clock when the test runs, so no time zone moves
+         * it across now: a date two days from today (a midnight passing during
+         * the request leaves it a day away), a datetime or a timestamp one day.
          */
         private void clockMarks(FieldSpec f, String pathConstant) {
             String name = json(f);
@@ -1331,7 +1333,8 @@ final class ContractTestSource {
                 if (!f.hasDsl(mark[0])) continue;
                 boolean before = mark[0].startsWith("past");
                 String passes = moment(f, before ? -365 : 365, lang);
-                String refused = moment(f, before ? 1 : -1, lang);
+                int days = "date".equals(temporalKind(f)) ? 2 : 1;
+                String refused = moment(f, before ? days : -days, lang);
                 if (passes == null || refused == null) {
                     skip(e.getName() + "." + f.name() + " @" + mark[0] + ": "
                             + ("time".equals(temporalKind(f))
@@ -1342,7 +1345,10 @@ final class ContractTestSource {
                 Test t = test(
                         f.name() + mark[1],
                         f.name() + ": a year " + (before ? "ago" : "from now") + " passes, "
-                                + (before ? "tomorrow" : "yesterday") + " is refused (400 " + mark[1] + ")");
+                                + (days == 2
+                                        ? (before ? "two days ahead" : "two days ago")
+                                        : (before ? "tomorrow" : "yesterday"))
+                                + " is refused (400 " + mark[1] + ")");
                 t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
                         + lang.string(name) + ", " + passes + ")))"));
                 t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
@@ -1960,8 +1966,8 @@ final class ContractTestSource {
                                 ? at.toString() + ":00"
                                 : at.format(java.time.format.DateTimeFormatter.ofPattern(pattern)));
             case "time":
-                // A time of day against the clock: the day's first second, its last.
-                return lang.string(past && !future ? "00:00:00" : future && !past ? "23:59:59" : "10:00:00");
+                // A time of day against the clock is past or future by the hour the test runs at: no value is made.
+                return past || future ? null : lang.string("10:00:00");
             default:
                 return lang.string("2026-01-15T10:00:00Z");
         }
