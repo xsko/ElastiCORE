@@ -1400,6 +1400,55 @@ public class ContractTestsTest {
         assertTrue(s.contains("with this role - it has none to set -"), s);
     }
 
+    /**
+     * A visitor's create, as the service claims the owner: keyed by its owner (a key the request chooses) it is
+     * refused (401) whatever create says; a required owner a visitor's claim clears is counted, not tested. And
+     * none refuses even a visitor 403; an operation * sets is said so.
+     */
+    @Test
+    public void aVisitorsCreateIsReadAsTheServiceClaimsTheOwner() throws Exception {
+        String model = ACCESS
+                + String.join(
+                        "\n",
+                        "  Profile:",
+                        "    meta: entity @root @editable @expose(20) @owner(handle) @access(create=public, read=public,"
+                                + " delete=none, *=user)",
+                        "    fields:",
+                        "      handle: string(20) @id",
+                        "      bio:    string(40)!",
+                        "",
+                        "  Memo:",
+                        "    meta: entity @root @editable @expose(20) @owner(staffId) @access(create=public, read=owner)",
+                        "    fields:",
+                        "      memoId:  long @id @sequence",
+                        "      staffId: long!",
+                        "      text:    string(40)!",
+                        "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Profile create=public: a visitor is let in by it, and refused (401) - @owner is the key"
+                        + " the request chooses"),
+                log);
+        String p = read(project, "src/test/java/com/acme/shop/ProfileContractTest.java");
+        assertFalse(p.contains("void createLetsInAVisitor()"), p);
+        assertTrue(
+                method(p, "createRefusesAVisitor")
+                        .contains(
+                                "assertDenied(sentBy(null, creating(PROFILE, newProfile())), 401, \"not-signed-in\");"),
+                p);
+        // none: nobody - a visitor is refused 403, there being nothing to sign in for (the read before it is public).
+        assertTrue(method(p, "deleteRefusesAVisitor").contains("403, \"forbidden\");"), p);
+        assertTrue(method(p, "deleteRefusesAUser").contains("403, \"forbidden\");"), p);
+        assertFalse(p.contains("void deleteLetsIn"), p);
+        assertTrue(p.contains("@DisplayName(\"update=user (from *): "), p);
+        assertTrue(
+                log.contains("Memo create=public: a visitor's create clears @owner(staffId), which is required (!)"),
+                log);
+        assertFalse(read(project, "src/test/java/com/acme/shop/MemoContractTest.java")
+                .contains("createLetsInAVisitor"));
+    }
+
     /** Without @access nothing of it is written: the support class is the one it was. */
     @Test
     public void aDomainWithoutAccessGetsNoCallers() throws Exception {

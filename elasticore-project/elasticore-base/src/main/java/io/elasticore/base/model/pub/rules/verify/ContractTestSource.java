@@ -1677,6 +1677,11 @@ final class ContractTestSource {
 
         private String ownershipProblem;
         private FieldSpec ownerDto;
+        /** Whether the owner is the key the request chooses: create keys the row by the caller's id. */
+        private boolean keyedByOwner;
+        /** The @owner field create claims for the caller, where it is required (!); null otherwise. */
+        private String requiredClaim;
+
         private Callers callers;
         private Principal principal;
 
@@ -1774,6 +1779,10 @@ final class ContractTestSource {
             }
             FieldSpec pk = e.pkFields().size() == 1 ? e.pkFields().get(0) : null;
             boolean ownerIsKey = pk != null && pk.name().equals(owner.name());
+            // What create claims (ServiceAccessRules.accessCreate): a key the request chooses is the caller's id - a
+            // visitor, who has none, is refused (401); any other owner is set to it - a visitor's to none.
+            keyedByOwner = ownerIsKey && !ServiceAccessRules.keyGenerated(pk);
+            requiredClaim = !ownerIsKey && owner.required() ? owner.name() : null;
             if (ownerIsKey && principal.spec != null && path(principal.spec).equals(path(e))) {
                 ownership = "self";
                 return;
@@ -1819,6 +1828,8 @@ final class ContractTestSource {
             }
             AccessExpression x = level("search".equals(op) ? "read" : op);
             String refused = Policy.require(x, w);
+            // Keyed by its owner: a visitor has no identity to key the row by.
+            if ("create".equals(op) && refused == null && w.visitor && keyedByOwner) return "401";
             if (refused != null || "create".equals(op) || "search".equals(op)) return refused;
             return Policy.owns(x, w, mine);
         }
@@ -1859,6 +1870,16 @@ final class ContractTestSource {
                 Who w = callers.forTerm(term);
                 if (w == null) {
                     accessSkip(where + ": " + callers.problem);
+                    continue;
+                }
+                if (create && w.visitor && keyedByOwner) {
+                    accessSkip(where + ": a visitor is let in by it, and refused (401) - @owner is the key the request"
+                            + " chooses, and a visitor has no identity to key the row by");
+                    continue;
+                }
+                if (create && w.visitor && requiredClaim != null) {
+                    accessSkip(where + ": a visitor's create clears @owner(" + requiredClaim + "), which is required"
+                            + " (!), so the row cannot be saved");
                     continue;
                 }
                 boolean mine = term.contains("owner") && !create;
@@ -2000,8 +2021,13 @@ final class ContractTestSource {
                         said + ": " + w.label + " is refused" + on + " (" + refusal + " " + Policy.code(refusal) + ")";
                 method = op + "Refuses" + w.method + (mine ? "OnTheirRow" : anothers ? "OnAnothersRow" : "");
             }
-            Test t = new Test(method(method), display);
-            List<String> lines = t.lines;
+            if (search && refusal == null && searchKey() == null) {
+                // Not narrowed to the test's row, a search could leave it out by its page alone.
+                accessSkip(e.getName() + " " + said + ": its search takes no " + key + ", so no search is narrowed to"
+                        + " the test's row");
+                return;
+            }
+            List<String> lines = new ArrayList<String>();
             String caller = w.visitor ? "null" : "caller";
             String id = null;
             if (!create) {
@@ -2052,16 +2078,14 @@ final class ContractTestSource {
                 lines.add(lang.stmt(
                         "assertDenied(" + sent + ", " + refusal + ", " + lang.string(Policy.code(refusal)) + ")"));
             } else if (search) {
-                if (searchKey() == null) {
-                    accessSkip(e.getName() + " " + said + ": its search takes no " + key + ", so no search is narrowed"
-                            + " to the test's row to find it");
-                    if (!anothers) return;
-                }
                 lines.add(lang.stmt(
                         (anothers ? "assertMisses(" : "assertFinds(") + sent + ", " + lang.string(key) + ", id)"));
             } else {
                 lines.add(lang.stmt("assertAllowed(" + sent + ")"));
             }
+            // Named only once it is written: a case left out takes no name a later one would then not get.
+            Test t = new Test(method(method), display);
+            t.lines.addAll(lines);
             tests.add(t);
         }
 
