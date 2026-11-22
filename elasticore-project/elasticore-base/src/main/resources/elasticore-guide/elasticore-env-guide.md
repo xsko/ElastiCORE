@@ -770,12 +770,15 @@ config:
   is an enum or string with `@access(admin)`.
 
 ## 6-3. The language of the `--` labels (`labelLanguage`, 3.0)
-> **Works in:** the v3 bundles of a domain with an API (`@expose`) - JPA, MyBatis, MongoDB; Java, Kotlin; every architecture · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator
+> **Works in:** the label file - the v3 bundles of a domain with an API (`@expose`), JPA, MyBatis, MongoDB, Java, Kotlin, every architecture; the refusals that read it - the invariant and lifecycle refusals, which the ddd and hexagonal bundles write (JPA, MyBatis; Java, Kotlin) · **Not in:** layered and MongoDB (no such refusal), 2.x-compatible output (output = 'v2'), 2.x generator
 
 ```yaml
 config:
   labelLanguage: ko        # the "--" labels of this domain are Korean (optional; a tag as an @label key: ko, pt-BR)
 ```
+
+- Write the bare language (`ko`, not `ko-KR`): a request with `Accept-Language: ko` looks for `_ko`, and `ko-KR` finds `_ko` too.
+- In a refusal the `--` text becomes the label as it is - a long description reads oddly there; give a short one with `@label(ko=...)`.
 
 - Says which language the DSL's `--` text is in. It applies to the whole domain. The label bundle then gets a file of that
   language (`i18n/<domain>-labels_ko.properties`) with every label - `@label(ko=...)`, else the `--` text, and for an enumeration

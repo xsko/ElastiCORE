@@ -166,6 +166,48 @@ public class RefusalLabelsTest {
         assertEquals("annualRevenue can't be 0", messages.text("no.such.code", "annualRevenue can't be 0", values));
     }
 
+    /**
+     * A generated code thrown by hand with the values it had before labels -
+     * as the rule guide's (code, message, args...) shows - or with none: a
+     * sentence naming a value it was not given is not said with a hole; the
+     * refusal's own message is. A translation naming only the given values works.
+     */
+    @Test
+    public void aGeneratedCodeThrownWithFewerValuesSaysItsOwnMessage() {
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        InvariantViolationException state = new InvariantViolationException(
+                "state.Opportunity.stage.win",
+                "Opportunity cannot win when stage is LOST; it must be [OPEN]",
+                "LOST",
+                "[OPEN]");
+        assertEquals(
+                "Opportunity cannot win when stage is LOST; it must be [OPEN]",
+                messages.text(state.getCode(), state.getMessage(), state.getArgs()));
+        InvariantViolationException none = new InvariantViolationException(
+                "invariant.Account.annualRevenue.min", "annualRevenue must be at least 0");
+        assertEquals(
+                "annualRevenue must be at least 0", messages.text(none.getCode(), none.getMessage(), none.getArgs()));
+
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals(
+                "단계가 LOST이면 수주할 수 없습니다 (가능한 상태: [OPEN])",
+                messages.text(state.getCode(), state.getMessage(), state.getArgs()));
+
+        // Nothing to fall back on: the sentence as it was said before.
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        assertEquals("{0} must be at least 0", messages.text("invariant.Account.annualRevenue.min", null));
+    }
+
+    /** An invariant's sentence that is no MessageFormat pattern is said as written, as before it had values. */
+    @Test
+    public void anInvariantSentenceThatIsNoPatternIsSaidAsWritten() {
+        Object[] values = {Label.of("Account.employees"), Label.of("Account")};
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        assertEquals("no {negative} count", messages.text("invariant.Account.employees.min", "x", values));
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertEquals("직원 수는 {최소} 이상", messages.text("invariant.Account.employees.min", "x", values));
+    }
+
     /** A default pattern formatted where no bundle has the code says its labels too. */
     @Test
     public void aDefaultPatternSaysTheLabels() {

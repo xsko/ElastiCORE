@@ -36,6 +36,7 @@ public class MessageLabelsGenerationTest {
             "      accountId:     long @id @sequence",
             "      name:          string(30)! @label(en=Name) -- 이름",
             "      annualRevenue: int @min(0) @max(1000, 'at most 1000') -- 연 매출",
+            "      employees:     int @min(0, 'no {negative} count')",
             "      stage:         Stage",
             "    states:",
             "      stage:",
@@ -76,6 +77,8 @@ public class MessageLabelsGenerationTest {
             assertEquals("{0} must be at least 0", bundle.getProperty("invariant.Account.annualRevenue.min"));
             // The DSL's own sentence is kept as written: no placeholder, no pattern.
             assertEquals("at most 1000", bundle.getProperty("invariant.Account.annualRevenue.max"));
+            // A DSL sentence with a brace is kept as written too; the runtime says it so (RefusalLabelsTest).
+            assertEquals("no {negative} count", bundle.getProperty("invariant.Account.employees.min"));
             assertEquals("{1} violates name notNull", bundle.getProperty("invariant.Account.name-notNull"));
             assertEquals(
                     "Account violates name notNull",
@@ -101,6 +104,11 @@ public class MessageLabelsGenerationTest {
             assertTrue(
                     invariants.contains("InvariantViolationException(\"invariant.Account.annualRevenue.min\","
                             + " \"annualRevenue must be at least 0\", " + LABEL + ".of(\"Account.annualRevenue\"), "
+                            + LABEL + ".of(\"Account\"));"),
+                    invariants);
+            assertTrue(
+                    invariants.contains("InvariantViolationException(\"invariant.Account.employees.min\","
+                            + " \"no {negative} count\", " + LABEL + ".of(\"Account.employees\"), "
                             + LABEL + ".of(\"Account\"));"),
                     invariants);
             assertTrue(
