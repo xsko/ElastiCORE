@@ -764,7 +764,7 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 | `@past`, `@future` | on a date, a datetime or a timestamp: a year ago (from now) passes; past now the other way is refused - a date by two days (a midnight during the request leaves it past), a datetime or timestamp by one: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`), read from the clock when the test runs |
 | `@minsize(n)` | n members pass, n - 1 are refused: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: the boundary passes, one past it is refused: 422 `invariant.<Entity>.<rule>` |
-| `@access` | each operation the API serves - read, search, create, update, delete, each command - at its entry, else `*`, else `admin`: a caller each term lets in passes (2xx; a search finds the row); a visitor is refused 401 `not-signed-in`, a caller of a role no term lets in 403 `forbidden`, and where `owner` is a word a caller on another's row 404 `not-found` (a search does not find it). `REP&owner` refuses another role on a row of theirs and a REP on another's; `owner\|MANAGER` lets in either |
+| `@access` | each operation the API serves - read, search, create, update, delete, each command - at its entry, else `*`, else `admin`: a caller each term lets in passes (2xx; a search finds the row); a visitor is refused 401 `not-signed-in`, a caller of a role no term lets in 403 `forbidden`, and where `owner` is a word a caller on another's row 404 `not-found` (a search does not find it). `REP&owner` refuses another role on a row of theirs and a REP on another's; `owner\|MANAGER` lets in either. A visitor's create of a row keyed by its owner (`@owner` the key the request chooses) is refused 401, as the service does |
 
 - Files: `<Domain>ContractSupport` and a `<Entity>ContractTest` for each entity the API creates, in `src/test/java/<base package>/`
   (`src/test/kotlin` for Kotlin). Written once, then merged when the DSL changes - kept where you changed them - as the architecture test.
@@ -781,7 +781,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   `@owner` or no administrator signs in; the `@signin` entity's own row is the caller's. Sign in your way in `signIn(role)`.
 - Not tested of `@access`, counted in the summary and listed in the support class's comment: no principal to sign in, a role the
   role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds one), `owner` where `@owner` names no field, an entry
-  not read (`read=owners`), a delete or a command no sequence of commands brings a new row to.
+  not read (`read=owners`), a delete or a command no sequence of commands brings a new row to, a row of a caller's that cannot be
+  made, a search that takes no key, a composite key (create only), a visitor's create that clears a required `@owner`.
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
@@ -803,7 +804,7 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   skipped without it; their rows stay, with unique values.
 - Covered: the field constraints and `@access` in every mode, language and architecture; the lifecycles and the invariants where
   they are written - ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `@Mask` and `@encrypt`, `export`, the
-  `delete:` states of a lifecycle, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
+  `delete:` states of a lifecycle as a test of their own, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
   a float holds no exact 0.1, and its check compares it widened to a double. So are a `@past` / `@future` time of day (past or
   future by the hour the test runs at), a lookahead the rest always holds (`@pattern('^(?=.*\\d)\\d+$')`: nothing matches the rest
   and misses it) and any other lookaround - a negative lookahead, a lookbehind, a lookahead further in.

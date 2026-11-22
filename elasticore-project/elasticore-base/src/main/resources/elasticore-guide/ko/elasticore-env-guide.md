@@ -764,7 +764,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 | `@past`, `@future` | date, datetime, timestamp 에서: 1년 전(후)은 통과, 반대쪽으로 지금을 넘은 값은 거부 - date 는 이틀(요청 중 자정이 지나도 넘은 채로), datetime·timestamp 는 하루: 400 `Past` / `Future` (`PastOrPresent`, `FutureOrPresent`) - 테스트가 실행될 때의 시계로 |
 | `@minsize(n)` | 멤버 n 개는 통과, n - 1 개는 거부: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: 경계는 통과, 하나 넘으면 거부: 422 `invariant.<Entity>.<rule>` |
-| `@access` | API 가 제공하는 각 작업 - read, search, create, update, delete, 각 명령 - 을 그 항목, 없으면 `*`, 없으면 `admin` 수준으로: 각 항(term)이 들이는 호출자는 통과(2xx; 검색은 그 행을 찾음); 방문자는 401 `not-signed-in`, 어떤 항도 들이지 않는 역할의 호출자는 403 `forbidden`, `owner` 가 있는 곳에서는 남의 행에 대한 호출자가 404 `not-found` (검색은 그 행을 찾지 못함). `REP&owner` 는 자기 행이라도 다른 역할을, 남의 행이면 REP 도 거부; `owner\|MANAGER` 는 둘 중 하나면 들인다 |
+| `@access` | API 가 제공하는 각 작업 - read, search, create, update, delete, 각 명령 - 을 그 항목, 없으면 `*`, 없으면 `admin` 수준으로: 각 항(term)이 들이는 호출자는 통과(2xx; 검색은 그 행을 찾음); 방문자는 401 `not-signed-in`, 어떤 항도 들이지 않는 역할의 호출자는 403 `forbidden`, `owner` 가 있는 곳에서는 남의 행에 대한 호출자가 404 `not-found` (검색은 그 행을 찾지 못함). `REP&owner` 는 자기 행이라도 다른 역할을, 남의 행이면 REP 도 거부; `owner\|MANAGER` 는 둘 중 하나면 들인다. 소유자로 키를 정하는 행(`@owner` 가 요청이 정하는 키)의 방문자 create 는 서비스가 하듯 401 로 거부 |
 
 - 파일: `<Domain>ContractSupport` 와, API 가 생성하는 엔티티마다 `<Entity>ContractTest` - `src/test/java/<base package>/`
   (Kotlin 은 `src/test/kotlin`). 한 번 쓰고, 그 뒤 DSL 이 바뀌면 병합한다 - 고친 곳은 유지 - 아키텍처 테스트와 같다.
@@ -781,7 +781,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   `@signin` 엔티티 자신의 행은 그 호출자의 것이다. 프로젝트의 방식으로 로그인하려면 `signIn(role)` 을 고친다.
 - `@access` 에서 테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: 로그인시킬 principal 이 없음, 역할 필드가
   담을 수 없는 역할, 역할이 둘인 항(`REP&MANAGER` - 세션은 역할 하나를 담는다), `@owner` 가 필드를 가리키지 않는데 `owner` 를 쓴
-  곳, 읽을 수 없는 항목(`read=owners`), 어떤 명령 순서로도 새 행이 닿지 못하는 delete 나 명령.
+  곳, 읽을 수 없는 항목(`read=owners`), 어떤 명령 순서로도 새 행이 닿지 못하는 delete 나 명령, 만들 수 없는 호출자의 행, 키를
+  받지 않는 검색, 복합 키(create 만), 방문자의 create 가 필수 `@owner` 를 비우는 경우.
 - support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
   Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
   애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
@@ -803,7 +804,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   없으면 건너뛴다; 행은 남는다(유일한 값).
 - 다루는 범위: 필드 제약과 `@access` 는 모든 모드, 언어, 아키텍처에서; 생명주기와 불변식은 그것이 생성되는 곳 -
   ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: `@Mask` 와 `@encrypt`, `export`, 생명주기의
-  `delete:` 상태, 멤버 자체의 제약. float 의 소수 경계(`@max(0.1)`)는 건너뛴 것으로 센다:
+  `delete:` 상태의 테스트 자체, 멤버 자체의 제약. float 의 소수 경계(`@max(0.1)`)는 건너뛴 것으로 센다:
   float 는 0.1 을 정확히 담지 못하고, 그 검사는 double 로 넓힌 값을 비교한다. `@past` / `@future` 인 time(하루 중 시각 - 테스트가
   실행되는 시각에 따라 과거이기도 미래이기도 하다), 나머지 식이 늘 담는 lookahead(`@pattern('^(?=.*\\d)\\d+$')`: 나머지에 맞으면서
   빠뜨리는 값이 없다), 그 밖의 lookaround - 부정 lookahead, lookbehind, 앞이 아닌 곳의 lookahead - 도 그렇다. DTO 가 쓰지 않는

@@ -10,7 +10,8 @@
     of theirs where `owner` is a word, so the role is what refuses them; where `owner` is a word, a caller each owner term
     lets in, on another's row, 404 `not-found` (a search does not find the row). So `REP&owner` refuses another role and a REP
     on another's row, and `owner|MANAGER` lets in either. The expected answer is read as the generated code gives it: the
-    service asks the level, then the row's owner; the API reads a row before it deletes it, so a delete asks the read first.
+    service asks the level, then the row's owner; the API reads a row before it deletes it, so a delete asks the read first;
+    a visitor's create of a row keyed by its owner (`@owner` the key the request chooses) is refused 401, whatever create says.
     A refusal is checked by its status, and by its problem `code` where the answer has one - never by message.
   - The support class signs in principals of a role: `signIn(role)` makes one as the application itself, with the role in the
     `@signin` entity's role field (its JSON value - `"M"` for `UserRole.MANAGER` written `@json(code)`, a string role as
@@ -26,7 +27,8 @@
   - Counted as not tested, with why, in the summary and in the support class's comment: no principal to sign in (no
     `@signin`, or it cannot be built), a role the role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds
     one), `owner` where `@owner` names no field, an entry not read (`read=owners`), a row of a caller's that cannot be made,
-    a delete or a command no sequence of commands brings a new row to, a search that takes no key (only its finding).
+    a delete or a command no sequence of commands brings a new row to, a search that takes no key (it could miss the test's
+    row by its page alone), a composite key (only create is tested), a visitor's create that clears a required `@owner`.
 - Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `@access` gets the same
   contract tests and support class as before. `testCode: "true"` is as it was. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF /
   2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library change, no DSL word.
@@ -44,9 +46,10 @@
   and `-kt-mongo` (71) on MongoDB 7.0.12 through `ELASTICORE_IT_MONGODB_URI`. The Kotlin MongoDB run found that a principal
   with no role field signs in no administrator, so a row it made with the owner sent was its own: the owner now makes it.
   Whole suites of both MongoDB samples pass on the server (27 contract tests each, of `*=public`). `elasticore-template-ddd`
-  (70) and `-ddd-mybatis` (45) contract tests pass, unchanged. `ContractTestsTest` (+9): each case of a model with roles, `|`,
-  `&` and `owner` in Java and Kotlin, the sign-in entity's own row, a lifecycle-guarded delete and a command, the skips (no
-  `@signin`, two roles, an entry not read, no `@owner`, a role too long for its field, no role field), and that a model with
-  `@access` adds only test files in JPA, Kotlin, MyBatis and MongoDB.
+  (70) and `-ddd-mybatis` (45) contract tests pass, unchanged. `ContractTestsTest` (+10): each case of a model with roles, `|`,
+  `&` and `owner` in Java and Kotlin, the sign-in entity's own row, a lifecycle-guarded delete and a command, `none` and `*`,
+  a visitor's create keyed by its owner, the skips (no `@signin`, two roles, an entry not read, no `@owner`, a role too long
+  for its field, no role field, a required owner a visitor's create clears), and that a model with `@access` adds only test
+  files in JPA, Kotlin, MyBatis and MongoDB.
 - Files: `verify/ContractTestSource.java`, `ContractTestsTest.java`, the env guide 6.2.1 and the annotation guide's `@access`
   (en, ko), `elasticore-template-kt`'s `ticket.yml` and `ShopContractSupport.kt`, the pet store's `PurchaseOrderContractTest.java`.
