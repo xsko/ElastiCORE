@@ -427,6 +427,187 @@ public class OssieExportTest {
                 out);
         // The sentence for a reader stays.
         assertTrue(out.contains("ai_context: \"Codes: NONE = Disabled, YYYY, EQ = a = b\"\n"), out);
+        // No label column per language: no code_labels, no language in the sentence.
+        assertFalse(out.contains("code_labels"), out);
+    }
+
+    // ---- an enumeration's labels in other languages: label_en columns (issue 272) ----
+
+    /**
+     * Stage with label columns per language - declared ja before en - where WON
+     * has no English label and LST none at all; Plain without such columns.
+     */
+    private static String stageDesk() {
+        return String.join(
+                "\n",
+                "enumeration:",
+                "  Stage:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code: string(3) @code",
+                "      label: string(30)",
+                "      label_ja: string(30)",
+                "      label_en: string(30)",
+                "    enum:",
+                "      PRS: PRS, 발굴, 見込み, Prospecting",
+                "      WON: WON, 성사, 成約",
+                "      LST: LST, 실패",
+                "  Size:",
+                "    meta: enum",
+                "    fields:",
+                "      name: string(30)",
+                "      name_zh_TW: string(30)",
+                "    enum:",
+                "      SMALL: 작음, 小",
+                "      LARGE: 큼",
+                "  Plain:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code: string(3) @code",
+                "      label: string(30)",
+                "    enum:",
+                "      ONE: ONE, 하나",
+                "",
+                "entity:",
+                "  Deal:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      dealId: long @id @sequence",
+                "      stage: Stage",
+                "      phase: Stage @terms(deal stage)",
+                "      size: Size",
+                "      plain: Plain",
+                "");
+    }
+
+    private static final String STAGE_CODES =
+            "Codes: PRS = 발굴 (en: Prospecting, ja: 見込み)," + " WON = 성사 (ja: 成約), LST = 실패";
+
+    @Test
+    @DisplayName("a code's labels in other languages follow its label in ai_context, languages in name order")
+    public void anEnumsTranslationsAreInTheCodesText() throws Exception {
+        String out = export(stageDesk())[0];
+        assertTrue(fieldEntry(out, "stage").contains("        ai_context: " + yaml(STAGE_CODES) + "\n"), out);
+        // With @terms the same text is the instructions.
+        String phase = fieldEntry(out, "phase");
+        assertTrue(phase.contains("          instructions: " + yaml(STAGE_CODES) + "\n"), phase);
+        assertTrue(phase.contains("          synonyms: [\"deal stage\"]\n"), phase);
+        // Stored by ordinal: the key is the ordinal, the label the name and the label column;
+        // name_zh_TW is the language tag zh-TW.
+        assertTrue(
+                fieldEntry(out, "size").contains("ai_context: \"Codes: 0 = SMALL (작음) (zh-TW: 小), 1 = LARGE (큼)\"\n"),
+                out);
+        // It is still YAML a reader reads as one string.
+        Map<String, Object> stage = named(dataset(out, "Deal"), "fields", "stage");
+        assertEquals(STAGE_CODES, stage.get("ai_context"));
+    }
+
+    @Test
+    @DisplayName("code_labels is the labels per language as data, only for an enumeration with such columns")
+    @SuppressWarnings("unchecked")
+    public void codeLabelsAreDataOnlyWithColumns() throws Exception {
+        String out = export(stageDesk())[0];
+        assertTrue(
+                fieldEntry(out, "stage")
+                        .contains("data: {\"enumeration\": \"Stage\", \"codes\": "
+                                + "{\"PRS\": \"발굴\", \"WON\": \"성사\", \"LST\": \"실패\"}, "
+                                + "\"code_labels\": {\"PRS\": {\"en\": \"Prospecting\", \"ja\": \"見込み\"}, "
+                                + "\"WON\": {\"ja\": \"成約\"}}}\n"),
+                out);
+        Map<String, Object> size = extension(named(dataset(out, "Deal"), "fields", "size"));
+        Map<String, Object> labels = (Map<String, Object>) size.get("code_labels");
+        assertEquals(java.util.Collections.singletonMap("0", java.util.Collections.singletonMap("zh-TW", "小")), labels);
+        // Without label columns per language, the field is as it was.
+        String plain = fieldEntry(out, "plain");
+        assertFalse(plain.contains("code_labels"), plain);
+        assertTrue(plain.contains("ai_context: \"Codes: ONE = 하나\"\n"), plain);
+        assertTrue(plain.contains("data: {\"enumeration\": \"Plain\", \"codes\": {\"ONE\": \"하나\"}}\n"), plain);
+    }
+
+    @Test
+    @DisplayName("a model whose enumerations have no label columns per language exports what it did")
+    public void noLabelColumnsNoChange() throws Exception {
+        String with = export(stageDesk())[0];
+        String without = export(stageDesk()
+                .replace("      label_ja: string(30)\n", "")
+                .replace("      label_en: string(30)\n", "")
+                .replace("      name_zh_TW: string(30)\n", "")
+                .replace(", 見込み, Prospecting", "")
+                .replace(", 成約", "")
+                .replace(", 小", ""))[0];
+        assertFalse(without.contains("code_labels"), without);
+        assertFalse(without.contains("(en: ") || without.contains("(ja: ") || without.contains("(zh-TW: "), without);
+        assertTrue(
+                fieldEntry(without, "size").contains("ai_context: \"Codes: 0 = SMALL (작음), 1 = LARGE (큼)\"\n"),
+                without);
+        assertTrue(
+                fieldEntry(without, "stage").contains("ai_context: \"Codes: PRS = 발굴, WON = 성사, LST = 실패\"\n"),
+                without);
+        // The field of an enumeration without columns is the same in both.
+        assertEquals(fieldEntry(with, "plain"), fieldEntry(without, "plain"));
+    }
+
+    @Test
+    @DisplayName("the guides' examples of an enumeration's labels in other languages")
+    public void theGuidesExamplesOfCodeLabels() throws Exception {
+        // DSL guide, "An enumeration's labels in other languages".
+        String dsl = export(String.join(
+                "\n",
+                "enumeration:",
+                "  OrderStatus:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code:       string(3) @code",
+                "      name:       string(30)",
+                "      name_en:    string(30)",
+                "      name_zh_TW: string(30)",
+                "    enum:",
+                "      PENDING: PEN, 대기, Pending, 待處理",
+                "      SHIPPED: SHP, 배송, Shipped",
+                "",
+                "entity:",
+                "  PurchaseOrder:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      orderId: long @id @sequence",
+                "      status: OrderStatus",
+                ""))[0];
+        String status = fieldEntry(dsl, "status");
+        assertTrue(
+                status.contains("ai_context: \"Codes: PEN = 대기 (en: Pending, zh-TW: 待處理), SHP = 배송 (en: Shipped)\"\n"),
+                status);
+        assertTrue(
+                status.contains("\"code_labels\": {\"PEN\": {\"en\": \"Pending\", \"zh-TW\": \"待處理\"}, "
+                        + "\"SHP\": {\"en\": \"Shipped\"}}"),
+                status);
+        // Rule guide, the DSL -> Ossie mapping table.
+        String rule = export(String.join(
+                "\n",
+                "enumeration:",
+                "  OrderStatus:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code:     string(3) @code",
+                "      label:    string(30)",
+                "      label_ko: string(30)",
+                "      label_ja: string(30)",
+                "    enum:",
+                "      PLACED: PLC, Placed, 주문됨, 注文済み",
+                "",
+                "entity:",
+                "  PurchaseOrder:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      orderId: long @id @sequence",
+                "      status: OrderStatus",
+                ""))[0];
+        status = fieldEntry(rule, "status");
+        assertTrue(status.contains("ai_context: \"Codes: PLC = Placed (ja: 注文済み, ko: 주문됨)\"\n"), status);
+        assertTrue(status.contains("\"code_labels\": {\"PLC\": {\"ja\": \"注文済み\", \"ko\": \"주문됨\"}}"), status);
+    }
+
+    private static String yaml(String text) {
+        return OssieSemanticModelExporter.yaml(text);
     }
 
     // ---- a schema: the source is the table it names, as @Table(schema=...) does ----

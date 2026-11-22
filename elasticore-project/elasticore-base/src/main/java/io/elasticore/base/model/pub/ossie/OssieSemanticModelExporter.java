@@ -11,6 +11,7 @@ import io.elasticore.base.model.entity.EntityModels;
 import io.elasticore.base.model.entity.Field;
 import io.elasticore.base.model.enums.EnumConstant;
 import io.elasticore.base.model.enums.EnumModel;
+import io.elasticore.base.model.pub.rules.EnumLabelColumns;
 import io.elasticore.base.util.ConsoleLog;
 import io.elasticore.base.util.StringUtils;
 
@@ -21,6 +22,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -58,7 +60,8 @@ import java.util.regex.Pattern;
  *   back, and a semantic layer is a reader; nor a column marked @sensitive,
  *   which the application reads but a tool writing queries is not to be offered;
  * - an enumeration's codes and labels, as the field's ai_context, since the
- *   table holds the code and only the DSL says what PLC means;
+ *   table holds the code and only the DSL says what PLC means - with the
+ *   label in each language its label_en columns give;
  * - what Ossie has no word for (a lifecycle, who may read a row, a value the
  *   model derives) as an ELASTICORE nonportable extension;
  * - the business's own words (@terms) as synonyms, and its measures
@@ -727,6 +730,9 @@ public final class OssieSemanticModelExporter {
         // What each stored value means, as data: ai_context says it as a sentence a
         // program would have to parse (issue 174).
         if (stored != null && !stored.meaning.isEmpty()) ext.put("codes", stored.meaning);
+        // The label in each other language, as data (issue 272): only when the
+        // enumeration has label columns per language.
+        if (stored != null && !stored.translated.isEmpty()) ext.put("code_labels", stored.translated);
         if (f.getTypeInfo().isMoney()) ext.put("value_type", "money");
         if (f.getTypeInfo().isQuantity()) ext.put("value_type", "quantity");
         if (!ext.isEmpty()) b.append(extension("        ", ext));
@@ -1044,12 +1050,25 @@ public final class OssieSemanticModelExporter {
         final Map<String, String> literal = new LinkedHashMap<String, String>();
         /** stored value -> what it means, for the reader. */
         final Map<String, String> meaning = new LinkedHashMap<String, String>();
+        /**
+         * stored value -> language -> the label in it, from the label column's
+         * translation columns (label_en, label_ja); empty when the enumeration
+         * has none, and a code without any translation is not in it.
+         */
+        final Map<String, Map<String, String>> translated = new LinkedHashMap<String, Map<String, String>>();
 
         String codes() {
             if (meaning.isEmpty()) return null;
             List<String> parts = new ArrayList<String>();
             for (Map.Entry<String, String> m : meaning.entrySet()) {
-                parts.add(m.getKey().equals(m.getValue()) ? m.getKey() : m.getKey() + " = " + m.getValue());
+                String part = m.getKey().equals(m.getValue()) ? m.getKey() : m.getKey() + " = " + m.getValue();
+                Map<String, String> other = translated.get(m.getKey());
+                if (other != null && !other.isEmpty()) {
+                    List<String> each = new ArrayList<String>();
+                    for (Map.Entry<String, String> t : other.entrySet()) each.add(t.getKey() + ": " + t.getValue());
+                    part += " (" + join(each, ", ") + ")";
+                }
+                parts.add(part);
             }
             return "Codes: " + join(parts, ", ");
         }
@@ -1071,6 +1090,11 @@ public final class OssieSemanticModelExporter {
         s.datatype = codeAt >= 0 ? ossieType(enumFields.get(codeAt)) : byName ? "String" : "Integer";
         boolean text = "String".equals(s.datatype);
         if (en.getEnumConstantItems() == null) return s;
+        // The label column in other languages (issue 272): the columns named
+        // <label column>_<language> beside the one picked above.
+        Map<String, Map<String, String>> translations = labelAt < 0
+                ? Collections.<String, Map<String, String>>emptyMap()
+                : EnumLabelColumns.translations(en, enumFields.get(labelAt));
         int ordinal = 0;
         for (EnumConstant c : en.getEnumConstantItems().getItemList()) {
             List<String> values = new ArrayList<String>();
@@ -1081,6 +1105,9 @@ public final class OssieSemanticModelExporter {
             String label = labelAt >= 0 && labelAt < values.size() ? values.get(labelAt) : name;
             s.literal.put(name, text ? "'" + stored.replace("'", "''") + "'" : stored);
             s.meaning.put(stored, codeAt < 0 && !byName ? name + (label.equals(name) ? "" : " (" + label + ")") : label);
+            Map<String, String> other = translations.get(name);
+            if (other != null && !other.isEmpty()) s.translated.put(stored, other);
+            else s.translated.remove(stored);
             ordinal++;
         }
         return s;

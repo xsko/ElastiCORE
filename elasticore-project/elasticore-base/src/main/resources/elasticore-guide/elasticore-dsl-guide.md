@@ -104,7 +104,7 @@ entity:
 
 > **Works in:** every mode, language and architecture the generator writes (JPA, MyBatis, MongoDB; Java, Kotlin) - it is model information.
 > The label bundle is written by the v3 bundles for a domain that has an API (`@expose`); the `labels`, `XxxMeta` and
-> `XxxLabels` of the TypeScript client by `ts-model`; the synonyms by `ossie-export` (not yet for enumeration columns).
+> `XxxLabels` of the TypeScript client by `ts-model`; the synonyms by `ossie-export` (an enumeration's codes: below).
 
 The `--` text is the label in the domain's own language. Write the same label in other languages as `language=text`
 in `@label` on the same line - on a field line and on a `meta:` line (entity, DTO, enumeration):
@@ -207,7 +207,12 @@ enumeration:
   ```
 - The label bundle gets `OrderStatus.PENDING` - the constant's name, not the stored code `PEN` - with the label column in
   the default file and each translation in its language's file. Such columns alone are reason to write the bundle.
-- Not yet: the Apache Ossie export and the message bundle read the label column only.
+- The Apache Ossie export (`ossie-export`) gives each code its labels, in language name order after the label:
+  `ai_context: "Codes: PEN = 대기 (en: Pending, zh-TW: 待處理), SHP = 배송 (en: Shipped)"` (the `instructions` with
+  `@terms`), and beside `codes` in the field's `ELASTICORE` extension, as data:
+  `"code_labels": {"PEN": {"en": "Pending", "zh-TW": "待處理"}, "SHP": {"en": "Shipped"}}`. Its label column is the
+  first field named `label`, `name` or `desc`, as for `codes`.
+- Not yet: the message bundle reads the label column only.
 - An enumeration without such a column generates exactly what it did before.
 
 ### Meta annotations
@@ -805,7 +810,7 @@ Ossie has only 10 DataTypes: `String`, `Integer`, `Decimal`, `Float`, `Boolean`,
 | `datetime` / `LocalDateTime` | `LocalDateTime` | `"2026-10-03 09:30:00"` | `string` | `DateTime` | No time zone. `@JsonFormat("yyyy-MM-dd HH:mm:ss")` on the DTO |
 | `timestamp` | `java.time.Instant` | `"2026-10-03T00:30:00Z"` | `string` | `DateTimeTz` | One instant. Even if sent with `+09:00`, it is stored as the same instant and returned in UTC |
 | `blob` | `byte[]` | `"AQID/w=="` (base64) | `string` | `Opaque` | long binary in the row (`@JdbcTypeCode(LONG32VARBINARY)`) |
-| `EnumName` | That enum | Code (`"PLC"`) | enum | `String` | The value of `@db(code)` is stored. In Ossie, the code and the label go in `ai_context` |
+| `EnumName` | That enum | Code (`"PLC"`) | enum | `String` | The value of `@db(code)` is stored. In Ossie, the code and the label (and its `label_en` columns) go in `ai_context` |
 | `EntityName` | Entity reference | (identifier field) | - | Relationship | `@ManyToOne` automatically. Goes to Ossie `relationships` |
 
 - **Which time type to use**: for dates and times that people look at (business day, reservation time), use `date` and `datetime`; for "when did it happen"

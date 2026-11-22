@@ -1980,7 +1980,7 @@ relationships:
 | `@formula(sql)` | `expression` = 그 SQL | 계산 컬럼. 식이면 `expression.sql`, 서브쿼리(SELECT)가 들어 있으면 `dialects` 의 `ANSI_SQL` 항목 하나 - 아래 "식의 형태" |
 | `@extend(Parent)` 의 필드 | 자식 dataset 의 `fields` | 상속된 컬럼도 그 테이블에 있으므로 |
 | `@Embedded` 값 객체 | 그 컬럼들 (`deliveryAddress.city`) | `@embedded(prefix)` 면 `prefix_city` |
-| enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."`, 그리고 확장에 데이터로: `{"enumeration": "OrderStatus", "codes": {"PLC": "Placed", ...}}` | 테이블에는 코드만 있으므로 뜻을 함께 - 사람에게는 문장, 프로그램에게는 객체 |
+| enum 필드 | `datatype: String` + `ai_context: "Codes: PLC = Placed, ..."`, 그리고 확장에 데이터로: `{"enumeration": "OrderStatus", "codes": {"PLC": "Placed", ...}}`. 언어별 라벨 컬럼(`label_en`, DSL 가이드 "enumeration 의 다른 언어 라벨")이 있으면 `ai_context` 에 `PLC = Placed (ja: 注文済み, ko: 주문됨)`, `codes` 옆에 `"code_labels": {"PLC": {"ja": "注文済み", "ko": "주문됨"}, ...}` | 테이블에는 코드만 있으므로 뜻을 함께 - 사람에게는 문장, 프로그램에게는 객체 |
 | 다른 엔티티 참조 | `relationships[]` + 조인 컬럼 필드 | 실제 조인 컬럼 (`referenceColumn: short` 면 `customer_id`) |
 | `@password`, `@writeonly` | **내보내지 않음** | 애플리케이션도 읽어 주지 않는 값. `omitted_columns` 에 기록 |
 | `@sensitive` | **내보내지 않음** | 애플리케이션은 읽지만, 모델을 보고 쿼리를 쓰는 BI·AI 도구에는 내놓지 않을 값 (이메일, 로그인 제공자의 계정 id, API 키). `omitted_columns` 에 기록하고, 모델의 `ai_context` 가 그런 컬럼을 뺐다고 알림. `@Embedded` 값 객체에 붙이면 그 컬럼 전부. 참조에 붙이면 조인 컬럼과 그 relationship (따로 있는 `customerId` 필드는 그 필드의 표시대로). `@sensitive` 필드로 조인하는 참조도 relationship 으로 내보내지 않고 경고. 그 필드를 읽는 지표는 dataset 에 없는 컬럼을 읽는 지표처럼 거절. `@id` (키와 그 키로 오는 relationship 에 컬럼이 필요)와 컬렉션(자기 컬럼이 없음)에서는 경고하고 무시. 그 밖에는 바뀌는 것이 없음: DTO, 응답, 접근 규칙, DDL, Kotlin/TypeScript 출력은 붙이지 않았을 때와 같음 |
