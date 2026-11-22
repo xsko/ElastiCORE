@@ -29,7 +29,8 @@
 - Fixed: `@pattern` is sampled as the DTO's `@Pattern` reads it. The DSL writes a string literal's content (`\\d`); the
   sampler read that text as the expression (a backslash and a d), so a pattern with an escape got values the DTO refused.
 - Unchanged: a model without `testCode: "contract"` generates byte-identical output; the contract tests of a model without these
-  marks are the same, but a `@past` / `@future` date in a row, which is now read from the clock. `elcoreRulesCheck -Pstrict`
+  marks are the same, but a `@past` / `@future` date in a row, which is now read from the clock, and the values of a
+  `@pattern` with an escape (the fix above). `elcoreRulesCheck -Pstrict`
   158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library, no DSL word.
 - Not in scope: an aggregate member's own constraints. The pet store's password takes a letter rule only
   (`^(?=.*[A-Za-z]).+$`): its demo accounts, admin/admin and user/user, are made through the validating service.
