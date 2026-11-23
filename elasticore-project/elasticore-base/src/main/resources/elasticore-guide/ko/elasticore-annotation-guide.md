@@ -1296,9 +1296,9 @@ entity:
 - 정렬할 수 있는 것: 검색의 응답 DTO 가 자기 이름으로 보여 주는 값; 응답이 담는 내장 값의 부분(`deliveryAddress.city`);
   `@ref` 필드의 경로(`productName: string @ref(product.name)` -> `product.name`, 평탄화한 키 `customer.customerId`); 응답이
   DTO 째로 담는 조인 행의 값(ProductDTO 에 `category: CategoryDTO` 가 있으면 `category.name` - 누구나 읽을 수 있는 행이고,
-  DTO 가 담는 것은 그런 행뿐입니다); 엔티티의 키; `@sort` 기본 정렬.
-- 보여 주지 않으므로 정렬하지 않는 것: `@password`, `@writeonly` / `@nooutput`, `@jsonignore`, 가려서 쓰는 값(`@Mask`), 읽기 뷰가
-  없는 `@view`, 비밀번호를 읽는 `@ref`, 응답이 담지 않는 조인 행의 모든 값. 목록(List)으로는 정렬하지 않습니다. `@sensitive`,
+  DTO 가 담는 것은 그런 행뿐입니다); 엔티티의 키; `@sort` 기본 정렬(정렬을 적지 않은 검색은 이미 그 순서로 답합니다. 응답이 보여 주지 않는 값이면 DSL 경고).
+- 보여 주지 않으므로 정렬하지 않는 것: `@password`, `@writeonly` / `@nooutput`, `@jsonignore`(또는 네이티브 `@dto:` 의 `JsonIgnore` /
+  `WRITE_ONLY`), 가려서 쓰는 값(`@Mask`), 읽기 뷰가 없는 `@view`(jsonview 를 켰을 때), 비밀번호를 읽는 `@ref`, 응답이 담지 않는 조인 행의 모든 값. 목록(List)으로는 정렬하지 않습니다. `@sensitive`,
   `@encrypt` 값은 응답에 보이므로 정렬됩니다(암호화한 컬럼은 암호문 순서).
 - 엔티티에 없는 속성도 같은 답을 받으므로, 거절만으로는 숨긴 속성과 없는 속성을 구별할 수 없습니다. JPA 는 전에도 그 경우
   `no-such-property` 로 답했고, MyBatis 와 MongoDB 는 `bad-request` 와 `X cannot be sorted by ...` 로 답했습니다.
@@ -1330,7 +1330,7 @@ public java.util.Set<String> sortableProperties() {
   `sortableProperties()` 를 선언합니다(DTO 가 자기 목록을 내지 않으면 null 이라 2.x 코드는 예전처럼 정렬): 그 위의 3.0 검색 DTO 도
   같은 방식으로 검사됩니다. env.yml 에 자신만의 인터페이스를 둔 도메인은 그 인터페이스를 그대로 씁니다: 그 인터페이스에 없을
   수 있는 메서드를 검색 DTO 가 재정의하지 않고, 실행이 그렇게 알리며(DSL 경고), 정렬은 검사하지 않습니다 - 그 `getSort()` 에서
-  `SortCheck.sortable(...)` 을 부르십시오. 응답 DTO 가 도메인 모델에 없는 검색도 그렇습니다.
+  `SortCheck.sortable(...)` 을 부르십시오. 응답 DTO 가 도메인 모델에 없는 검색도 검사하지 않습니다(DSL 경고).
 - HTTP 로 확인: Pet Store `SortTermTest`(MANAGER, sortCode, sortColumn, export), MyBatis Pet Store
   `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused`(SQL 이 준비되지 않음), `elasticore-template-kt` `SortTermTest`(Kotlin),
   `elasticore-template-mongo` `ClubApi` / `ShopApi` 와 `elasticore-template-kt-mongo` `ClubApi`(MongoDB).

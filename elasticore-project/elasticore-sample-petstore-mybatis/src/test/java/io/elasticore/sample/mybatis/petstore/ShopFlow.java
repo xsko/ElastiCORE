@@ -459,7 +459,9 @@ abstract class ShopFlow {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("no-such-property"))
                     .andExpect(jsonPath("$.detail").value(containsString("cannot be sorted by '")))
-                    .andExpect(jsonPath("$.detail").value(not(containsString("customer.password,"))));
+                    // The properties it may name are said, and no hidden one is among them.
+                    .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.matchesPattern(
+                            "(?s).*sort by one of \\[(?![^\\]]*(password|creditCardNumber|email))[^\\]]*\\]")));
             assertThat(statements.sql).noneMatch(sql -> sql.contains("purchase_order"));
         }
         mvc.perform(json(post("/api/petstore/customer/search"), "{\"sortCode\":\"password+\"}").session(signIn("admin", "admin")))
