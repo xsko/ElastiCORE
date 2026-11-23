@@ -6,6 +6,7 @@ flowchart LR
     ctx_billing["billing"]
     ctx_board["board"]
     ctx_catalog["catalog<br/><small>publishes: AuthorDTO, BookDTO</small>"]
+    ctx_forum["forum"]
     ctx_shop["shop<br/><small>publishes: OrderPlaced</small>"]
     ctx_shop -->|OrderPlaced| ctx_billing
 ```
@@ -17,4 +18,5 @@ An arrow points from the context that is used (upstream) to the one that uses it
 | billing | shop |  |
 | board |  |  |
 | catalog |  | AuthorDTO, BookDTO |
+| forum |  |  |
 | shop |  | OrderPlaced |
