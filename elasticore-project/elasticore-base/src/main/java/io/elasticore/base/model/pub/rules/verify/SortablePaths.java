@@ -86,7 +86,19 @@ final class SortablePaths {
                 String t = term.trim();
                 if (t.endsWith("+") || t.endsWith("-"))
                     t = t.substring(0, t.length() - 1).trim();
-                if (!t.isEmpty()) out.add(t);
+                if (t.isEmpty()) continue;
+                // Every search without a sort answers in this order already, so a sort may name it;
+                // on a value no response shows, that order is said - with a warning.
+                if (!out.contains(t) && own != null && own.get(t) != null && hidden(own.get(t), "on")) {
+                    io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                            "[%s] @sort(%s) of %s orders by %s, which no response shows: every search without a"
+                                    + " sort answers in its order, and a sort may name it. Order by a shown value.",
+                            entity.getIdentity().getDomainId(),
+                            defaultSort,
+                            entity.getIdentity().getName(),
+                            t));
+                }
+                out.add(t);
             }
         }
         return new ArrayList<String>(out);
@@ -215,7 +227,10 @@ final class SortablePaths {
         if (map != null) {
             for (Map.Entry<String, Annotation> en : map.entrySet()) {
                 if (!en.getKey().contains("dto:") || en.getKey().contains("jpa:")) continue;
-                if (MaskedFields.namesMask(String.valueOf(en.getValue()))) return true;
+                String line = String.valueOf(en.getValue());
+                // The runtime's mask, or Jackson told natively to leave the value out of the JSON.
+                if (MaskedFields.namesMask(line) || line.contains("JsonIgnore") || line.contains("WRITE_ONLY"))
+                    return true;
             }
         }
         String view = f.getAnnotationValue("view");

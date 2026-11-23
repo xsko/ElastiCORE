@@ -26,13 +26,17 @@
   unknown sort terms now get `no-such-property` too, and a term reaches their own check (whose message repeats it as sent) only
   once the search DTO lists it.
 - v3 output changes by default (a security fix): a request that sorted by a value its response does not show is now 400.
-  The existing sample sorts all name shown values and keep working. The 2.x-compatible output (`output = 'v2'`) and the 2.x
+  The existing samples sort only by shown values and keep working. The 2.x-compatible output (`output = 'v2'`) and the 2.x
   generator are unchanged: `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0.
 - The runtime's `io.elasticore.springboot3.dto.SortableObject` - the `interface.sortable` the init wizard writes into a new
   project's env.yml - gets the same `sortableProperties()` (default null) and hands each term through `SortCheck`, so a 3.0
   search DTO on it is checked too. For code that does not override it - 2.x DTOs, any other implementation - null means any
   property, exactly as before (`SortCheckTest` checks both). A domain naming a sort interface of its own keeps it unchecked,
-  with a DSL warning; so does a search whose response DTO is not in the domain's model. `Refusals.shown(...)` is the runtime's shortening of a
+  with a DSL warning; so does a search whose response DTO is not in the domain's model. A `@sort` default on a value no
+  response shows stays allowed (every search without a sort already answers in that order) and is said with a DSL warning.
+  A value a native `@dto:` annotation keeps out of the JSON (`JsonIgnore`, `WRITE_ONLY`) counts as not shown.
+- The generated search DTOs on the runtime's interface override `sortableProperties()`, which the runtime declares from this
+  version on: the runtime (`elasticore-springboot3` / `-springboot4`) has to be the plugin's version, as always. `Refusals.shown(...)` is the runtime's shortening of a
   refused value, which `SqlPortGateway` now calls too (no change in what it says).
 - Checked: `SortTermGenerationTest` (9 runs: JPA Java hexagonal/layered/ddd, JPA Kotlin hexagonal/layered, MyBatis layered/ddd,
   MongoDB Java/Kotlin, and the 2.x-compatible run), `SearchDtoFileTest`, `KotlinDtoFileTest`, runtime `SortCheckTest` (Boot 3 and

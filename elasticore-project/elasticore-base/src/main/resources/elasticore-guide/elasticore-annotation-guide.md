@@ -1296,9 +1296,10 @@ with **400**, code `no-such-property`, before the query is built:
 - What a sort may name: a value the search's response DTO shows under its own name; a part of an embedded value it carries
   (`deliveryAddress.city`); a `@ref` field's path (`productName: string @ref(product.name)` -> `product.name`, a flattened key
   `customer.customerId`); the values of a joined row whose DTO the response carries whole (`category.name` where ProductDTO has
-  `category: CategoryDTO` - a row anyone may read, the only kind a DTO nests); the entity's key; the `@sort` default order.
-- Not shown, so never sorted by: `@password`, `@writeonly` / `@nooutput`, `@jsonignore`, a value written masked (`@Mask`), a
-  `@view` without the read view, a `@ref` to a password, and every value of a joined row the response does not carry. A list is
+  `category: CategoryDTO` - a row anyone may read, the only kind a DTO nests); the entity's key; the `@sort` default order
+  (every search without a sort answers in it already; on a value no response shows it gets a DSL warning).
+- Not shown, so never sorted by: `@password`, `@writeonly` / `@nooutput`, `@jsonignore` (or a native `@dto:` `JsonIgnore` /
+  `WRITE_ONLY`), a value written masked (`@Mask`), a `@view` without the read view (with jsonview on), a `@ref` to a password, and every value of a joined row the response does not carry. A list is
   never sorted by. A `@sensitive` or `@encrypt` value is shown, so it sorts (an encrypted column by its ciphertext).
 - A property the entity does not have gets the same answer, so the refusal does not tell a hidden property from a missing one.
   JPA answered `no-such-property` for it before; MyBatis and MongoDB answered `bad-request` with `X cannot be sorted by ...`.
@@ -1331,7 +1332,7 @@ public java.util.Set<String> sortableProperties() {
   declares `sortableProperties()` too (null unless a DTO lists its own, so 2.x code sorts as it did): a 3.0 search DTO on it is
   checked the same way. A domain whose env.yml names an interface of its own keeps it: the search DTO does not override what that
   interface may not declare, the run says so (a DSL warning), and the sort is not checked - call `SortCheck.sortable(...)` in its
-  `getSort()`. So does a search whose response DTO is not in the domain's model.
+  `getSort()`. A search whose response DTO is not in the domain's model is not checked either (a DSL warning).
 - Verified over HTTP: pet store `SortTermTest` (a MANAGER, sortCode, sortColumn and the export), MyBatis pet store
   `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused` (no SQL prepared), `elasticore-template-kt` `SortTermTest` (Kotlin),
   `elasticore-template-mongo` `ClubApi` / `ShopApi` and `elasticore-template-kt-mongo` `ClubApi` (MongoDB).

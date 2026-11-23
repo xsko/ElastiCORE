@@ -56,6 +56,7 @@ public class SortTermGenerationTest {
             "      placedAt: datetime",
             "      cardNo: string(30) @writeonly",
             "      phone: string(20) @env:maskphone",
+            "      auditRef: string(20) @env:hideref",
             "      member: StMember @ManyToOne",
             "      category: StCategory @ManyToOne",
             "      address: StAddress @Embedded",
@@ -126,7 +127,7 @@ public class SortTermGenerationTest {
                     srch.contains("\"address.city\"") == carried, "address.city (carried: " + carried + ") - " + where);
             // Not shown: write-only, masked, a @ref to a password, a guarded row's values, a part left out.
             for (String hidden : new String[] {
-                "cardNo", "phone", "member.secret", "member.email", "address.gateCode", "category.buyerNote"
+                "cardNo", "phone", "auditRef", "member.secret", "member.email", "address.gateCode", "category.buyerNote"
             }) {
                 assertFalse(srch.contains("\"" + hidden + "\""), hidden + " - " + where);
             }
@@ -202,6 +203,7 @@ public class SortTermGenerationTest {
                                 "    j2ee: jakarta",
                                 "    annotations:",
                                 "      maskphone: \"@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)\"",
+                                "      hideref: \"@dto:com.fasterxml.jackson.annotation.JsonIgnore\"",
                                 "  namespace:",
                                 "    base: io.acme.stshop",
                                 "")
