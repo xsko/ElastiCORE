@@ -1972,8 +1972,7 @@ public class ContractTestsTest {
                                 + "        Map<String, Object> search = obj(\"title\", shared, \"sortCode\", \"dealId-\");\n"
                                 + "        Map<String, Object> export = obj(\"search\", search, \"columns\", list(\"dealId\"),"
                                 + " \"headers\", list(\"dealId\"));\n"
-                                + "        assertSameRows(searched(DEAL, search, \"dealId\"), exportOf(DEAL, export), first,"
-                                + " second);\n"),
+                                + "        assertSameRows(DEAL, search, export, \"dealId\", first, second);\n"),
                 t);
         assertTrue(
                 method(t, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
@@ -1981,8 +1980,8 @@ public class ContractTestsTest {
                                 + "        Map<String, Object> export = obj(\"search\", obj(\"title\", shared), \"columns\","
                                 + " list(\"dealId\"), \"headers\", list(\"dealId\"));\n"
                                 + "        long rows = exportedRows(exportOf(DEAL, export), first, second);\n"
-                                + "        assertWritten(exportAtMost(DEAL, export, rows), rows);\n"
-                                + "        assertTooManyRows(exportAtMost(DEAL, export, rows - 1));\n"),
+                                + "        assertWritten(DEAL, export, rows);\n"
+                                + "        assertTooManyRows(DEAL, export, rows - 1);\n"),
                 t);
         assertTrue(t.contains(" * What the export promises is checked too: the file holds the rows the search\n"), t);
         // No search: the cap alone, over every row the caller may see.
@@ -2024,6 +2023,13 @@ public class ContractTestsTest {
                 s.contains("    protected Rows searched(String path, Object body, String key) throws Exception {\n"),
                 s);
         assertTrue(s.contains("        assertRefused(result, 400, \"export.too-many-rows\");\n"), s);
+        // Where nothing narrows the export, rows written meanwhile abort the test rather than fail it.
+        assertTrue(
+                s.contains("    private void unchanged(String path, Object body, long rows) throws Exception {\n"
+                        + "        long now = exportedKeys(exportOf(path, body)).size();\n"
+                        + "        if (now != rows) skip("),
+                s);
+        assertTrue(s.contains("            Rows again = searched(path, search, key);\n"), s);
         assertTrue(s.contains("        if (text.startsWith(\"\\uFEFF\")) text = text.substring(1);\n"), s);
         assertTrue(
                 s.contains(" * The tests of the export send the search's body to POST .../export (exportOf) and\n"), s);
@@ -2052,14 +2058,13 @@ public class ContractTestsTest {
                                 + "        val search = obj(\"title\", shared, \"sortCode\", \"dealId-\")\n"
                                 + "        val export = obj(\"search\", search, \"columns\", list(\"dealId\"), \"headers\","
                                 + " list(\"dealId\"))\n"
-                                + "        assertSameRows(searched(DEAL, search, \"dealId\"), exportOf(DEAL, export), first,"
-                                + " second)\n"),
+                                + "        assertSameRows(DEAL, search, export, \"dealId\", first, second)\n"),
                 t);
         assertTrue(
                 method(t, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
                         .contains("        val rows = exportedRows(exportOf(DEAL, export), first, second)\n"
-                                + "        assertWritten(exportAtMost(DEAL, export, rows), rows)\n"
-                                + "        assertTooManyRows(exportAtMost(DEAL, export, rows - 1))\n"),
+                                + "        assertWritten(DEAL, export, rows)\n"
+                                + "        assertTooManyRows(DEAL, export, rows - 1)\n"),
                 t);
         String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
         assertTrue(
@@ -2085,7 +2090,7 @@ public class ContractTestsTest {
         String mt = read(mongo, "src/test/java/com/acme/shop/DealContractTest.java");
         assertTrue(
                 method(mt, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
-                        .contains("        assertTooManyRows(exportAtMost(DEAL, export, rows - 1));\n"),
+                        .contains("        assertTooManyRows(DEAL, export, rows - 1);\n"),
                 mt);
         assertTrue(read(mongo, "src/test/java/com/acme/shop/ShopContractSupport.java")
                 .contains("    protected org.springframework.core.env.ConfigurableEnvironment environment;\n"));
@@ -2151,6 +2156,28 @@ public class ContractTestsTest {
                 tag);
         String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
         assertTrue(s.contains(" *   - Reel export: its search answers with ReelResultDTO"), s);
+    }
+
+    /** A controller the developer keeps without POST /export gets no test of it: it is read as it is on disk. */
+    @Test
+    public void aControllerKeptWithoutTheExportGetsNoExportTests() throws Exception {
+        File project = project(EXPORT, "contract");
+        run(project, "hexagonal", "java");
+        File controller = new File(project, "src/main/java/com/acme/shop/adapter/in/web/DealController.java");
+        String generated = read(project, "src/main/java/com/acme/shop/adapter/in/web/DealController.java");
+        assertTrue(generated.contains("@PostMapping(\"/export\")"), generated);
+        // The developer's own: no generated header, and the export moved elsewhere.
+        String kept = generated
+                .substring(generated.indexOf('\n') + 1)
+                .replace("@PostMapping(\"/export\")", "@PostMapping(\"/download\")");
+        Files.write(controller.toPath(), kept.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Deal export: its controller has no POST /export - a rule set leaves it out, or the"
+                        + " controller is yours without it"),
+                log);
+        assertFalse(read(project, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("exportOf("));
     }
 
     /** A domain without export gets none of it: its support class is the one it was. */

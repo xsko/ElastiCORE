@@ -798,10 +798,12 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   field, a `@rollup` entity or a name not written plainly (the column is not read), an `@encrypt @search(eq)` field the search does not take.
   A value the mask writes as it is aborts the test. A kept support class without these members gets none of them.
 - The export: the support class sends the body (`exportOf`) and the search (`searched`), and sets `elasticore.export.max-rows` for one
-  request in the application's `Environment` (`exportAtMost` - the export reads it at each request); the file's rows are told apart by
-  the key alone (`columns`, `headers`). Not tested, counted and listed in the support class's comment: a rule set that leaves `POST
-  /export` out, a composite key, a `@searchResult` DTO without the key, the order where the API takes no search. A kept support class
-  without these members gets none of them; a search refused for more rows than the application exports aborts the test.
+  request in the application's `Environment` (`exportAtMost` - the export reads it at each request, so tests run in parallel would
+  see it too: run these one at a time); the file's rows are told apart by the key alone (`columns`, `headers`). Not tested, counted
+  and listed in the support class's comment: a controller without `POST /export` (a rule set leaves it out, or the controller is yours
+  without it), a composite key, a `@searchResult` DTO without the key, the order where the API takes no search. A kept support class
+  without these members gets none of them. More rows than the application exports, or rows written meanwhile where nothing narrows
+  the search (a second search or export answers otherwise), abort the test rather than fail it.
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
@@ -811,8 +813,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   A table H2 cannot make - a column `@columnDef('jsonb')` or `xml` - is counted as skipped.
 - Each test makes its own rows: what the model requires, a row a reference names first (through its own API), and a value of its
   own for each row where one must be unique (`@unique`, a unique index, the key): text, a pattern's value varied, a number in steps.
-  It never reads the seeded data or counts rows, and it checks the status and the problem's `code` (and the field) - never the
-  message, so a translated API passes.
+  It never depends on the seeded data - only the export's tests count rows, compared with the search or the export itself, never with a
+  number - and it checks the status and the problem's `code` (and the field) - never the message, so a translated API passes.
 - A row the generator cannot build is counted in the build's summary:
   `contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test; ...)`.
   A refusal at run time by a rule of the application's own - a check its code makes, a unique value taken - aborts the test with

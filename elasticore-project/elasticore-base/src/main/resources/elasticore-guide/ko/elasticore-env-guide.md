@@ -798,10 +798,12 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   쓰지 않은 이름(컬럼을 읽지 않는다), 검색이 받지 않는 `@encrypt @search(eq)` 필드.
   마스크가 그대로 쓰는 값은 테스트를 중단한다. 이 멤버 없이 남은 support 클래스에는 이 테스트를 하나도 쓰지 않는다.
 - export: support 클래스는 본문을 보내고(`exportOf`), 검색하고(`searched`), 요청 하나 동안 애플리케이션의 `Environment` 에
-  `elasticore.export.max-rows` 를 정한다(`exportAtMost` - export 는 요청마다 그것을 읽는다); 파일의 행은 키 하나로만 구별한다
-  (`columns`, `headers`). 테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: `POST /export` 를 빼는 규칙
-  세트, 복합 키, 키가 없는 `@searchResult` DTO, API 가 검색을 받지 않는 곳의 순서. 이 멤버 없이 남은 support 클래스에는
-  이 테스트를 하나도 쓰지 않는다; 애플리케이션이 내보내는 것보다 많은 행이라 거부된 검색은 테스트를 중단한다.
+  `elasticore.export.max-rows` 를 정한다(`exportAtMost` - export 는 요청마다 그것을 읽으므로 병렬로 실행되는 테스트도 그것을
+  본다: 이 테스트는 하나씩 실행한다); 파일의 행은 키 하나로만 구별한다(`columns`, `headers`). 테스트하지 않는 것 - 요약이 세고
+  support 클래스의 주석에 나열한다: `POST /export` 가 없는 컨트롤러(규칙 세트가 빼거나, 그것 없이 남긴 프로젝트의 컨트롤러),
+  복합 키, 키가 없는 `@searchResult` DTO, API 가 검색을 받지 않는 곳의 순서. 이 멤버 없이 남은 support 클래스에는
+  이 테스트를 하나도 쓰지 않는다. 애플리케이션이 내보내는 것보다 많은 행, 또는 검색을 좁히는 것이 없는 곳에서 그사이 쓰인 행
+  (두 번째 검색이나 export 가 다르게 답한다)은 테스트를 실패가 아니라 중단으로 만든다.
 - support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
   Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
   애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
@@ -811,8 +813,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   H2 가 만들 수 없는 테이블 - `@columnDef('jsonb')` 나 `xml` 컬럼 - 은 건너뛴 것으로 센다.
 - 각 테스트는 자기 행을 만든다: 모델이 요구하는 것, 참조가 가리키는 행을 먼저(그 행의 API 로), 그리고 유일해야 하는 곳
   (`@unique`, 유일 인덱스, 키)에는 행마다 자기 값: 텍스트, 패턴 값의 변형, 단계별 숫자.
-  시드 데이터를 읽거나 행 수를 세지 않고, 상태 코드와 problem 의 `code` (와 필드) 를 확인한다 - 메시지는 보지 않으므로
-  번역된 API 도 통과한다.
+  시드 데이터에 기대지 않고 - 행 수는 export 의 테스트만 세며, 정한 수가 아니라 검색이나 export 자신과 비교한다 - 상태 코드와
+  problem 의 `code` (와 필드) 를 확인한다 - 메시지는 보지 않으므로 번역된 API 도 통과한다.
 - 생성기가 만들 수 없는 행은 빌드 요약이 센다:
   `contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test; ...)`.
   실행 중 애플리케이션 자신의 규칙에 의한 거부 - 그 코드의 검사, 이미 쓰인 유일 값 - 는 이유와 함께 테스트를 중단한다
