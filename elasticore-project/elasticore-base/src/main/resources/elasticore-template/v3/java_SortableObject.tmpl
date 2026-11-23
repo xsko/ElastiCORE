@@ -1,9 +1,11 @@
 package ${packageName};
 
+import io.elasticore.springboot3.dto.SortCheck;
 import org.springframework.data.domain.Sort;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Defines sorting behavior for request objects.
@@ -12,9 +14,23 @@ import java.util.List;
  * Spring Data's {@link Sort} object. Also supports backward-compatible
  * sorting using legacy `sortColumn` and `sortAscending` values.
  *
+ * A search DTO names the properties a sort may name - what the search's
+ * response shows - and any other is refused (400 no-such-property) before
+ * the query is built, so a value no response shows is not given away by
+ * its order.
+ *
  * Generated and managed by ElastiCORE.
  */
 public interface SortableObject {
+
+    /**
+     * The properties a sort may name: what the search's response shows, its
+     * key and its default order - null for any. The generated search DTOs
+     * list theirs.
+     */
+    default Set<String> sortableProperties() {
+        return null;
+    }
 
     @Schema(description = "Field used to specify the sorting criteria. Use '+' for ascending and '-' for descending. Multiple fields can be specified, separated by commas.",
             example = "name+,age-")
@@ -28,7 +44,8 @@ public interface SortableObject {
 
     /**
      * The order asked for. A sortColumn without sortAscending sorts
-     * ascending - left out, it used to unbox a null and answer 500.
+     * ascending - left out, it used to unbox a null and answer 500. A
+     * property sortableProperties() does not list is refused (400).
      */
     @Schema(hidden = true)
     default Sort getSort() {
@@ -41,14 +58,15 @@ public interface SortableObject {
 
         if (sortTxt == null || sortTxt.isEmpty()) return null;
 
+        Set<String> sortable = sortableProperties();
         List<Sort.Order> orders = new ArrayList<>();
         String[] sortParams = sortTxt.split(",");
 
         for (String param : sortParams) {
             if (param.endsWith("+")) {
-                orders.add(Sort.Order.asc(param.substring(0, param.length() - 1)));
+                orders.add(Sort.Order.asc(SortCheck.sortable(param.substring(0, param.length() - 1), sortable)));
             } else if (param.endsWith("-")) {
-                orders.add(Sort.Order.desc(param.substring(0, param.length() - 1)));
+                orders.add(Sort.Order.desc(SortCheck.sortable(param.substring(0, param.length() - 1), sortable)));
             }
         }
         return Sort.by(orders);

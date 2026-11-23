@@ -1189,6 +1189,22 @@ public final class EntitySpec {
         return pageable;
     }
 
+    /**
+     * What a search DTO's sort may name - the properties the search's response shows, its key and
+     * its default order - or null where the run did not work it out (the 2.x-compatible output, a
+     * search DTO of no entity): then any.
+     */
+    private List<String> sortableProperties;
+
+    public EntitySpec sortableProperties(List<String> properties) {
+        this.sortableProperties = properties == null ? null : new ArrayList<String>(properties);
+        return this;
+    }
+
+    public List<String> sortableProperties() {
+        return sortableProperties == null ? null : java.util.Collections.unmodifiableList(sortableProperties);
+    }
+
     /** Dedicated search-result DTO name, or null to fall back to the plain DTO. */
     public EntitySpec searchResultDtoName(String name) {
         this.searchResultDtoName = name;

@@ -436,4 +436,43 @@ abstract class ShopFlow {
                 .andExpect(status().isBadRequest());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ps_item", Long.class)).isEqualTo(32);
     }
+
+    /**
+     * A search sorts only by what its response shows: an order's response shows neither the card number
+     * (@writeonly) nor the customer's password hash or e-mail, and a customer's no password - sorted by, their
+     * order would be given away (and, among rows of one's own, the values). Refused before any SQL is prepared,
+     * by sortCode and sortColumn alike; what the response shows still sorts.
+     */
+    @Test
+    void aSortOnWhatTheResponseDoesNotShowIsRefused() throws Exception {
+        MockHttpSession buyer = signUp("sorter");
+        placeOrder(buyer, "[{\"itemId\":1,\"quantity\":1}]");
+        placeOrder(buyer, "[{\"itemId\":2,\"quantity\":2}]");
+        String orders = "/api/petstore/purchaseOrder/search";
+        for (String body : new String[] {
+                "{\"sortCode\":\"creditCard.creditCardNumber+\"}",
+                "{\"sortCode\":\"total-,customer.password+\"}",
+                "{\"sortCode\":\"customer.email+\"}",
+                "{\"sortColumn\":\"creditCard.creditCardNumber\",\"sortAscending\":false}"}) {
+            statements.sql.clear();
+            mvc.perform(json(post(orders), body).session(buyer))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("no-such-property"))
+                    .andExpect(jsonPath("$.detail").value(containsString("cannot be sorted by '")))
+                    .andExpect(jsonPath("$.detail").value(not(containsString("customer.password,"))));
+            assertThat(statements.sql).noneMatch(sql -> sql.contains("purchase_order"));
+        }
+        mvc.perform(json(post("/api/petstore/customer/search"), "{\"sortCode\":\"password+\"}").session(signIn("admin", "admin")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("no-such-property"));
+
+        mvc.perform(json(post(orders), "{\"sortCode\":\"creditCard.creditCardType+,total-\"}").session(buyer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].total").value(org.hamcrest.Matchers.greaterThan(20.0)));
+        mvc.perform(json(post(orders), "{\"sortColumn\":\"orderDate\",\"sortAscending\":false}").session(buyer))
+                .andExpect(status().isOk());
+        mvc.perform(json(post("/api/petstore/customer/search"), "{\"sortCode\":\"lastName+,login-\"}").session(signIn("admin", "admin")))
+                .andExpect(status().isOk());
+    }
 }

@@ -32,4 +32,31 @@ public final class Refusals {
     public static Object[] copy(Object[] args) {
         return args == null ? new Object[0] : args.clone();
     }
+
+    /**
+     * A value from the request as a refusal repeats it: at most 40 characters, a surrogate pair never
+     * cut in half, and control, line-separator and invisible format characters - a CR/LF that would
+     * fake a log line, a right-to-left override that would reorder it - shown as '?'.
+     */
+    public static String shown(String value) {
+        if (value == null) return null;
+        String head = value;
+        if (value.length() > 40) {
+            int end = Character.isHighSurrogate(value.charAt(39)) ? 39 : 40;
+            head = value.substring(0, end) + "...";
+        }
+        StringBuilder shown = new StringBuilder(head.length());
+        for (int i = 0; i < head.length(); ) {
+            int cp = head.codePointAt(i);
+            int type = Character.getType(cp);
+            boolean hidden = Character.isISOControl(cp)
+                    || type == Character.LINE_SEPARATOR
+                    || type == Character.PARAGRAPH_SEPARATOR
+                    || type == Character.FORMAT;
+            if (hidden) shown.append('?');
+            else shown.appendCodePoint(cp);
+            i += Character.charCount(cp);
+        }
+        return shown.toString();
+    }
 }

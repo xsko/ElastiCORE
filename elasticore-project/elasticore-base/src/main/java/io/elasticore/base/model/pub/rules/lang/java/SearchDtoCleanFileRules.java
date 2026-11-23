@@ -2,6 +2,7 @@ package io.elasticore.base.model.pub.rules.lang.java;
 
 import io.elasticore.base.model.pub.rules.base.RuleText;
 import io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules;
+import io.elasticore.base.model.pub.rules.base.SearchSortList;
 import io.elasticore.base.model.pub.rules.AnnoCode;
 import io.elasticore.base.model.pub.rules.CodeRules;
 import io.elasticore.base.model.pub.rules.EntitySpec;
@@ -125,5 +126,27 @@ public class SearchDtoCleanFileRules implements CodeRules {
         // clean mode alike.
         body.add((Object) "private String sortColumn; // Column to sort by");
         body.add((Object) "private Boolean sortAscending; // Sort order (true: ascending, false: descending)");
+
+        java.util.List<String> sortable = SearchSortList.listed(e);
+        if (sortable == null) return;
+        body.add((Object) "");
+        body.add((Object) ("/** " + SearchSortList.DOC + " */"));
+        body.add(
+                (Object)
+                        "private static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Collections.unmodifiableSet(");
+        StringBuilder items = new StringBuilder();
+        for (String p : sortable) {
+            if (items.length() > 0) items.append(",\n");
+            items.append("\t\t\t\t").append(RuleText.quote(p));
+        }
+        body.add((Object) "\t\tnew java.util.LinkedHashSet<String>(java.util.Arrays.asList(");
+        for (String line : RuleText.linesOf(items.toString() + ")));")) {
+            body.add((Object) line);
+        }
+        body.add((Object) "");
+        body.add((Object) "@Override");
+        body.add((Object) "public java.util.Set<String> sortableProperties() {");
+        body.add((Object) "\treturn SORTABLE_PROPERTIES;");
+        body.add((Object) "}");
     }
 }
