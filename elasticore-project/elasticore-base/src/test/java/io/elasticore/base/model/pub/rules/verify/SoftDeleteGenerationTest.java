@@ -324,7 +324,8 @@ public class SoftDeleteGenerationTest {
         assertTrue(mapper.contains("sp = sp.and((r,q,c) -> c.isNull(r.get(\"deletedAt\")));"), mapper);
         assertTrue(mapper.contains("sp = sp.and((r,q,c) -> c.isNull(r.get(\"removedAt\")));"), mapper);
         String search = text(find(java, "SdProductSrchDTO.java"));
-        assertFalse(search.contains("deletedAt"), search);
+        // No condition on it (a sort may still name it: the response shows it).
+        assertFalse(search.matches("(?s).*private [^;=]*deletedAt[A-Za-z]*;.*"), search);
         String kt = text(find(kotlin, "SdshopMapper.kt"));
         assertTrue(kt.contains("c.isNull(r.get<Any>(\"deletedAt\"))"), kt);
     }

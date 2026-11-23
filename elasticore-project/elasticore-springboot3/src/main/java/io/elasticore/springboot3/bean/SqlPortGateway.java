@@ -359,22 +359,7 @@ public abstract class SqlPortGateway implements DbmsSqlExecutor {
      * would fake a log line, a right-to-left override that would reorder it - shown as '?'.
      */
     private static String abbreviate(String term) {
-        String head = term;
-        if (term.length() > 40) {
-            int end = Character.isHighSurrogate(term.charAt(39)) ? 39 : 40;
-            head = term.substring(0, end) + "...";
-        }
-        StringBuilder shown = new StringBuilder(head.length());
-        for (int i = 0; i < head.length(); ) {
-            int cp = head.codePointAt(i);
-            int type = Character.getType(cp);
-            boolean hidden = Character.isISOControl(cp) || type == Character.LINE_SEPARATOR
-                    || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT;
-            if (hidden) shown.append('?');
-            else shown.appendCodePoint(cp);
-            i += Character.charCount(cp);
-        }
-        return shown.toString();
+        return io.elasticore.springboot3.validation.Refusals.shown(term);
     }
 
 

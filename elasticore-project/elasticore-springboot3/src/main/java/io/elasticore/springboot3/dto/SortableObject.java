@@ -42,6 +42,19 @@ public interface SortableObject {
     Boolean getSortAscending();
 
     /**
+     * The properties a sort may name - what the search's response shows - or null for any.
+     *
+     * A 3.0 search DTO that implements this interface (env.yml interface.sortable names it) lists its
+     * own, and getSort() refuses any other property (400) through {@link SortCheck}. Null, as every
+     * other implementation answers, leaves getSort() as it was.
+     *
+     * @return the properties a sort may name, or null for any
+     */
+    default java.util.Set<String> sortableProperties() {
+        return null;
+    }
+
+    /**
      * Creates a Spring Data Sort instance from the sorting configuration.
      * 
      * This method processes both sort codes and single column sorting to create
@@ -65,12 +78,13 @@ public interface SortableObject {
 
         List<Sort.Order> orders = new ArrayList<>();
         String[] sortParams = sortTxt.split(",");
+        java.util.Set<String> sortable = sortableProperties();
 
         for (String param : sortParams) {
             if (param.endsWith("+")) {
-                orders.add(Sort.Order.asc(param.substring(0, param.length() - 1)));
+                orders.add(Sort.Order.asc(SortCheck.sortable(param.substring(0, param.length() - 1), sortable)));
             } else if (param.endsWith("-")) {
-                orders.add(Sort.Order.desc(param.substring(0, param.length() - 1)));
+                orders.add(Sort.Order.desc(SortCheck.sortable(param.substring(0, param.length() - 1), sortable)));
             }
         }
         return Sort.by(orders);

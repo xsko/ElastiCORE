@@ -47,7 +47,8 @@ Listed in `methods` - and only there: without `methods` an entity keeps the five
 ```
 - The rows: the search `POST .../search` makes with `search` (the same search DTO) - its conditions, the search's `@access` and the
   `@owner` filter - every page of it, in `sortCode`'s order (absent: the search's own, `sortColumn` too; the key goes after it, so a row does not move
-  between two pages). The pages are read one after another: a row changed meanwhile may be in or out.
+  between two pages). The pages are read one after another: a row changed meanwhile may be in or out. The order names only what the
+  search's response shows, as the search's does (4.2 "What a search may sort by"): any other is 400 `no-such-property` before a byte is written.
 - `columns`: properties of the response DTO, in that order (a `@ref` one by its name, `productName`); absent: all of them, in the
   DTO's order. `headers`: the titles, one a column; absent: each column's label in the request's language (`Accept-Language`) from
   `i18n/<domain>-labels_<lang>.properties` (`@label(en=...)`, `labelLanguage`; the response DTO's key, then the entity's), else its name.
@@ -1214,6 +1215,7 @@ Generated SearchDTO fields:
 - `driversItem: RentDriver` (Join eq)
 - `sortCode: String`, `pageNumber: int`, `pageSize: int` (generated automatically)
 - When the request does not send `sortCode`, the order is set by `@sort` on the entity (or the search DTO) (below)
+- `sortCode` names only properties the search's response shows; any other is 400 `no-such-property` (4.2 "What a search may sort by", v3)
 
 ---
 
@@ -1277,6 +1279,63 @@ If the request sends `sortCode`, that wins. `ShopFlowTest` checks that the Pet S
 - If you write a property that the entity does not have, a DSL warning (`@sort(...): x is not a field of Product`) is printed and only that property is dropped (this prevents a sort 400).
 - Without `@sort`, the query runs with no ordering, as before.
 - It is a 3.0 rule engine (`elcore3`) feature. The 2.x generator (`elcore`) does not read `@sort`.
+
+#### What a search may sort by - only what its response shows
+> **Works in:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **Not in:** 2.x-compatible output (output = 'v2') and the 2.x generator - any property sorts, as before; a domain whose `interface.sortable` (env.yml) is its own, not the runtime's - not checked (warning)
+
+`sortCode` (`"orderDate-,total+"`) and `sortColumn` + `sortAscending` name entity properties - `name`, an embedded value's part
+`deliveryAddress.city`, a joined row's `customer.name`. A search sorts only by a property its response shows; any other is refused
+with **400**, code `no-such-property`, before the query is built:
+```json
+{ "code": "no-such-property", "title": "Invalid request",
+  "detail": "The search cannot be sorted by 'customer.email'; sort by one of [orderId, orderDate, status, deliveryAddress.street1, ...]" }
+```
+- Why: a sort on a value the response leaves out still tells its order. A pet store MANAGER searches every order; sorted by
+  `customer.email`, `creditCard.creditCardNumber` (`@writeonly`) or `customer.password` (the hash), the answer gave those values'
+  order away - and with orders of one's own placed among them, the values themselves.
+- What a sort may name: a value the search's response DTO shows under its own name; a part of an embedded value it carries
+  (`deliveryAddress.city`); a `@ref` field's path (`productName: string @ref(product.name)` -> `product.name`, a flattened key
+  `customer.customerId`); the values of a joined row whose DTO the response carries whole (`category.name` where ProductDTO has
+  `category: CategoryDTO` - a row anyone may read, the only kind a DTO nests); the entity's key; the `@sort` default order
+  (every search without a sort answers in it already; on a value no response shows it gets a DSL warning).
+- Not shown, so never sorted by: `@password`, `@writeonly` / `@nooutput`, `@jsonignore` (or a native `@dto:` `JsonIgnore` /
+  `WRITE_ONLY`), a value written masked (`@Mask`), a `@view` without the read view (with jsonview on), a `@ref` to a password, and every value of a joined row the response does not carry. A list is
+  never sorted by. A `@sensitive` or `@encrypt` value is shown, so it sorts (an encrypted column by its ciphertext).
+- A property the entity does not have gets the same answer, so the refusal does not tell a hidden property from a missing one.
+  JPA answered `no-such-property` for it before; MyBatis and MongoDB answered `bad-request` with `X cannot be sorted by ...`.
+- To sort by a joined value the response does not show, show it: `customerEmail: string @ref(customer.email)` in the DTO - then
+  `customer.email` sorts. The order is what the response says, and so is the value.
+- Every caller of the search is held to it, since the check is the search DTO's own `getSort()`: `POST .../search`,
+  `POST .../export` (its `sortCode` and the search's), and any code that calls `findBySearch` with a search DTO - the generated
+  GraphQL search does.
+- Generated, in each search DTO (pet store `PurchaseOrderSrchDTO`, shortened):
+```java
+/** What a sort may name: the values the search's response shows, its key and its default order. */
+private static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Collections.unmodifiableSet(
+        new java.util.LinkedHashSet<String>(java.util.Arrays.asList(
+                "orderId",
+                "orderDate",
+                "deliveryAddress.city",
+                "creditCard.creditCardType",
+                "total",
+                "customerId")));
+
+@Override
+public java.util.Set<String> sortableProperties() {
+    return SORTABLE_PROPERTIES;
+}
+```
+  Kotlin: `override fun sortableProperties(): Set<String> = setOf("ticketId", "subject", ...)`. The domain's `SortableObject`
+  hands each property through the runtime's `io.elasticore.springboot3.dto.SortCheck.sortable(...)`, which refuses one not listed.
+  A DTO that does not override `sortableProperties()` (null) sorts by any property, as before.
+- The runtime's `io.elasticore.springboot3.dto.SortableObject` - what the init wizard's env.yml names as `interface.sortable` -
+  declares `sortableProperties()` too (null unless a DTO lists its own, so 2.x code sorts as it did): a 3.0 search DTO on it is
+  checked the same way. A domain whose env.yml names an interface of its own keeps it: the search DTO does not override what that
+  interface may not declare, the run says so (a DSL warning), and the sort is not checked - call `SortCheck.sortable(...)` in its
+  `getSort()`. A search whose response DTO is not in the domain's model is not checked either (a DSL warning).
+- Verified over HTTP: pet store `SortTermTest` (a MANAGER, sortCode, sortColumn and the export), MyBatis pet store
+  `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused` (no SQL prepared), `elasticore-template-kt` `SortTermTest` (Kotlin),
+  `elasticore-template-mongo` `ClubApi` / `ShopApi` and `elasticore-template-kt-mongo` `ClubApi` (MongoDB).
 
 ### 4.2.2 @search(words:...) - one search box over several fields
 > **Works in:** v3, Kotlin (JPA) · **Not in:** MyBatis (mode: mybatis) - a warning, not searched; 2.x-compatible output (output = 'v2') - a warning, the property is left out; 2.x generator (not generated)

@@ -126,6 +126,30 @@ public class KotlinDtoFileTest {
         assertFalse(out.contains("@Builder.Default"), out);
     }
 
+    /** What the sort may name - the response's values - is listed, and SortableObject refuses any other. */
+    @Test
+    public void searchDto_listsWhatItsSortMayName() {
+        String out = renderSearch(orderSrch().sortableProperties(java.util.Arrays.asList("orderId", "customer.name")));
+        assertTrue(
+                out.contains("override fun sortableProperties(): Set<String> = setOf(\n"
+                        + "            \"orderId\",\n"
+                        + "            \"customer.name\")"),
+                out);
+        // Not worked out (the run did not): nothing listed, any property sorts as before.
+        assertFalse(renderSearch(orderSrch()).contains("sortableProperties"));
+        // The project's own sort interface may not declare it: nothing is overridden (the run says so).
+        String own = renderSearch(orderSrch()
+                .sortableInterface("com.acme.Sorting")
+                .sortableProperties(java.util.Arrays.asList("orderId")));
+        assertTrue(own.contains("Sorting"), own);
+        assertFalse(own.contains("sortableProperties"), own);
+        // The runtime's interface, which the init wizard's env.yml names, declares it: the list is there.
+        String runtime = renderSearch(orderSrch()
+                .sortableInterface("io.elasticore.springboot3.dto.SortableObject")
+                .sortableProperties(java.util.Arrays.asList("orderId")));
+        assertTrue(runtime.contains("override fun sortableProperties(): Set<String> = setOf("), runtime);
+    }
+
     /** The interfaces follow the class name, as Kotlin writes them. */
     @Test
     public void searchDto_namesItsInterfacesAfterTheClass() {

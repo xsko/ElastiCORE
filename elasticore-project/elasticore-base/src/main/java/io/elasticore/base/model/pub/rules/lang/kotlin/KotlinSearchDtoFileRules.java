@@ -117,5 +117,18 @@ public class KotlinSearchDtoFileRules implements CodeRules {
                 + " // Column to sort by"));
         body.add((Object) (kt.declaration(OVERRIDE, "Boolean", "sortAscending", "", false)
                 + " // Sort order (true: ascending, false: descending)"));
+
+        List<String> sortable = io.elasticore.base.model.pub.rules.base.SearchSortList.listed(e);
+        if (sortable == null) return;
+        body.add((Object) "");
+        body.add((Object) ("/** " + io.elasticore.base.model.pub.rules.base.SearchSortList.DOC + " */"));
+        StringBuilder items = new StringBuilder("override fun sortableProperties(): Set<String> = setOf(");
+        for (int i = 0; i < sortable.size(); i++) {
+            items.append(i == 0 ? "\n" : ",\n").append("        ").append(RuleText.quote(sortable.get(i)));
+        }
+        items.append(')');
+        for (String line : RuleText.linesOf(items.toString())) {
+            body.add((Object) line);
+        }
     }
 }

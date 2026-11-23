@@ -1,5 +1,6 @@
 package ${packageName}
 
+import io.elasticore.springboot3.dto.SortCheck
 import org.springframework.data.domain.Sort
 import io.swagger.v3.oas.annotations.media.Schema
 
@@ -9,6 +10,11 @@ import io.swagger.v3.oas.annotations.media.Schema
  * Provides support for parsing a sort code (e.g., "name+,age-") into
  * Spring Data's Sort object. Also supports backward-compatible sorting
  * using legacy sortColumn and sortAscending values.
+ *
+ * A search DTO names the properties a sort may name - what the search's
+ * response shows - and any other is refused (400 no-such-property) before
+ * the query is built, so a value no response shows is not given away by
+ * its order.
  *
  * Modify this code only as specified in the ElastiCORE guidelines
  * to avoid regeneration conflicts.
@@ -27,6 +33,13 @@ interface SortableObject {
     @get:Schema(hidden = true)
     val sortAscending: Boolean?
 
+    /**
+     * The properties a sort may name: what the search's response shows, its
+     * key and its default order - null for any. The generated search DTOs
+     * list theirs.
+     */
+    fun sortableProperties(): Set<String>? = null
+
     @Schema(hidden = true)
     fun getSort(): Sort? {
         var sortTxt = sortCode
@@ -39,12 +52,14 @@ interface SortableObject {
 
         if (sortTxt.isNullOrEmpty()) return null
 
+        // A property sortableProperties() does not list is refused (400).
+        val sortable = sortableProperties()
         val orders = ArrayList<Sort.Order>()
         for (param in sortTxt.split(",")) {
             if (param.endsWith("+")) {
-                orders.add(Sort.Order.asc(param.substring(0, param.length - 1)))
+                orders.add(Sort.Order.asc(SortCheck.sortable(param.substring(0, param.length - 1), sortable)))
             } else if (param.endsWith("-")) {
-                orders.add(Sort.Order.desc(param.substring(0, param.length - 1)))
+                orders.add(Sort.Order.desc(SortCheck.sortable(param.substring(0, param.length - 1), sortable)))
             }
         }
         return Sort.by(orders)

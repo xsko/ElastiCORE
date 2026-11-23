@@ -121,4 +121,49 @@ public class SearchDtoFileTest {
 
         assertTrue(render(e).contains("implements java.io.Serializable, Sorted, Paged  {"), render(e));
     }
+
+    private String renderClean(EntitySpec e) {
+        return new RuleEngine()
+                .register(new SearchDtoBaseRules())
+                .register(new io.elasticore.base.model.pub.rules.lang.java.SearchDtoCleanFileRules())
+                .run(e, "srchdto")
+                .render();
+    }
+
+    /**
+     * The 3.0 search DTO lists what its sort may name - what the search's response shows - and SortableObject
+     * refuses any other property (400) before the query is built.
+     */
+    @Test
+    public void theCleanSearchDtoListsWhatItsSortMayName() {
+        String out =
+                renderClean(productSrch().sortableProperties(java.util.Arrays.asList("productId", "category.name")));
+        assertTrue(
+                out.contains(
+                        "\tprivate static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Collections.unmodifiableSet(\n"
+                                + "\t\t\tnew java.util.LinkedHashSet<String>(java.util.Arrays.asList(\n"
+                                + "\t\t\t\t\t\"productId\",\n"
+                                + "\t\t\t\t\t\"category.name\")));"),
+                out);
+        assertTrue(
+                out.contains(
+                        "\t@Override\n\tpublic java.util.Set<String> sortableProperties() {\n\t\treturn SORTABLE_PROPERTIES;\n\t}"),
+                out);
+        // Not worked out (the 2.x-compatible run, a search DTO of no entity): nothing listed, as before.
+        assertFalse(renderClean(productSrch()).contains("sortableProperties"));
+        // The 2.x-compatible file rule never lists it.
+        assertFalse(render(productSrch().sortableProperties(java.util.Arrays.asList("productId")))
+                .contains("sortableProperties"));
+        // The project's own sort interface may not declare it: nothing is overridden (the run says so).
+        String own = renderClean(productSrch()
+                .sortableInterface("kr.co.acme.Sorted")
+                .sortableProperties(java.util.Arrays.asList("productId")));
+        assertTrue(own.contains("Sorted"), own);
+        assertFalse(own.contains("sortableProperties"), own);
+        // The runtime's interface, which the init wizard's env.yml names, declares it: the list is there.
+        String runtime = renderClean(productSrch()
+                .sortableInterface("io.elasticore.springboot3.dto.SortableObject")
+                .sortableProperties(java.util.Arrays.asList("productId")));
+        assertTrue(runtime.contains("public java.util.Set<String> sortableProperties() {"), runtime);
+    }
 }

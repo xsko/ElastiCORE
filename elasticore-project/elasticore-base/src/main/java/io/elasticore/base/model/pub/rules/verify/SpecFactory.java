@@ -818,6 +818,9 @@ public final class SpecFactory {
         spec.searchPageSize(searchPageSizeOf(dto));
         if (searchable) {
             spec.defaultSort(defaultSortOf(dto, entity));
+            if (sortsShownOnly && entity != null) {
+                spec.sortableProperties(SortablePaths.of(entity, model, spec.defaultSort()));
+            }
         }
 
         // What the DTO leaves out of its JSON.
@@ -2812,6 +2815,16 @@ public final class SpecFactory {
         return out.toString();
     }
 
+    /**
+     * Whether a search DTO lists what its sort may name - what the search's response shows (the 3.0
+     * Java and Kotlin output; the 2.x-compatible one sorts by any property, as 2.x did).
+     */
+    private static volatile boolean sortsShownOnly;
+
+    public static void sortsShownOnly(boolean on) {
+        sortsShownOnly = on;
+    }
+
     /** Whether DTOs carry a list of values, List<Long> (v3, Kotlin, TypeScript; 2.x does not). */
     private static volatile boolean valueListsInDto;
 
@@ -3071,7 +3084,7 @@ public final class SpecFactory {
         return null;
     }
 
-    private static Entity globalEntity(String typeName) {
+    static Entity globalEntity(String typeName) {
         if (typeName == null) return null;
         try {
             io.elasticore.base.ECoreModelContext ctx =

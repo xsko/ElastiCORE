@@ -130,6 +130,25 @@ public abstract class ClubApi {
         send(second, "GET", "/member/me", null, 200);
     }
 
+    /**
+     * A search sorts only by what its response shows: the document's own @password is in it, but no response shows
+     * it, so a sort on it is refused (400 no-such-property) - sortCode and sortColumn alike - before MongoDB is asked.
+     */
+    @Test
+    public void aSortOnThePasswordIsRefused() throws Exception {
+        HttpClient member = client();
+        String mail = "sorter-" + UUID.randomUUID().toString().substring(0, 8) + "@a.com";
+        send(member, "POST", "/member", "{\"email\":\"" + mail + "\",\"secret\":\"pw-sort\"}", 200);
+        send(member, "POST", "/member/signin", "{\"email\":\"" + mail + "\",\"secret\":\"pw-sort\"}", 200);
+        for (String sort : new String[] {"{\"sortCode\":\"secret+\"}", "{\"sortColumn\":\"secret\",\"sortAscending\":false}"}) {
+            JsonNode refused = body(send(member, "POST", "/member/search", sort), 400);
+            assertEquals("no-such-property", refused.get("code").asText(), refused.toString());
+            assertTrue(refused.get("detail").asText().contains("cannot be sorted by 'secret'"), refused.toString());
+        }
+        JsonNode mine = body(send(member, "POST", "/member/search", "{\"sortCode\":\"email+,memberId-\"}"), 200);
+        assertEquals(1, mine.get("content").size(), mine.toString());
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private static HttpClient client() {
