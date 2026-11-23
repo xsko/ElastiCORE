@@ -2585,6 +2585,9 @@ Post:
   jsoup safelist and writes its text without tags into the `@plain` field. The CoreService calls it on every write - a save, an update,
   an update by condition, and after a lifecycle command whose parameter sets the field - before the row is written and before
   `beforeSave`. What is kept is not reformatted.
+- Under MongoDB an entity without a collection of its own (no service, no `@repository` - an order's line) is kept inside the
+  document that holds it, and a request writes it with that document: the holder's service calls its `cleanHtml()` on the same
+  writes - a collection's members, a single one, and the members they hold - after the holder's own, before `beforeSave`.
 - `@safe(basic)`, the default, keeps text markup (paragraphs, emphasis, lists, quotes, code) and links (http, https, ftp, mailto) with
   `rel="nofollow"`, and no images. `@safe(relaxed)` also keeps headings, tables and images (http, https), and adds no `rel`. A script and
   its text, `on...` handlers, `javascript:` links and every other tag and attribute are removed: jsoup's `Safelist.basic()` / `relaxed()`.

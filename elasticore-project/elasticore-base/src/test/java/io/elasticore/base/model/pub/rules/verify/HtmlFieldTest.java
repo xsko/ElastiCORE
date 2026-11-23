@@ -173,6 +173,153 @@ public class HtmlFieldTest {
     }
 
     /**
+     * MongoDB keeps an entity without a collection of its own inside the document that holds it, and the root's
+     * mapper writes it from the request: its html is cleaned on each of the root's writes, before beforeSave - a
+     * collection's members, a single one, and the members they hold in turn. A member without html is left alone.
+     */
+    private static final String MONGO_MEMBERS = String.join(
+            "\n",
+            "entity:",
+            "  HtOrder:",
+            "    meta: entity @expose(20)",
+            "    fields:",
+            "      orderId: long @id @sequence",
+            "      orderNo: string(20)",
+            "      lines:   List<HtLine> @OneToMany(mappedBy=\"order\") @dtype(List<HtLineDTO>)",
+            "      tags:    List<HtTag> @OneToMany(mappedBy=\"order\") @dtype(List<HtTagDTO>)",
+            "  HtLine:",
+            "    meta: entity",
+            "    fields:",
+            "      lineId: long @id @sequence",
+            "      order:  HtOrder @ManyToOne",
+            "      note:   html @plain(noteText)",
+            "      noteText: text",
+            "      parts:  List<HtPart> @OneToMany(mappedBy=\"line\") @dtype(List<HtPartDTO>)",
+            // A single member, inside a member: a root's own would be searched by its key, which no document stores.
+            "      cover:  HtCover",
+            "  HtPart:",
+            "    meta: entity",
+            "    fields:",
+            "      partId: long @id @sequence",
+            "      line:   HtLine @ManyToOne",
+            "      body:   html @safe(relaxed)",
+            "  HtCover:",
+            "    meta: entity",
+            "    fields:",
+            "      coverId: long @id @sequence",
+            "      caption: html",
+            "  HtTag:",
+            "    meta: entity",
+            "    fields:",
+            "      tagId: long @id @sequence",
+            "      order: HtOrder @ManyToOne",
+            "      label: string(20)",
+            "dto:",
+            "  HtLineDTO:",
+            "    meta: dto @template(HtLine)",
+            "  HtPartDTO:",
+            "    meta: dto @template(HtPart)",
+            "  HtTagDTO:",
+            "    meta: dto @template(HtTag)",
+            "");
+
+    @Test
+    public void mongoCleansTheMembersADocumentEmbedsOnEveryWrite() throws Exception {
+        String[] log = new String[1];
+        File project = run("elcore-html-mongo-members", "layered", "java", "mongo", MONGO_MEMBERS, false, 0, log);
+        String core = found(project, "HtOrderCoreService.java");
+        String line = found(project, "HtLine.java");
+        int at = line.indexOf("package ") + "package ".length();
+        String model = line.substring(at, line.indexOf(';', at)) + ".";
+        String members = String.join(
+                "\n",
+                "        if (entity.getLines() != null) for (" + model + "HtLine m : entity.getLines()) {",
+                "            m.cleanHtml();",
+                "            if (m.getParts() != null) for (" + model + "HtPart m2 : m.getParts()) {",
+                "                m2.cleanHtml();",
+                "            }",
+                "            if (m.getCover() != null) {",
+                "                " + model + "HtCover m2 = m.getCover();",
+                "                m2.cleanHtml();",
+                "            }",
+                "        }",
+                "        beforeSave(entity, dto);");
+        // save, update and update by condition (a batch update is update's): the root has no html of its own.
+        assertEquals(2, occurrences(core, members), core);
+        assertEquals(1, occurrences(core, members.replace("\n        ", "\n            ")), core);
+        assertFalse(core.contains("entity.cleanHtml()"), core);
+        // Three members cleaned on each of the three writes; the tags, which have no html, are not.
+        assertEquals(9, occurrences(core, "cleanHtml();"), core);
+        String save = section(core, "public HtOrderDTO save(HtOrderDTO dto) {");
+        assertTrue(save.indexOf("m.cleanHtml();") < save.indexOf("beforeSave(entity, dto);"), save);
+        String update = section(core, "public HtOrderDTO update(HtOrderDTO dto) {");
+        assertTrue(update.indexOf("mapping(dto, entity") < update.indexOf("m.cleanHtml();"), update);
+        assertTrue(update.indexOf("m.cleanHtml();") < update.indexOf("beforeSave(entity, dto);"), update);
+        assertTrue(found(project, "HtLine.java").contains("public void cleanHtml() {"), core);
+        assertTrue(found(project, "HtPart.java").contains("Safelist.relaxed()"), core);
+        assertFalse(found(project, "HtTag.java").contains("cleanHtml"), core);
+
+        File kt = run("elcore-html-mongo-members-kt", "layered", "kotlin", "mongo", MONGO_MEMBERS, false, 0, log);
+        String ktCore = found(kt, "HtOrderCoreService.kt");
+        String ktMembers = String.join(
+                "\n",
+                "        for (m in entity.lines ?: emptyList<" + model + "HtLine>()) {",
+                "            m.cleanHtml()",
+                "            for (m2 in m.parts ?: emptyList<" + model + "HtPart>()) {",
+                "                m2.cleanHtml()",
+                "            }",
+                "            m.cover?.let { m2 ->",
+                "                m2.cleanHtml()",
+                "            }",
+                "        }",
+                "        beforeSave(entity, dto)");
+        assertEquals(2, occurrences(ktCore, ktMembers), ktCore);
+        assertEquals(1, occurrences(ktCore, ktMembers.replace("\n        ", "\n            ")), ktCore);
+        assertTrue(found(kt, "HtLine.kt").contains("fun cleanHtml() {"), ktCore);
+    }
+
+    /** A root's own html is cleaned first, then its members'; a MongoDB model without html on members is as before. */
+    @Test
+    public void mongoCleansTheRootBeforeItsMembersAndLeavesOtherModelsAlone() throws Exception {
+        String model =
+                MONGO_MEMBERS.replace("      orderNo: string(20)", "      orderNo: string(20)\n      intro:   html");
+        File project = run("elcore-html-mongo-root", "layered", "java", "mongo", model, false, 0, new String[1]);
+        String save = section(found(project, "HtOrderCoreService.java"), "public HtOrderDTO save(HtOrderDTO dto) {");
+        assertTrue(save.contains("        entity.cleanHtml();\n        if (entity.getLines() != null) for ("), save);
+
+        String plain = MONGO_MEMBERS
+                .replace("html @plain(noteText)", "text")
+                .replace("html @safe(relaxed)", "text")
+                .replace("caption: html", "caption: text");
+        File none = run("elcore-html-mongo-none", "layered", "java", "mongo", plain, false, 0, new String[1]);
+        String core = found(none, "HtOrderCoreService.java");
+        assertFalse(core.contains("cleanHtml"), core);
+        assertEquals(0, occurrences(core, "\n\n        beforeSave(entity, dto);"), core);
+        assertEquals(0, occurrences(core, "\n\n            beforeSave(entity, dto);"), core);
+
+        // JPA keeps the same members in tables of their own, which the root's mapper does not write: no member call.
+        File jpa = run("elcore-html-mongo-model-jpa", "layered", "java", "jpa", MONGO_MEMBERS, false, 0, new String[1]);
+        String jpaCore = found(jpa, "HtOrderCoreService.java");
+        assertFalse(jpaCore.contains("cleanHtml"), jpaCore);
+        assertTrue(found(jpa, "HtLine.java").contains("public void cleanHtml() {"), jpaCore);
+    }
+
+    /** Members that hold each other are kept to any depth, which the service's lines cannot reach: refused. */
+    @Test
+    public void mongoRefusesHtmlOnMembersThatHoldEachOther() throws Exception {
+        String model = MONGO_MEMBERS.replace(
+                "      body:   html @safe(relaxed)",
+                "      body:   html @safe(relaxed)\n      lines:  List<HtLine> @dtype(List<HtLineDTO>)");
+        String[] log = new String[1];
+        run("elcore-html-mongo-cycle", "layered", "java", "mongo", model, false, 1, log);
+        assertTrue(
+                log[0].contains("HtLine.note: MongoDB keeps HtLine inside the HtOrder document to any depth"
+                        + " (HtLine -> HtPart -> HtLine), and the service cleans an html field only to a fixed depth"
+                        + " - break the cycle, or declare the field text"),
+                log[0]);
+    }
+
+    /**
      * A command's parameter is kept by the move inside the entity, past the save path: the service cleans after the
      * move. Under the DDD rule sets the setters are the entity's own, which is why the cleaning is its method.
      */
@@ -382,6 +529,7 @@ public class HtmlFieldTest {
         for (int i = 0; i < keys.length; i++) saved[i] = System.getProperty(keys[i]);
         PrintStream out = System.out;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int code;
         try {
             System.setOut(new PrintStream(bytes, true, "UTF-8"));
             for (String k : keys) System.clearProperty(k);
@@ -393,8 +541,7 @@ public class HtmlFieldTest {
             else if ("layered".equals(architecture)) System.setProperty("elasticore.rules.v3", "true");
             if ("typescript".equals(language)) System.setProperty("elasticore.rules.ts", "true");
             System.setProperty(DdlConfig.DATABASES, "postgresql");
-            int code = RulesGenRunner.run(new String[0]);
-            if (exit != null) assertEquals(exit.intValue(), code, "the run's exit: " + project);
+            code = RulesGenRunner.run(new String[0]);
         } finally {
             System.setOut(out);
             for (int i = 0; i < keys.length; i++) {
@@ -405,6 +552,7 @@ public class HtmlFieldTest {
         }
         log[0] = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         out.print(log[0]);
+        if (exit != null) assertEquals(exit.intValue(), code, "the run's exit: " + project);
         return project;
     }
 
