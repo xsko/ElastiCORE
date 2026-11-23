@@ -6,6 +6,7 @@ import io.elasticore.base.model.entity.Entity;
 import io.elasticore.base.model.pub.rules.EntitySpec;
 import io.elasticore.base.model.pub.rules.EnumSpec;
 import io.elasticore.base.model.pub.rules.FieldSpec;
+import io.elasticore.base.model.pub.rules.base.AccessExpression;
 import io.elasticore.base.model.pub.rules.base.ControllerBaseRules;
 import io.elasticore.base.model.pub.rules.base.DtoBaseRules;
 import io.elasticore.base.model.pub.rules.base.FieldDoc;
@@ -77,11 +78,24 @@ final class ContractTestSource {
         final String className;
         final String text;
         final int tests;
+        /** The domain's support class: the one the test classes call. */
+        final boolean support;
+        /** The test class without its tests of @access, for a support class kept without their members; null for none. */
+        final String plain;
+
+        final int plainTests;
 
         Source(String className, String text, int tests) {
+            this(className, text, tests, false, null, 0);
+        }
+
+        Source(String className, String text, int tests, boolean support, String plain, int plainTests) {
             this.className = className;
             this.text = text;
             this.tests = tests;
+            this.support = support;
+            this.plain = plain;
+            this.plainTests = plainTests;
         }
     }
 
@@ -94,6 +108,8 @@ final class ContractTestSource {
         boolean lifecycles;
         /** The root's @invariant is checked (the domain-model rule sets). */
         boolean invariants;
+        /** A split root's commands get endpoints, and one with nothing editable no update (the domain-model rule sets). */
+        boolean commands;
         /** mode: mybatis - the schema is the application's, no Hibernate makes it. */
         boolean mybatis;
         /** The application the tests start, when Spring would not find it from their package; null when it would. */
@@ -106,6 +122,7 @@ final class ContractTestSource {
         void readRuleSets(java.util.function.Predicate<Class<?>> selected) {
             lifecycles = selected.test(DddStateRules.class);
             invariants = selected.test(DddInvariantRules.class);
+            commands = selected.test(DddCommandRules.class);
         }
     }
 
@@ -161,21 +178,163 @@ final class ContractTestSource {
         String support = domainClass + "ContractSupport";
         Lang lang = new Lang(s.kotlin);
 
-        List<Source> out = new ArrayList<Source>();
-        boolean guarded = false;
+        List<EntityTests> planned = new ArrayList<EntityTests>();
+        boolean asks = false;
         for (EntitySpec e : own) {
             if (!testable(e)) continue;
             EntityTests t = new EntityTests(e, lang, s);
             if (!t.plan()) continue;
+            planned.add(t);
+            asks |= (t.guarded && !t.tests.isEmpty()) || t.declaresAccess();
+        }
+        // Whom the tests sign in: asked where an entity with tests asks who is calling, or declares @access.
+        Principal principal = asks ? principal(lang) : null;
+        String noPrincipal = principal == null ? principalProblem : null;
+        accessSkipped.clear();
+        boolean callers = false;
+        for (EntityTests t : planned) {
+            t.access(principal, noPrincipal);
+            callers |= t.accessTests > 0;
+        }
+        List<Source> out = new ArrayList<Source>();
+        boolean guarded = false;
+        boolean access = false;
+        boolean system = false;
+        for (EntityTests t : planned) {
             if (t.tests.isEmpty()) continue;
             guarded |= t.guarded;
+            access |= t.declaresAccess();
             written += t.tests.size();
-            out.add(new Source(e.getName() + "ContractTest", t.render(pkg, support), t.tests.size()));
+            system |= t.accessTests > 0 && t.systemRows;
+            int plainTests = t.tests.size() - t.accessTests;
+            String plain = t.accessTests == 0 ? null : plainTests == 0 ? "" : t.render(pkg, support, false);
+            out.add(new Source(
+                    t.e.getName() + "ContractTest",
+                    t.render(pkg, support, true),
+                    t.tests.size(),
+                    false,
+                    plain,
+                    plainTests));
         }
         if (out.isEmpty()) return out;
-        Principal principal = guarded ? principal(lang) : null;
-        out.add(0, new Source(support, supportClass(pkg, support, domainName, s, lang, guarded, principal), 0));
+        Access a = new Access(callers, access, accessSkipped);
+        a.system = system;
+        out.add(
+                0,
+                new Source(
+                        support,
+                        supportClass(pkg, support, domainName, s, lang, guarded, guarded ? principal : null, a),
+                        0,
+                        true,
+                        null,
+                        0));
         return out;
+    }
+
+    /** What the support class says and holds of @access: the callers it signs in, what is not tested and why. */
+    static final class Access {
+        final boolean callers;
+        final boolean declared;
+        final List<String> skipped;
+        /** Some test makes its rows as the application itself (asTheSystem): no administrator signs in. */
+        boolean system;
+
+        Access(boolean callers, boolean declared, List<String> skipped) {
+            this.callers = callers;
+            this.declared = declared;
+            this.skipped = new ArrayList<String>(skipped);
+        }
+    }
+
+    // ---- what a kept support class holds -----------------------------------------------
+
+    /** The support members a test class may call, by name. */
+    private static final String[] MEMBERS = {
+        "post",
+        "command",
+        "create",
+        "createdId",
+        "given",
+        "assertMoved",
+        "assertCreated",
+        "assertRefused",
+        "assertFieldError",
+        "assertValue",
+        "assertStamped",
+        "text",
+        "email",
+        "num",
+        "serial",
+        "vary",
+        "obj",
+        "list",
+        "withValue",
+        "sentBy",
+        "reading",
+        "searching",
+        "creating",
+        "updating",
+        "deleting",
+        "commanding",
+        "createdIdBy",
+        "assertAllowed",
+        "assertDenied",
+        "assertFinds",
+        "assertMisses",
+        "asTheSystem"
+    };
+
+    /**
+     * The first member the test class calls that the support class on disk does
+     * not declare - a support class of the project's own, kept by a merge
+     * without what this run added to it - as the summary names it; null when it
+     * declares them all.
+     */
+    static String lacking(String supportText, String testText, boolean kotlin) {
+        String support = supportText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        String test = testText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        if (java.util.regex.Pattern.compile("\\bsignIn\\(\\s*[^)\\s]")
+                .matcher(test)
+                .find()) {
+            String declared = kotlin
+                    ? "\\bfun\\s+signIn\\s*\\(\\s*\\w+\\s*:\\s*String\\??\\s*\\)"
+                    : "\\bsignIn\\s*\\(\\s*(?:final\\s+)?String\\s+\\w+\\s*\\)\\s*(?:throws[^{;]*)?\\{";
+            if (!java.util.regex.Pattern.compile(declared).matcher(support).find()) return "signIn(String)";
+        }
+        if (!kotlin
+                && java.util.regex.Pattern.compile("\\bCaller\\s+\\w+\\s*=")
+                        .matcher(test)
+                        .find()
+                && !java.util.regex.Pattern.compile("\\bclass\\s+Caller\\b")
+                        .matcher(support)
+                        .find()) {
+            return "Caller";
+        }
+        for (String name : MEMBERS) {
+            if (!java.util.regex.Pattern.compile("(?<![\\w.])" + name + "\\s*[({]")
+                    .matcher(test)
+                    .find()) continue;
+            String declared = kotlin
+                    ? "\\bfun\\s+(?:<[^>]*>\\s*)?" + name + "\\s*\\("
+                    : "(?m)^[ \\t]*(?!return\\b|new\\b|throw\\b|else\\b)(?:[\\w.<>\\[\\],?]+\\s+)+" + name
+                            + "\\s*\\([^;{]*\\)\\s*(?:throws[^{;]*)?\\{";
+            if (!java.util.regex.Pattern.compile(declared).matcher(support).find()) return name + "(...)";
+        }
+        return null;
+    }
+
+    /** Tests not written after all - their support class lacks what they call: no longer counted as written, and why. */
+    void notWritten(int tests, String why) {
+        written -= tests;
+        skip(why);
+    }
+
+    /** What the generator knew it cannot test of the domain's @access, as the summary says it: for the support class's comment. */
+    private final List<String> accessSkipped = new ArrayList<String>();
+
+    private void accessSkip(String why) {
+        skip(why);
+        if (!accessSkipped.contains(why)) accessSkipped.add(why);
     }
 
     private static String classNameOf(String domainName, List<EntitySpec> own) {
@@ -594,6 +753,8 @@ final class ContractTestSource {
         final String method;
         final String display;
         final List<String> lines = new ArrayList<String>();
+        /** A test of @access: written only where the support class has what it calls. */
+        boolean access;
 
         Test(String method, String display) {
             this.method = method;
@@ -1617,9 +1778,514 @@ final class ContractTestSource {
             }
         }
 
+        // ---- @access
+
+        /** How many of the tests are of @access: the support class then signs their callers in. */
+        int accessTests;
+
+        /** The levels @access names, operation -> its text as AccessPolicy reads it ("*" the default). */
+        private final Map<String, String> entries = new LinkedHashMap<String, String>();
+
+        /** How a test makes a row of a given owner: self, sent, claimed - or null, and ownershipProblem says why. */
+        private String ownership;
+
+        private String ownershipProblem;
+        private FieldSpec ownerDto;
+        /** The rows of the cases are made as the application itself: signIn() signs in no administrator. */
+        boolean systemRows;
+
+        /** Whether the owner is the key the request chooses: create keys the row by the caller's id. */
+        private boolean keyedByOwner;
+        /** The @owner field create claims for the caller, where it is required (!); null otherwise. */
+        private String requiredClaim;
+
+        private Callers callers;
+        private Principal principal;
+
+        boolean declaresAccess() {
+            String declared = e.metaText("access");
+            return declared != null && !declared.trim().isEmpty();
+        }
+
+        /**
+         * The tests of @access: each operation the API serves - read, search, create,
+         * update, delete and each command - at the level its entry gives it, else the
+         * default (*), else admin. A caller each term of it lets in passes; a visitor, a
+         * caller of a role no term lets in and, where owner is a word, a caller on
+         * another's row are refused - by the status and code the generated checks
+         * answer. Each test signs in principals of its own (signIn(role)) and makes its
+         * own rows. What the generator cannot test is counted, with why.
+         */
+        void access(Principal p, String noPrincipal) {
+            if (!declaresAccess()) return;
+            String name = e.getName();
+            if (p == null) {
+                accessSkip(name + " @access: not tested - no caller can be signed in ("
+                        + (noPrincipal != null ? noPrincipal : "the run has no generated sign-in, @signin") + ")");
+                return;
+            }
+            for (String part : e.metaText("access").split(",", -1)) {
+                if (part.trim().isEmpty()) continue;
+                java.util.regex.Matcher m =
+                        ACCESS_ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+                AccessExpression x = m.matches() ? AccessExpression.parse(m.group(2)) : null;
+                if (x == null) {
+                    accessSkip(name + " @access: '" + part.trim() + "' is not read as operation=level, so none of it"
+                            + " is tested (the application would not start)");
+                    entries.clear();
+                    return;
+                }
+                entries.put(m.group(1), x.text());
+            }
+            principal = p;
+            callers = new Callers(p, entries.values());
+            systemRows = !callers.adminSignsIn();
+            ownership();
+            int before = tests.size();
+            if (e.pkFields().size() != 1) {
+                accessSkip(name + " @access: a composite key - only create is tested");
+            }
+            boolean rows = e.pkFields().size() == 1;
+            if (rows && !ControllerBaseRules.exposeOmitted(e).contains("read")) accessOf("read");
+            if (rows && !ControllerBaseRules.exposeOmitted(e).contains("search")) accessOf("search");
+            accessOf("create");
+            if (rows && updates()) accessOf("update");
+            if (rows && deletes()) accessOf("delete");
+            if (rows && s.commands && DddBehaviorRules.splits(e)) {
+                // POST /{id}/command: each declared command, and each move of a lifecycle.
+                Set<String> done = new LinkedHashSet<String>();
+                for (EntitySpec.CommandSpec c : e.commands()) done.add(c.name());
+                if (s.lifecycles) {
+                    for (EntitySpec.StateMachine m : e.stateMachines()) {
+                        for (EntitySpec.Move mv : m.moves()) {
+                            if (DddStateRules.writesMove(e, mv.command())) done.add(mv.command());
+                        }
+                    }
+                }
+                for (String c : done) accessOf(c);
+            }
+            accessTests = tests.size() - before;
+        }
+
+        /** Whether the API serves an update of one row: PUT, not left out, and not a root with nothing to edit. */
+        private boolean updates() {
+            if (e.hasMeta("readonly")) return false;
+            if (ControllerBaseRules.exposeOmitted(e).contains("update")) return false;
+            if (ControllerBaseRules.restExcluded(e, true).contains("update")) return false;
+            return !(s.commands && DddCommandRules.nothingEditable(e));
+        }
+
+        private boolean deletes() {
+            if (e.hasMeta("readonly")) return false;
+            if (ControllerBaseRules.exposeOmitted(e).contains("deleteById")) return false;
+            return !ControllerBaseRules.restExcluded(e, true).contains("deleteById");
+        }
+
+        /**
+         * How a row of a given owner is made: the caller's own row where the entity is
+         * the one they sign in as and @owner is its key (self); one the administrator
+         * makes with the owner set, where a request may send it (sent); one the owner
+         * makes, who owns what they create (claimed).
+         */
+        private void ownership() {
+            FieldSpec owner = ServiceAccessRules.ownerField(e);
+            if (owner == null) {
+                ownershipProblem = e.metaValue("owner") == null
+                        ? "it has no @owner"
+                        : "@owner(" + e.metaValue("owner").trim() + ") names no field the row holds";
+                return;
+            }
+            FieldSpec pk = e.pkFields().size() == 1 ? e.pkFields().get(0) : null;
+            boolean ownerIsKey = pk != null && pk.name().equals(owner.name());
+            // What create claims (ServiceAccessRules.accessCreate): a key the request chooses is the caller's id - a
+            // visitor, who has none, is refused (401); any other owner is set to it - a visitor's to none.
+            keyedByOwner = ownerIsKey && !ServiceAccessRules.keyGenerated(pk);
+            requiredClaim = !ownerIsKey && owner.required() ? owner.name() : null;
+            if (ownerIsKey && principal.spec != null && path(principal.spec).equals(path(e))) {
+                ownership = "self";
+                return;
+            }
+            if (ownerIsKey && ServiceAccessRules.keyGenerated(pk)) {
+                ownershipProblem = "@owner(" + owner.name() + ") is its generated key, which no caller's is";
+                return;
+            }
+            FieldSpec sent = field(dto, owner.name());
+            // The administrator - and the application itself, where no administrator signs in (sys) - keeps the owner
+            // a request names; anyone else owns what they create.
+            if (sent != null
+                    && !(ownerIsKey && ServiceAccessRules.keyGenerated(pk))
+                    && writable(e, sent)
+                    && !sent.hasDslAny("writeonly")
+                    && !io.elasticore.base.model.pub.rules.base.WriteGuardRules.serverSet(sent)) {
+                ownership = "sent";
+                ownerDto = sent;
+                return;
+            }
+            ownership = "claimed";
+        }
+
+        /** The level of an operation as the generated checks read it: its entry, else *, else admin. */
+        private AccessExpression level(String operation) {
+            String text = entries.containsKey(operation)
+                    ? entries.get(operation)
+                    : entries.containsKey("*") ? entries.get("*") : "admin";
+            return AccessExpression.parse(text);
+        }
+
+        /**
+         * What the generated code answers the caller, as AccessPolicy and the service
+         * call it: null when let in, else 401, 403 or 404. A read and a write of one row
+         * ask the level, then whether the row is the caller's (404 when it is not); the
+         * API reads the row before it deletes it, so a delete asks the read first.
+         */
+        String outcome(String op, Who w, boolean mine) {
+            if ("delete".equals(op)) {
+                String read = outcome("read", w, mine);
+                if (read != null) return read;
+            }
+            AccessExpression x = level("search".equals(op) ? "read" : op);
+            String refused = Policy.require(x, w);
+            // Keyed by its owner: a visitor has no identity to key the row by.
+            if ("create".equals(op) && refused == null && w.visitor && keyedByOwner) return "401";
+            if (refused != null || "create".equals(op) || "search".equals(op)) return refused;
+            return Policy.owns(x, w, mine);
+        }
+
+        /** The tests of one operation. */
+        private void accessOf(String op) {
+            boolean search = "search".equals(op);
+            boolean create = "create".equals(op);
+            String levelOp = search ? "read" : op;
+            AccessExpression x = level(levelOp);
+            String said = (search ? "search, read=" : op + "=")
+                    + x.text()
+                    + (entries.containsKey(levelOp) ? "" : entries.containsKey("*") ? " (from *)" : " (the default)");
+            String where = e.getName() + " " + said;
+            boolean ownerWord =
+                    x.mentions("owner") || ("delete".equals(op) && level("read").mentions("owner"));
+            if (!create && ownerWord && ownership == null) {
+                accessSkip(where + ": owner is a word of it, and " + ownershipProblem + " - so no row of a caller's"
+                        + " own is made");
+                return;
+            }
+            String steps = null;
+            if ("delete".equals(op) || (!create && !search && !"read".equals(op) && !"update".equals(op))) {
+                steps = stepsTo(op);
+            }
+            String body = null;
+            if (!create && !search && !"read".equals(op) && !"update".equals(op) && !"delete".equals(op)) {
+                body = commandBody(op);
+                if (body == null) {
+                    accessSkip(where + ": no value can be built for a parameter the command requires");
+                    return;
+                }
+            }
+            Set<String> seen = new java.util.HashSet<String>();
+            // A caller each term lets in.
+            for (List<String> term : x.terms()) {
+                if (term.contains("none")) continue;
+                Who w = callers.forTerm(term);
+                if (w == null) {
+                    accessSkip(where + ": " + callers.problem);
+                    continue;
+                }
+                if (create && w.visitor && keyedByOwner) {
+                    accessSkip(where + ": a visitor is let in by it, and refused (401) - @owner is the key the request"
+                            + " chooses, and a visitor has no identity to key the row by");
+                    continue;
+                }
+                if (create && w.visitor && requiredClaim != null) {
+                    accessSkip(where + ": a visitor's create clears @owner(" + requiredClaim + "), which is required"
+                            + " (!), so the row cannot be saved");
+                    continue;
+                }
+                boolean mine = term.contains("owner") && !create;
+                // A row not theirs first; theirs where the read before a delete would refuse another's.
+                if (!create && !mine && outcome(op, w, false) != null && canOwn(w)) mine = true;
+                if (outcome(op, w, mine) != null) {
+                    accessSkip(where + ": " + w.label + " is let in by it, and refused "
+                            + ("delete".equals(op)
+                                    ? "by read=" + level("read").text() + " first - the API reads the row before it"
+                                            + " deletes it"
+                                    : "on a row not theirs"));
+                    continue;
+                }
+                if (!seen.add("in:" + w.key() + mine)) continue;
+                if (steps == null && needsState(op)) {
+                    accessSkip(where + ": no sequence of commands brings a new row to a state it is given in");
+                    continue;
+                }
+                caseOf(op, said, w, mine, false, null, steps, body);
+            }
+            // A visitor, where the entry does not let one in.
+            Who visitor = callers.visitor();
+            String refusal = outcome(op, visitor, false);
+            if (refusal != null) caseOf(op, said, visitor, false, false, refusal, steps, body);
+            // A caller of a role no term lets in - on a row of theirs, where owner is a word: the role decides.
+            for (Who w : callers.candidates()) {
+                boolean byRole = Policy.require(x, w) != null
+                        || ("delete".equals(op) && Policy.require(level("read"), w) != null);
+                if (!byRole) continue;
+                boolean mine = !create && ownerWord && canOwn(w);
+                String r = outcome(op, w, mine);
+                if (r != null && seen.add("role:" + w.key())) caseOf(op, said, w, mine, false, r, steps, body);
+                break;
+            }
+            // Where owner is a word: a caller each owner term lets in, on another's row.
+            if (create || !x.mentions("owner")) return;
+            for (List<String> term : x.terms()) {
+                if (!term.contains("owner") || term.contains("none")) continue;
+                Who w = callers.forTerm(term);
+                if (w == null || !seen.add("other:" + w.key())) continue;
+                if (search) {
+                    if (Policy.require(x, w) != null || Policy.seesAll(x, w)) continue;
+                    caseOf(op, said, w, false, true, null, steps, body);
+                    continue;
+                }
+                String r = outcome(op, w, false);
+                if (r != null) caseOf(op, said, w, false, true, r, steps, body);
+            }
+        }
+
+        /** Whether the operation is a move of a lifecycle, or a delete a lifecycle guards: a new row may not be where it is given. */
+        private boolean needsState(String op) {
+            if ("delete".equals(op)) return s.lifecycles && DddStateRules.guardsDelete(e);
+            if (!s.lifecycles) return false;
+            for (EntitySpec.StateMachine m : e.machinesOf(op)) {
+                if (e.lifecycleProblem(m) == null) return true;
+            }
+            return false;
+        }
+
+        /**
+         * The commands that bring a new row to where the operation is given - a state
+         * each guarding lifecycle deletes from, or one the command moves from - as
+         * given(...) lines; "" when a new row is there already, null when none does.
+         */
+        private String stepsTo(String op) {
+            if (!needsState(op)) return "";
+            List<EntitySpec.StateMachine> machines = new ArrayList<EntitySpec.StateMachine>();
+            for (EntitySpec.StateMachine m : e.stateMachines()) {
+                if (e.lifecycleProblem(m) == null) machines.add(m);
+            }
+            Map<String, String> bodies = new LinkedHashMap<String, String>();
+            for (EntitySpec.StateMachine m : machines) {
+                for (EntitySpec.Move mv : m.moves()) {
+                    String c = mv.command();
+                    if (bodies.containsKey(c) || !DddStateRules.writesMove(e, c)) continue;
+                    String b = commandBody(c);
+                    if (b != null) bodies.put(c, b);
+                }
+            }
+            Graph graph = new Graph(machines, bodies.keySet());
+            if (graph.start == null) return null;
+            for (Map.Entry<String, List<String>> en : graph.paths.entrySet()) {
+                String[] tuple = graph.tupleOf(en.getKey());
+                boolean there = true;
+                for (int i = 0; i < machines.size(); i++) {
+                    EntitySpec.StateMachine m = machines.get(i);
+                    if ("delete".equals(op)) {
+                        if (m.deletable() != null
+                                && (tuple[i] == null || !m.deletable().contains(tuple[i]))) there = false;
+                    }
+                }
+                if (!"delete".equals(op) && graph.refusal(op, tuple) != null) there = false;
+                if (!there) continue;
+                StringBuilder lines = new StringBuilder();
+                List<String> at = en.getValue();
+                for (int i = 1; i < at.size(); i++) {
+                    String c = at.get(i).substring(0, at.get(i).indexOf('@'));
+                    if (lines.length() > 0) lines.append('\n');
+                    lines.append(lang.stmt("given("
+                            + sys("command(" + constant(e) + ", id, " + lang.string(DddCommandRules.kebab(c)) + ", "
+                                    + bodies.get(c) + ")")
+                            + ")"));
+                }
+                return lines.toString();
+            }
+            return null;
+        }
+
+        /**
+         * One test: the caller signed in, the row made - theirs, another's, or one the
+         * administrator made - the steps to the state the operation is given in, and the
+         * request: let in (refusal null) or refused with that status and code.
+         */
+        private void caseOf(
+                String op,
+                String said,
+                Who w,
+                boolean mine,
+                boolean anothers,
+                String refusal,
+                String steps,
+                String body) {
+            boolean search = "search".equals(op);
+            boolean create = "create".equals(op);
+            String path = constant(e);
+            String key = e.pkFields().size() == 1 ? json(e.pkFields().get(0)) : null;
+            boolean hidden = search && anothers && refusal == null;
+            String on = create || search ? "" : mine ? " on a row of theirs" : anothers ? " on another's row" : "";
+            String display;
+            String method;
+            if (hidden) {
+                display = said + ": " + w.label + " does not find another's row";
+                method = op + "HidesAnothersRowFrom" + w.method;
+            } else if (refusal == null) {
+                display = said + ": " + w.label
+                        + (search ? (mine ? " finds a row of theirs" : " finds the row") : " is let in" + on);
+                method = op + "LetsIn" + w.method + (mine ? "OnTheirRow" : "");
+            } else {
+                display =
+                        said + ": " + w.label + " is refused" + on + " (" + refusal + " " + Policy.code(refusal) + ")";
+                method = op + "Refuses" + w.method + (mine ? "OnTheirRow" : anothers ? "OnAnothersRow" : "");
+            }
+            if (search && refusal == null && searchKey() == null) {
+                // Not narrowed to the test's row, a search could leave it out by its page alone.
+                accessSkip(e.getName() + " " + said + ": its search takes no " + key + ", so no search is narrowed to"
+                        + " the test's row");
+                return;
+            }
+            List<String> lines = new ArrayList<String>();
+            String caller = w.visitor ? "null" : "caller";
+            String id = null;
+            if (!create) {
+                if (anothers) {
+                    Who someone = callers.plain();
+                    if (someone == null) {
+                        accessSkip(e.getName() + " " + said + ": no caller of another role can be signed in to own"
+                                + " the row");
+                        return;
+                    }
+                    lines.add(lang.caller("owner", "signIn(" + roleArg(someone) + ")"));
+                    if (!row(lines, "owner", someone, e.getName() + " " + said)) return;
+                } else if (mine) {
+                    lines.add(lang.caller("caller", "signIn(" + roleArg(w) + ")"));
+                    if (!row(lines, "caller", w, e.getName() + " " + said)) return;
+                } else {
+                    if (!row(lines, null, null, e.getName() + " " + said)) return;
+                }
+                id = "id";
+                if (refusal == null && steps != null && !steps.isEmpty()) {
+                    for (String step : steps.split("\n", -1)) lines.add(step);
+                }
+            }
+            if (!w.visitor && !mine) lines.add(lang.caller("caller", "signIn(" + roleArg(w) + ")"));
+            String request;
+            switch (create ? "create" : search ? "search" : op) {
+                case "create":
+                    request = "creating(" + path + ", " + newRow() + ")";
+                    break;
+                case "search":
+                    request = "searching(" + path + ", " + searchBody(id) + ")";
+                    break;
+                case "read":
+                    request = "reading(" + path + ", id)";
+                    break;
+                case "update":
+                    request = "updating(" + path + ", obj(" + lang.string(key) + ", id))";
+                    break;
+                case "delete":
+                    request = "deleting(" + path + ", id)";
+                    break;
+                default:
+                    request = "commanding(" + path + ", id, " + lang.string(DddCommandRules.kebab(op)) + ", " + body
+                            + ")";
+            }
+            String sent = "sentBy(" + caller + ", " + request + ")";
+            if (refusal != null) {
+                lines.add(lang.stmt(
+                        "assertDenied(" + sent + ", " + refusal + ", " + lang.string(Policy.code(refusal)) + ")"));
+            } else if (search) {
+                lines.add(lang.stmt(
+                        (anothers ? "assertMisses(" : "assertFinds(") + sent + ", " + lang.string(key) + ", id)"));
+            } else {
+                lines.add(lang.stmt("assertAllowed(" + sent + ")"));
+            }
+            // Named only once it is written: a case left out takes no name a later one would then not get.
+            Test t = new Test(method(method), display);
+            t.access = true;
+            t.lines.addAll(lines);
+            tests.add(t);
+        }
+
+        /** Whether a row of this caller's can be made: as ownership says, the owner making it where the server sets @owner. */
+        private boolean canOwn(Who w) {
+            if (ownership == null || w.visitor) return false;
+            return !"claimed".equals(ownership) || outcome("create", w, false) == null;
+        }
+
+        /** signIn's argument for the caller: the role as the principal's field takes it, or null. */
+        private String roleArg(Who w) {
+            return w.json == null ? "null" : lang.string(w.json);
+        }
+
+        /**
+         * A row a case needs, made as signIn() makes rows - the administrator - or,
+         * where no administrator signs in (the principal has no role to be one by), as
+         * the application itself: asTheSystem(...), which passes every check and keeps
+         * the owner a request names.
+         */
+        private String sys(String expression) {
+            if (!systemRows) return expression;
+            return lang.kotlin ? "asTheSystem { " + expression + " }" : "asTheSystem(() -> " + expression + ")";
+        }
+
+        /**
+         * The line that makes the row a test checks, its key in id: of the caller named
+         * (as ownership says), or - for none - one the administrator makes. False, with
+         * why counted, when it cannot be made.
+         */
+        private boolean row(List<String> lines, String ownerVar, Who ownerWho, String where) {
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            if (ownerVar == null) {
+                lines.add(lang.val("id", sys("createdId(" + path + ", " + newRow() + ", " + key + ")")));
+                return true;
+            }
+            if ("self".equals(ownership)) {
+                lines.add(lang.val("id", ownerVar + ".id"));
+                return true;
+            }
+            if ("sent".equals(ownership)) {
+                lines.add(lang.val(
+                        "id",
+                        sys("createdId(" + path + ", withValue(" + newRow() + ", " + lang.string(json(ownerDto)) + ", "
+                                + ownerVar + ".id), " + key + ")")));
+                return true;
+            }
+            if ("claimed".equals(ownership) && outcome("create", ownerWho, false) == null) {
+                // The rows it needs first made as the rows of every case are; the row itself by its owner.
+                lines.add(lang.val(
+                        "id", "createdIdBy(" + ownerVar + ", " + path + ", " + sys(newRow()) + ", " + key + ")"));
+                return true;
+            }
+            accessSkip(where + ": " + ownerWho.label + " cannot be made the owner of a row - the server sets @owner,"
+                    + " and create=" + level("create").text() + " does not let them make one");
+            return false;
+        }
+
+        /** The search's field of the key, as the request names it; null when the search takes none. */
+        private String searchKey() {
+            if (e.pkFields().size() != 1) return null;
+            EntitySpec srch = searchDto(e);
+            FieldSpec f = srch == null ? null : field(srch, e.pkFields().get(0).name());
+            return f == null || f.isList() ? null : json(f);
+        }
+
+        /** A search narrowed to the row of key id, where the search takes the key; any row otherwise. */
+        private String searchBody(String id) {
+            String k = searchKey();
+            return k == null || id == null ? "obj()" : "obj(" + lang.string(k) + ", " + id + ")";
+        }
+
         // ---- the class
 
-        String render(String pkg, String support) {
+        String render(String pkg, String support, boolean withAccess) {
+            List<Test> tests = new ArrayList<Test>();
+            for (Test t : this.tests) {
+                if (withAccess || !t.access) tests.add(t);
+            }
             StringBuilder s = new StringBuilder();
             s.append(OWNED).append('\n');
             s.append("package ").append(pkg).append(lang.kotlin ? "\n\n" : ";\n\n");
@@ -1639,8 +2305,12 @@ final class ContractTestSource {
                     .append(" * move of its lifecycles, and the constraints of what a request writes - by\n")
                     .append(" * status and code, never by message. Every request goes through ")
                     .append(support)
-                    .append(".\n")
-                    .append(" *\n")
+                    .append(".\n");
+            if (withAccess && accessTests > 0) {
+                s.append(" * Who @access lets in is checked too: for each operation, a caller each of its\n")
+                        .append(" * terms lets in, and those it refuses - each signed in for the test.\n");
+            }
+            s.append(" *\n")
                     .append(" * Written once, then merged when the DSL changes: yours from here. Change a test\n")
                     .append(" * where you changed a rule on purpose.\n")
                     .append(" */\n");
@@ -1853,6 +2523,11 @@ final class ContractTestSource {
         }
     }
 
+    /** The article of a role's name, read letter by letter: an ADMIN, an EDITOR, a USER, a MANAGER. */
+    static String roleArticle(String role) {
+        return role != null && !role.isEmpty() && "AEIOaeio".indexOf(role.charAt(0)) >= 0 ? "an " : "a ";
+    }
+
     /** "an " before a vowel, "a " before anything else. */
     static String article(String noun) {
         return noun != null && !noun.isEmpty() && "AEIOUaeiou".indexOf(noun.charAt(0)) >= 0 ? "an " : "a ";
@@ -2032,6 +2707,257 @@ final class ContractTestSource {
         String role;
         String roleValue;
         String entity;
+        /** The JSON name of its key: what signIn(role) reads back as the caller's id. */
+        String key;
+        /** The role field, and the spec its enum - if it is one - is known to; null without a role. */
+        FieldSpec roleField;
+
+        EntitySpec roleOwner;
+        /** The administrator's role as the session holds it (adminRole, ADMIN by default). */
+        String admin;
+        /** The entity a caller signs in as, and the model it is of: a row of it is the caller's own. */
+        EntitySpec spec;
+    }
+
+    // ---- the callers of the @access tests ------------------------------------------------
+
+    /** An entry of @access as ServiceAccessRules reads it: operation=level, quotes aside. */
+    private static final java.util.regex.Pattern ACCESS_ENTRY =
+            java.util.regex.Pattern.compile("^\\s*([\\w*]+)\\s*=\\s*(\\S.*?)\\s*$");
+
+    /** Whom a test of @access sends a request as. */
+    static final class Who {
+        /** "a visitor", "the administrator", "a MANAGER". */
+        final String label;
+        /** The same in a method name: AVisitor, TheAdministrator, AManager. */
+        final String method;
+        /** The role as the session holds it - and @access names it; null for none. */
+        final String role;
+        /** The role as signIn(role) sends it (an enum's JSON value); null to set none. */
+        final String json;
+
+        final boolean visitor;
+        final boolean admin;
+
+        Who(String label, String role, String json, boolean visitor, boolean admin) {
+            this.label = label;
+            this.method = camel(label.replace("'", ""));
+            this.role = role;
+            this.json = json;
+            this.visitor = visitor;
+            this.admin = admin;
+        }
+
+        String key() {
+            return visitor ? "-" : admin ? "*" : String.valueOf(role);
+        }
+    }
+
+    /**
+     * What the generated checks answer a caller - AccessPolicy's reading, as the
+     * service calls it: require the level, then (one row) whether it is the
+     * caller's. The administrator passes every term without none.
+     */
+    static final class Policy {
+        private Policy() {}
+
+        /** null when the caller may do it at all; 401 for a visitor signing in would help, else 403. */
+        static String require(AccessExpression x, Who w) {
+            boolean signingInHelps = false;
+            for (List<String> all : x.terms()) {
+                if (mayHold(all, w, w.admin)) return null;
+                if (!all.contains("none")) signingInHelps = true;
+            }
+            return w.visitor && signingInHelps ? "401" : "403";
+        }
+
+        /** Whether every word of the term may hold - owner taken as signed in. */
+        static boolean mayHold(List<String> all, Who w, boolean admin) {
+            for (String word : all) {
+                if ("none".equals(word)) return false;
+                if (admin || "public".equals(word)) continue;
+                if (w.visitor) return false;
+                if ("admin".equals(word)) return false;
+                if (!AccessExpression.LEVELS.contains(word) && !word.equals(w.role)) return false;
+            }
+            return true;
+        }
+
+        /** null when the row may be the caller's to do it to - theirs (mine), or a term without owner holds; else 404. */
+        static String owns(AccessExpression x, Who w, boolean mine) {
+            if (!x.mentions("owner") || w.admin) return null;
+            for (List<String> all : x.terms()) {
+                if (mayHold(all, w, false) && (mine || !all.contains("owner"))) return null;
+            }
+            return "404";
+        }
+
+        /** Whether the caller's search is not narrowed to their own rows. */
+        static boolean seesAll(AccessExpression x, Who w) {
+            if (w.admin) return true;
+            for (List<String> all : x.terms()) {
+                if (!all.contains("owner") && mayHold(all, w, false)) return true;
+            }
+            return false;
+        }
+
+        /** The problem's code the generated error handler answers with that status. */
+        static String code(String status) {
+            if ("401".equals(status)) return "not-signed-in";
+            if ("403".equals(status)) return "forbidden";
+            return "not-found";
+        }
+    }
+
+    /**
+     * The callers a principal can be signed in as: a visitor, the administrator, one
+     * of a role - each role as the session holds it and as signIn(role) sends it -
+     * and a plain one, of a role no entry names. Null, with problem said, for one
+     * that cannot be made.
+     */
+    static final class Callers {
+        private final Principal p;
+        private final List<String> named = new ArrayList<String>();
+        private final List<String> constants;
+        String problem;
+        private Who plain;
+        private boolean plainAsked;
+
+        Callers(Principal p, java.util.Collection<String> levels) {
+            this.p = p;
+            for (String level : levels) {
+                AccessExpression x = AccessExpression.parse(level);
+                if (x == null) continue;
+                for (String r : x.roles()) {
+                    if (!named.contains(r)) named.add(r);
+                }
+            }
+            String type = p.roleField == null ? null : simple(p.roleField.typeName());
+            constants = type != null && p.roleOwner.isKnownEnum(type) ? p.roleOwner.enumConstantNamesOf(type) : null;
+        }
+
+        Who visitor() {
+            return new Who("a visitor", null, null, true, false);
+        }
+
+        /** The value of the role field that holds the role; null, with problem said, where it cannot. */
+        private String value(String role) {
+            if (p.roleField == null) {
+                problem = p.entity + " has no role field (@role, @access(admin)) to sign in " + roleArticle(role) + role
+                        + " with";
+                return null;
+            }
+            String type = simple(p.roleField.typeName());
+            if (constants != null) {
+                if (!constants.contains(role)) {
+                    problem = role + " is not a constant of " + type + ", " + p.entity + "." + p.roleField.name()
+                            + "'s type";
+                    return null;
+                }
+                return enumValue(p.roleOwner, type, role);
+            }
+            int max = p.roleField.validationMaxLength();
+            if (max < 0) max = p.roleField.rawLength();
+            String regexp = regex(p.roleField);
+            if ((max > 0 && role.length() > max)
+                    || role.length() < Math.max(0, p.roleField.minLength())
+                    || (regexp != null && !role.matches(regexp))) {
+                problem = p.entity + "." + p.roleField.name() + " cannot hold " + role;
+                return null;
+            }
+            return role;
+        }
+
+        Who admin() {
+            String v = value(p.admin);
+            return v == null ? null : new Who("the administrator", p.admin, v, false, true);
+        }
+
+        /** Whether signIn() signs in the administrator: the principal has a role field that holds the administrator's role. */
+        boolean adminSignsIn() {
+            String before = problem;
+            boolean admin = p.roleValue != null && value(p.admin) != null;
+            problem = before;
+            return admin;
+        }
+
+        Who role(String role) {
+            String v = value(role);
+            return v == null ? null : new Who(roleArticle(role) + role, role, v, false, role.equals(p.admin));
+        }
+
+        /** One signed in of a role no entry names: the first such constant, else USER, GUEST, MEMBER; no role without a field. */
+        Who plain() {
+            if (plainAsked) return plain;
+            plainAsked = true;
+            if (p.roleField == null) {
+                plain = new Who("a signed-in caller", null, null, false, false);
+                return plain;
+            }
+            List<String> tried = constants != null ? constants : java.util.Arrays.asList("USER", "GUEST", "MEMBER");
+            for (String c : tried) {
+                if (c.equals(p.admin) || named.contains(c)) continue;
+                String before = problem;
+                Who w = role(c);
+                problem = before;
+                if (w != null) {
+                    plain = w;
+                    return plain;
+                }
+            }
+            return null;
+        }
+
+        /** The caller each term lets in: the administrator, one of its role, a plain one, a visitor for public alone. */
+        Who forTerm(List<String> term) {
+            List<String> roles = new ArrayList<String>();
+            boolean admin = false;
+            boolean signedIn = false;
+            for (String word : term) {
+                if ("admin".equals(word)) admin = true;
+                else if ("user".equals(word) || "owner".equals(word)) signedIn = true;
+                else if (!"public".equals(word) && !"none".equals(word) && !roles.contains(word)) roles.add(word);
+            }
+            if (admin) return admin();
+            if (roles.size() > 1) {
+                problem = String.join("&", term) + " asks for " + String.join(" and ", roles)
+                        + ", and a session holds one role";
+                return null;
+            }
+            if (roles.size() == 1) return role(roles.get(0));
+            if (signedIn) {
+                Who w = plain();
+                if (w == null)
+                    problem = "every role of " + p.entity + " is named or the administrator's, so no caller"
+                            + " of another is signed in";
+                return w;
+            }
+            return visitor();
+        }
+
+        /** The callers of a role that may be refused, in order: the plain one, then each other role the field takes. */
+        List<Who> candidates() {
+            List<Who> out = new ArrayList<Who>();
+            Who first = plain();
+            if (first != null) out.add(first);
+            List<String> more = constants != null ? constants : named;
+            for (String c : more) {
+                if (c.equals(p.admin) || (first != null && c.equals(first.role))) continue;
+                String before = problem;
+                Who w = role(c);
+                problem = before;
+                if (w != null) out.add(w);
+            }
+            return out;
+        }
+    }
+
+    /** The search DTO the entity's API reads: its fields as a search sends them; null when there is none. */
+    private EntitySpec searchDto(EntitySpec e) {
+        ECoreModel m = modelOf.get(e);
+        if (m == null || m.getDataTransferModels() == null || e.searchDtoClassName() == null) return null;
+        io.elasticore.base.model.dto.DataTransfer d = m.getDataTransferModels().findByName(e.searchDtoClassName());
+        return d == null ? null : SpecFactory.fromDto(d, m, m.getInternalDomainName());
     }
 
     /**
@@ -2071,12 +2997,17 @@ final class ContractTestSource {
                 FieldSpec role = ServiceAccessRules.roleField(p);
                 String admin = p.config("adminRole");
                 if (admin == null || admin.trim().isEmpty()) admin = "ADMIN";
+                out.admin = admin.trim();
+                out.spec = p;
+                out.key = json(p.pkFields().get(0));
                 if (role != null) {
                     out.role = json(role);
                     String type = simple(role.typeName());
                     EntitySpec pdto = dto(p);
                     EntitySpec owner = pdto != null && pdto.isKnownEnum(type) ? pdto : p;
                     out.roleValue = owner.isKnownEnum(type) ? enumValue(owner, type, admin.trim()) : admin.trim();
+                    out.roleField = role;
+                    out.roleOwner = owner;
                 }
                 EntityTests plan = new EntityTests(p, lang, new Settings());
                 plan.dto = dto(p);
@@ -2121,7 +3052,14 @@ final class ContractTestSource {
     static final String OWNED = "// Initially generated by ElastiCORE; no longer managed - do not remove this line.";
 
     private String supportClass(
-            String pkg, String name, String domainName, Settings s, Lang lang, boolean guarded, Principal principal) {
+            String pkg,
+            String name,
+            String domainName,
+            Settings s,
+            Lang lang,
+            boolean guarded,
+            Principal principal,
+            Access access) {
         String mockMvc = s.boot4
                 ? "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc"
                 : "org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc";
@@ -2129,16 +3067,23 @@ final class ContractTestSource {
         boolean tx = !s.mongo;
         String why = system ? principalProblem : null;
         return lang.kotlin
-                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why)
-                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why);
+                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access)
+                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access);
     }
 
     /**
      * The support class's comment. Without a sign-in it says why: the run has
      * no @signin, or its principal cannot be built - with the summary's reason.
+     * With tests of @access, how they sign in, and what of it is not tested.
      */
     private static String doc(
-            String domainName, Settings s, boolean guarded, boolean system, Principal principal, String why) {
+            String domainName,
+            Settings s,
+            boolean guarded,
+            boolean system,
+            Principal principal,
+            String why,
+            Access access) {
         StringBuilder d = new StringBuilder();
         d.append("/**\n")
                 .append(" * What every contract test of the ")
@@ -2162,6 +3107,17 @@ final class ContractTestSource {
         else
             d.append(": as an administrator, through the\n * generated sign-in of " + principal.entity
                     + ", made for the test as the application itself.\n");
+        if (access.callers) {
+            d.append(" * The tests of @access sign in callers of their own the same way - signIn(role),\n")
+                    .append(" * a principal of a role - and send their requests as them (sentBy).\n");
+        } else if (access.declared && principal == null) {
+            d.append(" * No test of @access is written: each needs callers signed in through it.\n");
+        }
+        if (!access.skipped.isEmpty()) {
+            d.append(" * Not tested of @access, as the build's summary says:\n");
+            for (String reason : access.skipped)
+                d.append(" *   - ").append(comment(reason)).append('\n');
+        }
         d.append(" *\n")
                 .append(" * Every test class extends this one, so all of them start the same application and\n")
                 .append(" * Spring keeps one context for the suite");
@@ -2252,7 +3208,8 @@ final class ContractTestSource {
             boolean system,
             Principal principal,
             boolean tx,
-            String why) {
+            String why,
+            Access access) {
         Lang lang = new Lang(false);
         StringBuilder j = new StringBuilder();
         j.append(OWNED).append('\n').append("package ").append(pkg).append(";\n\n");
@@ -2287,7 +3244,7 @@ final class ContractTestSource {
                 .append("import java.util.Map;\n")
                 .append("import java.util.concurrent.ThreadLocalRandom;\n")
                 .append("import java.util.concurrent.atomic.AtomicLong;\n\n");
-        j.append(doc(domainName, s, guarded, system, principal, why));
+        j.append(doc(domainName, s, guarded, system, principal, why, access));
         j.append(springBootTest(s, lang));
         j.append("@AutoConfigureMockMvc\n");
         if (tx) j.append("@Transactional\n");
@@ -2419,10 +3376,214 @@ final class ContractTestSource {
                     .append("        return result;\n")
                     .append("    }\n\n");
         }
+        if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
         j.append(JAVA_HELPERS);
         j.append("}\n");
         return j.toString();
     }
+
+    /**
+     * What the tests of @access send their requests with (Java): a principal of a
+     * role signed in as signIn() signs in the administrator, the request as it or
+     * as a visitor, and the checks of what @access answers.
+     */
+    private static String javaCallers(Principal p, Lang lang, boolean system) {
+        StringBuilder j = new StringBuilder();
+        j.append("    // ---- the callers of the @access tests\n\n")
+                .append(
+                        "    /** Whom a test of @access sends a request as: a principal signIn(role) made, and the session it opened. */\n")
+                .append("    protected static final class Caller {\n")
+                .append("        /** The principal's key: what the @owner of a row of theirs holds. */\n")
+                .append("        public final Object id;\n")
+                .append("        public final MockHttpSession session;\n\n")
+                .append("        public Caller(Object id, MockHttpSession session) {\n")
+                .append("            this.id = id;\n")
+                .append("            this.session = session;\n")
+                .append("        }\n")
+                .append("    }\n\n")
+                .append("    /**\n")
+                .append("     * Signs in a principal of its own for a test of @access: ")
+                .append(article(p.entity))
+                .append(p.entity)
+                .append(" made as the\n")
+                .append("     * application itself (CurrentUser.runAsSystem) with this role")
+                .append(p.role == null ? " - it has none to set -" : ", as its " + p.role + " sends it,")
+                .append("\n")
+                .append("     * and signed in through the generated sign-in, as signIn() signs in the administrator.\n")
+                .append("     * Sign in your way here if the application does.\n")
+                .append("     */\n")
+                .append("    protected Caller signIn(String role) throws Exception {\n")
+                .append("        Map<String, Object> principal = ")
+                .append(p.body)
+                .append(";\n");
+        if (p.role != null) {
+            j.append("        if (role != null) principal.put(")
+                    .append(lang.string(p.role))
+                    .append(", role);\n");
+        }
+        j.append("        MvcResult made = asSystem(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(")\n")
+                .append("                .contentType(MediaType.APPLICATION_JSON).content(json(principal)));\n")
+                .append(
+                        "        Assertions.assertTrue(ok(made), () -> \"the principal to sign in as was not made: \" + answer(made));\n")
+                .append("        MvcResult in = mvc.perform(request(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(" + \"/signin\")\n")
+                .append("                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                .append("                .content(json(obj(")
+                .append(lang.string(p.login))
+                .append(", principal.get(")
+                .append(lang.string(p.login))
+                .append("), ")
+                .append(lang.string(p.password))
+                .append(", principal.get(")
+                .append(lang.string(p.password))
+                .append(")))))).andReturn();\n")
+                .append(
+                        "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the principal: \" + answer(in));\n")
+                .append("        return new Caller(value(made, ")
+                .append(lang.string(p.key))
+                .append("), (MockHttpSession) in.getRequest().getSession(false));\n")
+                .append("    }\n\n");
+        j.append(JAVA_CALLER_HELPERS);
+        if (system) j.append(JAVA_SYSTEM_ROWS);
+        return j.toString();
+    }
+
+    /** The requests and checks of the @access tests (Java). */
+    private static final String JAVA_CALLER_HELPERS = ""
+            + "    /** The request as this caller - or as a visitor, for null: with what request(...) adds, and no other session. */\n"
+            + "    protected MvcResult sentBy(Caller caller, MockHttpServletRequestBuilder builder) throws Exception {\n"
+            + "        builder.accept(MediaType.APPLICATION_JSON);\n"
+            + "        if (caller != null && caller.session != null) builder.session(caller.session);\n"
+            + "        return mvc.perform(request(builder)).andReturn();\n"
+            + "    }\n"
+            + "\n"
+            + "    protected MockHttpServletRequestBuilder reading(String path, Object id) {\n"
+            + "        return MockMvcRequestBuilders.get(path + \"/\" + id);\n"
+            + "    }\n"
+            + "\n"
+            + "    protected MockHttpServletRequestBuilder searching(String path, Object body) {\n"
+            + "        return MockMvcRequestBuilders.post(path + \"/search\").contentType(MediaType.APPLICATION_JSON).content(json(body));\n"
+            + "    }\n"
+            + "\n"
+            + "    protected MockHttpServletRequestBuilder creating(String path, Object body) {\n"
+            + "        return MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** An update of the row by its key alone: nothing changes, and who may change it is asked all the same. */\n"
+            + "    protected MockHttpServletRequestBuilder updating(String path, Object body) {\n"
+            + "        return MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body));\n"
+            + "    }\n"
+            + "\n"
+            + "    protected MockHttpServletRequestBuilder deleting(String path, Object id) {\n"
+            + "        return MockMvcRequestBuilders.delete(path + \"/\" + id);\n"
+            + "    }\n"
+            + "\n"
+            + "    protected MockHttpServletRequestBuilder commanding(String path, Object id, String command, Object body) {\n"
+            + "        MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.post(path + \"/\" + id + \"/\" + command);\n"
+            + "        if (body != null) builder.contentType(MediaType.APPLICATION_JSON).content(json(body));\n"
+            + "        return builder;\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A row this caller makes, and its key: let in (assertAllowed says how it fails or is aborted). */\n"
+            + "    protected Object createdIdBy(Caller caller, String path, Object body, String key) throws Exception {\n"
+            + "        MvcResult made = sentBy(caller, creating(path, body));\n"
+            + "        assertAllowed(made);\n"
+            + "        Object id = value(made, key);\n"
+            + "        Assertions.assertNotNull(id, () -> \"POST \" + path + \" answered no \" + key + \": \" + answer(made));\n"
+            + "        return id;\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * Let in: 2xx. Refused as @access refuses - 401, 403, or 404 not-found for a row the caller\n"
+            + "     * may not see - or failed (5xx), the test fails; refused by another rule of the\n"
+            + "     * application's own (a reference to a row it needs, say), it is aborted with the reason, as\n"
+            + "     * succeeded says.\n"
+            + "     */\n"
+            + "    protected void assertAllowed(MvcResult result) throws Exception {\n"
+            + "        int status = result.getResponse().getStatus();\n"
+            + "        String code = code(result);\n"
+            + "        if (status == 401 || status == 403 || (status == 404 && (code == null || \"not-found\".equals(code)))) {\n"
+            + "            Assertions.fail(\"let in by @access, and refused: \" + answer(result));\n"
+            + "        }\n"
+            + "        succeeded(result, \"the request\");\n"
+            + "    }\n"
+            + "\n"
+            + "    /** Refused by @access: this status, and this problem code where the answer carries one. */\n"
+            + "    protected void assertDenied(MvcResult result, int status, String code) throws Exception {\n"
+            + "        Assertions.assertEquals(status, result.getResponse().getStatus(), () -> \"expected \" + status + \" \" + code + \": \" + answer(result));\n"
+            + "        String sent = code(result);\n"
+            + "        if (sent != null) Assertions.assertEquals(code, sent, () -> answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let the caller in, and its answer holds the row of this key. */\n"
+            + "    protected void assertFinds(MvcResult result, String key, Object id) throws Exception {\n"
+            + "        assertAllowed(result);\n"
+            + "        Assertions.assertTrue(keysOf(result, key).contains(String.valueOf(id)), () -> \"the search does not hold \" + key + \" \" + id + \": \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let the caller in, and its answer does not hold the row of this key. */\n"
+            + "    protected void assertMisses(MvcResult result, String key, Object id) throws Exception {\n"
+            + "        assertAllowed(result);\n"
+            + "        Assertions.assertFalse(keysOf(result, key).contains(String.valueOf(id)), () -> \"the search holds \" + key + \" \" + id + \": \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The keys of the rows a search answered: those of its page, or of the list it is. */\n"
+            + "    protected List<String> keysOf(MvcResult result, String key) {\n"
+            + "        Object rows;\n"
+            + "        try {\n"
+            + "            rows = JsonPath.read(body(result), \"$.content\");\n"
+            + "        } catch (RuntimeException notAPage) {\n"
+            + "            rows = null;\n"
+            + "        }\n"
+            + "        if (!(rows instanceof List)) {\n"
+            + "            try {\n"
+            + "                rows = JsonPath.read(body(result), \"$\");\n"
+            + "            } catch (RuntimeException notAList) {\n"
+            + "                rows = null;\n"
+            + "            }\n"
+            + "        }\n"
+            + "        List<String> keys = new ArrayList<>();\n"
+            + "        if (rows instanceof List) {\n"
+            + "            for (Object row : (List<?>) rows) {\n"
+            + "                if (row instanceof Map) keys.add(String.valueOf(((Map<?, ?>) row).get(key)));\n"
+            + "            }\n"
+            + "        }\n"
+            + "        return keys;\n"
+            + "    }\n"
+            + "\n";
+
+    /** Where no administrator signs in: the rows of the @access tests made as the application itself (Java). */
+    private static final String JAVA_SYSTEM_ROWS = ""
+            + "    /**\n"
+            + "     * Work as the application itself (CurrentUser.runAsSystem): the rows of a test of @access, where\n"
+            + "     * signIn() signs in no administrator to make them - every check passes, the owner sent is kept.\n"
+            + "     */\n"
+            + "    protected <T> T asTheSystem(java.util.concurrent.Callable<T> work) throws Exception {\n"
+            + "        Exception[] failure = new Exception[1];\n"
+            + "        T result = CurrentUser.callAsSystem(() -> {\n"
+            + "            try {\n"
+            + "                return work.call();\n"
+            + "            } catch (Exception e) {\n"
+            + "                failure[0] = e;\n"
+            + "                return null;\n"
+            + "            }\n"
+            + "        });\n"
+            + "        if (failure[0] != null) throw failure[0];\n"
+            + "        return result;\n"
+            + "    }\n"
+            + "\n";
+
+    /** The same in Kotlin. */
+    private static final String KOTLIN_SYSTEM_ROWS = ""
+            + "    /**\n"
+            + "     * Work as the application itself (CurrentUser.runAsSystem): the rows of a test of @access, where\n"
+            + "     * signIn() signs in no administrator to make them - every check passes, the owner sent is kept.\n"
+            + "     */\n"
+            + "    protected fun <T> asTheSystem(work: () -> T): T = CurrentUser.callAsSystem<T> { work() }\n"
+            + "\n";
 
     /** The requests, the checks and the values every contract test uses (Java). */
     private static final String JAVA_HELPERS = ""
@@ -2674,7 +3835,8 @@ final class ContractTestSource {
             boolean system,
             Principal principal,
             boolean tx,
-            String why) {
+            String why,
+            Access access) {
         Lang lang = new Lang(true);
         StringBuilder k = new StringBuilder();
         k.append(OWNED).append('\n').append("package ").append(pkg).append("\n\n");
@@ -2702,7 +3864,7 @@ final class ContractTestSource {
                 .append("import java.nio.charset.StandardCharsets\n")
                 .append("import java.util.concurrent.ThreadLocalRandom\n")
                 .append("import java.util.concurrent.atomic.AtomicLong\n\n");
-        k.append(doc(domainName, s, guarded, system, principal, why));
+        k.append(doc(domainName, s, guarded, system, principal, why, access));
         k.append(springBootTest(s, lang));
 
         k.append("@AutoConfigureMockMvc\n");
@@ -2824,10 +3986,156 @@ final class ContractTestSource {
                     .append(
                             "        CurrentUser.callAsSystem<MvcResult> { mvc.perform(request(builder.accept(MediaType.APPLICATION_JSON))).andReturn() }\n\n");
         }
+        if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
         k.append(KOTLIN_HELPERS);
         k.append("}\n");
         return k.toString();
     }
+
+    /** What the tests of @access send their requests with (Kotlin): as javaCallers. */
+    private static String kotlinCallers(Principal p, Lang lang, boolean system) {
+        StringBuilder k = new StringBuilder();
+        k.append("    // ---- the callers of the @access tests\n\n")
+                .append(
+                        "    /** Whom a test of @access sends a request as: a principal signIn(role) made - its key, which the @owner of a row of theirs holds - and the session it opened. */\n")
+                .append("    protected class Caller(val id: Any?, val session: MockHttpSession?)\n\n")
+                .append("    /**\n")
+                .append("     * Signs in a principal of its own for a test of @access: ")
+                .append(article(p.entity))
+                .append(p.entity)
+                .append(" made as the\n")
+                .append("     * application itself (CurrentUser.runAsSystem) with this role")
+                .append(p.role == null ? " - it has none to set -" : ", as its " + p.role + " sends it,")
+                .append("\n")
+                .append("     * and signed in through the generated sign-in, as signIn() signs in the administrator.\n")
+                .append("     * Sign in your way here if the application does.\n")
+                .append("     */\n")
+                .append("    protected open fun signIn(role: String?): Caller {\n")
+                .append("        val principal = ")
+                .append(p.body)
+                .append('\n');
+        if (p.role != null) {
+            k.append("        if (role != null) principal[")
+                    .append(lang.string(p.role))
+                    .append("] = role\n");
+        }
+        k.append("        val made = asSystem(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(")\n")
+                .append("            .contentType(MediaType.APPLICATION_JSON).content(json(principal)))\n")
+                .append(
+                        "        Assertions.assertTrue(ok(made)) { \"the principal to sign in as was not made: \" + answer(made) }\n")
+                .append("        val signedInAs = mvc.perform(request(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(" + \"/signin\")\n")
+                .append("            .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                .append("            .content(json(obj(")
+                .append(lang.string(p.login))
+                .append(", principal[")
+                .append(lang.string(p.login))
+                .append("], ")
+                .append(lang.string(p.password))
+                .append(", principal[")
+                .append(lang.string(p.password))
+                .append("]))))).andReturn()\n")
+                .append(
+                        "        Assertions.assertTrue(ok(signedInAs)) { \"the generated sign-in refused the principal: \" + answer(signedInAs) }\n")
+                .append("        return Caller(value(made, ")
+                .append(lang.string(p.key))
+                .append("), signedInAs.request.getSession(false) as MockHttpSession?)\n")
+                .append("    }\n\n");
+        k.append(KOTLIN_CALLER_HELPERS);
+        if (system) k.append(KOTLIN_SYSTEM_ROWS);
+        return k.toString();
+    }
+
+    /** The requests and checks of the @access tests (Kotlin). */
+    private static final String KOTLIN_CALLER_HELPERS = ""
+            + "    /** The request as this caller - or as a visitor, for null: with what request(...) adds, and no other session. */\n"
+            + "    protected fun sentBy(caller: Caller?, builder: MockHttpServletRequestBuilder): MvcResult {\n"
+            + "        builder.accept(MediaType.APPLICATION_JSON)\n"
+            + "        caller?.session?.let { builder.session(it) }\n"
+            + "        return mvc.perform(request(builder)).andReturn()\n"
+            + "    }\n"
+            + "\n"
+            + "    protected fun reading(path: String, id: Any?): MockHttpServletRequestBuilder = MockMvcRequestBuilders.get(\"$path/$id\")\n"
+            + "\n"
+            + "    protected fun searching(path: String, body: Any?): MockHttpServletRequestBuilder =\n"
+            + "        MockMvcRequestBuilders.post(\"$path/search\").contentType(MediaType.APPLICATION_JSON).content(json(body))\n"
+            + "\n"
+            + "    protected fun creating(path: String, body: Any?): MockHttpServletRequestBuilder =\n"
+            + "        MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body))\n"
+            + "\n"
+            + "    /** An update of the row by its key alone: nothing changes, and who may change it is asked all the same. */\n"
+            + "    protected fun updating(path: String, body: Any?): MockHttpServletRequestBuilder =\n"
+            + "        MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body))\n"
+            + "\n"
+            + "    protected fun deleting(path: String, id: Any?): MockHttpServletRequestBuilder = MockMvcRequestBuilders.delete(\"$path/$id\")\n"
+            + "\n"
+            + "    protected fun commanding(path: String, id: Any?, command: String, body: Any?): MockHttpServletRequestBuilder {\n"
+            + "        val builder = MockMvcRequestBuilders.post(\"$path/$id/$command\")\n"
+            + "        if (body != null) builder.contentType(MediaType.APPLICATION_JSON).content(json(body))\n"
+            + "        return builder\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A row this caller makes, and its key: let in (assertAllowed says how it fails or is aborted). */\n"
+            + "    protected fun createdIdBy(caller: Caller?, path: String, body: Any?, key: String): Any {\n"
+            + "        val made = sentBy(caller, creating(path, body))\n"
+            + "        assertAllowed(made)\n"
+            + "        return value(made, key) ?: Assertions.fail<Any>(\"POST $path answered no $key: \" + answer(made))\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * Let in: 2xx. Refused as @access refuses - 401, 403, or 404 not-found for a row the caller\n"
+            + "     * may not see - or failed (5xx), the test fails; refused by another rule of the\n"
+            + "     * application's own (a reference to a row it needs, say), it is aborted with the reason, as\n"
+            + "     * succeeded says.\n"
+            + "     */\n"
+            + "    protected fun assertAllowed(result: MvcResult) {\n"
+            + "        val status = result.response.status\n"
+            + "        val code = code(result)\n"
+            + "        if (status == 401 || status == 403 || (status == 404 && (code == null || code == \"not-found\"))) {\n"
+            + "            Assertions.fail<Unit>(\"let in by @access, and refused: \" + answer(result))\n"
+            + "        }\n"
+            + "        succeeded(result, \"the request\")\n"
+            + "    }\n"
+            + "\n"
+            + "    /** Refused by @access: this status, and this problem code where the answer carries one. */\n"
+            + "    protected fun assertDenied(result: MvcResult, status: Int, expected: String) {\n"
+            + "        Assertions.assertEquals(status, result.response.status) { \"expected $status $expected: \" + answer(result) }\n"
+            + "        val sent = code(result)\n"
+            + "        if (sent != null) Assertions.assertEquals(expected, sent) { answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let the caller in, and its answer holds the row of this key. */\n"
+            + "    protected fun assertFinds(result: MvcResult, key: String, id: Any?) {\n"
+            + "        assertAllowed(result)\n"
+            + "        Assertions.assertTrue(keysOf(result, key).contains(id.toString())) { \"the search does not hold $key $id: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let the caller in, and its answer does not hold the row of this key. */\n"
+            + "    protected fun assertMisses(result: MvcResult, key: String, id: Any?) {\n"
+            + "        assertAllowed(result)\n"
+            + "        Assertions.assertFalse(keysOf(result, key).contains(id.toString())) { \"the search holds $key $id: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The keys of the rows a search answered: those of its page, or of the list it is. */\n"
+            + "    protected fun keysOf(result: MvcResult, key: String): List<String> {\n"
+            + "        var rows: Any? = try {\n"
+            + "            JsonPath.read<Any?>(body(result), \"\\$.content\")\n"
+            + "        } catch (notAPage: RuntimeException) {\n"
+            + "            null\n"
+            + "        }\n"
+            + "        if (rows !is List<*>) {\n"
+            + "            rows = try {\n"
+            + "                JsonPath.read<Any?>(body(result), \"\\$\")\n"
+            + "            } catch (notAList: RuntimeException) {\n"
+            + "                null\n"
+            + "            }\n"
+            + "        }\n"
+            + "        return (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().map { it[key].toString() }\n"
+            + "    }\n"
+            + "\n";
 
     /** The requests, the checks and the values every contract test uses (Kotlin). */
     private static final String KOTLIN_HELPERS = ""
@@ -3060,6 +4368,11 @@ final class ContractTestSource {
 
         String val(String name, String expression) {
             return kotlin ? "val " + name + " = " + expression : (typeOf(name) + " " + name + " = " + expression + ";");
+        }
+
+        /** A caller signIn(role) signed in: Caller owner = signIn("U"); */
+        String caller(String name, String expression) {
+            return kotlin ? "val " + name + " = " + expression : "Caller " + name + " = " + expression + ";";
         }
 
         private static String typeOf(String name) {

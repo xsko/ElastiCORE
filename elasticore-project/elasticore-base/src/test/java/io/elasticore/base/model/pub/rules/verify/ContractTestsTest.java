@@ -1075,6 +1075,494 @@ public class ContractTestsTest {
         }
     }
 
+    // ---- @access ----------------------------------------------------------------------
+
+    /** A signing-in Staff with an enum role, and a Deal whose @access has roles, | and &. */
+    private static final String ACCESS = String.join(
+            "\n",
+            "enumeration:",
+            "  StaffRole:",
+            "    meta: enum @db(code) @json(code)",
+            "    fields:",
+            "      code:  string(1) @code",
+            "      label: string(20)",
+            "    enum:",
+            "      USER:    U, User",
+            "      REP:     R, Rep",
+            "      MANAGER: M, Manager",
+            "      ADMIN:   A, Admin",
+            "",
+            "entity:",
+            "  Staff:",
+            "    meta: entity @root @editable @expose(20) @signin @owner(staffId) @access(read=owner, create=public,"
+                    + " update=owner)",
+            "    fields:",
+            "      staffId: long @id @sequence",
+            "      login:   string(20)! @login @unique",
+            "      secret:  string(255)! @password",
+            "      role:    StaffRole @default(StaffRole.USER) @access(admin)",
+            "",
+            "  Deal:",
+            "    meta: entity @root @editable @expose(20) @owner(staffId) @access(read=owner|MANAGER, create=user,"
+                    + " update=REP&owner, delete=MANAGER&owner)",
+            "    fields:",
+            "      dealId:  long @id @sequence",
+            "      staffId: long",
+            "      title:   string(40)!",
+            "");
+
+    /** The test method of that name, from its @Test to its closing brace. */
+    private static String method(String classText, String name) {
+        int at = classText.indexOf("    void " + name + "() throws Exception {\n");
+        if (at < 0) at = classText.indexOf("    fun " + name + "() {\n");
+        assertTrue(at >= 0, name + " is not written:\n" + classText);
+        int start = classText.lastIndexOf("    @Test\n", at);
+        return classText.substring(start, classText.indexOf("\n    }\n", at) + 7);
+    }
+
+    @Test
+    public void eachAccessEntryLetsInWhoItNamesAndRefusesTheRest() throws Exception {
+        File project = project(ACCESS, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        // read=owner|MANAGER: the owner on their row, a MANAGER on any, a visitor 401, another 404.
+        assertEquals(
+                "    @Test\n"
+                        + "    @DisplayName(\"read=owner|MANAGER: a USER is let in on a row of theirs\")\n"
+                        + "    void readLetsInAUserOnTheirRow() throws Exception {\n"
+                        + "        Caller caller = signIn(\"U\");\n"
+                        + "        Object id = createdId(DEAL, withValue(newDeal(), \"staffId\", caller.id), \"dealId\");\n"
+                        + "        assertAllowed(sentBy(caller, reading(DEAL, id)));\n"
+                        + "    }\n",
+                method(t, "readLetsInAUserOnTheirRow"));
+        assertTrue(method(t, "readLetsInAManager").contains("Caller caller = signIn(\"M\");"), t);
+        assertTrue(
+                method(t, "readRefusesAVisitor")
+                        .contains("assertDenied(sentBy(null, reading(DEAL, id)), 401, \"not-signed-in\");"),
+                t);
+        String another = method(t, "readRefusesAUserOnAnothersRow");
+        assertTrue(
+                another.contains("        Caller owner = signIn(\"U\");\n"
+                        + "        Object id = createdId(DEAL, withValue(newDeal(), \"staffId\", owner.id), \"dealId\");\n"
+                        + "        Caller caller = signIn(\"U\");\n"
+                        + "        assertDenied(sentBy(caller, reading(DEAL, id)), 404, \"not-found\");\n"),
+                another);
+        // The search: narrowed by the key to the test's own row - found by its owner and a MANAGER, not by another.
+        assertTrue(
+                method(t, "searchLetsInAUserOnTheirRow")
+                        .contains("assertFinds(sentBy(caller, searching(DEAL, obj(\"dealId\", id))), \"dealId\", id);"),
+                t);
+        assertTrue(method(t, "searchLetsInAManager").contains("assertFinds("), t);
+        assertTrue(
+                method(t, "searchHidesAnothersRowFromAUser")
+                        .contains(
+                                "assertMisses(sentBy(caller, searching(DEAL, obj(\"dealId\", id))), \"dealId\", id);"),
+                t);
+        // create=user: anyone signed in; a visitor 401.
+        assertTrue(
+                method(t, "createLetsInAUser").contains("assertAllowed(sentBy(caller, creating(DEAL, newDeal())));"),
+                t);
+        assertTrue(
+                method(t, "createRefusesAVisitor")
+                        .contains("assertDenied(sentBy(null, creating(DEAL, newDeal())), 401, \"not-signed-in\");"),
+                t);
+        // update=REP&owner: a REP on their row; another role refused on their own row (403), a REP on another's (404).
+        assertTrue(
+                method(t, "updateLetsInARepOnTheirRow")
+                        .contains("assertAllowed(sentBy(caller, updating(DEAL, obj(\"dealId\", id))));"),
+                t);
+        String role = method(t, "updateRefusesAUserOnTheirRow");
+        assertTrue(
+                role.contains(
+                        "@DisplayName(\"update=REP&owner: a USER is refused on a row of theirs (403 forbidden)\")"),
+                role);
+        assertTrue(
+                role.contains("assertDenied(sentBy(caller, updating(DEAL, obj(\"dealId\", id))), 403, \"forbidden\");"),
+                role);
+        assertTrue(
+                method(t, "updateRefusesARepOnAnothersRow")
+                        .contains("Caller caller = signIn(\"R\");\n"
+                                + "        assertDenied(sentBy(caller, updating(DEAL, obj(\"dealId\", id))), 404,"
+                                + " \"not-found\");"),
+                t);
+        // delete=MANAGER&owner: the API reads the row first - a MANAGER reads any, and still deletes only their own.
+        assertTrue(
+                method(t, "deleteLetsInAManagerOnTheirRow")
+                        .contains("assertAllowed(sentBy(caller, deleting(DEAL, id)));"),
+                t);
+        assertTrue(method(t, "deleteRefusesAUserOnTheirRow").contains("403, \"forbidden\");"), t);
+        assertTrue(method(t, "deleteRefusesAManagerOnAnothersRow").contains("404, \"not-found\");"), t);
+        // No role is refused where owner lets everyone signed in through the level.
+        assertFalse(t.contains("void readRefusesARep"), t);
+        assertTrue(t.contains(" * Who @access lets in is checked too:"), t);
+
+        // The sign-in's principal: its own row is the owner's (@owner on the key).
+        String staff = read(project, "src/test/java/com/acme/shop/StaffContractTest.java");
+        assertTrue(method(staff, "readLetsInAUserOnTheirRow").contains("        Object id = caller.id;\n"), staff);
+        assertTrue(
+                method(staff, "createLetsInAVisitor")
+                        .contains("assertAllowed(sentBy(null, creating(STAFF, newStaff())));"),
+                staff);
+        // delete=admin, the default: the administrator; one of another role on their own row, past the read (403).
+        assertTrue(method(staff, "deleteLetsInTheAdministrator").contains("Caller caller = signIn(\"A\");"), staff);
+        assertTrue(method(staff, "deleteRefusesAUserOnTheirRow").contains("403, \"forbidden\");"), staff);
+
+        // The support class: a principal of a role, the request as it, the checks of what @access answers.
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("    protected static final class Caller {\n"), s);
+        assertTrue(s.contains("    protected Caller signIn(String role) throws Exception {\n"), s);
+        assertTrue(s.contains("        if (role != null) principal.put(\"role\", role);\n"), s);
+        assertTrue(
+                s.contains(
+                        "        return new Caller(value(made, \"staffId\"), (MockHttpSession) in.getRequest().getSession(false));\n"),
+                s);
+        assertTrue(
+                s.contains(
+                        "    protected MvcResult sentBy(Caller caller, MockHttpServletRequestBuilder builder) throws Exception {\n"),
+                s);
+        assertTrue(
+                s.contains("        if (sent != null) Assertions.assertEquals(code, sent, () -> answer(result));\n"),
+                s);
+        // Let in fails on what @access answers - a 404 not-found too - and aborts on another rule's refusal.
+        assertTrue(
+                s.contains("        if (status == 401 || status == 403 || (status == 404 && (code == null ||"
+                        + " \"not-found\".equals(code)))) {\n"),
+                s);
+        assertTrue(s.contains(" * The tests of @access sign in callers of their own the same way - signIn(role),"), s);
+        // The administrator's sign-in of phase 2 is as it was.
+        assertTrue(s.contains("    protected void signIn() throws Exception {\n"), s);
+        // Every test is counted.
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+    }
+
+    @Test
+    public void kotlinGetsTheSameAccessTests() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "kotlin");
+        String t = read(project, "src/test/kotlin/com/acme/shop/DealContractTest.kt");
+        assertEquals(
+                "    @Test\n"
+                        + "    @DisplayName(\"update=REP&owner: a USER is refused on a row of theirs (403 forbidden)\")\n"
+                        + "    fun updateRefusesAUserOnTheirRow() {\n"
+                        + "        val caller = signIn(\"U\")\n"
+                        + "        val id = createdId(DEAL, withValue(newDeal(), \"staffId\", caller.id), \"dealId\")\n"
+                        + "        assertDenied(sentBy(caller, updating(DEAL, obj(\"dealId\", id))), 403, \"forbidden\")\n"
+                        + "    }\n",
+                method(t, "updateRefusesAUserOnTheirRow"));
+        assertTrue(
+                method(t, "readRefusesAVisitor")
+                        .contains("assertDenied(sentBy(null, reading(DEAL, id)), 401, \"not-signed-in\")"),
+                t);
+        String s = read(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(s.contains("    protected class Caller(val id: Any?, val session: MockHttpSession?)\n"), s);
+        assertTrue(s.contains("    protected open fun signIn(role: String?): Caller {\n"), s);
+        assertTrue(s.contains("        if (role != null) principal[\"role\"] = role\n"), s);
+        assertTrue(
+                s.contains(
+                        "    protected fun sentBy(caller: Caller?, builder: MockHttpServletRequestBuilder): MvcResult {\n"),
+                s);
+    }
+
+    /** A delete the lifecycle guards: the row is moved to a state it is deleted from, as the administrator, first. */
+    @Test
+    public void aDeleteALifecycleGuardsIsGivenWhereItMayBe() throws Exception {
+        String model = ACCESS.replace(
+                        "entity:\n",
+                        "  DealStatus:\n"
+                                + "    meta: enum @db(code) @json(code)\n"
+                                + "    fields:\n"
+                                + "      code:  string(3) @code\n"
+                                + "      label: string(20)\n"
+                                + "    enum:\n"
+                                + "      OPEN:   OPN, Open\n"
+                                + "      LOST:   LST, Lost\n"
+                                + "\n"
+                                + "entity:\n")
+                .replace(
+                        "@root @editable @expose(20) @owner(staffId) @access(read=owner|MANAGER, create=user,"
+                                + " update=REP&owner, delete=MANAGER&owner)",
+                        "@root @expose(20) @owner(staffId) @access(read=owner|MANAGER, create=user,"
+                                + " delete=MANAGER&owner, lose=REP|MANAGER)")
+                .replace(
+                        "      title:   string(40)!\n",
+                        "      title:   string(40)!\n"
+                                + "      status:  DealStatus\n"
+                                + "    states:\n"
+                                + "      status:\n"
+                                + "        initial: OPEN\n"
+                                + "        lose:    OPEN -> LOST\n"
+                                + "        delete:  LOST\n");
+        File project = project(model, "contract");
+        run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(
+                method(t, "deleteLetsInAManagerOnTheirRow")
+                        .contains("        given(command(DEAL, id, \"lose\", null));\n"
+                                + "        assertAllowed(sentBy(caller, deleting(DEAL, id)));\n"),
+                t);
+        // A refusal is asked before the state: no steps.
+        assertFalse(method(t, "deleteRefusesAUserOnTheirRow").contains("given("), t);
+        // A command: each of A|B lets in, another role is refused (403), a visitor 401.
+        assertTrue(method(t, "loseLetsInARep").contains("commanding(DEAL, id, \"lose\", null)"), t);
+        assertTrue(method(t, "loseLetsInAManager").contains("assertAllowed("), t);
+        assertTrue(method(t, "loseRefusesAUser").contains("403, \"forbidden\");"), t);
+        assertTrue(method(t, "loseRefusesAVisitor").contains("401, \"not-signed-in\");"), t);
+    }
+
+    /** What the generator cannot test of @access is counted with why, and the support class says it. */
+    @Test
+    public void whatIsNotTestedOfAccessIsSaid() throws Exception {
+        // No @signin: no caller to sign in.
+        String noSignIn = ACCESS.replace("@expose(20) @signin @owner(staffId)", "@expose(20) @owner(staffId)");
+        File none = project(noSignIn, "contract");
+        String noneLog = run(none, "hexagonal", "java");
+        assertTrue(
+                noneLog.contains("Deal @access: not tested - no caller can be signed in (the run has no generated"
+                        + " sign-in, @signin)"),
+                noneLog);
+        String ns = read(none, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(ns.contains(" * No test of @access is written: each needs callers signed in through it.\n"), ns);
+        assertFalse(ns.contains("sentBy"), ns);
+        assertFalse(
+                read(none, "src/test/java/com/acme/shop/DealContractTest.java").contains("signIn("), noneLog);
+
+        // Two roles in one term, a role the field cannot hold, an entry not read, an owner with no field.
+        String misread =
+                ACCESS.replace("update=REP&owner, delete=MANAGER&owner", "update=REP&MANAGER, delete=MANAGER&owner");
+        File two = project(misread, "contract");
+        String twoLog = run(two, "hexagonal", "java");
+        assertTrue(
+                twoLog.contains("Deal update=REP&MANAGER: REP&MANAGER asks for REP and MANAGER, and a session holds one"
+                        + " role"),
+                twoLog);
+        String ts = read(two, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                ts.contains(" * Not tested of @access, as the build's summary says:\n *   - Deal update=REP&MANAGER:"),
+                ts);
+        // The rest of the entry is tested still: a visitor is refused.
+        assertTrue(read(two, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("void updateRefusesAVisitor()"));
+
+        String unread = ACCESS.replace("create=user, update=REP&owner", "create=users, update=REP&owner");
+        File bad = project(unread, "contract");
+        String badLog = run(bad, "hexagonal", "java");
+        assertTrue(badLog.contains("Deal @access: 'create=users' is not read as operation=level"), badLog);
+        assertFalse(
+                read(bad, "src/test/java/com/acme/shop/DealContractTest.java").contains("signIn("), badLog);
+
+        String unowned = ACCESS.replace(
+                "@expose(20) @owner(staffId) @access(read=owner|MANAGER", "@expose(20) @access(read=owner|MANAGER");
+        File noOwner = project(unowned, "contract");
+        String noOwnerLog = run(noOwner, "hexagonal", "java");
+        assertTrue(
+                noOwnerLog.contains(
+                        "Deal read=owner|MANAGER: owner is a word of it, and it has no @owner - so no row of"
+                                + " a caller's own is made"),
+                noOwnerLog);
+        // create names no owner: still tested.
+        assertTrue(read(noOwner, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("void createLetsInAUser()"));
+
+        // A string role too short for a role @access names.
+        String shortRole = ACCESS.replace(
+                        "      role:    StaffRole @default(StaffRole.USER) @access(admin)",
+                        "      role:    string(5) @access(admin) @role")
+                .replace("read=owner|MANAGER", "read=owner|LEAD|MANAGER");
+        File narrow = project(shortRole, "contract");
+        String narrowLog = run(narrow, "hexagonal", "java");
+        assertTrue(narrowLog.contains("Deal read=owner|LEAD|MANAGER: Staff.role cannot hold MANAGER"), narrowLog);
+        String nt = read(narrow, "src/test/java/com/acme/shop/DealContractTest.java");
+        // A string role is sent as written; LEAD fits.
+        assertTrue(method(nt, "readLetsInALead").contains("Caller caller = signIn(\"LEAD\");"), nt);
+    }
+
+    /**
+     * A principal with no role: signIn() signs in no administrator, so a row is not made by it with the owner
+     * sent - the owner makes it, owning what they create - and a role an entry names is counted as not tested.
+     */
+    @Test
+    public void withoutARoleTheOwnerMakesTheirRowAndRolesAreSaid() throws Exception {
+        String model = ACCESS.replace("      role:    StaffRole @default(StaffRole.USER) @access(admin)\n", "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        // No administrator signs in: the rows are made as the application itself, which keeps the owner sent.
+        assertTrue(
+                method(t, "readLetsInASignedInCallerOnTheirRow")
+                        .contains("        Caller caller = signIn(null);\n"
+                                + "        Object id = asTheSystem(() -> createdId(DEAL, withValue(newDeal(), \"staffId\","
+                                + " caller.id), \"dealId\"));\n"),
+                t);
+        assertTrue(
+                method(t, "readRefusesAVisitor")
+                        .contains("        Object id = asTheSystem(() -> createdId(DEAL, newDeal(), \"dealId\"));\n"),
+                t);
+        assertTrue(
+                log.contains("Deal read=owner|MANAGER: Staff has no role field (@role, @access(admin)) to sign in a"
+                        + " MANAGER with"),
+                log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertFalse(s.contains("principal.put(\"role\", role)"), s);
+        assertTrue(s.contains("with this role - it has none to set -"), s);
+        assertTrue(
+                s.contains(
+                        "    protected <T> T asTheSystem(java.util.concurrent.Callable<T> work) throws Exception {\n"),
+                s);
+        // Kotlin the same way.
+        File kt = project(model, "contract");
+        run(kt, "hexagonal", "kotlin");
+        assertTrue(method(read(kt, "src/test/kotlin/com/acme/shop/DealContractTest.kt"), "readRefusesAVisitor")
+                .contains("        val id = asTheSystem { createdId(DEAL, newDeal(), \"dealId\") }\n"));
+        assertTrue(
+                read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt")
+                        .contains(
+                                "    protected fun <T> asTheSystem(work: () -> T): T = CurrentUser.callAsSystem<T> { work() }\n"));
+        // Where an administrator signs in, the rows are its own as before: no asTheSystem.
+        File admin = project(ACCESS, "contract");
+        run(admin, "hexagonal", "java");
+        assertFalse(read(admin, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("asTheSystem"));
+    }
+
+    /**
+     * The build never breaks: a support class of the project's kept without the members the tests of @access
+     * call (a merge it could not make) gets test classes without those tests, and the run says what to add and
+     * where the version it generated is.
+     */
+    @Test
+    public void aSupportClassKeptWithoutTheNewMembersGetsNoTestItCannotCompile() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "java");
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        String generated = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        int from = generated.indexOf("    // ---- the callers of the @access tests");
+        int to = generated.indexOf("    protected MvcResult post(String path, Object body) throws Exception {");
+        assertTrue(from > 0 && to > from, generated);
+        // The developer's class, as a merge it could not make keeps it: without the new members.
+        String kept = generated.substring(0, from) + generated.substring(to);
+        Files.write(support.toPath(), kept.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertEquals(kept, read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"));
+        assertTrue(
+                log.contains("Shop: ShopContractSupport has no signIn(String) - add the members from"
+                        + " build/elasticore/contract/ShopContractSupport.java, the version this run generated; the"
+                        + " tests of @access are not written"),
+                log);
+        String copy = read(project, "build/elasticore/contract/ShopContractSupport.java");
+        assertTrue(copy.contains("    protected Caller signIn(String role) throws Exception {\n"), copy);
+        // The constraint tests stay - they call only what the kept class has; none of @access is left.
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(t.contains("void titleIsRequired()"), t);
+        assertFalse(t.contains("sentBy("), t);
+        assertFalse(t.contains("Who @access lets in"), t);
+        assertNotNull(ContractTestSource.lacking(kept, generatedAccessTest(project), false));
+        // The summary counts what was written.
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+        // Members the tests call, read off a support class as declared - Java and Kotlin.
+        assertEquals(
+                null,
+                ContractTestSource.lacking(copy, "        assertAllowed(sentBy(caller, reading(X, id)));", false));
+        assertEquals(
+                "assertDenied(...)",
+                ContractTestSource.lacking(
+                        "    protected fun sentBy(caller: Caller?, b: B): MvcResult = x\n"
+                                + "    protected fun reading(path: String, id: Any?): B = y\n",
+                        "        assertDenied(sentBy(null, reading(X, id)), 401, \"not-signed-in\")",
+                        true));
+    }
+
+    /** A test of @access, as the run before the support class was kept wrote it. */
+    private static String generatedAccessTest(File project) throws IOException {
+        return "        Caller caller = signIn(\"U\");\n        assertAllowed(sentBy(caller, reading(DEAL, id)));\n";
+    }
+
+    /**
+     * A visitor's create, as the service claims the owner: keyed by its owner (a key the request chooses) it is
+     * refused (401) whatever create says; a required owner a visitor's claim clears is counted, not tested. And
+     * none refuses even a visitor 403; an operation * sets is said so.
+     */
+    @Test
+    public void aVisitorsCreateIsReadAsTheServiceClaimsTheOwner() throws Exception {
+        String model = ACCESS
+                + String.join(
+                        "\n",
+                        "  Profile:",
+                        "    meta: entity @root @editable @expose(20) @owner(handle) @access(create=public, read=public,"
+                                + " delete=none, *=user)",
+                        "    fields:",
+                        "      handle: string(20) @id",
+                        "      bio:    string(40)!",
+                        "",
+                        "  Memo:",
+                        "    meta: entity @root @editable @expose(20) @owner(staffId) @access(create=public, read=owner)",
+                        "    fields:",
+                        "      memoId:  long @id @sequence",
+                        "      staffId: long!",
+                        "      text:    string(40)!",
+                        "");
+        File project = project(model, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Profile create=public: a visitor is let in by it, and refused (401) - @owner is the key"
+                        + " the request chooses"),
+                log);
+        String p = read(project, "src/test/java/com/acme/shop/ProfileContractTest.java");
+        assertFalse(p.contains("void createLetsInAVisitor()"), p);
+        assertTrue(
+                method(p, "createRefusesAVisitor")
+                        .contains(
+                                "assertDenied(sentBy(null, creating(PROFILE, newProfile())), 401, \"not-signed-in\");"),
+                p);
+        // none: nobody - a visitor is refused 403, there being nothing to sign in for (the read before it is public).
+        assertTrue(method(p, "deleteRefusesAVisitor").contains("403, \"forbidden\");"), p);
+        assertTrue(method(p, "deleteRefusesAUser").contains("403, \"forbidden\");"), p);
+        assertFalse(p.contains("void deleteLetsIn"), p);
+        assertTrue(p.contains("@DisplayName(\"update=user (from *): "), p);
+        assertTrue(
+                log.contains("Memo create=public: a visitor's create clears @owner(staffId), which is required (!)"),
+                log);
+        assertFalse(read(project, "src/test/java/com/acme/shop/MemoContractTest.java")
+                .contains("createLetsInAVisitor"));
+    }
+
+    /** Without @access nothing of it is written: the support class is the one it was. */
+    @Test
+    public void aDomainWithoutAccessGetsNoCallers() throws Exception {
+        File project = project(MODEL, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertFalse(s.contains("Caller"), s);
+        assertFalse(s.contains("@access sign in"), s);
+        assertFalse(read(project, "src/test/java/com/acme/shop/ShipmentContractTest.java")
+                .contains("Who @access"));
+    }
+
+    @Test
+    public void contractWithAccessChangesNothingElse() throws Exception {
+        onlyTheTestsAreAdded(ACCESS, "jpa", "hexagonal", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractWithAccessChangesNothingElseInKotlin() throws Exception {
+        onlyTheTestsAreAdded(ACCESS, "jpa", "layered", "kotlin", "src/test/kotlin/com/acme/shop/", "kt");
+    }
+
+    @Test
+    public void contractWithAccessChangesNothingElseOverMyBatis() throws Exception {
+        onlyTheTestsAreAdded(ACCESS, "mybatis", "ddd", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractWithAccessChangesNothingElseOverMongoDb() throws Exception {
+        onlyTheTestsAreAdded(
+                ACCESS.replace("long @id @sequence", "string(24) @id"),
+                "mongo",
+                "layered",
+                "java",
+                "src/test/java/com/acme/shop/",
+                "java");
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {

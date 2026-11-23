@@ -29,6 +29,8 @@ import java.util.concurrent.atomic.AtomicLong
  * nothing as generated; a project that asks every write for a CSRF token adds its
  * cookie and header there. signIn() is how a test signs in: as an administrator, through the
  * generated sign-in of Agent, made for the test as the application itself.
+ * The tests of @access sign in callers of their own the same way - signIn(role),
+ * a principal of a role - and send their requests as them (sentBy).
  *
  * Every test class extends this one, so all of them start the same application and
  * Spring keeps one context for the suite; each test's rows are rolled back.
@@ -112,6 +114,115 @@ abstract class ShopContractSupport {
     /** The request as the application itself: every @access check passes. */
     protected fun asSystem(builder: MockHttpServletRequestBuilder): MvcResult =
         CurrentUser.callAsSystem<MvcResult> { mvc.perform(request(builder.accept(MediaType.APPLICATION_JSON))).andReturn() }
+
+    // ---- the callers of the @access tests
+
+    /** Whom a test of @access sends a request as: a principal signIn(role) made - its key, which the @owner of a row of theirs holds - and the session it opened. */
+    protected class Caller(val id: Any?, val session: MockHttpSession?)
+
+    /**
+     * Signs in a principal of its own for a test of @access: an Agent made as the
+     * application itself (CurrentUser.runAsSystem) with this role, as its grade sends it,
+     * and signed in through the generated sign-in, as signIn() signs in the administrator.
+     * Sign in your way here if the application does.
+     */
+    protected open fun signIn(role: String?): Caller {
+        val principal = obj("login", text(12), "secret", text(12))
+        if (role != null) principal["grade"] = role
+        val made = asSystem(MockMvcRequestBuilders.post(PRINCIPAL)
+            .contentType(MediaType.APPLICATION_JSON).content(json(principal)))
+        Assertions.assertTrue(ok(made)) { "the principal to sign in as was not made: " + answer(made) }
+        val signedInAs = mvc.perform(request(MockMvcRequestBuilders.post(PRINCIPAL + "/signin")
+            .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
+            .content(json(obj("login", principal["login"], "secret", principal["secret"]))))).andReturn()
+        Assertions.assertTrue(ok(signedInAs)) { "the generated sign-in refused the principal: " + answer(signedInAs) }
+        return Caller(value(made, "agentId"), signedInAs.request.getSession(false) as MockHttpSession?)
+    }
+
+    /** The request as this caller - or as a visitor, for null: with what request(...) adds, and no other session. */
+    protected fun sentBy(caller: Caller?, builder: MockHttpServletRequestBuilder): MvcResult {
+        builder.accept(MediaType.APPLICATION_JSON)
+        caller?.session?.let { builder.session(it) }
+        return mvc.perform(request(builder)).andReturn()
+    }
+
+    protected fun reading(path: String, id: Any?): MockHttpServletRequestBuilder = MockMvcRequestBuilders.get("$path/$id")
+
+    protected fun searching(path: String, body: Any?): MockHttpServletRequestBuilder =
+        MockMvcRequestBuilders.post("$path/search").contentType(MediaType.APPLICATION_JSON).content(json(body))
+
+    protected fun creating(path: String, body: Any?): MockHttpServletRequestBuilder =
+        MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body))
+
+    /** An update of the row by its key alone: nothing changes, and who may change it is asked all the same. */
+    protected fun updating(path: String, body: Any?): MockHttpServletRequestBuilder =
+        MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body))
+
+    protected fun deleting(path: String, id: Any?): MockHttpServletRequestBuilder = MockMvcRequestBuilders.delete("$path/$id")
+
+    protected fun commanding(path: String, id: Any?, command: String, body: Any?): MockHttpServletRequestBuilder {
+        val builder = MockMvcRequestBuilders.post("$path/$id/$command")
+        if (body != null) builder.contentType(MediaType.APPLICATION_JSON).content(json(body))
+        return builder
+    }
+
+    /** A row this caller makes, and its key: let in (assertAllowed says how it fails or is aborted). */
+    protected fun createdIdBy(caller: Caller?, path: String, body: Any?, key: String): Any {
+        val made = sentBy(caller, creating(path, body))
+        assertAllowed(made)
+        return value(made, key) ?: Assertions.fail<Any>("POST $path answered no $key: " + answer(made))
+    }
+
+    /**
+     * Let in: 2xx. Refused as @access refuses - 401, 403, or 404 not-found for a row the caller
+     * may not see - or failed (5xx), the test fails; refused by another rule of the
+     * application's own (a reference to a row it needs, say), it is aborted with the reason, as
+     * succeeded says.
+     */
+    protected fun assertAllowed(result: MvcResult) {
+        val status = result.response.status
+        val code = code(result)
+        if (status == 401 || status == 403 || (status == 404 && (code == null || code == "not-found"))) {
+            Assertions.fail<Unit>("let in by @access, and refused: " + answer(result))
+        }
+        succeeded(result, "the request")
+    }
+
+    /** Refused by @access: this status, and this problem code where the answer carries one. */
+    protected fun assertDenied(result: MvcResult, status: Int, expected: String) {
+        Assertions.assertEquals(status, result.response.status) { "expected $status $expected: " + answer(result) }
+        val sent = code(result)
+        if (sent != null) Assertions.assertEquals(expected, sent) { answer(result) }
+    }
+
+    /** The search let the caller in, and its answer holds the row of this key. */
+    protected fun assertFinds(result: MvcResult, key: String, id: Any?) {
+        assertAllowed(result)
+        Assertions.assertTrue(keysOf(result, key).contains(id.toString())) { "the search does not hold $key $id: " + answer(result) }
+    }
+
+    /** The search let the caller in, and its answer does not hold the row of this key. */
+    protected fun assertMisses(result: MvcResult, key: String, id: Any?) {
+        assertAllowed(result)
+        Assertions.assertFalse(keysOf(result, key).contains(id.toString())) { "the search holds $key $id: " + answer(result) }
+    }
+
+    /** The keys of the rows a search answered: those of its page, or of the list it is. */
+    protected fun keysOf(result: MvcResult, key: String): List<String> {
+        var rows: Any? = try {
+            JsonPath.read<Any?>(body(result), "\$.content")
+        } catch (notAPage: RuntimeException) {
+            null
+        }
+        if (rows !is List<*>) {
+            rows = try {
+                JsonPath.read<Any?>(body(result), "\$")
+            } catch (notAList: RuntimeException) {
+                null
+            }
+        }
+        return (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().map { it[key].toString() }
+    }
 
     protected fun post(path: String, body: Any?): MvcResult =
         perform(MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body)))

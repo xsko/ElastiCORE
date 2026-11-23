@@ -2770,11 +2770,62 @@ public final class RulesGenRunner {
         s.mybatis = persistence() == RulesConfig.Persistence.MYBATIS;
         s.readRuleSets(this::selects);
         s.application = applicationFor(pkg);
+        String support = null;
+        ContractTestSource.Source supportSource = null;
+        ArtifactTarget supportOut = null;
+        boolean copied = false;
         for (ContractTestSource.Source src : contract.domain(model, domain.className(), specs, pkg, s)) {
             ArtifactTarget out = kotlin
                     ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, src.className, true)
                     : ArtifactTarget.of("java", "src/test/java", "java", pkg, src.className, true);
-            write(String.format("    %-12s %s", "contract", out.relativePath()), out, src.text);
+            String label = String.format("    %-12s %s", "contract", out.relativePath());
+            if (src.support) {
+                write(label, out, src.text);
+                // What the merge left: the developer's support class may be kept without what this run added.
+                File file = new File(rootFor(out) + "/" + out.relativePath());
+                support = readText(file);
+                supportSource = src;
+                supportOut = out;
+                continue;
+            }
+            String text = src.text;
+            String missing = support == null ? null : ContractTestSource.lacking(support, text, kotlin);
+            if (missing != null) {
+                // The build never breaks: tests that would call what the support class lacks are not written.
+                File copy = new File(
+                        rootFor(supportOut),
+                        "build/elasticore/contract/" + supportOut.fileName() + "." + supportOut.extension());
+                if (!copied) copied = writeCopy(copy, supportSource.text);
+                String plainMissing = src.plain == null || src.plain.isEmpty()
+                        ? missing
+                        : ContractTestSource.lacking(support, src.plain, kotlin);
+                String why = String.format(
+                        "%s: %s has no %s - add the members from %s, the version this run generated; ",
+                        domain.className(),
+                        supportSource.className,
+                        missing,
+                        "build/elasticore/contract/" + supportOut.fileName() + "." + supportOut.extension());
+                if (src.plain != null && !src.plain.isEmpty() && plainMissing == null) {
+                    contract.notWritten(src.tests - src.plainTests, why + "the tests of @access are not written");
+                    text = src.plain;
+                } else {
+                    contract.notWritten(src.tests, why + "its contract tests are not written");
+                    System.out.println(label + "  SKIP(" + supportSource.className + " has no " + missing + ")");
+                    continue;
+                }
+            }
+            write(label, out, text);
+        }
+    }
+
+    /** The generated version of a file kept as the developer's, beside the build: what they take members over from. */
+    private static boolean writeCopy(File file, String text) {
+        try {
+            java.nio.file.Files.createDirectories(file.getParentFile().toPath());
+            java.nio.file.Files.write(file.toPath(), text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return true;
+        } catch (java.io.IOException unwritable) {
+            return false;
         }
     }
 

@@ -36,7 +36,8 @@ entity:
 
   Ticket:
     # export: POST .../ticket/export - an agent's own tickets only, as the search (@owner)
-    meta: entity @root @expose(pageSize=20, methods="create,read,search,update,delete,export") @owner(agentId) @access(read=owner, create=user, close=owner) @event(Closed) -- 작업
+    # cancel: the agent's own, or a LEAD's on any; bill: a LEAD's, on a ticket of their own (grade is the role)
+    meta: entity @root @expose(pageSize=20, methods="create,read,search,update,delete,export") @owner(agentId) @access(read=owner, create=user, close=owner, cancel=owner|LEAD, bill=LEAD&owner) @event(Closed) -- 작업
     fields:
       ticketId: string(36) @id @genid
       agent:    Agent @ManyToOne @onDelete(restrict)   # an agent with tickets is not deleted (a deleted ticket aside)
