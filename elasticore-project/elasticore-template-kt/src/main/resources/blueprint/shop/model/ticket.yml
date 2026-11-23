@@ -33,6 +33,9 @@ entity:
       login:    string(20)! @login
       secret:   string(255)! @password
       grade:    string(10) @access(admin) @role
+      # Kept encrypted, found by an equal phone however it is written (@encrypt(digits) @s(eq)), shown masked
+      # (010-****-5678); sent back as shown, an update keeps it. The keys are the tests' (TestCryptoKeys).
+      phone:    string(20) @encrypt(digits) @s(eq) @env:maskphone
 
   Ticket:
     # export: POST .../ticket/export - an agent's own tickets only, as the search (@owner)

@@ -9,12 +9,16 @@ import io.elasticore.base.model.pub.rules.FieldSpec;
 import io.elasticore.base.model.pub.rules.base.AccessExpression;
 import io.elasticore.base.model.pub.rules.base.ControllerBaseRules;
 import io.elasticore.base.model.pub.rules.base.DtoBaseRules;
+import io.elasticore.base.model.pub.rules.base.EncryptRules;
 import io.elasticore.base.model.pub.rules.base.FieldDoc;
+import io.elasticore.base.model.pub.rules.base.MaskedFields;
 import io.elasticore.base.model.pub.rules.base.ServiceAccessRules;
 import io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules;
 import io.elasticore.base.model.pub.rules.ddd.DddCommandRules;
 import io.elasticore.base.model.pub.rules.ddd.DddInvariantRules;
 import io.elasticore.base.model.pub.rules.ddd.DddStateRules;
+import io.elasticore.base.model.pub.rules.mongo.MongoDocs;
+import io.elasticore.base.model.pub.rules.mybatis.MyBatisSql;
 
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
@@ -53,6 +57,11 @@ import java.util.Set;
  *   invariant          a field compared with a number, a collection's size, a
  *                      field that must be set: the boundary passes, one past it is
  *                      refused (422, code invariant.Entity....)
+ *   mask (@Mask)       the read and the search show what the field's MaskType makes of
+ *                      the value sent; the masked text an update sends back keeps the
+ *                      stored value, a new value replaces it (issue 270)
+ *   encrypt            the column holds no plain value - it decrypts to the value sent;
+ *                      with @search(eq) a search by the value finds the row, by another not
  * </pre>
  *
  * One test class per entity, each extending one support class per domain:
@@ -80,22 +89,36 @@ final class ContractTestSource {
         final int tests;
         /** The domain's support class: the one the test classes call. */
         final boolean support;
-        /** The test class without its tests of @access, for a support class kept without their members; null for none. */
-        final String plain;
-
-        final int plainTests;
+        /**
+         * The class with fewer tests, for a support class kept without the members of some - of @access,
+         * of the mask and the encryption: the first whose members the kept class has is written. Empty when
+         * every test calls only what any support class has.
+         */
+        final List<Fallback> fallbacks = new ArrayList<Fallback>();
 
         Source(String className, String text, int tests) {
-            this(className, text, tests, false, null, 0);
+            this(className, text, tests, false);
         }
 
-        Source(String className, String text, int tests, boolean support, String plain, int plainTests) {
+        Source(String className, String text, int tests, boolean support) {
             this.className = className;
             this.text = text;
             this.tests = tests;
             this.support = support;
-            this.plain = plain;
-            this.plainTests = plainTests;
+        }
+    }
+
+    /** A test class without some of its tests: its text ("" for none left), how many it has, and what it leaves out. */
+    static final class Fallback {
+        final String text;
+        final int tests;
+        /** "the tests of @access", as the summary says what is not written. */
+        final String omitted;
+
+        Fallback(String text, int tests, String omitted) {
+            this.text = text;
+            this.tests = tests;
+            this.omitted = omitted;
         }
     }
 
@@ -179,6 +202,7 @@ final class ContractTestSource {
         Lang lang = new Lang(s.kotlin);
 
         List<EntityTests> planned = new ArrayList<EntityTests>();
+        privacySkipped.clear();
         boolean asks = false;
         for (EntitySpec e : own) {
             if (!testable(e)) continue;
@@ -200,21 +224,41 @@ final class ContractTestSource {
         boolean guarded = false;
         boolean access = false;
         boolean system = false;
+        Privacy privacy = new Privacy(privacySkipped);
         for (EntityTests t : planned) {
             if (t.tests.isEmpty()) continue;
             guarded |= t.guarded;
             access |= t.declaresAccess();
             written += t.tests.size();
             system |= t.accessTests > 0 && t.systemRows;
-            int plainTests = t.tests.size() - t.accessTests;
-            String plain = t.accessTests == 0 ? null : plainTests == 0 ? "" : t.render(pkg, support, false);
-            out.add(new Source(
-                    t.e.getName() + "ContractTest",
-                    t.render(pkg, support, true),
-                    t.tests.size(),
-                    false,
-                    plain,
-                    plainTests));
+            privacy.tests |= t.privacyTests > 0;
+            privacy.stored |= t.storedTests;
+            privacy.decrypted |= t.decryptedTests;
+            int plainTests = t.tests.size() - t.accessTests - t.privacyTests;
+            String plain = t.accessTests + t.privacyTests == 0
+                    ? null
+                    : plainTests == 0 ? "" : t.render(pkg, support, false, false);
+            Source src = new Source(t.e.getName() + "ContractTest", t.render(pkg, support, true, true), t.tests.size());
+            // Without the tests of @Mask and @encrypt first, where the kept class has the members of @access.
+            if (t.privacyTests > 0 && t.accessTests > 0) {
+                src.fallbacks.add(new Fallback(
+                        t.render(pkg, support, true, false),
+                        t.tests.size() - t.privacyTests,
+                        "the tests of @Mask and @encrypt"));
+                src.fallbacks.add(new Fallback(
+                        t.render(pkg, support, false, true), t.tests.size() - t.accessTests, "the tests of @access"));
+            }
+            if (plain != null) {
+                src.fallbacks.add(new Fallback(
+                        plain,
+                        plainTests,
+                        t.privacyTests == 0
+                                ? "the tests of @access"
+                                : t.accessTests == 0
+                                        ? "the tests of @Mask and @encrypt"
+                                        : "the tests of @access, @Mask and @encrypt"));
+            }
+            out.add(src);
         }
         if (out.isEmpty()) return out;
         Access a = new Access(callers, access, accessSkipped);
@@ -223,12 +267,27 @@ final class ContractTestSource {
                 0,
                 new Source(
                         support,
-                        supportClass(pkg, support, domainName, s, lang, guarded, guarded ? principal : null, a),
+                        supportClass(
+                                pkg, support, domainName, s, lang, guarded, guarded ? principal : null, a, privacy),
                         0,
-                        true,
-                        null,
-                        0));
+                        true));
         return out;
+    }
+
+    /** What the support class holds of @Mask and @encrypt: the members their tests call, and what is not tested and why. */
+    static final class Privacy {
+        /** Some test of @Mask or @encrypt is written: read, search, put and the checks of a masked answer. */
+        boolean tests;
+        /** Some test reads a value as the database holds it (stored). */
+        boolean stored;
+        /** Some test decrypts what the database holds (decrypted, assertEncrypted). */
+        boolean decrypted;
+
+        final List<String> skipped;
+
+        Privacy(List<String> skipped) {
+            this.skipped = new ArrayList<String>(skipped);
+        }
     }
 
     /** What the support class says and holds of @access: the callers it signs in, what is not tested and why. */
@@ -281,7 +340,21 @@ final class ContractTestSource {
         "assertDenied",
         "assertFinds",
         "assertMisses",
-        "asTheSystem"
+        "asTheSystem",
+        "read",
+        "search",
+        "put",
+        "assertUpdated",
+        "digits",
+        "masked",
+        "assertMasked",
+        "assertFoundMasked",
+        "assertFound",
+        "assertNotFound",
+        "stored",
+        "assertStored",
+        "decrypted",
+        "assertEncrypted"
     };
 
     /**
@@ -335,6 +408,14 @@ final class ContractTestSource {
     private void accessSkip(String why) {
         skip(why);
         if (!accessSkipped.contains(why)) accessSkipped.add(why);
+    }
+
+    /** What the generator knew it cannot test of the domain's @Mask and @encrypt: for the support class's comment. */
+    private final List<String> privacySkipped = new ArrayList<String>();
+
+    private void privacySkip(String why) {
+        skip(why);
+        if (!privacySkipped.contains(why)) privacySkipped.add(why);
     }
 
     private static String classNameOf(String domainName, List<EntitySpec> own) {
@@ -756,6 +837,9 @@ final class ContractTestSource {
         /** A test of @access: written only where the support class has what it calls. */
         boolean access;
 
+        /** A test of @Mask or @encrypt: written only where the support class has what it calls. */
+        boolean privacy;
+
         Test(String method, String display) {
             this.method = method;
             this.display = display;
@@ -858,6 +942,7 @@ final class ContractTestSource {
             if (s.lifecycles) lifecycles(own);
             constraints(own);
             invariants(own);
+            privacy();
             return true;
         }
 
@@ -2279,12 +2364,400 @@ final class ContractTestSource {
             return k == null || id == null ? "obj()" : "obj(" + lang.string(k) + ", " + id + ")";
         }
 
+        // ---- @Mask and @encrypt
+
+        /** How many of the tests are of @Mask and @encrypt: the support class then has what they call. */
+        int privacyTests;
+
+        /** Some of them read a value as the database holds it (stored). */
+        boolean storedTests;
+
+        /** Some of them decrypt what the database holds (decrypted, assertEncrypted). */
+        boolean decryptedTests;
+
+        /**
+         * The tests of what the runtime's @Mask and @encrypt promise, of each field of the DTO that has
+         * them: the read and the search show what the field's MaskType makes of the value sent; an update
+         * that sends the masked text back keeps the stored value (issue 270), one with a new value replaces
+         * it; the column holds no plain value, and the API the value; an equality search (@search(eq))
+         * finds the row by its value and not by another. What cannot be tested is counted, with why.
+         */
+        void privacy() {
+            Map<String, String> maskOf = new HashMap<String, String>();
+            for (MaskedFields.Masked m : MaskedFields.of(e)) maskOf.put(m.field(), m.maskType());
+            for (FieldSpec f : dto.fields()) {
+                FieldSpec declared = field(e, f.name());
+                String maskType = maskOf.get(f.name());
+                boolean encrypted = declared != null && declared.hasDsl(EncryptRules.ENCRYPT) && f.isStringType();
+                if (maskType == null && !encrypted) continue;
+                String where = e.getName() + "." + f.name() + (maskType != null ? " @Mask" : " @encrypt");
+                if (e.pkFields().size() != 1) {
+                    privacySkip(e.getName() + " @Mask, @encrypt: a composite key - no row is read back by its key");
+                    return;
+                }
+                if (f.name().equals(e.pkFields().get(0).name())) {
+                    privacySkip(where + ": it is the key, which a test reads its row back by");
+                    continue;
+                }
+                if (!writable(e, f) || f.hasDslAny("writeonly")) {
+                    privacySkip(where + ": a request does not write it, so no value of the test's is sent");
+                    continue;
+                }
+                Sample value = privateValue(f, declared, maskType);
+                if (value == null) {
+                    privacySkip(where + ": no value of " + f.typeName() + " the generator builds fits it"
+                            + (maskType != null ? " and shows " + maskName(maskType) : ""));
+                    continue;
+                }
+                if (maskType != null) {
+                    shownMasked(f, maskType, value);
+                    sentBackMasked(f, declared, maskType, value, encrypted);
+                }
+                if (encrypted) {
+                    storedEncrypted(f, declared, maskType, value);
+                    foundByValue(f, value);
+                }
+            }
+        }
+
+        /** The value a test of @Mask or @encrypt sends: an expression, and whether each evaluation is another. */
+        final class Sample {
+            final String expression;
+            final boolean varies;
+
+            Sample(String expression, boolean varies) {
+                this.expression = expression;
+                this.varies = varies;
+            }
+        }
+
+        /**
+         * A value the field takes, of the shape its mask changes - a phone of three groups for PHONE, an
+         * address with a local part of three or more for EMAIL, enough digits for CARD, RRN and PLATE, three
+         * letters or more for NAME - unique for each row; its @pattern's where it has one. Null when none
+         * fits the field's length.
+         */
+        private Sample privateValue(FieldSpec f, FieldSpec declared, String maskType) {
+            if (regex(f) != null) {
+                String v = text(f, false);
+                return v == null ? null : new Sample(v, v.startsWith("vary("));
+            }
+            int max = f.validationMaxLength();
+            if (max < 0) max = f.rawLength() > 0 ? f.rawLength() : 0;
+            int min = Math.max(0, f.minLength());
+            String type = maskType == null ? null : maskName(maskType);
+            boolean digits = declared != null
+                    && EncryptRules.DIGITS.equalsIgnoreCase(String.valueOf(declared.dslValue(EncryptRules.ENCRYPT))
+                            .trim());
+            if (f.hasDsl("email") || "EMAIL".equals(type)) {
+                int n = fit(max, min, 24, "EMAIL".equals(type) ? 8 : 6);
+                return n < 0 ? null : new Sample("email(" + n + ")", true);
+            }
+            if ("PHONE".equals(type) && fit(max, min, 13, 13) == 13) {
+                return new Sample("\"010-\" + digits(4) + \"-\" + digits(4)", true);
+            }
+            int[] want = "PHONE".equals(type)
+                    ? new int[] {11, 8}
+                    : "CARD".equals(type)
+                            ? new int[] {16, 9}
+                            : "RRN".equals(type) ? new int[] {13, 8} : "PLATE".equals(type) ? new int[] {8, 5} : null;
+            if (want != null || (type == null && digits)) {
+                int n = want == null ? fit(max, min, 11, 1) : fit(max, min, want[0], want[1]);
+                return n < 0 ? null : new Sample("digits(" + n + ")", true);
+            }
+            int n = fit(max, min, 12, "NAME".equals(type) ? 3 : 1);
+            return n < 0 ? null : new Sample("text(" + n + ")", true);
+        }
+
+        /** The length to send: what is wanted within the field's bounds; -1 when it holds fewer than least. */
+        private int fit(int max, int min, int want, int least) {
+            int n = max > 0 ? Math.min(max, want) : want;
+            n = Math.max(n, min);
+            if (max > 0 && n > max) return -1;
+            return n < least ? -1 : n;
+        }
+
+        /** The two lines every test of @Mask and @encrypt starts with: the value sent, and the row made with it. */
+        private void rowWith(Test t, FieldSpec f, Sample value) {
+            t.lines.add(lang.text("sent", value.expression));
+            t.lines.add(lang.val(
+                    "id",
+                    "createdId(" + constant(e) + ", withValue(" + newRow() + ", " + lang.string(json(f)) + ", sent), "
+                            + lang.string(json(e.pkFields().get(0))) + ")"));
+        }
+
+        private Test privacyTest(String method, String display) {
+            Test t = new Test(method(method), display);
+            t.privacy = true;
+            tests.add(t);
+            privacyTests++;
+            return t;
+        }
+
+        /** The read and the search show the field as its mask writes the value sent. */
+        private void shownMasked(FieldSpec f, String maskType, Sample value) {
+            String where = e.getName() + "." + f.name() + " @Mask";
+            if (ControllerBaseRules.exposeOmitted(e).contains("read")) {
+                privacySkip(where + ": its API takes no read (@expose methods), so no answer of a row is read");
+                return;
+            }
+            String narrowed = null;
+            boolean searched = !ControllerBaseRules.exposeOmitted(e).contains("search") && searchDto(e) != null;
+            String result = e.searchResultDtoName();
+            if (searched
+                    && result != null
+                    && !result.trim().isEmpty()
+                    && !result.trim().equals(e.dtoClassName())) {
+                // Another DTO answers the search: whether it carries the field, and masked, is its own.
+                privacySkip(where + ": its search answers with " + result.trim() + ", not " + e.dtoClassName()
+                        + ", so the search's answer is not checked - the read is");
+                searched = false;
+            }
+            if (searched) {
+                narrowed = narrowedTo(f);
+                if (narrowed == null) {
+                    privacySkip(where + ": its search takes neither "
+                            + json(e.pkFields().get(0)) + " nor " + f.name()
+                            + ", so no search is narrowed to the test's row - the read is checked");
+                }
+            }
+            String name = maskName(maskType);
+            Test t = privacyTest(
+                    f.name() + "IsShownMasked",
+                    f.name() + ": shown masked (@Mask " + name + ") - the read"
+                            + (narrowed != null ? " and the search" : "") + " show what " + name
+                            + " makes of the value sent");
+            rowWith(t, f, value);
+            t.lines.add(lang.text("masked", "masked(sent, " + maskType + ".apply(sent))"));
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            t.lines.add(lang.stmt("assertMasked(read(" + path + ", id), " + lang.string(json(f)) + ", masked)"));
+            if (narrowed != null) {
+                t.lines.add(lang.stmt("assertFoundMasked(search(" + path + ", " + narrowed + "), " + key + ", id, "
+                        + lang.string(json(f)) + ", masked)"));
+            }
+        }
+
+        /** Whether the search's answer names its rows by their key: the entity's DTO, or a @searchResult one with it. */
+        private boolean searchAnswersKey() {
+            String result = e.searchResultDtoName();
+            if (result == null || result.trim().isEmpty() || result.trim().equals(e.dtoClassName())) return true;
+            ECoreModel m = modelOf.get(e);
+            io.elasticore.base.model.dto.DataTransfer d = m == null || m.getDataTransferModels() == null
+                    ? null
+                    : m.getDataTransferModels().findByName(result.trim());
+            EntitySpec answer = d == null ? null : SpecFactory.fromDto(d, m, m.getInternalDomainName());
+            return answer != null && field(answer, e.pkFields().get(0).name()) != null;
+        }
+
+        /** A search narrowed to the test's row: by its key, else by the value sent where the search takes it as text. */
+        private String narrowedTo(FieldSpec f) {
+            String k = searchKey();
+            if (k != null) return "obj(" + lang.string(k) + ", id)";
+            String by = searchedBy(f);
+            return by == null ? null : "obj(" + lang.string(by) + ", sent)";
+        }
+
+        /** The search's field of this one, where it finds an equal value (eq, like, or none named); null otherwise. */
+        private String searchedBy(FieldSpec f) {
+            EntitySpec srch = searchDto(e);
+            FieldSpec sf = srch == null ? null : field(srch, f.name());
+            FieldSpec declared = field(e, f.name());
+            if (sf == null || sf.isList() || declared == null) return null;
+            String condition = declared.dslValueAny("search", "s", "srch", "filter", "searchable");
+            String c = condition == null ? "" : condition.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!c.isEmpty() && !EncryptRules.equality(c) && !"like".equals(c)) return null;
+            return json(sf);
+        }
+
+        /**
+         * Issue 270: the masked text sent back by an update keeps the stored value - read past the
+         * application, or found by an equality search of its value - and a new value replaces it.
+         */
+        private void sentBackMasked(FieldSpec f, FieldSpec declared, String maskType, Sample value, boolean encrypted) {
+            String where = e.getName() + "." + f.name() + " @Mask sent back";
+            boolean byCommands = s.commands && DddCommandRules.nothingEditable(e);
+            boolean noPut = e.hasMeta("readonly")
+                    || ControllerBaseRules.exposeOmitted(e).contains("update")
+                    || ControllerBaseRules.restExcluded(e, true).contains("update");
+            if (noPut || byCommands) {
+                privacySkip(where + ": its API takes no update"
+                        + (noPut
+                                ? " (@expose methods, @readonly)"
+                                : " - its commands change the row (@editable opens a field to PUT)"));
+                return;
+            }
+            if (s.commands && DddBehaviorRules.sealed(e, declared)) {
+                privacySkip(
+                        where + ": an update does not write it - its commands change it (@editable opens it to PUT)");
+                return;
+            }
+            if (regex(f) != null) {
+                privacySkip(where + ": its @pattern may refuse the masked text (400), so none is sent");
+                return;
+            }
+            if (!value.varies) {
+                privacySkip(where + ": the generator makes one value of it only, and a new one is sent");
+                return;
+            }
+            String stored = storedCall(f, declared);
+            String by =
+                    encrypted && EncryptRules.indexOf(e, f.name()) != null && searchAnswersKey() ? searchedBy(f) : null;
+            if (stored == null
+                    && (by == null || ControllerBaseRules.exposeOmitted(e).contains("search"))) {
+                privacySkip(where + ": " + storageProblem + ", and no search finds the row by its value");
+                return;
+            }
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            String name = lang.string(json(f));
+            Test t = privacyTest(
+                    f.name() + "SentBackMaskedKeepsTheStoredValue",
+                    f.name() + ": the masked text sent back keeps the stored value, a new value replaces it");
+            rowWith(t, f, value);
+            t.lines.add(lang.text("masked", "masked(sent, " + maskType + ".apply(sent))"));
+            t.lines.add(lang.stmt("assertUpdated(put(" + path + ", obj(" + key + ", id, " + name + ", masked)))"));
+            keeps(t, stored, encrypted, by, "sent", null);
+            t.lines.add(lang.text("other", value.expression));
+            t.lines.add(lang.stmt("assertUpdated(put(" + path + ", obj(" + key + ", id, " + name + ", other)))"));
+            keeps(t, stored, encrypted, by, "other", "sent");
+        }
+
+        /** The line that proves the row holds this value: read past the application, else found by it (and not by gone). */
+        private void keeps(Test t, String stored, boolean encrypted, String by, String value, String gone) {
+            if (stored != null) {
+                storedTests = true;
+                decryptedTests |= encrypted;
+                t.lines.add(lang.stmt(
+                        "assertStored(" + (encrypted ? "decrypted(" + stored + ")" : stored) + ", " + value + ")"));
+                return;
+            }
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            t.lines.add(lang.stmt(
+                    "assertFound(search(" + path + ", obj(" + lang.string(by) + ", " + value + ")), " + key + ", id)"));
+            if (gone != null) {
+                t.lines.add(lang.stmt("assertNotFound(search(" + path + ", obj(" + lang.string(by) + ", " + gone
+                        + ")), " + key + ", id)"));
+            }
+        }
+
+        /** The column holds no plain value - it decrypts to the value sent - and the API answers the value. */
+        private void storedEncrypted(FieldSpec f, FieldSpec declared, String maskType, Sample value) {
+            String where = e.getName() + "." + f.name() + " @encrypt";
+            String stored = storedCall(f, declared);
+            if (stored == null) {
+                privacySkip(where + ": " + storageProblem + ", so the column is not read");
+                return;
+            }
+            Test t = privacyTest(
+                    f.name() + "IsStoredEncrypted",
+                    f.name() + ": kept encrypted (@encrypt) - the column holds no plain value, the API the value");
+            rowWith(t, f, value);
+            t.lines.add(lang.stmt("assertEncrypted(" + stored + ", sent)"));
+            t.lines.add(lang.stmt("assertStored(decrypted(" + stored + "), sent)"));
+            if (maskType == null && !ControllerBaseRules.exposeOmitted(e).contains("read")) {
+                t.lines.add(
+                        lang.stmt("assertValue(read(" + constant(e) + ", id), " + lang.string(json(f)) + ", sent)"));
+            }
+            storedTests = true;
+            decryptedTests = true;
+        }
+
+        /** An equality search (@search(eq)) by the value sent finds the row; by another value it does not. */
+        private void foundByValue(FieldSpec f, Sample value) {
+            if (EncryptRules.indexOf(e, f.name()) == null) return;
+            String where = e.getName() + "." + f.name() + " @encrypt @search(eq)";
+            String by = ControllerBaseRules.exposeOmitted(e).contains("search") ? null : searchedBy(f);
+            if (by == null) {
+                privacySkip(where + ": its API's search does not take " + f.name());
+                return;
+            }
+            if (!searchAnswersKey()) {
+                privacySkip(where + ": its search answers with "
+                        + e.searchResultDtoName().trim() + ", which shows no "
+                        + json(e.pkFields().get(0)) + " to find the row by");
+                return;
+            }
+            if (!value.varies) {
+                privacySkip(where + ": the generator makes one value of it only, and another is searched");
+                return;
+            }
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            Test t = privacyTest(
+                    f.name() + "IsFoundByItsValue",
+                    f.name()
+                            + ": an equality search (@encrypt @search(eq)) finds the row by its value, not by another");
+            rowWith(t, f, value);
+            t.lines.add(lang.stmt(
+                    "assertFound(search(" + path + ", obj(" + lang.string(by) + ", sent)), " + key + ", id)"));
+            t.lines.add(lang.stmt("assertNotFound(search(" + path + ", obj(" + lang.string(by) + ", " + value.expression
+                    + ")), " + key + ", id)"));
+        }
+
+        /** Why storedCall gave null, as the summary says it. */
+        private String storageProblem;
+
+        /**
+         * The read of the field as the database holds it, past the application: stored(table, column, key
+         * column, id) - over MongoDB the collection, the name the field is stored under, and _id. Null, and
+         * storageProblem says why, where the generator does not name them.
+         */
+        private String storedCall(FieldSpec f, FieldSpec declared) {
+            storageProblem = null;
+            boolean own = false;
+            for (FieldSpec x : e.fields()) own |= x.name().equals(f.name());
+            // A plain @abstract parent's fields are columns of the entity's own table.
+            EntitySpec parent = s.mongo ? null : MyBatisSql.abstractParent(e);
+            if (parent != null) {
+                for (FieldSpec x : parent.fields()) own |= x.name().equals(f.name());
+            }
+            if (declared == null || !own) {
+                storageProblem = "it is inherited, and the generator does not name the table it is kept in";
+                return null;
+            }
+            if (!s.mongo && e.hasMeta("rollup")) {
+                storageProblem = "a @rollup entity is kept in its parent's table, which the generator does not name";
+                return null;
+            }
+            String table;
+            String column;
+            String keyColumn;
+            if (s.mongo) {
+                if (!MongoDocs.ownCollection(e.getName())) {
+                    storageProblem = "its documents are kept inside another's, and the generator does not name them";
+                    return null;
+                }
+                table = MongoDocs.collection(e);
+                String named = MongoDocs.explicitName(declared);
+                column = named != null ? named : declared.name();
+                keyColumn = "_id";
+            } else {
+                // As Spring's naming writes them - a named table or column too - with the schema: MyBatisSql's names.
+                table = MyBatisSql.table(e);
+                column = MyBatisSql.column(declared);
+                keyColumn = MyBatisSql.column(e.pkFields().get(0));
+            }
+            java.util.regex.Pattern plainName = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_$.]*");
+            for (String n : new String[] {table, column, keyColumn}) {
+                if (n == null || !plainName.matcher(n).matches()) {
+                    storageProblem = "the generator does not name the "
+                            + (s.mongo ? "collection and field" : "table and" + " column") + " it is kept in plainly ("
+                            + n + ")";
+                    return null;
+                }
+            }
+            return "stored(" + lang.string(table) + ", " + lang.string(column) + ", " + lang.string(keyColumn)
+                    + ", id)";
+        }
+
         // ---- the class
 
-        String render(String pkg, String support, boolean withAccess) {
+        String render(String pkg, String support, boolean withAccess, boolean withPrivacy) {
             List<Test> tests = new ArrayList<Test>();
             for (Test t : this.tests) {
-                if (withAccess || !t.access) tests.add(t);
+                if ((withAccess || !t.access) && (withPrivacy || !t.privacy)) tests.add(t);
             }
             StringBuilder s = new StringBuilder();
             s.append(OWNED).append('\n');
@@ -2309,6 +2782,32 @@ final class ContractTestSource {
             if (withAccess && accessTests > 0) {
                 s.append(" * Who @access lets in is checked too: for each operation, a caller each of its\n")
                         .append(" * terms lets in, and those it refuses - each signed in for the test.\n");
+            }
+            if (withPrivacy && privacyTests > 0) {
+                List<String> promised = new ArrayList<String>();
+                for (Test t : tests) {
+                    if (t.method.contains("IsShownMasked")) add(promised, "the answer shows the value masked");
+                    if (t.method.contains("SentBackMasked"))
+                        add(promised, "the masked text sent back keeps the stored value");
+                    if (t.method.contains("IsStoredEncrypted")) add(promised, "the column holds no plain value");
+                    if (t.method.contains("IsFoundByItsValue"))
+                        add(promised, "an equality search finds the row by its value");
+                }
+                StringBuilder said = new StringBuilder("What @Mask and @encrypt promise is checked too: ");
+                for (int i = 0; i < promised.size(); i++) {
+                    said.append(i == 0 ? "" : i == promised.size() - 1 ? " and " : ", ")
+                            .append(promised.get(i));
+                }
+                StringBuilder line = new StringBuilder();
+                for (String word : said.append('.').toString().split(" ", -1)) {
+                    if (line.length() > 0 && line.length() + 1 + word.length() > 84) {
+                        s.append(" * ").append(line).append('\n');
+                        line.setLength(0);
+                    }
+                    if (line.length() > 0) line.append(' ');
+                    line.append(word);
+                }
+                s.append(" * ").append(line).append('\n');
             }
             s.append(" *\n")
                     .append(" * Written once, then merged when the DSL changes: yours from here. Change a test\n")
@@ -2521,6 +3020,15 @@ final class ContractTestSource {
             r.atLeast(v, false);
             r.atMost(v, false);
         }
+    }
+
+    private static void add(List<String> list, String item) {
+        if (!list.contains(item)) list.add(item);
+    }
+
+    /** The constant of a qualified MaskType: EMAIL for io.elasticore.springboot3.mask.MaskType.EMAIL. */
+    static String maskName(String maskType) {
+        return maskType.substring(maskType.lastIndexOf('.') + 1);
     }
 
     /** The article of a role's name, read letter by letter: an ADMIN, an EDITOR, a USER, a MANAGER. */
@@ -3059,7 +3567,8 @@ final class ContractTestSource {
             Lang lang,
             boolean guarded,
             Principal principal,
-            Access access) {
+            Access access,
+            Privacy privacy) {
         String mockMvc = s.boot4
                 ? "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc"
                 : "org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc";
@@ -3067,8 +3576,8 @@ final class ContractTestSource {
         boolean tx = !s.mongo;
         String why = system ? principalProblem : null;
         return lang.kotlin
-                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access)
-                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access);
+                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access, privacy)
+                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access, privacy);
     }
 
     /**
@@ -3083,7 +3592,8 @@ final class ContractTestSource {
             boolean system,
             Principal principal,
             String why,
-            Access access) {
+            Access access,
+            Privacy privacy) {
         StringBuilder d = new StringBuilder();
         d.append("/**\n")
                 .append(" * What every contract test of the ")
@@ -3116,6 +3626,30 @@ final class ContractTestSource {
         if (!access.skipped.isEmpty()) {
             d.append(" * Not tested of @access, as the build's summary says:\n");
             for (String reason : access.skipped)
+                d.append(" *   - ").append(comment(reason)).append('\n');
+        }
+        if (privacy.tests) {
+            d.append(" * The tests of @Mask and @encrypt read a row back (read), search it (search) and\n")
+                    .append(" * update it (put); what a mask makes of the value sent is its own MaskType's\n")
+                    .append(" * apply, as the generated update compares it")
+                    .append(
+                            privacy.stored
+                                    ? (s.mongo
+                                            ? "; what is stored is read past the\n * application, with MongoTemplate (stored).\n"
+                                            : "; what is stored is read past the\n * application, with JdbcTemplate (stored)"
+                                                    + (privacy.decrypted
+                                                            ? " and decrypted with its key (decrypted).\n"
+                                                            : ".\n"))
+                                    : ".\n");
+            if (privacy.decrypted) {
+                d.append(" * An application with an @encrypt field starts only with its keys\n")
+                        .append(" * (elasticore.crypto.key, elasticore.crypto.index-key): give the tests theirs -\n")
+                        .append(" * an environment variable, never the repository.\n");
+            }
+        }
+        if (!privacy.skipped.isEmpty()) {
+            d.append(" * Not tested of @Mask and @encrypt, as the build's summary says:\n");
+            for (String reason : privacy.skipped)
                 d.append(" *   - ").append(comment(reason)).append('\n');
         }
         d.append(" *\n")
@@ -3209,7 +3743,8 @@ final class ContractTestSource {
             Principal principal,
             boolean tx,
             String why,
-            Access access) {
+            Access access,
+            Privacy privacy) {
         Lang lang = new Lang(false);
         StringBuilder j = new StringBuilder();
         j.append(OWNED).append('\n').append("package ").append(pkg).append(";\n\n");
@@ -3244,7 +3779,7 @@ final class ContractTestSource {
                 .append("import java.util.Map;\n")
                 .append("import java.util.concurrent.ThreadLocalRandom;\n")
                 .append("import java.util.concurrent.atomic.AtomicLong;\n\n");
-        j.append(doc(domainName, s, guarded, system, principal, why, access));
+        j.append(doc(domainName, s, guarded, system, principal, why, access, privacy));
         j.append(springBootTest(s, lang));
         j.append("@AutoConfigureMockMvc\n");
         if (tx) j.append("@Transactional\n");
@@ -3264,6 +3799,24 @@ final class ContractTestSource {
                 .append("    /** The session signIn() opened, sent with every request after it; null for none. */\n")
                 .append("    protected MockHttpSession session;\n\n")
                 .append("    private boolean signedIn;\n\n");
+        if (privacy.stored) {
+            if (s.mongo) {
+                j.append("    /** What the tests of @Mask read past the application: the documents as stored. */\n")
+                        .append("    @Autowired\n")
+                        .append("    protected org.springframework.data.mongodb.core.MongoTemplate mongo;\n\n");
+            } else {
+                j.append(
+                                "    /** What the tests of @Mask and @encrypt read past the application: the columns as stored. */\n")
+                        .append("    @Autowired\n")
+                        .append("    protected org.springframework.jdbc.core.JdbcTemplate jdbc;\n\n");
+                if (!s.mybatis) {
+                    j.append(
+                                    "    /** Written to the database before a column is read: the test's transaction holds the rest. */\n")
+                            .append("    @Autowired\n")
+                            .append("    protected jakarta.persistence.EntityManager entityManager;\n\n");
+                }
+            }
+        }
         if (s.mongo) {
             j.append("    /** The tests run on the MongoDB server " + MONGO_URI
                             + " names; without one they are skipped. */\n")
@@ -3377,6 +3930,7 @@ final class ContractTestSource {
                     .append("    }\n\n");
         }
         if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
+        if (privacy.tests) j.append(javaPrivacy(s, privacy));
         j.append(JAVA_HELPERS);
         j.append("}\n");
         return j.toString();
@@ -3573,6 +4127,308 @@ final class ContractTestSource {
             + "        });\n"
             + "        if (failure[0] != null) throw failure[0];\n"
             + "        return result;\n"
+            + "    }\n"
+            + "\n";
+
+    /**
+     * What the tests of @Mask and @encrypt call (Java): the requests, the values and the checks, and - where
+     * a test reads what is stored - the read past the application (JdbcTemplate, after the test's
+     * transaction is written out under JPA; MongoTemplate over MongoDB) and the decryption.
+     */
+    private static String javaPrivacy(Settings s, Privacy p) {
+        StringBuilder j = new StringBuilder(JAVA_PRIVACY);
+        if (p.stored) {
+            j.append(
+                    s.mongo
+                            ? JAVA_STORED_MONGO
+                            : JAVA_STORED_JDBC.replace(FLUSH, s.mybatis ? "" : "        entityManager.flush();\n"));
+        }
+        if (p.decrypted) j.append(JAVA_DECRYPTED);
+        return j.toString();
+    }
+
+    /** Where the JPA read of a column writes the test's transaction out first. */
+    private static final String FLUSH = "        // flush\n";
+
+    private static final String JAVA_PRIVACY = ""
+            + "    // ---- the tests of @Mask and @encrypt\n"
+            + "\n"
+            + "    /** The row as the API reads it: GET path/{id}. */\n"
+            + "    protected MvcResult read(String path, Object id) throws Exception {\n"
+            + "        return perform(MockMvcRequestBuilders.get(path + \"/\" + id));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A search: POST path/search with these conditions. */\n"
+            + "    protected MvcResult search(String path, Object body) throws Exception {\n"
+            + "        return perform(MockMvcRequestBuilders.post(path + \"/search\").contentType(MediaType.APPLICATION_JSON).content(json(body)));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** An update of the row the body's key names: PUT path. */\n"
+            + "    protected MvcResult put(String path, Object body) throws Exception {\n"
+            + "        return perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The update was made: 2xx (refused as succeeded says). */\n"
+            + "    protected void assertUpdated(MvcResult result) throws Exception {\n"
+            + "        succeeded(result, \"the update\");\n"
+            + "    }\n"
+            + "\n"
+            + "    /** Digits of exactly this length, unique in the run. */\n"
+            + "    protected String digits(int length) {\n"
+            + "        String unique = Long.toString(SEQUENCE.incrementAndGet());\n"
+            + "        if (unique.length() >= length) return unique.substring(unique.length() - length);\n"
+            + "        StringBuilder digits = new StringBuilder(length);\n"
+            + "        while (digits.length() + unique.length() < length) digits.append('0');\n"
+            + "        return digits.append(unique).toString();\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * What the field's mask makes of the value sent: its MaskType's apply, as the generated update\n"
+            + "     * compares it. Where that is the value itself, no answer would show the mask: the test is aborted.\n"
+            + "     */\n"
+            + "    protected String masked(String sent, String masked) {\n"
+            + "        if (masked.equals(sent)) skip(\"the mask writes \" + sent + \" as it is, so no answer shows it masked\");\n"
+            + "        return masked;\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The read let in, and its answer shows the field masked. */\n"
+            + "    protected void assertMasked(MvcResult result, String field, String masked) throws Exception {\n"
+            + "        succeeded(result, \"the read\");\n"
+            + "        Assertions.assertEquals(masked, String.valueOf(value(result, field)), () -> field + \" is not shown masked: \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, its answer holds the row of this key, and shows the field masked. */\n"
+            + "    protected void assertFoundMasked(MvcResult result, String key, Object id, String field, String masked) throws Exception {\n"
+            + "        assertFound(result, key, id);\n"
+            + "        for (Map<?, ?> row : rowsOf(result)) {\n"
+            + "            if (!String.valueOf(id).equals(String.valueOf(row.get(key)))) continue;\n"
+            + "            Assertions.assertEquals(masked, String.valueOf(row.get(field)), () -> field + \" is not shown masked: \" + answer(result));\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, and its answer holds the row of this key. */\n"
+            + "    protected void assertFound(MvcResult result, String key, Object id) throws Exception {\n"
+            + "        succeeded(result, \"the search\");\n"
+            + "        Assertions.assertTrue(keysIn(result, key).contains(String.valueOf(id)), () -> \"the search does not hold \" + key + \" \" + id + \": \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, and its answer does not hold the row of this key. */\n"
+            + "    protected void assertNotFound(MvcResult result, String key, Object id) throws Exception {\n"
+            + "        succeeded(result, \"the search\");\n"
+            + "        Assertions.assertFalse(keysIn(result, key).contains(String.valueOf(id)), () -> \"the search holds \" + key + \" \" + id + \": \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The rows a search answered: those of its page, or of the list it is. */\n"
+            + "    private List<Map<?, ?>> rowsOf(MvcResult result) {\n"
+            + "        Object rows;\n"
+            + "        try {\n"
+            + "            rows = JsonPath.read(body(result), \"$.content\");\n"
+            + "        } catch (RuntimeException notAPage) {\n"
+            + "            rows = null;\n"
+            + "        }\n"
+            + "        if (!(rows instanceof List)) {\n"
+            + "            try {\n"
+            + "                rows = JsonPath.read(body(result), \"$\");\n"
+            + "            } catch (RuntimeException notAList) {\n"
+            + "                rows = null;\n"
+            + "            }\n"
+            + "        }\n"
+            + "        List<Map<?, ?>> out = new ArrayList<>();\n"
+            + "        if (rows instanceof List) {\n"
+            + "            for (Object row : (List<?>) rows) {\n"
+            + "                if (row instanceof Map) out.add((Map<?, ?>) row);\n"
+            + "            }\n"
+            + "        }\n"
+            + "        return out;\n"
+            + "    }\n"
+            + "\n"
+            + "    private List<String> keysIn(MvcResult result, String key) {\n"
+            + "        List<String> keys = new ArrayList<>();\n"
+            + "        for (Map<?, ?> row : rowsOf(result)) keys.add(String.valueOf(row.get(key)));\n"
+            + "        return keys;\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String JAVA_STORED_JDBC = ""
+            + "    /**\n"
+            + "     * The value the database holds, read past the application: the column of the row of this key - what\n"
+            + "     * the test's transaction has not written yet is written first.\n"
+            + "     */\n"
+            + "    protected String stored(String table, String column, String key, Object id) {\n"
+            + FLUSH
+            + "        List<String> found = jdbc.queryForList(\"select \" + column + \" from \" + table + \" where \" + key + \" = ?\", String.class, id);\n"
+            + "        Assertions.assertEquals(1, found.size(), () -> table + \" holds no row of \" + key + \" \" + id);\n"
+            + "        return found.get(0);\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The value stored is this one. */\n"
+            + "    protected void assertStored(String stored, String expected) {\n"
+            + "        Assertions.assertEquals(expected, stored, \"the value stored\");\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String JAVA_STORED_MONGO = ""
+            + "    /** The value the database holds, read past the application: the field of the document of this key. */\n"
+            + "    protected String stored(String collection, String field, String key, Object id) {\n"
+            + "        org.bson.Document document = mongo.findById(id, org.bson.Document.class, collection);\n"
+            + "        Assertions.assertNotNull(document, () -> collection + \" holds no document of \" + key + \" \" + id);\n"
+            + "        Object value = document.get(field);\n"
+            + "        return value == null ? null : value.toString();\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The value stored is this one. */\n"
+            + "    protected void assertStored(String stored, String expected) {\n"
+            + "        Assertions.assertEquals(expected, stored, \"the value stored\");\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String JAVA_DECRYPTED = ""
+            + "    /** A value as the database holds it, decrypted with the application's key (elasticore.crypto.key). */\n"
+            + "    protected String decrypted(String stored) {\n"
+            + "        return stored == null ? null : io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(stored);\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The column holds no plain value: not the value sent, nor text with it inside. */\n"
+            + "    protected void assertEncrypted(String stored, String sent) {\n"
+            + "        Assertions.assertNotNull(stored, \"nothing is stored\");\n"
+            + "        Assertions.assertNotEquals(sent, stored, \"the column holds the plain value\");\n"
+            + "        if (sent.length() >= 6) Assertions.assertFalse(stored.contains(sent), () -> \"the column holds the plain value: \" + stored);\n"
+            + "    }\n"
+            + "\n";
+
+    /** The same in Kotlin. */
+    private static String kotlinPrivacy(Settings s, Privacy p) {
+        StringBuilder k = new StringBuilder(KOTLIN_PRIVACY);
+        if (p.stored) {
+            k.append(
+                    s.mongo
+                            ? KOTLIN_STORED_MONGO
+                            : KOTLIN_STORED_JDBC.replace(FLUSH, s.mybatis ? "" : "        entityManager.flush()\n"));
+        }
+        if (p.decrypted) k.append(KOTLIN_DECRYPTED);
+        return k.toString();
+    }
+
+    private static final String KOTLIN_PRIVACY = ""
+            + "    // ---- the tests of @Mask and @encrypt\n"
+            + "\n"
+            + "    /** The row as the API reads it: GET path/{id}. */\n"
+            + "    protected fun read(path: String, id: Any?): MvcResult = perform(MockMvcRequestBuilders.get(\"$path/$id\"))\n"
+            + "\n"
+            + "    /** A search: POST path/search with these conditions. */\n"
+            + "    protected fun search(path: String, body: Any?): MvcResult =\n"
+            + "        perform(MockMvcRequestBuilders.post(\"$path/search\").contentType(MediaType.APPLICATION_JSON).content(json(body)))\n"
+            + "\n"
+            + "    /** An update of the row the body's key names: PUT path. */\n"
+            + "    protected fun put(path: String, body: Any?): MvcResult =\n"
+            + "        perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)))\n"
+            + "\n"
+            + "    /** The update was made: 2xx (refused as succeeded says). */\n"
+            + "    protected fun assertUpdated(result: MvcResult) = succeeded(result, \"the update\")\n"
+            + "\n"
+            + "    /** Digits of exactly this length, unique in the run. */\n"
+            + "    protected fun digits(length: Int): String {\n"
+            + "        val unique = SEQUENCE.incrementAndGet().toString()\n"
+            + "        if (unique.length >= length) return unique.substring(unique.length - length)\n"
+            + "        return \"0\".repeat(length - unique.length) + unique\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * What the field's mask makes of the value sent: its MaskType's apply, as the generated update\n"
+            + "     * compares it. Where that is the value itself, no answer would show the mask: the test is aborted.\n"
+            + "     */\n"
+            + "    protected fun masked(sent: String, masked: String): String {\n"
+            + "        if (masked == sent) skip(\"the mask writes $sent as it is, so no answer shows it masked\")\n"
+            + "        return masked\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The read let in, and its answer shows the field masked. */\n"
+            + "    protected fun assertMasked(result: MvcResult, field: String, masked: String) {\n"
+            + "        succeeded(result, \"the read\")\n"
+            + "        Assertions.assertEquals(masked, value(result, field).toString()) { \"$field is not shown masked: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, its answer holds the row of this key, and shows the field masked. */\n"
+            + "    protected fun assertFoundMasked(result: MvcResult, key: String, id: Any?, field: String, masked: String) {\n"
+            + "        assertFound(result, key, id)\n"
+            + "        for (row in rowsOf(result)) {\n"
+            + "            if (row[key].toString() != id.toString()) continue\n"
+            + "            Assertions.assertEquals(masked, row[field].toString()) { \"$field is not shown masked: \" + answer(result) }\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, and its answer holds the row of this key. */\n"
+            + "    protected fun assertFound(result: MvcResult, key: String, id: Any?) {\n"
+            + "        succeeded(result, \"the search\")\n"
+            + "        Assertions.assertTrue(rowsOf(result).any { it[key].toString() == id.toString() }) { \"the search does not hold $key $id: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The search let in, and its answer does not hold the row of this key. */\n"
+            + "    protected fun assertNotFound(result: MvcResult, key: String, id: Any?) {\n"
+            + "        succeeded(result, \"the search\")\n"
+            + "        Assertions.assertFalse(rowsOf(result).any { it[key].toString() == id.toString() }) { \"the search holds $key $id: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The rows a search answered: those of its page, or of the list it is. */\n"
+            + "    private fun rowsOf(result: MvcResult): List<Map<*, *>> {\n"
+            + "        var rows: Any? = try {\n"
+            + "            JsonPath.read<Any?>(body(result), \"\\$.content\")\n"
+            + "        } catch (notAPage: RuntimeException) {\n"
+            + "            null\n"
+            + "        }\n"
+            + "        if (rows !is List<*>) {\n"
+            + "            rows = try {\n"
+            + "                JsonPath.read<Any?>(body(result), \"\\$\")\n"
+            + "            } catch (notAList: RuntimeException) {\n"
+            + "                null\n"
+            + "            }\n"
+            + "        }\n"
+            + "        return (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String KOTLIN_STORED_JDBC = ""
+            + "    /**\n"
+            + "     * The value the database holds, read past the application: the column of the row of this key - what\n"
+            + "     * the test's transaction has not written yet is written first.\n"
+            + "     */\n"
+            + "    protected fun stored(table: String, column: String, key: String, id: Any?): String? {\n"
+            + FLUSH
+            + "        val found = jdbc.queryForList(\"select $column from $table where $key = ?\", String::class.java, id)\n"
+            + "        Assertions.assertEquals(1, found.size) { \"$table holds no row of $key $id\" }\n"
+            + "        return found[0]\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The value stored is this one. */\n"
+            + "    protected fun assertStored(stored: String?, expected: String) {\n"
+            + "        Assertions.assertEquals(expected, stored, \"the value stored\")\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String KOTLIN_STORED_MONGO = ""
+            + "    /** The value the database holds, read past the application: the field of the document of this key. */\n"
+            + "    protected fun stored(collection: String, field: String, key: String, id: Any?): String? {\n"
+            + "        val document = mongo.findById(id!!, org.bson.Document::class.java, collection)\n"
+            + "        Assertions.assertNotNull(document) { \"$collection holds no document of $key $id\" }\n"
+            + "        return document?.get(field)?.toString()\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The value stored is this one. */\n"
+            + "    protected fun assertStored(stored: String?, expected: String) {\n"
+            + "        Assertions.assertEquals(expected, stored, \"the value stored\")\n"
+            + "    }\n"
+            + "\n";
+
+    private static final String KOTLIN_DECRYPTED = ""
+            + "    /** A value as the database holds it, decrypted with the application's key (elasticore.crypto.key). */\n"
+            + "    protected fun decrypted(stored: String?): String? =\n"
+            + "        stored?.let { io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(it) }\n"
+            + "\n"
+            + "    /** The column holds no plain value: not the value sent, nor text with it inside. */\n"
+            + "    protected fun assertEncrypted(stored: String?, sent: String) {\n"
+            + "        Assertions.assertNotNull(stored, \"nothing is stored\")\n"
+            + "        Assertions.assertNotEquals(sent, stored, \"the column holds the plain value\")\n"
+            + "        if (sent.length >= 6) Assertions.assertFalse(stored!!.contains(sent)) { \"the column holds the plain value: $stored\" }\n"
             + "    }\n"
             + "\n";
 
@@ -3836,7 +4692,8 @@ final class ContractTestSource {
             Principal principal,
             boolean tx,
             String why,
-            Access access) {
+            Access access,
+            Privacy privacy) {
         Lang lang = new Lang(true);
         StringBuilder k = new StringBuilder();
         k.append(OWNED).append('\n').append("package ").append(pkg).append("\n\n");
@@ -3864,7 +4721,7 @@ final class ContractTestSource {
                 .append("import java.nio.charset.StandardCharsets\n")
                 .append("import java.util.concurrent.ThreadLocalRandom\n")
                 .append("import java.util.concurrent.atomic.AtomicLong\n\n");
-        k.append(doc(domainName, s, guarded, system, principal, why, access));
+        k.append(doc(domainName, s, guarded, system, principal, why, access, privacy));
         k.append(springBootTest(s, lang));
 
         k.append("@AutoConfigureMockMvc\n");
@@ -3875,6 +4732,25 @@ final class ContractTestSource {
                 .append("    /** The session signIn() opened, sent with every request after it; null for none. */\n")
                 .append("    protected var session: MockHttpSession? = null\n\n")
                 .append("    private var signedIn = false\n\n");
+        if (privacy.stored) {
+            if (s.mongo) {
+                k.append("    /** What the tests of @Mask read past the application: the documents as stored. */\n")
+                        .append("    @Autowired\n")
+                        .append(
+                                "    protected lateinit var mongo: org.springframework.data.mongodb.core.MongoTemplate\n\n");
+            } else {
+                k.append(
+                                "    /** What the tests of @Mask and @encrypt read past the application: the columns as stored. */\n")
+                        .append("    @Autowired\n")
+                        .append("    protected lateinit var jdbc: org.springframework.jdbc.core.JdbcTemplate\n\n");
+                if (!s.mybatis) {
+                    k.append(
+                                    "    /** Written to the database before a column is read: the test's transaction holds the rest. */\n")
+                            .append("    @Autowired\n")
+                            .append("    protected lateinit var entityManager: jakarta.persistence.EntityManager\n\n");
+                }
+            }
+        }
         k.append("    companion object {\n")
                 .append(
                         "        /** A test's values are its own (logins, unique fields): each run starts somewhere new. */\n")
@@ -3987,6 +4863,7 @@ final class ContractTestSource {
                             "        CurrentUser.callAsSystem<MvcResult> { mvc.perform(request(builder.accept(MediaType.APPLICATION_JSON))).andReturn() }\n\n");
         }
         if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
+        if (privacy.tests) k.append(kotlinPrivacy(s, privacy));
         k.append(KOTLIN_HELPERS);
         k.append("}\n");
         return k.toString();
@@ -4368,6 +5245,11 @@ final class ContractTestSource {
 
         String val(String name, String expression) {
             return kotlin ? "val " + name + " = " + expression : (typeOf(name) + " " + name + " = " + expression + ";");
+        }
+
+        /** A text: String sent = email(24); */
+        String text(String name, String expression) {
+            return kotlin ? "val " + name + " = " + expression : "String " + name + " = " + expression + ";";
         }
 
         /** A caller signIn(role) signed in: Caller owner = signIn("U"); */
