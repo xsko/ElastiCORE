@@ -20,18 +20,20 @@
     `assertStored` (`jdbc`, `entityManager` or `mongo` injected), `decrypted`, `assertEncrypted` - only when a test calls it.
     A support class kept by a merge without them gets none of these tests and keeps the others - the tests of `@access` too
     where it has their members - and the summary says so (`... the tests of @Mask and @encrypt are not written`).
-  - Counted as not tested, with why, in the summary and the support class's comment: a composite key, a field a request does
-    not write, a field no value the generator builds fits with a change the mask shows, no read (the search too where it takes
-    neither the key nor the field), no update of the field (a root its commands change - `@editable` opens it), a `@pattern`
-    field sent back (its pattern may refuse the masked text), an inherited field or a name not written plainly (its column is
-    not read), an `@encrypt @search(eq)` field the search does not take.
+  - Counted as not tested, with why, in the summary and the support class's comment: a composite key, the key itself, a field
+    a request does not write, a field no value the generator builds fits with a change the mask shows (or with a second value),
+    no read (the search too where it takes neither the key nor the field, or answers with a `@searchResult` DTO), no update of
+    the field (a root its commands change - `@editable` opens it), a `@pattern` field sent back (its pattern may refuse the
+    masked text), an inherited field (a plain `@abstract` parent's is the entity's own), a `@rollup` entity or a name not
+    written plainly (its column is not read), an `@encrypt @search(eq)` field the search does not take. The table and column
+    are named as Spring's naming writes them, with the schema (`MyBatisSql`'s names).
 - Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `@Mask` and `@encrypt`
   gets the same contract tests and support class as before. `testCode: "true"` is as it was. `elcoreRulesCheck -Pstrict` 158
   MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library change, no DSL word.
 - Samples: `elasticore-template-ddd-mybatis`'s `Customer.phone` is masked (`@env:maskphone`); `elasticore-template-kt`'s
   `Agent` has `phone: string(20) @encrypt(digits) @s(eq) @env:maskphone` (its keys are the tests' `TestCryptoKeys`), and its
   edited `ShopContractSupport.kt` takes the new members. `elasticore-template-ddd`'s `Subscriber` and the MongoDB samples'
-  `Customer.email` were masked and encrypted already.
+  `Customer.email` were masked already (`Subscriber`'s phone and e-mail encrypted too; MongoDB has no `@encrypt`).
 - Checked, over HTTP: `elasticore-template-ddd` (Java, JPA) `SubscriberContractTest` 11, 4 of them new (phone and e-mail
   kept encrypted, the phone found by its value, the e-mail shown masked; sent back is counted - the root takes no `PUT`), whole
   suite 203; `-ddd-mybatis` (MyBatis) `CustomerContractTest` 13 (the phone shown masked and sent back), whole suite 158;

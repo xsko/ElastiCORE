@@ -18,6 +18,7 @@ import io.elasticore.base.model.pub.rules.ddd.DddCommandRules;
 import io.elasticore.base.model.pub.rules.ddd.DddInvariantRules;
 import io.elasticore.base.model.pub.rules.ddd.DddStateRules;
 import io.elasticore.base.model.pub.rules.mongo.MongoDocs;
+import io.elasticore.base.model.pub.rules.mybatis.MyBatisSql;
 
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
@@ -2394,6 +2395,10 @@ final class ContractTestSource {
                     privacySkip(e.getName() + " @Mask, @encrypt: a composite key - no row is read back by its key");
                     return;
                 }
+                if (f.name().equals(e.pkFields().get(0).name())) {
+                    privacySkip(where + ": it is the key, which a test reads its row back by");
+                    continue;
+                }
                 if (!writable(e, f) || f.hasDslAny("writeonly")) {
                     privacySkip(where + ": a request does not write it, so no value of the test's is sent");
                     continue;
@@ -2498,6 +2503,16 @@ final class ContractTestSource {
             }
             String narrowed = null;
             boolean searched = !ControllerBaseRules.exposeOmitted(e).contains("search") && searchDto(e) != null;
+            String result = e.searchResultDtoName();
+            if (searched
+                    && result != null
+                    && !result.trim().isEmpty()
+                    && !result.trim().equals(e.dtoClassName())) {
+                // Another DTO answers the search: whether it carries the field, and masked, is its own.
+                privacySkip(where + ": its search answers with " + result.trim() + ", not " + e.dtoClassName()
+                        + ", so the search's answer is not checked - the read is");
+                searched = false;
+            }
             if (searched) {
                 narrowed = narrowedTo(f);
                 if (narrowed == null) {
@@ -2521,6 +2536,18 @@ final class ContractTestSource {
                 t.lines.add(lang.stmt("assertFoundMasked(search(" + path + ", " + narrowed + "), " + key + ", id, "
                         + lang.string(json(f)) + ", masked)"));
             }
+        }
+
+        /** Whether the search's answer names its rows by their key: the entity's DTO, or a @searchResult one with it. */
+        private boolean searchAnswersKey() {
+            String result = e.searchResultDtoName();
+            if (result == null || result.trim().isEmpty() || result.trim().equals(e.dtoClassName())) return true;
+            ECoreModel m = modelOf.get(e);
+            io.elasticore.base.model.dto.DataTransfer d = m == null || m.getDataTransferModels() == null
+                    ? null
+                    : m.getDataTransferModels().findByName(result.trim());
+            EntitySpec answer = d == null ? null : SpecFactory.fromDto(d, m, m.getInternalDomainName());
+            return answer != null && field(answer, e.pkFields().get(0).name()) != null;
         }
 
         /** A search narrowed to the test's row: by its key, else by the value sent where the search takes it as text. */
@@ -2549,11 +2576,20 @@ final class ContractTestSource {
          */
         private void sentBackMasked(FieldSpec f, FieldSpec declared, String maskType, Sample value, boolean encrypted) {
             String where = e.getName() + "." + f.name() + " @Mask sent back";
-            if (!updates() || (s.commands && DddBehaviorRules.sealed(e, declared))) {
-                privacySkip(where + ": its API takes no update of it"
-                        + (s.commands && DddBehaviorRules.splits(e)
-                                ? " - its commands change the row (@editable opens a field to PUT)"
-                                : " (@expose methods, @readonly)"));
+            boolean byCommands = s.commands && DddCommandRules.nothingEditable(e);
+            boolean noPut = e.hasMeta("readonly")
+                    || ControllerBaseRules.exposeOmitted(e).contains("update")
+                    || ControllerBaseRules.restExcluded(e, true).contains("update");
+            if (noPut || byCommands) {
+                privacySkip(where + ": its API takes no update"
+                        + (noPut
+                                ? " (@expose methods, @readonly)"
+                                : " - its commands change the row (@editable opens a field to PUT)"));
+                return;
+            }
+            if (s.commands && DddBehaviorRules.sealed(e, declared)) {
+                privacySkip(
+                        where + ": an update does not write it - its commands change it (@editable opens it to PUT)");
                 return;
             }
             if (regex(f) != null) {
@@ -2565,7 +2601,8 @@ final class ContractTestSource {
                 return;
             }
             String stored = storedCall(f, declared);
-            String by = encrypted && EncryptRules.indexOf(e, f.name()) != null ? searchedBy(f) : null;
+            String by =
+                    encrypted && EncryptRules.indexOf(e, f.name()) != null && searchAnswersKey() ? searchedBy(f) : null;
             if (stored == null
                     && (by == null || ControllerBaseRules.exposeOmitted(e).contains("search"))) {
                 privacySkip(where + ": " + storageProblem + ", and no search finds the row by its value");
@@ -2636,6 +2673,12 @@ final class ContractTestSource {
                 privacySkip(where + ": its API's search does not take " + f.name());
                 return;
             }
+            if (!searchAnswersKey()) {
+                privacySkip(where + ": its search answers with "
+                        + e.searchResultDtoName().trim() + ", which shows no "
+                        + json(e.pkFields().get(0)) + " to find the row by");
+                return;
+            }
             if (!value.varies) {
                 privacySkip(where + ": the generator makes one value of it only, and another is searched");
                 return;
@@ -2665,8 +2708,17 @@ final class ContractTestSource {
             storageProblem = null;
             boolean own = false;
             for (FieldSpec x : e.fields()) own |= x.name().equals(f.name());
+            // A plain @abstract parent's fields are columns of the entity's own table.
+            EntitySpec parent = s.mongo ? null : MyBatisSql.abstractParent(e);
+            if (parent != null) {
+                for (FieldSpec x : parent.fields()) own |= x.name().equals(f.name());
+            }
             if (declared == null || !own) {
                 storageProblem = "it is inherited, and the generator does not name the table it is kept in";
+                return null;
+            }
+            if (!s.mongo && e.hasMeta("rollup")) {
+                storageProblem = "a @rollup entity is kept in its parent's table, which the generator does not name";
                 return null;
             }
             String table;
@@ -2682,9 +2734,10 @@ final class ContractTestSource {
                 column = named != null ? named : declared.name();
                 keyColumn = "_id";
             } else {
-                table = unquote(e.tableName());
-                column = declared.dbColumnName();
-                keyColumn = e.pkFields().get(0).dbColumnName();
+                // As Spring's naming writes them - a named table or column too - with the schema: MyBatisSql's names.
+                table = MyBatisSql.table(e);
+                column = MyBatisSql.column(declared);
+                keyColumn = MyBatisSql.column(e.pkFields().get(0));
             }
             java.util.regex.Pattern plainName = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_$.]*");
             for (String n : new String[] {table, column, keyColumn}) {

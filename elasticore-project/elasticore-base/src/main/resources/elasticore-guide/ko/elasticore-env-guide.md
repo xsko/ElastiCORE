@@ -789,12 +789,13 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   받지 않는 검색, 복합 키(create 만), 방문자의 create 가 필수 `@owner` 를 비우는 경우.
 - `@Mask` 와 `@encrypt`: support 클래스는 행을 다시 읽고(`read`), 검색하고(`search`), 수정하고(`put`), 저장된 것을 애플리케이션을
   거치지 않고 읽어(`stored`: `JdbcTemplate` - JPA 는 트랜잭션을 먼저 내보낸 뒤; `MongoTemplate`) 복호화한다(`decrypted`, 애플리케이션의
-  키로 - 테스트에 `elasticore.crypto.key` 와 `index-key` 를 준다, 저장소에는 두지 않는다: 샘플의 `TestCryptoKeys`).
-  테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: 복합 키, 요청이 쓰지 않는 필드, 생성기가 만드는 값 중 마스크가
-  바꾸는 것이 맞지 않는 필드(`EMAIL` 로 가린 `string(2)`), 읽기 없음(`@expose methods`; 검색은 키나 그 필드를 받는 곳에서 확인),
-  필드의 수정 없음(명령이 바꾸는 루트; `@editable` 이 `PUT` 에 연다), 돌려보내는 `@pattern` 필드(패턴이 가린 글자를 거부할 수
-  있다), 상속한 필드(컬럼을 읽지 않는다), 검색이 받지 않는 `@encrypt @search(eq)` 필드. 마스크가 그대로 쓰는 값은 테스트를
-  중단한다. 이 멤버 없이 남은 support 클래스에는 이 테스트를 하나도 쓰지 않는다.
+  키로 - 테스트에는 테스트만의 키를 준다, 샘플의 `TestCryptoKeys` 처럼 실행마다 만들어).
+  테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: 복합 키, 키 자체, 요청이 쓰지 않는 필드, 생성기가 만드는 값 중
+  마스크가 바꾸는 것이 맞지 않는 필드(`EMAIL` 로 가린 `string(2)`)나 두 번째 값이 없는 필드(값이 하나뿐인 `@pattern`), 읽기 없음
+  (`@expose methods`; 검색은 키도 그 필드도 받지 않거나 `@searchResult` DTO 로 답하는 곳에서), 필드의 수정 없음(명령이 바꾸는 루트;
+  `@editable` 이 `PUT` 에 연다), 돌려보내는 `@pattern` 필드(가린 글자를 거부할 수 있다), 상속한 필드, `@rollup` 엔티티, 평이하게
+  쓰지 않은 이름(컬럼을 읽지 않는다), 검색이 받지 않는 `@encrypt @search(eq)` 필드.
+  마스크가 그대로 쓰는 값은 테스트를 중단한다. 이 멤버 없이 남은 support 클래스에는 이 테스트를 하나도 쓰지 않는다.
 - support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
   Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
   애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
