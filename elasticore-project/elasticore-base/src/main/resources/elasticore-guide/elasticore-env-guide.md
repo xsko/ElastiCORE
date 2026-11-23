@@ -1372,11 +1372,12 @@ that still serves an endpoint the DSL took away (`@expose(methods)`, `@readonly`
 **Turn it on**: it is on by default for 3.0 code. To turn it off, `elasticore { merge = false }` - from then on a file without a marker 
 is treated as the developer's own and skipped (if you delete it, it is generated anew with the marker). `output = 'v2'` (2.x code) is off by default - exactly as 2.x used it.
 
-**`.elasticore/cache` - commit it together with the generated files.** It is one file (an uncompressed zip) holding, per file, exactly what the generator wrote last (before merging).
+**`.elasticore/generated-base.zip` - commit it together with the generated files.** It is one file (an uncompressed zip) holding, per file, exactly what the generator wrote last (before merging).
 It is the base of the merge, so for a file edited by someone who cloned (even with `--depth 1`) to be merged, it must be in the repository. If the content is
-the same, the bytes are the same, so the repository grows only as much as the generated output changed. The `.elasticore/.gitattributes` next to it marks it binary.
-**The cache and the generated files travel together** - commit both, or, in a project that keeps generated files out of git, leave out `.elasticore/` too.
-If you commit only the cache, after a pull the old local generated file looks like an "edited file" and is not rewritten.
+the same, the bytes are the same, so the repository grows only as much as the generated output changed. The `.elasticore/.gitattributes` next to it marks it binary (and keeps LFS off it), and `.elasticore/.gitignore` takes it back in where a project ignores `*.zip` - commit both.
+**The base and the generated files travel together** - commit both, or, in a project that keeps generated files out of git, leave out `.elasticore/` too.
+If you commit only the base, after a pull the old local generated file looks like an "edited file" and is not rewritten.
+It used to be named `.elasticore/cache`. The first build that writes renames it (`[elcore3] .elasticore/cache was renamed to .elasticore/generated-base.zip - commit both changes ...`) - commit the delete and the new file; nothing else to do. If both are there (a branch brought the old one back), the new one is read and the build warns until you delete the old one.
 
 | Case | What the build does |
 |---|---|
@@ -1416,13 +1417,14 @@ and below it the list of files that still have markers.
 
 - `-Pforce` does not apply to merged files. A setting that is always on in the build must not erase your edits.
 - **If a git merge conflicts** (when two branches each changed the model and generated):
-  1. For `.elasticore/cache`, pick one side - `git checkout --ours .elasticore/cache`.
+  1. For `.elasticore/generated-base.zip`, pick one side - `git checkout --ours .elasticore/generated-base.zip`.
   2. For a conflicted generated file, pick **the same side as the cache** - `git checkout --ours <file>`. When you build, the other side's DSL changes come in again. If you pick
      the side different from the cache, the DSL changes of the cache's branch look like "things the developer deleted" and may silently drop out.
   3. **If both branches edited the same generated file by hand**, merge that file yourself - keep the generated lines and the edited lines of both sides. If you
      pick only one side, what the other side edited is lost.
-- If the cache cannot be read (corrupt), nothing is written and the build fails. Fetch it again from git. If you delete only the `cache` file, the next build reports, without touching them, all files that are not
-  in the cache and differ from what is generated now - delete the files you want to get as generated. If you delete the whole `.elasticore/`
+  4. **A branch from before the rename** still has `.elasticore/cache` (a modify/delete conflict on it). The base is the side you picked in step 2: if that is the branch's side, `git checkout <branch> -- .elasticore/cache` and `git mv -f .elasticore/cache .elasticore/generated-base.zip`; otherwise `git rm .elasticore/cache`.
+- If the base cannot be read (corrupt), nothing is written and the build fails. Fetch it again from git. If you delete only the `generated-base.zip` file, the next build reports, without touching them, all files that are not
+  in the base and differ from what is generated now - delete the files you want to get as generated. If you delete the whole `.elasticore/`
   folder, it is treated as a project merging for the first time, and `orm.xml` and the message files, which were always overwritten, are written anew as before.
 - The merge is line by line, so it counts as a conflict even when both sides edit **directly adjacent lines** (same as git).
 

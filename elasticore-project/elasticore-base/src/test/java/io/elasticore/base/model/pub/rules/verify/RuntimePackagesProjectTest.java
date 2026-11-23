@@ -341,7 +341,8 @@ public class RuntimePackagesProjectTest {
 
     /** The mapping the cache records for a file's text; empty: none. */
     private String recordedMappingOf(String key) throws IOException {
-        String said = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()))
+        String said = GeneratedCache.read(
+                        Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()))
                 .get(".runtime-packages");
         if (said == null) return "";
         for (String line : said.split("\n", -1)) {

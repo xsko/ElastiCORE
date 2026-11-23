@@ -1585,7 +1585,7 @@ no language at all, such as `.proto`, is the exception.
 ## 7.5 Ownership of generated files (elcore3)
 
 In 3.0 code, all generated files, Java and Kotlin included, are **merged** without a first-line mark: your edits stay and DSL changes come in too,
-and a generate-once file accepts only changes that merge cleanly and warns about the rest (`.elasticore/cache`,
+and a generate-once file accepts only changes that merge cleanly and warns about the rest (`.elasticore/generated-base.zip`,
 `elasticore-env-guide.md` section 9-2). The table below is the rule for **files that have a first-line mark** - `output = 'v2'`, `merge = false`,
 and files in a merging project where the base cannot be confirmed, so the mark is still there (9-2 "projects that had marks"). When marks are written, mapper
 XML, SQL, properties, `.proto` and TypeScript use `<!-- //ecd:... -->`, `-- //ecd:...` and `//ecd:...`, and `orm.xml` and message
@@ -1751,7 +1751,7 @@ elasticore {
 }
 ```
 
-Without this setting, if `src/main/ts` holds a generated `.ts` (in `.elasticore/cache`, or with `//ecd:` on the first line) and that client was not made from the current model,
+Without this setting, if `src/main/ts` holds a generated `.ts` (in `.elasticore/generated-base.zip`, or with `//ecd:` on the first line) and that client was not made from the current model,
 `elcore3` warns once at the end:
 `[elcore3] .../src/main/ts holds a generated TypeScript client made from an older model - run the elcore3ts task after a
 model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
@@ -1830,15 +1830,15 @@ elasticore {
   project nor one that holds one (`com.acme.shop` in a project `com.acme.shop`: put the copy in `com.acme.shop.runtime`).
   Otherwise the build fails before anything is generated.
 - Unset, the generated code is byte for byte what it was.
-- The text is rewritten before it is merged and kept in `.elasticore/cache`, so the file and its base agree.
-- **Turning it on in a project generated before.** A merged file - one `.elasticore/cache` holds - is renamed on every side
+- The text is rewritten before it is merged and kept in `.elasticore/generated-base.zip`, so the file and its base agree.
+- **Turning it on in a project generated before.** A merged file - one `.elasticore/generated-base.zip` holds - is renamed on every side
   before the merge: its cached base, the file as you left it, and the new text. Your edits stay where they are and are renamed
   with the rest (an import of a runtime class you added becomes the mapped one), and a conflict is only where your edit and a
   change of the DSL meet, as without the setting. A file the run does not write - a file without a base (`SKIP(user-owned)`,
   `SKIP(not in the cache)`), or one the DSL no longer produces that is kept because a source of yours uses it - is not
   renamed; the run names it (below), and you change its imports by hand. A file only renamed is reported
   `RENAMED(your edits kept; ...)`, and a kept file of yours `KEPT(...; the runtime's packages renamed)`.
-- **Changing or removing it.** `.elasticore/cache` records, with each text, the mapping it was renamed with - in the same
+- **Changing or removing it.** `.elasticore/generated-base.zip` records, with each text, the mapping it was renamed with - in the same
   save, so a run of one domain (`-Pdomain`), or one that stops or whose model check fails, leaves every text paired with
   its own. When the mapping differs, a merged file's base and the file are renamed back from the mapping recorded for it
   and on to the new one (back to `io.elasticore` when the setting is removed), so your edits stay and only real conflicts
@@ -2145,12 +2145,12 @@ when you choose an architecture other than layered.
 | A conflict left in a file (`<<<<<<< yours`) | Fails |
 | A file you edited that the build leaves as it is | Passes, listed |
 | A DSL warning | Passes, counted (fails with `-Pstrict`) |
-| A file without a header and without a base in `.elasticore/cache` | Passes, listed as not checked |
+| A file without a header and without a base in `.elasticore/generated-base.zip` | Passes, listed as not checked |
 
 - A file the build would write that is not there fails only in a project that keeps its generated sources in git (one
   of them is there). A project whose build generates them (`.gitignore`d) is checked for its DSL and for the generated
   files it does commit, such as the DDL.
-- Commit `.elasticore/cache` with the generated files: without it the build takes them for yours, and so does this check.
+- Commit `.elasticore/generated-base.zip` with the generated files: without it the build takes them for yours, and so does this check.
 - The TypeScript client is checked with `-Pts`. `-Pdomain` is refused: the check reads the whole project. A migration the build would write (`ddl.migration`) fails it, and none is written.
 - Not checked: `schema.yml`, the context map, the Ossie model. With `output = 'v2'` the task runs 2.x's own check (`elcore -Pmode=valid`).
 
