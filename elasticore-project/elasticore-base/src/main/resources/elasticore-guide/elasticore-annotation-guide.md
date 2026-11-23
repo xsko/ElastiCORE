@@ -1281,7 +1281,7 @@ If the request sends `sortCode`, that wins. `ShopFlowTest` checks that the Pet S
 - It is a 3.0 rule engine (`elcore3`) feature. The 2.x generator (`elcore`) does not read `@sort`.
 
 #### What a search may sort by - only what its response shows
-> **Works in:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **Not in:** 2.x-compatible output (output = 'v2') and the 2.x generator - any property sorts, as before; a domain with its own `interface.sortable` (env.yml) - not checked (warning)
+> **Works in:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **Not in:** 2.x-compatible output (output = 'v2') and the 2.x generator - any property sorts, as before; a domain whose `interface.sortable` (env.yml) is its own, not the runtime's - not checked (warning)
 
 `sortCode` (`"orderDate-,total+"`) and `sortColumn` + `sortAscending` name entity properties - `name`, an embedded value's part
 `deliveryAddress.city`, a joined row's `customer.name`. A search sorts only by a property its response shows; any other is refused
@@ -1327,9 +1327,11 @@ public java.util.Set<String> sortableProperties() {
   Kotlin: `override fun sortableProperties(): Set<String> = setOf("ticketId", "subject", ...)`. The domain's `SortableObject`
   hands each property through the runtime's `io.elasticore.springboot3.dto.SortCheck.sortable(...)`, which refuses one not listed.
   A DTO that does not override `sortableProperties()` (null) sorts by any property, as before.
-- A domain whose env.yml names its own `interface.sortable` keeps its interface: the search DTO does not override what that
+- The runtime's `io.elasticore.springboot3.dto.SortableObject` - what the init wizard's env.yml names as `interface.sortable` -
+  declares `sortableProperties()` too (null unless a DTO lists its own, so 2.x code sorts as it did): a 3.0 search DTO on it is
+  checked the same way. A domain whose env.yml names an interface of its own keeps it: the search DTO does not override what that
   interface may not declare, the run says so (a DSL warning), and the sort is not checked - call `SortCheck.sortable(...)` in its
-  `getSort()`.
+  `getSort()`. So does a search whose response DTO is not in the domain's model.
 - Verified over HTTP: pet store `SortTermTest` (a MANAGER, sortCode, sortColumn and the export), MyBatis pet store
   `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused` (no SQL prepared), `elasticore-template-kt` `SortTermTest` (Kotlin),
   `elasticore-template-mongo` `ClubApi` / `ShopApi` and `elasticore-template-kt-mongo` `ClubApi` (MongoDB).

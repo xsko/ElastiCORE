@@ -31,6 +31,59 @@ class SortCheckTest {
         return fail("not refused: " + property);
     }
 
+    /** A search DTO on the runtime's interface, as a project the init wizard made has them. */
+    private static final class Search implements PageableObject {
+        private final String sortCode;
+        private final Set<String> sortable;
+
+        Search(String sortCode, Set<String> sortable) {
+            this.sortCode = sortCode;
+            this.sortable = sortable;
+        }
+
+        @Override
+        public String getSortCode() {
+            return sortCode;
+        }
+
+        @Override
+        public String getSortColumn() {
+            return null;
+        }
+
+        @Override
+        public Boolean getSortAscending() {
+            return null;
+        }
+
+        @Override
+        public Set<String> sortableProperties() {
+            return sortable;
+        }
+
+        @Override
+        public int getPageNumber() {
+            return 0;
+        }
+
+        @Override
+        public int getPageSize() {
+            return 20;
+        }
+    }
+
+    @Test
+    @DisplayName("the runtime's SortableObject keeps a listing search DTO's sort to its list, and any other as it was")
+    void theRuntimesInterfaceChecksAListingDto() {
+        assertThat(new Search("total-,orderId+", SHOWN).getPageable().getSort().toString())
+                .isEqualTo("total: DESC,orderId: ASC");
+        assertThatThrownBy(() -> new Search("total-,customer.password+", SHOWN).getPageable())
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageStartingWith("The search cannot be sorted by 'customer.password'");
+        // A DTO that lists nothing (2.x code, every other implementation) sorts as it did.
+        assertThat(new Search("customer.password+", null).getSort().toString()).isEqualTo("customer.password: ASC");
+    }
+
     @Test
     @DisplayName("a listed property passes as it is")
     void aListedPropertyPasses() {
