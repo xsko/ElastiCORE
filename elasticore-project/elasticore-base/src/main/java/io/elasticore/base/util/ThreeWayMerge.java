@@ -85,6 +85,10 @@ public final class ThreeWayMerge {
             List<Integer> at) {
         int[] ma = matches(o, a);
         int[] mb = matches(o, b);
+        if (bothAdded) {
+            joinInsertions(o, a, ma, b, mb);
+            joinInsertions(o, b, mb, a, ma);
+        }
         int io = 0;
         int ia = 0;
         int ib = 0;
@@ -328,6 +332,79 @@ public final class ThreeWayMerge {
 
     private static List<String> lines(String text) {
         return Arrays.asList(text.replace("\r\n", "\n").split("\n", -1));
+    }
+
+    /**
+     * Re-aligns the kept lines so that lines one side added at one place are
+     * one insertion, not two around a line that only looks kept.
+     *
+     * A member added before an existing one repeats that member's first lines
+     * ("@Test", a blank line). The diff may keep the existing "@Test" as the
+     * added member's, and then the added lines are two insertions: the
+     * member's Javadoc before the kept "@Test", the rest of it after. A member
+     * the other side adds at the same place lands between the two - between
+     * the Javadoc and its method (issue 295). Where a run of kept lines sits
+     * between two insertions and the lines from it to the end of the second
+     * end with that same run, the run is kept at that end instead: the same
+     * lines kept, one insertion. And the mirror of it, the run kept at the
+     * start of the first. Repeated until no run moves; each move joins two
+     * insertions into one, so it ends.
+     *
+     * Only between two pure insertions - no base line deleted next to the
+     * run - and not where the second side (theirs, mt) added the same lines
+     * on either side of the run: there the merge takes them once, and a move
+     * that joins them with the lines on the run's other side would write
+     * them twice.
+     */
+    static void joinInsertions(List<String> base, List<String> other, int[] m, List<String> theirs, int[] mt) {
+        boolean moved = true;
+        while (moved) {
+            moved = false;
+            int p = 0;
+            while (p < m.length) {
+                if (m[p] < 0) {
+                    p++;
+                    continue;
+                }
+                // A run of base lines kept as consecutive lines of other: p..q.
+                int start = p;
+                int q = p;
+                while (q + 1 < m.length && m[q + 1] == m[q] + 1) q++;
+                int next = q + 1;
+                p = next;
+                // The base lines next to the run are kept too (or there are none): pure insertions.
+                if ((start > 0 && m[start - 1] < 0) || (next < m.length && m[next] < 0)) continue;
+                int k = next - start;
+                int before = start == 0 ? -1 : m[start - 1];
+                int after = next == m.length ? other.size() : m[next];
+                if (m[start] - before <= 1 || after - m[q] <= 1) continue;
+                // Lines the other side added alike on either side of the run: the merge takes them once as
+                // they stand, and a move - which joins both into one - would write them twice.
+                if (sameAdded(other.subList(before + 1, m[start]), theirs, mt, start)
+                        || sameAdded(other.subList(m[q] + 1, after), theirs, mt, next)) {
+                    continue;
+                }
+                List<String> run = base.subList(start, next);
+                if (other.subList(after - k, after).equals(run)) {
+                    for (int j = 0; j < k; j++) m[start + j] = after - k + j;
+                    moved = true;
+                } else if (other.subList(before + 1, before + 1 + k).equals(run)) {
+                    for (int j = 0; j < k; j++) m[start + j] = before + 1 + j;
+                    moved = true;
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether the other side added these lines (but for layout) right before
+     * base line at (at == base size: at the end), between two base lines it kept.
+     */
+    private static boolean sameAdded(List<String> lines, List<String> theirs, int[] mt, int at) {
+        int end = at == mt.length ? theirs.size() : mt[at];
+        int begin = at == 0 ? -1 : mt[at - 1];
+        if (end < 0 || (at > 0 && begin < 0)) return false;
+        return sameButLayout(lines, theirs.subList(begin + 1, end));
     }
 
     /** For each base line, the line of other it stayed as, or -1 where it changed. */
