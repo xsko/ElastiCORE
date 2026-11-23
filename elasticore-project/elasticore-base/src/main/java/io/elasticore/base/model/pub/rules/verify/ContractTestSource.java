@@ -78,11 +78,24 @@ final class ContractTestSource {
         final String className;
         final String text;
         final int tests;
+        /** The domain's support class: the one the test classes call. */
+        final boolean support;
+        /** The test class without its tests of @access, for a support class kept without their members; null for none. */
+        final String plain;
+
+        final int plainTests;
 
         Source(String className, String text, int tests) {
+            this(className, text, tests, false, null, 0);
+        }
+
+        Source(String className, String text, int tests, boolean support, String plain, int plainTests) {
             this.className = className;
             this.text = text;
             this.tests = tests;
+            this.support = support;
+            this.plain = plain;
+            this.plainTests = plainTests;
         }
     }
 
@@ -186,20 +199,34 @@ final class ContractTestSource {
         List<Source> out = new ArrayList<Source>();
         boolean guarded = false;
         boolean access = false;
+        boolean system = false;
         for (EntityTests t : planned) {
             if (t.tests.isEmpty()) continue;
             guarded |= t.guarded;
             access |= t.declaresAccess();
             written += t.tests.size();
-            out.add(new Source(t.e.getName() + "ContractTest", t.render(pkg, support), t.tests.size()));
+            system |= t.accessTests > 0 && t.systemRows;
+            int plainTests = t.tests.size() - t.accessTests;
+            String plain = t.accessTests == 0 ? null : plainTests == 0 ? "" : t.render(pkg, support, false);
+            out.add(new Source(
+                    t.e.getName() + "ContractTest",
+                    t.render(pkg, support, true),
+                    t.tests.size(),
+                    false,
+                    plain,
+                    plainTests));
         }
         if (out.isEmpty()) return out;
         Access a = new Access(callers, access, accessSkipped);
+        a.system = system;
         out.add(
                 0,
                 new Source(
                         support,
                         supportClass(pkg, support, domainName, s, lang, guarded, guarded ? principal : null, a),
+                        0,
+                        true,
+                        null,
                         0));
         return out;
     }
@@ -209,12 +236,97 @@ final class ContractTestSource {
         final boolean callers;
         final boolean declared;
         final List<String> skipped;
+        /** Some test makes its rows as the application itself (asTheSystem): no administrator signs in. */
+        boolean system;
 
         Access(boolean callers, boolean declared, List<String> skipped) {
             this.callers = callers;
             this.declared = declared;
             this.skipped = new ArrayList<String>(skipped);
         }
+    }
+
+    // ---- what a kept support class holds -----------------------------------------------
+
+    /** The support members a test class may call, by name. */
+    private static final String[] MEMBERS = {
+        "post",
+        "command",
+        "create",
+        "createdId",
+        "given",
+        "assertMoved",
+        "assertCreated",
+        "assertRefused",
+        "assertFieldError",
+        "assertValue",
+        "assertStamped",
+        "text",
+        "email",
+        "num",
+        "serial",
+        "vary",
+        "obj",
+        "list",
+        "withValue",
+        "sentBy",
+        "reading",
+        "searching",
+        "creating",
+        "updating",
+        "deleting",
+        "commanding",
+        "createdIdBy",
+        "assertAllowed",
+        "assertDenied",
+        "assertFinds",
+        "assertMisses",
+        "asTheSystem"
+    };
+
+    /**
+     * The first member the test class calls that the support class on disk does
+     * not declare - a support class of the project's own, kept by a merge
+     * without what this run added to it - as the summary names it; null when it
+     * declares them all.
+     */
+    static String lacking(String supportText, String testText, boolean kotlin) {
+        String support = supportText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        String test = testText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        if (java.util.regex.Pattern.compile("\\bsignIn\\(\\s*[^)\\s]")
+                .matcher(test)
+                .find()) {
+            String declared = kotlin
+                    ? "\\bfun\\s+signIn\\s*\\(\\s*\\w+\\s*:\\s*String\\??\\s*\\)"
+                    : "\\bsignIn\\s*\\(\\s*(?:final\\s+)?String\\s+\\w+\\s*\\)\\s*(?:throws[^{;]*)?\\{";
+            if (!java.util.regex.Pattern.compile(declared).matcher(support).find()) return "signIn(String)";
+        }
+        if (!kotlin
+                && java.util.regex.Pattern.compile("\\bCaller\\s+\\w+\\s*=")
+                        .matcher(test)
+                        .find()
+                && !java.util.regex.Pattern.compile("\\bclass\\s+Caller\\b")
+                        .matcher(support)
+                        .find()) {
+            return "Caller";
+        }
+        for (String name : MEMBERS) {
+            if (!java.util.regex.Pattern.compile("(?<![\\w.])" + name + "\\s*[({]")
+                    .matcher(test)
+                    .find()) continue;
+            String declared = kotlin
+                    ? "\\bfun\\s+(?:<[^>]*>\\s*)?" + name + "\\s*\\("
+                    : "(?m)^[ \\t]*(?!return\\b|new\\b|throw\\b|else\\b)(?:[\\w.<>\\[\\],?]+\\s+)+" + name
+                            + "\\s*\\([^;{]*\\)\\s*(?:throws[^{;]*)?\\{";
+            if (!java.util.regex.Pattern.compile(declared).matcher(support).find()) return name + "(...)";
+        }
+        return null;
+    }
+
+    /** Tests not written after all - their support class lacks what they call: no longer counted as written, and why. */
+    void notWritten(int tests, String why) {
+        written -= tests;
+        skip(why);
     }
 
     /** What the generator knew it cannot test of the domain's @access, as the summary says it: for the support class's comment. */
@@ -641,6 +753,8 @@ final class ContractTestSource {
         final String method;
         final String display;
         final List<String> lines = new ArrayList<String>();
+        /** A test of @access: written only where the support class has what it calls. */
+        boolean access;
 
         Test(String method, String display) {
             this.method = method;
@@ -1677,6 +1791,9 @@ final class ContractTestSource {
 
         private String ownershipProblem;
         private FieldSpec ownerDto;
+        /** The rows of the cases are made as the application itself: signIn() signs in no administrator. */
+        boolean systemRows;
+
         /** Whether the owner is the key the request chooses: create keys the row by the caller's id. */
         private boolean keyedByOwner;
         /** The @owner field create claims for the caller, where it is required (!); null otherwise. */
@@ -1722,6 +1839,7 @@ final class ContractTestSource {
             }
             principal = p;
             callers = new Callers(p, entries.values());
+            systemRows = !callers.adminSignsIn();
             ownership();
             int before = tests.size();
             if (e.pkFields().size() != 1) {
@@ -1792,10 +1910,9 @@ final class ContractTestSource {
                 return;
             }
             FieldSpec sent = field(dto, owner.name());
-            // The administrator keeps the owner a request names; anyone else owns what they create. The rows the
-            // tests make go through signIn() - an administrator only where the principal has a role to be one by.
+            // The administrator - and the application itself, where no administrator signs in (sys) - keeps the owner
+            // a request names; anyone else owns what they create.
             if (sent != null
-                    && callers.adminSignsIn()
                     && !(ownerIsKey && ServiceAccessRules.keyGenerated(pk))
                     && writable(e, sent)
                     && !sent.hasDslAny("writeonly")
@@ -1979,8 +2096,10 @@ final class ContractTestSource {
                 for (int i = 1; i < at.size(); i++) {
                     String c = at.get(i).substring(0, at.get(i).indexOf('@'));
                     if (lines.length() > 0) lines.append('\n');
-                    lines.append(lang.stmt("given(command(" + constant(e) + ", id, "
-                            + lang.string(DddCommandRules.kebab(c)) + ", " + bodies.get(c) + "))"));
+                    lines.append(lang.stmt("given("
+                            + sys("command(" + constant(e) + ", id, " + lang.string(DddCommandRules.kebab(c)) + ", "
+                                    + bodies.get(c) + ")")
+                            + ")"));
                 }
                 return lines.toString();
             }
@@ -2085,6 +2204,7 @@ final class ContractTestSource {
             }
             // Named only once it is written: a case left out takes no name a later one would then not get.
             Test t = new Test(method(method), display);
+            t.access = true;
             t.lines.addAll(lines);
             tests.add(t);
         }
@@ -2101,6 +2221,17 @@ final class ContractTestSource {
         }
 
         /**
+         * A row a case needs, made as signIn() makes rows - the administrator - or,
+         * where no administrator signs in (the principal has no role to be one by), as
+         * the application itself: asTheSystem(...), which passes every check and keeps
+         * the owner a request names.
+         */
+        private String sys(String expression) {
+            if (!systemRows) return expression;
+            return lang.kotlin ? "asTheSystem { " + expression + " }" : "asTheSystem(() -> " + expression + ")";
+        }
+
+        /**
          * The line that makes the row a test checks, its key in id: of the caller named
          * (as ownership says), or - for none - one the administrator makes. False, with
          * why counted, when it cannot be made.
@@ -2109,7 +2240,7 @@ final class ContractTestSource {
             String path = constant(e);
             String key = lang.string(json(e.pkFields().get(0)));
             if (ownerVar == null) {
-                lines.add(lang.val("id", "createdId(" + path + ", " + newRow() + ", " + key + ")"));
+                lines.add(lang.val("id", sys("createdId(" + path + ", " + newRow() + ", " + key + ")")));
                 return true;
             }
             if ("self".equals(ownership)) {
@@ -2119,12 +2250,14 @@ final class ContractTestSource {
             if ("sent".equals(ownership)) {
                 lines.add(lang.val(
                         "id",
-                        "createdId(" + path + ", withValue(" + newRow() + ", " + lang.string(json(ownerDto)) + ", "
-                                + ownerVar + ".id), " + key + ")"));
+                        sys("createdId(" + path + ", withValue(" + newRow() + ", " + lang.string(json(ownerDto)) + ", "
+                                + ownerVar + ".id), " + key + ")")));
                 return true;
             }
             if ("claimed".equals(ownership) && outcome("create", ownerWho, false) == null) {
-                lines.add(lang.val("id", "createdIdBy(" + ownerVar + ", " + path + ", " + newRow() + ", " + key + ")"));
+                // The rows it needs first made as the rows of every case are; the row itself by its owner.
+                lines.add(lang.val(
+                        "id", "createdIdBy(" + ownerVar + ", " + path + ", " + sys(newRow()) + ", " + key + ")"));
                 return true;
             }
             accessSkip(where + ": " + ownerWho.label + " cannot be made the owner of a row - the server sets @owner,"
@@ -2148,7 +2281,11 @@ final class ContractTestSource {
 
         // ---- the class
 
-        String render(String pkg, String support) {
+        String render(String pkg, String support, boolean withAccess) {
+            List<Test> tests = new ArrayList<Test>();
+            for (Test t : this.tests) {
+                if (withAccess || !t.access) tests.add(t);
+            }
             StringBuilder s = new StringBuilder();
             s.append(OWNED).append('\n');
             s.append("package ").append(pkg).append(lang.kotlin ? "\n\n" : ";\n\n");
@@ -2169,7 +2306,7 @@ final class ContractTestSource {
                     .append(" * status and code, never by message. Every request goes through ")
                     .append(support)
                     .append(".\n");
-            if (accessTests > 0) {
+            if (withAccess && accessTests > 0) {
                 s.append(" * Who @access lets in is checked too: for each operation, a caller each of its\n")
                         .append(" * terms lets in, and those it refuses - each signed in for the test.\n");
             }
@@ -3239,7 +3376,7 @@ final class ContractTestSource {
                     .append("        return result;\n")
                     .append("    }\n\n");
         }
-        if (access.callers && principal != null) j.append(javaCallers(principal, lang));
+        if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
         j.append(JAVA_HELPERS);
         j.append("}\n");
         return j.toString();
@@ -3250,7 +3387,7 @@ final class ContractTestSource {
      * role signed in as signIn() signs in the administrator, the request as it or
      * as a visitor, and the checks of what @access answers.
      */
-    private static String javaCallers(Principal p, Lang lang) {
+    private static String javaCallers(Principal p, Lang lang, boolean system) {
         StringBuilder j = new StringBuilder();
         j.append("    // ---- the callers of the @access tests\n\n")
                 .append(
@@ -3310,6 +3447,7 @@ final class ContractTestSource {
                 .append("), (MockHttpSession) in.getRequest().getSession(false));\n")
                 .append("    }\n\n");
         j.append(JAVA_CALLER_HELPERS);
+        if (system) j.append(JAVA_SYSTEM_ROWS);
         return j.toString();
     }
 
@@ -3415,6 +3553,36 @@ final class ContractTestSource {
             + "        }\n"
             + "        return keys;\n"
             + "    }\n"
+            + "\n";
+
+    /** Where no administrator signs in: the rows of the @access tests made as the application itself (Java). */
+    private static final String JAVA_SYSTEM_ROWS = ""
+            + "    /**\n"
+            + "     * Work as the application itself (CurrentUser.runAsSystem): the rows of a test of @access, where\n"
+            + "     * signIn() signs in no administrator to make them - every check passes, the owner sent is kept.\n"
+            + "     */\n"
+            + "    protected <T> T asTheSystem(java.util.concurrent.Callable<T> work) throws Exception {\n"
+            + "        Exception[] failure = new Exception[1];\n"
+            + "        T result = CurrentUser.callAsSystem(() -> {\n"
+            + "            try {\n"
+            + "                return work.call();\n"
+            + "            } catch (Exception e) {\n"
+            + "                failure[0] = e;\n"
+            + "                return null;\n"
+            + "            }\n"
+            + "        });\n"
+            + "        if (failure[0] != null) throw failure[0];\n"
+            + "        return result;\n"
+            + "    }\n"
+            + "\n";
+
+    /** The same in Kotlin. */
+    private static final String KOTLIN_SYSTEM_ROWS = ""
+            + "    /**\n"
+            + "     * Work as the application itself (CurrentUser.runAsSystem): the rows of a test of @access, where\n"
+            + "     * signIn() signs in no administrator to make them - every check passes, the owner sent is kept.\n"
+            + "     */\n"
+            + "    protected fun <T> asTheSystem(work: () -> T): T = CurrentUser.callAsSystem<T> { work() }\n"
             + "\n";
 
     /** The requests, the checks and the values every contract test uses (Java). */
@@ -3818,14 +3986,14 @@ final class ContractTestSource {
                     .append(
                             "        CurrentUser.callAsSystem<MvcResult> { mvc.perform(request(builder.accept(MediaType.APPLICATION_JSON))).andReturn() }\n\n");
         }
-        if (access.callers && principal != null) k.append(kotlinCallers(principal, lang));
+        if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
         k.append(KOTLIN_HELPERS);
         k.append("}\n");
         return k.toString();
     }
 
     /** What the tests of @access send their requests with (Kotlin): as javaCallers. */
-    private static String kotlinCallers(Principal p, Lang lang) {
+    private static String kotlinCallers(Principal p, Lang lang, boolean system) {
         StringBuilder k = new StringBuilder();
         k.append("    // ---- the callers of the @access tests\n\n")
                 .append(
@@ -3877,6 +4045,7 @@ final class ContractTestSource {
                 .append("), signedInAs.request.getSession(false) as MockHttpSession?)\n")
                 .append("    }\n\n");
         k.append(KOTLIN_CALLER_HELPERS);
+        if (system) k.append(KOTLIN_SYSTEM_ROWS);
         return k.toString();
     }
 

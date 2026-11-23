@@ -1386,10 +1386,16 @@ public class ContractTestsTest {
         File project = project(model, "contract");
         String log = run(project, "hexagonal", "java");
         String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        // No administrator signs in: the rows are made as the application itself, which keeps the owner sent.
         assertTrue(
                 method(t, "readLetsInASignedInCallerOnTheirRow")
                         .contains("        Caller caller = signIn(null);\n"
-                                + "        Object id = createdIdBy(caller, DEAL, newDeal(), \"dealId\");\n"),
+                                + "        Object id = asTheSystem(() -> createdId(DEAL, withValue(newDeal(), \"staffId\","
+                                + " caller.id), \"dealId\"));\n"),
+                t);
+        assertTrue(
+                method(t, "readRefusesAVisitor")
+                        .contains("        Object id = asTheSystem(() -> createdId(DEAL, newDeal(), \"dealId\"));\n"),
                 t);
         assertTrue(
                 log.contains("Deal read=owner|MANAGER: Staff has no role field (@role, @access(admin)) to sign in a"
@@ -1398,6 +1404,76 @@ public class ContractTestsTest {
         String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
         assertFalse(s.contains("principal.put(\"role\", role)"), s);
         assertTrue(s.contains("with this role - it has none to set -"), s);
+        assertTrue(
+                s.contains(
+                        "    protected <T> T asTheSystem(java.util.concurrent.Callable<T> work) throws Exception {\n"),
+                s);
+        // Kotlin the same way.
+        File kt = project(model, "contract");
+        run(kt, "hexagonal", "kotlin");
+        assertTrue(method(read(kt, "src/test/kotlin/com/acme/shop/DealContractTest.kt"), "readRefusesAVisitor")
+                .contains("        val id = asTheSystem { createdId(DEAL, newDeal(), \"dealId\") }\n"));
+        assertTrue(
+                read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt")
+                        .contains(
+                                "    protected fun <T> asTheSystem(work: () -> T): T = CurrentUser.callAsSystem<T> { work() }\n"));
+        // Where an administrator signs in, the rows are its own as before: no asTheSystem.
+        File admin = project(ACCESS, "contract");
+        run(admin, "hexagonal", "java");
+        assertFalse(read(admin, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("asTheSystem"));
+    }
+
+    /**
+     * The build never breaks: a support class of the project's kept without the members the tests of @access
+     * call (a merge it could not make) gets test classes without those tests, and the run says what to add and
+     * where the version it generated is.
+     */
+    @Test
+    public void aSupportClassKeptWithoutTheNewMembersGetsNoTestItCannotCompile() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "java");
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        String generated = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        int from = generated.indexOf("    // ---- the callers of the @access tests");
+        int to = generated.indexOf("    protected MvcResult post(String path, Object body) throws Exception {");
+        assertTrue(from > 0 && to > from, generated);
+        // The developer's class, as a merge it could not make keeps it: without the new members.
+        String kept = generated.substring(0, from) + generated.substring(to);
+        Files.write(support.toPath(), kept.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertEquals(kept, read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"));
+        assertTrue(
+                log.contains("Shop: ShopContractSupport has no signIn(String) - add the members from"
+                        + " build/elasticore/contract/ShopContractSupport.java, the version this run generated; the"
+                        + " tests of @access are not written"),
+                log);
+        String copy = read(project, "build/elasticore/contract/ShopContractSupport.java");
+        assertTrue(copy.contains("    protected Caller signIn(String role) throws Exception {\n"), copy);
+        // The constraint tests stay - they call only what the kept class has; none of @access is left.
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(t.contains("void titleIsRequired()"), t);
+        assertFalse(t.contains("sentBy("), t);
+        assertFalse(t.contains("Who @access lets in"), t);
+        assertNotNull(ContractTestSource.lacking(kept, generatedAccessTest(project), false));
+        // The summary counts what was written.
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+        // Members the tests call, read off a support class as declared - Java and Kotlin.
+        assertEquals(
+                null,
+                ContractTestSource.lacking(copy, "        assertAllowed(sentBy(caller, reading(X, id)));", false));
+        assertEquals(
+                "assertDenied(...)",
+                ContractTestSource.lacking(
+                        "    protected fun sentBy(caller: Caller?, b: B): MvcResult = x\n"
+                                + "    protected fun reading(path: String, id: Any?): B = y\n",
+                        "        assertDenied(sentBy(null, reading(X, id)), 401, \"not-signed-in\")",
+                        true));
+    }
+
+    /** A test of @access, as the run before the support class was kept wrote it. */
+    private static String generatedAccessTest(File project) throws IOException {
+        return "        Caller caller = signIn(\"U\");\n        assertAllowed(sentBy(caller, reading(DEAL, id)));\n";
     }
 
     /**
