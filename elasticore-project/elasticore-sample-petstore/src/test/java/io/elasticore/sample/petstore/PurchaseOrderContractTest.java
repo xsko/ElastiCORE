@@ -13,6 +13,9 @@ import java.util.Map;
  * status and code, never by message. Every request goes through PetstoreContractSupport.
  * Who @access lets in is checked too: for each operation, a caller each of its
  * terms lets in, and those it refuses - each signed in for the test.
+ * What the export promises is checked too: the file holds the rows the search
+ * answers, in its order, and elasticore.export.max-rows refuses more
+ * before anything is written.
  *
  * Written once, then merged when the DSL changes: yours from here. Change a test
  * where you changed a rule on purpose.
@@ -107,6 +110,29 @@ class PurchaseOrderContractTest extends PetstoreContractSupport {
     void linesSize() throws Exception {
         assertCreated(post(PURCHASE_ORDER, newPurchaseOrder()));
         assertFieldError(post(PURCHASE_ORDER, withValue(newPurchaseOrder(), "lines", list())), "lines", "Size");
+    }
+
+    @Test
+    @DisplayName("export: the rows the search answers with the same body, in its order (sortCode orderId-)")
+    void exportHoldsTheSearchsRowsInItsOrder() throws Exception {
+        // No search narrows the export to the test's rows: every row the caller may see is in it.
+        Object first = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Object second = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Map<String, Object> search = obj("sortCode", "orderId-");
+        Map<String, Object> export = obj("search", search, "columns", list("orderId"), "headers", list("orderId"));
+        assertSameRows(PURCHASE_ORDER, search, export, "orderId", first, second);
+    }
+
+    @Test
+    @DisplayName("export: as many rows as elasticore.export.max-rows are written, one more is refused (400 export.too-many-rows) before anything is written")
+    void exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten() throws Exception {
+        // No search narrows the export to the test's rows: every row the caller may see is in it.
+        Object first = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Object second = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
+        Map<String, Object> export = obj("columns", list("orderId"), "headers", list("orderId"));
+        long rows = exportedRows(exportOf(PURCHASE_ORDER, export), first, second);
+        assertWritten(PURCHASE_ORDER, export, rows);
+        assertTooManyRows(PURCHASE_ORDER, export, rows - 1);
     }
 
     @Test

@@ -17,8 +17,9 @@ entity:
       city: string(40)
       zip: string(10)
 
+  # export: POST .../customer/export - the search's documents as a CSV file (the contract tests check it)
   Customer:
-    meta: entity @expose(20) @access(*=public) -- customer
+    meta: entity @expose(pageSize=20, methods="create,read,search,update,delete,export") @access(*=public) -- customer
     fields:
       customerId: long @id @sequence
       name: string(50)! @search(like)

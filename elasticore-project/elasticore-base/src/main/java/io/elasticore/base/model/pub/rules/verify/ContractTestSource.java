@@ -62,6 +62,10 @@ import java.util.Set;
  *                      stored value, a new value replaces it (issue 270)
  *   encrypt            the column holds no plain value - it decrypts to the value sent;
  *                      with @search(eq) a search by the value finds the row, by another not
+ *   export             the file holds the rows the search answers with the same body, in
+ *                      its order (sorted by the key, which every response shows); as many
+ *                      rows as elasticore.export.max-rows are written, one more is refused
+ *                      (400, export.too-many-rows) before anything is written
  * </pre>
  *
  * One test class per entity, each extending one support class per domain:
@@ -180,9 +184,13 @@ final class ContractTestSource {
         return model.getInternalDomainName() + ":" + entityName;
     }
 
-    ContractTestSource(List<ECoreModel> models, Set<String> served) {
+    /** The entities whose controller this run wrote with POST /export, as domain:Entity (key). */
+    private final Set<String> exported;
+
+    ContractTestSource(List<ECoreModel> models, Set<String> served, Set<String> exported) {
         this.models = models;
         this.served = served;
+        this.exported = exported;
     }
 
     // ---- the domain -------------------------------------------------------------------
@@ -203,6 +211,7 @@ final class ContractTestSource {
 
         List<EntityTests> planned = new ArrayList<EntityTests>();
         privacySkipped.clear();
+        exportSkipped.clear();
         boolean asks = false;
         for (EntitySpec e : own) {
             if (!testable(e)) continue;
@@ -225,6 +234,7 @@ final class ContractTestSource {
         boolean access = false;
         boolean system = false;
         Privacy privacy = new Privacy(privacySkipped);
+        Export export = new Export(exportSkipped);
         for (EntityTests t : planned) {
             if (t.tests.isEmpty()) continue;
             guarded |= t.guarded;
@@ -234,30 +244,9 @@ final class ContractTestSource {
             privacy.tests |= t.privacyTests > 0;
             privacy.stored |= t.storedTests;
             privacy.decrypted |= t.decryptedTests;
-            int plainTests = t.tests.size() - t.accessTests - t.privacyTests;
-            String plain = t.accessTests + t.privacyTests == 0
-                    ? null
-                    : plainTests == 0 ? "" : t.render(pkg, support, false, false);
-            Source src = new Source(t.e.getName() + "ContractTest", t.render(pkg, support, true, true), t.tests.size());
-            // Without the tests of @Mask and @encrypt first, where the kept class has the members of @access.
-            if (t.privacyTests > 0 && t.accessTests > 0) {
-                src.fallbacks.add(new Fallback(
-                        t.render(pkg, support, true, false),
-                        t.tests.size() - t.privacyTests,
-                        "the tests of @Mask and @encrypt"));
-                src.fallbacks.add(new Fallback(
-                        t.render(pkg, support, false, true), t.tests.size() - t.accessTests, "the tests of @access"));
-            }
-            if (plain != null) {
-                src.fallbacks.add(new Fallback(
-                        plain,
-                        plainTests,
-                        t.privacyTests == 0
-                                ? "the tests of @access"
-                                : t.accessTests == 0
-                                        ? "the tests of @Mask and @encrypt"
-                                        : "the tests of @access, @Mask and @encrypt"));
-            }
+            export.tests |= t.exportTests > 0;
+            Source src = new Source(t.e.getName() + "ContractTest", t.render(pkg, support, Groups.ALL), t.tests.size());
+            fallbacks(t, pkg, support, src);
             out.add(src);
         }
         if (out.isEmpty()) return out;
@@ -268,10 +257,68 @@ final class ContractTestSource {
                 new Source(
                         support,
                         supportClass(
-                                pkg, support, domainName, s, lang, guarded, guarded ? principal : null, a, privacy),
+                                pkg,
+                                support,
+                                domainName,
+                                s,
+                                lang,
+                                guarded,
+                                guarded ? principal : null,
+                                a,
+                                privacy,
+                                export),
                         0,
                         true));
         return out;
+    }
+
+    /**
+     * The tests whose members a kept support class may lack, by group: of @access, of @Mask and @encrypt,
+     * of the export. A test class is written with the groups whose members the kept class has.
+     */
+    static final class Groups {
+        static final int ACCESS = 1;
+        static final int PRIVACY = 2;
+        static final int EXPORT = 4;
+        static final int ALL = ACCESS | PRIVACY | EXPORT;
+
+        /** The groups left out, tried in this order: the fewest first, so the most tests are kept. */
+        static final int[] LEFT_OUT = {PRIVACY, ACCESS, EXPORT, ACCESS | PRIVACY, PRIVACY | EXPORT, ACCESS | EXPORT, ALL
+        };
+
+        private Groups() {}
+
+        /** What the summary says is not written: "the tests of @access, @Mask and @encrypt". */
+        static String omitted(int groups) {
+            List<String> names = new ArrayList<String>();
+            if ((groups & ACCESS) != 0) names.add("@access");
+            if ((groups & PRIVACY) != 0) names.add("@Mask and @encrypt");
+            String of = String.join(", ", names);
+            if ((groups & EXPORT) == 0) return "the tests of " + of;
+            return names.isEmpty() ? "the tests of the export" : "the tests of " + of + " and of the export";
+        }
+    }
+
+    /**
+     * The test class with fewer tests, for a support class kept without the members of some groups: each
+     * set of the groups the class has tests of left out, the fewest first; the last, with none of them,
+     * is empty where no other test is left.
+     */
+    private static void fallbacks(EntityTests t, String pkg, String support, Source src) {
+        int present = (t.accessTests > 0 ? Groups.ACCESS : 0)
+                | (t.privacyTests > 0 ? Groups.PRIVACY : 0)
+                | (t.exportTests > 0 ? Groups.EXPORT : 0);
+        if (present == 0) return;
+        for (int dropped : Groups.LEFT_OUT) {
+            // Only sets of the groups there are; all of them - the largest - comes last.
+            if ((dropped & ~present) != 0) continue;
+            int kept = t.tests.size()
+                    - ((dropped & Groups.ACCESS) != 0 ? t.accessTests : 0)
+                    - ((dropped & Groups.PRIVACY) != 0 ? t.privacyTests : 0)
+                    - ((dropped & Groups.EXPORT) != 0 ? t.exportTests : 0);
+            String text = dropped == present && kept == 0 ? "" : t.render(pkg, support, Groups.ALL & ~dropped);
+            src.fallbacks.add(new Fallback(text, kept, Groups.omitted(dropped)));
+        }
     }
 
     /** What the support class holds of @Mask and @encrypt: the members their tests call, and what is not tested and why. */
@@ -286,6 +333,18 @@ final class ContractTestSource {
         final List<String> skipped;
 
         Privacy(List<String> skipped) {
+            this.skipped = new ArrayList<String>(skipped);
+        }
+    }
+
+    /** What the support class holds of the export: the members its tests call, and what is not tested and why. */
+    static final class Export {
+        /** Some test of the export is written: the export, the search's rows, the checks of the file. */
+        boolean tests;
+
+        final List<String> skipped;
+
+        Export(List<String> skipped) {
             this.skipped = new ArrayList<String>(skipped);
         }
     }
@@ -354,7 +413,14 @@ final class ContractTestSource {
         "stored",
         "assertStored",
         "decrypted",
-        "assertEncrypted"
+        "assertEncrypted",
+        "exportOf",
+        "exportAtMost",
+        "searched",
+        "exportedRows",
+        "assertSameRows",
+        "assertWritten",
+        "assertTooManyRows"
     };
 
     /**
@@ -416,6 +482,14 @@ final class ContractTestSource {
     private void privacySkip(String why) {
         skip(why);
         if (!privacySkipped.contains(why)) privacySkipped.add(why);
+    }
+
+    /** What the generator knew it cannot test of the domain's export: for the support class's comment. */
+    private final List<String> exportSkipped = new ArrayList<String>();
+
+    private void exportSkip(String why) {
+        skip(why);
+        if (!exportSkipped.contains(why)) exportSkipped.add(why);
     }
 
     private static String classNameOf(String domainName, List<EntitySpec> own) {
@@ -840,6 +914,9 @@ final class ContractTestSource {
         /** A test of @Mask or @encrypt: written only where the support class has what it calls. */
         boolean privacy;
 
+        /** A test of the export: written only where the support class has what it calls. */
+        boolean export;
+
         Test(String method, String display) {
             this.method = method;
             this.display = display;
@@ -943,11 +1020,12 @@ final class ContractTestSource {
             constraints(own);
             invariants(own);
             privacy();
+            export();
             return true;
         }
 
         private boolean declaresAnything(EntitySpec e) {
-            if (!e.stateMachines().isEmpty() || e.hasMeta("invariant")) return true;
+            if (!e.stateMachines().isEmpty() || e.hasMeta("invariant") || ControllerBaseRules.exports(e)) return true;
             for (FieldSpec f : e.fields()) {
                 if (f.required()
                         || f.validationMaxLength() >= 0
@@ -2752,12 +2830,157 @@ final class ContractTestSource {
                     + ", id)";
         }
 
+        // ---- the export
+
+        /** How many of the tests are of the export: the support class then has what they call. */
+        int exportTests;
+
+        /**
+         * The tests of POST .../export (issue 271), where @expose(methods) lists it: the file holds the rows
+         * the search answers with the same body, in its order - sorted by the key, which every response
+         * shows and a search may sort by (issue 304) - and as many rows as elasticore.export.max-rows lets
+         * are written, one more is refused (400 export.too-many-rows) before anything is written. The rows
+         * are the test's own: two of them, narrowed to by a text the search finds them by, where it takes
+         * one; else every row the caller may see, the search's first page compared. What cannot be tested
+         * is counted, with why.
+         */
+        void export() {
+            if (!ControllerBaseRules.exports(e)) return;
+            String name = e.getName() + " export";
+            if (!exported.contains(key(modelOf.get(e), e.getName()))) {
+                exportSkip(name + ": its controller has no POST /export - a rule set leaves it out, or the controller"
+                        + " is yours without it");
+                return;
+            }
+            if (e.pkFields().size() != 1) {
+                exportSkip(name + ": a composite key - the rows of the file are not told apart by one key");
+                return;
+            }
+            if (!searchAnswersKey()) {
+                exportSkip(name + ": its search answers with "
+                        + e.searchResultDtoName().trim() + ", which shows no "
+                        + json(e.pkFields().get(0)) + " to tell the rows of the file by");
+                return;
+            }
+            FieldSpec pk = e.pkFields().get(0);
+            String path = constant(e);
+            String key = lang.string(json(pk));
+            String[] narrowed = narrowing();
+            String sort = pk.name() + "-";
+            EntitySpec srch = ControllerBaseRules.exposeOmitted(e).contains("search") ? null : searchDto(e);
+            boolean searched = srch != null;
+            List<String> sortable = searched ? srch.sortableProperties() : null;
+            if (!searched) {
+                exportSkip(name + ": its API takes no search (@expose methods), so the file is not compared with one");
+            } else if (sortable != null && !sortable.contains(pk.name())) {
+                exportSkip(name + ": its search may not sort by " + pk.name() + ", so the order is not compared");
+                searched = false;
+            }
+            if (searched) {
+                Test t = exportTest(
+                        "exportHoldsTheSearchsRowsInItsOrder",
+                        "export: the rows the search answers with the same body, in its order (sortCode " + sort + ")");
+                rows(t, narrowed);
+                t.lines.add(lang.map(
+                        "search",
+                        narrowed == null
+                                ? "obj(\"sortCode\", " + lang.string(sort) + ")"
+                                : "obj(" + lang.string(narrowed[1]) + ", shared, \"sortCode\", " + lang.string(sort)
+                                        + ")"));
+                t.lines.add(lang.map(
+                        "export",
+                        "obj(\"search\", search, \"columns\", list(" + key + "), \"headers\", list(" + key + "))"));
+                t.lines.add(lang.stmt("assertSameRows(" + path + ", search, export, " + key + ", first, second)"));
+            }
+            Test t = exportTest(
+                    "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten",
+                    "export: as many rows as elasticore.export.max-rows are written, one more is refused (400"
+                            + " export.too-many-rows) before anything is written");
+            rows(t, narrowed);
+            t.lines.add(lang.map(
+                    "export",
+                    (narrowed == null ? "obj(" : "obj(\"search\", obj(" + lang.string(narrowed[1]) + ", shared), ")
+                            + "\"columns\", list(" + key + "), \"headers\", list(" + key + "))"));
+            t.lines.add(lang.typed("long", "rows", "exportedRows(exportOf(" + path + ", export), first, second)"));
+            t.lines.add(lang.stmt("assertWritten(" + path + ", export, rows)"));
+            t.lines.add(lang.stmt("assertTooManyRows(" + path + ", export, rows - 1)"));
+        }
+
+        private Test exportTest(String method, String display) {
+            Test t = new Test(method(method), display);
+            t.export = true;
+            tests.add(t);
+            exportTests++;
+            return t;
+        }
+
+        /**
+         * The two rows of the test: with the text the search is narrowed to, where it takes one; else as
+         * the model makes them, among every row the caller may see.
+         */
+        private void rows(Test t, String[] narrowed) {
+            String path = constant(e);
+            String key = lang.string(json(e.pkFields().get(0)));
+            if (narrowed == null) {
+                t.lines.add(
+                        "// No search narrows the export to the test's rows: every row the caller may see is in it.");
+                t.lines.add(lang.object("first", "createdId(" + path + ", " + newRow() + ", " + key + ")"));
+                t.lines.add(lang.object("second", "createdId(" + path + ", " + newRow() + ", " + key + ")"));
+                return;
+            }
+            t.lines.add(lang.text("shared", narrowed[2]));
+            for (String row : new String[] {"first", "second"}) {
+                t.lines.add(lang.object(
+                        row,
+                        "createdId(" + path + ", withValue(" + newRow() + ", " + lang.string(narrowed[0])
+                                + ", shared), " + key + ")"));
+            }
+        }
+
+        /**
+         * A text field the two rows of a test of the export share, and the search finds them by: the
+         * request's name of it, the search's, and the value - unique text of six characters or more, which
+         * no other row holds. Null where the search takes none: a field without a @pattern, @email,
+         * a @unique, a @Mask or an @encrypt, which the search finds an equal value of (eq, like, or none
+         * named).
+         */
+        private String[] narrowing() {
+            if (ControllerBaseRules.exposeOmitted(e).contains("search")) return null;
+            Set<String> masked = new java.util.HashSet<String>();
+            for (MaskedFields.Masked m : MaskedFields.of(e)) masked.add(m.field());
+            FieldSpec pk = e.pkFields().get(0);
+            for (FieldSpec f : dto.fields()) {
+                FieldSpec declared = field(e, f.name());
+                if (declared == null
+                        || !f.isStringType()
+                        || f.isList()
+                        || f.name().equals(pk.name())) continue;
+                if (!writable(e, f)
+                        || f.hasDslAny("writeonly", "email", "pattern")
+                        || masked.contains(f.name())
+                        || declared.hasDsl(EncryptRules.ENCRYPT)
+                        || unique(e, f)
+                        || io.elasticore.base.model.pub.rules.base.WriteGuardRules.serverSet(f)) continue;
+                String by = searchedBy(f);
+                if (by == null) continue;
+                int max = f.validationMaxLength();
+                if (max < 0) max = f.rawLength() > 0 ? f.rawLength() : 0;
+                int n = fit(max, Math.max(0, f.minLength()), 12, 6);
+                if (n < 0) continue;
+                return new String[] {json(f), by, "text(" + n + ")"};
+            }
+            return null;
+        }
+
         // ---- the class
 
-        String render(String pkg, String support, boolean withAccess, boolean withPrivacy) {
+        String render(String pkg, String support, int groups) {
+            boolean withAccess = (groups & Groups.ACCESS) != 0;
+            boolean withPrivacy = (groups & Groups.PRIVACY) != 0;
+            boolean withExport = (groups & Groups.EXPORT) != 0;
             List<Test> tests = new ArrayList<Test>();
             for (Test t : this.tests) {
-                if ((withAccess || !t.access) && (withPrivacy || !t.privacy)) tests.add(t);
+                if ((withAccess || !t.access) && (withPrivacy || !t.privacy) && (withExport || !t.export)) tests.add(t);
             }
             StringBuilder s = new StringBuilder();
             s.append(OWNED).append('\n');
@@ -2808,6 +3031,18 @@ final class ContractTestSource {
                     line.append(word);
                 }
                 s.append(" * ").append(line).append('\n');
+            }
+            boolean exportWritten = false;
+            boolean ordered = false;
+            for (Test t : tests) {
+                exportWritten |= t.export;
+                ordered |= t.export && t.method.startsWith("exportHoldsTheSearchsRows");
+            }
+            if (exportWritten) {
+                s.append(" * What the export promises is checked too: ")
+                        .append(ordered ? "the file holds the rows the search\n * answers, in its order, and " : "")
+                        .append("elasticore.export.max-rows refuses more")
+                        .append(ordered ? "\n * before anything is written.\n" : " before\n * anything is written.\n");
             }
             s.append(" *\n")
                     .append(" * Written once, then merged when the DSL changes: yours from here. Change a test\n")
@@ -3568,7 +3803,8 @@ final class ContractTestSource {
             boolean guarded,
             Principal principal,
             Access access,
-            Privacy privacy) {
+            Privacy privacy,
+            Export export) {
         String mockMvc = s.boot4
                 ? "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc"
                 : "org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc";
@@ -3576,8 +3812,37 @@ final class ContractTestSource {
         boolean tx = !s.mongo;
         String why = system ? principalProblem : null;
         return lang.kotlin
-                ? kotlinSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access, privacy)
-                : javaSupport(pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access, privacy);
+                ? kotlinSupport(
+                        pkg, name, domainName, s, mockMvc, guarded, system, principal, tx, why, access, privacy, export)
+                : javaSupport(
+                        pkg,
+                        name,
+                        domainName,
+                        s,
+                        mockMvc,
+                        guarded,
+                        system,
+                        principal,
+                        tx,
+                        why,
+                        access,
+                        privacy,
+                        export);
+    }
+
+    /** What the support class's comment says of the export: how its tests work, and what is not tested and why. */
+    private static void exportDoc(StringBuilder d, Export export) {
+        if (export.tests) {
+            d.append(" * The tests of the export send the search's body to POST .../export (exportOf) and\n")
+                    .append(" * compare the file with the search (searched); elasticore.export.max-rows is set\n")
+                    .append(" * for one request at a time (exportAtMost) - the export reads it at each request,\n")
+                    .append(" * so tests run in parallel would see it too: run these one at a time.\n");
+        }
+        if (!export.skipped.isEmpty()) {
+            d.append(" * Not tested of the export, as the build's summary says:\n");
+            for (String reason : export.skipped)
+                d.append(" *   - ").append(comment(reason)).append('\n');
+        }
     }
 
     /**
@@ -3593,7 +3858,8 @@ final class ContractTestSource {
             Principal principal,
             String why,
             Access access,
-            Privacy privacy) {
+            Privacy privacy,
+            Export export) {
         StringBuilder d = new StringBuilder();
         d.append("/**\n")
                 .append(" * What every contract test of the ")
@@ -3652,6 +3918,7 @@ final class ContractTestSource {
             for (String reason : privacy.skipped)
                 d.append(" *   - ").append(comment(reason)).append('\n');
         }
+        exportDoc(d, export);
         d.append(" *\n")
                 .append(" * Every test class extends this one, so all of them start the same application and\n")
                 .append(" * Spring keeps one context for the suite");
@@ -3744,7 +4011,8 @@ final class ContractTestSource {
             boolean tx,
             String why,
             Access access,
-            Privacy privacy) {
+            Privacy privacy,
+            Export export) {
         Lang lang = new Lang(false);
         StringBuilder j = new StringBuilder();
         j.append(OWNED).append('\n').append("package ").append(pkg).append(";\n\n");
@@ -3779,7 +4047,7 @@ final class ContractTestSource {
                 .append("import java.util.Map;\n")
                 .append("import java.util.concurrent.ThreadLocalRandom;\n")
                 .append("import java.util.concurrent.atomic.AtomicLong;\n\n");
-        j.append(doc(domainName, s, guarded, system, principal, why, access, privacy));
+        j.append(doc(domainName, s, guarded, system, principal, why, access, privacy, export));
         j.append(springBootTest(s, lang));
         j.append("@AutoConfigureMockMvc\n");
         if (tx) j.append("@Transactional\n");
@@ -3816,6 +4084,12 @@ final class ContractTestSource {
                             .append("    protected jakarta.persistence.EntityManager entityManager;\n\n");
                 }
             }
+        }
+        if (export.tests) {
+            j.append(
+                            "    /** Where the tests of the export set elasticore.export.max-rows for one request (exportAtMost). */\n")
+                    .append("    @Autowired\n")
+                    .append("    protected org.springframework.core.env.ConfigurableEnvironment environment;\n\n");
         }
         if (s.mongo) {
             j.append("    /** The tests run on the MongoDB server " + MONGO_URI
@@ -3931,6 +4205,7 @@ final class ContractTestSource {
         }
         if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
         if (privacy.tests) j.append(javaPrivacy(s, privacy));
+        if (export.tests) j.append(JAVA_EXPORT);
         j.append(JAVA_HELPERS);
         j.append("}\n");
         return j.toString();
@@ -4432,6 +4707,382 @@ final class ContractTestSource {
             + "    }\n"
             + "\n";
 
+    /**
+     * What the tests of the export call (Java): the export, with elasticore.export.max-rows set for one
+     * request; the search's rows; the file read as CSV, and the checks of what it holds.
+     */
+    private static final String JAVA_EXPORT = ""
+            + "    // ---- the tests of the export\n"
+            + "\n"
+            + "    /** The search's rows as a file: POST path/export with this body - search, sortCode, columns, headers. */\n"
+            + "    protected MvcResult exportOf(String path, Object body) throws Exception {\n"
+            + "        return perform(MockMvcRequestBuilders.post(path + \"/export\").contentType(MediaType.APPLICATION_JSON).content(json(body)));\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export with elasticore.export.max-rows at this many rows, for this request only: the export\n"
+            + "     * reads the setting from the application's Environment at each request.\n"
+            + "     */\n"
+            + "    protected MvcResult exportAtMost(String path, Object body, long maxRows) throws Exception {\n"
+            + "        String name = \"contract-test-export-max-rows\";\n"
+            + "        environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource(\n"
+            + "                name, Map.<String, Object>of(\"elasticore.export.max-rows\", maxRows)));\n"
+            + "        try {\n"
+            + "            return exportOf(path, body);\n"
+            + "        } finally {\n"
+            + "            environment.getPropertySources().remove(name);\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** What a search answered: the keys of its rows in its order, and how many rows it matches (-1: not said). */\n"
+            + "    protected static final class Rows {\n"
+            + "        public final List<String> keys;\n"
+            + "        public final long total;\n"
+            + "\n"
+            + "        public Rows(List<String> keys, long total) {\n"
+            + "            this.keys = keys;\n"
+            + "            this.total = total;\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A search - POST path/search with this body - let in (as succeeded says), and its rows. */\n"
+            + "    protected Rows searched(String path, Object body, String key) throws Exception {\n"
+            + "        MvcResult result = perform(MockMvcRequestBuilders.post(path + \"/search\").contentType(MediaType.APPLICATION_JSON).content(json(body)));\n"
+            + "        succeeded(result, \"the search\");\n"
+            + "        Object rows = jsonAt(result, \"$.content\");\n"
+            + "        boolean page = rows instanceof List;\n"
+            + "        if (!page) rows = jsonAt(result, \"$\");\n"
+            + "        List<String> keys = new ArrayList<>();\n"
+            + "        if (rows instanceof List) {\n"
+            + "            for (Object row : (List<?>) rows) {\n"
+            + "                if (row instanceof Map) keys.add(String.valueOf(((Map<?, ?>) row).get(key)));\n"
+            + "            }\n"
+            + "        }\n"
+            + "        if (!page) return new Rows(keys, keys.size());\n"
+            + "        Object total = jsonAt(result, \"$.totalElements\");\n"
+            + "        if (total == null) total = jsonAt(result, \"$.page.totalElements\");\n"
+            + "        return new Rows(keys, total instanceof Number ? ((Number) total).longValue() : -1L);\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The answer's value at this JSON path, or null. */\n"
+            + "    private Object jsonAt(MvcResult result, String path) {\n"
+            + "        try {\n"
+            + "            return JsonPath.read(body(result), path);\n"
+            + "        } catch (RuntimeException notThere) {\n"
+            + "            return null;\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export wrote a file - 2xx, CSV, an attachment - and the first cell of each of its rows below\n"
+            + "     * the titles. Refused for more rows than the application exports, the test is aborted; refused\n"
+            + "     * for what its body asks (export.no-such-column ...), it fails.\n"
+            + "     */\n"
+            + "    protected List<String> exportedKeys(MvcResult result) throws Exception {\n"
+            + "        String code = ok(result) ? null : code(result);\n"
+            + "        if (\"export.too-many-rows\".equals(code)) skip(\"the search matches more rows than the application exports: \" + answer(result));\n"
+            + "        if (code != null && code.startsWith(\"export.\")) Assertions.fail(\"the export refused its body: \" + answer(result));\n"
+            + "        succeeded(result, \"the export\");\n"
+            + "        String type = result.getResponse().getContentType();\n"
+            + "        Assertions.assertTrue(type != null && type.startsWith(\"text/csv\"), () -> \"the export is not a CSV file: \" + type);\n"
+            + "        String disposition = result.getResponse().getHeader(\"Content-Disposition\");\n"
+            + "        Assertions.assertTrue(disposition != null && disposition.startsWith(\"attachment\"), () -> \"the export is not an attachment: \" + disposition);\n"
+            + "        List<List<String>> records = records(result);\n"
+            + "        List<String> keys = new ArrayList<>();\n"
+            + "        for (int i = 1; i < records.size(); i++) keys.add(unguarded(records.get(i).get(0)));\n"
+            + "        return keys;\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The file holds these rows; how many rows it holds. */\n"
+            + "    protected long exportedRows(MvcResult result, Object... ids) throws Exception {\n"
+            + "        List<String> keys = exportedKeys(result);\n"
+            + "        for (Object id : ids) {\n"
+            + "            Assertions.assertTrue(keys.contains(String.valueOf(id)), () -> \"the export does not hold \" + id + \": \" + keys);\n"
+            + "        }\n"
+            + "        return keys.size();\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The file holds the rows the search answers with the same body: as many as it matches, these\n"
+            + "     * among them, and first those of its page, in its order. Where they differ and a second search\n"
+            + "     * answers otherwise than the first, rows were written meanwhile - nothing narrows the search to\n"
+            + "     * the test's rows: the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    protected void assertSameRows(String path, Object search, Object export, String key, Object... ids) throws Exception {\n"
+            + "        Rows searched = searched(path, search, key);\n"
+            + "        List<String> keys = exportedKeys(exportOf(path, export));\n"
+            + "        boolean same = (searched.total < 0 || searched.total == keys.size())\n"
+            + "                && searched.keys.size() <= keys.size()\n"
+            + "                && searched.keys.equals(keys.subList(0, searched.keys.size()));\n"
+            + "        if (!same) {\n"
+            + "            Rows again = searched(path, search, key);\n"
+            + "            if (again.total != searched.total || !again.keys.equals(searched.keys)) {\n"
+            + "                skip(\"the rows changed while the test ran: the search answered \" + searched.keys + \", then \" + again.keys);\n"
+            + "            }\n"
+            + "        }\n"
+            + "        for (Object id : ids) {\n"
+            + "            Assertions.assertTrue(keys.contains(String.valueOf(id)), () -> \"the export does not hold \" + id + \": \" + keys);\n"
+            + "        }\n"
+            + "        if (searched.total >= 0) {\n"
+            + "            Assertions.assertEquals(searched.total, keys.size(), () -> \"the export holds \" + keys.size() + \" rows, the search matches \" + searched.total);\n"
+            + "        }\n"
+            + "        Assertions.assertTrue(searched.keys.size() <= keys.size(), () -> \"the export holds fewer rows than the search's page: \" + keys + \", the search \" + searched.keys);\n"
+            + "        Assertions.assertEquals(searched.keys, keys.subList(0, searched.keys.size()), \"the export is not in the search's order\");\n"
+            + "    }\n"
+            + "\n"
+            + "    /** With elasticore.export.max-rows at this many rows: written, a file of exactly that many. */\n"
+            + "    protected void assertWritten(String path, Object body, long rows) throws Exception {\n"
+            + "        MvcResult result = exportAtMost(path, body, rows);\n"
+            + "        long written = ok(result) ? exportedKeys(result).size() : -1L;\n"
+            + "        if (written == rows) return;\n"
+            + "        unchanged(path, body, rows);\n"
+            + "        Assertions.fail(\"an export of \" + rows + \" rows, as many as elasticore.export.max-rows, \"\n"
+            + "                + (written < 0 ? \"was refused: \" + answer(result) : \"wrote \" + written));\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * With elasticore.export.max-rows at this many rows, one fewer than the export holds: refused before\n"
+            + "     * anything is written - 400 export.too-many-rows, a problem, no file nor a part of one.\n"
+            + "     */\n"
+            + "    protected void assertTooManyRows(String path, Object body, long maxRows) throws Exception {\n"
+            + "        MvcResult result = exportAtMost(path, body, maxRows);\n"
+            + "        if (result.getResponse().getStatus() != 400 || !\"export.too-many-rows\".equals(code(result))) {\n"
+            + "            unchanged(path, body, maxRows + 1);\n"
+            + "        }\n"
+            + "        assertRefused(result, 400, \"export.too-many-rows\");\n"
+            + "        Assertions.assertNull(result.getResponse().getHeader(\"Content-Disposition\"), () -> \"a file was started: \" + answer(result));\n"
+            + "        String type = result.getResponse().getContentType();\n"
+            + "        Assertions.assertFalse(type != null && type.startsWith(\"text/csv\"), () -> \"a CSV file was started: \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export still holds this many rows; where it does not, rows were written meanwhile - nothing\n"
+            + "     * narrows it to the test's rows - and the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    private void unchanged(String path, Object body, long rows) throws Exception {\n"
+            + "        long now = exportedKeys(exportOf(path, body)).size();\n"
+            + "        if (now != rows) skip(\"the rows changed while the test ran: the export held \" + rows + \", then \" + now);\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The records of a CSV file (RFC 4180): its byte order mark left out, a quoted cell read whole. */\n"
+            + "    private List<List<String>> records(MvcResult result) {\n"
+            + "        String text = new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);\n"
+            + "        if (text.startsWith(\"\\uFEFF\")) text = text.substring(1);\n"
+            + "        List<List<String>> records = new ArrayList<>();\n"
+            + "        List<String> record = new ArrayList<>();\n"
+            + "        StringBuilder cell = new StringBuilder();\n"
+            + "        boolean quoted = false;\n"
+            + "        for (int i = 0; i < text.length(); i++) {\n"
+            + "            char ch = text.charAt(i);\n"
+            + "            if (quoted) {\n"
+            + "                if (ch != '\"') cell.append(ch);\n"
+            + "                else if (i + 1 < text.length() && text.charAt(i + 1) == '\"') cell.append(text.charAt(++i));\n"
+            + "                else quoted = false;\n"
+            + "            } else if (ch == '\"') {\n"
+            + "                quoted = true;\n"
+            + "            } else if (ch == ',') {\n"
+            + "                record.add(cell.toString());\n"
+            + "                cell.setLength(0);\n"
+            + "            } else if (ch == '\\r' || ch == '\\n') {\n"
+            + "                if (ch == '\\r' && i + 1 < text.length() && text.charAt(i + 1) == '\\n') i++;\n"
+            + "                record.add(cell.toString());\n"
+            + "                cell.setLength(0);\n"
+            + "                records.add(record);\n"
+            + "                record = new ArrayList<>();\n"
+            + "            } else {\n"
+            + "                cell.append(ch);\n"
+            + "            }\n"
+            + "        }\n"
+            + "        if (cell.length() > 0 || !record.isEmpty()) {\n"
+            + "            record.add(cell.toString());\n"
+            + "            records.add(record);\n"
+            + "        }\n"
+            + "        return records;\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A cell as the value it shows: without the ' the export puts before a text a spreadsheet would run. */\n"
+            + "    private static String unguarded(String cell) {\n"
+            + "        return cell.length() > 1 && cell.charAt(0) == '\\'' && \"=+-@\\t\\r\".indexOf(cell.charAt(1)) >= 0 ? cell.substring(1) : cell;\n"
+            + "    }\n"
+            + "\n";
+
+    /** The same in Kotlin. */
+    private static final String KOTLIN_EXPORT = ""
+            + "    // ---- the tests of the export\n"
+            + "\n"
+            + "    /** The search's rows as a file: POST path/export with this body - search, sortCode, columns, headers. */\n"
+            + "    protected fun exportOf(path: String, body: Any?): MvcResult =\n"
+            + "        perform(MockMvcRequestBuilders.post(\"$path/export\").contentType(MediaType.APPLICATION_JSON).content(json(body)))\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export with elasticore.export.max-rows at this many rows, for this request only: the export\n"
+            + "     * reads the setting from the application's Environment at each request.\n"
+            + "     */\n"
+            + "    protected fun exportAtMost(path: String, body: Any?, maxRows: Long): MvcResult {\n"
+            + "        val name = \"contract-test-export-max-rows\"\n"
+            + "        environment.propertySources.addFirst(\n"
+            + "            org.springframework.core.env.MapPropertySource(name, mapOf<String, Any>(\"elasticore.export.max-rows\" to maxRows)))\n"
+            + "        try {\n"
+            + "            return exportOf(path, body)\n"
+            + "        } finally {\n"
+            + "            environment.propertySources.remove(name)\n"
+            + "        }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** What a search answered: the keys of its rows in its order, and how many rows it matches (-1: not said). */\n"
+            + "    protected class Rows(val keys: List<String>, val total: Long)\n"
+            + "\n"
+            + "    /** A search - POST path/search with this body - let in (as succeeded says), and its rows. */\n"
+            + "    protected fun searched(path: String, body: Any?, key: String): Rows {\n"
+            + "        val result = perform(MockMvcRequestBuilders.post(\"$path/search\").contentType(MediaType.APPLICATION_JSON).content(json(body)))\n"
+            + "        succeeded(result, \"the search\")\n"
+            + "        val content = jsonAt(result, \"\\$.content\")\n"
+            + "        val page = content is List<*>\n"
+            + "        val rows = if (page) content else jsonAt(result, \"\\$\")\n"
+            + "        val keys = (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().map { it[key].toString() }\n"
+            + "        if (!page) return Rows(keys, keys.size.toLong())\n"
+            + "        val total = jsonAt(result, \"\\$.totalElements\") ?: jsonAt(result, \"\\$.page.totalElements\")\n"
+            + "        return Rows(keys, (total as? Number)?.toLong() ?: -1L)\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The answer's value at this JSON path, or null. */\n"
+            + "    private fun jsonAt(result: MvcResult, path: String): Any? =\n"
+            + "        try {\n"
+            + "            JsonPath.read<Any?>(body(result), path)\n"
+            + "        } catch (notThere: RuntimeException) {\n"
+            + "            null\n"
+            + "        }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export wrote a file - 2xx, CSV, an attachment - and the first cell of each of its rows below\n"
+            + "     * the titles. Refused for more rows than the application exports, the test is aborted; refused\n"
+            + "     * for what its body asks (export.no-such-column ...), it fails.\n"
+            + "     */\n"
+            + "    protected fun exportedKeys(result: MvcResult): List<String> {\n"
+            + "        val code = if (ok(result)) null else code(result)\n"
+            + "        if (code == \"export.too-many-rows\") skip(\"the search matches more rows than the application exports: \" + answer(result))\n"
+            + "        if (code != null && code.startsWith(\"export.\")) Assertions.fail<Unit>(\"the export refused its body: \" + answer(result))\n"
+            + "        succeeded(result, \"the export\")\n"
+            + "        val type = result.response.contentType\n"
+            + "        Assertions.assertTrue(type != null && type.startsWith(\"text/csv\")) { \"the export is not a CSV file: $type\" }\n"
+            + "        val disposition = result.response.getHeader(\"Content-Disposition\")\n"
+            + "        Assertions.assertTrue(disposition != null && disposition.startsWith(\"attachment\")) { \"the export is not an attachment: $disposition\" }\n"
+            + "        return records(result).drop(1).map { unguarded(it[0]) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The file holds these rows; how many rows it holds. */\n"
+            + "    protected fun exportedRows(result: MvcResult, vararg ids: Any?): Long {\n"
+            + "        val keys = exportedKeys(result)\n"
+            + "        for (id in ids) Assertions.assertTrue(keys.contains(id.toString())) { \"the export does not hold $id: $keys\" }\n"
+            + "        return keys.size.toLong()\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The file holds the rows the search answers with the same body: as many as it matches, these\n"
+            + "     * among them, and first those of its page, in its order. Where they differ and a second search\n"
+            + "     * answers otherwise than the first, rows were written meanwhile - nothing narrows the search to\n"
+            + "     * the test's rows: the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    protected fun assertSameRows(path: String, search: Any?, export: Any?, key: String, vararg ids: Any?) {\n"
+            + "        val searched = searched(path, search, key)\n"
+            + "        val keys = exportedKeys(exportOf(path, export))\n"
+            + "        val same = (searched.total < 0 || searched.total == keys.size.toLong()) &&\n"
+            + "            searched.keys.size <= keys.size &&\n"
+            + "            searched.keys == keys.subList(0, searched.keys.size)\n"
+            + "        if (!same) {\n"
+            + "            val again = searched(path, search, key)\n"
+            + "            if (again.total != searched.total || again.keys != searched.keys) {\n"
+            + "                skip(\"the rows changed while the test ran: the search answered ${searched.keys}, then ${again.keys}\")\n"
+            + "            }\n"
+            + "        }\n"
+            + "        for (id in ids) Assertions.assertTrue(keys.contains(id.toString())) { \"the export does not hold $id: $keys\" }\n"
+            + "        if (searched.total >= 0) {\n"
+            + "            Assertions.assertEquals(searched.total, keys.size.toLong()) { \"the export holds ${keys.size} rows, the search matches ${searched.total}\" }\n"
+            + "        }\n"
+            + "        Assertions.assertTrue(searched.keys.size <= keys.size) { \"the export holds fewer rows than the search's page: $keys, the search ${searched.keys}\" }\n"
+            + "        Assertions.assertEquals(searched.keys, keys.subList(0, searched.keys.size), \"the export is not in the search's order\")\n"
+            + "    }\n"
+            + "\n"
+            + "    /** With elasticore.export.max-rows at this many rows: written, a file of exactly that many. */\n"
+            + "    protected fun assertWritten(path: String, body: Any?, rows: Long) {\n"
+            + "        val result = exportAtMost(path, body, rows)\n"
+            + "        val written = if (ok(result)) exportedKeys(result).size.toLong() else -1L\n"
+            + "        if (written == rows) return\n"
+            + "        unchanged(path, body, rows)\n"
+            + "        Assertions.fail<Unit>(\"an export of $rows rows, as many as elasticore.export.max-rows, \" +\n"
+            + "            (if (written < 0) \"was refused: \" + answer(result) else \"wrote $written\"))\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * With elasticore.export.max-rows at this many rows, one fewer than the export holds: refused before\n"
+            + "     * anything is written - 400 export.too-many-rows, a problem, no file nor a part of one.\n"
+            + "     */\n"
+            + "    protected fun assertTooManyRows(path: String, body: Any?, maxRows: Long) {\n"
+            + "        val result = exportAtMost(path, body, maxRows)\n"
+            + "        if (result.response.status != 400 || code(result) != \"export.too-many-rows\") unchanged(path, body, maxRows + 1)\n"
+            + "        assertRefused(result, 400, \"export.too-many-rows\")\n"
+            + "        Assertions.assertNull(result.response.getHeader(\"Content-Disposition\")) { \"a file was started: \" + answer(result) }\n"
+            + "        val type = result.response.contentType\n"
+            + "        Assertions.assertFalse(type != null && type.startsWith(\"text/csv\")) { \"a CSV file was started: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export still holds this many rows; where it does not, rows were written meanwhile - nothing\n"
+            + "     * narrows it to the test's rows - and the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    private fun unchanged(path: String, body: Any?, rows: Long) {\n"
+            + "        val now = exportedKeys(exportOf(path, body)).size.toLong()\n"
+            + "        if (now != rows) skip(\"the rows changed while the test ran: the export held $rows, then $now\")\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The records of a CSV file (RFC 4180): its byte order mark left out, a quoted cell read whole. */\n"
+            + "    private fun records(result: MvcResult): List<List<String>> {\n"
+            + "        var text = String(result.response.contentAsByteArray, StandardCharsets.UTF_8)\n"
+            + "        if (text.startsWith(\"\\uFEFF\")) text = text.substring(1)\n"
+            + "        val records = ArrayList<List<String>>()\n"
+            + "        var record = ArrayList<String>()\n"
+            + "        val cell = StringBuilder()\n"
+            + "        var quoted = false\n"
+            + "        var i = 0\n"
+            + "        while (i < text.length) {\n"
+            + "            val ch = text[i]\n"
+            + "            if (quoted) {\n"
+            + "                if (ch != '\"') {\n"
+            + "                    cell.append(ch)\n"
+            + "                } else if (i + 1 < text.length && text[i + 1] == '\"') {\n"
+            + "                    cell.append(ch)\n"
+            + "                    i++\n"
+            + "                } else {\n"
+            + "                    quoted = false\n"
+            + "                }\n"
+            + "            } else if (ch == '\"') {\n"
+            + "                quoted = true\n"
+            + "            } else if (ch == ',') {\n"
+            + "                record.add(cell.toString())\n"
+            + "                cell.setLength(0)\n"
+            + "            } else if (ch == '\\r' || ch == '\\n') {\n"
+            + "                if (ch == '\\r' && i + 1 < text.length && text[i + 1] == '\\n') i++\n"
+            + "                record.add(cell.toString())\n"
+            + "                cell.setLength(0)\n"
+            + "                records.add(record)\n"
+            + "                record = ArrayList()\n"
+            + "            } else {\n"
+            + "                cell.append(ch)\n"
+            + "            }\n"
+            + "            i++\n"
+            + "        }\n"
+            + "        if (cell.isNotEmpty() || record.isNotEmpty()) {\n"
+            + "            record.add(cell.toString())\n"
+            + "            records.add(record)\n"
+            + "        }\n"
+            + "        return records\n"
+            + "    }\n"
+            + "\n"
+            + "    /** A cell as the value it shows: without the ' the export puts before a text a spreadsheet would run. */\n"
+            + "    private fun unguarded(cell: String): String =\n"
+            + "        if (cell.length > 1 && cell[0] == '\\'' && \"=+-@\\t\\r\".indexOf(cell[1]) >= 0) cell.substring(1) else cell\n"
+            + "\n";
+
     /** The same in Kotlin. */
     private static final String KOTLIN_SYSTEM_ROWS = ""
             + "    /**\n"
@@ -4693,7 +5344,8 @@ final class ContractTestSource {
             boolean tx,
             String why,
             Access access,
-            Privacy privacy) {
+            Privacy privacy,
+            Export export) {
         Lang lang = new Lang(true);
         StringBuilder k = new StringBuilder();
         k.append(OWNED).append('\n').append("package ").append(pkg).append("\n\n");
@@ -4721,7 +5373,7 @@ final class ContractTestSource {
                 .append("import java.nio.charset.StandardCharsets\n")
                 .append("import java.util.concurrent.ThreadLocalRandom\n")
                 .append("import java.util.concurrent.atomic.AtomicLong\n\n");
-        k.append(doc(domainName, s, guarded, system, principal, why, access, privacy));
+        k.append(doc(domainName, s, guarded, system, principal, why, access, privacy, export));
         k.append(springBootTest(s, lang));
 
         k.append("@AutoConfigureMockMvc\n");
@@ -4750,6 +5402,13 @@ final class ContractTestSource {
                             .append("    protected lateinit var entityManager: jakarta.persistence.EntityManager\n\n");
                 }
             }
+        }
+        if (export.tests) {
+            k.append(
+                            "    /** Where the tests of the export set elasticore.export.max-rows for one request (exportAtMost). */\n")
+                    .append("    @Autowired\n")
+                    .append(
+                            "    protected lateinit var environment: org.springframework.core.env.ConfigurableEnvironment\n\n");
         }
         k.append("    companion object {\n")
                 .append(
@@ -4864,6 +5523,7 @@ final class ContractTestSource {
         }
         if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
         if (privacy.tests) k.append(kotlinPrivacy(s, privacy));
+        if (export.tests) k.append(KOTLIN_EXPORT);
         k.append(KOTLIN_HELPERS);
         k.append("}\n");
         return k.toString();
@@ -5250,6 +5910,21 @@ final class ContractTestSource {
         /** A text: String sent = email(24); */
         String text(String name, String expression) {
             return kotlin ? "val " + name + " = " + expression : "String " + name + " = " + expression + ";";
+        }
+
+        /** A key: Object first = createdId(...); */
+        String object(String name, String expression) {
+            return typed("Object", name, expression);
+        }
+
+        /** A body: Map<String, Object> search = obj(...); */
+        String map(String name, String expression) {
+            return typed("Map<String, Object>", name, expression);
+        }
+
+        /** A value of a Java type, inferred in Kotlin: long rows = ...; */
+        String typed(String javaType, String name, String expression) {
+            return kotlin ? "val " + name + " = " + expression : javaType + " " + name + " = " + expression + ";";
         }
 
         /** A caller signIn(role) signed in: Caller owner = signIn("U"); */

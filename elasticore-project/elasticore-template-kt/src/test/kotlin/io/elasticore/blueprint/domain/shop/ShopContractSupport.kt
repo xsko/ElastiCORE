@@ -38,6 +38,10 @@ import java.util.concurrent.atomic.AtomicLong
  * An application with an @encrypt field starts only with its keys
  * (elasticore.crypto.key, elasticore.crypto.index-key): give the tests theirs -
  * an environment variable, never the repository.
+ * The tests of the export send the search's body to POST .../export (exportOf) and
+ * compare the file with the search (searched); elasticore.export.max-rows is set
+ * for one request at a time (exportAtMost) - the export reads it at each request,
+ * so tests run in parallel would see it too: run these one at a time.
  *
  * Every test class extends this one, so all of them start the same application and
  * Spring keeps one context for the suite; each test's rows are rolled back.
@@ -82,6 +86,10 @@ abstract class ShopContractSupport {
     /** Written to the database before a column is read: the test's transaction holds the rest. */
     @Autowired
     protected lateinit var entityManager: jakarta.persistence.EntityManager
+
+    /** Where the tests of the export set elasticore.export.max-rows for one request (exportAtMost). */
+    @Autowired
+    protected lateinit var environment: org.springframework.core.env.ConfigurableEnvironment
 
     companion object {
         /** A test's values are its own (logins, unique fields): each run starts somewhere new. */
@@ -341,6 +349,180 @@ abstract class ShopContractSupport {
         Assertions.assertNotEquals(sent, stored, "the column holds the plain value")
         if (sent.length >= 6) Assertions.assertFalse(stored!!.contains(sent)) { "the column holds the plain value: $stored" }
     }
+
+    // ---- the tests of the export
+
+    /** The search's rows as a file: POST path/export with this body - search, sortCode, columns, headers. */
+    protected fun exportOf(path: String, body: Any?): MvcResult =
+        perform(MockMvcRequestBuilders.post("$path/export").contentType(MediaType.APPLICATION_JSON).content(json(body)))
+
+    /**
+     * The export with elasticore.export.max-rows at this many rows, for this request only: the export
+     * reads the setting from the application's Environment at each request.
+     */
+    protected fun exportAtMost(path: String, body: Any?, maxRows: Long): MvcResult {
+        val name = "contract-test-export-max-rows"
+        environment.propertySources.addFirst(
+            org.springframework.core.env.MapPropertySource(name, mapOf<String, Any>("elasticore.export.max-rows" to maxRows)))
+        try {
+            return exportOf(path, body)
+        } finally {
+            environment.propertySources.remove(name)
+        }
+    }
+
+    /** What a search answered: the keys of its rows in its order, and how many rows it matches (-1: not said). */
+    protected class Rows(val keys: List<String>, val total: Long)
+
+    /** A search - POST path/search with this body - let in (as succeeded says), and its rows. */
+    protected fun searched(path: String, body: Any?, key: String): Rows {
+        val result = perform(MockMvcRequestBuilders.post("$path/search").contentType(MediaType.APPLICATION_JSON).content(json(body)))
+        succeeded(result, "the search")
+        val content = jsonAt(result, "\$.content")
+        val page = content is List<*>
+        val rows = if (page) content else jsonAt(result, "\$")
+        val keys = (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().map { it[key].toString() }
+        if (!page) return Rows(keys, keys.size.toLong())
+        val total = jsonAt(result, "\$.totalElements") ?: jsonAt(result, "\$.page.totalElements")
+        return Rows(keys, (total as? Number)?.toLong() ?: -1L)
+    }
+
+    /** The answer's value at this JSON path, or null. */
+    private fun jsonAt(result: MvcResult, path: String): Any? =
+        try {
+            JsonPath.read<Any?>(body(result), path)
+        } catch (notThere: RuntimeException) {
+            null
+        }
+
+    /**
+     * The export wrote a file - 2xx, CSV, an attachment - and the first cell of each of its rows below
+     * the titles. Refused for more rows than the application exports, the test is aborted; refused
+     * for what its body asks (export.no-such-column ...), it fails.
+     */
+    protected fun exportedKeys(result: MvcResult): List<String> {
+        val code = if (ok(result)) null else code(result)
+        if (code == "export.too-many-rows") skip("the search matches more rows than the application exports: " + answer(result))
+        if (code != null && code.startsWith("export.")) Assertions.fail<Unit>("the export refused its body: " + answer(result))
+        succeeded(result, "the export")
+        val type = result.response.contentType
+        Assertions.assertTrue(type != null && type.startsWith("text/csv")) { "the export is not a CSV file: $type" }
+        val disposition = result.response.getHeader("Content-Disposition")
+        Assertions.assertTrue(disposition != null && disposition.startsWith("attachment")) { "the export is not an attachment: $disposition" }
+        return records(result).drop(1).map { unguarded(it[0]) }
+    }
+
+    /** The file holds these rows; how many rows it holds. */
+    protected fun exportedRows(result: MvcResult, vararg ids: Any?): Long {
+        val keys = exportedKeys(result)
+        for (id in ids) Assertions.assertTrue(keys.contains(id.toString())) { "the export does not hold $id: $keys" }
+        return keys.size.toLong()
+    }
+
+    /**
+     * The file holds the rows the search answers with the same body: as many as it matches, these
+     * among them, and first those of its page, in its order. Where they differ and a second search
+     * answers otherwise than the first, rows were written meanwhile - nothing narrows the search to
+     * the test's rows: the test is aborted, not failed.
+     */
+    protected fun assertSameRows(path: String, search: Any?, export: Any?, key: String, vararg ids: Any?) {
+        val searched = searched(path, search, key)
+        val keys = exportedKeys(exportOf(path, export))
+        val same = (searched.total < 0 || searched.total == keys.size.toLong()) &&
+            searched.keys.size <= keys.size &&
+            searched.keys == keys.subList(0, searched.keys.size)
+        if (!same) {
+            val again = searched(path, search, key)
+            if (again.total != searched.total || again.keys != searched.keys) {
+                skip("the rows changed while the test ran: the search answered ${searched.keys}, then ${again.keys}")
+            }
+        }
+        for (id in ids) Assertions.assertTrue(keys.contains(id.toString())) { "the export does not hold $id: $keys" }
+        if (searched.total >= 0) {
+            Assertions.assertEquals(searched.total, keys.size.toLong()) { "the export holds ${keys.size} rows, the search matches ${searched.total}" }
+        }
+        Assertions.assertTrue(searched.keys.size <= keys.size) { "the export holds fewer rows than the search's page: $keys, the search ${searched.keys}" }
+        Assertions.assertEquals(searched.keys, keys.subList(0, searched.keys.size), "the export is not in the search's order")
+    }
+
+    /** With elasticore.export.max-rows at this many rows: written, a file of exactly that many. */
+    protected fun assertWritten(path: String, body: Any?, rows: Long) {
+        val result = exportAtMost(path, body, rows)
+        val written = if (ok(result)) exportedKeys(result).size.toLong() else -1L
+        if (written == rows) return
+        unchanged(path, body, rows)
+        Assertions.fail<Unit>("an export of $rows rows, as many as elasticore.export.max-rows, " +
+            (if (written < 0) "was refused: " + answer(result) else "wrote $written"))
+    }
+
+    /**
+     * With elasticore.export.max-rows at this many rows, one fewer than the export holds: refused before
+     * anything is written - 400 export.too-many-rows, a problem, no file nor a part of one.
+     */
+    protected fun assertTooManyRows(path: String, body: Any?, maxRows: Long) {
+        val result = exportAtMost(path, body, maxRows)
+        if (result.response.status != 400 || code(result) != "export.too-many-rows") unchanged(path, body, maxRows + 1)
+        assertRefused(result, 400, "export.too-many-rows")
+        Assertions.assertNull(result.response.getHeader("Content-Disposition")) { "a file was started: " + answer(result) }
+        val type = result.response.contentType
+        Assertions.assertFalse(type != null && type.startsWith("text/csv")) { "a CSV file was started: " + answer(result) }
+    }
+
+    /**
+     * The export still holds this many rows; where it does not, rows were written meanwhile - nothing
+     * narrows it to the test's rows - and the test is aborted, not failed.
+     */
+    private fun unchanged(path: String, body: Any?, rows: Long) {
+        val now = exportedKeys(exportOf(path, body)).size.toLong()
+        if (now != rows) skip("the rows changed while the test ran: the export held $rows, then $now")
+    }
+
+    /** The records of a CSV file (RFC 4180): its byte order mark left out, a quoted cell read whole. */
+    private fun records(result: MvcResult): List<List<String>> {
+        var text = String(result.response.contentAsByteArray, StandardCharsets.UTF_8)
+        if (text.startsWith("﻿")) text = text.substring(1)
+        val records = ArrayList<List<String>>()
+        var record = ArrayList<String>()
+        val cell = StringBuilder()
+        var quoted = false
+        var i = 0
+        while (i < text.length) {
+            val ch = text[i]
+            if (quoted) {
+                if (ch != '"') {
+                    cell.append(ch)
+                } else if (i + 1 < text.length && text[i + 1] == '"') {
+                    cell.append(ch)
+                    i++
+                } else {
+                    quoted = false
+                }
+            } else if (ch == '"') {
+                quoted = true
+            } else if (ch == ',') {
+                record.add(cell.toString())
+                cell.setLength(0)
+            } else if (ch == '\r' || ch == '\n') {
+                if (ch == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++
+                record.add(cell.toString())
+                cell.setLength(0)
+                records.add(record)
+                record = ArrayList()
+            } else {
+                cell.append(ch)
+            }
+            i++
+        }
+        if (cell.isNotEmpty() || record.isNotEmpty()) {
+            record.add(cell.toString())
+            records.add(record)
+        }
+        return records
+    }
+
+    /** A cell as the value it shows: without the ' the export puts before a text a spreadsheet would run. */
+    private fun unguarded(cell: String): String =
+        if (cell.length > 1 && cell[0] == '\'' && "=+-@\t\r".indexOf(cell[1]) >= 0) cell.substring(1) else cell
 
     protected fun post(path: String, body: Any?): MvcResult =
         perform(MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body)))

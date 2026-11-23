@@ -767,6 +767,7 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 | `@access` | each operation the API serves - read, search, create, update, delete, each command - at its entry, else `*`, else `admin`: a caller each term lets in passes (2xx; a search finds the row); a visitor is refused 401 `not-signed-in`, a caller of a role no term lets in 403 `forbidden`, and where `owner` is a word a caller on another's row 404 `not-found` (a search does not find it). `REP&owner` refuses another role on a row of theirs and a REP on another's; `owner\|MANAGER` lets in either. A visitor's create of a row keyed by its owner (`@owner` the key the request chooses) is refused 401, as the service does |
 | `@Mask` (an env.yml `@dto:` annotation) | a value of the mask's shape is sent - a phone of three groups, an address, enough digits: the read and the search show what the field's `MaskType` makes of it (its `apply`, as the generated update compares it). The masked text sent back by an update (`PUT`) keeps the stored value, a new value replaces it (issue 270) - read past the application (`JdbcTemplate`, `MongoTemplate`), else found by an `@encrypt @search(eq)` search |
 | `@encrypt` | the column holds no plain value and decrypts to the value sent; the API answers the value. With `@search(eq)`: a search by the value finds the row, one by another value does not |
+| `export` in `@expose(methods)` | two rows of the test's own, sharing a text the search finds them by (where it takes none, every row the caller may see): the file of `POST .../export` (CSV) holds the rows the search answers with the same body - as many as it matches, in its order, sorted by the key (`sortCode` `<key>-`), which every response shows. With `elasticore.export.max-rows` at that many rows they are written; at one fewer the export is refused 400 `export.too-many-rows` before anything is written - a problem, no file |
 
 - Files: `<Domain>ContractSupport` and a `<Entity>ContractTest` for each entity the API creates, in `src/test/java/<base package>/`
   (`src/test/kotlin` for Kotlin). Written once, then merged when the DSL changes - kept where you changed them - as the architecture test.
@@ -796,6 +797,13 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   field (a root its commands change; `@editable` opens it to `PUT`), a `@pattern` field sent back (it may refuse the masked text), an inherited
   field, a `@rollup` entity or a name not written plainly (the column is not read), an `@encrypt @search(eq)` field the search does not take.
   A value the mask writes as it is aborts the test. A kept support class without these members gets none of them.
+- The export: the support class sends the body (`exportOf`) and the search (`searched`), and sets `elasticore.export.max-rows` for one
+  request in the application's `Environment` (`exportAtMost` - the export reads it at each request, so tests run in parallel would
+  see it too: run these one at a time); the file's rows are told apart by the key alone (`columns`, `headers`). Not tested, counted
+  and listed in the support class's comment: a controller without `POST /export` (a rule set leaves it out, or the controller is yours
+  without it), a composite key, a `@searchResult` DTO without the key, the order where the API takes no search. A kept support class
+  without these members gets none of them. More rows than the application exports, or rows written meanwhile where nothing narrows
+  the search (a second search or export answers otherwise), abort the test rather than fail it.
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.
@@ -805,8 +813,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   A table H2 cannot make - a column `@columnDef('jsonb')` or `xml` - is counted as skipped.
 - Each test makes its own rows: what the model requires, a row a reference names first (through its own API), and a value of its
   own for each row where one must be unique (`@unique`, a unique index, the key): text, a pattern's value varied, a number in steps.
-  It never reads the seeded data or counts rows, and it checks the status and the problem's `code` (and the field) - never the
-  message, so a translated API passes.
+  It never depends on the seeded data - only the export's tests count rows, compared with the search or the export itself, never with a
+  number - and it checks the status and the problem's `code` (and the field) - never the message, so a translated API passes.
 - A row the generator cannot build is counted in the build's summary:
   `contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test; ...)`.
   A refusal at run time by a rule of the application's own - a check its code makes, a unique value taken - aborts the test with
@@ -815,9 +823,9 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - `testCode` is read exactly: `"true"`, `"contract"` or `"false"`; another value (`"Contract"`, `"contracts"`) is a DSL warning.
 - MongoDB: the tests run on the server `ELASTICORE_IT_MONGODB_URI` names (`mongodb://host:port`, database `elasticore_contract`) and are
   skipped without it; their rows stay, with unique values.
-- Covered: the field constraints, `@access` and `@Mask` in every mode, language and architecture (`@encrypt` where it is: not MongoDB);
-  the lifecycles and the invariants where they are written - ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not yet: `export`, the
-  `delete:` states of a lifecycle as a test of their own, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
+- Covered: the field constraints, `@access`, `@Mask` and `export` in every mode, language and architecture (`@encrypt` where it is:
+  not MongoDB); the lifecycles and the invariants where they are written - ddd and hexagonal, JPA and MyBatis, Java and Kotlin. Not
+  yet: the `delete:` states of a lifecycle as a test of their own, a member's own constraints. A fractional bound of a float (`@max(0.1)`) is counted as skipped:
   a float holds no exact 0.1, and its check compares it widened to a double. So are a `@past` / `@future` time of day (past or
   future by the hour the test runs at), a lookahead the rest always holds (`@pattern('^(?=.*\\d)\\d+$')`: nothing matches the rest
   and misses it) and any other lookaround - a negative lookahead, a lookbehind, a lookahead further in.
@@ -828,7 +836,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   the model says: the pet store's `PurchaseOrderContractTest` adds a delivery address, without which its `place` refuses the order.
 - Examples: `elasticore-template-ddd` (Java, hexagonal, JPA; `Subscriber` `@encrypt`, `@Mask`), `-ddd-mybatis` (MyBatis; `Customer.phone`
   masked), `-kt` (Kotlin; `cancel=owner|LEAD`, `bill=LEAD&owner`; `Agent.phone` `@encrypt(digits) @s(eq)` masked), `-mongo` and `-kt-mongo`
-  (`Customer.email` masked), the pet store (Spring Boot 4, sign-in; `read=owner|MANAGER`, `delete=MANAGER&owner`).
+  (`Customer.email` masked), the pet store (Spring Boot 4, sign-in; `read=owner|MANAGER`, `delete=MANAGER&owner`). Exported (`export`):
+  the pet store's `Item` and `PurchaseOrder`, `-kt`'s `Ticket`, `-ddd-mybatis`'s, `-mongo`'s and `-kt-mongo`'s `Customer`.
 
 ---
 
