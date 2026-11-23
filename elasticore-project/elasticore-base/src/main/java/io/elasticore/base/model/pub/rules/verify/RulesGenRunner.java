@@ -4081,12 +4081,15 @@ public final class RulesGenRunner {
             }
             String text = code.render();
             write(label, out, text);
-            // POST /export where the controller has it: a rule set may leave it out (isMethodExcluded).
-            if ("control".equals(target)
-                    && currentModel != null
-                    && text.contains("@PostMapping(\"/"
-                            + io.elasticore.base.model.pub.rules.base.ControllerBaseRules.EXPORT + "\")")) {
-                contractExported.add(ContractTestSource.key(currentModel, spec.getName()));
+            // POST /export where the controller has it: a rule set may leave it out (isMethodExcluded), and a
+            // controller the merge keeps as the developer's is read as it is on disk.
+            if ("control".equals(target) && currentModel != null) {
+                String kept = readText(new File(rootFor(out) + "/" + out.relativePath()));
+                if ((kept != null ? kept : text)
+                        .contains("@PostMapping(\"/"
+                                + io.elasticore.base.model.pub.rules.base.ControllerBaseRules.EXPORT + "\")")) {
+                    contractExported.add(ContractTestSource.key(currentModel, spec.getName()));
+                }
             }
             return true;
         } catch (RuntimeException e) {

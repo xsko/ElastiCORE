@@ -2848,7 +2848,8 @@ final class ContractTestSource {
             if (!ControllerBaseRules.exports(e)) return;
             String name = e.getName() + " export";
             if (!exported.contains(key(modelOf.get(e), e.getName()))) {
-                exportSkip(name + ": the run's rule sets leave POST /export out of its controller");
+                exportSkip(name + ": its controller has no POST /export - a rule set leaves it out, or the controller"
+                        + " is yours without it");
                 return;
             }
             if (e.pkFields().size() != 1) {
@@ -2889,8 +2890,7 @@ final class ContractTestSource {
                 t.lines.add(lang.map(
                         "export",
                         "obj(\"search\", search, \"columns\", list(" + key + "), \"headers\", list(" + key + "))"));
-                t.lines.add(lang.stmt("assertSameRows(searched(" + path + ", search, " + key + "), exportOf(" + path
-                        + ", export), first, second)"));
+                t.lines.add(lang.stmt("assertSameRows(" + path + ", search, export, " + key + ", first, second)"));
             }
             Test t = exportTest(
                     "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten",
@@ -2902,8 +2902,8 @@ final class ContractTestSource {
                     (narrowed == null ? "obj(" : "obj(\"search\", obj(" + lang.string(narrowed[1]) + ", shared), ")
                             + "\"columns\", list(" + key + "), \"headers\", list(" + key + "))"));
             t.lines.add(lang.typed("long", "rows", "exportedRows(exportOf(" + path + ", export), first, second)"));
-            t.lines.add(lang.stmt("assertWritten(exportAtMost(" + path + ", export, rows), rows)"));
-            t.lines.add(lang.stmt("assertTooManyRows(exportAtMost(" + path + ", export, rows - 1))"));
+            t.lines.add(lang.stmt("assertWritten(" + path + ", export, rows)"));
+            t.lines.add(lang.stmt("assertTooManyRows(" + path + ", export, rows - 1)"));
         }
 
         private Test exportTest(String method, String display) {
@@ -3835,7 +3835,8 @@ final class ContractTestSource {
         if (export.tests) {
             d.append(" * The tests of the export send the search's body to POST .../export (exportOf) and\n")
                     .append(" * compare the file with the search (searched); elasticore.export.max-rows is set\n")
-                    .append(" * for one request at a time (exportAtMost) - the export reads it at each request.\n");
+                    .append(" * for one request at a time (exportAtMost) - the export reads it at each request,\n")
+                    .append(" * so tests run in parallel would see it too: run these one at a time.\n");
         }
         if (!export.skipped.isEmpty()) {
             d.append(" * Not tested of the export, as the build's summary says:\n");
@@ -4803,10 +4804,22 @@ final class ContractTestSource {
             + "\n"
             + "    /**\n"
             + "     * The file holds the rows the search answers with the same body: as many as it matches, these\n"
-            + "     * among them, and first those of its page, in its order.\n"
+            + "     * among them, and first those of its page, in its order. Where they differ and a second search\n"
+            + "     * answers otherwise than the first, rows were written meanwhile - nothing narrows the search to\n"
+            + "     * the test's rows: the test is aborted, not failed.\n"
             + "     */\n"
-            + "    protected void assertSameRows(Rows searched, MvcResult export, Object... ids) throws Exception {\n"
-            + "        List<String> keys = exportedKeys(export);\n"
+            + "    protected void assertSameRows(String path, Object search, Object export, String key, Object... ids) throws Exception {\n"
+            + "        Rows searched = searched(path, search, key);\n"
+            + "        List<String> keys = exportedKeys(exportOf(path, export));\n"
+            + "        boolean same = (searched.total < 0 || searched.total == keys.size())\n"
+            + "                && searched.keys.size() <= keys.size()\n"
+            + "                && searched.keys.equals(keys.subList(0, searched.keys.size()));\n"
+            + "        if (!same) {\n"
+            + "            Rows again = searched(path, search, key);\n"
+            + "            if (again.total != searched.total || !again.keys.equals(searched.keys)) {\n"
+            + "                skip(\"the rows changed while the test ran: the search answered \" + searched.keys + \", then \" + again.keys);\n"
+            + "            }\n"
+            + "        }\n"
             + "        for (Object id : ids) {\n"
             + "            Assertions.assertTrue(keys.contains(String.valueOf(id)), () -> \"the export does not hold \" + id + \": \" + keys);\n"
             + "        }\n"
@@ -4817,19 +4830,38 @@ final class ContractTestSource {
             + "        Assertions.assertEquals(searched.keys, keys.subList(0, searched.keys.size()), \"the export is not in the search's order\");\n"
             + "    }\n"
             + "\n"
-            + "    /** At elasticore.export.max-rows: written, a file of exactly this many rows. */\n"
-            + "    protected void assertWritten(MvcResult result, long rows) throws Exception {\n"
-            + "        Assertions.assertTrue(ok(result), () -> \"an export of \" + rows + \" rows, as many as elasticore.export.max-rows, was refused: \" + answer(result));\n"
-            + "        List<String> keys = exportedKeys(result);\n"
-            + "        Assertions.assertEquals(rows, keys.size(), () -> \"the export writes \" + keys.size() + \" rows, not \" + rows);\n"
+            + "    /** With elasticore.export.max-rows at this many rows: written, a file of exactly that many. */\n"
+            + "    protected void assertWritten(String path, Object body, long rows) throws Exception {\n"
+            + "        MvcResult result = exportAtMost(path, body, rows);\n"
+            + "        long written = ok(result) ? exportedKeys(result).size() : -1L;\n"
+            + "        if (written == rows) return;\n"
+            + "        unchanged(path, body, rows);\n"
+            + "        Assertions.fail(\"an export of \" + rows + \" rows, as many as elasticore.export.max-rows, \"\n"
+            + "                + (written < 0 ? \"was refused: \" + answer(result) : \"wrote \" + written));\n"
             + "    }\n"
             + "\n"
-            + "    /** Refused before anything is written: 400 export.too-many-rows, a problem - no file, nor a part of one. */\n"
-            + "    protected void assertTooManyRows(MvcResult result) throws Exception {\n"
+            + "    /**\n"
+            + "     * With elasticore.export.max-rows at this many rows, one fewer than the export holds: refused before\n"
+            + "     * anything is written - 400 export.too-many-rows, a problem, no file nor a part of one.\n"
+            + "     */\n"
+            + "    protected void assertTooManyRows(String path, Object body, long maxRows) throws Exception {\n"
+            + "        MvcResult result = exportAtMost(path, body, maxRows);\n"
+            + "        if (result.getResponse().getStatus() != 400 || !\"export.too-many-rows\".equals(code(result))) {\n"
+            + "            unchanged(path, body, maxRows + 1);\n"
+            + "        }\n"
             + "        assertRefused(result, 400, \"export.too-many-rows\");\n"
             + "        Assertions.assertNull(result.getResponse().getHeader(\"Content-Disposition\"), () -> \"a file was started: \" + answer(result));\n"
             + "        String type = result.getResponse().getContentType();\n"
             + "        Assertions.assertFalse(type != null && type.startsWith(\"text/csv\"), () -> \"a CSV file was started: \" + answer(result));\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export still holds this many rows; where it does not, rows were written meanwhile - nothing\n"
+            + "     * narrows it to the test's rows - and the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    private void unchanged(String path, Object body, long rows) throws Exception {\n"
+            + "        long now = exportedKeys(exportOf(path, body)).size();\n"
+            + "        if (now != rows) skip(\"the rows changed while the test ran: the export held \" + rows + \", then \" + now);\n"
             + "    }\n"
             + "\n"
             + "    /** The records of a CSV file (RFC 4180): its byte order mark left out, a quoted cell read whole. */\n"
@@ -4947,10 +4979,22 @@ final class ContractTestSource {
             + "\n"
             + "    /**\n"
             + "     * The file holds the rows the search answers with the same body: as many as it matches, these\n"
-            + "     * among them, and first those of its page, in its order.\n"
+            + "     * among them, and first those of its page, in its order. Where they differ and a second search\n"
+            + "     * answers otherwise than the first, rows were written meanwhile - nothing narrows the search to\n"
+            + "     * the test's rows: the test is aborted, not failed.\n"
             + "     */\n"
-            + "    protected fun assertSameRows(searched: Rows, export: MvcResult, vararg ids: Any?) {\n"
-            + "        val keys = exportedKeys(export)\n"
+            + "    protected fun assertSameRows(path: String, search: Any?, export: Any?, key: String, vararg ids: Any?) {\n"
+            + "        val searched = searched(path, search, key)\n"
+            + "        val keys = exportedKeys(exportOf(path, export))\n"
+            + "        val same = (searched.total < 0 || searched.total == keys.size.toLong()) &&\n"
+            + "            searched.keys.size <= keys.size &&\n"
+            + "            searched.keys == keys.subList(0, searched.keys.size)\n"
+            + "        if (!same) {\n"
+            + "            val again = searched(path, search, key)\n"
+            + "            if (again.total != searched.total || again.keys != searched.keys) {\n"
+            + "                skip(\"the rows changed while the test ran: the search answered ${searched.keys}, then ${again.keys}\")\n"
+            + "            }\n"
+            + "        }\n"
             + "        for (id in ids) Assertions.assertTrue(keys.contains(id.toString())) { \"the export does not hold $id: $keys\" }\n"
             + "        if (searched.total >= 0) {\n"
             + "            Assertions.assertEquals(searched.total, keys.size.toLong()) { \"the export holds ${keys.size} rows, the search matches ${searched.total}\" }\n"
@@ -4959,19 +5003,36 @@ final class ContractTestSource {
             + "        Assertions.assertEquals(searched.keys, keys.subList(0, searched.keys.size), \"the export is not in the search's order\")\n"
             + "    }\n"
             + "\n"
-            + "    /** At elasticore.export.max-rows: written, a file of exactly this many rows. */\n"
-            + "    protected fun assertWritten(result: MvcResult, rows: Long) {\n"
-            + "        Assertions.assertTrue(ok(result)) { \"an export of $rows rows, as many as elasticore.export.max-rows, was refused: \" + answer(result) }\n"
-            + "        val keys = exportedKeys(result)\n"
-            + "        Assertions.assertEquals(rows, keys.size.toLong()) { \"the export writes ${keys.size} rows, not $rows\" }\n"
+            + "    /** With elasticore.export.max-rows at this many rows: written, a file of exactly that many. */\n"
+            + "    protected fun assertWritten(path: String, body: Any?, rows: Long) {\n"
+            + "        val result = exportAtMost(path, body, rows)\n"
+            + "        val written = if (ok(result)) exportedKeys(result).size.toLong() else -1L\n"
+            + "        if (written == rows) return\n"
+            + "        unchanged(path, body, rows)\n"
+            + "        Assertions.fail<Unit>(\"an export of $rows rows, as many as elasticore.export.max-rows, \" +\n"
+            + "            (if (written < 0) \"was refused: \" + answer(result) else \"wrote $written\"))\n"
             + "    }\n"
             + "\n"
-            + "    /** Refused before anything is written: 400 export.too-many-rows, a problem - no file, nor a part of one. */\n"
-            + "    protected fun assertTooManyRows(result: MvcResult) {\n"
+            + "    /**\n"
+            + "     * With elasticore.export.max-rows at this many rows, one fewer than the export holds: refused before\n"
+            + "     * anything is written - 400 export.too-many-rows, a problem, no file nor a part of one.\n"
+            + "     */\n"
+            + "    protected fun assertTooManyRows(path: String, body: Any?, maxRows: Long) {\n"
+            + "        val result = exportAtMost(path, body, maxRows)\n"
+            + "        if (result.response.status != 400 || code(result) != \"export.too-many-rows\") unchanged(path, body, maxRows + 1)\n"
             + "        assertRefused(result, 400, \"export.too-many-rows\")\n"
             + "        Assertions.assertNull(result.response.getHeader(\"Content-Disposition\")) { \"a file was started: \" + answer(result) }\n"
             + "        val type = result.response.contentType\n"
             + "        Assertions.assertFalse(type != null && type.startsWith(\"text/csv\")) { \"a CSV file was started: \" + answer(result) }\n"
+            + "    }\n"
+            + "\n"
+            + "    /**\n"
+            + "     * The export still holds this many rows; where it does not, rows were written meanwhile - nothing\n"
+            + "     * narrows it to the test's rows - and the test is aborted, not failed.\n"
+            + "     */\n"
+            + "    private fun unchanged(path: String, body: Any?, rows: Long) {\n"
+            + "        val now = exportedKeys(exportOf(path, body)).size.toLong()\n"
+            + "        if (now != rows) skip(\"the rows changed while the test ran: the export held $rows, then $now\")\n"
             + "    }\n"
             + "\n"
             + "    /** The records of a CSV file (RFC 4180): its byte order mark left out, a quoted cell read whole. */\n"

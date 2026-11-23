@@ -6,8 +6,9 @@
   turns the contract tests on had none of it tested.
 - Now, for each entity whose `@expose(methods)` lists `export` and whose controller has it:
   - `exportHoldsTheSearchsRowsInItsOrder`: two rows of the test's own, sharing a unique text the search finds them by (the first
-    text field of the request the search takes with `eq`, `like` or no condition - no `@pattern`, `@email`, `@unique`, `@Mask`,
-    `@encrypt`, six characters or more); where the search takes none, every row the caller may see. The search and the export
+    text field of the request the search takes with `eq`, `like` or no condition - one a request writes, not `@writeonly` nor set
+    by the server, without `@pattern`, `@email`, `@unique`, `@Mask` or `@encrypt`, of six characters or more); where the search
+    takes none, every row the caller may see. The search and the export
     get the same body - the conditions and `sortCode` `<key>-`: the key, which every response shows and a search may sort by
     (issue 304), descending, so an export that ignored the order (it puts the key after it, ascending) is told. The file (200,
     `text/csv`, an attachment, the key alone as its column) holds as many rows as the search matches (its `totalElements`), the
@@ -16,7 +17,7 @@
     rows the export holds they are written, at one fewer the answer is 400 `export.too-many-rows` - a problem, with no
     `Content-Disposition` and no CSV. The setting is put into the application's `Environment` for that one request
     (`exportAtMost`, a `MapPropertySource` first and removed after): the export reads it at each request, so the suite keeps
-    one application context.
+    one application context - and tests run in parallel would see the setting too (the support class and the guide say so).
   - The support class gets what these tests call - `exportOf`, `exportAtMost` (with the `ConfigurableEnvironment` injected),
     `searched` and its `Rows`, `exportedKeys`, `exportedRows`, `assertSameRows`, `assertWritten`, `assertTooManyRows`, and a
     CSV reader (RFC 4180, the byte order mark, the formula guard's `'`) - only when a test calls it. A kept support class
@@ -24,9 +25,13 @@
     class's fallbacks are now every set of the groups it may lack - `@access`, `@Mask` and `@encrypt`, the export - the fewest
     left out first (the summary's wording for the first two is as before).
   - A refusal for more rows than the application exports (`export.too-many-rows` on the first export: a large table where
-    nothing narrows the search) aborts the test; any other `export.*` refusal of the body fails it.
-  - Counted as not tested, with why, in the summary and the support class's comment: a rule set that leaves `POST /export` out
-    of the controller (the run records which controllers have it), a composite key, a `@searchResult` DTO without the key, the
+    nothing narrows the search) aborts the test; any other `export.*` refusal of the body fails it. Where the file and the
+    search differ, or the capped export does not answer as expected, the search or the export is asked again: when it now
+    answers otherwise, rows were written meanwhile (nothing narrows the search to the test's rows, or MongoDB's rows stay)
+    and the test is aborted with both answers, not failed.
+  - Counted as not tested, with why, in the summary and the support class's comment: a controller without `POST /export` - a
+    rule set leaves it out, or the developer's controller, kept by the merge, has none (the run reads the file it leaves), a
+    composite key, a `@searchResult` DTO without the key, the
     order where the API takes no search (`@expose methods` without `search`: the cap is still tested). An entity that exports
     but takes no create is counted as before ("its API takes no create").
 - Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `export` gets the same
@@ -42,7 +47,9 @@
   and 52 (their Docker tests skipped as before). Broken on purpose, then restored: with the runtime's limit one row lax
   (`count <= max + 1`), both `exportAboveMaxRows...` tests failed (`expected 400 export.too-many-rows: 200`); with the export
   ignoring the asked order, both `exportHoldsTheSearchsRowsInItsOrder` tests failed (`[2011, 2010]` against `[2010, 2011]`).
-  `ContractTestsTest` (+8): the tests in Java, Kotlin, MyBatis and MongoDB, narrowed and not, the skips, a support class kept
+  With the re-check in place the lax limit still fails both, not aborts them.
+  `ContractTestsTest` (+9): the tests in Java, Kotlin, MyBatis and MongoDB, narrowed and not, the skips (a kept controller
+  without `POST /export` among them), the re-check of the rows written meanwhile, a support class kept
   without the new members (with and without those of `@access`), a domain without export unchanged, and that a model with
   export adds only test files. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0
   missing / 0 extra.

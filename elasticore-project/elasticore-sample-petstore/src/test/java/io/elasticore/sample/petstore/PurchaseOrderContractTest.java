@@ -120,7 +120,7 @@ class PurchaseOrderContractTest extends PetstoreContractSupport {
         Object second = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
         Map<String, Object> search = obj("sortCode", "orderId-");
         Map<String, Object> export = obj("search", search, "columns", list("orderId"), "headers", list("orderId"));
-        assertSameRows(searched(PURCHASE_ORDER, search, "orderId"), exportOf(PURCHASE_ORDER, export), first, second);
+        assertSameRows(PURCHASE_ORDER, search, export, "orderId", first, second);
     }
 
     @Test
@@ -131,8 +131,8 @@ class PurchaseOrderContractTest extends PetstoreContractSupport {
         Object second = createdId(PURCHASE_ORDER, newPurchaseOrder(), "orderId");
         Map<String, Object> export = obj("columns", list("orderId"), "headers", list("orderId"));
         long rows = exportedRows(exportOf(PURCHASE_ORDER, export), first, second);
-        assertWritten(exportAtMost(PURCHASE_ORDER, export, rows), rows);
-        assertTooManyRows(exportAtMost(PURCHASE_ORDER, export, rows - 1));
+        assertWritten(PURCHASE_ORDER, export, rows);
+        assertTooManyRows(PURCHASE_ORDER, export, rows - 1);
     }
 
     @Test
