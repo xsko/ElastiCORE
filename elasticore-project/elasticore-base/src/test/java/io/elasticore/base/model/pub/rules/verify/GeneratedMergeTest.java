@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * elasticore.merge: a generated mapper the developer edited follows the DSL
- * and keeps the edits, whatever they were, against .elasticore/cache - what
+ * and keeps the edits, whatever they were, against .elasticore/generated-base.zip - what
  * was generated last. Each case of a generated file: written, regenerated,
  * edited, edited where the DSL changes it too, deleted, no longer produced,
  * in the way of one, written before the project merged, cloned.
@@ -97,10 +97,13 @@ public class GeneratedMergeTest {
         assertNotNull(schema);
         assertFalse(read(schema).contains("//ecd:"), read(schema));
 
-        File cache = new File(project, ".elasticore/cache");
+        File cache = new File(project, ".elasticore/generated-base.zip");
         assertTrue(cache.isFile());
-        assertEquals("cache binary\n", new String(Files.readAllBytes(new File(project, ".elasticore/.gitattributes").toPath()),
-                StandardCharsets.UTF_8));
+        assertEquals(
+                "generated-base.zip binary -filter\n",
+                new String(
+                        Files.readAllBytes(new File(project, ".elasticore/.gitattributes").toPath()),
+                        StandardCharsets.UTF_8));
         Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(cache.toPath()));
         String key = key(project);
         assertEquals(xml.replace("\r\n", "\n"), entries.get(key));
@@ -160,7 +163,9 @@ public class GeneratedMergeTest {
         assertFalse(merged.contains("<<<<<<<"), merged);
 
         // The cache holds what was generated, not the merge.
-        String inCache = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath())).get(key(project));
+        String inCache = GeneratedCache.read(
+                        Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()))
+                .get(key(project));
         assertTrue(inCache.contains("t.memo"), inCache);
         assertFalse(inCache.contains("reviewed by the DBA"), inCache);
 
@@ -210,7 +215,7 @@ public class GeneratedMergeTest {
         unsaid = true;
         run(project, 0);
         assertFalse(xml(project).contains("//ecd:"));
-        assertTrue(new File(project, ".elasticore/cache").isFile());
+        assertTrue(new File(project, ".elasticore/generated-base.zip").isFile());
         assertFalse(read(java(project, "PurchaseOrder.java")).contains("//ecd:"));
 
         // The code 2.x generates: stamped as 2.x stamps it, no cache.
@@ -562,7 +567,7 @@ public class GeneratedMergeTest {
         String refused = runCapturingErr(project, 1);
         assertTrue(refused.contains("run it without -Pdomain once"), refused);
         assertTrue(read(dto).startsWith("//ecd:"), "nothing was written");
-        assertFalse(new File(project, ".elasticore/cache").exists());
+        assertFalse(new File(project, ".elasticore/generated-base.zip").exists());
         System.clearProperty("elasticore.domain");
 
         String log = run(project, 0);
@@ -572,14 +577,14 @@ public class GeneratedMergeTest {
         assertTrue(moved.contains("// kept through the upgrade"), moved);
         assertTrue(log.contains("PurchaseOrderDTO.java  MERGED(your edits kept)")
                 || log.contains("PurchaseOrderDTO.java  UNCHANGED(your edits kept)"), log);
-        assertTrue(new File(project, ".elasticore/cache").isFile());
+        assertTrue(new File(project, ".elasticore/generated-base.zip").isFile());
 
         // The upgrade run generated what a run without it does: the next one changes nothing.
-        byte[] cache = Files.readAllBytes(new File(project, ".elasticore/cache").toPath());
+        byte[] cache = Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath());
         String again = run(project, 0);
         assertFalse(again.contains("[elcore3] upgrade"), again);
         assertFalse(java.util.regex.Pattern.compile("\\.java  (WROTE|MERGED)").matcher(again).find(), again);
-        assertArrayEquals(cache, Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        assertArrayEquals(cache, Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
     }
 
     /** The file with its hash line's version - this generator's major.minor - as 2.2 stamps it. */
@@ -734,10 +739,10 @@ public class GeneratedMergeTest {
         Files.write(messages, edited.getBytes(StandardCharsets.UTF_8));
 
         // The cache deleted - or replaced by the other side of a git conflict - with its folder left.
-        Files.delete(new File(project, ".elasticore/cache").toPath());
+        Files.delete(new File(project, ".elasticore/generated-base.zip").toPath());
         String log = run(project, 0);
         assertEquals(edited, read(messages), log);
-        assertTrue(log.contains("dgshop-messages.properties: not in .elasticore/cache"), log);
+        assertTrue(log.contains("dgshop-messages.properties: not in .elasticore/generated-base.zip"), log);
 
         // The folder gone as well: the project's first merging run, which writes it as it always did.
         delete(new File(project, ".elasticore").toPath());
@@ -1003,7 +1008,8 @@ public class GeneratedMergeTest {
         String log = run(project, 0);
         assertTrue(Files.exists(ts), log);
         assertFalse(log.contains("PurchaseOrderDTO.ts was generated"), log);
-        Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        Map<String, String> entries =
+                GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
         assertNotNull(entries.get(keyOf(project, ts)));
 
         // The model changes: the server's run, which does not write the client,
@@ -1016,7 +1022,7 @@ public class GeneratedMergeTest {
         System.setProperty("elasticore.rules.ts", "true");
         log = run(project, 0);
         assertTrue(read(ts).contains("// mine") && read(ts).contains("memo"), log + read(ts));
-        entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
         boolean server = false;
         for (String k : entries.keySet()) if (!k.endsWith(".ts")) server = true;
         assertTrue(server, entries.keySet().toString());
@@ -1127,7 +1133,8 @@ public class GeneratedMergeTest {
         assertTrue(log.contains("CouponRepository.xml  REMOVED"), log);
         assertTrue(Files.exists(gift), log);
         assertTrue(log.contains("GiftRepository.xml was generated, the DSL no longer produces it"), log);
-        Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        Map<String, String> entries =
+                GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
         assertNull(entries.get(giftKey), "an edited file the DSL dropped is the developer's");
         assertNull(entries.get(keyOf(project, coupon)));
         assertNotNull(entries.get(key(project)));
@@ -1167,7 +1174,8 @@ public class GeneratedMergeTest {
         log = run(project, 0);
         assertFalse(Files.exists(dto), log);
         assertTrue(log.contains("CouponDTO.java  REMOVED"), log);
-        Map<String, String> entries = GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+        Map<String, String> entries =
+                GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
         assertNull(entries.get(keyOf(project, dto)));
     }
 
@@ -1268,7 +1276,7 @@ public class GeneratedMergeTest {
         String taken = xml(project);
         assertFalse(taken.contains("//ecd:"), taken);
         assertEquals(stamped.substring(stamped.indexOf('\n') + 1).replace("\r\n", "\n"), taken.replace("\r\n", "\n"));
-        assertTrue(log.contains("CouponRepository.xml: not in .elasticore/cache"), log);
+        assertTrue(log.contains("CouponRepository.xml: not in .elasticore/generated-base.zip"), log);
         assertEquals(couponEdited, read(coupon));
     }
 
@@ -1295,11 +1303,13 @@ public class GeneratedMergeTest {
     public void anUnreadableCacheStopsTheRun() throws Exception {
         File project = project(CUSTOMER + ORDER);
         run(project, 0);
-        Files.write(new File(project, ".elasticore/cache").toPath(), "<<<<<<< HEAD\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(project, ".elasticore/generated-base.zip").toPath(),
+                "<<<<<<< HEAD\n".getBytes(StandardCharsets.UTF_8));
         String edited = xml(project) + "<!-- mine -->\n";
         Files.write(xmlPath(project), edited.getBytes(StandardCharsets.UTF_8));
         String log = runCapturingErr(project, 1);
-        assertTrue(log.contains(".elasticore/cache cannot be read"), log);
+        assertTrue(log.contains(".elasticore/generated-base.zip cannot be read"), log);
         assertEquals(edited, xml(project));
     }
 

@@ -349,7 +349,7 @@ public class SoftDeleteHierarchyTest {
             // The same file with no base to merge with (written before merging, or the cache gone): left as it is,
             // and a delete would remove the row - so the build stops.
             Files.move(kept, owned, StandardCopyOption.REPLACE_EXISTING);
-            File cache = new File(dir, ".elasticore/cache");
+            File cache = new File(dir, ".elasticore/generated-base.zip");
             assertTrue(cache.isFile(), "the merge base");
             Files.delete(cache.toPath());
             ModelCheck.reset();
