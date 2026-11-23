@@ -2,6 +2,7 @@ package io.elasticore.base.util;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -331,6 +332,271 @@ public class ThreeWayMergeTest {
         ThreeWayMerge.Result s = ThreeWayMerge.mergeSource(SOURCE, yours, generated);
         assertEquals(1, s.conflicts(), s.text());
         assertEquals("    private String mine;", yours.split("\n")[s.lines().get(0) - 1]);
+    }
+
+    /** The generated contract test of issue 295, as the generator wrote it last time. */
+    private static final String CONTRACT = t(
+            "package com.acme.crm;",
+            "",
+            "import org.junit.jupiter.api.DisplayName;",
+            "import org.junit.jupiter.api.Test;",
+            "",
+            "class AccountContractTest extends CrmContractSupport {",
+            "",
+            "    @Test",
+            "    @DisplayName(\"name is required (400 NotNull)\")",
+            "    void nameIsRequired() throws Exception {",
+            "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", null)), \"name\", \"NotNull\");",
+            "    }",
+            "",
+            "    @Test",
+            "    @DisplayName(\"name: 100 pass, 101 are refused (400 Size)\")",
+            "    void nameSize() throws Exception {",
+            "        assertCreated(post(ACCOUNT, withValue(newAccount(), \"name\", text(100))));",
+            "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", text(101))), \"name\", \"Size\");",
+            "    }",
+            "}");
+
+    /** The developer's test, written right after the generated nameIsRequired, with a Javadoc of its own. */
+    private static final String HAND_WRITTEN = String.join(
+            "\n",
+            "    /** Written by hand: @notblank is not generated yet. */",
+            "    @Test",
+            "    @DisplayName(\"name: blank is refused (400 NotBlank)\")",
+            "    void nameIsNotBlank() throws Exception {",
+            "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", \"   \")), \"name\", \"NotBlank\");",
+            "    }",
+            "",
+            "");
+
+    /** The test the generator now writes at the same place. */
+    private static final String GENERATED_MEMBER = String.join(
+            "\n",
+            "    @Test",
+            "    @DisplayName(\"name: blank is refused (400 NotBlank)\")",
+            "    void nameNotBlank() throws Exception {",
+            "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", \"   \")), \"name\", \"NotBlank\");",
+            "    }",
+            "",
+            "");
+
+    private static final String AFTER_REQUIRED = "    }\n\n    @Test\n    @DisplayName(\"name: 100";
+
+    /**
+     * Issue 295: a generated member inserted where the developer wrote one of
+     * their own went between the developer's Javadoc and its method - the
+     * comment then sat on the generated test and the developer's had none.
+     */
+    @Test
+    public void aHandWrittenMembersJavadocStaysWithItWhenAGeneratedMemberIsInsertedThere() {
+        String yours = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + HAND_WRITTEN + "    @Test\n    @DisplayName(\"name: 100");
+        String generated = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + GENERATED_MEMBER + "    @Test\n    @DisplayName(\"name: 100");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(CONTRACT, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        String text = r.text();
+        // The Javadoc right above its own method, the generated test without one, both whole.
+        assertTrue(text.contains(HAND_WRITTEN), text);
+        assertTrue(text.contains("    }\n\n" + GENERATED_MEMBER), text);
+        assertFalse(
+                text.contains("*/\n    @Test\n    @DisplayName(\"name: blank is refused (400 NotBlank)\")\n"
+                        + "    void nameNotBlank()"),
+                text);
+        assertEquals(1, text.split("Written by hand", -1).length - 1, text);
+        assertTrue(text.contains("void nameIsRequired()") && text.contains("void nameSize()"), text);
+    }
+
+    /** The same with a Javadoc of several lines, a line comment and an annotation more. */
+    @Test
+    public void aLongerCommentAndMoreAnnotationsStayWithTheirMemberToo() {
+        String hand = String.join(
+                "\n",
+                "    /**",
+                "     * Written by hand.",
+                "     */",
+                "    // until the generator covers it",
+                "    @Test",
+                "    @Tag(\"mine\")",
+                "    @DisplayName(\"name: blank is refused (400 NotBlank)\")",
+                "    void nameIsNotBlank() throws Exception {",
+                "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", \"   \")), \"name\", \"NotBlank\");",
+                "    }",
+                "",
+                "");
+        String yours = CONTRACT.replace(AFTER_REQUIRED, "    }\n\n" + hand + "    @Test\n    @DisplayName(\"name: 100");
+        String generated = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + GENERATED_MEMBER + "    @Test\n    @DisplayName(\"name: 100");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(CONTRACT, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertTrue(r.text().contains(hand), r.text());
+        assertTrue(r.text().contains("    }\n\n" + GENERATED_MEMBER), r.text());
+    }
+
+    /** Kotlin: the same merge, with a KDoc. */
+    @Test
+    public void aHandWrittenMembersKDocStaysWithItInKotlin() {
+        String base = t(
+                "package com.acme.crm",
+                "",
+                "import org.junit.jupiter.api.DisplayName",
+                "import org.junit.jupiter.api.Test",
+                "",
+                "class AccountContractTest : CrmContractSupport() {",
+                "",
+                "    @Test",
+                "    @DisplayName(\"name is required (400 NotNull)\")",
+                "    fun nameIsRequired() {",
+                "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", null)), \"name\", \"NotNull\")",
+                "    }",
+                "",
+                "    @Test",
+                "    @DisplayName(\"name: 100 pass, 101 are refused (400 Size)\")",
+                "    fun nameSize() {",
+                "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", text(101))), \"name\", \"Size\")",
+                "    }",
+                "}");
+        String hand = String.join(
+                "\n",
+                "    /** Written by hand: @notblank is not generated yet. */",
+                "    @Test",
+                "    @DisplayName(\"name: blank is refused (400 NotBlank)\")",
+                "    fun nameIsNotBlank() {",
+                "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", \"   \")), \"name\", \"NotBlank\")",
+                "    }",
+                "",
+                "");
+        String member = String.join(
+                "\n",
+                "    @Test",
+                "    @DisplayName(\"name: blank is refused (400 NotBlank)\")",
+                "    fun nameNotBlank() {",
+                "        assertFieldError(post(ACCOUNT, withValue(newAccount(), \"name\", \"   \")), \"name\", \"NotBlank\")",
+                "    }",
+                "",
+                "");
+        String yours = base.replace(AFTER_REQUIRED, "    }\n\n" + hand + "    @Test\n    @DisplayName(\"name: 100");
+        String generated =
+                base.replace(AFTER_REQUIRED, "    }\n\n" + member + "    @Test\n    @DisplayName(\"name: 100");
+        assertFalse(yours.equals(base) || generated.equals(base), "the model did not change");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(base, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertTrue(r.text().contains(hand), r.text());
+        assertTrue(r.text().contains("    }\n\n" + member), r.text());
+    }
+
+    /**
+     * A file the developer did not touch is the generated one, byte for byte;
+     * and one where only the developer added is theirs.
+     */
+    @Test
+    public void withoutHandWrittenMembersTheMergeIsTheGeneratedFile() {
+        String generated = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + GENERATED_MEMBER + "    @Test\n    @DisplayName(\"name: 100");
+        assertEquals(
+                generated,
+                ThreeWayMerge.mergeSource(CONTRACT, CONTRACT, generated).text());
+        String yours = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + HAND_WRITTEN + "    @Test\n    @DisplayName(\"name: 100");
+        assertEquals(yours, ThreeWayMerge.mergeSource(CONTRACT, yours, CONTRACT).text());
+    }
+
+    /** The alignment of base lines to other lines after joinInsertions, the second side unchanged. */
+    private static int[] joined(String base, String other, int... m) {
+        int[] unchanged = new int[base.split(",").length];
+        for (int i = 0; i < unchanged.length; i++) unchanged[i] = i;
+        return joined(base, other, base, unchanged, m);
+    }
+
+    private static int[] joined(String base, String other, String theirs, int[] mt, int... m) {
+        ThreeWayMerge.joinInsertions(
+                java.util.Arrays.asList(base.split(",")),
+                java.util.Arrays.asList(other.split(",")),
+                m,
+                java.util.Arrays.asList(theirs.split(",")),
+                mt);
+        return m;
+    }
+
+    /**
+     * A member both sides added alike is taken once: the run does not move
+     * away from lines the other side added at the same place. And it moves
+     * only between two pure insertions - not next to a line either side replaced.
+     */
+    @Test
+    public void aRunDoesNotMoveAwayFromWhatBothAddedAlike() {
+        // The developer added X and then J,R; the DSL added J,R at the same place.
+        assertArrayEquals(
+                new int[] {0, 2, 5}, joined("P,R,S", "P,X,R,J,R,S", "P,R,J,R,S", new int[] {0, 1, 4}, 0, 2, 5));
+        // The DSL added something else there: it moves.
+        assertArrayEquals(new int[] {0, 4, 5}, joined("P,R,S", "P,X,R,J,R,S", "P,R,K,S", new int[] {0, 1, 3}, 0, 2, 5));
+        // At the start, the mirror: the DSL added X,R before R as the developer did.
+        assertArrayEquals(
+                new int[] {0, 3, 5}, joined("P,R,S", "P,R,X,R,J,S", "P,R,X,R,S", new int[] {0, 3, 4}, 0, 3, 5));
+        // Both added X before R; a move down would join the developer's X with J,R and write X twice.
+        assertArrayEquals(new int[] {0, 2, 5}, joined("P,R,S", "P,X,R,J,R,S", "P,X,R,S", new int[] {0, 2, 3}, 0, 2, 5));
+        assertEquals(
+                t("P", "X", "R", "J", "R", "S"),
+                ThreeWayMerge.mergeSource(t("P", "R", "S"), t("P", "X", "R", "J", "R", "S"), t("P", "X", "R", "S"))
+                        .text());
+        // d replaced by J before the run: no move down across it.
+        assertArrayEquals(new int[] {0, -1, 2, 5}, joined("a,d,x,b", "a,J,x,K,x,b", 0, -1, 2, 5));
+
+        String base = t("P", "R", "S");
+        assertEquals(
+                t("P", "X", "R", "J", "R", "S"),
+                ThreeWayMerge.mergeSource(base, t("P", "X", "R", "J", "R", "S"), t("P", "R", "J", "R", "S"))
+                        .text());
+        // Both replaced d by J alike, the developer added more after: no conflict.
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(
+                t("a", "d", "x", "b"), t("a", "J", "x", "K", "x", "b"), t("a", "J", "x", "b"));
+        assertEquals(0, r.conflicts(), r.text());
+        assertEquals(t("a", "J", "x", "K", "x", "b"), r.text());
+    }
+
+    /** The developer wrote the very test the DSL now writes, with a Javadoc of their own: it is there once. */
+    @Test
+    public void aMemberTheDeveloperWroteAsTheDslNowWritesItIsThereOnce() {
+        String yours = CONTRACT.replace(
+                AFTER_REQUIRED,
+                "    }\n\n    /** Mine, before the generator wrote it. */\n" + GENERATED_MEMBER
+                        + "    @Test\n    @DisplayName(\"name: 100");
+        String generated = CONTRACT.replace(
+                AFTER_REQUIRED, "    }\n\n" + GENERATED_MEMBER + "    @Test\n    @DisplayName(\"name: 100");
+        ThreeWayMerge.Result r = ThreeWayMerge.mergeSource(CONTRACT, yours, generated);
+        assertEquals(0, r.conflicts(), r.text());
+        assertEquals(yours, r.text());
+    }
+
+    /** A kept run between two insertions moves to the end of the second, or to the start of the first. */
+    @Test
+    public void aRunBetweenTwoInsertionsMovesSoTheyAreOne() {
+        // x kept between J and K,x: kept as the last x, one insertion J,x,K.
+        assertArrayEquals(new int[] {0, 4, 5}, joined("a,x,b", "a,J,x,K,x,b", 0, 2, 5));
+        // x kept between x,J and K: kept as the first x, one insertion J,x,K.
+        assertArrayEquals(new int[] {0, 1, 5}, joined("a,x,b", "a,x,J,x,K,b", 0, 3, 5));
+        // A run of two lines, and a run at the end of the base.
+        assertArrayEquals(new int[] {0, 5, 6, 7}, joined("a,x,y,b", "a,J,x,y,K,x,y,b", 0, 2, 3, 7));
+        assertArrayEquals(new int[] {0, 4}, joined("a,x", "a,J,x,K,x", 0, 2));
+        // At the start of the base: kept as the first x.
+        assertArrayEquals(new int[] {0, 4}, joined("x,b", "x,J,x,K,b", 2, 4));
+        // A move that lets an earlier run move: y first, then x - two passes.
+        assertArrayEquals(new int[] {0, 6, 7, 8}, joined("a,x,y,b", "a,P,x,y,Q,y,x,y,b", 0, 2, 5, 8));
+    }
+
+    /** Nothing moves where there is one insertion, or where the move would cross a line the side deleted. */
+    @Test
+    public void aRunMovesOnlyToJoinTwoInsertions() {
+        // Only one insertion, before or after the run.
+        assertArrayEquals(new int[] {0, 3}, joined("x,b", "x,J,x,b", 0, 3));
+        assertArrayEquals(new int[] {0, 3}, joined("a,x", "a,J,x,x", 0, 3));
+        assertArrayEquals(new int[] {0, 1, 4}, joined("a,x,b", "a,x,J,x,b", 0, 1, 4));
+        // Two insertions, but the lines do not repeat the run.
+        assertArrayEquals(new int[] {0, 2, 4}, joined("a,x,b", "a,J,x,K,b", 0, 2, 4));
+        // The line after the run deleted (d): it does not move down past it ...
+        assertArrayEquals(new int[] {0, 2, -1, 5}, joined("a,x,d,b", "a,J,x,K,x,b", 0, 2, -1, 5));
+        // ... and the line before deleted: it does not move up past it.
+        assertArrayEquals(new int[] {0, -1, 3, 5}, joined("a,d,x,b", "a,x,J,x,K,b", 0, -1, 3, 5));
     }
 
     private static void assertMerged(String expected, String base, String yours, String generated) {
