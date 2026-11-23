@@ -211,12 +211,41 @@ public final class RulesGenRunner {
      * ignored without a word, and a password stored as typed. Said instead.
      */
     private void warnUnenforced(ECoreModel model) {
-        boolean access = selectsNamed("ServiceAccessRules");
-        boolean states = selectsNamed("DddStateRules");
-        boolean derive = selectsNamed("DddDeriveRules");
-        boolean keeps = selectsNamed("JpaEntityAnnotationRules")
-                || selectsNamed("MyBatisMapperRules")
-                || selectsNamed("MongoServiceFileRules");
+        // The selection the engine runs (RulesConfig.resolveRules): the
+        // domain's list, else the build's property, else the bundle - plus
+        // the rule sets the build adds. Where it came from decides the
+        // advice: a list replaces the architecture's bundle, so declaring an
+        // architecture does nothing for it.
+        java.util.List<String> declared = configuredRules();
+        String property = System.getProperty(RulesConfig.PROP_RULES);
+        String listKey = null;
+        java.util.List<String> named = declared;
+        if (declared != null) {
+            listKey = kotlin && domainConfig("publisher.rules.kt") != null ? "publisher.rules.kt" : "publisher.rules";
+        } else if (property != null && !property.trim().isEmpty()) {
+            listKey = RulesConfig.PROP_RULES;
+            named = RulesConfig.configuredList(property);
+        }
+        java.util.List<String> selection =
+                withAddedRules(named != null ? named : java.util.Collections.singletonList(defaultBundle()));
+        String bundle = named == null ? defaultBundle() : namesTwoXBundle(named) ? RulesConfig.DEFAULT_BUNDLE : null;
+        boolean access = selectsNamed("ServiceAccessRules", selection);
+        boolean states = selectsNamed("DddStateRules", selection);
+        boolean derive = selectsNamed("DddDeriveRules", selection);
+        boolean keeps = selectsNamed("JpaEntityAnnotationRules", selection)
+                || selectsNamed("MyBatisMapperRules", selection)
+                || selectsNamed("MongoServiceFileRules", selection);
+        RulesConfig.Persistence persistence = persistence();
+        String keepingSet = keepingRuleSet(persistence);
+        // The bundles that carry the lifecycle and the derived values: none over MongoDB.
+        String domainModelBundles;
+        RulesConfig.Language language = kotlin ? RulesConfig.Language.KOTLIN : RulesConfig.Language.JAVA;
+        try {
+            domainModelBundles = RulesConfig.bundleFor(RulesConfig.Architecture.HEXAGONAL, language, persistence)
+                    + " or " + RulesConfig.bundleFor(RulesConfig.Architecture.DOMAIN_MODEL, language, persistence);
+        } catch (IllegalArgumentException noDomainModel) {
+            domainModelBundles = null;
+        }
         ModelComponentItems<Entity> all = model.getEntityModels().getItems();
         for (int i = 0; i < all.size(); i++) {
             Entity entity = all.get(i);
@@ -235,22 +264,131 @@ public final class RulesGenRunner {
                 if (f.hasAnnotation(io.elasticore.base.model.pub.rules.base.SoftDelete.DELETED)) wantsKept = true;
             }
             String missing = null;
-            if (wantsAccess && !access) missing = "@access, @owner and @password (jpa-service-access)";
-            else if (!entity.getStates().isEmpty() && !states)
+            String ruleSet = null;
+            if (wantsAccess && !access) {
+                missing = "@access, @owner and @password (jpa-service-access)";
+                ruleSet = "jpa-service-access";
+            } else if (!entity.getStates().isEmpty() && !states) {
                 missing = wantsStamp ? "states: and @stamp (ddd-state)" : "states: (ddd-state)";
-            else if (wantsStamp && !states) missing = "@stamp (ddd-state)";
-            // The 2.x-compatible bundle writes no delete that keeps the row: a delete would remove it.
-            else if (wantsKept && !keeps) missing = "@deleted (jpa-entity-annotations or mode: mybatis)";
-            else if (wantsDerive && !derive) missing = "@snapshot and @compute (ddd-derive)";
+                ruleSet = "ddd-state";
+            } else if (wantsStamp && !states) {
+                missing = "@stamp (ddd-state)";
+                ruleSet = "ddd-state";
+            } else if (wantsKept && !keeps) {
+                // The 2.x-compatible bundle writes no delete that keeps the row: a delete would remove it.
+                missing = "@deleted (" + keepingSet + ")";
+                ruleSet = keepingSet;
+            } else if (wantsDerive && !derive) {
+                missing = "@snapshot and @compute (ddd-derive)";
+                ruleSet = "ddd-derive";
+            }
             if (missing != null) {
                 io.elasticore.base.util.ConsoleLog.storeLog(
                         "DSL_WARN",
-                        String.format(
-                                "[%s] %s declares %s, which the selected rules do not enforce - nothing is checked, derived"
-                                        + " or hashed. Declare architecture = 'ddd' or 'hexagonal', or add the rule set.",
-                                model.getInternalDomainName(), name, missing));
+                        unenforcedWarning(
+                                model.getInternalDomainName(),
+                                name,
+                                missing,
+                                ruleSet,
+                                listKey,
+                                bundle,
+                                domainModelBundles));
             }
         }
+    }
+
+    /** Whether a rule list names the 2.x bundle, which the wizard wrote for a layered Java domain before 3.0.261028-rc3. */
+    static boolean namesTwoXBundle(java.util.List<String> rules) {
+        for (String rule : rules) {
+            if (RulesConfig.DEFAULT_BUNDLE.equals(rule.trim())) return true;
+        }
+        return false;
+    }
+
+    /** The rule set that writes a delete keeping the row (@deleted) for a domain of this persistence. */
+    static String keepingRuleSet(RulesConfig.Persistence persistence) {
+        if (persistence == RulesConfig.Persistence.MYBATIS) return "mybatis-mapper";
+        if (persistence == RulesConfig.Persistence.MONGO) return "mongo-service-file";
+        return "jpa-entity-annotations";
+    }
+
+    /**
+     * The warning for a rule the DSL states and the selection does not carry,
+     * with the advice that fits where the selection came from.
+     *
+     * listKey: where the list that is the selection was named - the env.yml
+     * key (publisher.rules, publisher.rules.kt) or the build's property
+     * (RulesConfig.PROP_RULES) - or null when the selection is a bundle.
+     * bundle: the bundle that is the selection, or jpa-springboot when a
+     * list names it, else null. domainModelBundles: the bundles that carry
+     * the lifecycle and the derived values for this domain, or null where
+     * there are none (MongoDB).
+     *
+     * A list replaces the architecture's bundle, so the advice is the list or
+     * the adding form; the 2.x bundle takes neither an architecture nor an
+     * added rule set, so the advice is the 3.0 code; any other bundle is a
+     * layered one, which the domain-model bundles extend.
+     */
+    static String unenforcedWarning(
+            String domain,
+            String entity,
+            String missing,
+            String ruleSet,
+            String listKey,
+            String bundle,
+            String domainModelBundles) {
+        String head = String.format(
+                "[%s] %s declares %s, which the selected rules do not enforce - nothing is checked, derived or hashed. ",
+                domain, entity, missing);
+        boolean domainModel = "ddd-state".equals(ruleSet) || "ddd-derive".equals(ruleSet);
+        boolean fromProperty = RulesConfig.PROP_RULES.equals(listKey);
+        String list = fromProperty ? "-D" + RulesConfig.PROP_RULES : listKey;
+        String where = fromProperty ? "The build's " + list : listKey + " in env.yml";
+        if (domainModel && domainModelBundles == null) {
+            return head
+                    + String.format(
+                            "This domain's mode has no domain-model bundle: %s and the domain-model rule sets it works on"
+                                    + " are generated for JPA and MyBatis (architecture = 'ddd' or 'hexagonal').",
+                            ruleSet);
+        }
+        if (RulesConfig.DEFAULT_BUNDLE.equals(bundle)) {
+            String move = listKey != null
+                    ? String.format(
+                            "%s names %s, the code 2.x generates, which has no %s; the 3.0 code carries it: take %s"
+                                    + " out of the list (leave the list out for the architecture's bundle), and output ="
+                                    + " 'v2' out of the elasticore { } block if it is there",
+                            where, bundle, ruleSet, bundle)
+                    : String.format(
+                            "The code 2.x generates (output = 'v2', bundle %s) has no %s; the 3.0 code carries it:"
+                                    + " elasticore { output = 'v3' }",
+                            bundle, ruleSet);
+            String architecture = !domainModel
+                    ? ""
+                    : listKey != null
+                            ? ", and declare architecture = 'ddd' or 'hexagonal'"
+                            : " with architecture = 'ddd' or 'hexagonal'";
+            return head + move + architecture + " - see elasticore-migration-guide.md.";
+        }
+        if (listKey != null) {
+            return head
+                    + String.format(
+                            "%s replaces the architecture's bundle rather than adding to it, and its list does not name"
+                                    + " %s. To add rule sets to the bundle, leave %s out and name them in rules = [...]"
+                                    + " in the elasticore { } block (-Delasticore.publisher.rules.add=...); to keep the"
+                                    + " list, name %s in it.",
+                            where,
+                            ruleSet,
+                            list,
+                            domainModel
+                                    ? "a bundle that carries " + ruleSet
+                                            + " with the domain-model rule sets it works on (" + domainModelBundles
+                                            + ")"
+                                    : ruleSet);
+        }
+        return head
+                + String.format(
+                        "The %s bundle does not carry %s. Declare architecture = 'ddd' or 'hexagonal', or add the rule set.",
+                        bundle, ruleSet);
     }
 
     /**
@@ -289,7 +427,12 @@ public final class RulesGenRunner {
 
     /** Whether the selection includes a rule set of this class name (named, so the runner imports no rule set). */
     private boolean selectsNamed(String simpleName) {
-        for (String name : contributingRules()) {
+        return selectsNamed(simpleName, contributingRules());
+    }
+
+    /** Whether these rule names include a rule set of this class name. */
+    private static boolean selectsNamed(String simpleName, java.util.List<String> names) {
+        for (String name : names) {
             try {
                 for (io.elasticore.base.model.pub.rules.CodeRules rs : RuleCatalog.standard().rulesOf(name)) {
                     if (rs.getClass().getSimpleName().equals(simpleName)) return true;
