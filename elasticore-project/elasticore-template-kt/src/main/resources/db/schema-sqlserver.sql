@@ -332,6 +332,8 @@ CREATE TABLE shop_agent (
     login NVARCHAR(20) NOT NULL,
     secret NVARCHAR(255) NOT NULL,
     grade NVARCHAR(10),
+    phone NVARCHAR(147),
+    phone_bidx NVARCHAR(22),
     PRIMARY KEY (agent_id)
 );
 
@@ -570,6 +572,7 @@ CREATE INDEX ix_cms_comment_author__d2d721a ON cms_comment (author_phone_bidx);
 CREATE UNIQUE INDEX idx_hr_dept_code ON hr_department (code);
 CREATE UNIQUE INDEX idx_hr_emp_email ON hr_employee (email);
 CREATE INDEX idx_hr_emp_dept ON hr_employee (department_dept_id);
+CREATE INDEX ix_shop_agent_phone_bidx ON shop_agent (phone_bidx);
 CREATE UNIQUE INDEX uk_shop_agent_login ON shop_agent (login);
 CREATE INDEX idx_shop_cat_name ON shop_category (name);
 CREATE UNIQUE INDEX idx_shop_cust_email ON shop_customer (email);

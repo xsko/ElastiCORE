@@ -2796,18 +2796,24 @@ public final class RulesGenRunner {
                         rootFor(supportOut),
                         "build/elasticore/contract/" + supportOut.fileName() + "." + supportOut.extension());
                 if (!copied) copied = writeCopy(copy, supportSource.text);
-                String plainMissing = src.plain == null || src.plain.isEmpty()
-                        ? missing
-                        : ContractTestSource.lacking(support, src.plain, kotlin);
+                // The class with fewer tests: the first whose members the kept class has.
+                ContractTestSource.Fallback chosen = null;
+                for (ContractTestSource.Fallback f : src.fallbacks) {
+                    if (f.text.isEmpty()) break;
+                    if (ContractTestSource.lacking(support, f.text, kotlin) == null) {
+                        chosen = f;
+                        break;
+                    }
+                }
                 String why = String.format(
                         "%s: %s has no %s - add the members from %s, the version this run generated; ",
                         domain.className(),
                         supportSource.className,
                         missing,
                         "build/elasticore/contract/" + supportOut.fileName() + "." + supportOut.extension());
-                if (src.plain != null && !src.plain.isEmpty() && plainMissing == null) {
-                    contract.notWritten(src.tests - src.plainTests, why + "the tests of @access are not written");
-                    text = src.plain;
+                if (chosen != null) {
+                    contract.notWritten(src.tests - chosen.tests, why + chosen.omitted + " are not written");
+                    text = chosen.text;
                 } else {
                     contract.notWritten(src.tests, why + "its contract tests are not written");
                     System.out.println(label + "  SKIP(" + supportSource.className + " has no " + missing + ")");

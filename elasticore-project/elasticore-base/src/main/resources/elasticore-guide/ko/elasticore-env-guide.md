@@ -765,6 +765,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 | `@minsize(n)` | 멤버 n 개는 통과, n - 1 개는 거부: 400 `Size` |
 | `@invariant` | `price > 0`, `items.size > 0`, `notNull`, `notEmpty`: 경계는 통과, 하나 넘으면 거부: 422 `invariant.<Entity>.<rule>` |
 | `@access` | API 가 제공하는 각 작업 - read, search, create, update, delete, 각 명령 - 을 그 항목, 없으면 `*`, 없으면 `admin` 수준으로: 각 항(term)이 들이는 호출자는 통과(2xx; 검색은 그 행을 찾음); 방문자는 401 `not-signed-in`, 어떤 항도 들이지 않는 역할의 호출자는 403 `forbidden`, `owner` 가 있는 곳에서는 남의 행에 대한 호출자가 404 `not-found` (검색은 그 행을 찾지 못함). `REP&owner` 는 자기 행이라도 다른 역할을, 남의 행이면 REP 도 거부; `owner\|MANAGER` 는 둘 중 하나면 들인다. 소유자로 키를 정하는 행(`@owner` 가 요청이 정하는 키)의 방문자 create 는 서비스가 하듯 401 로 거부 |
+| `@Mask` (env.yml 의 `@dto:` 애노테이션) | 마스크 모양의 값을 보낸다 - 세 묶음의 전화번호, 주소, 충분한 숫자: 읽기와 검색은 필드의 `MaskType` 이 그 값으로 만드는 것(생성된 수정이 비교하는 것과 같은 그 `apply`)을 보여 준다. 수정(`PUT`)이 돌려보낸 가린 글자는 저장된 값을 지키고, 새 값은 바꾼다(issue 270) - 애플리케이션을 거치지 않고 읽거나(`JdbcTemplate`, `MongoTemplate`), 아니면 `@encrypt @search(eq)` 검색으로 찾는다 |
+| `@encrypt` | 컬럼에는 평문이 없고 보낸 값으로 복호화된다; API 는 값을 답한다. `@search(eq)` 면: 그 값으로 검색하면 행을 찾고, 다른 값으로는 찾지 못한다 |
 
 - 파일: `<Domain>ContractSupport` 와, API 가 생성하는 엔티티마다 `<Entity>ContractTest` - `src/test/java/<base package>/`
   (Kotlin 은 `src/test/kotlin`). 한 번 쓰고, 그 뒤 DSL 이 바뀌면 병합한다 - 고친 곳은 유지 - 아키텍처 테스트와 같다.
@@ -785,6 +787,14 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   담을 수 없는 역할, 역할이 둘인 항(`REP&MANAGER` - 세션은 역할 하나를 담는다), `@owner` 가 필드를 가리키지 않는데 `owner` 를 쓴
   곳, 읽을 수 없는 항목(`read=owners`), 어떤 명령 순서로도 새 행이 닿지 못하는 delete 나 명령, 만들 수 없는 호출자의 행, 키를
   받지 않는 검색, 복합 키(create 만), 방문자의 create 가 필수 `@owner` 를 비우는 경우.
+- `@Mask` 와 `@encrypt`: support 클래스는 행을 다시 읽고(`read`), 검색하고(`search`), 수정하고(`put`), 저장된 것을 애플리케이션을
+  거치지 않고 읽어(`stored`: `JdbcTemplate` - JPA 는 트랜잭션을 먼저 내보낸 뒤; `MongoTemplate`) 복호화한다(`decrypted`, 애플리케이션의
+  키로 - 테스트에 `elasticore.crypto.key` 와 `index-key` 를 준다, 저장소에는 두지 않는다: 샘플의 `TestCryptoKeys`).
+  테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: 복합 키, 요청이 쓰지 않는 필드, 생성기가 만드는 값 중 마스크가
+  바꾸는 것이 맞지 않는 필드(`EMAIL` 로 가린 `string(2)`), 읽기 없음(`@expose methods`; 검색은 키나 그 필드를 받는 곳에서 확인),
+  필드의 수정 없음(명령이 바꾸는 루트; `@editable` 이 `PUT` 에 연다), 돌려보내는 `@pattern` 필드(패턴이 가린 글자를 거부할 수
+  있다), 상속한 필드(컬럼을 읽지 않는다), 검색이 받지 않는 `@encrypt @search(eq)` 필드. 마스크가 그대로 쓰는 값은 테스트를
+  중단한다. 이 멤버 없이 남은 support 클래스에는 이 테스트를 하나도 쓰지 않는다.
 - support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
   Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
   애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
@@ -804,8 +814,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 - `testCode` 는 정확히 읽는다: `"true"`, `"contract"`, `"false"`; 다른 값(`"Contract"`, `"contracts"`)은 DSL 경고다.
 - MongoDB: 테스트는 `ELASTICORE_IT_MONGODB_URI` 가 가리키는 서버(`mongodb://host:port`, 데이터베이스 `elasticore_contract`)에서 실행되고
   없으면 건너뛴다; 행은 남는다(유일한 값).
-- 다루는 범위: 필드 제약과 `@access` 는 모든 모드, 언어, 아키텍처에서; 생명주기와 불변식은 그것이 생성되는 곳 -
-  ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: `@Mask` 와 `@encrypt`, `export`, 생명주기의
+- 다루는 범위: 필드 제약, `@access`, `@Mask` 는 모든 모드, 언어, 아키텍처에서(`@encrypt` 는 있는 곳: MongoDB 제외); 생명주기와
+  불변식은 그것이 생성되는 곳 - ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: `export`, 생명주기의
   `delete:` 상태의 테스트 자체, 멤버 자체의 제약. float 의 소수 경계(`@max(0.1)`)는 건너뛴 것으로 센다:
   float 는 0.1 을 정확히 담지 못하고, 그 검사는 double 로 넓힌 값을 비교한다. `@past` / `@future` 인 time(하루 중 시각 - 테스트가
   실행되는 시각에 따라 과거이기도 미래이기도 하다), 나머지 식이 늘 담는 lookahead(`@pattern('^(?=.*\\d)\\d+$')`: 나머지에 맞으면서
@@ -815,8 +825,9 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   MyBatis 에서는 H2(`testRuntimeOnly 'com.h2database:h2'`); Spring Boot 4 에서는 `spring-boot-starter-webmvc-test` 도.
 - 규칙을 일부러 바꾼 곳은 테스트를, 애플리케이션이 모델보다 더 요구하는 곳은 행 빌더(`newPurchaseOrder()`)를 고친다:
   pet store 의 `PurchaseOrderContractTest` 는 배송지 주소를 더한다 - 없으면 `place` 가 주문을 거부한다.
-- 예: `elasticore-template-ddd` (Java, hexagonal, JPA), `-ddd-mybatis` (MyBatis), `-kt` (Kotlin; `cancel=owner|LEAD`,
-  `bill=LEAD&owner`), pet store (Spring Boot 4, 로그인; `read=owner|MANAGER`, `delete=MANAGER&owner`).
+- 예: `elasticore-template-ddd` (Java, hexagonal, JPA; `Subscriber` 의 `@encrypt`, `@Mask`), `-ddd-mybatis` (MyBatis; 가린
+  `Customer.phone`), `-kt` (Kotlin; `cancel=owner|LEAD`, `bill=LEAD&owner`; 가린 `Agent.phone` `@encrypt(digits) @s(eq)`), `-mongo` 와
+  `-kt-mongo` (가린 `Customer.email`), pet store (Spring Boot 4, 로그인; `read=owner|MANAGER`, `delete=MANAGER&owner`).
 
 ---
 

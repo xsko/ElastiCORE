@@ -24,6 +24,8 @@ entities:
       login: string(20) @Column(name = "login", length = 20)
       secret: string(255) @Column(name = "secret", length = 255)
       grade: string(10) @Column(name = "grade", length = 10)
+      phone: string(20) @Column(name = "phone", length = 147)
+      phoneBidx: string(22) @Column(name = "phone_bidx", length = 22)
 
   ApiLog:
     meta: entity @extend(AuditableWithEnum) @java(io.elasticore.blueprint.domain.integration.entity.ApiLog)

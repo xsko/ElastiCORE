@@ -52,6 +52,7 @@ type Agent {
   agentId: Long
   login: String
   grade: String
+  phone: String
 }
 
 type Category {
@@ -178,12 +179,14 @@ input AgentInput {
   login: String
   secret: String
   grade: String
+  phone: String
 }
 
 input AgentSrchInput {
   agentId: Long
   login: String
   grade: String
+  phone: String
   sortCode: String
   pageNumber: Int
   pageSize: Int
