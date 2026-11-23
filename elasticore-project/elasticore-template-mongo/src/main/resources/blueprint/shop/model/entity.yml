@@ -64,6 +64,8 @@ entity:
       order: PurchaseOrder @ManyToOne
       sku: string(20)!
       qty: int
+      # Markup on a member: the order's service cleans it with the order.
+      note: html
 
 dto:
   OrderLineDTO:

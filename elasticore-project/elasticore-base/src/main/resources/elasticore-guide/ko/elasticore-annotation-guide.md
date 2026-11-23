@@ -2585,6 +2585,9 @@ Post:
   jsoup 허용 목록으로 거르고 태그를 뺀 텍스트를 `@plain` 필드에 씁니다. CoreService 가 모든 쓰기에서 부릅니다 - 저장, 수정,
   조건 수정, 그리고 파라미터로 그 필드를 바꾸는 라이프사이클 command 뒤 - 행을 쓰기 전, `beforeSave` 보다 먼저.
   남긴 것은 다시 서식을 바꾸지 않습니다.
+- MongoDB 에서 자기 컬렉션이 없는 엔티티(서비스도 `@repository` 도 없는 것 - 주문의 줄)는 그것을 가진 문서 안에 저장되고,
+  요청이 그 문서와 함께 씁니다: 가진 쪽의 서비스가 같은 쓰기마다 그 엔티티의 `cleanHtml()` 을 부릅니다 - 컬렉션의 멤버,
+  하나뿐인 멤버, 그리고 그들이 가진 멤버까지 - 가진 쪽 자신의 것 다음, `beforeSave` 보다 먼저.
 - 기본값 `@safe(basic)` 은 글 서식(문단, 강조, 목록, 인용, 코드)과 링크(http, https, ftp, mailto)를 `rel="nofollow"` 와 함께 남기고,
   이미지는 남기지 않습니다. `@safe(relaxed)` 는 제목, 표, 이미지(http, https)도 남기고 `rel` 은 붙이지 않습니다. 스크립트와 그 내용,
   `on...` 핸들러, `javascript:` 링크, 그 밖의 태그·속성은 모두 지웁니다: jsoup 의 `Safelist.basic()` / `relaxed()`.
