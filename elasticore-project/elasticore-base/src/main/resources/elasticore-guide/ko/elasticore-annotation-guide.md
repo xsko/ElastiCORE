@@ -1296,7 +1296,8 @@ entity:
 - 정렬할 수 있는 것: 검색의 응답 DTO 가 자기 이름으로 보여 주는 값; 응답이 담는 내장 값의 부분(`deliveryAddress.city`);
   `@ref` 필드의 경로(`productName: string @ref(product.name)` -> `product.name`, 평탄화한 키 `customer.customerId`); 응답이
   DTO 째로 담는 조인 행의 값(ProductDTO 에 `category: CategoryDTO` 가 있으면 `category.name` - 누구나 읽을 수 있는 행이고,
-  DTO 가 담는 것은 그런 행뿐입니다); 엔티티의 키; `@sort` 기본 정렬(정렬을 적지 않은 검색은 이미 그 순서로 답합니다. 응답이 보여 주지 않는 값이면 DSL 경고).
+  DTO 가 담는 것은 그런 행뿐입니다); 엔티티의 키; `@sort` 기본 정렬(정렬을 적지 않은 검색은 이미 그 순서로 답합니다.
+  응답이 보여 주지 않는 값이면 DSL 경고).
 - 보여 주지 않으므로 정렬하지 않는 것: `@password`, `@writeonly` / `@nooutput`, `@jsonignore`(또는 네이티브 `@dto:` 의 `JsonIgnore` /
   `WRITE_ONLY`), 가려서 쓰는 값(`@Mask`), 읽기 뷰가 없는 `@view`(jsonview 를 켰을 때), 비밀번호를 읽는 `@ref`, 응답이 담지 않는 조인 행의 모든 값. 목록(List)으로는 정렬하지 않습니다. `@sensitive`,
   `@encrypt` 값은 응답에 보이므로 정렬됩니다(암호화한 컬럼은 암호문 순서).
@@ -1305,7 +1306,8 @@ entity:
 - 응답이 보여 주지 않는 조인 값으로 정렬하려면 보여 주십시오: DTO 에 `customerEmail: string @ref(customer.email)` 를 두면
   `customer.email` 로 정렬됩니다. 순서가 말하는 것과 응답이 말하는 것이 같아집니다.
 - 검사는 검색 DTO 자신의 `getSort()` 이므로 검색을 부르는 모든 곳에 적용됩니다: `POST .../search`, `POST .../export`(본문의
-  `sortCode` 와 검색의 것), 그리고 검색 DTO 로 `findBySearch` 를 부르는 모든 코드 - 생성된 GraphQL 검색도 그렇게 부릅니다.
+  `sortCode` 와 검색의 것), 그리고 검색 DTO 로 `findBySearch` 를 부르는 모든 코드 -
+  생성된 GraphQL 검색도 그렇게 부릅니다.
 - 생성 결과, 검색 DTO 마다 (Pet Store `PurchaseOrderSrchDTO`, 줄임):
 ```java
 /** What a sort may name: the values the search's response shows, its key and its default order. */
