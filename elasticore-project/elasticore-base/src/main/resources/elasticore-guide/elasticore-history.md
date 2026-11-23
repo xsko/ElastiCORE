@@ -1,3 +1,400 @@
+## 3.0.261124
+
+### New Features (tests - `testCode: "contract"`: `export`)
+
+#### The contract tests check what an entity's export promises
+- Why (issue 295, phase 5): the export of issue 271 (`POST .../export`, where `@expose(methods)` lists `export`) promises the
+  rows of the search, in its order, and a refusal above `elasticore.export.max-rows` before anything is written. A project that
+  turns the contract tests on had none of it tested.
+- Now, for each entity whose `@expose(methods)` lists `export` and whose controller has it:
+  - `exportHoldsTheSearchsRowsInItsOrder`: two rows of the test's own, sharing a unique text the search finds them by (the first
+    text field of the request the search takes with `eq`, `like` or no condition - one a request writes, not `@writeonly` nor set
+    by the server, without `@pattern`, `@email`, `@unique`, `@Mask` or `@encrypt`, of six characters or more); where the search
+    takes none, every row the caller may see. The search and the export
+    get the same body - the conditions and `sortCode` `<key>-`: the key, which every response shows and a search may sort by
+    (issue 304), descending, so an export that ignored the order (it puts the key after it, ascending) is told. The file (200,
+    `text/csv`, an attachment, the key alone as its column) holds as many rows as the search matches (its `totalElements`), the
+    test's two among them, and first the search's page, in its order.
+  - `exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten`: the same two rows; with `elasticore.export.max-rows` at the number of
+    rows the export holds they are written, at one fewer the answer is 400 `export.too-many-rows` - a problem, with no
+    `Content-Disposition` and no CSV. The setting is put into the application's `Environment` for that one request
+    (`exportAtMost`, a `MapPropertySource` first and removed after): the export reads it at each request, so the suite keeps
+    one application context - and tests run in parallel would see the setting too (the support class and the guide say so).
+  - The support class gets what these tests call - `exportOf`, `exportAtMost` (with the `ConfigurableEnvironment` injected),
+    `searched` and its `Rows`, `exportedKeys`, `exportedRows`, `assertSameRows`, `assertWritten`, `assertTooManyRows`, and a
+    CSV reader (RFC 4180, the byte order mark, the formula guard's `'`) - only when a test calls it. A kept support class
+    without them gets none of these tests and keeps the others (`... the tests of the export are not written`); the kept
+    class's fallbacks are now every set of the groups it may lack - `@access`, `@Mask` and `@encrypt`, the export - the fewest
+    left out first (the summary's wording for the first two is as before).
+  - A refusal for more rows than the application exports (`export.too-many-rows` on the first export: a large table where
+    nothing narrows the search) aborts the test; any other `export.*` refusal of the body fails it. Where the file and the
+    search differ, or the capped export does not answer as expected, the search or the export is asked again: when it now
+    answers otherwise, rows were written meanwhile (nothing narrows the search to the test's rows, or MongoDB's rows stay)
+    and the test is aborted with both answers, not failed.
+  - Counted as not tested, with why, in the summary and the support class's comment: a controller without `POST /export` - a
+    rule set leaves it out, or the developer's controller, kept by the merge, has none (the run reads the file it leaves), a
+    composite key, a `@searchResult` DTO without the key, the
+    order where the API takes no search (`@expose methods` without `search`: the cap is still tested). An entity that exports
+    but takes no create is counted as before ("its API takes no create").
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `export` gets the same
+  contract tests and support class as before. No runtime library change, no DSL word.
+- Samples: the pet store's `PurchaseOrderContractTest` (the sample's own file) takes the two tests as the generator writes them
+  (no text narrows the order search: every order); `elasticore-template-kt`'s edited `ShopContractSupport.kt` takes the new
+  members; `elasticore-template-kt-mongo`'s shop `Customer` lists `export` (it had none).
+- Checked, over HTTP: the pet store (Java, JPA, hexagonal, Boot 4) `ItemContractTest` 20 (both narrowed by `name`) and
+  `PurchaseOrderContractTest` 31 (every order, a `@genid` key, `@owner`), whole suite 199; `elasticore-template-kt` (Kotlin, JPA)
+  `TicketContractTest` 36, whole suite 237 - before its `ShopContractSupport.kt` took the members, the run left the two out
+  and said why (`ShopContractSupport has no exportOf(...) ... the tests of the export are not written`); `-ddd-mybatis` (MyBatis, ddd) `CustomerContractTest` 12, whole suite 160; `-mongo` (Java) and
+  `-kt-mongo` (Kotlin) on MongoDB 7.0.14 through `ELASTICORE_IT_MONGODB_URI`: `CustomerContractTest` 12 each, whole suites 61
+  and 52 (their Docker tests skipped as before). Broken on purpose, then restored: with the runtime's limit one row lax
+  (`count <= max + 1`), both `exportAboveMaxRows...` tests failed (`expected 400 export.too-many-rows: 200`); with the export
+  ignoring the asked order, both `exportHoldsTheSearchsRowsInItsOrder` tests failed (`[2011, 2010]` against `[2010, 2011]`).
+  With the re-check in place the lax limit still fails both, not aborts them.
+  `ContractTestsTest` (+9): the tests in Java, Kotlin, MyBatis and MongoDB, narrowed and not, the skips (a kept controller
+  without `POST /export` among them), the re-check of the rows written meanwhile, a support class kept
+  without the new members (with and without those of `@access`), a domain without export unchanged, and that a model with
+  export adds only test files. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0
+  missing / 0 extra.
+- Files: `verify/ContractTestSource.java`, `verify/RulesGenRunner.java` (the controllers with `POST /export`, the kept support
+  class's fallbacks), `ContractTestsTest.java`, the env guide 6.2.1 (en, ko), the pet store's `PurchaseOrderContractTest.java`,
+  `elasticore-template-kt`'s `ShopContractSupport.kt`, `elasticore-template-kt-mongo`'s shop `entity.yml`.
+
+### New Features (tests - `testCode: "contract"`: `@Mask` and `@encrypt`)
+
+#### The contract tests check what a masked and an encrypted field promise
+- Why (issue 295, phase 4): what the runtime's `@Mask` and the 3.0 code's `@encrypt` promise - the answer masked, the masked
+  text a client sends back kept as the stored value (issue 270), no plain value in the column, a blind-index search by the
+  value - was tested by hand in a few samples, and not at all in a project that turns the contract tests on.
+- Now, for each field of an entity's DTO that the runtime's `@Mask(MaskType.X)` marks (an env.yml `@dto:` annotation, found
+  as the generated update finds it) or that is `@encrypt`:
+  - `@Mask`: a value of the mask's shape is sent - a phone of three groups for `PHONE`, an address for `EMAIL`, enough digits
+    for `CARD`, `RRN`, `PLATE`, three letters or more for `NAME`, the field's `@pattern`'s value where it has one. The read and
+    the search (narrowed to the row by its key, else by the value) show what the field's `MaskType` makes of it - its own
+    `apply`, as the generated update compares it. A value the mask writes as it is aborts the test (nothing would show it).
+  - Issue 270: an update (`PUT`) that sends the masked text back keeps the stored value, and one with a new value replaces it -
+    read past the application: the column through `JdbcTemplate` (under JPA after the test's transaction is written out),
+    the document through `MongoTemplate`, decrypted with the application's key where the field is also `@encrypt`.
+  - `@encrypt`: the column holds no plain value and decrypts to the value sent; the API answers the value (where it is not
+    masked). With `@search(eq)`: a search by the value finds the row, one by another value does not.
+  - The support class gets what these tests call - `read`, `search`, `put`, `digits`, `masked`, `assertMasked`,
+    `assertFoundMasked`, `assertFound`, `assertNotFound`, `assertUpdated`, and where a test reads what is stored `stored`,
+    `assertStored` (`jdbc`, `entityManager` or `mongo` injected), `decrypted`, `assertEncrypted` - only when a test calls it.
+    A support class kept by a merge without them gets none of these tests and keeps the others - the tests of `@access` too
+    where it has their members - and the summary says so (`... the tests of @Mask and @encrypt are not written`).
+  - Counted as not tested, with why, in the summary and the support class's comment: a composite key, the key itself, a field
+    a request does not write, a field no value the generator builds fits with a change the mask shows (or with a second value),
+    no read (the search too where it takes neither the key nor the field, or answers with a `@searchResult` DTO), no update of
+    the field (a root its commands change - `@editable` opens it), a `@pattern` field sent back (its pattern may refuse the
+    masked text), an inherited field (a plain `@abstract` parent's is the entity's own), a `@rollup` entity or a name not
+    written plainly (its column is not read), an `@encrypt @search(eq)` field the search does not take. The table and column
+    are named as Spring's naming writes them, with the schema (`MyBatisSql`'s names).
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `@Mask` and `@encrypt`
+  gets the same contract tests and support class as before. `testCode: "true"` is as it was. `elcoreRulesCheck -Pstrict` 158
+  MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library change, no DSL word.
+- Samples: `elasticore-template-ddd-mybatis`'s `Customer.phone` is masked (`@env:maskphone`); `elasticore-template-kt`'s
+  `Agent` has `phone: string(20) @encrypt(digits) @s(eq) @env:maskphone` (its keys are the tests' `TestCryptoKeys`), and its
+  edited `ShopContractSupport.kt` takes the new members. `elasticore-template-ddd`'s `Subscriber` and the MongoDB samples'
+  `Customer.email` were masked already (`Subscriber`'s phone and e-mail encrypted too; MongoDB has no `@encrypt`).
+- Checked, over HTTP: `elasticore-template-ddd` (Java, JPA) `SubscriberContractTest` 11, 4 of them new (phone and e-mail
+  kept encrypted, the phone found by its value, the e-mail shown masked; sent back is counted - the root takes no `PUT`), whole
+  suite 203; `-ddd-mybatis` (MyBatis) `CustomerContractTest` 13 (the phone shown masked and sent back), whole suite 158;
+  `-kt` (Kotlin, JPA) `AgentContractTest` 23 (all four on `Agent.phone`), whole suite 233 - before its `ShopContractSupport.kt`
+  took the members, the run wrote the class without them, as said; `-mongo` and `-kt-mongo` on MongoDB 7.0.14 through
+  `ELASTICORE_IT_MONGODB_URI`: `CustomerContractTest` 10 each (the e-mail shown masked and sent back, read with
+  `MongoTemplate`), whole suites 57 and 48 (their Docker tests skipped as before). Broken on purpose, then restored: without
+  the update's keep of the stored value (`MaskedFields`), `phoneSentBackMaskedKeepsTheStoredValue` failed (`010-****-5479`
+  stored); with the converter writing the value as sent, both `IsStoredEncrypted` tests of `Subscriber` failed; without the
+  DTO's `@Mask`, `emailIsShownMasked` failed. `ContractTestsTest` (+8): each test in Java, Kotlin, MyBatis and MongoDB, the
+  skips, a support class kept without the new members (with and without those of `@access`), a domain without them unchanged,
+  and that a model with `@Mask` and `@encrypt` adds only test files.
+- Files: `verify/ContractTestSource.java`, `verify/RulesGenRunner.java` (the kept support class's fallbacks), `ContractTestsTest.java`,
+  the env guide 6.2.1 (en, ko), `elasticore-template-ddd-mybatis`'s shop `env.yml` and `entity.yml`, `elasticore-template-kt`'s
+  shop `env.yml`, `ticket.yml`, `ShopContractSupport.kt` and the regenerated `schema.yml`, `db/schema-*.sql` and `shop.graphqls`.
+
+### New Features (tests - `testCode: "contract"`: callers the project makes)
+
+#### The contract tests sign in callers a project's own code makes: `newSignInRow(role)` in the support class
+- Why (issue 295, a report on a forum: hexagonal, JPA, Spring Boot 4.1, Java, 12 entities): a sign-in entity whose API takes
+  no create - sign-up is the project's own, a mailed code, a social sign-in - left no caller to sign in, so no test of `@access`
+  was written at all (`Post @access: not tested - no caller can be signed in (Member (signing in): its API takes no create, ...)`).
+  The support class said "sign in your way there", but editing `signIn()` brought nothing back: the tests were left out when
+  the code was generated. The project's own tests signed in in two steps - a member saved through its service as the system,
+  then the generated sign-in - and only the first step is the project's.
+- Now a project may write that first step in its support class, at the end of the class:
+  - Java `protected Map<String, Object> newSignInRow(String role) throws Exception`, Kotlin
+    `protected fun newSignInRow(role: String?): Map<String, Any?>`: the row of a caller of that role made the project's way,
+    answered as its login, its plain password and its key (`obj("email", email, "password", "Secret-1", "memberId", id)`).
+    `role` is the role field's value as a request sends it (`null`: a caller of no role); it runs as the application itself
+    (`CurrentUser.runAsSystem`, in the generated `signInRow`), which checks that the three are answered.
+  - The run reads the support class on disk - the project's - before it plans the tests (the generated class never declares
+    the member, so the merge keeps it, or keeps the file as it is). Where it is declared as the generated sign-in calls it, the
+    callers are made by it: `signIn()` signs in the administrator (`newSignInRow` of the `adminRole`) and `signIn(role)` a
+    caller of each role an entry names, and the owner of a row, through the generated sign-in; the tests of `@access` are
+    written as for a principal the model builds. Another signature, or one in a comment, is not read as it.
+  - Preferred to the model's row whenever it is written, not only where the model cannot build one: a project writes it
+    because its sign-up makes a caller otherwise than the API's create (more fields, a check of its own, a verified flag), and
+    a row the project's code would not make tests nothing the application does.
+  - Not generated and not an interface: without it the build is as it was. Where no principal can be built from the model and
+    the run has a sign-in to sign one in through, the summary's line of the principal says what to write
+    (`Member (signing in): its API takes no create, so no administrator is made to sign in as - to sign callers in, write
+    protected Map<String, Object> newSignInRow(String role) throws Exception in ForumContractSupport: a Member of that role
+    made your way, answered as obj("email", <its login>, "password", <its plain password>, "memberId", <its key>)`), and the
+    support class's comment shows it with a short example. The tests still say what each entry expects (allowed, 401, 403, 404).
+- And where nobody can be signed in - no `@signin` in the run, or no principal built - the rows of an `@owner` entity are made by
+  the application itself, without their owner (the server sets `@owner` from who is calling): a project's own code that reads
+  the owner answered 500, and a lifecycle test failed rather than aborted. Now the summary counts each such entity
+  (`Verification: its rows are made without their owner (@owner(memberId)) - nobody can be signed in, so the application itself
+  makes them; a 5xx answer on such a row aborts the test rather than fails it`), the support class lists them, and its
+  `withoutOwner` aborts a test where a row it needs, a step or the move - a request on such an entity's path - answers 5xx, or
+  lets out what the application threw (MockMvc rethrows it rather than answering 500: `thrownWithoutOwner`). Any other answer
+  is checked as before: a 409 where a move is allowed, a 2xx where it is refused, still fails. This changes the support class of
+  a run with no `@signin` and an `@owner` entity too, on purpose: its rows have no owner either. The trade-off: a 5xx on such a
+  row that is not about the owner aborts too, with the answer in the reason.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain whose principal the model builds,
+  or without an `@owner` entity, without `newSignInRow`, gets the same support and test classes as before. No runtime library
+  change, no DSL word.
+- Checked, over HTTP: `elasticore-template-ddd` (Java, hexagonal, JPA, Spring Boot 3) has a new `forum` domain shaped as the
+  report: `Member @signin` with no create in its API, `Topic` and `Verification` with `@owner` and `@access` (roles, `owner`,
+  a lifecycle a MODERATOR moves). Without the member the run said `contract tests: 85 written, 9 skipped (... Member (signing in):
+  ... - to sign callers in, write ... newSignInRow ...; Topic @access: not tested ...; Verification: its rows are made without
+  their owner ...)` and wrote 11 forum tests; with `ForumContractSupport.newSignInRow` (a `MemberService.save`, the role from
+  `MemberRole.fromCode`) the support class is `MERGED(your edits kept)`, the run says `115 written, 4 skipped`, and the 41 forum
+  tests pass - 30 of `@access` - in a suite of 244 (203 before). Broken on purpose, then restored, on that sample: with
+  `update=user` for Topic and `approve=user` for Verification in the generated services, exactly
+  `updateRefusesAUserOnAnothersRow` (200, not 404) and `approveRefusesAUser` (200, not 403) failed. Without the member (rows
+  without their owner), an `approve` override that throws on a missing owner made four lifecycle tests fail before; they are
+  now aborted with `the request failed on a row made without its owner (Verification @owner(memberId) - nobody is signed in):
+  ... The given id must not be null`; with the moves broken instead (approve allowed from APPROVED, reject only from
+  REJECTED) on the same owner-less rows, `approveIsRefusedWhenStatusIsApproved` (200, not 409), `rejectFromPending` and the two
+  tests whose step rejects still failed. Kotlin, `elasticore-template-kt` switched for the run only, then restored: with
+  `newSignInRow` (an `AgentService.save`) its 80 contract tests pass; with Agent's create taken out of its API too, Ticket's 36
+  (`@access` among them) pass; without the member, the owner-less Kotlin helpers compile and its 35 pass.
+  `ContractTestsTest` (+7): the hint in Java and Kotlin (and none without `@signin`), the member written and merged (Java,
+  Kotlin), preferred where the model builds a row, how the declaration is read, the owner-less rows said and their 5xx
+  handled, the example's login. Unchanged suites: `elasticore-template-kt` 237, the pet store 199. `elcoreRulesCheck -Pstrict`
+  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `verify/ContractTestSource.java`, `verify/RulesGenRunner.java` (the support class read before the plan),
+  `ContractTestsTest.java`, the env guide 6.2.1 (en, ko), `elasticore-template-ddd`'s new `forum` domain (`env.yml`,
+  `entity.yml`), its `ForumContractSupport.java`, `DddSampleApp.java`, `build.gradle` and `.gitignore`, and its regenerated
+  `context-map.md`, `schema.yml`, `semantic_model.yml` and `db/schema-*.sql` (the forum's tables added).
+
+### Changes (v3 merge - the base of the merge)
+
+#### `.elasticore/cache` is now `.elasticore/generated-base.zip`, and an existing project is moved by its next build
+- Why: the file that holds what the generator last wrote - the base every edit of a generated file is merged against - was
+  named `.elasticore/cache`. The name read as disposable: people deleted it or put it in `.gitignore`, and after that the
+  build could no longer merge their edits (it leaves every edited file alone as "not in the cache"). The file has to be
+  committed with the project; its name now says what it is.
+- Now the base is `.elasticore/generated-base.zip` - the same stored zip, the same bytes for the same content. Beside it,
+  written when absent as `.gitattributes` always was: `.elasticore/.gitattributes` says `generated-base.zip binary -filter`
+  (`-filter`: a project's `*.zip filter=lfs` does not turn the base into an LFS pointer), and `.elasticore/.gitignore` says
+  `!generated-base.zip`, which takes the base back in where a project ignores `*.zip` (the common Java `.gitignore` does).
+  Both checked with git: `git check-ignore` under a root `*.zip`, `git check-attr` under a root LFS rule.
+- What a project sees:
+  - Only the old file there: the build reads it as the base, as before. The first merging run that writes (`elcore3`,
+    also with `-Pdomain`) writes the new file, reads it back, makes `.elasticore/.gitattributes` name it (the line
+    `cache binary` becomes `generated-base.zip binary -filter`, another line whose pattern is `cache` gets the new name;
+    every other line is kept as it is), and only then deletes the old file. It prints one line:
+    `[elcore3] .elasticore/cache was renamed to .elasticore/generated-base.zip - commit both changes (the delete and the new file)`.
+    Commit the delete and the new files; nothing else is needed. The edits of generated files are merged across the rename.
+  - Both files there (a branch that had not moved yet brought the old one back): the new one is read; the old one is not
+    deleted - it is a committed file, and which branch's base it holds is not known - and every run warns:
+    `[elcore3] .elasticore/cache is no longer read - .elasticore/generated-base.zip is the base of the merge; delete .elasticore/cache and commit the delete`.
+    The env guide (9-2, git merge conflicts) says how to merge such a branch.
+  - Neither: a first merging run, as before; it writes only the new name.
+  - A run that stops before or while saving leaves the old file: it is deleted only after the new one was written and read
+    back whole. A new file that does not read back as written is taken away again and the build fails, as a base it
+    cannot write always did. An old file that cannot be deleted is said, and warned about as above from then on.
+  - A run that writes nothing - `elcoreValidate`, `elcoreMigrationCheck` (also when refused for `-Pdomain`), `-PlistRules`
+    - moves nothing. An old file that cannot be read is named as `.elasticore/cache` in the message that stops the build.
+- Unchanged: the merge itself, the summary's words `the cache is missing` and the status `SKIP(not in the cache)`, which
+  tools read; a project that does not merge (the 2.x-compatible output, `merge = false`) has no base and sees nothing of
+  this. No file in this repository held a base (the samples regenerate their trees and keep `.elasticore/` out of git).
+- Checked: `GeneratedBaseRenameTest` - a new project writes only the new name and the two files beside it; the old file
+  alone is renamed with the same bytes and entries and the line printed once; an edited mapper is merged across the rename
+  (end to end through `RulesGenRunner`), with the developer's own `.gitattributes` lines (CRLF) kept; a `-Pdomain` run
+  renames, a validation or migration check refused for `-Pdomain` does not; both files: the new one read, the old one left
+  as it was, the warning; a run stopped after the new file is written leaves the old one and the next run reads the new; a
+  new file that does not read back is taken away; an old name that is no longer a regular file is not deleted; a listing,
+  a validation and a migration check move nothing; an unreadable old file is named; the `.gitattributes` rewrite line by
+  line. `GeneratedMergeTest`, `LanguageSwitchTest`, `RuntimePackagesProjectTest`, `SoftDeleteHierarchyTest` follow the
+  new name. The guide's steps for merging a branch from before the rename were run in a scratch repository.
+- Guides: env guide (en, ko) 9-2 - the new name, the files beside it, the rename, both files, merging an older branch;
+  rule, migration and annotation guides (en, ko), README, the tour and getting started name the new file. The samples'
+  `.gitignore` comments.
+- Files: `GeneratedCache.java`, `RulesGenRunner.java`, `ElastiCoreExtension.java` (javadoc).
+
+### Bug Fixes (v3 generated-file merge)
+
+#### A hand-written member's Javadoc stays with it when the DSL adds a member at the same place (#295)
+- Why: a generated-once file the developer added to - a contract test class, a behaviour class, a service - is merged with
+  what the generator writes now. Reported on a contract test class: the developer's test, with its own Javadoc, sat right
+  after the generated `nameIsRequired`; on regeneration the new generated `nameNotBlank` went between that Javadoc and the
+  developer's method. The comment then sat on the generated test, and the developer's had none. The cause: the added member
+  repeats the first lines of the member after it (`@Test`, a blank line), the line diff took the existing `@Test` as the added
+  member's, and the developer's lines became two insertions - the Javadoc before that `@Test`, the rest after it - with the
+  generated member landing between them.
+- Now, in the body of a Java or Kotlin source (`ThreeWayMerge.mergeSource`), a run of kept lines between two pure insertions
+  of one side is kept at the end of the second (or the start of the first) when the lines there are the same: the same lines
+  kept, one insertion. The developer's member - comments, annotations, method - is merged whole, and the generated one is put
+  beside it. The run does not move next to a line that side deleted or replaced, nor where the other side added the same
+  lines on either side of it (the merge takes those once). Other merges (YAML and the other text files) are unchanged.
+- A file the developer did not edit is still the generated file byte for byte, and one only the developer changed is theirs:
+  the merge takes one side whole there, whatever the alignment.
+- Checked: `ThreeWayMergeTest` - the reported class (fails before), a Javadoc of several lines with a line comment and an
+  annotation more, the Kotlin case with a KDoc, the test the developer wrote as the DSL now writes it (there once), a member
+  both added alike, a line both replaced alike (no conflict), the untouched and developer-only files, and the re-alignment
+  itself case by case; `GeneratedMergeTest`, `ContractTestsTest`, `MigrationPreviewTest`, `SignInAndReferencesTest`,
+  `RuntimePackagesProjectTest`; `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0.
+- Files: `ThreeWayMerge.java`.
+
+### Bug Fixes (v3 MongoDB - security: `html` on an embedded member)
+
+#### MongoDB cleans the html of the members a document embeds, on every write of the document
+- Why: under `mode: mongo` an entity without a collection of its own (no service, no `@repository` - an order's line) is
+  kept inside the document that holds it, and the holder's mapper writes it from the request. An `html` field on such a
+  member was accepted - `prepareHtml` refuses html on a member it finds through `@aggregate`, `@cascade` or a `@OneToMany`
+  from a `@root`, and MongoDB decides what to embed by another rule (`MongoDocs.ownCollection`) - and the member got its
+  `cleanHtml()`, but nothing called it: the holder's service cleaned only its own fields. The markup was stored exactly as
+  the request sent it, `<script>` and `on...` handlers included, with no build error or warning. Reproduced on
+  `elasticore-template-mongo` with `OrderLine.note: html`: a `PUT /purchaseOrder` with
+  `<b onclick="steal()">hi</b><script>steal()</script>` in a line handed that text to MongoDB unchanged.
+- Who is affected: MongoDB projects (Java or Kotlin) with an `html` field on an embedded member. A page that shows the value
+  as HTML (the TypeScript client marks it `html: true`) ran what a writer put in it. JPA and MyBatis are not affected: their
+  root's mapper does not write such a member from the request, and html on a member the rules write with their root
+  (`@aggregate`, `@cascade`, a `@root`'s `@OneToMany`) or on a value object (`@embeddable`) is refused there as here.
+- Now the holder's CoreService calls each embedded member's `cleanHtml()` on every write - a save, an update, an update by
+  condition, and a batch update (each through update) - after the holder's own `entity.cleanHtml()` and before the
+  developer's `beforeSave`: a collection's members, a single member, and the members those hold in turn (Java and Kotlin):
+
+  ```java
+  if (entity.getLines() != null) for (io.acme.shop.domain.model.OrderLine m : entity.getLines()) {
+      m.cleanHtml();
+  }
+  ```
+  ```kotlin
+  for (m in entity.lines ?: emptyList<io.acme.shop.domain.model.OrderLine>()) {
+      m.cleanHtml()
+  }
+  ```
+  MongoDB has no lifecycle commands, so there is no other write path. A member written after the clean (in `beforeSave`, or
+  through the repository) is the application's to clean, as a root's field is. Members that hold each other (a line's parts
+  holding lines) are kept to any depth, which the generated lines cannot reach: an html field among them now stops the build
+  (`... MongoDB keeps HtLine inside the HtOrder document to any depth (HtLine -> HtPart -> HtLine) ...`).
+- Unchanged: the rule adds lines only under `mode: mongo` and only where a member has an html field, so a project without
+  html, a JPA or MyBatis project, and a MongoDB project without html on a member generate byte-identical output (by
+  construction; `HtmlFieldTest` checks such a MongoDB and JPA service). For the 2.x baseline: `elcoreRulesCheck -Pstrict`
+  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library change, no DSL word.
+- Checked: `HtmlFieldTest` (+3): the Java and Kotlin services of a MongoDB model with a collection of members holding a
+  collection and a single member of their own (each cleaned on save, update and update by condition, before `beforeSave`;
+  a member without html left alone), a root's own clean before its members', the same model without html and under JPA
+  without a member call, and members holding each other refused - the three fail without the fix. Over HTTP on MongoDB
+  7.0.14 (`ELASTICORE_IT_MONGODB_URI`): `elasticore-template-mongo` and `elasticore-template-kt-mongo`
+  `ShopApi.anEmbeddedMembersHtmlFieldIsCleanedOnEveryWrite` - a line's `<b onclick="steal()">hi</b><script>steal()</script>`
+  answered and stored as `<b>hi</b>` on `POST`, `PUT`, `PUT /batch` and `updateBySpecification`; whole suites 48 and 42
+  passed (their Docker tests skipped as before). Both samples generated with the member html taken out give the same 121
+  source files and 34 resources before and after the change. `MongoGenerationTest`, `GuideTranslationTest`,
+  `SourceAsciiTest` pass; `formatCheck` and `diffErrorprone` pass; `diffMutation` kills 37 of the 40 mutations of the changed
+  lines (93%).
+- Guides: annotation guide (en, ko), html section.
+- Files: `base/HtmlRules.java`, `verify/RulesGenRunner.java` (`relateMembersEarly`: under MongoDB a member's own relations
+  are known when the service is written, so its members are reached), `HtmlFieldTest.java`, the annotation guide (en, ko), `elasticore-template-mongo` and
+  `elasticore-template-kt-mongo`'s shop `entity.yml` (`OrderLine.note: html`) and `ShopApi.java`.
+
+### Bug Fixes (v3 search - security)
+
+#### A search sorts only by what its response shows; a sort on a hidden value is 400 `no-such-property`
+- Why: the 3.0 search turned every `sortCode` / `sortColumn` term into a sort unchecked (JPA), or checked it only against
+  the columns it can sort by (MyBatis `SORT_COLUMNS`, MongoDB `SORT_FIELDS`), which hold the hidden ones too. A sort on a value
+  the response leaves out still tells that value's order. Reproduced on the generated samples over HTTP: in the pet store
+  (Boot 4, JPA hexagonal) a MANAGER's `POST /purchaseOrder/search` with `customer.email+`, `creditCard.creditCardNumber+`
+  (`@writeonly`) and `customer.password+` answered 200, in the stored e-mails', card numbers' and password hashes' order
+  (checked against the H2 file); in the MyBatis pet store a customer's own orders sorted by the card number, and the admin's
+  customer search by the hash; in `elasticore-template-kt` (Kotlin JPA) a ticket search by `agent.secret` and the agent search
+  by `secret`; in `elasticore-template-mongo` a member search by the `@password` `secret`, and a customer search by the
+  masked (`@Mask`) e-mail. With rows of one's own to sort among, the order gives the value itself away.
+- Now each 3.0 search DTO (Java and Kotlin, JPA, MyBatis and MongoDB, every architecture) lists what its sort may name -
+  `SORTABLE_PROPERTIES` and `sortableProperties()` - and the generated `SortableObject.getSort()` hands each property through
+  the runtime's new `io.elasticore.springboot3.dto.SortCheck`, which refuses one not listed with a `BadRequestException`
+  (400, code `no-such-property`, "The search cannot be sorted by 'x'; sort by one of [...]", the term cut to 40 characters and
+  control characters shown as `?`) before the query is built. `sortColumn` goes the same way, and so does the export
+  (`POST .../export`) and every other call of `findBySearch` with a search DTO.
+- The rule (`SortablePaths`): a value the search's response DTO shows under its own name; a part of an embedded value the DTO
+  carries; a `@ref` path (a flattened key `customer.customerId`, `product.name`); the values of a joined row whose DTO the
+  response carries whole - a row anyone may read, as `access-dto-nested` nests no other - up to three relations deep; the key;
+  the `@sort` default order. Never `@password`, `@writeonly`/`@nooutput`, `@jsonignore`, a `@Mask` value, a `@view` without
+  read, a `@ref` to a password, a list. `@sensitive` and `@encrypt` values are shown, so they sort.
+- The answer is the one a property the entity does not have gets, so a hidden property cannot be told from a missing one.
+  JPA said `no-such-property` for that before; MyBatis and MongoDB said `bad-request` (`X cannot be sorted by ...`) - their
+  unknown sort terms now get `no-such-property` too, and a term reaches their own check (whose message repeats it as sent) only
+  once the search DTO lists it.
+- v3 output changes by default (a security fix): a request that sorted by a value its response does not show is now 400.
+  The existing samples sort only by shown values and keep working. The 2.x-compatible output (`output = 'v2'`) and the 2.x
+  generator are unchanged: `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0.
+- The runtime's `io.elasticore.springboot3.dto.SortableObject` - the `interface.sortable` the init wizard writes into a new
+  project's env.yml - gets the same `sortableProperties()` (default null) and hands each term through `SortCheck`, so a 3.0
+  search DTO on it is checked too. For code that does not override it - 2.x DTOs, any other implementation - null means any
+  property, exactly as before (`SortCheckTest` checks both). A domain naming a sort interface of its own keeps it unchecked,
+  with a DSL warning; so does a search whose response DTO is not in the domain's model. A `@sort` default on a value no
+  response shows stays allowed (every search without a sort already answers in that order) and is said with a DSL warning.
+  A value a native `@dto:` annotation keeps out of the JSON (`JsonIgnore`, `WRITE_ONLY`) counts as not shown.
+- The generated search DTOs on the runtime's interface override `sortableProperties()`, which the runtime declares from this
+  version on: the runtime (`elasticore-springboot3` / `-springboot4`) has to be the plugin's version, as always. `Refusals.shown(...)` is the runtime's shortening of a
+  refused value, which `SqlPortGateway` now calls too (no change in what it says).
+- Checked: `SortTermGenerationTest` (9 runs: JPA Java hexagonal/layered/ddd, JPA Kotlin hexagonal/layered, MyBatis layered/ddd,
+  MongoDB Java/Kotlin, and the 2.x-compatible run), `SearchDtoFileTest`, `KotlinDtoFileTest`, runtime `SortCheckTest` (Boot 3 and
+  4); over HTTP: pet store `SortTermTest`, MyBatis pet store `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused` (no SQL is
+  prepared), `elasticore-template-kt` `SortTermTest`, `elasticore-template-mongo` `ClubApi` / `ShopApi`,
+  `elasticore-template-kt-mongo` `ClubApi` (MongoDB 7).
+- Guides: annotation guide (en, ko) 4.2 "What a search may sort by", the export and 3.8 notes.
+- Files: `SortablePaths.java`, `SpecFactory.java`, `RulesGenRunner.java`, `RulesVerifyRunner.java`, `EntitySpec.java`,
+  `SearchSortList.java`, `MaskedFields.java`, `SearchDtoCleanFileRules.java`, `KotlinSearchDtoFileRules.java`,
+  `v3/java_SortableObject.tmpl`, `kt/java_SortableObject.tmpl`; runtime `SortCheck.java`, `SortableObject.java`, `Refusals.java`, `SqlPortGateway.java`.
+
+### Bug Fixes (v3 generation - the warning for rules the selection does not carry)
+
+#### The "selected rules do not enforce" warning gives the advice that fits where the selection came from (#247)
+- Why: a domain that declares `@access`, `@owner`, `@password`, `states:`, `@stamp`, `@deleted`, `@snapshot` or `@compute`
+  while the selected rules do not carry the rule set for it is warned (`DSL_WARN`), and the warning always ended "Declare
+  architecture = 'ddd' or 'hexagonal', or add the rule set.". A `publisher.rules` list in env.yml replaces the architecture's
+  bundle, so for a hexagonal domain with `publisher.rules: [ossie-export]` - whose `@password` is then stored as typed and whose
+  `@access` is not checked - declaring the architecture changes nothing; the 2.x code (`output = 'v2'`) refuses both an
+  architecture and an added rule set. And the check read the selection without the build's property
+  `-Delasticore.publisher.rules`, which replaces the bundle as the env.yml list does: a hexagonal build naming
+  `ossie-export` there generated `@password` and `@access` unchecked without any warning.
+- Now the check reads the selection the engine runs (the env.yml list, else the property, else the bundle, plus the rule sets
+  the build adds), and the advice follows it, naming the missing rule set:
+  - a list in env.yml (or the property, "The build's -Delasticore.publisher.rules ..."): "publisher.rules in env.yml replaces
+    the architecture's bundle rather than adding to it, and its list does not name jpa-service-access. To add rule sets to
+    the bundle, leave publisher.rules out and name them in rules = [...] in the elasticore { } block
+    (-Delasticore.publisher.rules.add=...); to keep the list, name jpa-service-access in it." (`publisher.rules.kt` for a
+    Kotlin domain that uses that key; for `ddd-state` and `ddd-derive` "... name a bundle that carries ddd-state with the
+    domain-model rule sets it works on (hexagonal-springboot or ddd-springboot) in it", the domain's own ones - `-kt` in
+    Kotlin, the MyBatis ones in mode: mybatis - from `RulesConfig.bundleFor`);
+  - a list naming `jpa-springboot` (as the wizard wrote before 3.0.261028-rc3): "publisher.rules in env.yml names
+    jpa-springboot, the code 2.x generates, which has no jpa-service-access; the 3.0 code carries it: take jpa-springboot out
+    of the list (leave the list out for the architecture's bundle), and output = 'v2' out of the elasticore { } block if it
+    is there - see elasticore-migration-guide.md.";
+  - the 2.x code: "The code 2.x generates (output = 'v2', bundle jpa-springboot) has no jpa-service-access; the 3.0 code
+    carries it: elasticore { output = 'v3' } - see elasticore-migration-guide.md." (with "with architecture = 'ddd' or
+    'hexagonal'" for `ddd-state` and `ddd-derive`);
+  - a layered bundle: "The jpa-springboot-v3 bundle does not carry ddd-state. Declare architecture = 'ddd' or 'hexagonal',
+    or add the rule set." (the sentence it ended with before, after the bundle's name);
+  - a lifecycle or derived value over MongoDB, which has no domain-model bundle: "This domain's mode has no domain-model
+    bundle: ddd-state and the domain-model rule sets it works on are generated for JPA and MyBatis (architecture = 'ddd' or
+    'hexagonal').";
+  - `@deleted` names the set of the domain's mode - `jpa-entity-annotations`, `mybatis-mapper` or `mongo-service-file` - in
+    "declares @deleted (...)" too, which said "(jpa-entity-annotations or mode: mybatis)" before.
+- Still a warning; whether it becomes a build failure is open on the issue. No generated file changes:
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0.
+- Checked: `UnenforcedWarningTest` - each form; the reported run (hexagonal, `publisher.rules: [ossie-export]`, entities with
+  `@password`/`@access`, `@deleted` and `@compute`) told that the list replaces the bundle, with each missing set; the same
+  list as the build's property, now warned; `[jpa-springboot]` in env.yml told to take it out; both ways the message offers
+  (the plugin's `rules = ['ossie-export']`, and `[ossie-export, jpa-service-access]` in env.yml) each ending the warning with
+  the access checks written (`AccessPolicy`); an `output = 'v2'` run sent to the 3.0 code. `StateStampTest` (the layered
+  bundle named with `ddd-state`); `OssieSensitiveTest` unchanged.
+- Files: `RulesGenRunner.java`.
+
 ## 3.0.261123
 
 ### New Features (v3 service - `@access` names roles)
