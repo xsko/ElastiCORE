@@ -777,8 +777,10 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - The tests of `@access` sign in principals of their own: `signIn(role)` makes one as the application itself, with that role in the
   `@signin` entity's role field (`"M"` for `UserRole.MANAGER` written `@json(code)`), signs it in through the generated sign-in and
   returns a `Caller` - its key, which a row's `@owner` holds, and its session; `sentBy(caller, ...)` sends a request as it, or as a
-  visitor for `null`. A row of a caller's is made by the administrator with the owner sent, or by the caller where the server sets
-  `@owner` or no administrator signs in; the `@signin` entity's own row is the caller's. Sign in your way in `signIn(role)`.
+  visitor for `null`. A row of a caller's is made by the administrator - as the application itself (`asTheSystem`) where no
+  administrator signs in - with the owner sent, or by the caller where the server sets `@owner`; the `@signin` entity's own row is
+  the caller's. Sign in your way in `signIn(role)`. A support class of yours kept by a merge without these members gets no test of
+  `@access` (the build never breaks): the summary names the member, and `build/elasticore/contract/` holds the version generated.
 - Not tested of `@access`, counted in the summary and listed in the support class's comment: no principal to sign in, a role the
   role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds one), `owner` where `@owner` names no field, an entry
   not read (`read=owners`), a delete or a command no sequence of commands brings a new row to, a row of a caller's that cannot be

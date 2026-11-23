@@ -19,8 +19,14 @@
     sends a request as it, or as a visitor for `null`; `assertAllowed`, `assertDenied`, `assertFinds`, `assertMisses` check
     the answer. `signIn()` - the administrator the rows are made by - is as it was.
   - Each test signs in its own principals and makes its own rows. A row of a caller's is made by the administrator with the
-    owner sent, or - where the server sets `@owner`, or the principal has no role to be the administrator by - by the caller,
-    who owns what they create; the `@signin` entity's own row is the caller's. A delete or a command a lifecycle guards is
+    owner sent - as the application itself (`asTheSystem`, added to the support class then) where the principal has no role
+    to be the administrator by, so an admin-only create does not abort the test - or, where the server sets `@owner`, by the
+    caller, who owns what they create; the `@signin` entity's own row is the caller's.
+  - The build never breaks: after the support class is written or merged, the run reads the file it left. Where it lacks a
+    member a test class calls (`signIn(String)`, `sentBy`, `Caller`, `assertAllowed` ... - a class of the project's a merge
+    kept as it was), the tests of `@access` are not written - the class keeps its other tests where the kept class has what
+    they call, else it is not written - and the summary says so: `Shop: ShopContractSupport has no signIn(String) - add the
+    members from build/elasticore/contract/ShopContractSupport.java, the version this run generated; ...`. A delete or a command a lifecycle guards is
     given after the commands that bring a new row to where it may be (as the administrator).
   - Let in, a request refused by `@access` (401, 403, a 404 `not-found`) or failing (5xx) fails the test; refused by another
     rule of the application's own - a reference to a row it needs, say - it is aborted with the reason.
@@ -44,9 +50,11 @@
   only: the MyBatis pet store (layered, Spring Boot 4) 106 - with its order builder given an item, which its application
   requires and its model does not (without it those tests are aborted); the `club` domains of `elasticore-template-mongo` (44)
   and `-kt-mongo` (71) on MongoDB 7.0.12 through `ELASTICORE_IT_MONGODB_URI`. The Kotlin MongoDB run found that a principal
-  with no role field signs in no administrator, so a row it made with the owner sent was its own: the owner now makes it.
+  with no role field signs in no administrator, so a row it made with the owner sent was its own: such rows are now made as
+  the application itself; rerun with that, the two `club` domains pass again (44, 71), the rows through `asTheSystem`.
   Whole suites of both MongoDB samples pass on the server (27 contract tests each, of `*=public`). `elasticore-template-ddd`
-  (70) and `-ddd-mybatis` (45) contract tests pass, unchanged. `ContractTestsTest` (+10): each case of a model with roles, `|`,
+  (70) and `-ddd-mybatis` (45) contract tests pass, unchanged. `ContractTestsTest` (+11): a support class kept without the new members (no test of `@access`
+  written, the others kept, the version generated beside the build, the summary), each case of a model with roles, `|`,
   `&` and `owner` in Java and Kotlin, the sign-in entity's own row, a lifecycle-guarded delete and a command, `none` and `*`,
   a visitor's create keyed by its owner, the skips (no `@signin`, two roles, an entry not read, no `@owner`, a role too long
   for its field, no role field, a required owner a visitor's create clears), and that a model with `@access` adds only test
