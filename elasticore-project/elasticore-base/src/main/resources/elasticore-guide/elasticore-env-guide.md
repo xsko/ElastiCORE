@@ -784,6 +784,21 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   administrator signs in - with the owner sent, or by the caller where the server sets `@owner`; the `@signin` entity's own row is
   the caller's. Sign in your way in `signIn(role)`. A support class of yours kept by a merge without these members gets no test of
   `@access` (the build never breaks): the summary names the member, and `build/elasticore/contract/` holds the version generated.
+- Callers your sign-up makes: write `newSignInRow(role)` in the support class - Java `protected Map<String, Object>
+  newSignInRow(String role) throws Exception`, Kotlin `protected fun newSignInRow(role: String?): Map<String, Any?>`, at the end of the
+  class. It makes the row of a caller of that role your way (your service, as your sign-up makes one) and answers its login, its plain
+  password and its key: `obj("email", email, "password", "Secret-1", "memberId", id)`. `role` is the role field's value as a request
+  sends it (`null`: a caller of no role), and it runs as the application itself. Where the run finds it in your support class, on
+  disk, `signIn()` and `signIn(role)` sign in the rows it makes through the generated sign-in - instead of rows built from the model,
+  even where those could be - and the tests of `@access` are written, also where the API takes no create (`@expose(20,
+  methods="read,search,update")`). It is not generated and not an interface: without it the build is as it was, and where no
+  principal can be built from the model the summary and the support class's comment say what to write (`Member (signing in): its API
+  takes no create, ... - to sign callers in, write protected Map<String, Object> newSignInRow(String role) ...`). The tests still say
+  what each entry expects. Another signature is not read as it. `elasticore-template-ddd`'s `forum` domain does so.
+- Nobody signed in: the rows of an `@owner` entity are made by the application itself, without their owner (the server sets `@owner`
+  from who is calling). The summary counts each such entity (`Verification: its rows are made without their owner (@owner(memberId))
+  - ...`), and a 5xx answer on one of its rows - a row a test needs, a step, the move - aborts the test with the reason (`withoutOwner`),
+  since the application's own code may need the owner; any other answer is checked as ever (a 409 where the move is allowed fails).
 - Not tested of `@access`, counted in the summary and listed in the support class's comment: no principal to sign in, a role the
   role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds one), `owner` where `@owner` names no field, an entry
   not read (`read=owners`), a delete or a command no sequence of commands brings a new row to, a row of a caller's that cannot be

@@ -2280,6 +2280,385 @@ public class ContractTestsTest {
                 ContractTestSource.Groups.omitted(ContractTestSource.Groups.ALL));
     }
 
+    // ---- the callers the project makes (newSignInRow) and the rows nobody owns ----------
+
+    /** The sign-in entity of ACCESS without a create in its API: its rows are made by the project's own code. */
+    private static final String NO_CREATE = ACCESS.replace(
+            "@root @editable @expose(20) @signin @owner(staffId) @access(read=owner, create=public, update=owner)",
+            "@root @editable @expose(20, methods=\"read,search,update\") @signin @owner(staffId)"
+                    + " @access(read=owner, create=none, update=owner)");
+
+    /** What a project writes at the end of its support class to make its callers (Java). */
+    private static final String SIGN_IN_ROW = ""
+            + "\n    @org.springframework.beans.factory.annotation.Autowired\n"
+            + "    private Object staffService;\n\n"
+            + "    protected Map<String, Object> newSignInRow(String role) throws Exception {\n"
+            + "        String login = text(12);\n"
+            + "        return obj(\"login\", login, \"secret\", \"Secret-1\", \"staffId\", 1L);\n"
+            + "    }\n";
+
+    /** The same in Kotlin. */
+    private static final String SIGN_IN_ROW_KT = ""
+            + "\n    protected fun newSignInRow(role: String?): Map<String, Any?> {\n"
+            + "        val login = text(12)\n"
+            + "        return obj(\"login\", login, \"secret\", \"Secret-1\", \"staffId\", 1L)\n"
+            + "    }\n";
+
+    /** The text with the member written before the class's closing brace. */
+    private static String atTheEnd(String classText, String member) {
+        int end = classText.lastIndexOf('}');
+        return classText.substring(0, end) + member.substring(1) + classText.substring(end);
+    }
+
+    /**
+     * A sign-in entity whose API takes no create (sign-up is the project's own): no caller can be made from
+     * the model, and the summary and the support class say what to write - newSignInRow(role), where - to
+     * get the tests of @access.
+     */
+    @Test
+    public void aSignInWithoutCreateSaysWhatToWriteToSignCallersIn() throws Exception {
+        assertFalse(NO_CREATE.equals(ACCESS));
+        File project = project(NO_CREATE, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Staff (signing in): its API takes no create, so no administrator is made to sign in as"
+                        + " - to sign callers in, write protected Map<String, Object> newSignInRow(String role) throws"
+                        + " Exception in ShopContractSupport: a Staff of that role made your way, answered as"
+                        + " obj(\"login\", <its login>, \"secret\", <its plain password>, \"staffId\", <its key>)"),
+                log);
+        // Each entity's own line keeps the reason alone.
+        assertTrue(
+                log.contains("Deal @access: not tested - no caller can be signed in (Staff (signing in): its API takes"
+                        + " no create, so no administrator is made to sign in as); "),
+                log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains(" * To sign callers in - and have the tests of @access written - write the row of a\n"
+                        + " * caller of a role here, your way (as your sign-up makes a Staff); the generated\n"
+                        + " * sign-in then signs it in, and the next run writes the tests. At the end of the\n"
+                        + " * class, where a run's changes to it do not meet yours:\n"
+                        + " *\n"
+                        + " *     protected Map<String, Object> newSignInRow(String role) throws Exception {\n"
+                        + " *         String login = text(12);\n"
+                        + " *         Object id = null; // a Staff of this role, with this login and password, saved"
+                        + " your way\n"
+                        + " *         return obj(\"login\", login, \"secret\", \"Secret-1\", \"staffId\", id);\n"
+                        + " *     }\n"),
+                s);
+        assertFalse(s.contains("signInRow("), s);
+        // The example in the comment is not read as written: a second run is the same.
+        assertFalse(ContractTestSource.writesSignInRow(s, false));
+        assertFalse(
+                read(project, "src/test/java/com/acme/shop/DealContractTest.java")
+                        .contains("signIn("),
+                s);
+        // Kotlin says its own signature.
+        File kt = project(NO_CREATE, "contract");
+        String ktLog = run(kt, "hexagonal", "kotlin");
+        assertTrue(
+                ktLog.contains("write protected fun newSignInRow(role: String?): Map<String, Any?> in"
+                        + " ShopContractSupport: "),
+                ktLog);
+        assertTrue(
+                read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt")
+                        .contains(" *         val id: Any? = TODO() // a Staff of this role, with this login and"
+                                + " password, saved your way\n"),
+                ktLog);
+        // No sign-in at all: nothing to write would help, and nothing is said of it.
+        File none = project(
+                ACCESS.replace("@expose(20) @signin @owner(staffId)", "@expose(20) @owner(staffId)"), "contract");
+        String noneLog = run(none, "hexagonal", "java");
+        assertFalse(noneLog.contains("newSignInRow"), noneLog);
+        String noneSupport = read(none, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertFalse(noneSupport.contains("newSignInRow"), noneSupport);
+        // Nobody signs in there either: Deal's rows have no owner, which is said, and a 5xx on one aborts.
+        assertTrue(noneLog.contains("Deal: its rows are made without their owner (@owner(staffId))"), noneLog);
+        assertTrue(
+                noneSupport.contains("    protected void withoutOwner(MvcResult result, String what) {\n"),
+                noneSupport);
+    }
+
+    /**
+     * newSignInRow written in the project's support class: the tests of @access are written, their callers made
+     * by it - as the application itself - and signed in through the generated sign-in; the merge keeps the
+     * member and takes the new sign-in over.
+     */
+    @Test
+    public void aSupportClassThatMakesItsCallersGetsTheAccessTests() throws Exception {
+        File project = project(NO_CREATE, "contract");
+        run(project, "hexagonal", "java");
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        String yours = atTheEnd(read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"), SIGN_IN_ROW);
+        Files.write(support.toPath(), yours.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("contract     src/test/java/com/acme/shop/ShopContractSupport.java  MERGED"), log);
+        assertFalse(log.contains("newSignInRow(String role) throws Exception in"), log);
+        assertFalse(log.contains("Deal @access: not tested"), log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        // Yours, kept.
+        assertTrue(s.contains(SIGN_IN_ROW.substring(1)), s);
+        // The administrator: the row newSignInRow makes for the administrator's role, signed in.
+        assertEquals(
+                "    protected void signIn() throws Exception {\n"
+                        + "        Map<String, Object> principal = signInRow(\"A\");\n"
+                        + "        MvcResult in = mvc.perform(request(MockMvcRequestBuilders.post(PRINCIPAL + \"/signin\")\n"
+                        + "                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n"
+                        + "                .content(json(obj(\"login\", principal.get(\"login\"), \"secret\","
+                        + " principal.get(\"secret\")))))).andReturn();\n"
+                        + "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the administrator"
+                        + " newSignInRow made: \" + answer(in));\n"
+                        + "        session = (MockHttpSession) in.getRequest().getSession(false);\n"
+                        + "    }\n",
+                s.substring(
+                        s.indexOf("    protected void signIn() throws Exception {\n"),
+                        s.indexOf("    }\n", s.indexOf("    protected void signIn() throws Exception {\n")) + 6));
+        // newSignInRow runs as the application itself, and must answer what the sign-in and the tests read.
+        assertTrue(
+                s.contains("        Map<String, Object> row = CurrentUser.callAsSystem(() -> {\n"
+                        + "            try {\n"
+                        + "                return newSignInRow(role);\n"),
+                s);
+        assertTrue(s.contains("        for (String field : Arrays.asList(\"login\", \"secret\", \"staffId\")) {\n"), s);
+        assertTrue(
+                s.contains("    protected Caller signIn(String role) throws Exception {\n"
+                        + "        Map<String, Object> principal = signInRow(role);\n"),
+                s);
+        assertTrue(
+                s.contains("        return new Caller(principal.get(\"staffId\"), (MockHttpSession)"
+                        + " in.getRequest().getSession(false));\n"),
+                s);
+        // No row of the model's is posted, and the requests are no longer the application's own.
+        assertFalse(s.contains("asSystem(MockMvcRequestBuilders.post(PRINCIPAL)"), s);
+        assertFalse(s.contains("if (session == null) return asSystem(builder);"), s);
+        assertTrue(s.contains(" * generated sign-in of Staff - one newSignInRow(role), yours, makes.\n"), s);
+        // The tests of @access, as for a sign-in the model builds: the owner's row, a visitor, another's row.
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertEquals(
+                "    @Test\n"
+                        + "    @DisplayName(\"read=owner|MANAGER: a USER is let in on a row of theirs\")\n"
+                        + "    void readLetsInAUserOnTheirRow() throws Exception {\n"
+                        + "        Caller caller = signIn(\"U\");\n"
+                        + "        Object id = createdId(DEAL, withValue(newDeal(), \"staffId\", caller.id), \"dealId\");\n"
+                        + "        assertAllowed(sentBy(caller, reading(DEAL, id)));\n"
+                        + "    }\n",
+                method(t, "readLetsInAUserOnTheirRow"));
+        assertTrue(method(t, "readRefusesAUserOnAnothersRow").contains("404, \"not-found\");"), t);
+        assertTrue(method(t, "createRefusesAVisitor").contains("401, \"not-signed-in\");"), t);
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+        // The class written is what the kept support class has every member of.
+        assertEquals(null, ContractTestSource.lacking(s, t, false));
+
+        // Kotlin the same way.
+        File kt = project(NO_CREATE, "contract");
+        run(kt, "hexagonal", "kotlin");
+        File ktSupport = new File(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        Files.write(
+                ktSupport.toPath(),
+                atTheEnd(read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt"), SIGN_IN_ROW_KT)
+                        .getBytes(StandardCharsets.UTF_8));
+        String ktLog = run(kt, "hexagonal", "kotlin");
+        assertFalse(ktLog.contains("Deal @access: not tested"), ktLog);
+        String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(ks.contains("        val principal = signInRow(\"A\")\n"), ks);
+        assertTrue(
+                ks.contains("        val row: Map<String, Any?> = CurrentUser.callAsSystem<Map<String, Any?>> {"
+                        + " newSignInRow(role) }\n"),
+                ks);
+        assertTrue(
+                ks.contains("    protected open fun signIn(role: String?): Caller {\n"
+                        + "        val principal = signInRow(role)\n"),
+                ks);
+        assertTrue(
+                ks.contains("        return Caller(principal[\"staffId\"], signedInAs.request.getSession(false) as"
+                        + " MockHttpSession?)\n"),
+                ks);
+        assertTrue(method(read(kt, "src/test/kotlin/com/acme/shop/DealContractTest.kt"), "readRefusesAVisitor")
+                .contains("401, \"not-signed-in\")"));
+    }
+
+    /**
+     * Written where the model builds a row too, newSignInRow is preferred: the project wrote it because its
+     * sign-up makes a caller otherwise (more fields, its own checks) than the API's create does.
+     */
+    @Test
+    public void aSupportClassThatMakesItsCallersIsPreferredToTheModelsRow() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "java");
+        String before = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                before.contains("        MvcResult made = asSystem(MockMvcRequestBuilders.post(PRINCIPAL)\n"), before);
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        Files.write(support.toPath(), atTheEnd(before, SIGN_IN_ROW).getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("        Map<String, Object> principal = signInRow(\"A\");\n"), s);
+        assertTrue(s.contains("        Map<String, Object> principal = signInRow(role);\n"), s);
+        assertFalse(s.contains("asSystem(MockMvcRequestBuilders.post(PRINCIPAL)"), s);
+        assertFalse(s.contains("principal.put(\"role\", role)"), s);
+        // The tests are the ones of the model's sign-in: who signs them in is the support class's business.
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(method(t, "readLetsInAManager").contains("Caller caller = signIn(\"M\");"), t);
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+    }
+
+    /** The example's login fits the login field: an address for an e-mail, text no longer than the field. */
+    @Test
+    public void theExampleOfNewSignInRowFitsTheLogin() throws Exception {
+        File mail = project(
+                NO_CREATE.replace("login:   string(20)! @login @unique", "login:   string(100)! @login @unique @email"),
+                "contract");
+        run(mail, "hexagonal", "java");
+        assertTrue(read(mail, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains(" *         String login = email(24);\n"));
+        File narrow =
+                project(NO_CREATE.replace("login:   string(20)! @login", "login:   string(8)! @login"), "contract");
+        run(narrow, "hexagonal", "java");
+        assertTrue(read(narrow, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains(" *         String login = text(8);\n"));
+        // A part of the helpers not there once is this class's fault, never a silent miss.
+        assertEquals("a-X-c", ContractTestSource.replacedOnce("a-b-c", "b", "X"));
+        for (String text : new String[] {"a-c", "b-b"}) {
+            try {
+                ContractTestSource.replacedOnce(text, "b", "X");
+                throw new AssertionError("replaced in " + text);
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage().contains("not found once"));
+            }
+        }
+    }
+
+    /** What is read as newSignInRow: the declaration the generated sign-in calls, not another shape or a comment. */
+    @Test
+    public void newSignInRowIsReadAsTheGeneratedSignInCallsIt() {
+        assertTrue(ContractTestSource.writesSignInRow(SIGN_IN_ROW, false));
+        assertTrue(ContractTestSource.writesSignInRow(
+                "private java.util.Map<String,Object> newSignInRow(final String r) {", false));
+        assertTrue(ContractTestSource.writesSignInRow(
+                "Map<String, Object> newSignInRow( String role ) throws java.io.IOException {", false));
+        assertTrue(ContractTestSource.writesSignInRow(
+                "Map<java.lang.String, java.lang.Object> newSignInRow(@Nullable final java.lang.String role) {",
+                false));
+        // Another return type or parameter would not compile against the generated call: not it.
+        assertFalse(ContractTestSource.writesSignInRow("Map<String, String> newSignInRow(String role) {", false));
+        assertFalse(ContractTestSource.writesSignInRow("Map<String, Object> newSignInRow() {", false));
+        assertFalse(ContractTestSource.writesSignInRow("Map<String, Object> newSignInRow(Object role) {", false));
+        assertFalse(ContractTestSource.writesSignInRow("Map<String, Object> newSignInRows(String role) {", false));
+        assertFalse(ContractTestSource.writesSignInRow("Map<String, Object> newSignInRow(String role);", false));
+        // Written in a comment - as the generated comment shows it - is not written.
+        assertFalse(ContractTestSource.writesSignInRow(
+                "/**\n *     protected Map<String, Object> newSignInRow(String role) throws Exception {\n */", false));
+        assertFalse(ContractTestSource.writesSignInRow(
+                "/*\n    protected Map<String, Object> newSignInRow(String role) throws Exception {\n */", false));
+        assertFalse(ContractTestSource.writesSignInRow(
+                "// protected Map<String, Object> newSignInRow(String role) throws Exception {", false));
+        assertFalse(ContractTestSource.writesSignInRow(null, false));
+        // Kotlin: a nullable role, a map of String.
+        assertTrue(ContractTestSource.writesSignInRow(SIGN_IN_ROW_KT, true));
+        assertTrue(ContractTestSource.writesSignInRow("fun newSignInRow(r: String?): Map<String, Any> = x", true));
+        assertTrue(ContractTestSource.writesSignInRow(
+                "private fun newSignInRow(role: String?): MutableMap<String, Any?> {", true));
+        assertFalse(ContractTestSource.writesSignInRow("fun newSignInRow(role: String): Map<String, Any?> {", true));
+        assertFalse(ContractTestSource.writesSignInRow("fun newSignInRow(role: String?): Any {", true));
+        assertFalse(ContractTestSource.writesSignInRow(SIGN_IN_ROW, true));
+        assertFalse(ContractTestSource.writesSignInRow(SIGN_IN_ROW_KT, false));
+    }
+
+    /**
+     * Nobody can be signed in: the rows of an @owner entity are made by the application itself, without their
+     * owner. The summary counts it, and the support class aborts a test - not fails it - where the application
+     * answers 5xx on such a row; any other answer is checked as before.
+     */
+    @Test
+    public void rowsMadeWithoutTheirOwnerAreSaidAndTheir5xxAbortsTheTest() throws Exception {
+        // Memo's owner is required, so its rows are sent with one: they have it.
+        File project = project(
+                NO_CREATE
+                        + String.join(
+                                "\n",
+                                "  Memo:",
+                                "    meta: entity @root @editable @expose(20) @owner(staffId) @access(create=user)",
+                                "    fields:",
+                                "      memoId:  long @id @sequence",
+                                "      staffId: long!",
+                                "      text:    string(40)!",
+                                ""),
+                "contract");
+        String log = run(project, "hexagonal", "java");
+        assertFalse(log.contains("Memo: its rows are made without their owner"), log);
+        assertTrue(read(project, "src/test/java/com/acme/shop/MemoContractTest.java")
+                .contains("\"staffId\""));
+        String why = "Deal: its rows are made without their owner (@owner(staffId)) - nobody can be signed in, so the"
+                + " application itself makes them; a 5xx answer on such a row aborts the test rather than fails it";
+        assertTrue(log.contains(why), log);
+        // The sign-in entity owns its own rows (its key): not said.
+        assertFalse(log.contains("Staff: its rows are made without their owner"), log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains(" * Rows made without their owner (withoutOwner), as the build's summary says:\n *   - "
+                        + why + "\n"),
+                s);
+        assertTrue(
+                s.contains("    protected void withoutOwner(MvcResult result, String what) {\n"
+                        + "        if (result.getResponse().getStatus() < 500) return;\n"
+                        + "        String owner = rowsWithoutOwner(result.getRequest().getRequestURI());\n"
+                        + "        if (owner != null) skip(what + \" failed on a row made without its owner (\" + owner + \" -"
+                        + " nobody is signed in): \" + answer(result));\n"
+                        + "    }\n"),
+                s);
+        assertTrue(
+                s.contains("    private String rowsWithoutOwner(String path) {\n"
+                        + "        if (path.equals(\"/api/shop/deal\") || path.startsWith(\"/api/shop/deal/\")) return \"Deal"
+                        + " @owner(staffId)\";\n"
+                        + "        return null;\n"
+                        + "    }\n"),
+                s);
+        // MockMvc lets out what the application throws (a 5xx on a server): on such a row, that aborts too.
+        assertTrue(
+                s.contains("        if (failure[0] != null) {\n"
+                        + "            thrownWithoutOwner(builder, failure[0]);\n"
+                        + "            throw failure[0];\n"
+                        + "        }\n"),
+                s);
+        assertTrue(s.contains("        if (!(failure instanceof jakarta.servlet.ServletException)) return;\n"), s);
+        // A step, the move and a row the test needs: their 5xx on such a row aborts; nothing else changes.
+        assertTrue(
+                s.contains("        if (ok(result)) return;\n        withoutOwner(result, what);\n"
+                        + "        if (refused(result) && !declared(code(result))) {\n"),
+                s);
+        assertTrue(
+                s.contains("    protected void assertRefused(MvcResult result, int status, String code) throws"
+                        + " Exception {\n        withoutOwner(result, \"the request refused\");\n"
+                        + "        Assertions.assertEquals(status, result.getResponse().getStatus(),"),
+                s);
+        // Kotlin the same way.
+        File kt = project(NO_CREATE, "contract");
+        run(kt, "hexagonal", "kotlin");
+        String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(
+                ks.contains(
+                        "        if (path == \"/api/shop/deal\" || path.startsWith(\"/api/shop/deal/\")) return \"Deal"
+                                + " @owner(staffId)\"\n"),
+                ks);
+        assertTrue(
+                ks.contains("        } catch (failure: jakarta.servlet.ServletException) {\n"
+                        + "            thrownWithoutOwner(builder, failure)\n"),
+                ks);
+        assertTrue(ks.contains("        if (ok(result)) return\n        withoutOwner(result, what)\n"), ks);
+        assertTrue(ks.contains("        withoutOwner(result, \"the request refused\")\n"), ks);
+        // Signed in - by the model's row or the project's - the rows have their owner: none of it.
+        File signedIn = project(ACCESS, "contract");
+        String signedInLog = run(signedIn, "hexagonal", "java");
+        assertFalse(signedInLog.contains("made without their owner"), signedInLog);
+        assertFalse(read(signedIn, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("withoutOwner"));
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        Files.write(support.toPath(), atTheEnd(s, SIGN_IN_ROW).getBytes(StandardCharsets.UTF_8));
+        String yoursLog = run(project, "hexagonal", "java");
+        assertFalse(yoursLog.contains("made without their owner"), yoursLog);
+        assertFalse(read(project, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("withoutOwner("));
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {

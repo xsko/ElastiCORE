@@ -95,6 +95,17 @@ entities:
       vipProfile: VipProfile @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
       orders: List<Order> @relation(mappedBy="customer") -- List<Order> entity relationship
 
+  Member:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Member)
+    table: frm_member
+    java: io.elasticore.sample.ddd.forum.domain.model.Member
+    fields:
+      memberId: Long @Column(name = "member_id") @Id @GeneratedValue
+      email: string(100) @Column(name = "email", length = 100) @Unique
+      password: string(255) @Column(name = "password", length = 255)
+      nickname: string(30) @Column(name = "nickname", length = 30)
+      role: string(1) @Column(name = "role", length = 1) -- 후보값( U=User, M=Moderator, A=Admin)
+
   Order:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Order)
     table: shop_order
@@ -277,6 +288,25 @@ entities:
       supplierId: string(10) @Column(name = "supplier_id", length = 10) @Id
       name: string(50) @Column(name = "name", length = 50)
 
+  Topic:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Topic)
+    table: frm_topic
+    java: io.elasticore.sample.ddd.forum.domain.model.Topic
+    fields:
+      topicId: Long @Column(name = "topic_id") @Id @GeneratedValue
+      member: Member @foreignKey(member_member_id) -- Member entity relationship
+      title: string(100) @Column(name = "title", length = 100)
+
+  Verification:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Verification)
+    table: frm_verification
+    java: io.elasticore.sample.ddd.forum.domain.model.Verification
+    fields:
+      verificationId: Long @Column(name = "verification_id") @Id @GeneratedValue
+      member: Member @foreignKey(member_member_id) -- Member entity relationship
+      code: string(6) @Column(name = "code", length = 6)
+      status: string(3) @Column(name = "status", length = 3) -- 후보값( PND=Pending, APR=Approved, REJ=Rejected)
+
   VipProfile:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.VipProfile)
     table: shop_vip_profile
@@ -319,6 +349,16 @@ enumeration:
       DUE: DUE,Due
       PAID: PAD,Paid
       REFUNDED: REF,Refunded
+
+  MemberRole:
+    meta: enum
+    fields:
+      code: string(1) @Column(name = "code", length = 1)
+      label: string(20) @Column(name = "label", length = 20)
+    enum:
+      USER: U,User
+      MODERATOR: M,Moderator
+      ADMIN: A,Admin
 
   OrderStatus:
     meta: enum
@@ -373,4 +413,14 @@ enumeration:
     enum:
       ACTIVE: ACT,Active
       MOVED: MOV,Moved
+
+  VerificationStatus:
+    meta: enum
+    fields:
+      code: string(3) @Column(name = "code", length = 3)
+      label: string(20) @Column(name = "label", length = 20)
+    enum:
+      PENDING: PND,Pending
+      APPROVED: APR,Approved
+      REJECTED: REJ,Rejected
 
