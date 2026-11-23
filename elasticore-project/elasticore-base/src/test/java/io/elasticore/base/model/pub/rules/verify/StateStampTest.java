@@ -355,6 +355,9 @@ public class StateStampTest {
         // The value the build script takes - 'ddd', not the enum's DOMAIN_MODEL.
         assertTrue(
                 layeredLog.contains("Declare architecture = 'ddd' or 'hexagonal', or add the rule set."), layeredLog);
+        // The bundle is the selection (no list in env.yml): it is named, with the set it lacks.
+        assertTrue(layeredLog.contains("The jpa-springboot-v3 bundle does not carry ddd-state."), layeredLog);
+        assertFalse(layeredLog.contains("replaces the architecture's bundle"), layeredLog);
         assertFalse(layeredLog.contains("domain-model"), layeredLog);
     }
 
