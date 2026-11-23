@@ -124,6 +124,30 @@ CREATE TABLE cat_supplier (
     PRIMARY KEY (supplier_id)
 );
 
+CREATE TABLE frm_member (
+    member_id BIGINT IDENTITY(1,1) NOT NULL,
+    email NVARCHAR(100) NOT NULL,
+    password NVARCHAR(255) NOT NULL,
+    nickname NVARCHAR(30) NOT NULL,
+    role NVARCHAR(1),
+    PRIMARY KEY (member_id)
+);
+
+CREATE TABLE frm_topic (
+    topic_id BIGINT IDENTITY(1,1) NOT NULL,
+    member_member_id BIGINT,
+    title NVARCHAR(100) NOT NULL,
+    PRIMARY KEY (topic_id)
+);
+
+CREATE TABLE frm_verification (
+    verification_id BIGINT IDENTITY(1,1) NOT NULL,
+    member_member_id BIGINT,
+    code NVARCHAR(6) NOT NULL,
+    status NVARCHAR(3),
+    PRIMARY KEY (verification_id)
+);
+
 CREATE TABLE shop_category (
     created_by NVARCHAR(50),
     create_date DATETIME2(6),
@@ -319,6 +343,8 @@ ALTER TABLE brd_post_like ADD CONSTRAINT fk_brd_post_like_post FOREIGN KEY (post
 ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_post FOREIGN KEY (post_post_id) REFERENCES brd_post (post_id);
 ALTER TABLE brd_report ADD CONSTRAINT fk_brd_report_comment FOREIGN KEY (comment_comment_id) REFERENCES brd_comment (comment_id);
 ALTER TABLE cat_book ADD CONSTRAINT fk_cat_book_author FOREIGN KEY (author_author_id) REFERENCES cat_author (author_id);
+ALTER TABLE frm_topic ADD CONSTRAINT fk_frm_topic_member FOREIGN KEY (member_member_id) REFERENCES frm_member (member_id);
+ALTER TABLE frm_verification ADD CONSTRAINT fk_frm_verification_member FOREIGN KEY (member_member_id) REFERENCES frm_member (member_id);
 ALTER TABLE shop_category ADD CONSTRAINT fk_shop_category_pare_6fb00ae1 FOREIGN KEY (parent_category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_products ADD CONSTRAINT fk_shop_products_category FOREIGN KEY (category_cat_id) REFERENCES shop_category (cat_id);
 ALTER TABLE shop_products_aud ADD CONSTRAINT fk_shop_products_aud_rev FOREIGN KEY (rev) REFERENCES revinfo (rev);
@@ -330,6 +356,7 @@ ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_order FOREIGN KEY 
 ALTER TABLE shop_order_item ADD CONSTRAINT fk_shop_order_item_product FOREIGN KEY (product_product_id) REFERENCES shop_products (product_id);
 
 CREATE INDEX ix_brd_subscriber_phone_bidx ON brd_subscriber (phone_bidx);
+CREATE UNIQUE INDEX uk_frm_member_email ON frm_member (email);
 CREATE INDEX idx_shop_cat_name ON shop_category (name);
 CREATE UNIQUE INDEX idx_shop_prod_sku ON shop_products (sku);
 CREATE UNIQUE INDEX idx_shop_cust_email ON shop_customer (email);

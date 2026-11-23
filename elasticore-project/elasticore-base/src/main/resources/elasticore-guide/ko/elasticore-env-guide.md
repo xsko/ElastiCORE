@@ -784,6 +784,21 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   정하는 곳에서는 그 호출자가 만든다; `@signin` 엔티티 자신의 행은 그 호출자의 것이다. 프로젝트의 방식으로 로그인하려면
   `signIn(role)` 을 고친다. 병합이 이 멤버 없이 남긴 프로젝트의 support 클래스에는 `@access` 의 테스트를 쓰지 않는다(빌드는 깨지지
   않는다): 요약이 빠진 멤버를 말하고, 생성된 버전은 `build/elasticore/contract/` 에 있다.
+- 프로젝트의 가입이 만드는 호출자: support 클래스에 `newSignInRow(role)` 을 쓴다 - Java `protected Map<String, Object>
+  newSignInRow(String role) throws Exception`, Kotlin `protected fun newSignInRow(role: String?): Map<String, Any?>`, 클래스의 맨
+  끝에. 그 역할의 호출자 행을 프로젝트의 방식으로(가입이 만드는 대로, 프로젝트의 서비스로) 만들고 그 로그인, 평문 비밀번호, 키를
+  돌려준다: `obj("email", email, "password", "Secret-1", "memberId", id)`. `role` 은 요청이 보내는 역할 필드의 값이고(`null`: 역할
+  없는 호출자), 애플리케이션 자신으로서 실행된다. 실행이 디스크의 프로젝트 support 클래스에서 이것을 찾으면 `signIn()` 과
+  `signIn(role)` 은 모델로 만든 행 대신 - 모델이 만들 수 있는 곳에서도 - 이것이 만든 행을 생성된 로그인으로 로그인시키고,
+  `@access` 의 테스트를 쓴다 - API 가 create 를 받지 않는 곳(`@expose(20, methods="read,search,update")`)에서도.
+  생성되지 않고 인터페이스도 아니다: 없으면 빌드는 전과 같고, 모델로 principal 을 만들 수 없는 곳에서는 요약과 support 클래스의
+  주석이 무엇을 쓸지 말한다(`Member (signing in): its API takes no create, ... - to sign callers in, write protected Map<String,
+  Object> newSignInRow(String role) ...`). 각 항목이 기대하는 답은 여전히 테스트가 정한다. 다른 시그니처는 이것으로 읽지 않는다.
+  `elasticore-template-ddd` 의 `forum` 도메인이 이렇게 한다.
+- 아무도 로그인하지 않을 때: `@owner` 엔티티의 행은 애플리케이션 자신이 owner 없이 만든다(서버는 호출자로 `@owner` 를 정한다).
+  요약은 그런 엔티티를 하나씩 세고(`Verification: its rows are made without their owner (@owner(memberId)) - ...`), 그 행에 대한
+  5xx 응답은 - 테스트가 필요로 하는 행, 단계, 이동 - 테스트를 이유와 함께 중단한다(`withoutOwner`): 애플리케이션 자신의 코드가
+  owner 를 필요로 할 수 있다. 그 밖의 응답은 늘 하던 대로 확인한다(이동이 허용되는 곳의 409 는 실패).
 - `@access` 에서 테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: 로그인시킬 principal 이 없음, 역할 필드가
   담을 수 없는 역할, 역할이 둘인 항(`REP&MANAGER` - 세션은 역할 하나를 담는다), `@owner` 가 필드를 가리키지 않는데 `owner` 를 쓴
   곳, 읽을 수 없는 항목(`read=owners`), 어떤 명령 순서로도 새 행이 닿지 못하는 delete 나 명령, 만들 수 없는 호출자의 행, 키를

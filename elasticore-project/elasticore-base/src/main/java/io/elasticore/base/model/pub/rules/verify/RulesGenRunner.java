@@ -2955,6 +2955,15 @@ public final class RulesGenRunner {
         s.mybatis = persistence() == RulesConfig.Persistence.MYBATIS;
         s.readRuleSets(this::selects);
         s.application = applicationFor(pkg);
+        // The project's support class, as it is on disk: where it makes the callers itself (newSignInRow),
+        // they are signed in through the generated sign-in. The generated class never declares that member,
+        // so the merge keeps it or the file as it is - what is read here is what the merge leaves.
+        String supportName = ContractTestSource.supportClassName(domain.className(), specs);
+        ArtifactTarget supportFile = kotlin
+                ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, supportName, true)
+                : ArtifactTarget.of("java", "src/test/java", "java", pkg, supportName, true);
+        s.signInRowWritten = ContractTestSource.writesSignInRow(
+                readText(new File(rootFor(supportFile) + "/" + supportFile.relativePath())), kotlin);
         String support = null;
         ContractTestSource.Source supportSource = null;
         ArtifactTarget supportOut = null;

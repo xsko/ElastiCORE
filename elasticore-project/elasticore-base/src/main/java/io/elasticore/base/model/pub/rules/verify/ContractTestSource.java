@@ -141,6 +141,11 @@ final class ContractTestSource {
         boolean mybatis;
         /** The application the tests start, when Spring would not find it from their package; null when it would. */
         String application;
+        /**
+         * The domain's support class on disk - the project's - declares newSignInRow(role): the callers are
+         * made by it and signed in through the generated sign-in, whatever the model could build.
+         */
+        boolean signInRowWritten;
 
         /**
          * Reads which of the domain-model rule sets the run selected. The rule
@@ -163,6 +168,12 @@ final class ContractTestSource {
 
     /** Why the sign-in's principal of the last domain asked was not built, as the summary says it; null when it was. */
     private String principalProblem;
+
+    /**
+     * Where the principal could not be built from the model but the run has a sign-in to sign one in
+     * through: the entity, so the summary and the support class say what to write (newSignInRow).
+     */
+    private EntitySpec signInRowWanted;
 
     final List<String> skipped = new ArrayList<String>();
 
@@ -205,8 +216,7 @@ final class ContractTestSource {
             specs.put(key(model, e.getName()), e);
             modelOf.put(e, model);
         }
-        String domainClass = classNameOf(domainName, own);
-        String support = domainClass + "ContractSupport";
+        String support = supportClassName(domainName, own);
         Lang lang = new Lang(s.kotlin);
 
         List<EntityTests> planned = new ArrayList<EntityTests>();
@@ -221,8 +231,9 @@ final class ContractTestSource {
             asks |= (t.guarded && !t.tests.isEmpty()) || t.declaresAccess();
         }
         // Whom the tests sign in: asked where an entity with tests asks who is calling, or declares @access.
-        Principal principal = asks ? principal(lang) : null;
+        Principal principal = asks ? principal(lang, s, support) : null;
         String noPrincipal = principal == null ? principalProblem : null;
+        EntitySpec wanted = principal == null && asks ? signInRowWanted : null;
         accessSkipped.clear();
         boolean callers = false;
         for (EntityTests t : planned) {
@@ -235,6 +246,8 @@ final class ContractTestSource {
         boolean system = false;
         Privacy privacy = new Privacy(privacySkipped);
         Export export = new Export(exportSkipped);
+        // Nobody signed in: the rows of an @owner entity are made by the application itself, without their owner.
+        Map<String, String[]> unowned = new LinkedHashMap<String, String[]>();
         for (EntityTests t : planned) {
             if (t.tests.isEmpty()) continue;
             guarded |= t.guarded;
@@ -245,6 +258,7 @@ final class ContractTestSource {
             privacy.stored |= t.storedTests;
             privacy.decrypted |= t.decryptedTests;
             export.tests |= t.exportTests > 0;
+            if (principal == null) withoutOwner(t, unowned);
             Source src = new Source(t.e.getName() + "ContractTest", t.render(pkg, support, Groups.ALL), t.tests.size());
             fallbacks(t, pkg, support, src);
             out.add(src);
@@ -252,6 +266,8 @@ final class ContractTestSource {
         if (out.isEmpty()) return out;
         Access a = new Access(callers, access, accessSkipped);
         a.system = system;
+        a.signInRow = wanted;
+        a.unowned.putAll(unowned);
         out.add(
                 0,
                 new Source(
@@ -321,6 +337,35 @@ final class ContractTestSource {
         }
     }
 
+    /**
+     * The rows the test class makes that hold no owner: nobody is signed in, so the application itself makes
+     * them (CurrentUser.runAsSystem), and the server sets an @owner it does not know. Each such entity, by
+     * its API's path, with what the summary says of it - a 5xx answer on one of its rows aborts the test,
+     * for the application's own code may need the owner; any other answer is checked as ever. Each holds
+     * the summary's reason and how the abort names it ("Verification @owner(member)").
+     */
+    private void withoutOwner(EntityTests t, Map<String, String[]> unowned) {
+        for (Builder b : t.builders.values()) {
+            String declared = b.e.metaValue("owner");
+            if (declared == null || declared.trim().isEmpty()) continue;
+            FieldSpec owner = ServiceAccessRules.ownerField(b.e);
+            if (owner != null) {
+                // The row's own key (a principal's), or an owner the row is sent with: it has one.
+                if (b.e.pkFields().size() == 1 && b.e.pkFields().get(0).name().equals(owner.name())) continue;
+                boolean sent = false;
+                for (String[] kv : b.fields) sent |= kv[0].equals(json(owner));
+                if (sent) continue;
+            }
+            String path = path(b.e);
+            if (unowned.containsKey(path)) continue;
+            String why = b.e.getName() + ": its rows are made without their owner (@owner(" + declared.trim()
+                    + ")) - nobody can be signed in, so the application itself makes them; a 5xx answer on such a"
+                    + " row aborts the test rather than fails it";
+            unowned.put(path, new String[] {why, b.e.getName() + " @owner(" + declared.trim() + ")"});
+            skip(why);
+        }
+    }
+
     /** What the support class holds of @Mask and @encrypt: the members their tests call, and what is not tested and why. */
     static final class Privacy {
         /** Some test of @Mask or @encrypt is written: read, search, put and the checks of a masked answer. */
@@ -356,6 +401,13 @@ final class ContractTestSource {
         final List<String> skipped;
         /** Some test makes its rows as the application itself (asTheSystem): no administrator signs in. */
         boolean system;
+        /** The sign-in entity whose callers newSignInRow(role) would make, where nobody can be signed in; else null. */
+        EntitySpec signInRow;
+        /**
+         * The entities whose rows are made without their owner - nobody is signed in - by their API's path,
+         * and what the summary says of each: a 5xx answer on such a row aborts the test.
+         */
+        final Map<String, String[]> unowned = new LinkedHashMap<String, String[]>();
 
         Access(boolean callers, boolean declared, List<String> skipped) {
             this.callers = callers;
@@ -462,6 +514,35 @@ final class ContractTestSource {
         return null;
     }
 
+    /** The member a project writes in its support class to make the row of a caller of a role. */
+    static final String SIGN_IN_ROW = "newSignInRow";
+
+    /** How it is declared, as the summary and the support class's comment tell a developer to write it. */
+    static String signInRowSignature(boolean kotlin) {
+        return kotlin
+                ? "protected fun " + SIGN_IN_ROW + "(role: String?): Map<String, Any?>"
+                : "protected Map<String, Object> " + SIGN_IN_ROW + "(String role) throws Exception";
+    }
+
+    /**
+     * Whether the support class - the project's, as it is on disk - declares newSignInRow(role) as the
+     * generated sign-in calls it: Java Map&lt;String, Object&gt; newSignInRow(String role), Kotlin
+     * fun newSignInRow(role: String?): Map&lt;String, Any?&gt; (or Map&lt;String, Any&gt;). Another
+     * shape is not read as it - the generated class would not compile against it - and the summary says
+     * what to write. Comments are not read.
+     */
+    static boolean writesSignInRow(String supportText, boolean kotlin) {
+        if (supportText == null) return false;
+        String support = supportText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        String declared = kotlin
+                ? "\\bfun\\s+" + SIGN_IN_ROW + "\\s*\\(\\s*\\w+\\s*:\\s*String\\?\\s*\\)\\s*:\\s*"
+                        + "(?:kotlin\\.collections\\.)?(?:Mutable)?Map\\s*<\\s*String\\s*,\\s*Any\\??\\s*>"
+                : "(?:java\\.util\\.)?Map\\s*<\\s*(?:java\\.lang\\.)?String\\s*,\\s*(?:java\\.lang\\.)?Object\\s*>\\s+"
+                        + SIGN_IN_ROW
+                        + "\\s*\\(\\s*(?:(?:final|@[\\w.]+)\\s+)*(?:java\\.lang\\.)?String\\s+\\w+\\s*\\)\\s*(?:throws[^{;]*)?\\{";
+        return java.util.regex.Pattern.compile(declared).matcher(support).find();
+    }
+
     /** Tests not written after all - their support class lacks what they call: no longer counted as written, and why. */
     void notWritten(int tests, String why) {
         written -= tests;
@@ -490,6 +571,11 @@ final class ContractTestSource {
     private void exportSkip(String why) {
         skip(why);
         if (!exportSkipped.contains(why)) exportSkipped.add(why);
+    }
+
+    /** The domain's support class: ShopContractSupport. */
+    static String supportClassName(String domainName, List<EntitySpec> own) {
+        return classNameOf(domainName, own) + "ContractSupport";
     }
 
     private static String classNameOf(String domainName, List<EntitySpec> own) {
@@ -3460,6 +3546,11 @@ final class ContractTestSource {
         String admin;
         /** The entity a caller signs in as, and the model it is of: a row of it is the caller's own. */
         EntitySpec spec;
+        /**
+         * Made by the project's newSignInRow(role), not from the model: no body, the row's login,
+         * password and key read from the map it answers.
+         */
+        boolean external;
     }
 
     // ---- the callers of the @access tests ------------------------------------------------
@@ -3708,50 +3799,61 @@ final class ContractTestSource {
      * null when there is none, or when no principal of it can be built - then
      * principalProblem says why, as the summary does.
      */
-    private Principal principal(Lang lang) {
+    private Principal principal(Lang lang, Settings s, String support) {
         principalProblem = null;
-        Principal found = signInPrincipal(lang);
-        if (found != null) principalProblem = null;
-        else if (principalProblem != null) skip(principalProblem);
+        signInRowWanted = null;
+        Principal found = signInPrincipal(lang, s.signInRowWritten);
+        if (found != null) {
+            principalProblem = null;
+            signInRowWanted = null;
+        } else if (principalProblem != null) {
+            // Said once, with what to write where the run has a sign-in to sign a caller in through.
+            skip(principalProblem + (signInRowWanted == null ? "" : signInRowHint(signInRowWanted, lang, support)));
+        }
         return found;
     }
 
-    private Principal signInPrincipal(Lang lang) {
+    /**
+     * What the summary adds to why no principal is built, where a generated sign-in could sign one in:
+     * " - to sign callers in, write protected Map<String, Object> newSignInRow(String role) in
+     * ShopContractSupport: a Staff of that role made your way, answered as obj("login", ...)".
+     */
+    static String signInRowHint(EntitySpec p, Lang lang, String support) {
+        String login = ServiceAccessRules.loginField(p);
+        String password = null;
+        for (FieldSpec f : p.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+        }
+        return " - to sign callers in, write " + signInRowSignature(lang.kotlin) + " in " + support + ": "
+                + article(p.getName()) + p.getName() + " of that role made your way, answered as obj(\"" + login
+                + "\", <its login>, \"" + password + "\", <its plain password>, \""
+                + json(p.pkFields().get(0))
+                + "\", <its key>)";
+    }
+
+    private Principal signInPrincipal(Lang lang, boolean signInRowWritten) {
         for (ECoreModel m : models) {
             if (m.getEntityModels() == null) continue;
             ModelComponentItems<Entity> items = m.getEntityModels().getItems();
             for (int i = 0; i < items.size(); i++) {
                 EntitySpec p = entityIn(m, items.get(i).getIdentity().getName());
                 if (p == null || !ServiceAccessRules.signsIn(p)) continue;
+                boolean signsInWith = signsInWith(p);
+                // The project makes the callers its way (newSignInRow): preferred to the model's row, which its
+                // sign-up may refuse or make otherwise - and the only way where the API takes no create.
+                if (signInRowWritten && signsInWith) {
+                    Principal out = known(p);
+                    out.external = true;
+                    return out;
+                } // From here no principal may be built from the model: then newSignInRow would make one.
+                if (signsInWith) signInRowWanted = p;
                 if (!creates(p)) {
                     if (principalProblem == null)
                         principalProblem = p.getName() + " (signing in): its API takes no create, so no administrator"
                                 + " is made to sign in as";
                     continue;
                 }
-                Principal out = new Principal();
-                out.entity = p.getName();
-                out.path = path(p);
-                out.constant = "PRINCIPAL";
-                out.login = ServiceAccessRules.loginField(p);
-                for (FieldSpec f : p.fields()) {
-                    if (f.hasDsl("password")) out.password = f.name();
-                }
-                FieldSpec role = ServiceAccessRules.roleField(p);
-                String admin = p.config("adminRole");
-                if (admin == null || admin.trim().isEmpty()) admin = "ADMIN";
-                out.admin = admin.trim();
-                out.spec = p;
-                out.key = json(p.pkFields().get(0));
-                if (role != null) {
-                    out.role = json(role);
-                    String type = simple(role.typeName());
-                    EntitySpec pdto = dto(p);
-                    EntitySpec owner = pdto != null && pdto.isKnownEnum(type) ? pdto : p;
-                    out.roleValue = owner.isKnownEnum(type) ? enumValue(owner, type, admin.trim()) : admin.trim();
-                    out.roleField = role;
-                    out.roleOwner = owner;
-                }
+                Principal out = known(p);
                 EntityTests plan = new EntityTests(p, lang, new Settings());
                 plan.dto = dto(p);
                 if (plan.dto == null) {
@@ -3788,6 +3890,43 @@ final class ContractTestSource {
             }
         }
         return null;
+    }
+
+    /** Whether the generated sign-in of the entity takes a login and a password a caller's row can be read for. */
+    private static boolean signsInWith(EntitySpec p) {
+        if (p.pkFields().size() != 1 || ServiceAccessRules.loginField(p) == null) return false;
+        for (FieldSpec f : p.fields()) {
+            if (f.hasDsl("password")) return true;
+        }
+        return false;
+    }
+
+    /** What a principal of the sign-in entity is known by from the model: its path, login, password, key, role. */
+    private Principal known(EntitySpec p) {
+        Principal out = new Principal();
+        out.entity = p.getName();
+        out.path = path(p);
+        out.constant = "PRINCIPAL";
+        out.login = ServiceAccessRules.loginField(p);
+        for (FieldSpec f : p.fields()) {
+            if (f.hasDsl("password")) out.password = f.name();
+        }
+        FieldSpec role = ServiceAccessRules.roleField(p);
+        String admin = p.config("adminRole");
+        if (admin == null || admin.trim().isEmpty()) admin = "ADMIN";
+        out.admin = admin.trim();
+        out.spec = p;
+        out.key = json(p.pkFields().get(0));
+        if (role != null) {
+            out.role = json(role);
+            String type = simple(role.typeName());
+            EntitySpec pdto = dto(p);
+            EntitySpec owner = pdto != null && pdto.isKnownEnum(type) ? pdto : p;
+            out.roleValue = owner.isKnownEnum(type) ? enumValue(owner, type, admin.trim()) : admin.trim();
+            out.roleField = role;
+            out.roleOwner = owner;
+        }
+        return out;
     }
 
     // ---- the support class -------------------------------------------------------------
@@ -3846,6 +3985,78 @@ final class ContractTestSource {
     }
 
     /**
+     * Where nobody can be signed in, but a generated sign-in could sign a caller in: what to write in the
+     * support class - newSignInRow(role), its signature and a short example - to have the callers made
+     * the project's way and the tests of @access written.
+     */
+    static void signInRowDoc(StringBuilder d, EntitySpec p, boolean kotlin) {
+        String login = ServiceAccessRules.loginField(p);
+        String password = null;
+        FieldSpec loginField = null;
+        for (FieldSpec f : p.fields()) {
+            if (f.hasDsl("password")) password = f.name();
+            if (f.name().equals(login)) loginField = f;
+        }
+        int max = loginField == null ? -1 : loginField.validationMaxLength();
+        boolean email = loginField != null
+                && (loginField.hasDsl("email") || "email".equalsIgnoreCase(simple(loginField.typeName())));
+        String value = email
+                ? "email(" + (max > 0 ? Math.min(24, max) : 24) + ")"
+                : "text(" + (max > 0 ? Math.min(12, max) : 12) + ")";
+        String key = json(p.pkFields().get(0));
+        String entity = p.getName();
+        d.append(" *\n")
+                .append(" * To sign callers in - and have the tests of @access written - write the row of a\n")
+                .append(" * caller of a role here, your way (as your sign-up makes ")
+                .append(article(entity).trim())
+                .append(' ')
+                .append(entity)
+                .append("); the generated\n")
+                .append(" * sign-in then signs it in, and the next run writes the tests. At the end of the\n")
+                .append(" * class, where a run's changes to it do not meet yours:\n")
+                .append(" *\n")
+                .append(" *     ")
+                .append(signInRowSignature(kotlin))
+                .append(" {\n");
+        if (kotlin) {
+            d.append(" *         val login = ")
+                    .append(value)
+                    .append('\n')
+                    .append(" *         val id: Any? = TODO() // ")
+                    .append(article(entity))
+                    .append(entity)
+                    .append(" of this role, with this login and password, saved your way\n")
+                    .append(" *         return obj(\"")
+                    .append(login)
+                    .append("\", login, \"")
+                    .append(password)
+                    .append("\", \"Secret-1\", \"")
+                    .append(key)
+                    .append("\", id)\n");
+        } else {
+            d.append(" *         String login = ")
+                    .append(value)
+                    .append(";\n")
+                    .append(" *         Object id = null; // ")
+                    .append(article(entity))
+                    .append(entity)
+                    .append(" of this role, with this login and password, saved your way\n")
+                    .append(" *         return obj(\"")
+                    .append(login)
+                    .append("\", login, \"")
+                    .append(password)
+                    .append("\", \"Secret-1\", \"")
+                    .append(key)
+                    .append("\", id);\n");
+        }
+        d.append(" *     }\n")
+                .append(" *\n")
+                .append(" * role is the role field's value as a request sends it (null: a caller of no role);\n")
+                .append(" * it runs as the application itself (CurrentUser.runAsSystem). Answer the login,\n")
+                .append(" * the plain password and the key: signIn() and signIn(role) sign in with them.\n");
+    }
+
+    /**
      * The support class's comment. Without a sign-in it says why: the run has
      * no @signin, or its principal cannot be built - with the summary's reason.
      * With tests of @access, how they sign in, and what of it is not tested.
@@ -3880,6 +4091,9 @@ final class ContractTestSource {
         else if (system)
             d.append(": the run has no generated\n * sign-in (@signin), so the requests run as the application itself\n"
                     + " * (CurrentUser.runAsSystem); sign in your way there and set the session.\n");
+        else if (principal.external)
+            d.append(": as an administrator, through the\n * generated sign-in of " + principal.entity
+                    + " - one newSignInRow(role), yours, makes.\n");
         else
             d.append(": as an administrator, through the\n * generated sign-in of " + principal.entity
                     + ", made for the test as the application itself.\n");
@@ -3889,10 +4103,16 @@ final class ContractTestSource {
         } else if (access.declared && principal == null) {
             d.append(" * No test of @access is written: each needs callers signed in through it.\n");
         }
+        if (access.signInRow != null) signInRowDoc(d, access.signInRow, s.kotlin);
         if (!access.skipped.isEmpty()) {
             d.append(" * Not tested of @access, as the build's summary says:\n");
             for (String reason : access.skipped)
                 d.append(" *   - ").append(comment(reason)).append('\n');
+        }
+        if (!access.unowned.isEmpty()) {
+            d.append(" * Rows made without their owner (withoutOwner), as the build's summary says:\n");
+            for (String[] reason : access.unowned.values())
+                d.append(" *   - ").append(comment(reason[0])).append('\n');
         }
         if (privacy.tests) {
             d.append(" * The tests of @Mask and @encrypt read a row back (read), search it (search) and\n")
@@ -4119,7 +4339,9 @@ final class ContractTestSource {
                         "    protected MockHttpServletRequestBuilder request(MockHttpServletRequestBuilder builder) {\n")
                 .append("        return builder;\n")
                 .append("    }\n\n");
-        if (principal != null) {
+        if (principal != null && principal.external) {
+            j.append(javaSignInRow(principal, lang));
+        } else if (principal != null) {
             j.append("    /**\n")
                     .append("     * Signs in before a test's first request: as an administrator, through the\n")
                     .append("     * generated sign-in - ")
@@ -4199,15 +4421,198 @@ final class ContractTestSource {
                     .append("                return null;\n")
                     .append("            }\n")
                     .append("        });\n")
-                    .append("        if (failure[0] != null) throw failure[0];\n")
+                    .append(
+                            access.unowned.isEmpty()
+                                    ? "        if (failure[0] != null) throw failure[0];\n"
+                                    : "        if (failure[0] != null) {\n"
+                                            + "            thrownWithoutOwner(builder, failure[0]);\n"
+                                            + "            throw failure[0];\n"
+                                            + "        }\n")
                     .append("        return result;\n")
                     .append("    }\n\n");
         }
         if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
         if (privacy.tests) j.append(javaPrivacy(s, privacy));
         if (export.tests) j.append(JAVA_EXPORT);
-        j.append(JAVA_HELPERS);
+        j.append(access.unowned.isEmpty() ? JAVA_HELPERS : javaWithoutOwner(access.unowned, lang));
         j.append("}\n");
+        return j.toString();
+    }
+
+    /** The text with that part replaced once; a part the text does not hold is a fault of this class. */
+    static String replacedOnce(String text, String part, String with) {
+        int at = text.indexOf(part);
+        if (at < 0 || text.indexOf(part, at + 1) >= 0)
+            throw new IllegalStateException("not found once in the helpers: " + part);
+        return text.substring(0, at) + with + text.substring(at + part.length());
+    }
+
+    /** What the check of a row made without its owner says, and the paths it is asked of. */
+    private static final String WITHOUT_OWNER_DOC = ""
+            + "    /**\n"
+            + "     * A 5xx answer on a row made without its owner aborts the test with the reason: nobody is\n"
+            + "     * signed in, so the application itself makes the rows, and the server sets no @owner - the\n"
+            + "     * application's own code may need it. Any other answer is checked as ever: a refusal where\n"
+            + "     * the move is allowed, or a 2xx where it is refused, still fails.\n"
+            + "     */\n";
+
+    /** Why the rows of a request's path are made without their owner (Java, Kotlin): the entity and its @owner, or null. */
+    private static String rowsWithoutOwner(Map<String, String[]> unowned, Lang lang) {
+        StringBuilder j = new StringBuilder();
+        j.append(
+                        "    /** The entity and @owner of the rows this path is of, where they are made without their owner; else null. */\n")
+                .append(
+                        lang.kotlin
+                                ? "    private fun rowsWithoutOwner(path: String): String? {\n"
+                                : "    private String rowsWithoutOwner(String path) {\n");
+        for (Map.Entry<String, String[]> en : unowned.entrySet()) {
+            j.append(lang.kotlin ? "        if (path == " : "        if (path.equals(")
+                    .append(lang.string(en.getKey()))
+                    .append(lang.kotlin ? " || path.startsWith(" : ") || path.startsWith(")
+                    .append(lang.string(en.getKey() + "/"))
+                    .append(")) return ")
+                    .append(lang.string(en.getValue()[1]))
+                    .append(lang.kotlin ? "\n" : ";\n");
+        }
+        j.append(lang.kotlin ? "        return null\n" : "        return null;\n")
+                .append("    }\n\n");
+        return j.toString();
+    }
+
+    /** The helpers (Java), the 5xx answers on a row made without its owner aborting the test (withoutOwner). */
+    private static String javaWithoutOwner(Map<String, String[]> unowned, Lang lang) {
+        StringBuilder j = new StringBuilder(WITHOUT_OWNER_DOC);
+        j.append("    protected void withoutOwner(MvcResult result, String what) {\n")
+                .append("        if (result.getResponse().getStatus() < 500) return;\n")
+                .append("        String owner = rowsWithoutOwner(result.getRequest().getRequestURI());\n")
+                .append(
+                        "        if (owner != null) skip(what + \" failed on a row made without its owner (\" + owner + \" - nobody is signed in): \" + answer(result));\n")
+                .append("    }\n\n")
+                .append(
+                        "    /** As withoutOwner: what the application let out of the request - a 5xx on a server - on such a row. */\n")
+                .append(
+                        "    private void thrownWithoutOwner(MockHttpServletRequestBuilder builder, Exception failure) {\n")
+                .append("        if (!(failure instanceof jakarta.servlet.ServletException)) return;\n")
+                .append(
+                        "        String owner = rowsWithoutOwner(builder.buildRequest(new org.springframework.mock.web.MockServletContext()).getRequestURI());\n")
+                .append(
+                        "        if (owner != null) skip(\"the request failed on a row made without its owner (\" + owner + \" - nobody is signed in): \" + failure);\n")
+                .append("    }\n\n");
+        j.append(rowsWithoutOwner(unowned, lang));
+        String helpers = replacedOnce(
+                JAVA_HELPERS,
+                "    private void succeeded(MvcResult result, String what) throws Exception {\n"
+                        + "        if (ok(result)) return;\n",
+                "    private void succeeded(MvcResult result, String what) throws Exception {\n"
+                        + "        if (ok(result)) return;\n"
+                        + "        withoutOwner(result, what);\n");
+        helpers = replacedOnce(
+                helpers,
+                "    protected void assertRefused(MvcResult result, int status, String code) throws Exception {\n",
+                "    protected void assertRefused(MvcResult result, int status, String code) throws Exception {\n"
+                        + "        withoutOwner(result, \"the request refused\");\n");
+        return j.append(helpers).toString();
+    }
+
+    /** The helpers (Kotlin), as javaWithoutOwner. */
+    private static String kotlinWithoutOwner(Map<String, String[]> unowned, Lang lang) {
+        StringBuilder k = new StringBuilder(WITHOUT_OWNER_DOC);
+        k.append("    protected fun withoutOwner(result: MvcResult, what: String) {\n")
+                .append("        if (result.response.status < 500) return\n")
+                .append("        val owner = rowsWithoutOwner(result.request.requestURI) ?: return\n")
+                .append(
+                        "        skip(\"$what failed on a row made without its owner ($owner - nobody is signed in): \" + answer(result))\n")
+                .append("    }\n\n")
+                .append(
+                        "    /** As withoutOwner: what the application let out of the request - a 5xx on a server - on such a row. */\n")
+                .append(
+                        "    private fun thrownWithoutOwner(builder: MockHttpServletRequestBuilder, failure: Exception) {\n")
+                .append(
+                        "        val owner = rowsWithoutOwner(builder.buildRequest(org.springframework.mock.web.MockServletContext()).requestURI) ?: return\n")
+                .append(
+                        "        skip(\"the request failed on a row made without its owner ($owner - nobody is signed in): $failure\")\n")
+                .append("    }\n\n");
+        k.append(rowsWithoutOwner(unowned, lang));
+        String helpers = replacedOnce(
+                KOTLIN_HELPERS,
+                "    private fun succeeded(result: MvcResult, what: String) {\n" + "        if (ok(result)) return\n",
+                "    private fun succeeded(result: MvcResult, what: String) {\n"
+                        + "        if (ok(result)) return\n"
+                        + "        withoutOwner(result, what)\n");
+        helpers = replacedOnce(
+                helpers,
+                "    protected fun assertRefused(result: MvcResult, status: Int, expected: String) {\n",
+                "    protected fun assertRefused(result: MvcResult, status: Int, expected: String) {\n"
+                        + "        withoutOwner(result, \"the request refused\")\n");
+        return k.append(helpers).toString();
+    }
+
+    /**
+     * signIn() where the project makes its callers (Java): the row newSignInRow(role) makes - as the
+     * application itself - signed in through the generated sign-in; and the call of newSignInRow itself,
+     * which checks the row answers what the sign-in and the tests read of it.
+     */
+    private static String javaSignInRow(Principal p, Lang lang) {
+        StringBuilder j = new StringBuilder();
+        j.append("    /**\n")
+                .append("     * Signs in before a test's first request: as an administrator, through the\n")
+                .append("     * generated sign-in - ")
+                .append(article(p.entity))
+                .append(p.entity)
+                .append(" newSignInRow(role) makes, yours. The tests check what the\n")
+                .append("     * model declares, not who may ask; sign in your way here if the application does.\n")
+                .append("     */\n")
+                .append("    protected void signIn() throws Exception {\n")
+                .append("        Map<String, Object> principal = signInRow(")
+                .append(p.roleValue == null ? "null" : lang.string(p.roleValue))
+                .append(");\n")
+                .append("        MvcResult in = mvc.perform(request(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(" + \"/signin\")\n")
+                .append("                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                .append("                .content(json(obj(")
+                .append(lang.string(p.login))
+                .append(", principal.get(")
+                .append(lang.string(p.login))
+                .append("), ")
+                .append(lang.string(p.password))
+                .append(", principal.get(")
+                .append(lang.string(p.password))
+                .append(")))))).andReturn();\n")
+                .append(
+                        "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the administrator newSignInRow made: \" + answer(in));\n")
+                .append("        session = (MockHttpSession) in.getRequest().getSession(false);\n")
+                .append("    }\n\n");
+        j.append("    /**\n")
+                .append("     * The row of a caller of this role - the role as a request sends it, null for none -\n")
+                .append("     * made by newSignInRow, yours, as the application itself (CurrentUser.runAsSystem):\n")
+                .append("     * its login and plain password to sign in with, and its key.\n")
+                .append("     */\n")
+                .append("    private Map<String, Object> signInRow(String role) throws Exception {\n")
+                .append("        Exception[] failure = new Exception[1];\n")
+                .append("        Map<String, Object> row = CurrentUser.callAsSystem(() -> {\n")
+                .append("            try {\n")
+                .append("                return newSignInRow(role);\n")
+                .append("            } catch (Exception e) {\n")
+                .append("                failure[0] = e;\n")
+                .append("                return null;\n")
+                .append("            }\n")
+                .append("        });\n")
+                .append("        if (failure[0] != null) throw failure[0];\n")
+                .append(
+                        "        Assertions.assertNotNull(row, () -> \"newSignInRow(\" + role + \") answered no row\");\n")
+                .append("        for (String field : Arrays.asList(")
+                .append(lang.string(p.login))
+                .append(", ")
+                .append(lang.string(p.password))
+                .append(", ")
+                .append(lang.string(p.key))
+                .append(")) {\n")
+                .append(
+                        "            Assertions.assertNotNull(row.get(field), () -> \"newSignInRow(\" + role + \") answered no \" + field + \": \" + row);\n")
+                .append("        }\n")
+                .append("        return row;\n")
+                .append("    }\n\n");
         return j.toString();
     }
 
@@ -4229,8 +4634,44 @@ final class ContractTestSource {
                 .append("            this.id = id;\n")
                 .append("            this.session = session;\n")
                 .append("        }\n")
-                .append("    }\n\n")
-                .append("    /**\n")
+                .append("    }\n\n");
+        if (p.external) {
+            j.append("    /**\n")
+                    .append("     * Signs in a principal of its own for a test of @access: ")
+                    .append(article(p.entity))
+                    .append(p.entity)
+                    .append(" of this role\n")
+                    .append("     * newSignInRow(role) makes, yours, signed in through the generated sign-in, as\n")
+                    .append(
+                            "     * signIn() signs in the administrator. Sign in your way here if the application does.\n")
+                    .append("     */\n")
+                    .append("    protected Caller signIn(String role) throws Exception {\n")
+                    .append("        Map<String, Object> principal = signInRow(role);\n")
+                    .append("        MvcResult in = mvc.perform(request(MockMvcRequestBuilders.post(")
+                    .append(p.constant)
+                    .append(" + \"/signin\")\n")
+                    .append(
+                            "                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                    .append("                .content(json(obj(")
+                    .append(lang.string(p.login))
+                    .append(", principal.get(")
+                    .append(lang.string(p.login))
+                    .append("), ")
+                    .append(lang.string(p.password))
+                    .append(", principal.get(")
+                    .append(lang.string(p.password))
+                    .append(")))))).andReturn();\n")
+                    .append(
+                            "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the principal newSignInRow made: \" + answer(in));\n")
+                    .append("        return new Caller(principal.get(")
+                    .append(lang.string(p.key))
+                    .append("), (MockHttpSession) in.getRequest().getSession(false));\n")
+                    .append("    }\n\n");
+            j.append(JAVA_CALLER_HELPERS);
+            if (system) j.append(JAVA_SYSTEM_ROWS);
+            return j.toString();
+        }
+        j.append("    /**\n")
                 .append("     * Signs in a principal of its own for a test of @access: ")
                 .append(article(p.entity))
                 .append(p.entity)
@@ -5450,7 +5891,9 @@ final class ContractTestSource {
                 .append("     */\n")
                 .append(
                         "    protected open fun request(builder: MockHttpServletRequestBuilder): MockHttpServletRequestBuilder = builder\n\n");
-        if (principal != null) {
+        if (principal != null && principal.external) {
+            k.append(kotlinSignInRow(principal, lang));
+        } else if (principal != null) {
             k.append("    /**\n")
                     .append("     * Signs in before a test's first request: as an administrator, through the\n")
                     .append("     * generated sign-in - ")
@@ -5515,7 +5958,17 @@ final class ContractTestSource {
                 .append("        session?.let { builder.session(it) }\n");
         if (system) k.append("        if (session == null) return asSystem(builder)\n");
         k.append("        return mvc.perform(request(builder)).andReturn()\n").append("    }\n\n");
-        if (guarded) {
+        if (guarded && !access.unowned.isEmpty()) {
+            k.append("    /** The request as the application itself: every @access check passes. */\n")
+                    .append("    protected fun asSystem(builder: MockHttpServletRequestBuilder): MvcResult =\n")
+                    .append("        try {\n")
+                    .append(
+                            "            CurrentUser.callAsSystem<MvcResult> { mvc.perform(request(builder.accept(MediaType.APPLICATION_JSON))).andReturn() }\n")
+                    .append("        } catch (failure: jakarta.servlet.ServletException) {\n")
+                    .append("            thrownWithoutOwner(builder, failure)\n")
+                    .append("            throw failure\n")
+                    .append("        }\n\n");
+        } else if (guarded) {
             k.append("    /** The request as the application itself: every @access check passes. */\n")
                     .append("    protected fun asSystem(builder: MockHttpServletRequestBuilder): MvcResult =\n")
                     .append(
@@ -5524,8 +5977,63 @@ final class ContractTestSource {
         if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
         if (privacy.tests) k.append(kotlinPrivacy(s, privacy));
         if (export.tests) k.append(KOTLIN_EXPORT);
-        k.append(KOTLIN_HELPERS);
+        k.append(access.unowned.isEmpty() ? KOTLIN_HELPERS : kotlinWithoutOwner(access.unowned, lang));
         k.append("}\n");
+        return k.toString();
+    }
+
+    /** signIn() where the project makes its callers (Kotlin): as javaSignInRow. */
+    private static String kotlinSignInRow(Principal p, Lang lang) {
+        StringBuilder k = new StringBuilder();
+        k.append("    /**\n")
+                .append("     * Signs in before a test's first request: as an administrator, through the\n")
+                .append("     * generated sign-in - ")
+                .append(article(p.entity))
+                .append(p.entity)
+                .append(" newSignInRow(role) makes, yours. The tests check what the\n")
+                .append("     * model declares, not who may ask; sign in your way here if the application does.\n")
+                .append("     */\n")
+                .append("    protected open fun signIn() {\n")
+                .append("        val principal = signInRow(")
+                .append(p.roleValue == null ? "null" : lang.string(p.roleValue))
+                .append(")\n")
+                .append("        val signedInAs = mvc.perform(request(MockMvcRequestBuilders.post(")
+                .append(p.constant)
+                .append(" + \"/signin\")\n")
+                .append("            .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                .append("            .content(json(obj(")
+                .append(lang.string(p.login))
+                .append(", principal[")
+                .append(lang.string(p.login))
+                .append("], ")
+                .append(lang.string(p.password))
+                .append(", principal[")
+                .append(lang.string(p.password))
+                .append("]))))).andReturn()\n")
+                .append(
+                        "        Assertions.assertTrue(ok(signedInAs)) { \"the generated sign-in refused the administrator newSignInRow made: \" + answer(signedInAs) }\n")
+                .append("        session = signedInAs.request.getSession(false) as MockHttpSession?\n")
+                .append("    }\n\n");
+        k.append("    /**\n")
+                .append("     * The row of a caller of this role - the role as a request sends it, null for none -\n")
+                .append("     * made by newSignInRow, yours, as the application itself (CurrentUser.runAsSystem):\n")
+                .append("     * its login and plain password to sign in with, and its key.\n")
+                .append("     */\n")
+                .append("    private fun signInRow(role: String?): Map<String, Any?> {\n")
+                .append(
+                        "        val row: Map<String, Any?> = CurrentUser.callAsSystem<Map<String, Any?>> { newSignInRow(role) }\n")
+                .append("        for (field in listOf(")
+                .append(lang.string(p.login))
+                .append(", ")
+                .append(lang.string(p.password))
+                .append(", ")
+                .append(lang.string(p.key))
+                .append(")) {\n")
+                .append(
+                        "            Assertions.assertNotNull(row[field]) { \"newSignInRow($role) answered no $field: $row\" }\n")
+                .append("        }\n")
+                .append("        return row\n")
+                .append("    }\n\n");
         return k.toString();
     }
 
@@ -5535,8 +6043,43 @@ final class ContractTestSource {
         k.append("    // ---- the callers of the @access tests\n\n")
                 .append(
                         "    /** Whom a test of @access sends a request as: a principal signIn(role) made - its key, which the @owner of a row of theirs holds - and the session it opened. */\n")
-                .append("    protected class Caller(val id: Any?, val session: MockHttpSession?)\n\n")
-                .append("    /**\n")
+                .append("    protected class Caller(val id: Any?, val session: MockHttpSession?)\n\n");
+        if (p.external) {
+            k.append("    /**\n")
+                    .append("     * Signs in a principal of its own for a test of @access: ")
+                    .append(article(p.entity))
+                    .append(p.entity)
+                    .append(" of this role\n")
+                    .append("     * newSignInRow(role) makes, yours, signed in through the generated sign-in, as\n")
+                    .append(
+                            "     * signIn() signs in the administrator. Sign in your way here if the application does.\n")
+                    .append("     */\n")
+                    .append("    protected open fun signIn(role: String?): Caller {\n")
+                    .append("        val principal = signInRow(role)\n")
+                    .append("        val signedInAs = mvc.perform(request(MockMvcRequestBuilders.post(")
+                    .append(p.constant)
+                    .append(" + \"/signin\")\n")
+                    .append("            .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)\n")
+                    .append("            .content(json(obj(")
+                    .append(lang.string(p.login))
+                    .append(", principal[")
+                    .append(lang.string(p.login))
+                    .append("], ")
+                    .append(lang.string(p.password))
+                    .append(", principal[")
+                    .append(lang.string(p.password))
+                    .append("]))))).andReturn()\n")
+                    .append(
+                            "        Assertions.assertTrue(ok(signedInAs)) { \"the generated sign-in refused the principal newSignInRow made: \" + answer(signedInAs) }\n")
+                    .append("        return Caller(principal[")
+                    .append(lang.string(p.key))
+                    .append("], signedInAs.request.getSession(false) as MockHttpSession?)\n")
+                    .append("    }\n\n");
+            k.append(KOTLIN_CALLER_HELPERS);
+            if (system) k.append(KOTLIN_SYSTEM_ROWS);
+            return k.toString();
+        }
+        k.append("    /**\n")
                 .append("     * Signs in a principal of its own for a test of @access: ")
                 .append(article(p.entity))
                 .append(p.entity)

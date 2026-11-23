@@ -1,0 +1,59 @@
+enumeration:
+  MemberRole:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:  string(1) @code
+      label: string(20)
+    enum:
+      USER:      U, User
+      MODERATOR: M, Moderator
+      ADMIN:     A, Admin
+
+  VerificationStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      PENDING:  PND, Pending
+      APPROVED: APR, Approved
+      REJECTED: REJ, Rejected
+
+entity:
+  # Signs in (@signin), and reads and changes only their own row; the API makes none (create=none, and no
+  # create in @expose): a member signs up by the forum's own code. The contract tests make their members
+  # with ForumContractSupport.newSignInRow - through MemberService, as that code does.
+  Member:
+    meta: entity @root @editable @expose(20, methods="read,search,update") @signin(refresh=password) @owner(memberId)
+          @access(read=owner, create=none, update=owner)
+    fields:
+      memberId: long @id @sequence
+      email:    string(100)! @login @unique @search(eq)
+      password: string(255)! @password
+      nickname: string(30)!
+      role:     MemberRole @default(MemberRole.USER) @access(admin)
+
+  # A topic: anyone reads it, a member writes one - and owns it - and its author or a moderator edits it;
+  # only its author deletes it.
+  Topic:
+    meta: entity @root @editable @expose(20) @owner(memberId)
+          @access(read=public, create=user, update=owner|MODERATOR, delete=owner)
+    fields:
+      topicId:  long @id @sequence
+      member:   Member @ManyToOne
+      title:    string(100)!
+
+  # A member asks to be verified with the code they were mailed; a moderator approves or rejects it.
+  Verification:
+    meta: entity @root @expose(20) @owner(memberId)
+          @access(read=owner|MODERATOR, create=user, approve=MODERATOR, reject=MODERATOR)
+    fields:
+      verificationId: long @id @sequence
+      member:         Member @ManyToOne
+      code:           string(6)!
+      status:         VerificationStatus
+    states:
+      status:
+        initial: PENDING
+        approve: PENDING -> APPROVED
+        reject:  PENDING -> REJECTED
