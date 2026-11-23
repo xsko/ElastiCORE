@@ -810,7 +810,16 @@ public final class RulesGenRunner {
         if (merges(v3, kotlin)) {
             try {
                 runner.cache = GeneratedCache.load(new File(basePath));
+                // A run that writes nothing saves nothing - also one refused before its preview began.
+                runner.readOnly = checking || validating || Boolean.getBoolean("elasticore.rules.list");
                 merging = runner;
+                // Both names there - a branch merged the old one back: the new one is read, the old one is the
+                // developer's to delete (a committed file), not this run's.
+                if (runner.cache.oldLeftBeside() != null) {
+                    io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.OLD_PATH
+                            + " is no longer read - " + GeneratedCache.PATH + " is the base of the merge;"
+                            + " delete " + GeneratedCache.OLD_PATH + " and commit the delete");
+                }
                 // The mapping the cached texts were renamed with, against this run's.
                 if (!typescript && (v3 || kotlin)) runner.readCachedMappings(loader.allModels());
                 // A 2.x project's first merging run: the code 2.x generated is
@@ -841,7 +850,7 @@ public final class RulesGenRunner {
                     runner.moduleRoots = loader.moduleRoots();
                 }
             } catch (IOException e) {
-                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.pathIn(new File(basePath))
                         + " cannot be read (" + e.getMessage() + ") - take it from git again;"
                         + " deleting it keeps every generated file that differs from what is generated now");
                 return 1;
@@ -1061,7 +1070,7 @@ public final class RulesGenRunner {
         return staleClient(roots, java.util.Collections.<String>emptySet());
     }
 
-    /** cached: the files .elasticore/cache holds, by absolute path - a merged client has no stamp. */
+    /** cached: the files .elasticore/generated-base.zip holds, by absolute path - a merged client has no stamp. */
     static String staleClient(java.util.List<String> roots, java.util.Set<String> cached) {
         for (String root : roots) {
             if (!holdsGeneratedClient(root, cached)) continue;
@@ -5652,14 +5661,14 @@ public final class RulesGenRunner {
         validateSection(b, "Migrations the build would write - run ./gradlew elcore3 and commit", runner.wouldMigrate);
         validateSection(b, "Conflicts and errors", conflicts);
         validateSection(b, "Edited by you and left as they are (not a failure)", edited);
-        // Neither a header nor a base in .elasticore/cache: the build leaves them alone, and so this check -
-        // a project whose cache is not committed meets every generated file here.
+        // Neither a header nor a base in .elasticore/generated-base.zip: the build leaves them alone, and so
+        // this check - a project whose base is not committed meets every generated file here.
         List<String> unchecked = new ArrayList<String>(done.withStatus("SKIP(no ElastiCORE header"));
         unchecked.addAll(done.withStatus("SKIP(not in the cache"));
         validateSection(
                 b,
-                "Not checked - no ElastiCORE header and no base in .elasticore/cache, so yours"
-                        + " (commit .elasticore/cache with the generated files)",
+                "Not checked - no ElastiCORE header and no base in " + GeneratedCache.PATH + ", so yours" + " (commit "
+                        + GeneratedCache.PATH + " with the generated files)",
                 unchecked);
         if (!runner.notes.isEmpty()) {
             b.append("## Notes of the run\n\n");
@@ -6006,6 +6015,9 @@ public final class RulesGenRunner {
     /** What was generated last (elasticore.merge), or null when the project does not merge. */
     private GeneratedCache cache;
 
+    /** A validation, a migration check or a listing: the base is read, never saved. */
+    private boolean readOnly;
+
     /** The run of this JVM that holds a cache, for run() to save it whatever ends the run. */
     private static RulesGenRunner merging;
 
@@ -6248,8 +6260,7 @@ public final class RulesGenRunner {
             try {
                 previous = RuntimePackages.parse(said);
             } catch (IllegalArgumentException e) {
-                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.DIR + "/"
-                        + GeneratedCache.NAME
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + cache.path()
                         + " records a mapping that cannot be read ('" + said + "': " + e.getMessage() + ") - its files"
                         + " are renamed with this run's mapping only, and recorded with it from now on");
                 continue;
@@ -6621,7 +6632,7 @@ public final class RulesGenRunner {
             } else if (!renamed(key, disk).equals(generated)) {
                 skipped++;
                 System.out.println(label + "  SKIP(not in the cache)");
-                notes.add("[elcore3] " + key + ": not in " + GeneratedCache.DIR + "/" + GeneratedCache.NAME
+                notes.add("[elcore3] " + key + ": not in " + cache.path()
                         + " - edited before merging was turned on, or not written by ElastiCORE - so what to merge"
                         + " it with is not known; left as it is (delete it to have it generated)");
                 return;
@@ -6727,9 +6738,20 @@ public final class RulesGenRunner {
 
     private void saveCache() {
         // elcoreMigrationCheck writes nothing: the cache would say the project has moved.
-        if (cache == null || preview != null) return;
+        // Nor does a listing (-PlistRules), a validation or a check refused before it began (readOnly), which would
+        // otherwise move a base read from the old name.
+        if (cache == null || preview != null || readOnly) return;
+        boolean renaming = cache.renaming();
         try {
             cache.save();
+            if (renaming && cache.oldKeptBecause() == null) {
+                System.out.println("[elcore3] " + GeneratedCache.OLD_PATH + " was renamed to " + GeneratedCache.PATH
+                        + " - commit both changes (the delete and the new file)");
+            } else if (renaming) {
+                io.elasticore.base.util.ConsoleLog.printWarn("[elcore3] " + GeneratedCache.PATH + " was written, but "
+                        + GeneratedCache.OLD_PATH + " could not be removed (" + cache.oldKeptBecause() + ") - it is no"
+                        + " longer read; delete it, and commit the delete and the new file");
+            }
         } catch (IOException e) {
             failed++;
             notes.add(cache.file() + " cannot be written: " + e.getMessage()
@@ -7041,8 +7063,9 @@ public final class RulesGenRunner {
             for (String k : stampKept) System.out.println("  still stamped: " + k);
             if (!unbased.isEmpty()) {
                 // Without a stamp and unknown to the cache there is no base: left as it is.
-                System.out.println("  " + unbased.size() + " source(s) without a stamp that " + GeneratedCache.DIR + "/"
-                        + GeneratedCache.NAME + " does not hold were left as they are"
+                System.out.println("  " + unbased.size() + " source(s) without a stamp that " + cache.path()
+                        + " does not hold were left as they are"
+                        // "the cache is missing" stays: tools read the line by these words.
                         + (cache.existed() ? "" : " - the cache is missing: take it from git and run again"));
             }
         }

@@ -2775,7 +2775,7 @@ public class ColorTag extends ColorTagBase {
   Hibernate 는 원소 자신의 테이블에서 조건을 보는데, 하위 클래스 테이블에는 그 컬럼이 없습니다.
   `List<Person>` 은 빌드를 멈추고 그렇게 알립니다.
 - hexagonal 과 DDD 는 하위 클래스를 생성되는 base 와 여러분의 클래스로 나눕니다. 생성기가 `@SQLDelete` 줄을 여러분의 클래스에
-  병합하지 못하면(`.elasticore/cache` 에 기준본이 없거나 ElastiCORE 헤더가 없을 때) 빌드가 멈추고 넣을 줄을 알려 줍니다:
+  병합하지 못하면(`.elasticore/generated-base.zip` 에 기준본이 없거나 ElastiCORE 헤더가 없을 때) 빌드가 멈추고 넣을 줄을 알려 줍니다:
   그 줄이 없으면 삭제가 행을 지웁니다.
 - 다른 엔티티에서와 같습니다: 요청이 키를 주면 버전(`@jpa:Version`)이 있어야 하고, 복합 키와
   Spring Boot 3 의 `mapping: xml` 은 빌드를 멈춥니다.

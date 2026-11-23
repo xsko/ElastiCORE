@@ -1585,7 +1585,7 @@ v3에 자기 스켈레톤이 없는 타깃은 호환 스켈레톤으로 떨어�
 ## 7.5 생성 파일의 소유권 (elcore3)
 
 3.0 코드의 생성 파일은 Java·Kotlin 을 포함해 모두 첫 줄 표시 없이 **병합**됩니다: 고친 내용은 남고 DSL 의 변경도
-들어오며, 한 번만 생성하는 파일은 깔끔하게 합쳐지는 변경만 받고 나머지는 경고합니다(`.elasticore/cache`,
+들어오며, 한 번만 생성하는 파일은 깔끔하게 합쳐지는 변경만 받고 나머지는 경고합니다(`.elasticore/generated-base.zip`,
 `elasticore-env-guide.md` 9-2 절). 아래 표는 **첫 줄 표시가 있는 파일**의 규칙입니다 - `output = 'v2'`, `merge = false`,
 그리고 병합하는 프로젝트에서 기준을 확인할 수 없어 아직 표시가 남은 파일(9-2 "표시가 있던 프로젝트"). 표시를 쓸 때 매퍼
 XML·SQL·properties·`.proto`·TypeScript 는 `<!-- //ecd:... -->`, `-- //ecd:...`, `//ecd:...` 이고, `orm.xml` 과 메시지
@@ -1751,7 +1751,7 @@ elasticore {
 }
 ```
 
-이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(`.elasticore/cache` 에 있거나 첫 줄이 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
+이 설정이 없는데 `src/main/ts` 에 생성된 `.ts`(`.elasticore/generated-base.zip` 에 있거나 첫 줄이 `//ecd:`)가 있고, 그 클라이언트가 지금 모델로 만들어진 것이 아니면
 `elcore3` 가 끝에 한 번 경고합니다:
 `[elcore3] .../src/main/ts holds a generated TypeScript client made from an older model - run the elcore3ts task after a
 model change, or set typescriptClient = true in the elasticore { } block so the build runs it.`
@@ -1830,15 +1830,15 @@ elasticore {
   그것을 담는 패키지도 아니어야 합니다(`com.acme.shop` 프로젝트의 `com.acme.shop`: 사본은 `com.acme.shop.runtime` 에).
   아니면 아무것도 생성하기 전에 빌드가 실패합니다.
 - 설정하지 않으면 생성된 코드는 바이트 하나까지 지금과 같습니다.
-- 텍스트는 병합되고 `.elasticore/cache` 에 들어가기 전에 바뀌므로 파일과 그 베이스가 같습니다.
-- **이미 생성된 프로젝트에서 켤 때.** 병합되는 파일 - `.elasticore/cache` 에 있는 파일 - 은 병합 전에 모든 쪽이 바뀝니다:
+- 텍스트는 병합되고 `.elasticore/generated-base.zip` 에 들어가기 전에 바뀌므로 파일과 그 베이스가 같습니다.
+- **이미 생성된 프로젝트에서 켤 때.** 병합되는 파일 - `.elasticore/generated-base.zip` 에 있는 파일 - 은 병합 전에 모든 쪽이 바뀝니다:
   캐시의 베이스, 개발자가 둔 파일, 새 텍스트. 개발자의 수정은 제자리에 남고 나머지와 함께 이름이 바뀌며(직접 더한 런타임
   클래스 import 도 매핑된 것으로), 충돌은 설정이 없을 때처럼 개발자의 수정과 DSL 의 변경이 만나는 곳에만 생깁니다. 실행이 쓰지
   않는 파일 - 베이스가 없는 파일(`SKIP(user-owned)`, `SKIP(not in the cache)`), 또는 DSL 이 더는 만들지 않지만 개발자의 소스가
   써서 남겨 둔 파일 - 은 바꾸지 않습니다.
   실행이 그 파일을 알려 주고(아래), import 는 직접 고치세요. 이름만 바뀐 파일은
   `RENAMED(your edits kept; ...)`, 개발자의 것으로 남긴 파일은 `KEPT(...; the runtime's packages renamed)` 로 알립니다.
-- **바꾸거나 없앨 때.** `.elasticore/cache` 는 텍스트마다 그것을 바꾼 매핑을 같은 저장에서 함께 남깁니다. 그래서 한
+- **바꾸거나 없앨 때.** `.elasticore/generated-base.zip` 는 텍스트마다 그것을 바꾼 매핑을 같은 저장에서 함께 남깁니다. 그래서 한
   도메인만 생성한 실행(`-Pdomain`), 중간에 멈춘 실행, 모델 검사가 실패한 실행도 모든 텍스트를 제 매핑과 짝지어 둡니다.
   매핑이 다르면, 병합되는 파일의 베이스와 파일을 그 파일에 남은 매핑에서 되돌린 뒤 새 매핑으로 바꿉니다
   (설정을 없애면 `io.elasticore` 로 되돌립니다). 그래서 수정은 남고 진짜 충돌만 남으며, 실행은
@@ -2145,12 +2145,12 @@ task elcore3(type: JavaExec) {
 | 충돌 표시가 남은 파일 (`<<<<<<< yours`) | 실패 |
 | 직접 고쳤고 빌드가 그대로 두는 파일 | 통과, 목록에 표시 |
 | DSL 경고 | 통과, 개수 표시 (`-Pstrict` 면 실패) |
-| 헤더도 없고 `.elasticore/cache` 에 기준도 없는 파일 | 통과, 점검하지 못한 파일로 표시 |
+| 헤더도 없고 `.elasticore/generated-base.zip` 에 기준도 없는 파일 | 통과, 점검하지 못한 파일로 표시 |
 
 - 빌드가 쓸 파일이 없을 때는 생성 소스를 git 에 두는 프로젝트(그중 하나라도 있는 프로젝트)에서만 실패합니다.
   빌드할 때 생성하는 프로젝트(`.gitignore`)는 DSL 과, DDL 처럼 커밋하는 생성 파일을
   점검합니다.
-- `.elasticore/cache` 는 생성 파일과 함께 커밋합니다: 없으면 빌드가 그 파일들을 사용자 것으로 보고, 이 점검도 그렇습니다.
+- `.elasticore/generated-base.zip` 는 생성 파일과 함께 커밋합니다: 없으면 빌드가 그 파일들을 사용자 것으로 보고, 이 점검도 그렇습니다.
 - TypeScript 클라이언트는 `-Pts` 로 점검합니다. `-Pdomain` 은 거절합니다: 프로젝트 전체를 읽습니다. 빌드가 쓸 마이그레이션(`ddl.migration`)이 있으면 실패하고, 쓰지는 않습니다.
 - 점검하지 않는 것: `schema.yml`, 컨텍스트 맵, Ossie 모델. `output = 'v2'` 면 2.x 자체 점검(`elcore -Pmode=valid`)을 돌립니다.
 

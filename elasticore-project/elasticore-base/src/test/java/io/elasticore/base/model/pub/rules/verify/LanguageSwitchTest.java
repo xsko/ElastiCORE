@@ -98,7 +98,7 @@ public class LanguageSwitchTest {
         assertEquals(new TreeSet<String>(), twins(project), log);
         assertTrue(Files.exists(report), "the developer's class stays");
         Map<String, String> cache =
-                GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/cache").toPath()));
+                GeneratedCache.read(Files.readAllBytes(new File(project, ".elasticore/generated-base.zip").toPath()));
         for (String key : cache.keySet()) assertFalse(key.endsWith(".java"), key + " left in the cache");
 
         // And the next run has nothing more to say about them.

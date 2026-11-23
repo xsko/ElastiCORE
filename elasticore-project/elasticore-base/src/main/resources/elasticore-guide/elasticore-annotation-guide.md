@@ -2775,7 +2775,7 @@ public class ColorTag extends ColorTagBase {
   (`List<Party>`): Hibernate tests the restriction on the element's own table, and a subclass's has no column - a
   `List<Person>` stops the build and says so.
 - Hexagonal and DDD split a subclass into a generated base and a class that is yours. When the generator cannot merge
-  the `@SQLDelete` line into your class (no base in `.elasticore/cache`, or no ElastiCORE header), the build stops and
+  the `@SQLDelete` line into your class (no base in `.elasticore/generated-base.zip`, or no ElastiCORE header), the build stops and
   names the line to add: without it a delete would remove the row.
 - What holds for any entity holds here: a key the request gives needs a version (`@jpa:Version`), a composite key and
   `mapping: xml` on Spring Boot 3 stop the build.

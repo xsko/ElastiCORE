@@ -142,8 +142,9 @@ public abstract class ElastiCoreExtension {
      * DSL now generates, rather than skipped. On by default for the 3.0 code;
      * off for the code 2.x generates ({@code output = 'v2'}).
      *
-     * What was generated last is kept in {@code .elasticore/cache}, committed
-     * with the project; a file is merged against it line by line, as git
+     * What was generated last is kept in {@code .elasticore/generated-base.zip}
+     * (once {@code .elasticore/cache}, renamed by the first build that writes),
+     * committed with the project; a file is merged against it line by line, as git
      * merges, and the lines both sides changed are marked as a conflict that
      * stops the build. Every generated file but the Java and Kotlin sources,
      * which keep their //ecd: line.

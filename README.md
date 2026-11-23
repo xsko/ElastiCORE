@@ -22,7 +22,7 @@ answers, shortened to one line each.</sub>
   model; a request that breaks one gets a defined answer (401, 403, 409, 400) with an error code.
 - **Regenerating is safe, even after you edit generated code.** Edit any generated file — a DTO, a mapper, a
   controller — and the next build keeps your edit and still brings in the model's changes: it merges them as git
-  merges a branch, against what it generated last (`.elasticore/cache`, committed with the code). Only where your
+  merges a branch, against what it generated last (`.elasticore/generated-base.zip`, committed with the code). Only where your
   edit and the model change the same lines does it stop, with the usual `<<<<<<<` marks for you to resolve. So the
   code never drifts from the model, and you are never forced to choose between your edit and the next DSL change.
 - **One model, the code you want.** Java or Kotlin; layered, DDD or hexagonal, over JPA or MyBatis (`mode: mybatis` -
@@ -134,7 +134,7 @@ infrastructure/persistence/...          its JPA adapter
 **⑤ Run** — `./gradlew bootRun`. Anyone may search and read products; creating one without signing in answers 401
 "Sign in to create Product", a price of 0 answers 400 "price must be positive". `build` and `bootRun` run `elcore3`
 first, so from here on a change starts in the model. Code you add to a generated file stays through every
-regeneration (the merge above); commit `.elasticore/cache` with the generated files.
+regeneration (the merge above); commit `.elasticore/generated-base.zip` with the generated files.
 
 ## What the model holds
 
