@@ -47,6 +47,7 @@ entity:
   # A root with a behaviour class of its own (the default for a root): its
   # values are given when it is made and change through its methods after
   # that. The contact details a customer edits are opened with @editable.
+  # The phone is shown masked (@env:maskphone: 010-****-5678); sent back as shown, an update keeps it.
   Customer:
     meta: entity @root @expose(pageSize=25, methods="create,read,search,update,delete,export") @extend(AuditEntity) @Index(name="idx_shop_cust_email", columnList="email", unique="true")
     fields:
@@ -54,7 +55,7 @@ entity:
       firstName: string(50)! @search(like)
       lastName: string(50)! @search(like)
       email: string(100)! @search(eq)
-      phone: string(20) @editable
+      phone: string(20) @editable @env:maskphone
       dateOfBirth: date @search(between)
       loyaltyPoints: long @default(0) @min(0)
       customerType: CustomerType @search(eq)

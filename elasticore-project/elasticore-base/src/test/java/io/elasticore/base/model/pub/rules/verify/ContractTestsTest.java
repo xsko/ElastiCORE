@@ -506,11 +506,17 @@ public class ContractTestsTest {
 
     /** A run with testCode: contract and one without differ in the test files it adds, and in nothing else. */
     private void onlyTheTestsAreAdded(
-            String model, String mode, String architecture, String language, String dir, String extension)
+            String model,
+            String mode,
+            String architecture,
+            String language,
+            String dir,
+            String extension,
+            String... config)
             throws Exception {
-        File plain = project(model, null, mode);
+        File plain = project(model, null, mode, config);
         run(plain, architecture, language);
-        File contract = project(model, "contract", mode);
+        File contract = project(model, "contract", mode, config);
         run(contract, architecture, language);
         Map<String, String> before = tree(plain);
         Map<String, String> after = tree(contract);
@@ -1563,6 +1569,324 @@ public class ContractTestsTest {
                 "java");
     }
 
+    // ---- @Mask and @encrypt -----------------------------------------------------------
+
+    /** The env.yml annotations the runtime's mask is named by. */
+    private static final String[] MASKS = {
+        "annotations:",
+        "  maskphone: \"@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.PHONE)\"",
+        "  maskemail: \"@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.EMAIL)\"",
+        "  maskname: \"@dto:io.elasticore.springboot3.mask.Mask(io.elasticore.springboot3.mask.MaskType.NAME)\""
+    };
+
+    private static final String PRIVATE = String.join(
+            "\n",
+            "entity:",
+            "  Member:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      memberId: long @id @sequence",
+            "      name:     string(30)!",
+            "      phone:    string(20) @encrypt(digits) @s(eq) @env:maskphone",
+            "      email:    string(100) @env:maskemail",
+            "      ssn:      string(20) @encrypt",
+            "      nick:     string(12) @pattern('[a-z]{3}[0-9]{2}') @env:maskname",
+            "");
+
+    /**
+     * A masked field: the read and the search show what its MaskType makes of the value sent, and the masked
+     * text an update sends back keeps the stored value (issue 270) - read past the application - while a new
+     * value replaces it. An encrypted one: the column holds no plain value and decrypts to the value sent;
+     * with search(eq), a search by the value finds the row and one by another does not.
+     */
+    @Test
+    public void maskAndEncryptAreTestedOverTheApi() throws Exception {
+        File project = project(PRIVATE, "contract", "jpa", MASKS);
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/MemberContractTest.java");
+        assertTrue(
+                method(t, "phoneIsShownMasked")
+                        .contains("        String sent = \"010-\" + digits(4) + \"-\" + digits(4);\n"
+                                + "        Object id = createdId(MEMBER, withValue(newMember(), \"phone\", sent), \"memberId\");\n"
+                                + "        String masked = masked(sent, io.elasticore.springboot3.mask.MaskType.PHONE.apply(sent));\n"
+                                + "        assertMasked(read(MEMBER, id), \"phone\", masked);\n"
+                                + "        assertFoundMasked(search(MEMBER, obj(\"memberId\", id)), \"memberId\", id, \"phone\","
+                                + " masked);\n"),
+                t);
+        // Encrypted and masked: what is kept is read back and decrypted.
+        assertTrue(
+                method(t, "phoneSentBackMaskedKeepsTheStoredValue")
+                        .contains(
+                                "        assertUpdated(put(MEMBER, obj(\"memberId\", id, \"phone\", masked)));\n"
+                                        + "        assertStored(decrypted(stored(\"member\", \"phone\", \"member_id\", id)), sent);\n"
+                                        + "        String other = \"010-\" + digits(4) + \"-\" + digits(4);\n"
+                                        + "        assertUpdated(put(MEMBER, obj(\"memberId\", id, \"phone\", other)));\n"
+                                        + "        assertStored(decrypted(stored(\"member\", \"phone\", \"member_id\", id)), other);\n"),
+                t);
+        // Masked only: the column holds the value as sent.
+        assertTrue(
+                method(t, "emailSentBackMaskedKeepsTheStoredValue").contains("        String sent = email(24);\n")
+                        && method(t, "emailSentBackMaskedKeepsTheStoredValue")
+                                .contains(
+                                        "        assertStored(stored(\"member\", \"email\", \"member_id\", id), sent);\n"),
+                t);
+        assertTrue(
+                method(t, "phoneIsStoredEncrypted")
+                        .contains(
+                                "        assertEncrypted(stored(\"member\", \"phone\", \"member_id\", id), sent);\n"
+                                        + "        assertStored(decrypted(stored(\"member\", \"phone\", \"member_id\", id)), sent);\n"),
+                t);
+        // Encrypted, not masked: the API answers the value itself.
+        assertTrue(
+                method(t, "ssnIsStoredEncrypted").contains("        String sent = text(12);\n")
+                        && method(t, "ssnIsStoredEncrypted")
+                                .contains("        assertValue(read(MEMBER, id), \"ssn\", sent);\n"),
+                t);
+        assertFalse(method(t, "phoneIsStoredEncrypted").contains("assertValue"), t);
+        assertTrue(
+                method(t, "phoneIsFoundByItsValue")
+                        .contains("        assertFound(search(MEMBER, obj(\"phone\", sent)), \"memberId\", id);\n"
+                                + "        assertNotFound(search(MEMBER, obj(\"phone\", \"010-\" + digits(4) + \"-\" + digits(4))),"
+                                + " \"memberId\", id);\n"),
+                t);
+        // No @search(eq) on ssn: no search by it; a mask of a @pattern field shows the pattern's value masked.
+        assertFalse(t.contains("ssnIsFoundByItsValue"), t);
+        assertTrue(method(t, "nickIsShownMasked").contains("        String sent = vary(\"aaa00\", "), t);
+        assertTrue(t.contains("What @Mask and @encrypt promise is checked too: the answer shows the value masked,"), t);
+        // The masked text of a @pattern field may not match it: not sent back, and said.
+        assertFalse(t.contains("nickSentBackMasked"), t);
+        assertTrue(
+                log.contains(
+                        "Member.nick @Mask sent back: its @pattern may refuse the masked text (400), so none is sent"),
+                log);
+        assertFalse(t.contains("\"message\""), t);
+
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("    protected MvcResult read(String path, Object id) throws Exception {\n"), s);
+        assertTrue(s.contains("    protected MvcResult put(String path, Object body) throws Exception {\n"), s);
+        assertTrue(
+                s.contains("    protected String masked(String sent, String masked) {\n"
+                        + "        if (masked.equals(sent)) skip("),
+                s);
+        // Under JPA what the test's transaction holds is written out before the column is read.
+        assertTrue(
+                s.contains("    protected String stored(String table, String column, String key, Object id) {\n"
+                        + "        entityManager.flush();\n"
+                        + "        List<String> found = jdbc.queryForList("),
+                s);
+        assertTrue(s.contains("    protected jakarta.persistence.EntityManager entityManager;\n"), s);
+        assertTrue(s.contains("io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(stored)"), s);
+        assertTrue(
+                s.contains(
+                        " * Not tested of @Mask and @encrypt, as the build's summary says:\n"
+                                + " *   - Member.nick @Mask sent back: its @pattern may refuse the masked text (400), so none is sent\n"),
+                s);
+        assertTrue(s.contains("(elasticore.crypto.key, elasticore.crypto.index-key)"), s);
+        assertTrue(
+                log.contains(
+                        "contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written, 1 skipped"),
+                log);
+    }
+
+    /** The same tests in Kotlin; over MyBatis nothing is written out first; over MongoDB the document is read. */
+    @Test
+    public void maskAndEncryptInKotlinOverMyBatisAndOverMongoDb() throws Exception {
+        File kt = project(PRIVATE, "contract", "jpa", MASKS);
+        run(kt, "layered", "kotlin");
+        String t = read(kt, "src/test/kotlin/com/acme/shop/MemberContractTest.kt");
+        assertTrue(
+                method(t, "phoneSentBackMaskedKeepsTheStoredValue")
+                        .contains(
+                                "        val sent = \"010-\" + digits(4) + \"-\" + digits(4)\n"
+                                        + "        val id = createdId(MEMBER, withValue(newMember(), \"phone\", sent), \"memberId\")\n"
+                                        + "        val masked = masked(sent, io.elasticore.springboot3.mask.MaskType.PHONE.apply(sent))\n"
+                                        + "        assertUpdated(put(MEMBER, obj(\"memberId\", id, \"phone\", masked)))\n"
+                                        + "        assertStored(decrypted(stored(\"member\", \"phone\", \"member_id\", id)), sent)\n"),
+                t);
+        String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(ks.contains("    protected lateinit var jdbc: org.springframework.jdbc.core.JdbcTemplate\n"), ks);
+        assertTrue(
+                ks.contains(
+                        "    protected fun stored(table: String, column: String, key: String, id: Any?): String? {\n"
+                                + "        entityManager.flush()\n"),
+                ks);
+        assertTrue(ks.contains("    protected fun masked(sent: String, masked: String): String {\n"), ks);
+
+        File mybatis = project(PRIVATE, "contract", "mybatis", MASKS);
+        run(mybatis, "ddd", "java");
+        String ms = read(mybatis, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(ms.contains("    protected org.springframework.jdbc.core.JdbcTemplate jdbc;\n"), ms);
+        assertFalse(ms.contains("EntityManager"), ms);
+        assertFalse(ms.contains("flush()"), ms);
+        assertTrue(read(mybatis, "src/test/java/com/acme/shop/MemberContractTest.java")
+                .contains("void phoneIsFoundByItsValue() throws Exception {"));
+
+        // MongoDB has no @encrypt: the mask alone, its stored value read from the document.
+        String masked = PRIVATE.replace("long @id @sequence", "string(24) @id")
+                .replace(" @encrypt(digits) @s(eq)", " @s(eq)")
+                .replace("      ssn:      string(20) @encrypt\n", "");
+        File mongo = project(masked, "contract", "mongo", MASKS);
+        run(mongo, "layered", "java");
+        String mt = read(mongo, "src/test/java/com/acme/shop/MemberContractTest.java");
+        assertTrue(
+                method(mt, "emailSentBackMaskedKeepsTheStoredValue")
+                        .contains("        assertStored(stored(\"member\", \"email\", \"_id\", id), sent);\n"),
+                mt);
+        assertFalse(mt.contains("decrypted("), mt);
+        assertFalse(mt.contains("IsStoredEncrypted"), mt);
+        String mss = read(mongo, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(mss.contains("    protected org.springframework.data.mongodb.core.MongoTemplate mongo;\n"), mss);
+        assertTrue(mss.contains("mongo.findById(id, org.bson.Document.class, collection)"), mss);
+        assertFalse(mss.contains("FieldCrypto"), mss);
+        assertFalse(mss.contains("JdbcTemplate"), mss);
+    }
+
+    /** What the generator cannot test of @Mask and @encrypt is counted with why, and said in the support class. */
+    @Test
+    public void whatCannotBeTestedOfMaskAndEncryptIsSaid() throws Exception {
+        String model = String.join(
+                "\n",
+                "enumeration:",
+                "  CardStatus:",
+                "    meta: enum @db(code) @json(code)",
+                "    fields:",
+                "      code:  string(3) @code",
+                "      label: string(20)",
+                "    enum:",
+                "      ACTIVE: ACT, Active",
+                "      CLOSED: CLS, Closed",
+                "",
+                "entity:",
+                "  Card:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      cardId: long @id @sequence",
+                "      holder: string(30) @env:maskname",
+                "      status: CardStatus",
+                "    states:",
+                "      status:",
+                "        initial: ACTIVE",
+                "        close:   ACTIVE -> CLOSED",
+                "",
+                "  Badge:",
+                "    meta: entity @root @editable @expose(pageSize=20, methods=\"create,search,update\")",
+                "    fields:",
+                "      badgeId: long @id @sequence",
+                "      owner:   string(30) @env:maskname",
+                "",
+                "  Tag:",
+                "    meta: entity @root @expose(20)",
+                "    fields:",
+                "      tagId: long @id @sequence",
+                "      shown: string(2) @env:maskemail",
+                "");
+        File project = project(model, "contract", "jpa", MASKS);
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Card.holder @Mask sent back: its API takes no update of it - its commands change the row"
+                        + " (@editable opens a field to PUT)"),
+                log);
+        assertTrue(method(read(project, "src/test/java/com/acme/shop/CardContractTest.java"), "holderIsShownMasked")
+                .contains("assertMasked(read(CARD, id), \"holder\", masked);"));
+        assertTrue(
+                log.contains(
+                        "Badge.owner @Mask: its API takes no read (@expose methods), so no answer of a row is read"),
+                log);
+        String badge = read(project, "src/test/java/com/acme/shop/BadgeContractTest.java");
+        assertFalse(badge.contains("ownerIsShownMasked"), badge);
+        assertTrue(badge.contains("void ownerSentBackMaskedKeepsTheStoredValue()"), badge);
+        // Two characters hold no address the mask changes: no value is built.
+        assertTrue(
+                log.contains("Tag.shown @Mask: no value of String the generator builds fits it and shows EMAIL"), log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains(" * Not tested of @Mask and @encrypt, as the build's summary says:\n"), s);
+        assertTrue(s.contains(" *   - Badge.owner @Mask: its API takes no read"), s);
+    }
+
+    /** A domain without @Mask and @encrypt gets none of it: its support class is the one it was. */
+    @Test
+    public void aDomainWithoutMaskOrEncryptGetsNoneOfIt() throws Exception {
+        File project = project(MODEL, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertFalse(s.contains("@Mask"), s);
+        assertFalse(s.contains("protected MvcResult read("), s);
+        assertFalse(s.contains("digits("), s);
+        assertFalse(s.contains("JdbcTemplate"), s);
+        assertFalse(read(project, "src/test/java/com/acme/shop/ShipmentContractTest.java")
+                .contains("@Mask"));
+    }
+
+    @Test
+    public void contractWithMaskAndEncryptChangesNothingElse() throws Exception {
+        onlyTheTestsAreAdded(PRIVATE, "jpa", "hexagonal", "java", "src/test/java/com/acme/shop/", "java", MASKS);
+    }
+
+    @Test
+    public void contractWithMaskAndEncryptChangesNothingElseInKotlin() throws Exception {
+        onlyTheTestsAreAdded(PRIVATE, "jpa", "layered", "kotlin", "src/test/kotlin/com/acme/shop/", "kt", MASKS);
+    }
+
+    @Test
+    public void contractWithMaskAndEncryptChangesNothingElseOverMyBatis() throws Exception {
+        onlyTheTestsAreAdded(PRIVATE, "mybatis", "layered", "java", "src/test/java/com/acme/shop/", "java", MASKS);
+    }
+
+    /**
+     * The build never breaks: a support class kept without the members of @Mask and @encrypt gets its other
+     * tests - of @access too, where it has those members - and the summary says what is not written.
+     */
+    @Test
+    public void aSupportClassKeptWithoutTheMaskMembersKeepsTheOtherTests() throws Exception {
+        String model = ACCESS.replace(
+                "      title:   string(40)!\n",
+                "      title:   string(40)!\n      note:    string(40) @env:maskname\n");
+        File project = project(model, "contract", "jpa", MASKS);
+        run(project, "hexagonal", "java");
+        String generated = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(read(project, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("void noteIsShownMasked()"));
+        int from = generated.indexOf("    // ---- the tests of @Mask and @encrypt");
+        int to = generated.indexOf("    protected MvcResult post(String path, Object body) throws Exception {");
+        assertTrue(from > 0 && to > from, generated);
+        String kept = generated.substring(0, from) + generated.substring(to);
+        Files.write(
+                new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java").toPath(),
+                kept.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Shop: ShopContractSupport has no read(...) - add the members from"
+                        + " build/elasticore/contract/ShopContractSupport.java, the version this run generated; the"
+                        + " tests of @Mask and @encrypt are not written"),
+                log);
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertFalse(t.contains("IsShownMasked"), t);
+        assertFalse(t.contains("What @Mask and @encrypt"), t);
+        assertTrue(t.contains("sentBy("), t);
+        assertTrue(t.contains("void titleIsRequired()"), t);
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+        // Kept with the members of @Mask and without those of @access: the tests of @Mask stay.
+        int callers = generated.indexOf("    // ---- the callers of the @access tests");
+        assertTrue(callers > 0 && callers < from, generated);
+        String noCallers = generated.substring(0, callers) + generated.substring(from);
+        Files.write(
+                new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java").toPath(),
+                noCallers.getBytes(StandardCharsets.UTF_8));
+        log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("the tests of @access are not written"), log);
+        t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(t.contains("void noteIsShownMasked()"), t);
+        assertFalse(t.contains("sentBy("), t);
+        // A member is found as declared, not inside another's name.
+        assertEquals(
+                "masked(...)",
+                ContractTestSource.lacking(
+                        "    protected MvcResult read(String path, Object id) throws Exception {\n    }\n"
+                                + "    protected void assertMasked(MvcResult r, String f, String m) throws Exception {\n    }\n",
+                        "        String masked = masked(sent, X.apply(sent));\n        assertMasked(read(P, id), \"f\", masked);",
+                        false));
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {
@@ -1624,6 +1948,11 @@ public class ContractTestsTest {
     }
 
     private File project(String model, String testCode, String mode) throws IOException {
+        return project(model, testCode, mode, new String[0]);
+    }
+
+    /** A project whose env.yml's config holds these lines too (annotations: ...). */
+    private File project(String model, String testCode, String mode, String... config) throws IOException {
         File dir = Files.createTempDirectory("elcore-contract").toFile();
         projects.add(dir);
         File blueprint = new File(dir, "src/main/resources/blueprint/shop");
@@ -1637,6 +1966,7 @@ public class ContractTestsTest {
         env.add("    mode: " + mode);
         env.add("    j2ee: jakarta");
         if (testCode != null) env.add("    testCode: \"" + testCode + "\"");
+        for (String line : config) env.add("    " + line);
         env.add("  namespace:");
         env.add("    base: com.acme.shop");
         env.add("");

@@ -31,6 +31,13 @@ import java.util.concurrent.atomic.AtomicLong
  * generated sign-in of Agent, made for the test as the application itself.
  * The tests of @access sign in callers of their own the same way - signIn(role),
  * a principal of a role - and send their requests as them (sentBy).
+ * The tests of @Mask and @encrypt read a row back (read), search it (search) and
+ * update it (put); what a mask makes of the value sent is its own MaskType's
+ * apply, as the generated update compares it; what is stored is read past the
+ * application, with JdbcTemplate (stored) and decrypted with its key (decrypted).
+ * An application with an @encrypt field starts only with its keys
+ * (elasticore.crypto.key, elasticore.crypto.index-key): give the tests theirs -
+ * an environment variable, never the repository.
  *
  * Every test class extends this one, so all of them start the same application and
  * Spring keeps one context for the suite; each test's rows are rolled back.
@@ -67,6 +74,14 @@ abstract class ShopContractSupport {
     protected var session: MockHttpSession? = null
 
     private var signedIn = false
+
+    /** What the tests of @Mask and @encrypt read past the application: the columns as stored. */
+    @Autowired
+    protected lateinit var jdbc: org.springframework.jdbc.core.JdbcTemplate
+
+    /** Written to the database before a column is read: the test's transaction holds the rest. */
+    @Autowired
+    protected lateinit var entityManager: jakarta.persistence.EntityManager
 
     companion object {
         /** A test's values are its own (logins, unique fields): each run starts somewhere new. */
@@ -222,6 +237,109 @@ abstract class ShopContractSupport {
             }
         }
         return (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().map { it[key].toString() }
+    }
+
+    // ---- the tests of @Mask and @encrypt
+
+    /** The row as the API reads it: GET path/{id}. */
+    protected fun read(path: String, id: Any?): MvcResult = perform(MockMvcRequestBuilders.get("$path/$id"))
+
+    /** A search: POST path/search with these conditions. */
+    protected fun search(path: String, body: Any?): MvcResult =
+        perform(MockMvcRequestBuilders.post("$path/search").contentType(MediaType.APPLICATION_JSON).content(json(body)))
+
+    /** An update of the row the body's key names: PUT path. */
+    protected fun put(path: String, body: Any?): MvcResult =
+        perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)))
+
+    /** The update was made: 2xx (refused as succeeded says). */
+    protected fun assertUpdated(result: MvcResult) = succeeded(result, "the update")
+
+    /** Digits of exactly this length, unique in the run. */
+    protected fun digits(length: Int): String {
+        val unique = SEQUENCE.incrementAndGet().toString()
+        if (unique.length >= length) return unique.substring(unique.length - length)
+        return "0".repeat(length - unique.length) + unique
+    }
+
+    /**
+     * What the field's mask makes of the value sent: its MaskType's apply, as the generated update
+     * compares it. Where that is the value itself, no answer would show the mask: the test is aborted.
+     */
+    protected fun masked(sent: String, masked: String): String {
+        if (masked == sent) skip("the mask writes $sent as it is, so no answer shows it masked")
+        return masked
+    }
+
+    /** The read let in, and its answer shows the field masked. */
+    protected fun assertMasked(result: MvcResult, field: String, masked: String) {
+        succeeded(result, "the read")
+        Assertions.assertEquals(masked, value(result, field).toString()) { "$field is not shown masked: " + answer(result) }
+    }
+
+    /** The search let in, its answer holds the row of this key, and shows the field masked. */
+    protected fun assertFoundMasked(result: MvcResult, key: String, id: Any?, field: String, masked: String) {
+        assertFound(result, key, id)
+        for (row in rowsOf(result)) {
+            if (row[key].toString() != id.toString()) continue
+            Assertions.assertEquals(masked, row[field].toString()) { "$field is not shown masked: " + answer(result) }
+        }
+    }
+
+    /** The search let in, and its answer holds the row of this key. */
+    protected fun assertFound(result: MvcResult, key: String, id: Any?) {
+        succeeded(result, "the search")
+        Assertions.assertTrue(rowsOf(result).any { it[key].toString() == id.toString() }) { "the search does not hold $key $id: " + answer(result) }
+    }
+
+    /** The search let in, and its answer does not hold the row of this key. */
+    protected fun assertNotFound(result: MvcResult, key: String, id: Any?) {
+        succeeded(result, "the search")
+        Assertions.assertFalse(rowsOf(result).any { it[key].toString() == id.toString() }) { "the search holds $key $id: " + answer(result) }
+    }
+
+    /** The rows a search answered: those of its page, or of the list it is. */
+    private fun rowsOf(result: MvcResult): List<Map<*, *>> {
+        var rows: Any? = try {
+            JsonPath.read<Any?>(body(result), "\$.content")
+        } catch (notAPage: RuntimeException) {
+            null
+        }
+        if (rows !is List<*>) {
+            rows = try {
+                JsonPath.read<Any?>(body(result), "\$")
+            } catch (notAList: RuntimeException) {
+                null
+            }
+        }
+        return (rows as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+    }
+
+    /**
+     * The value the database holds, read past the application: the column of the row of this key - what
+     * the test's transaction has not written yet is written first.
+     */
+    protected fun stored(table: String, column: String, key: String, id: Any?): String? {
+        entityManager.flush()
+        val found = jdbc.queryForList("select $column from $table where $key = ?", String::class.java, id)
+        Assertions.assertEquals(1, found.size) { "$table holds no row of $key $id" }
+        return found[0]
+    }
+
+    /** The value stored is this one. */
+    protected fun assertStored(stored: String?, expected: String) {
+        Assertions.assertEquals(expected, stored, "the value stored")
+    }
+
+    /** A value as the database holds it, decrypted with the application's key (elasticore.crypto.key). */
+    protected fun decrypted(stored: String?): String? =
+        stored?.let { io.elasticore.springboot3.crypto.FieldCrypto.current().decrypt(it) }
+
+    /** The column holds no plain value: not the value sent, nor text with it inside. */
+    protected fun assertEncrypted(stored: String?, sent: String) {
+        Assertions.assertNotNull(stored, "nothing is stored")
+        Assertions.assertNotEquals(sent, stored, "the column holds the plain value")
+        if (sent.length >= 6) Assertions.assertFalse(stored!!.contains(sent)) { "the column holds the plain value: $stored" }
     }
 
     protected fun post(path: String, body: Any?): MvcResult =
