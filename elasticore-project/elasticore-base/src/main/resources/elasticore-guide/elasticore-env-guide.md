@@ -789,12 +789,13 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   made, a search that takes no key, a composite key (create only), a visitor's create that clears a required `@owner`.
 - `@Mask` and `@encrypt`: the support class reads a row back (`read`), searches (`search`), updates (`put`), reads what is stored past
   the application (`stored`: `JdbcTemplate`, after the JPA transaction is written out; `MongoTemplate`) and decrypts it (`decrypted`, with
-  the application's key - give the tests `elasticore.crypto.key` and `index-key`, never in the repository: the samples' `TestCryptoKeys`).
-  Not tested, counted and listed in the support class's comment: a composite key, a field a request does not write, one no value the
-  generator builds fits with a change the mask shows (`string(2)` masked `EMAIL`), no read (`@expose methods`; the search is checked where
-  it takes the key or the field), no update of the field (a root its commands change; `@editable` opens it to `PUT`), a `@pattern` field
-  sent back (its pattern may refuse the masked text), an inherited field (its column is not read), an `@encrypt @search(eq)` field the
-  search does not take. A value the mask writes as it is aborts the test. A kept support class without these members gets none of them.
+  the application's key - give the tests test-only keys of their own, made for the run as the samples' `TestCryptoKeys` makes them).
+  Not tested, counted and listed in the support class's comment: a composite key, the key, a field a request does not write, one no value
+  the generator builds fits with a change the mask shows (`string(2)` masked `EMAIL`) or with a second value (a `@pattern` of one), no read
+  (`@expose methods`; the search where it takes neither the key nor the field, or answers with a `@searchResult` DTO), no update of the
+  field (a root its commands change; `@editable` opens it to `PUT`), a `@pattern` field sent back (it may refuse the masked text), an inherited
+  field, a `@rollup` entity or a name not written plainly (the column is not read), an `@encrypt @search(eq)` field the search does not take.
+  A value the mask writes as it is aborts the test. A kept support class without these members gets none of them.
 - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (and `@Transactional`): every test class extends it, so Spring
   starts the application once for the suite, and the JPA and MyBatis tests roll their rows back. Spring finds the application above
   the tests' package; where it would not, the build names the project's one `@SpringBootApplication` - else name it there.

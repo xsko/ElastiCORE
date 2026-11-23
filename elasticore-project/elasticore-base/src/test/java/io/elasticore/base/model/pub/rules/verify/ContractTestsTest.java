@@ -1779,13 +1779,53 @@ public class ContractTestsTest {
                 "    fields:",
                 "      tagId: long @id @sequence",
                 "      shown: string(2) @env:maskemail",
+                "",
+                "  Note:",
+                "    meta: entity @root @editable @expose(20) @table(MemoBook)",
+                "    fields:",
+                "      noteId: long @id @sequence",
+                "      body:   string(40) @column(bodyText) @env:maskname",
+                "",
+                "  Slot:",
+                "    meta: entity @root @editable @expose(20)",
+                "    fields:",
+                "      slotCode: string(20) @id @env:maskname",
+                "      label:    string(20)",
+                "",
+                "  Reel:",
+                "    meta: entity @root @editable @expose(20)",
+                "    fields:",
+                "      reelId: long @id @sequence",
+                "      title:  string(30) @env:maskname",
+                "",
+                "dto:",
+                "  ReelResultDTO:",
+                "    meta: dto @searchResult(Reel)",
+                "    fields:",
+                "      title: --",
                 "");
         File project = project(model, "contract", "jpa", MASKS);
         String log = run(project, "hexagonal", "java");
         assertTrue(
-                log.contains("Card.holder @Mask sent back: its API takes no update of it - its commands change the row"
+                log.contains("Card.holder @Mask sent back: its API takes no update - its commands change the row"
                         + " (@editable opens a field to PUT)"),
                 log);
+        // A named table and column are read as Spring's naming writes them.
+        assertTrue(method(
+                        read(project, "src/test/java/com/acme/shop/NoteContractTest.java"),
+                        "bodySentBackMaskedKeepsTheStoredValue")
+                .contains("assertStored(stored(\"memo_book\", \"body_text\", \"note_id\", id), sent);"));
+        // The key is what a test reads its row back by: not sent masked.
+        assertTrue(log.contains("Slot.slotCode @Mask: it is the key, which a test reads its row back by"), log);
+        // Another DTO answers the search: only the read is checked.
+        assertTrue(
+                log.contains(
+                        "Reel.title @Mask: its search answers with ReelResultDTO, not ReelDTO, so the search's answer"
+                                + " is not checked - the read is"),
+                log);
+        String reel = method(read(project, "src/test/java/com/acme/shop/ReelContractTest.java"), "titleIsShownMasked");
+        assertTrue(reel.contains("assertMasked(read(REEL, id), \"title\", masked);"), reel);
+        assertFalse(reel.contains("assertFoundMasked"), reel);
         assertTrue(method(read(project, "src/test/java/com/acme/shop/CardContractTest.java"), "holderIsShownMasked")
                 .contains("assertMasked(read(CARD, id), \"holder\", masked);"));
         assertTrue(
