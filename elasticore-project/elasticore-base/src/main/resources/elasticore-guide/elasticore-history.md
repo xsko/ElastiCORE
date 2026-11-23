@@ -1,3 +1,696 @@
+## 3.0.261123
+
+### New Features (v3 service - `@access` names roles)
+
+#### `@access` takes role names and joins words with `|` (either) and `&` (both)
+- Why (issue 269): a level was one of `public`, `user`, `owner`, `admin`, `none`. A shop whose managers read every
+  order, or whose representatives change only their own rows, had no way to say it: `read=owner` let the owner and
+  the administrator alone, and a role between the two was hand-written around the generated service.
+- Now: a level entry may name the session's roles - the constants of the `@signin` entity's role field (`@role`, or
+  the field named `role`, an enum or string with `@access(admin)`) - and join words with `|` and `&`; `&` binds
+  tighter than `|`, there are no parentheses, spaces around `|` and `&` are allowed: `read=owner|MANAGER` (the owner,
+  or a MANAGER on every row - a MANAGER's search is not narrowed, anyone else's has their own rows),
+  `update=REP&owner` (a REP on a row of their own; an owner who is no REP is refused 403),
+  `close=REP&owner|MANAGER`. A word that is a level is the level, in any case; any other word is a role name, starts
+  with a capital letter and is compared with `CurrentUser.hasRole` as written. The administrator passes every entry
+  but `none`, as it passes `owner`. `findAll` and a conditional delete or update of an entry naming `owner` are for
+  whoever passes it on every row, and the administrator. The runtime's `AccessPolicy` reads the entry (the generated
+  services hand it the declaration text, as before), so the checks are those of every mode, language and
+  architecture: the service checks of create, read, update, delete, search and the command operations, the per-row
+  read, and the search filter of JPA (the `Specification`), MyBatis (the mapper's owner argument) and MongoDB (the
+  `Criteria`). `AccessPolicy.level(op)` answers null for an entry that names a role or joins words.
+- Build checks: where the application has a role enum - the `@signin` entity's role field is an enum, in this domain
+  or another domain of the application (counted per application, as `@signin` is) - a role name (a word with a
+  capital first that is no level) that is not one of its constants stops the build, naming the entity, the entry and
+  the name: `[Shop] Ticket
+  @access(create=REP|MANGER): MANGER is neither a level (public, user, owner, admin, none) nor a constant of the role
+  enum UserRole (USER, MANAGER, REP, ADMIN).` Without one (no `@signin`, a string role, two `@signin` entities) a name
+  is not checked. DSL warnings: a role constant named `PUBLIC`, `USER`, `OWNER` or `NONE`, once an entry names a role
+  or writes the word as the constant (`read=USER`) - `UserRole.USER cannot be named in @access` (`ADMIN` is the
+  administrator anyway); `&` with `user` or `public` (adds nothing) or with `none` (lets nobody in). The sign-in is
+  still generated only when the `@signin` entity's update (and a chosen key's delete) lets in only the row's own user
+  and the administrator: every term of the entry holds `admin`, `none`, or `owner` on the key - `update=owner|MANAGER`
+  is refused with the reason, `update=REP&owner` is not. The Ossie export writes a joined entry as the runtime reads
+  it (`owner|MANAGER`).
+- Unchanged: an entry of one level generates and behaves as before - a model that names no role generates the same
+  bytes, and the runtime's refusals keep their messages (401 for a visitor, "is for the administrator", "is not
+  allowed"); the 2.x-compatible output; a field's `@access(admin)` (a field takes only `admin`); the TypeScript
+  client, which exposes no access levels. The loader reads `@access` values with `|` and `&`, spaced or not, as one
+  value; other annotations keep the 2.x reading. A word that is no level and cannot be a role name (no capital first,
+  `read=owners`) is what it was: the build's "is not operation=level" warning with its message, the build goes on -
+  with a role enum too - and the application refuses to start with the same message as before.
+- Checked: `AccessPolicyTest` (springboot3 and springboot4 share it) - parsing, either, both, `&` before `|`, the
+  administrator passing all but `none`, a visitor's 401, the search filter of `owner|MANAGER` and `REP&owner`,
+  `requireAll`, a lower-case non-level word refused with the message it had before. `AccessRolesTest` - the entry in the generated service of JPA
+  hexagonal Java and Kotlin, MyBatis layered Java and MongoDB Java and Kotlin with the owner filter; the service of a
+  role entry equal to that of a level entry but for the declaration text; the build error for an unknown name, also
+  when the role enum is in another domain; `read=owners` and `update=rep&owner` with a role enum: the warning as
+  before and a build that passes; no check without a role enum; the warnings (`&` with user, none and
+  public; the hidden `USER` said where an entry names a role or writes `USER`, not in a model that names none); the
+  refused sign-in of `update=owner|MANAGER`, and of `update=REP&owner` when `@owner` is not the key, the kept sign-in
+  of `update=REP&owner` on the key. `StarParameterTest` - the loader keeps a spaced entry whole. The pet store (Boot 4,
+  hexagonal JPA, over MockMvc): `UserRole` has `MANAGER`, `PurchaseOrder` says `read=owner|MANAGER` and
+  `delete=MANAGER&owner`; `ShopFlowTest` - a customer the administrator made a MANAGER reads and searches another's
+  order, another customer gets 404 and an empty search; the owner who is no MANAGER deletes nothing (403), a MANAGER
+  deletes a cancelled order of their own and not another's (404). Its build says `UserRole.USER cannot be named in
+  @access`. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing /
+  0 extra.
+- Files: `AccessPolicy` (springboot3), `AccessExpression` (new), `ServiceAccessRules`, `EntitySpec`, `SpecFactory`,
+  `RulesGenRunner`, `AbstractModelLoader`, `OssieSemanticModelExporter`, `AccessPolicyTest`, `AccessRolesTest` (new), `StarParameterTest`, the
+  annotation and DSL guides (en, ko), the pet store (`enum.yml`, `entity.yml`, `semantic_model.yml`, `ShopFlowTest`,
+  `guide/build_guide.py`, `static/dsl-guide.html`).
+
+### Bug Fixes (rule API - the blind index of an encrypted field)
+
+#### `FieldSpec.blindIndexOf()` tells a team rule which field is a blind index, and of what
+- Why (issue 290): with `email: string(100) @encrypt @s(eq)` the generator adds the field `emailBidx` (a
+  `string(22)`), and a team rule walking `EntitySpec.fields()` or `dtoFields()` saw it as a declared field. The only
+  way to tell was the internal mark `EncryptRules.INDEX_OF`, which the rule guide does not name.
+- Now: `FieldSpec.blindIndexOf()` answers, for the blind index of an `@encrypt @search(eq)` field, the name of the
+  field it indexes (`emailBidx` -> `email`, `@encrypt(digits)` too), and `null` for every other field. The rules that
+  read the mark through `FieldSpec` (`EncryptRules.indexes`, `EncryptRules.indexOf`, the service test's sample data)
+  ask it now. The rule-dev guide's `FieldSpec` table names it, with the line that leaves such a field out of a screen
+  model: `if (f.blindIndexOf() != null) continue;`.
+- Unchanged: `fields()`, `allFields()` and `dtoFields()` return what they did; the DTO and the Ossie export leave the
+  index out as before, by the same mark on the model's `Field` (they do not read `FieldSpec`); generated code does not
+  change.
+- Checked: `BlindIndexOfTest` - a team rule (`com.acme.probe.ScreenFieldRules`) in a generated project, Java and
+  Kotlin, sees `emailBidx->email phoneBidx->phone` (`phone` is `@encrypt(digits)`) in `fields()` and lists the
+  declared fields alone; a declared field answers `null`. `EncryptFieldTest`, `EncryptFieldMarkTest`.
+  `elcoreRulesCheck -Pstrict` (158 MATCH / 0 DIFF / 2 ACCEPTED) and `elcoreTreeCheck` (0 differ / 0 missing /
+  0 extra); `elasticore-template-ddd`, `-kt` and `-mybatis` (which use `@encrypt`) regenerate with no change.
+- Files: `FieldSpec`, `EncryptRules`, `ServiceTestBaseRules`, `BlindIndexOfTest`, `ScreenFieldRules` and its
+  templates (test), the rule-dev guide's `FieldSpec` table (en, ko).
+
+### New Features (tests - `testCode: "contract"`: `@access`)
+
+#### The contract tests check who each `@access` entry lets in and whom it refuses
+- Why (issue 295, phase 3): the contract tests signed in an administrator and checked what the model declares of the data;
+  who may do what - `@access` with its roles, `|`, `&` and `owner` - was tested by hand or not at all.
+- Now:
+  - Each operation the API serves - read, search, create, update, delete, each command - is tested at the level its entry gives
+    it, else `*`, else `admin` (the default). A caller each term lets in passes (2xx; a search, narrowed to the test's row by
+    its key, finds it). A visitor is refused 401 `not-signed-in`; a caller of a role no term lets in 403 `forbidden` - on a row
+    of theirs where `owner` is a word, so the role is what refuses them; where `owner` is a word, a caller each owner term
+    lets in, on another's row, 404 `not-found` (a search does not find the row). So `REP&owner` refuses another role and a REP
+    on another's row, and `owner|MANAGER` lets in either. The expected answer is read as the generated code gives it: the
+    service asks the level, then the row's owner; the API reads a row before it deletes it, so a delete asks the read first;
+    a visitor's create of a row keyed by its owner (`@owner` the key the request chooses) is refused 401, whatever create says.
+    A refusal is checked by its status, and by its problem `code` where the answer has one - never by message.
+  - The support class signs in principals of a role: `signIn(role)` makes one as the application itself, with the role in the
+    `@signin` entity's role field (its JSON value - `"M"` for `UserRole.MANAGER` written `@json(code)`, a string role as
+    written), signs it in through the generated sign-in and returns a `Caller` (its key and session); `sentBy(caller, ...)`
+    sends a request as it, or as a visitor for `null`; `assertAllowed`, `assertDenied`, `assertFinds`, `assertMisses` check
+    the answer. `signIn()` - the administrator the rows are made by - is as it was.
+  - Each test signs in its own principals and makes its own rows. A row of a caller's is made by the administrator with the
+    owner sent - as the application itself (`asTheSystem`, added to the support class then) where the principal has no role
+    to be the administrator by, so an admin-only create does not abort the test - or, where the server sets `@owner`, by the
+    caller, who owns what they create; the `@signin` entity's own row is the caller's.
+  - The build never breaks: after the support class is written or merged, the run reads the file it left. Where it lacks a
+    member a test class calls (`signIn(String)`, `sentBy`, `Caller`, `assertAllowed` ... - a class of the project's a merge
+    kept as it was), the tests of `@access` are not written - the class keeps its other tests where the kept class has what
+    they call, else it is not written - and the summary says so: `Shop: ShopContractSupport has no signIn(String) - add the
+    members from build/elasticore/contract/ShopContractSupport.java, the version this run generated; ...`. A delete or a command a lifecycle guards is
+    given after the commands that bring a new row to where it may be (as the administrator).
+  - Let in, a request refused by `@access` (401, 403, a 404 `not-found`) or failing (5xx) fails the test; refused by another
+    rule of the application's own - a reference to a row it needs, say - it is aborted with the reason.
+  - Counted as not tested, with why, in the summary and in the support class's comment: no principal to sign in (no
+    `@signin`, or it cannot be built), a role the role field cannot hold, a term of two roles (`REP&MANAGER` - a session holds
+    one), `owner` where `@owner` names no field, an entry not read (`read=owners`), a row of a caller's that cannot be made,
+    a delete or a command no sequence of commands brings a new row to, a search that takes no key (it could miss the test's
+    row by its page alone), a composite key (only create is tested), a visitor's create that clears a required `@owner`.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; a domain without `@access` gets the same
+  contract tests and support class as before. `testCode: "true"` is as it was. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF /
+  2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library change, no DSL word.
+- Samples: `elasticore-template-kt`'s Ticket says `cancel=owner|LEAD, bill=LEAD&owner` (a string role: the agent's `grade`), so
+  the Kotlin sample has a role expression; its edited `ShopContractSupport.kt` takes the new members. The pet store already has
+  `read=owner|MANAGER`, `delete=MANAGER&owner`; its edited `PurchaseOrderContractTest` takes the new tests (merged, the
+  delivery address kept).
+- Checked, over HTTP: the pet store (Spring Boot 4, hexagonal, JPA) 122 contract tests (45 before), its whole suite 193.
+  Weakening three generated checks of `PurchaseOrderCoreService` - the search's owner filter, the read's owner check,
+  `delete=MANAGER&owner` as `delete=owner` - failed exactly `searchHidesAnothersRowFromAUser`,
+  `readRefusesAUserOnAnothersRow` and `deleteRefusesAUserOnTheirRow` (409 instead of 403); restored.
+  `elasticore-template-kt` (Kotlin, hexagonal) 73 contract tests (34 of Ticket), its whole suite 228. Switched on for the run
+  only: the MyBatis pet store (layered, Spring Boot 4) 106 - with its order builder given an item, which its application
+  requires and its model does not (without it those tests are aborted); the `club` domains of `elasticore-template-mongo` (44)
+  and `-kt-mongo` (71) on MongoDB 7.0.12 through `ELASTICORE_IT_MONGODB_URI`. The Kotlin MongoDB run found that a principal
+  with no role field signs in no administrator, so a row it made with the owner sent was its own: such rows are now made as
+  the application itself; rerun with that, the two `club` domains pass again (44, 71), the rows through `asTheSystem`.
+  Whole suites of both MongoDB samples pass on the server (27 contract tests each, of `*=public`). `elasticore-template-ddd`
+  (70) and `-ddd-mybatis` (45) contract tests pass, unchanged. `ContractTestsTest` (+11): a support class kept without the new members (no test of `@access`
+  written, the others kept, the version generated beside the build, the summary), each case of a model with roles, `|`,
+  `&` and `owner` in Java and Kotlin, the sign-in entity's own row, a lifecycle-guarded delete and a command, `none` and `*`,
+  a visitor's create keyed by its owner, the skips (no `@signin`, two roles, an entry not read, no `@owner`, a role too long
+  for its field, no role field, a required owner a visitor's create clears), and that a model with `@access` adds only test
+  files in JPA, Kotlin, MyBatis and MongoDB.
+- Files: `verify/ContractTestSource.java`, `ContractTestsTest.java`, the env guide 6.2.1 and the annotation guide's `@access`
+  (en, ko), `elasticore-template-kt`'s `ticket.yml` and `ShopContractSupport.kt`, the pet store's `PurchaseOrderContractTest.java`.
+
+### New Features (tests - `testCode: "contract"`: the tests of what the DSL declares, lifecycles and constraints)
+
+#### `testCode: "contract"` writes tests of each lifecycle move and each constraint, over the project's own API
+- Why (issue 295, phase 2): the rules a model declares - a move of `states:`, a `@min`, a `@pattern`, an `@invariant` - each
+  needed a test written by hand, and most had none. A regression in the generator or in a hand-written override passed the
+  build. The tests the DSL already implies are now generated, and an AI agent that edits the model gets a precise signal.
+- Now:
+  - A new value of env.yml's `config.testCode`: `"contract"`. It writes the contract tests and nothing else - no Mockito, no
+    service unit test. `"true"` keeps its meaning (the service unit tests of the 2.x output and Kotlin; the v3 Java bundles
+    still write none under it). The v3 output and Kotlin, every architecture (layered, ddd, hexagonal), JPA, MyBatis and
+    MongoDB; the 2.x output gets none, and a DSL warning says so.
+  - Per domain, in `src/test/java/<base package>/` (`src/test/kotlin` for Kotlin): `<Domain>ContractSupport` and a
+    `<Entity>ContractTest` for each entity whose API creates rows. Both carry the generate-once marker: written once, then
+    merged when the DSL changes and kept where the developer changed them, as the architecture test.
+  - What is tested, by status and the problem's `code` (and the field), never by message text:
+    - each move of `states:` from each state it lists - 2xx, the state moved (the value the API shows, `@json(code)` too), a
+      `@stamp` of the state entered set - the row brought there by the shortest sequence of commands; refused (409,
+      `state.<Entity>.<field>.<command>`) from each other state a row can reach, preferring a state only that lifecycle
+      refuses in when a command moves several; a new row starts in each lifecycle's `initial`;
+    - `!` sent as null (400 `NotNull`); `string(n)` / `@length` at the length and one past it (400 `Size`, and the least
+      length); `@min` / `@max` at the bound and one step past it (400 `Min` / `Max`, `DecimalMin` / `DecimalMax` where the DTO
+      writes those); `@pattern` with a value made from the expression and checked with `java.util.regex` at generation, and
+      one that does not match (400 `Pattern`); `@minsize(n)` with n and n - 1 members (400 `Size`);
+    - `@invariant` of the forms the generator reads - `field > n` (`>=`, `<`, `<=`, `==`), `items.size > n`, `notNull`,
+      `notEmpty` - at the boundary and one past it (422, the invariant's own code).
+  - Rows are built from the model: what the DTO requires, the rows a required reference names (made first through their
+    own API; the key the request sends - a flattened key, or the identity a reference by id holds), the references a
+    `@snapshot` or `@compute` reads through, the members a collection must have, a required value object, enumerations by
+    the value the API reads, dates in the DTO's format (`@past` / `@future` respected), unique text for every string, and a
+    value of its own for each row where one must be unique (`@unique`, a unique index alone on it, the key): a `@pattern`'s
+    value varied in the positions the pattern lets vary (each character checked in place, and combinations, at generation),
+    a number in whole steps within its bounds. A unique enumeration, boolean or date, a unique `@pattern` with one value only,
+    a fractional bound of a float (a float holds no exact 0.1, and its check widens it to a double) and a table H2 cannot
+    make (`@columnDef('jsonb')`, `xml`) are counted as skipped. A whole number's promise (`qty > 0.5`) is tested at whole
+    numbers (1 and 0). Each test makes its own rows and reads no seeded data.
+  - The support class carries `@SpringBootTest` + `@AutoConfigureMockMvc` (Spring Boot 3 and 4 packages) and, over JPA and
+    MyBatis, `@Transactional`: every test class extends it, so the suite starts one application context and each test's rows
+    are rolled back. Spring finds the application above the tests' package; where it would not, the build names the
+    project's single `@SpringBootApplication` (src/main first). Over JPA and MyBatis its properties pin an in-memory H2 of
+    the tests' own, whatever datasource the application names (URL, driver; over JPA `ddl-auto=create-drop` and Flyway and
+    Liquibase off, over MyBatis the application's schema); a project changes them there. Over MongoDB the tests run on the
+    server `ELASTICORE_IT_MONGODB_URI` names, in the database `elasticore_contract`, and are skipped without it.
+  - Every request goes through the support class: `request(builder)` (what every request gets added - empty; a CSRF token
+    goes there) and `signIn()`. Where an operation asks who is calling (`@access`), `signIn()` makes an administrator as the
+    application itself (`CurrentUser.runAsSystem`, the role from `adminRole`) and signs in through the generated sign-in
+    (`@signin`); without one the requests run as the application. JSON is read with JsonPath and written by the support
+    class: no Jackson version is assumed.
+  - A refusal at run time by a rule of the application's own (a check its code makes, a unique value taken) aborts the test
+    with the reason (`Assumptions.abort`, also printed - Gradle's XML report keeps no reason). A refusal the model declares
+    (`invalid`, `invariant.*`, `state.*`) and a 5xx fail it - on a row the test needs as on the one it checks, so a
+    regression in a row's builder (a required field it does not send) cannot pass as aborted tests. `testCode` is read
+    exactly as `"true"` is; a value it does not take (`"Contract"`, `"contracts"`) is a DSL warning. A row the generator
+    cannot build is counted:
+    `=== contract tests: 70 written, 2 skipped (Receipt: its API takes no create (@expose methods), so no row is made to test;
+    Product.price @min(0): @invariant(price > 0) refuses the boundary) ===` after the run's summary.
+  - Rule API: `DddInvariantRules.declaredPromises`, `DddStateRules.stampedStates`; `DddCommandRules.kebab`,
+    `ServiceAccessRules.keyGenerated` and `ServiceAccessRules.level` are public.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output (a run with and one without the switch
+  differ only in the added test files - `ContractTestsTest`); `"true"` writes what it wrote. `elcoreRulesCheck -Pstrict`
+  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No project build is changed: the tests
+  need `spring-boot-starter-test` and, over JPA and MyBatis, H2; on Spring Boot 4 `spring-boot-starter-webmvc-test` too.
+- Not yet (later phases of issue 295): `@access` itself, `@Mask` and `@encrypt`, `export`; nor a lifecycle's `delete:`
+  states, or the constraints of an aggregate's members on their own.
+- Samples: `testCode: "contract"` in `elasticore-template-ddd` (shop, board, catalog, billing), `-ddd-mybatis` (shop, catalog,
+  billing), `-kt` (shop), the pet store (petstore), `-mongo` and `-kt-mongo` (shop). The generated tests are not committed,
+  as the samples' generated code; the ones a sample edited are: the Kotlin sample's support class names its application
+  (`ddd.KotlinShopApp`), the pet store's `PurchaseOrderContractTest` sends the delivery address `PurchaseOrder.place` needs.
+  The Kotlin sample's Product maps PostgreSQL's `xml` and `jsonb`: it is counted as skipped (`contract tests: 38 written,
+  1 skipped (Product: metadataRaw's column is jsonb, which H2 - the tests' database - cannot make)`).
+- Checked: the generated tests run and pass - `elasticore-template-ddd` 70 (Java, hexagonal and layered, JPA: two lifecycles
+  moved by one command, stamps, invariants, references by id), `-ddd-mybatis` 45 (MyBatis), `-kt` 38 (Kotlin, sign-in
+  through the generated sign-in), the pet store 40 (Spring Boot 4, `@access` with an administrator signed in, money,
+  embedded values, members with references); the MongoDB samples compile and skip 12 each without a server. Each module's
+  whole suite passes with them (199, 156, 94, 111). A regression is caught: `PurchaseOrder.ship()` overridden without
+  `super.ship()` failed 4 of the pet store's tests (the move, and the refusals from SHIPPED and CANCELLED). `ContractTestsTest`
+  (30): the Java and Kotlin sources, the layered bundle, the sign-in, MongoDB, the application named, an edit kept and a
+  DSL change merged, `"true"`, the 2.x output, the summary; a run without the switch the same but for the test files in Java
+  hexagonal, Kotlin, layered, MyBatis and MongoDB; the H2 properties (Java, Kotlin, MyBatis) and Mongo's database; the
+  support class failing a declared refusal of a row it needs; unique values (pattern varied, number in steps, what cannot
+  be said); a float's fractional bound (and that Hibernate Validator's widening, `BigDecimal.valueOf((double) 0.1f)`, is
+  above 0.1); a whole number's promise; a table H2 cannot make; `testCode` read exactly; two domains with an entity of one
+  name; the pattern values (negated classes, `\w`, `\S`, inline flags, `{n,}`, combinations).
+- Files: `verify/ContractTestSource.java`, `verify/PatternSample.java` (new), `verify/RulesGenRunner.java`,
+  `ddd/DddInvariantRules.java`, `ddd/DddStateRules.java`, `ddd/DddCommandRules.java`, `base/ServiceAccessRules.java`,
+  `ContractTestsTest.java` (new), the env guide 6.2 / 6.2.1 (en, ko), the samples' env.yml, `.gitignore` and
+  `elasticore-template-kt/build.gradle`.
+
+### New Features (tests - `testCode: "contract"`: lookahead patterns, the rest of the Bean Validation marks)
+
+#### The contract tests read a password's `@pattern`, and test `@notblank`, `@email`, `@past` and `@future`
+- Why (issue 295, the phase 2 follow-up): a `@pattern` with lookaheads - the usual password rule - was no sample, so an entity
+  with such a password got no tests, and as the sign-in's principal it left every test running as the application. The other
+  Bean Validation marks the DTO writes had no test, and a `@past` / `@future` field's value was fixed (2000, 2100).
+- Now:
+  - `@pattern` beginning with `^` and lookaheads `(?=.*X)` or `(?=.*?X)` - X one class, one escape (`\d`, `\w`, `\S` ...) or one
+    character: the rest is sampled as before and a character of each X put where the rest takes it, within the field's length
+    and `@length`; the whole value is checked with `java.util.regex`. A value varied per row varies a position that holds a
+    lookahead only within it. The refused value matches the rest and misses one lookahead; where none can be built
+    (`^(?=.*\d)\d+$`) the pattern test is not written and is counted. Any other lookaround - a negative lookahead, a
+    lookbehind, a lookahead further in, one without `^` - stays a counted skip. Covered: `^(?=.*[A-Za-z])(?=.*[0-9]).+$` with
+    `string(255)! @length(min=8)` and `^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$`.
+  - Each mark the DTO writes on what a request sends gets one refusal, by status, field and code, after its valid value
+    passes: `@notblank` - `"   "`, 400 `NotBlank`; `@email` - the address without its `@`, 400 `Email`; `@past` /
+    `@pastorpresent` - ahead of now, 400 `Past` / `PastOrPresent`; `@future` / `@futureorpresent` - behind now, 400 `Future` /
+    `FutureOrPresent`. The dates are read from the clock when the test runs - a year ago or ahead for the valid value; for
+    the refused one two days on a date (a midnight passing during the request leaves it past now), a day on a datetime or a
+    timestamp - so no time zone moves them across now; on a date, a datetime and a timestamp (Instant), in the DTO's
+    format. A time of day is counted as skipped (past or future by the hour of the run), and no value of one is
+    made: a required one leaves its row counted as skipped. A mark the DTO does not write is not
+    tested: `@notblank` on a field the server sets (`@readonly`), which `v3-dto-system-managed` takes off; `@email` with a
+    `@pattern` whose value is no address is counted.
+  - Every other test's row satisfies the marks: a `@notblank` field is sent (it refuses null), a required `@past` /
+    `@future` value is a year from the clock.
+  - The sign-in's principal of a password with lookaheads is built: the support class makes it and signs in with the plain
+    value it sent (the password is hashed on save). Where there is no sign-in, the support class's comment says why: the run
+    has no `@signin`, or its principal cannot be built - with the summary's reason (`Agent (signing in): secret: ...`). A
+    `@signin` entity the API does not create is now counted too.
+- Fixed: `@pattern` is sampled as the DTO's `@Pattern` reads it. The DSL writes a string literal's content (`\\d`); the
+  sampler read that text as the expression (a backslash and a d), so a pattern with an escape got values the DTO refused.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; the contract tests of a model without these
+  marks are the same, but a `@past` / `@future` date in a row, which is now read from the clock, and the values of a
+  `@pattern` with an escape (the fix above). `elcoreRulesCheck -Pstrict`
+  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra. No runtime library, no DSL word.
+- Not in scope: an aggregate member's own constraints. The pet store's password takes a letter rule only
+  (`^(?=.*[A-Za-z]).+$`): its demo accounts, admin/admin and user/user, are made through the validating service.
+- Samples: the pet store's Customer `lastName` is `@notblank`, its `password` has `@pattern('^(?=.*[A-Za-z]).+$', ...)` (it
+  already had `email @email` and `dateOfBirth date @past`); Category has `featuredUntil: datetime @future` (the column in
+  `db/schema-*.sql` and the Ossie model).
+- Checked: the pet store's contract tests 45 (40 before: `lastNameNotBlank`, `emailEmail`, `dateOfBirthPast`,
+  `passwordPattern`, `featuredUntilFuture`), over HTTP with the administrator signed in as a Customer made with the
+  pattern's password; its whole suite 116. Removing `@Email` from the generated `CustomerDTO` failed `emailEmail` (200 for the
+  address without its `@`); restored. `elasticore-template-kt` contract tests 38, `-ddd-mybatis` 48, `-ddd` 74 pass.
+  `ContractTestsTest` (+5): each mark in Java and Kotlin (date, datetime, timestamp, a date in `yyyyMMdd`), the row sending
+  `@notblank`, no test of a mark the DTO does not write, the time of day, a lookahead the rest holds, a negative lookahead and
+  an `@email` whose `@pattern` makes no address counted, the lookahead pattern's refusal; the principal with a lookahead
+  password; the support class's reason (a principal that cannot be built, a `@signin` entity without create, no `@signin`);
+  a reason safe in a comment. `PatternSampleTest` (new, 8): both password patterns (valid, refused, length), the lazy form and a
+  literal, a varied value keeping every lookahead (2000 combinations), the impossible refusal, the other lookarounds, the
+  unescaping.
+- Files: `verify/ContractTestSource.java`, `verify/PatternSample.java`, `ContractTestsTest.java`, `PatternSampleTest.java`
+  (new), the env guide 6.2.1 (en, ko), the pet store's `entity.yml`, `semantic_model.yml`, `db/schema-*.sql` and its site guide page `static/dsl-guide.html` (rebuilt by `guide/build_guide.py`).
+
+### New Features (REST - an export writes an enumeration by its label: `labels` in the export's body)
+
+#### `POST .../export` takes `"labels": ["status"]` or `"labels": "*"` beside `columns` and `headers`
+- Why (issue 289): the export of issue 271 writes an enumeration as the response's JSON does, by its code (`PLC`) - a file a
+  person reads wants the label (`Placed`, `주문됨`), in the language the column titles are already in.
+- Now:
+  - The body of `POST /api/<domain>/<entity>/export` has `labels`: the enumeration columns written by their label in the
+    request's language, not their code; `"*"` (or `["*"]`) for every enumeration column of the export. A field it does not
+    list is written by its code, as before. No DSL word: it is the request's choice, like `columns` and `headers`.
+  - Which label: the label bundle's file of the request's language (`Enum.CONSTANT`, from the `label_<lang>` column, or every
+    label column in the `labelLanguage` file - the same lookup as the titles, `_en` for English); where that file has none,
+    the bundle's default file (the label column); where the bundle does not hold the enumeration (no `label_<lang>` column, no
+    bundle at all), the label column the enumeration itself holds - its `label`, `name`, `desc`, `description` or `title`
+    getter that is not the code; with no label at all, the code. Unlike a refusal (issue 274), which never reads the default
+    file, the label column is the wanted fallback here.
+  - A name that is not a column of the export (`columns`, else the DTO's) or not an enumeration: 400 `export.labels`, naming
+    it and the columns it may name, before the search runs - as a wrong name in `columns` is refused.
+  - `.xlsx`: a label is a text cell. CSV: the injection guard applies to it as to any text.
+  - The runtime reads the constant from the row itself (the DTO's property), so the code -> constant mapping needs no
+    generated code: every mode, language and architecture the export is in. `ErrorMessages.labelOrDefault(key)`: a label
+    in the request's language, else the label bundle's default file.
+  - The TypeScript client's `ExportRequest` (`apiSupport.ts`) gets `labels?: string[] | '*'`.
+- Unchanged: a body without `labels` (or with an empty list) writes byte for byte what it wrote. The generated Java and
+  Kotlin code is the same; only `apiSupport.ts` of a run with an export gains the one member (a model without `export`
+  generates byte-identical output). Refusals still never read the default label file.
+- Limits: an enumeration whose label column is marked `@label` under another name, in a domain whose bundle does not hold
+  it (no `label_<lang>` column, no `labelLanguage`), is read by the getter names above, which may find another column or
+  none (then the code). An enumeration of another domain is labelled by the exporting domain's bundle (which does not hold
+  it), so by its own label column.
+- Checked: `SearchExportTest` (runtime, on Jackson 2 in elasticore-springboot3 and Jackson 3 in elasticore-springboot4: no
+  `labels` and an empty list give the codes as before; `["stage"]` in English - `label_en` for OPEN, the default file's label
+  column for LOST, which has no `label_en` - in Korean and in a language without a label file; `"*"` with an enumeration the
+  bundle does not hold (its own label column) and one with no label (its code), and `"*"` within `columns`; 400
+  `export.labels` for a name not in `columns`, an unknown name and a text field, also for a workbook; an .xlsx with the labels
+  as string cells; the body read with `"labels": "*"` and with a list). `RefusalLabelsTest` still says `LOST` in English, now
+  that the test bundle's default file holds the constants. `SearchExportGenerationTest` (the `labels` member of
+  `ExportRequest`). Over HTTP: the pet store (JPA, hexagonal, Boot 4, Jackson 3) `ExportTest` - a customer's orders by
+  `labels: ["status"]` with `Accept-Language: ko` are `주문됨` / `배송됨` under the title `주문 상태`, with `"*"` and `en`
+  `Placed` / `Shipped` (OrderStatus has no `label_en`: its label column), without `labels` `PLC` / `SHP`, 400 for `orderId`
+  and for `total`; `elasticore-template-kt` (Kotlin, JPA, ddd, no label bundle) `ShopApiContractTest` - `"*"` writes
+  `Open,Unbilled`, `["billing"]` `OPN,Unbilled`, 400 for `subject`. The generated TypeScript type-checked and run
+  (`elasticore-template-kt` `elcore3tsTest -Pstrict`, the new member in its `apiSupport.ts`). `elcoreRulesCheck -Pstrict`
+  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: the runtime's `SearchExport`, `ExportColumns`, `JsonRows` (Jackson 2 and Jackson 3), `ErrorMessages`;
+  `TypeScriptApiRules`; tests `SearchExportTest`, the test bundle `i18n/crm-labels.properties`, `SearchExportGenerationTest`,
+  the pet store's `ExportTest`, `elasticore-template-kt` `ShopApiContractTest`; the annotation and env guides (en, ko).
+
+### Bug Fixes (v3 service - a masked field sent back unchanged)
+
+#### An update keeps a `@Mask` field's stored value when the text sent is that value masked
+- Why (issue 270): `@Mask(MaskType.X)` writes a response field masked, and a request was read as sent. A client that
+  reads a row and sends it back - an edit form, a `PUT` of the read DTO - sent `010-****-5678` for a phone it never
+  saw, and the update wrote that text over the number for good. The env guide only told the client not to.
+- Now: the 3.0 code's update (`PUT` and `PUT /batch`, which goes through it) compares a masked field's text with the
+  stored value masked by the runtime's own `MaskType.apply` - what the response showed - and when they are the same,
+  puts the stored value back on the DTO before the mapper writes it. With `@encrypt` the stored value is the one the
+  persistence layer decrypted (the JPA converter, the MyBatis type handler). Any other text is written as before; a
+  create writes what it is sent. In the CoreService of JPA (Java and Kotlin), MyBatis (layered, and the DDD/hexagonal
+  port service) and MongoDB (Java and Kotlin), in every architecture.
+- Which fields: the mask is not a DSL word. A DTO field whose `@dto:` annotation names the class
+  `io.elasticore.springboot3.mask.Mask` - or the name `elasticore { runtimePackages }` renames it to, when the
+  annotation is written with the project's package - with a `MaskType` constant, on a text field the entity stores
+  under the same name. The comparison names the `MaskType` of the annotation's package, so it is renamed with the
+  annotation. A `@Mask` whose argument is not a `MaskType` constant is a DSL warning, and its field is written as sent;
+  a `@readonly` field is not touched (the mapper never writes it).
+- Unchanged: a model without a masked field generates the same code (no line, no comment); the 2.x-compatible output;
+  an update by condition (`updateBySpecification`) and code that calls the mapper itself write what they are given;
+  `except=owner|admin` stays with issue 178.
+- Checked: `MaskRoundTripTest` - the line in the update of JPA Java and Kotlin, hexagonal JPA, MyBatis layered and
+  hexagonal, MongoDB Java and Kotlin, after the not-found check and before the mapper, not in the create; another
+  `@dto:` annotation, another class named `Mask` and a `@readonly` field left out; the warning; `runtimePackages` with
+  the annotation in the runtime's package and in the project's; no line without a masked field. Samples, generated,
+  compiled and run: `elasticore-template-ddd` `BoardEncryptTest` (hexagonal JPA, `Subscriber.email` `@encrypt` and
+  `@Mask(EMAIL)`: the read DTO sent to the service's update and batch update keeps the ciphertext; with the line taken
+  out the same test fails - the root refuses the masked text as a change of a sealed field); `elasticore-template-kt`
+  `CommentEncryptTest` (Kotlin JPA over HTTP, `authorPhone` `@encrypt(digits)` and `@Mask(PHONE)`: `PUT` and
+  `PUT /batch` of the read JSON keep the phone and its blind index, a new phone is written, masked text of the old
+  phone is written as sent); `elasticore-template-mybatis` `ShopApi` (MyBatis over HTTP on H2, `Gadget.serialNo`
+  `@encrypt(digits)` and `@Mask(CARD)`, the same four cases); `elasticore-template-mongo` `MaskedUpdateTest` (the
+  generated MongoDB service with a mocked repository) and `ShopApi` / `elasticore-template-kt-mongo` `ShopApi` over
+  HTTP (`Customer.email` `@Mask(EMAIL)`; run where Docker or `ELASTICORE_IT_MONGODB_URI` is, skipped locally; both
+  compiled). The seven sample modules, generated before and after the change without their new masked fields, were
+  byte-identical. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing
+  / 0 extra; the full test suites of `elasticore-template-ddd`, `-kt` and `-mybatis`.
+- Files: `MaskedFields` (new), `JpaServiceFileRules`, `MyBatisServiceFileRules`, `MongoServiceFileRules`, the
+  templates `v3/service`, `kt/service`, `v3/mongo_service`, `kt/mongo_service`, `v3/mybatis_service`,
+  `v3/mybatis_port_service` (`${maskKeep}`), `MaskRoundTripTest`, the env guide (en, ko), the samples above (blueprint
+  and tests).
+
+### New Features (messages - a refusal names the field, the entity and the state by its label)
+
+#### `invariant.*` and `state.*` take the labels as values, in the language of the response; `config: labelLanguage`
+- Why (issue 274): a refusal said in Korean still named the field, the entity and the state by their code names
+  (`PurchaseOrder cannot cancel when status is SHIPPED`), and a translation could not do better - `invariant.*` took no
+  values and `state.*` only the codes - although the generator knows every label (`--`, `@label(en=...)`, the
+  enumeration's `label_<language>` columns).
+- Now:
+  - The generated refusals pass the labels as values of the runtime's new `io.elasticore.springboot3.validation.Label`
+    (keys as the label bundle has them: `Account`, `Account.annualRevenue`, `Stage.WON`). `invariant.*`: `{0}` the field
+    (for `@invariant(condition)` the first field the condition reads, else the entity), `{1}` the entity. `state.*`
+    (moves, commands of several lifecycles, `delete:`): `{0}` and `{1}` the codes as before, then `{2}` the field, `{3}`
+    the entity, `{4}` the current state, `{5}` the allowed states. Where no label is found each reads exactly as the code
+    beside it: `{4}` as `{0}` (`String.valueOf`), `{5}` framed as `{1}` (`[PLACED, SHIPPED]`, as `Arrays.toString` and the
+    delete check say it; Kotlin's step `PLACED or SHIPPED`, as `joinToString(" or ")` - `Label.listOf` / `Label.anyOf`).
+    Java and Kotlin, every mode and architecture that writes these refusals. The exception's own message
+    (`getMessage()`, a log) is unchanged.
+  - The default bundle names them: `invariant.Account.annualRevenue.min={0} must be at least 0`,
+    `{1} violates <condition>` for an `@invariant` without a sentence, `state.<E>.<f>.<command>={3} cannot <command> when {2}
+    is {4}; it must be {5}`, `state.<E>.<f>.delete={3} cannot be deleted when {2} is {4}; it must be {5}`. A sentence
+    written in the DSL stays as written. The header lists the values, only in a domain that has such codes.
+  - `ErrorMessages` says a `Label` in the one language the response is in: the label bundle's file of that language itself
+    (`i18n/<domain>-labels_ko.properties`; `_en` for the bundles' own wording) - never the default file, which holds the
+    `--` text - else the name. Elsewhere (a log, `MessageFormat`, another `MessageSource`) a `Label` is its name, and it is a
+    `MessageSourceResolvable` with its key as the code.
+  - A refusal that carried values before (`state.*`, `reference.*`, a hand-written code with values) is a `MessageFormat`
+    pattern as it always was, placeholder or not (`''` an apostrophe). A refusal whose values are all labels - an
+    `invariant.*`, which had none - passes them only to a sentence that holds a `{`: an `invariant.*` translation without
+    a placeholder such as `can't be negative` is said as written, as before, and so is one that is no `MessageFormat`
+    pattern (`금액은 {최소} 이상`, a DSL sentence with a brace).
+  - A sentence that names a value the refusal did not give - a generated code thrown by hand with the two codes
+    (`state.*`) or with none (`invariant.*`) - is answered with the refusal's own message, never with `{3}` left in it.
+    Without a message to fall back on it is said as before.
+  - A project with `runtimePackages` (its own copy of the runtime) adds the new `Label` to its copy and takes the
+    changed `ErrorMessages`: the generated refusals name `Label`.
+  - env.yml `config: labelLanguage: ko` (optional, domain-wide, normalised as an `@label` key; not a language tag: a
+    `DSL_WARN`, ignored) names the language of the `--` labels: the label bundle gets a file of that language with every
+    label - `@label(ko=...)`, else the `--` text; an enumeration's `label_ko` column, else its label column. Without it, a
+    language with no `@label(<language>=...)` gets the names in these sentences.
+- Unchanged: a model without invariants and lifecycles generates the same code; a model without labelLanguage and
+  without translations writes no label bundle; `reference.*`; existing `_ko` translations of `state.*` keep their meaning
+  (`{0}`/`{1}` still the codes); every answer - English and translated - of a model without labels, word for word; the
+  2.x-compatible output and the 2.x generator. Changed by default, as the feature: the refusal lines of a model with
+  invariants or lifecycles carry the labels, and the default bundle's sentences of those codes are patterns naming them.
+- Checked: `RefusalLabelsTest` (springboot3: English takes `_en` or the name and never the `--` file; ko and ko_KR take
+  `_ko`; ja translated without labels says the names; Accept-Language `fr, ko;q=0.8` / `en` / `sv` / none through the
+  `AcceptHeaderLocaleResolver`; a ko `state.*` translation with the codes unchanged; an `invariant.*` translation with
+  `can't` and no placeholder kept intact, a pattern with `''` rendered; a `state.*` and a hand-written translation
+  without a placeholder written with `''` said with `'`, as Spring's own MessageSource says them with the codes alone;
+  a hand-thrown `state.*` with two values and an `invariant.*` with none answered with their own message, a translation
+  naming only `{0}`/`{1}` said with them; an invariant translation and a DSL sentence that are no pattern said as
+  written; `format` with a label; `Label` as a name - `listOf` equal to `Arrays.toString`, `anyOf` to `joinToString(" or ")` -,
+  its codes, another `MessageSource`). `MessageLabelsGenerationTest` (base, through `RulesGenRunner`: the bundle
+  sentences, read back with `MessageFormat`; a model without labels whose sentences, with the names and the code lists,
+  read as the sentences before; the Java and Kotlin throw lines of the invariants, the mover and the delete check; no
+  `Label` in a model without refusals; the labelLanguage file, `_en` unchanged, `ko_kr` -> `_ko_KR`, `korean` warned and
+  ignored; a DSL sentence with a brace kept as written), `LiteralPatternTest` (a condition's or a bound's text with an
+  apostrophe or a brace said back as written), `ErrorCatalogTest`, `ShopModelTest` (assertions on the old sentences
+  updated). A model without English
+  labels answers in English as before, by the runtime: `elasticore-template-ddd` `EnglishRefusalAsBeforeTest` (Java: a
+  move `... it must be [READY]`, a command of two lifecycles `... [PAID]`, `sortOrder must be at least 0` / `at most 999`,
+  each equal to the exception's message, the sentence the answer had) and `elasticore-template-kt`
+  `DomainRulesDslTest.withoutEnglishLabelsTheEnglishAnswerIsAsBefore` (Kotlin: `... it must be OPEN`, `... UNBILLED`,
+  the delete check `... [CLOSED]`, the bounds). Over HTTP in the Pet Store (`labelLanguage: ko`,
+  `PurchaseOrder.status @label(en=Order status) -- 주문 상태`, `OrderStatus.label_ko`): `ShopFlowTest` - cancel and delete
+  of a shipped order without a header, `en` and `fr` answer `PurchaseOrder cannot ... when Order status is SHIPPED; it
+  must be [PLACED]` / `[CANCELLED]` (the field by its English label; was `status`), `ko` delete answers
+  `주문 상태이(가) 배송됨인 주문은(는) 지울 수 없습니다 (지울 수 있는 상태: [취소됨])`, `ko` cancel by the translation with the
+  codes is unchanged; `LabelBundleTest` (the `_ko` file). `elasticore-template-kt` `DomainRulesDslTest` (the values
+  thrown by a two-lifecycle command and by `checkDeletable`) and `ShopApiContractTest`; `elasticore-template-ddd`
+  `LifecycleTogetherTest`, `AggregateInvariantTest`, `ApiContractTest`, `StateStampApiTest`, `BoundaryInvariantTest`;
+  `elasticore-template-ddd-mybatis` `LifecycleTogetherTest`. With the main sources of the change taken back (the
+  runtime `Label` kept so the tests compile), `MessageLabelsGenerationTest`, `RefusalLabelsTest`, `ErrorCatalogTest` and
+  `ShopModelTest` fail.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `Label` (new), `ErrorMessages`, `DddInvariantRules`, `DddStateRules`, `ErrorCatalog`, `LabelCatalog`,
+  `RulesGenRunner`, `RefusalLabelsTest` and its bundles (new), `MessageLabelsGenerationTest` (new), `ErrorCatalogTest`,
+  `ShopModelTest`, the Pet Store (`env.yml`, `entity.yml`, `enum.yml`, `semantic_model.yml`,
+  `petstore-messages_ko.properties`, `ShopFlowTest`, `LabelBundleTest`, the site guide page `static/dsl-guide.html`
+  regenerated by `guide/build_guide.py`), `LiteralPatternTest` (new), `elasticore-template-kt` `DomainRulesDslTest`,
+  `elasticore-template-ddd` `EnglishRefusalAsBeforeTest` (new),
+  the rule, env and DSL guides (en, ko), `docs/tour.md`, `docs/tour.ko.md`, `changes/screen-labels.md`.
+
+### New Features (Ossie export - an enumeration's code labels in every language)
+
+#### The codes of an enum field carry their labels from the `label_en` columns
+- Why (issue 272): an enumeration's label columns per language (issue 268: `name_en`, `label_ja`, `name_zh_TW`) reached
+  the TypeScript client and the label bundle, but the Apache Ossie export read the label column only - a question in
+  English about `PRS` found only the Korean `발굴`.
+- Now: the label column is the one the export already picks (the first field named `label`, `name` or `desc`), and its
+  translation columns are read with `EnumLabelColumns.translations` (the same rules: a text column, first subtag an
+  ISO 639-1 language, `pt_BR` -> `pt-BR`).
+  - The codes text - the field's `ai_context`, or its `ai_context.instructions` when the field has `@terms` - gives each
+    code its other languages in brackets after its label, in language name order:
+    `"Codes: PRS = 발굴 (en: Prospecting, ja: 見込み), WON = 성사 (ja: 成約), LST = 실패"`. A code with no label in a
+    language leaves that language out; a code with none keeps today's text. An enum stored by ordinal reads
+    `0 = SMALL (작음) (zh-TW: 小)`.
+  - The field's `ELASTICORE` extension gets `code_labels` beside `codes` (whose shape is unchanged), keyed by the same
+    stored values: `"code_labels": {"PRS": {"en": "Prospecting", "ja": "見込み"}, "WON": {"ja": "成約"}}` - written only
+    when at least one code has such a label; a code without any is not in it.
+- Unchanged: an enumeration without label columns per language exports byte for byte as before; the committed
+  `semantic_model.yml` of `elasticore-sample-petstore`, `elasticore-template-ddd` and `elasticore-template-ddd-mybatis`
+  (none has such columns) are regenerated identical. Which column is the label (Ossie's pick, the TypeScript pick) is
+  unchanged; an enumeration whose label column is only `description` or `title` has no label column in the export,
+  as before. The 2.x-compatible output and the 2.x generator are untouched.
+- Checked: `OssieExportTest` through `RulesGenRunner`: the translations in the plain `ai_context` and in
+  `instructions` with `@terms`, languages in name order though declared `ja` before `en`, a code missing one language
+  and one missing all, an ordinal enum with `name_zh_TW` (`zh-TW`), `code_labels` present only for the enumerations
+  with columns, the same model without the columns giving today's text and no `code_labels`, and the guides' two
+  examples; `anEnumsCodesAreData` asserts no `code_labels`. Without the change the three tests of the new output fail; the no-change test passes either way. A test
+  export with `code_labels` and the three samples' exports pass Apache Ossie main's validator
+  (`validation/validate.py --schema core-spec/ossie-schema.json`, apache/ossie `83d39d6`).
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `OssieSemanticModelExporter`, `OssieExportTest`, the DSL guide ("A label in other languages", "An
+  enumeration's labels in other languages", "Value types at a glance") and the rule guide (DSL -> Ossie mapping), en
+  and ko.
+
+### Bug Fixes (DSL loader - a quoted value with `=` or nested parentheses)
+
+#### `@pattern('^(?=.*[A-Za-z])(?=.*[0-9]).+$', '...')` keeps its regular expression
+- Why (issue 267): an `=` anywhere in an annotation's parameters made the loader read them as `key=value` pairs, and an
+  `=` inside a quoted string counted too. The lookahead `(?=` of a password rule was split there, and the last piece
+  became the value: `@Pattern(regexp = "digit'", message = "비밀번호 is not in the expected form")`. Every value was
+  refused (`demo1234` too), the TypeScript validator got the same pattern, and nothing warned. A group inside a group,
+  `'^((AB|CD)-[0-9]{3})$'`, was not read at all, because the annotation's parentheses were matched one level deep.
+- Now: an `=` inside a quoted string - one that is closed later, so the apostrophe of `Owner's` is a letter - is part of
+  the value. Parameters whose every `=` is quoted are one value, read as before (`@pattern` splits its regular
+  expression and message at the first comma outside quotes). Parentheses inside a value nest two levels deep.
+- Unchanged: an `=` outside quotes is a pair as in 2.x (`@pattern(regexp="...", message="...")`, `@access(read=public)`),
+  a value without `=` is one value, and a single quoted value is one value. A model without a quoted `=` or a group in a
+  group generates the same.
+- Checked: `ParenthesesInQuotedValueTest` - the issue's model failed before (`digit'`) and passes, in the Java DTO
+  (`@Pattern(regexp = "^(?=.*[A-Za-z])(?=.*[0-9]).+$", message = "...")`) and the TypeScript client; a group in a group;
+  an `=` inside double quotes; the named form, an apostrophe before a pair and a plain value read as before.
+  `PatternAnnotationTest`, `QuotedParameterTest`, `StarParameterTest`, `ComplexLengthParameterTest`,
+  `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`.
+- Files: `AbstractModelLoader` (`equalsOutsideQuotes`, the annotation pattern), `ParenthesesInQuotedValueTest`.
+
+### New Features (TypeScript client and label bundle - what a screen needs around labels)
+
+#### `XxxMeta`, `validateXxxCodes` and an enumeration's labels in other languages as `label_en` columns
+- Why (issue 268): a screen in more than one language had the field labels (`XxxFields.f.labels`) but not the type's
+  own label, not the checks as codes it can say in its own words, and no way to give an enumeration's constants a label
+  per language - `@label` is not written on a constant line.
+- Now:
+  - **`XxxMeta`** - each DTO file of the TypeScript client gets
+    `export const XxxMeta: { label: string; labels: Record<string, string> } = { label: "...", labels: { en: "..." } }`
+    (`Xxx` as in `XxxFields`): the DTO's own `meta:` label, or its entity's when it has none, with the translations of
+    that `@label(en=...)` (`labels: {}` without). Written only when there is such a label - a `--` comment on the
+    `meta:` line is one - and not when the file already imports or declares that name (a field of a type `XxxMeta`,
+    which would not compile: TS2440).
+  - **`validateXxxCodes(value, partial)`** beside `validateXxx`, which is unchanged: the same checks, as the server's
+    `fieldErrors` codes - `{ field, code, values }[]` with `NotNull`, `Size` (`min`, `max`), `Min`/`Max` (`value`;
+    `DecimalMin`/`DecimalMax` where the server's DTO carries those), `Pattern` (`regexp`), `Email`. A list with
+    `@minsize` is `NotNull` when missing and `Size` (`min`) when shorter. This is an accepted change of the TypeScript
+    client's output: every DTO file that has `validateXxx` gains this function and nothing else changes in it.
+  - **Enumeration columns `<label column>_<language>`** (`name_en`, `label_ja`, `label_pt_BR` -> `pt-BR`): a text
+    column whose suffix, read as an `@label(xx=...)` key is (`LabelTranslations.isLanguage`, `normalized`), starts with
+    a two-letter ISO 639-1 language (`Locale.getISOLanguages()`). camelCase (`nameEn`), three letters or a non-ISO pair
+    (`name_kor`, `label_old`, `name_cd`) and a number or date column (`name_no: int`, `desc_seq: long`) are ordinary
+    columns; a text `name_no` / `name_id` is Norwegian / Indonesian. The label column is the one `XxxLabel` already
+    shows. Beside at least one real translation column, a text column `<label column>_<suffix>` whose suffix is not a
+    language (`name_kor` beside `name_en`, likely a typo) is a `DSL_WARN` naming the enumeration and the column; an
+    enumeration without a translation column says nothing (`name_short`, `name_kana`). The TypeScript client writes
+    `export const XxxLabels: Record<Xxx, Record<string, string>> = { [Xxx.CODE]: { en: "...", "zh-TW": "..." } }` beside
+    the unchanged `XxxLabel`, only for an enumeration with such columns; the label bundle gets `Enum.CONSTANT` (the
+    constant's name) - the label column in the default file, each translation in its language's file - and is now
+    written also when such columns are the only translations of the model. The shared reading is
+    `EnumLabelColumns` (label column, translation columns, values per constant), which the Ossie export reads too
+    (`ossie-code-labels.md`);
+    rules read it as `EnumSpec.labelTranslations()`.
+- On by default, as agreed on the issue (the owner: an added function with `validateXxx` kept as it is; `XxxMeta` with
+  `label` and `labels`): a model without any translation still gains `validateXxxCodes` in every DTO file that has
+  `validateXxx`, and `XxxMeta` in each DTO file whose type has a meta label (a `--` comment on the `meta:` line
+  included). Nothing else in its TypeScript output changes, and it writes no label bundle and no `XxxLabels`.
+- Unchanged: `validateXxx`, `XxxFields`, `XxxLabel`. The columns stay columns of the enumeration
+  (properties of the Java and Kotlin enums); the Ossie export and the generated messages read them too
+  (`ossie-code-labels.md`, `message-labels.md`). The
+  2.x-compatible output and the 2.x generator are untouched.
+- Checked: `ScreenLabelsTypeScriptTest` (`XxxMeta` with and without translations, none without a label; the codes of
+  each constraint - `NotNull`, `Size` with both lengths, `Min`/`Max`, `DecimalMin`/`DecimalMax`, `Pattern`, `Email`, a
+  list's `NotNull` then `Size`; a shown-only field unchecked; `validateXxx` byte for byte as before; `XxxLabels` with a
+  quoted `"zh-TW"` and an escaped quote; which columns are translations - ISO first subtag, text only; a `--` comment
+  makes the label column). `ScreenLabelsGenerationTest` through `RulesGenRunner`: the bundle of a model whose only
+  translations are enumeration columns (a line without a column has none in that language, no file for
+  `label_remark`), the warning said once, the Java and Kotlin enums with the columns, `XxxLabels` and `XxxMeta` in the
+  TypeScript run (a DTO without a label takes its entity's), a model with neither writes no bundle, no `XxxMeta`, no
+  `XxxLabels`; look-alike columns (`name_no: int`, `name_kor`, `name_short`, `name_kana`) give no bundle, no
+  `XxxLabels` and no warning; a DTO importing a type `PetMeta` declares no `PetMeta`.
+  `elasticore-template-kt`: `OrderStatus` has `name_ko` and `name_zh_TW` columns; `elcore3tsVerify -Pstrict` type-checks
+  the generated client with `tsc`, `compileKotlin` compiles the enum and `ShopApiContractTest` passes. Its client
+  generated before and after the change: 46 of 143 files differ, and each only by the additions (45
+  `validateXxxCodes`, 8 `XxxMeta`, 1 `OrderStatusLabels`). `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED,
+  `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `EnumLabelColumns` (new), `LabelTranslations`, `EnumSpec`, `SpecFactory`, `LabelCatalog`, `RulesGenRunner`,
+  `TypeScriptDtoFileRules`, `TypeScriptEnumRules`, `DtoBaseRules` (`decimalBound`), the two tests,
+  `elasticore-template-kt` (`enum.yml`, `schema.yml`, `.gitignore`), the DSL guide, the rule guide and the rule-dev
+  guide (en, ko).
+
+### New Features (REST - `export` in `@expose(methods)`: the search as a CSV file or an .xlsx workbook)
+
+#### `POST /api/<domain>/<entity>/export`, where `@expose(methods="...")` lists `export`
+- Why (issue 271): a screen's "download" of a search was code every project wrote again - the same conditions as the
+  search, its access check and `@owner` filter, every page, the columns and their titles, quoting, a spreadsheet's formula
+  injection, a limit - and each got some of it wrong.
+- Now:
+  - `export` is a sixth name of `@expose(methods="...")`. Only where it is listed: without `methods` an entity keeps the
+    five it has, and a list without it serves what it served. Every mode (JPA, MyBatis, MongoDB), Java and Kotlin, every
+    architecture (layered, ddd, hexagonal). A name it does not know is still a DSL warning, which now names `export` among
+    the names.
+  - The controller gets `POST .../export` beside `POST .../search`, taking `{ search, sortCode, columns, headers, format }`
+    (all optional; `search` is the search DTO `POST .../search` takes). It only wires: the search DTO, the order - the
+    body's `sortCode`, else the search's own (its old `sortColumn`/`sortAscending` folded into the code), with the key
+    after it so that rows of one value do not move between pages -
+    and every page of the service's (the use case's) own `findBySearch`, so the conditions, the search's `@access` and the
+    `@owner` filter are the search's. Nothing changes in the service or the use case.
+  - The runtime's new `io.elasticore.springboot3.export` writes it (`SearchExport`, `CsvWriter`, `XlsxWriter`; no interface
+    an application implements). Columns: the response DTO's properties as the application's ObjectMapper writes them
+    (Jackson 2 on Spring Boot 3, Jackson 3 on 4; its JsonView where the search answers in one), in the DTO's declaration
+    order, or those `columns` lists (400 for one it does not have). Titles: `headers` (400 for another length), else each
+    column's label in the request's language - `ErrorMessages`' label lookup of issue 274, over the domain's label bundle
+    (`Dto.field`, then `Entity.field`; a language with a label file is one the request may be answered in), else the name.
+    Values as the response's JSON shows them: `@Mask` masked, an enumeration by its code, money and dates as written.
+  - CSV by default: UTF-8 with a BOM, RFC 4180 quoting, CRLF; a text that starts with `=`, `+`, `-`, `@`, a tab or a
+    carriage return gets a `'` before it (CSV injection, as OWASP advises) - a JSON number does not, so a negative number
+    stays a number. `.xlsx` for `"format": "xlsx"` or an Accept that asks for it (CSV where both are asked alike), through
+    POI's streaming `SXSSFWorkbook`, where the application has Apache POI - checked by class name; the runtime only compiles
+    against it - else 406 (`not-acceptable`). In the workbook numbers are numbers (more than 15 digits: text), dates dates
+    (from the DTO's value, unless masked, written by a serializer of their own, or shown in part by a `@JsonFormat`
+    pattern such as `yyyy-MM`), text never a formula. The workbook is written when every page is in: a page that fails
+    answers the error, not a workbook of fewer rows. Another `format`: 400.
+  - `elasticore.export.max-rows` (Spring property, default 100,000): the first page's total - the count through the same
+    search - above it is 400 `export.too-many-rows` with the count, before anything is written. A sheet's 1,048,575 rows cap
+    an .xlsx export whatever it says (the refusal then names the sheet).
+  - The TypeScript client: `exportXxx(body: ExportRequest<XxxSrchDTO>): Promise<Blob>` in `XxxApi.ts`, and
+    `ExportRequest` / `requestFile` in `apiSupport.ts` - the client where the entity lists `export`, the two in
+    `apiSupport.ts` where an entity of any domain of the run does (every domain writes that one file).
+  - `ErrorMessages.label(Label)`: a label in the request's language, public for the export.
+- Unchanged: a model that does not list `export` generates byte-identical output (the controller, `apiSupport.ts`, the
+  client); the 2.x-compatible output and the 2.x generator do not read it. The runtime library brings no new dependency
+  (POI is `compileOnly`). A project with `runtimePackages` copies the new `export` classes with the rest.
+- Limits: the pages are read one after another, each its own query, so a row written meanwhile may be in or out; a CSV
+  export that fails after its first rows went out is cut short (the status is already sent); an enumeration is its
+  code, not its label; a search that is not paged is read whole before it is counted; a rule set that excludes the
+  controller's `export` leaves `exportXxx` in the client, as for the other endpoints.
+- Checked: `SearchExportTest` (runtime, run by elasticore-springboot3 on Jackson 2 and elasticore-springboot4 on Jackson 3:
+  BOM and RFC 4180 bytes, the injection guard and a negative number, three pages of 1,007 rows all written in the DTO's
+  order, the limit refused after one page with nothing written, columns and headers and their 400s, the crm label bundle in
+  en / ko / ja, a JsonView, @Mask in CSV and xlsx, an xlsx with number, date, text-not-formula and a 17-digit id, the Accept
+  header, 406 without POI, the sort with the key after it and an old sortColumn folded in, a failing second page that
+  leaves an .xlsx response untouched, the sheet's cap named, a `yyyy-MM` date kept as text). `ControllerMethodRulesTest` (the endpoint only where listed, the
+  paged and the list form, `export` alone, a rule set excluding it, nothing omitted for the five, the 2.x output without it;
+  the warning's names) and `ExposeMethodsTest` (the warning). `SearchExportGenerationTest` (through `RulesGenRunner`: JPA
+  Java hexagonal / layered / ddd, JPA Kotlin hexagonal / layered, MyBatis Java layered / hexagonal, MongoDB Java and
+  Kotlin layered - the endpoint on the entity that lists it, none on the others; an entity without it generated alike
+  with or without an export beside it; `apiSupport.ts` the same text without the two, and with them in a run of three
+  domains where the exporting one is not written last; the client's `exportExItem`; a typo still warned). The pet
+  store's pages type-check and bundle against the generated client (`webBuild`). Over HTTP: the pet store (JPA, hexagonal, Boot 4) `ExportTest` - the search's rows, columns and headers,
+  `Unit cost` / its Korean label by Accept-Language, a customer's own orders only (the administrator's not; a visitor 401), the
+  status code `PLC`, `=HYPERLINK` and `-1+2` guarded, 406 for xlsx and Accept xlsx without POI, 400s - and `ExportLimitTest`
+  (`max-rows=10`: the 32 items refused with the count, a narrower search written); `elasticore-template-mybatis` (MyBatis,
+  layered, Boot 3, POI on the test path) `ShopApi` - `serialNo` masked by the application's ObjectMapper, the DTO's
+  columns, a workbook with a string `=SUM` cell, a number and a date, 1,100 rows written once each in key order;
+  `elasticore-template-kt` (Kotlin) `ShopApiContractTest` - an agent's own tickets only; `elasticore-template-ddd` (ddd)
+  `ExposeMethodsApiTest` - a receipt; `elasticore-template-mongo` `ShopApi` - the masked email (runs where Docker does,
+  CI). Compiled: `elasticore-template-kt-mongo` (Kotlin, MongoDB) and `elasticore-template-ddd-mybatis` (MyBatis ddd and
+  hexagonal). The generated TypeScript type-checked and run (`elasticore-template-kt` `elcore3tsTest -Pstrict`).
+  With the change taken back, `SearchExportGenerationTest` and the export tests of `ControllerMethodRulesTest` fail.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `ControllerBaseRules`, `TypeScriptApiRules`, `RulesGenRunner`, `ts/apiSupport.tmpl`; the runtime's `export/` (`SearchExport`,
+  `CsvWriter`, `XlsxWriter`, `ExportSheet`, `ExportColumns`, `JsonRows` on Jackson 2 and Jackson 3), `ErrorMessages`, the
+  two runtime `build.gradle` (POI `compileOnly`); tests `SearchExportTest`, `SearchExportGenerationTest` (new),
+  `ControllerMethodRulesTest`, `ExposeMethodsTest`; the pet store (`entity.yml`, `ExportTest`, `ExportLimitTest`, the site
+  guide page `static/dsl-guide.html` rebuilt by `guide/build_guide.py`), `elasticore-template-mybatis` (`entity.yml`,
+  `build.gradle`, `ShopApi`), `elasticore-template-kt` (`ticket.yml`, `ShopApiContractTest`), `elasticore-template-ddd`
+  (`billing` `entity.yml`, `ExposeMethodsApiTest`), `elasticore-template-ddd-mybatis` (`billing`, `shop` `entity.yml`),
+  `elasticore-template-mongo` (`entity.yml`, `ShopApi`), `elasticore-template-kt-mongo` (`club` `entity.yml`); the
+  annotation, env and rule guides (en, ko).
+
+### Bug Fixes (rule API - a team marker's pairs and flags)
+
+#### A team marker's values without `=` are kept, and a field marker's pairs are read through `FieldSpec`
+- Why (issue 273): `@ui(menu=sales, order=30, staff)` lost `staff`. The 2.x reading keeps a value only when an
+  annotation has no `key=value` pair, so a flag written beside pairs was dropped with nothing said. A field marker's
+  pairs (`@ui(title=true)`) were reachable only one by one, or through `FieldSpec.raw()`, the internal classes the rule
+  guide says may change.
+- Now: the loader also records, for an annotation with pairs, the pairs in the order written and the values without
+  `=`. The rule API reads them: `EntitySpec.metaFlags("ui")` (`[staff]`, beside `metaProperties("ui")`,
+  `{menu=sales, order=30}`), `FieldSpec.dslProperties("ui")` (every pair in the order written) and
+  `FieldSpec.dslFlags("ui")`.
+- Unchanged: what every existing reader sees - the annotation's value, its properties and `metaText` are as before, so
+  `@access`, `@expose` and the rest read what they did; generated code does not change.
+- Checked: `TeamMarkerParametersTest` - a field marker's pairs in order and its flags; the 2.x reading unchanged (no
+  value, the flag not a property; a plain value with no flags); a team rule (`com.acme.probe.UiMarkerRules`) in a
+  generated project reads `{menu=sales, order=30}`, `[staff]` and the field's `{title=true} [wide]`.
+  `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck`.
+- Files: `Annotation` (`asWritten`), `AbstractModelLoader`, `FieldSpec`, `EntitySpec`, `SpecFactory`,
+  `TeamMarkerParametersTest`, the rule-dev guide's `EntitySpec` and `FieldSpec` tables (en, ko).
+
+### Bug Fixes (TypeScript - a team's domain-level file)
+
+#### A TypeScript run asks a `DomainArtifactContributor` listed under `ts:` for its files
+- Why (issue 266): the DDD customize guide tells a team to list its TypeScript rule set with `ts-model` under `ts:` of
+  `publisher.rules`. Its per-entity files (`ArtifactContributor`) were written, but a domain-level one
+  (`DomainArtifactContributor`) was never asked for: the TypeScript branch of the runner returned after the enumerations
+  and `apiSupport.ts`. No file, no line in the log, no warning.
+- Now: the TypeScript run asks the rule sets it runs for their domain files after `apiSupport.ts`, and writes them to
+  `src/main/ts/` as the per-entity ones. The rule sets are those of `publisher.rules.ts` (or the default `ts-model`),
+  never the server's; `ts-model` declares no domain file, so a project without its own rule writes the same.
+- Checked: `TsDomainContributorTest` - a team rule under `ts:` writes `src/main/ts/crmUiModel.ts` beside
+  `apiSupport.ts` and the DTOs; it failed before the fix (no file) and passes after.
+- Files: `RulesGenRunner`, `TsDomainContributorTest` (with the test rule `com.acme.probe.TsUiRules` and its
+  `ts/tsUiModel.tmpl`), the DDD customize guide's troubleshooting row (en, ko).
+
 ## 3.0.261121
 
 ### Changes (archTest - the packages of the project's own code)
