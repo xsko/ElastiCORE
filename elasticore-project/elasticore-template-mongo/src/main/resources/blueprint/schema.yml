@@ -44,6 +44,7 @@ entities:
       order: PurchaseOrder @foreignKey(order_order_id) -- PurchaseOrder entity relationship
       sku: string(20) @Column(name = "sku", length = 20)
       qty: Integer @Column(name = "qty")
+      note: string @Column(name = "note")
 
   Product:
     meta: entity @java(io.elasticore.sample.mongo.shop.domain.model.Product) -- product

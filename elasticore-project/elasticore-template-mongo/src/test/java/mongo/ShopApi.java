@@ -2,6 +2,10 @@ package mongo;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.elasticore.sample.mongo.shop.application.PurchaseOrderService;
+import io.elasticore.sample.mongo.shop.application.dto.OrderLineDTO;
+import io.elasticore.sample.mongo.shop.application.dto.PurchaseOrderDTO;
+import io.elasticore.sample.mongo.shop.application.dto.PurchaseOrderSrchDTO;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.junit.jupiter.api.Test;
@@ -46,6 +50,9 @@ public abstract class ShopApi {
 
     @Autowired
     MongoTemplate mongo;
+
+    @Autowired
+    PurchaseOrderService orders;
 
     /** A database of its own for each run, so that runs never see each other's documents. */
     static String database() {
@@ -224,6 +231,56 @@ public abstract class ShopApi {
         assertEquals("<a href=\"https://example.com/l\" rel=\"nofollow\">spec</a>", changed.get("description").asText(),
                 changed.toString());
         assertEquals("spec", changed.get("descriptionText").asText(), changed.toString());
+    }
+
+    /**
+     * An html field on a member the document embeds (OrderLine.note), which has no service of its own: the order's
+     * service cleans it with the order on a create, an update, a batch update and an update by condition - in the
+     * stored document too.
+     */
+    @Test
+    public void anEmbeddedMembersHtmlFieldIsCleanedOnEveryWrite() throws Exception {
+        String raw = "<b onclick=\"steal()\">hi</b><script>steal()</script>";
+        String sent = json.writeValueAsString(raw);
+        String clean = "<b>hi</b>";
+        String orderNo = "H-" + unique();
+        long customer = id(create("customer", "{\"name\":\"Han\"}"), "customerId");
+        JsonNode created = create("purchaseOrder", "{\"orderNo\":\"" + orderNo + "\",\"status\":\"N\",\"amount\":10,"
+                + "\"customerCustomerId\":" + customer + ",\"lines\":[{\"sku\":\"H\",\"qty\":1,\"note\":" + sent + "}]}");
+        long order = id(created, "orderId");
+        assertEquals(clean, created.get("lines").get(0).get("note").asText(), created.toString());
+        assertEquals(clean, storedLine(order).getString("note"));
+
+        JsonNode updated = body(send("PUT", "/purchaseOrder", "{\"orderId\":" + order + ",\"version\":0,"
+                + "\"lines\":[{\"sku\":\"U\",\"qty\":1,\"note\":" + sent + "}]}"), 200);
+        assertEquals(clean, updated.get("lines").get(0).get("note").asText(), updated.toString());
+        assertEquals(clean, storedLine(order).getString("note"));
+
+        send("PUT", "/purchaseOrder/batch", "[{\"orderId\":" + order + ",\"version\":1,"
+                + "\"lines\":[{\"sku\":\"B\",\"qty\":1,\"note\":" + sent + "}]}]", 200);
+        assertEquals("B", storedLine(order).getString("sku"));
+        assertEquals(clean, storedLine(order).getString("note"));
+
+        OrderLineDTO line = new OrderLineDTO();
+        line.setSku("C");
+        line.setQty(1);
+        line.setNote(raw);
+        PurchaseOrderDTO change = new PurchaseOrderDTO();
+        change.setLines(List.of(line));
+        PurchaseOrderSrchDTO where = new PurchaseOrderSrchDTO();
+        where.setOrderNo(orderNo);
+        assertEquals(1, orders.updateBySpecification(change, where));
+        assertEquals("C", storedLine(order).getString("sku"));
+        assertEquals(clean, storedLine(order).getString("note"));
+    }
+
+    /** The order's one line, as the document holds it. */
+    private Document storedLine(long orderId) {
+        Document stored = mongo.getCollection("purchase_order").find(new Document("_id", orderId)).first();
+        assertNotNull(stored);
+        List<?> lines = (List<?>) stored.get("lines");
+        assertEquals(1, lines.size(), stored.toJson());
+        return (Document) lines.get(0);
     }
 
     /**

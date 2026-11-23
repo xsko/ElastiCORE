@@ -2527,7 +2527,34 @@ public final class RulesGenRunner {
                 spec.knownRelated(f.coreItemType(), target);
                 // A member written with this row has the columns of what it extends too.
                 relateParentEarly(target);
+                if (persistence() == RulesConfig.Persistence.MONGO) {
+                    relateMembersEarly(target, new java.util.HashSet<String>());
+                }
             }
+        }
+    }
+
+    /**
+     * MongoDB keeps a member's own members inside the same document, and the
+     * service that writes the document cleans their html (HtmlRules): a
+     * member - an entity without a collection of its own - is handed its
+     * relations too, to any depth, each entity once.
+     */
+    private void relateMembersEarly(EntitySpec member, java.util.Set<String> seen) {
+        if (io.elasticore.base.model.pub.rules.mongo.MongoDocs.ownCollection(member.getName())) return;
+        if (!seen.add(member.getName())) return;
+        for (io.elasticore.base.model.pub.rules.FieldSpec f :
+                io.elasticore.base.model.pub.rules.mybatis.MyBatisSql.fields(member)) {
+            if (!f.isEntityRef()) continue;
+            EntitySpec target = member.related(f.coreItemType());
+            if (target == null) {
+                target = ownModelSpec(f.coreItemType());
+                if (target == null) target = foreignSpec(f.coreItemType());
+                if (target == null) continue;
+                member.knownRelated(f.coreItemType(), target);
+                relateParentEarly(target);
+            }
+            relateMembersEarly(target, seen);
         }
     }
 
