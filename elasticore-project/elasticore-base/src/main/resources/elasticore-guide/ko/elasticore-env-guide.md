@@ -767,6 +767,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 | `@access` | API 가 제공하는 각 작업 - read, search, create, update, delete, 각 명령 - 을 그 항목, 없으면 `*`, 없으면 `admin` 수준으로: 각 항(term)이 들이는 호출자는 통과(2xx; 검색은 그 행을 찾음); 방문자는 401 `not-signed-in`, 어떤 항도 들이지 않는 역할의 호출자는 403 `forbidden`, `owner` 가 있는 곳에서는 남의 행에 대한 호출자가 404 `not-found` (검색은 그 행을 찾지 못함). `REP&owner` 는 자기 행이라도 다른 역할을, 남의 행이면 REP 도 거부; `owner\|MANAGER` 는 둘 중 하나면 들인다. 소유자로 키를 정하는 행(`@owner` 가 요청이 정하는 키)의 방문자 create 는 서비스가 하듯 401 로 거부 |
 | `@Mask` (env.yml 의 `@dto:` 애노테이션) | 마스크 모양의 값을 보낸다 - 세 묶음의 전화번호, 주소, 충분한 숫자: 읽기와 검색은 필드의 `MaskType` 이 그 값으로 만드는 것(생성된 수정이 비교하는 것과 같은 그 `apply`)을 보여 준다. 수정(`PUT`)이 돌려보낸 가린 글자는 저장된 값을 지키고, 새 값은 바꾼다(issue 270) - 애플리케이션을 거치지 않고 읽거나(`JdbcTemplate`, `MongoTemplate`), 아니면 `@encrypt @search(eq)` 검색으로 찾는다 |
 | `@encrypt` | 컬럼에는 평문이 없고 보낸 값으로 복호화된다; API 는 값을 답한다. `@search(eq)` 면: 그 값으로 검색하면 행을 찾고, 다른 값으로는 찾지 못한다 |
+| `@expose(methods)` 의 `export` | 테스트 자신의 행 둘 - 검색이 찾는 텍스트를 함께 가진다(검색이 그런 텍스트를 받지 않으면 호출자가 볼 수 있는 모든 행): `POST .../export` 의 파일(CSV)은 같은 본문으로 검색이 답하는 행을 담는다 - 검색이 맞추는 만큼, 검색의 순서로, 모든 응답이 보여 주는 키로 정렬해(`sortCode` `<key>-`). `elasticore.export.max-rows` 가 그 행 수면 쓰이고, 하나 적으면 아무것도 쓰기 전에 400 `export.too-many-rows` 로 거부된다 - 파일이 아닌 problem |
 
 - 파일: `<Domain>ContractSupport` 와, API 가 생성하는 엔티티마다 `<Entity>ContractTest` - `src/test/java/<base package>/`
   (Kotlin 은 `src/test/kotlin`). 한 번 쓰고, 그 뒤 DSL 이 바뀌면 병합한다 - 고친 곳은 유지 - 아키텍처 테스트와 같다.
@@ -796,6 +797,11 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   `@editable` 이 `PUT` 에 연다), 돌려보내는 `@pattern` 필드(가린 글자를 거부할 수 있다), 상속한 필드, `@rollup` 엔티티, 평이하게
   쓰지 않은 이름(컬럼을 읽지 않는다), 검색이 받지 않는 `@encrypt @search(eq)` 필드.
   마스크가 그대로 쓰는 값은 테스트를 중단한다. 이 멤버 없이 남은 support 클래스에는 이 테스트를 하나도 쓰지 않는다.
+- export: support 클래스는 본문을 보내고(`exportOf`), 검색하고(`searched`), 요청 하나 동안 애플리케이션의 `Environment` 에
+  `elasticore.export.max-rows` 를 정한다(`exportAtMost` - export 는 요청마다 그것을 읽는다); 파일의 행은 키 하나로만 구별한다
+  (`columns`, `headers`). 테스트하지 않는 것 - 요약이 세고 support 클래스의 주석에 나열한다: `POST /export` 를 빼는 규칙
+  세트, 복합 키, 키가 없는 `@searchResult` DTO, API 가 검색을 받지 않는 곳의 순서. 이 멤버 없이 남은 support 클래스에는
+  이 테스트를 하나도 쓰지 않는다; 애플리케이션이 내보내는 것보다 많은 행이라 거부된 검색은 테스트를 중단한다.
 - support 클래스가 `@SpringBootTest` + `@AutoConfigureMockMvc` (와 `@Transactional`) 를 갖는다: 모든 테스트 클래스가 이것을 상속하므로
   Spring 은 스위트 전체에 애플리케이션을 한 번 띄우고, JPA 와 MyBatis 테스트는 자기 행을 롤백한다. Spring 은 테스트 패키지 위에서
   애플리케이션을 찾는다; 찾지 못하는 곳이면 빌드가 프로젝트의 단 하나뿐인 `@SpringBootApplication` 을 적는다 - 아니면 거기에 직접 적는다.
@@ -815,8 +821,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 - `testCode` 는 정확히 읽는다: `"true"`, `"contract"`, `"false"`; 다른 값(`"Contract"`, `"contracts"`)은 DSL 경고다.
 - MongoDB: 테스트는 `ELASTICORE_IT_MONGODB_URI` 가 가리키는 서버(`mongodb://host:port`, 데이터베이스 `elasticore_contract`)에서 실행되고
   없으면 건너뛴다; 행은 남는다(유일한 값).
-- 다루는 범위: 필드 제약, `@access`, `@Mask` 는 모든 모드, 언어, 아키텍처에서(`@encrypt` 는 있는 곳: MongoDB 제외); 생명주기와
-  불변식은 그것이 생성되는 곳 - ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: `export`, 생명주기의
+- 다루는 범위: 필드 제약, `@access`, `@Mask`, `export` 는 모든 모드, 언어, 아키텍처에서(`@encrypt` 는 있는 곳: MongoDB 제외);
+  생명주기와 불변식은 그것이 생성되는 곳 - ddd 와 hexagonal, JPA 와 MyBatis, Java 와 Kotlin. 아직: 생명주기의
   `delete:` 상태의 테스트 자체, 멤버 자체의 제약. float 의 소수 경계(`@max(0.1)`)는 건너뛴 것으로 센다:
   float 는 0.1 을 정확히 담지 못하고, 그 검사는 double 로 넓힌 값을 비교한다. `@past` / `@future` 인 time(하루 중 시각 - 테스트가
   실행되는 시각에 따라 과거이기도 미래이기도 하다), 나머지 식이 늘 담는 lookahead(`@pattern('^(?=.*\\d)\\d+$')`: 나머지에 맞으면서
@@ -828,7 +834,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   pet store 의 `PurchaseOrderContractTest` 는 배송지 주소를 더한다 - 없으면 `place` 가 주문을 거부한다.
 - 예: `elasticore-template-ddd` (Java, hexagonal, JPA; `Subscriber` 의 `@encrypt`, `@Mask`), `-ddd-mybatis` (MyBatis; 가린
   `Customer.phone`), `-kt` (Kotlin; `cancel=owner|LEAD`, `bill=LEAD&owner`; 가린 `Agent.phone` `@encrypt(digits) @s(eq)`), `-mongo` 와
-  `-kt-mongo` (가린 `Customer.email`), pet store (Spring Boot 4, 로그인; `read=owner|MANAGER`, `delete=MANAGER&owner`).
+  `-kt-mongo` (가린 `Customer.email`), pet store (Spring Boot 4, 로그인; `read=owner|MANAGER`, `delete=MANAGER&owner`). 내보내기(`export`):
+  pet store 의 `Item` 과 `PurchaseOrder`, `-kt` 의 `Ticket`, `-ddd-mybatis`, `-mongo`, `-kt-mongo` 의 `Customer`.
 
 ---
 

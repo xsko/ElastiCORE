@@ -2735,6 +2735,9 @@ public final class RulesGenRunner {
     /** The entities whose controller this run wrote: what the contract tests make rows through. */
     private final java.util.Set<String> contractServed = new java.util.HashSet<String>();
 
+    /** The entities whose controller this run wrote with POST /export: what the contract tests of the export call. */
+    private final java.util.Set<String> contractExported = new java.util.HashSet<String>();
+
     /** The contract tests of the run (testCode: contract), and the summary they leave; null until a domain asks. */
     private ContractTestSource contract;
 
@@ -2765,7 +2768,7 @@ public final class RulesGenRunner {
         }
         String pkg = ArchitectureTestSource.basePackage(model);
         if (pkg == null) return;
-        if (contract == null) contract = new ContractTestSource(runModels, contractServed);
+        if (contract == null) contract = new ContractTestSource(runModels, contractServed, contractExported);
         ContractTestSource.Settings s = new ContractTestSource.Settings();
         s.kotlin = kotlin;
         s.boot4 = RulesConfig.springBootMajor() >= 4;
@@ -4076,7 +4079,15 @@ public final class RulesGenRunner {
                 System.out.println(label + "  SKIP(dontMake)");
                 return false;
             }
-            write(label, out, code.render());
+            String text = code.render();
+            write(label, out, text);
+            // POST /export where the controller has it: a rule set may leave it out (isMethodExcluded).
+            if ("control".equals(target)
+                    && currentModel != null
+                    && text.contains("@PostMapping(\"/"
+                            + io.elasticore.base.model.pub.rules.base.ControllerBaseRules.EXPORT + "\")")) {
+                contractExported.add(ContractTestSource.key(currentModel, spec.getName()));
+            }
             return true;
         } catch (RuntimeException e) {
             failed(label, out, e);
