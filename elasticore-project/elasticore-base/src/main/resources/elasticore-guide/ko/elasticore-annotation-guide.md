@@ -47,7 +47,8 @@ Notice:
 ```
 - 행: `search`(같은 검색 DTO)로 `POST .../search` 가 하는 검색 - 그 조건, 검색의 `@access`, `@owner` 필터 - 의 모든 페이지를
   `sortCode` 순서로 씁니다(없으면 검색 자신의 순서, `sortColumn` 도. 그 뒤에 키를 붙여, 같은 값의 행이 두 페이지 사이에서 움직이지 않게 합니다).
-  페이지는 차례로 읽으므로, 그 사이에 바뀐 행은 들어갈 수도 빠질 수도 있습니다.
+  페이지는 차례로 읽으므로, 그 사이에 바뀐 행은 들어갈 수도 빠질 수도 있습니다. 순서는 검색처럼 검색의 응답이 보여 주는 것만
+  적을 수 있습니다(4.2 "검색이 정렬할 수 있는 것"): 그 밖의 것은 한 바이트도 쓰기 전에 400 `no-such-property` 입니다.
 - `columns`: 응답 DTO 의 속성을 그 순서로(`@ref` 는 그 이름으로, `productName`). 없으면 모든 속성을 DTO 의 순서로. `headers`:
   열마다 하나씩 제목. 없으면 열마다 요청 언어(`Accept-Language`)의 라벨 - `i18n/<domain>-labels_<lang>.properties`
   (`@label(en=...)`, `labelLanguage`. 응답 DTO 의 키, 다음에 엔티티의 키) - 이고, 라벨이 없으면 이름입니다.
@@ -1214,6 +1215,7 @@ entity:
 - `driversItem: RentDriver` (Join eq)
 - `sortCode: String`, `pageNumber: int`, `pageSize: int` (자동 생성)
 - 요청이 `sortCode` 를 보내지 않을 때의 순서는 엔티티(또는 검색 DTO)의 `@sort` 로 정합니다 (아래)
+- `sortCode` 는 검색의 응답이 보여 주는 속성만 적을 수 있고, 그 밖의 것은 400 `no-such-property` 입니다 (4.2 "검색이 정렬할 수 있는 것", v3)
 
 ---
 
@@ -1277,6 +1279,59 @@ entity:
 - 엔티티에 없는 속성을 적으면 DSL 경고(`@sort(...): x is not a field of Product`) 후 그 속성만 빠집니다 (정렬 400 방지).
 - `@sort` 가 없으면 예전처럼 정렬 없이 조회합니다.
 - 3.0 규칙 엔진(`elcore3`) 기능입니다. 2.x 생성기(`elcore`)는 `@sort` 를 읽지 않습니다.
+
+#### 검색이 정렬할 수 있는 것 - 응답이 보여 주는 것만
+> **동작:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **안 됨:** 2.x-compatible output (output = 'v2') 와 2.x generator - 예전처럼 어떤 속성으로든 정렬; env.yml 에 자신의 `interface.sortable` 을 둔 도메인 - 검사 안 함 (경고)
+
+`sortCode`(`"orderDate-,total+"`)와 `sortColumn` + `sortAscending` 은 엔티티 속성을 이름으로 적습니다 - `name`, 내장 값의 부분
+`deliveryAddress.city`, 조인한 행의 `customer.name`. 검색은 그 응답이 보여 주는 속성으로만 정렬합니다. 그 밖의 속성은 조회를
+만들기 전에 **400**, 코드 `no-such-property` 로 거절합니다:
+```json
+{ "code": "no-such-property", "title": "Invalid request",
+  "detail": "The search cannot be sorted by 'customer.email'; sort by one of [orderId, orderDate, status, deliveryAddress.street1, ...]" }
+```
+- 이유: 응답이 빼 놓은 값도 그 값으로 정렬하면 순서가 드러납니다. Pet Store 의 MANAGER 는 모든 주문을 검색합니다.
+  `customer.email`, `creditCard.creditCardNumber`(`@writeonly`), `customer.password`(해시)로 정렬하면 그 값들의 순서가
+  드러났고, 자기 주문을 그 사이에 넣어 보면 값 자체까지 드러났습니다.
+- 정렬할 수 있는 것: 검색의 응답 DTO 가 자기 이름으로 보여 주는 값; 응답이 담는 내장 값의 부분(`deliveryAddress.city`);
+  `@ref` 필드의 경로(`productName: string @ref(product.name)` -> `product.name`, 평탄화한 키 `customer.customerId`); 응답이
+  DTO 째로 담는 조인 행의 값(ProductDTO 에 `category: CategoryDTO` 가 있으면 `category.name` - 누구나 읽을 수 있는 행이고,
+  DTO 가 담는 것은 그런 행뿐입니다); 엔티티의 키; `@sort` 기본 정렬.
+- 보여 주지 않으므로 정렬하지 않는 것: `@password`, `@writeonly` / `@nooutput`, `@jsonignore`, 가려서 쓰는 값(`@Mask`), 읽기 뷰가
+  없는 `@view`, 비밀번호를 읽는 `@ref`, 응답이 담지 않는 조인 행의 모든 값. 목록(List)으로는 정렬하지 않습니다. `@sensitive`,
+  `@encrypt` 값은 응답에 보이므로 정렬됩니다(암호화한 컬럼은 암호문 순서).
+- 엔티티에 없는 속성도 같은 답을 받으므로, 거절만으로는 숨긴 속성과 없는 속성을 구별할 수 없습니다. JPA 는 전에도 그 경우
+  `no-such-property` 로 답했고, MyBatis 와 MongoDB 는 `bad-request` 와 `X cannot be sorted by ...` 로 답했습니다.
+- 응답이 보여 주지 않는 조인 값으로 정렬하려면 보여 주십시오: DTO 에 `customerEmail: string @ref(customer.email)` 를 두면
+  `customer.email` 로 정렬됩니다. 순서가 말하는 것과 응답이 말하는 것이 같아집니다.
+- 검사는 검색 DTO 자신의 `getSort()` 이므로 검색을 부르는 모든 곳에 적용됩니다: `POST .../search`, `POST .../export`(본문의
+  `sortCode` 와 검색의 것), 그리고 검색 DTO 로 `findBySearch` 를 부르는 모든 코드 - 생성된 GraphQL 검색도 그렇게 부릅니다.
+- 생성 결과, 검색 DTO 마다 (Pet Store `PurchaseOrderSrchDTO`, 줄임):
+```java
+/** What a sort may name: the values the search's response shows, its key and its default order. */
+private static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Collections.unmodifiableSet(
+        new java.util.LinkedHashSet<String>(java.util.Arrays.asList(
+                "orderId",
+                "orderDate",
+                "deliveryAddress.city",
+                "creditCard.creditCardType",
+                "total",
+                "customerId")));
+
+@Override
+public java.util.Set<String> sortableProperties() {
+    return SORTABLE_PROPERTIES;
+}
+```
+  Kotlin: `override fun sortableProperties(): Set<String> = setOf("ticketId", "subject", ...)`. 도메인의 `SortableObject` 가 각
+  속성을 런타임의 `io.elasticore.springboot3.dto.SortCheck.sortable(...)` 에 넘기고, 목록에 없는 속성은 거기서 거절됩니다.
+  `sortableProperties()` 를 재정의하지 않은 DTO(null)는 예전처럼 어떤 속성으로든 정렬합니다.
+- env.yml 에 자신의 `interface.sortable` 을 둔 도메인은 그 인터페이스를 그대로 씁니다: 그 인터페이스에 없을 수 있는 메서드를
+  검색 DTO 가 재정의하지 않고, 실행이 그렇게 알리며(DSL 경고), 정렬은 검사하지 않습니다 - 그 `getSort()` 에서
+  `SortCheck.sortable(...)` 을 부르십시오.
+- HTTP 로 확인: Pet Store `SortTermTest`(MANAGER, sortCode, sortColumn, export), MyBatis Pet Store
+  `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused`(SQL 이 준비되지 않음), `elasticore-template-kt` `SortTermTest`(Kotlin),
+  `elasticore-template-mongo` `ClubApi` / `ShopApi` 와 `elasticore-template-kt-mongo` `ClubApi`(MongoDB).
 
 ### 4.2.2 @search(words:...) - 여러 필드를 찾는 검색창 하나
 > **동작:** v3, Kotlin (JPA) · **안 됨:** MyBatis (mode: mybatis) - 경고 후 검색 안 함; 2.x-compatible output (output = 'v2') - 경고 후 속성을 뺌; 2.x generator (생성 안 됨)

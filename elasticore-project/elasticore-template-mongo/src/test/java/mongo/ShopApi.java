@@ -160,6 +160,10 @@ public abstract class ShopApi {
         send("POST", "/purchaseOrder/search", "{\"sortCode\":\"customer.customerId+,orderId-\"}", 200);
         String refused = send("POST", "/purchaseOrder/search", "{\"sortCode\":\"customer.name+\"}", 400).body();
         assertTrue(refused.contains("cannot be sorted by"), refused);
+        // A customer's e-mail is shown masked (@Mask): its order would give the e-mail away, so it is not sorted by.
+        String masked = send("POST", "/customer/search", "{\"sortCode\":\"email+\"}", 400).body();
+        assertTrue(masked.contains("\"no-such-property\"") && masked.contains("cannot be sorted by 'email'"), masked);
+        send("POST", "/customer/search", "{\"sortCode\":\"name+,address.city-\"}", 200);
     }
 
     // ---- update and delete --------------------------------------------------------------

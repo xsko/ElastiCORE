@@ -110,6 +110,7 @@ public final class RulesGenRunner {
         this.typescript = typescript;
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.valueListsInDto(false);
+        SpecFactory.sortsShownOnly(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
         SpecFactory.referenceRequiredByKey(false);
@@ -1513,6 +1514,8 @@ public final class RulesGenRunner {
             // A reserved word is said for the databases this domain writes its DDL for (issue 168).
             io.elasticore.base.model.pub.rules.schema.ReservedWords.declared(declaredDatabases(currentModel));
             SpecFactory.valueListsInDto(v3 || kotlin || typescript);
+            // A search sorts only by what its response shows (the 3.0 Java and Kotlin search DTOs).
+            SpecFactory.sortsShownOnly(v3 || kotlin);
             // And a root starts with a class for its behaviour where the
             // rule set that makes one - the one that names entity classes -
             // is selected.

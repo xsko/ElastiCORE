@@ -122,6 +122,13 @@ public final class MaskedFields {
                 stored, m.maskType(), stored, sent, syntax.statement(syntax.setter("dto", m.field(), stored)));
     }
 
+    /** Whether an annotation line the DSL hands to the DTO is the runtime's mask - the response writes the field masked. */
+    public static boolean namesMask(String line) {
+        if (line == null) return false;
+        Matcher a = ANNOTATION.matcher(line.trim());
+        return a.matches() && maskClassNames().contains(a.group(1));
+    }
+
     /** The runtime's class name, and the one the project's runtimePackages renames it to. */
     static List<String> maskClassNames() {
         List<String> names = new ArrayList<String>();
