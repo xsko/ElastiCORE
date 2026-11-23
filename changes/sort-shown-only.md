@@ -26,10 +26,13 @@
   unknown sort terms now get `no-such-property` too, and a term reaches their own check (whose message repeats it as sent) only
   once the search DTO lists it.
 - v3 output changes by default (a security fix): a request that sorted by a value its response does not show is now 400.
-  The existing sample sorts all name shown values and keep working. A domain with its own `interface.sortable` keeps its
-  interface unchecked, with a DSL warning. The 2.x-compatible output (`output = 'v2'`) and the 2.x generator are unchanged,
-  and so is the runtime's own `io.elasticore.springboot3.dto.SortableObject` that 2.x code uses: `elcoreRulesCheck -Pstrict`
-  158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0. `Refusals.shown(...)` is the runtime's shortening of a
+  The existing sample sorts all name shown values and keep working. The 2.x-compatible output (`output = 'v2'`) and the 2.x
+  generator are unchanged: `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 / 0 / 0.
+- The runtime's `io.elasticore.springboot3.dto.SortableObject` - the `interface.sortable` the init wizard writes into a new
+  project's env.yml - gets the same `sortableProperties()` (default null) and hands each term through `SortCheck`, so a 3.0
+  search DTO on it is checked too. For code that does not override it - 2.x DTOs, any other implementation - null means any
+  property, exactly as before (`SortCheckTest` checks both). A domain naming a sort interface of its own keeps it unchecked,
+  with a DSL warning; so does a search whose response DTO is not in the domain's model. `Refusals.shown(...)` is the runtime's shortening of a
   refused value, which `SqlPortGateway` now calls too (no change in what it says).
 - Checked: `SortTermGenerationTest` (9 runs: JPA Java hexagonal/layered/ddd, JPA Kotlin hexagonal/layered, MyBatis layered/ddd,
   MongoDB Java/Kotlin, and the 2.x-compatible run), `SearchDtoFileTest`, `KotlinDtoFileTest`, runtime `SortCheckTest` (Boot 3 and
@@ -39,4 +42,4 @@
 - Guides: annotation guide (en, ko) 4.2 "What a search may sort by", the export and 3.8 notes.
 - Files: `SortablePaths.java`, `SpecFactory.java`, `RulesGenRunner.java`, `RulesVerifyRunner.java`, `EntitySpec.java`,
   `SearchSortList.java`, `MaskedFields.java`, `SearchDtoCleanFileRules.java`, `KotlinSearchDtoFileRules.java`,
-  `v3/java_SortableObject.tmpl`, `kt/java_SortableObject.tmpl`; runtime `SortCheck.java`, `Refusals.java`, `SqlPortGateway.java`.
+  `v3/java_SortableObject.tmpl`, `kt/java_SortableObject.tmpl`; runtime `SortCheck.java`, `SortableObject.java`, `Refusals.java`, `SqlPortGateway.java`.

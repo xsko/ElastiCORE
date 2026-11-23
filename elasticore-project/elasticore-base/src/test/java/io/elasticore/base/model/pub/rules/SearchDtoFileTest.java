@@ -160,5 +160,10 @@ public class SearchDtoFileTest {
                 .sortableProperties(java.util.Arrays.asList("productId")));
         assertTrue(own.contains("Sorted"), own);
         assertFalse(own.contains("sortableProperties"), own);
+        // The runtime's interface, which the init wizard's env.yml names, declares it: the list is there.
+        String runtime = renderClean(productSrch()
+                .sortableInterface("io.elasticore.springboot3.dto.SortableObject")
+                .sortableProperties(java.util.Arrays.asList("productId")));
+        assertTrue(runtime.contains("public java.util.Set<String> sortableProperties() {"), runtime);
     }
 }

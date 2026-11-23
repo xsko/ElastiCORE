@@ -143,6 +143,11 @@ public class KotlinDtoFileTest {
                 .sortableProperties(java.util.Arrays.asList("orderId")));
         assertTrue(own.contains("Sorting"), own);
         assertFalse(own.contains("sortableProperties"), own);
+        // The runtime's interface, which the init wizard's env.yml names, declares it: the list is there.
+        String runtime = renderSearch(orderSrch()
+                .sortableInterface("io.elasticore.springboot3.dto.SortableObject")
+                .sortableProperties(java.util.Arrays.asList("orderId")));
+        assertTrue(runtime.contains("override fun sortableProperties(): Set<String> = setOf("), runtime);
     }
 
     /** The interfaces follow the class name, as Kotlin writes them. */

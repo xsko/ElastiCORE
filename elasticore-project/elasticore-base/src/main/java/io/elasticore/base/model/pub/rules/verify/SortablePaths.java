@@ -65,7 +65,14 @@ final class SortablePaths {
     @SuppressWarnings("StringSplitter")
     static List<String> of(Entity entity, ECoreModel model, String defaultSort) {
         DataTransfer result = resultDto(entity, model);
-        if (result == null) return null;
+        if (result == null) {
+            // Nothing to tell what the response shows by: said, rather than left unchecked without a word.
+            io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
+                    "[%s] the search of %s answers with no DTO of this model (%s), so its sort is not kept to what the"
+                            + " response shows - any property sorts. Declare the DTO here to have it checked.",
+                    entity.getIdentity().getDomainId(), entity.getIdentity().getName(), resultName(entity, model)));
+            return null;
+        }
         Set<String> out = new LinkedHashSet<String>();
         ListMap<String, Field> own = entity.getAllFieldListMap();
         if (own != null) {
@@ -88,9 +95,12 @@ final class SortablePaths {
     /** The DTO a search answers with: its @searchResult DTO, else the entity's own. */
     private static DataTransfer resultDto(Entity entity, ECoreModel model) {
         if (model.getDataTransferModels() == null) return null;
-        String name = SpecFactory.searchResultDtoOf(entity, model);
-        if (name == null) name = entity.getIdentity().getName() + "DTO";
-        return model.getDataTransferModels().getItems().findByName(name);
+        return model.getDataTransferModels().getItems().findByName(resultName(entity, model));
+    }
+
+    private static String resultName(Entity entity, ECoreModel model) {
+        String name = model.getDataTransferModels() == null ? null : SpecFactory.searchResultDtoOf(entity, model);
+        return name != null ? name : entity.getIdentity().getName() + "DTO";
     }
 
     /** The paths the DTO shows of the entity's values, under the prefix of the relations followed to it. */

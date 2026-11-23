@@ -1281,7 +1281,7 @@ entity:
 - 3.0 규칙 엔진(`elcore3`) 기능입니다. 2.x 생성기(`elcore`)는 `@sort` 를 읽지 않습니다.
 
 #### 검색이 정렬할 수 있는 것 - 응답이 보여 주는 것만
-> **동작:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **안 됨:** 2.x-compatible output (output = 'v2') 와 2.x generator - 예전처럼 어떤 속성으로든 정렬; env.yml 에 자신의 `interface.sortable` 을 둔 도메인 - 검사 안 함 (경고)
+> **동작:** v3, Kotlin; JPA, MyBatis (mode: mybatis), MongoDB (mode: mongo); layered, ddd, hexagonal · **안 됨:** 2.x-compatible output (output = 'v2') 와 2.x generator - 예전처럼 어떤 속성으로든 정렬; env.yml 의 `interface.sortable` 이 런타임 것이 아닌 자신만의 인터페이스인 도메인 - 검사 안 함 (경고)
 
 `sortCode`(`"orderDate-,total+"`)와 `sortColumn` + `sortAscending` 은 엔티티 속성을 이름으로 적습니다 - `name`, 내장 값의 부분
 `deliveryAddress.city`, 조인한 행의 `customer.name`. 검색은 그 응답이 보여 주는 속성으로만 정렬합니다. 그 밖의 속성은 조회를
@@ -1326,9 +1326,11 @@ public java.util.Set<String> sortableProperties() {
   Kotlin: `override fun sortableProperties(): Set<String> = setOf("ticketId", "subject", ...)`. 도메인의 `SortableObject` 가 각
   속성을 런타임의 `io.elasticore.springboot3.dto.SortCheck.sortable(...)` 에 넘기고, 목록에 없는 속성은 거기서 거절됩니다.
   `sortableProperties()` 를 재정의하지 않은 DTO(null)는 예전처럼 어떤 속성으로든 정렬합니다.
-- env.yml 에 자신의 `interface.sortable` 을 둔 도메인은 그 인터페이스를 그대로 씁니다: 그 인터페이스에 없을 수 있는 메서드를
-  검색 DTO 가 재정의하지 않고, 실행이 그렇게 알리며(DSL 경고), 정렬은 검사하지 않습니다 - 그 `getSort()` 에서
-  `SortCheck.sortable(...)` 을 부르십시오.
+- 런타임의 `io.elasticore.springboot3.dto.SortableObject`(init 마법사의 env.yml 이 `interface.sortable` 로 적는 것)도
+  `sortableProperties()` 를 선언합니다(DTO 가 자기 목록을 내지 않으면 null 이라 2.x 코드는 예전처럼 정렬): 그 위의 3.0 검색 DTO 도
+  같은 방식으로 검사됩니다. env.yml 에 자신만의 인터페이스를 둔 도메인은 그 인터페이스를 그대로 씁니다: 그 인터페이스에 없을
+  수 있는 메서드를 검색 DTO 가 재정의하지 않고, 실행이 그렇게 알리며(DSL 경고), 정렬은 검사하지 않습니다 - 그 `getSort()` 에서
+  `SortCheck.sortable(...)` 을 부르십시오. 응답 DTO 가 도메인 모델에 없는 검색도 그렇습니다.
 - HTTP 로 확인: Pet Store `SortTermTest`(MANAGER, sortCode, sortColumn, export), MyBatis Pet Store
   `ShopFlow.aSortOnWhatTheResponseDoesNotShowIsRefused`(SQL 이 준비되지 않음), `elasticore-template-kt` `SortTermTest`(Kotlin),
   `elasticore-template-mongo` `ClubApi` / `ShopApi` 와 `elasticore-template-kt-mongo` `ClubApi`(MongoDB).
