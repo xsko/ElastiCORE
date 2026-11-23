@@ -1927,6 +1927,332 @@ public class ContractTestsTest {
                         false));
     }
 
+    // ---- export -----------------------------------------------------------------------
+
+    private static final String EXPORT = String.join(
+            "\n",
+            "entity:",
+            "  Deal:",
+            "    meta: entity @root @editable @expose(pageSize=20, methods=\"create,read,search,update,delete,export\")",
+            "    fields:",
+            "      dealId: long @id @sequence",
+            "      title:  string(40)! @search(like)",
+            "      amount: int @min(0)",
+            "",
+            "  Memo:",
+            "    meta: entity @root @editable @expose(pageSize=20, methods=\"create,read,export\")",
+            "    fields:",
+            "      memoId: long @id @sequence",
+            "      text:   string(40)!",
+            "",
+            "  Note:",
+            "    meta: entity @root @editable @expose(20)",
+            "    fields:",
+            "      noteId: long @id @sequence",
+            "      body:   string(40)! @search(like)",
+            "");
+
+    /**
+     * Where @expose(methods) lists export: the file holds the rows the search answers with the same body, in
+     * its order - sorted by the key, which every response shows - and as many rows as elasticore.export.max-rows
+     * are written, one more refused before anything is written. The rows are the test's own, narrowed to by a
+     * text the search finds them by; without a search, every row the caller may see.
+     */
+    @Test
+    public void theExportIsTestedOverTheApi() throws Exception {
+        File project = project(EXPORT, "contract");
+        String log = run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        String rows = "        String shared = text(12);\n"
+                + "        Object first = createdId(DEAL, withValue(newDeal(), \"title\", shared), \"dealId\");\n"
+                + "        Object second = createdId(DEAL, withValue(newDeal(), \"title\", shared), \"dealId\");\n";
+        assertTrue(
+                method(t, "exportHoldsTheSearchsRowsInItsOrder")
+                        .contains(rows
+                                + "        Map<String, Object> search = obj(\"title\", shared, \"sortCode\", \"dealId-\");\n"
+                                + "        Map<String, Object> export = obj(\"search\", search, \"columns\", list(\"dealId\"),"
+                                + " \"headers\", list(\"dealId\"));\n"
+                                + "        assertSameRows(searched(DEAL, search, \"dealId\"), exportOf(DEAL, export), first,"
+                                + " second);\n"),
+                t);
+        assertTrue(
+                method(t, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
+                        .contains(rows
+                                + "        Map<String, Object> export = obj(\"search\", obj(\"title\", shared), \"columns\","
+                                + " list(\"dealId\"), \"headers\", list(\"dealId\"));\n"
+                                + "        long rows = exportedRows(exportOf(DEAL, export), first, second);\n"
+                                + "        assertWritten(exportAtMost(DEAL, export, rows), rows);\n"
+                                + "        assertTooManyRows(exportAtMost(DEAL, export, rows - 1));\n"),
+                t);
+        assertTrue(t.contains(" * What the export promises is checked too: the file holds the rows the search\n"), t);
+        // No search: the cap alone, over every row the caller may see.
+        String m = read(project, "src/test/java/com/acme/shop/MemoContractTest.java");
+        assertFalse(m.contains("exportHoldsTheSearchsRows"), m);
+        assertTrue(
+                method(m, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
+                        .contains("        // No search narrows the export to the test's rows: every row the caller may"
+                                + " see is in it.\n"
+                                + "        Object first = createdId(MEMO, newMemo(), \"memoId\");\n"
+                                + "        Object second = createdId(MEMO, newMemo(), \"memoId\");\n"
+                                + "        Map<String, Object> export = obj(\"columns\", list(\"memoId\"), \"headers\","
+                                + " list(\"memoId\"));\n"),
+                m);
+        assertTrue(
+                m.contains(
+                        " * What the export promises is checked too: elasticore.export.max-rows refuses more before\n"
+                                + " * anything is written.\n"),
+                m);
+        assertTrue(
+                log.contains(
+                        "Memo export: its API takes no search (@expose methods), so the file is not compared with one"),
+                log);
+        // Without export in its methods: none of it.
+        assertFalse(read(project, "src/test/java/com/acme/shop/NoteContractTest.java")
+                .contains("export"));
+        assertFalse(t.contains("\"message\""), t);
+
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains("    protected MvcResult exportOf(String path, Object body) throws Exception {\n"), s);
+        assertTrue(
+                s.contains(
+                        "    protected MvcResult exportAtMost(String path, Object body, long maxRows) throws Exception {\n"
+                                + "        String name = \"contract-test-export-max-rows\";\n"
+                                + "        environment.getPropertySources().addFirst("),
+                s);
+        assertTrue(s.contains("    protected org.springframework.core.env.ConfigurableEnvironment environment;\n"), s);
+        assertTrue(
+                s.contains("    protected Rows searched(String path, Object body, String key) throws Exception {\n"),
+                s);
+        assertTrue(s.contains("        assertRefused(result, 400, \"export.too-many-rows\");\n"), s);
+        assertTrue(s.contains("        if (text.startsWith(\"\\uFEFF\")) text = text.substring(1);\n"), s);
+        assertTrue(
+                s.contains(" * The tests of the export send the search's body to POST .../export (exportOf) and\n"), s);
+        assertTrue(
+                s.contains(" * Not tested of the export, as the build's summary says:\n"
+                        + " *   - Memo export: its API takes no search (@expose methods), so the file is not compared"
+                        + " with one\n"),
+                s);
+        assertTrue(
+                log.contains(
+                        "contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written, 1 skipped"),
+                log);
+    }
+
+    /** The same tests in Kotlin, over MyBatis and over MongoDB, whose rows stay. */
+    @Test
+    public void theExportInKotlinOverMyBatisAndOverMongoDb() throws Exception {
+        File kt = project(EXPORT, "contract", "jpa");
+        run(kt, "layered", "kotlin");
+        String t = read(kt, "src/test/kotlin/com/acme/shop/DealContractTest.kt");
+        assertTrue(
+                method(t, "exportHoldsTheSearchsRowsInItsOrder")
+                        .contains("        val shared = text(12)\n"
+                                + "        val first = createdId(DEAL, withValue(newDeal(), \"title\", shared), \"dealId\")\n"
+                                + "        val second = createdId(DEAL, withValue(newDeal(), \"title\", shared), \"dealId\")\n"
+                                + "        val search = obj(\"title\", shared, \"sortCode\", \"dealId-\")\n"
+                                + "        val export = obj(\"search\", search, \"columns\", list(\"dealId\"), \"headers\","
+                                + " list(\"dealId\"))\n"
+                                + "        assertSameRows(searched(DEAL, search, \"dealId\"), exportOf(DEAL, export), first,"
+                                + " second)\n"),
+                t);
+        assertTrue(
+                method(t, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
+                        .contains("        val rows = exportedRows(exportOf(DEAL, export), first, second)\n"
+                                + "        assertWritten(exportAtMost(DEAL, export, rows), rows)\n"
+                                + "        assertTooManyRows(exportAtMost(DEAL, export, rows - 1))\n"),
+                t);
+        String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(
+                ks.contains(
+                        "    protected lateinit var environment: org.springframework.core.env.ConfigurableEnvironment\n"),
+                ks);
+        assertTrue(
+                ks.contains("    protected fun exportAtMost(path: String, body: Any?, maxRows: Long): MvcResult {\n"),
+                ks);
+        assertTrue(ks.contains("    protected class Rows(val keys: List<String>, val total: Long)\n"), ks);
+        assertTrue(ks.contains("        val total = jsonAt(result, \"\\$.totalElements\") ?: jsonAt(result,"), ks);
+
+        File mybatis = project(EXPORT, "contract", "mybatis");
+        run(mybatis, "layered", "java");
+        assertTrue(read(mybatis, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("void exportHoldsTheSearchsRowsInItsOrder() throws Exception {"));
+        assertTrue(read(mybatis, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("    protected MvcResult exportOf(String path, Object body) throws Exception {\n"));
+
+        String model = EXPORT.replace("long @id @sequence", "string(24) @id");
+        File mongo = project(model, "contract", "mongo");
+        run(mongo, "layered", "java");
+        String mt = read(mongo, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(
+                method(mt, "exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten")
+                        .contains("        assertTooManyRows(exportAtMost(DEAL, export, rows - 1));\n"),
+                mt);
+        assertTrue(read(mongo, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("    protected org.springframework.core.env.ConfigurableEnvironment environment;\n"));
+    }
+
+    /** What the generator cannot test of the export is counted with why, and said in the support class. */
+    @Test
+    public void whatCannotBeTestedOfTheExportIsSaid() throws Exception {
+        String model = String.join(
+                "\n",
+                "entity:",
+                "  Reel:",
+                "    meta: entity @root @editable @expose(pageSize=20, methods=\"create,read,search,export\")",
+                "    fields:",
+                "      reelId: long @id @sequence",
+                "      title:  string(30)! @search(like)",
+                "",
+                "  Ledger:",
+                "    meta: entity @root @expose(pageSize=20, methods=\"read,search,export\")",
+                "    fields:",
+                "      ledgerId: long @id @sequence",
+                "      name:     string(20)!",
+                "",
+                "  Tag:",
+                "    meta: entity @root @editable @expose(pageSize=20, methods=\"create,read,search,export\")",
+                "    fields:",
+                "      tagId: long @id @sequence",
+                "      code:  string(4)! @search(eq)",
+                "",
+                "  Slot:",
+                "    meta: entity @expose(pageSize=20, methods=\"create,read,search,export\")",
+                "    fields:",
+                "      shelf: string(5) @id",
+                "      place: string(5) @id",
+                "      name:  string(20)!",
+                "",
+                "dto:",
+                "  ReelResultDTO:",
+                "    meta: dto @searchResult(Reel)",
+                "    fields:",
+                "      reelId: --",
+                "");
+        File project = project(model, "contract", "jpa");
+        String log = run(project, "hexagonal", "java");
+        // Another DTO answers the search and the export, without the key: nothing tells the file's rows apart.
+        assertTrue(
+                log.contains("Reel export: its search answers with ReelResultDTO, which shows no reelId to tell the"
+                        + " rows of the file by"),
+                log);
+        assertFalse(new File(project, "src/test/java/com/acme/shop/ReelContractTest.java").exists()
+                && read(project, "src/test/java/com/acme/shop/ReelContractTest.java")
+                        .contains("export"));
+        // Two keys: no one key tells the file's rows apart.
+        assertTrue(
+                log.contains("Slot export: a composite key - the rows of the file are not told apart by one key"), log);
+        // No create: no row is made to export.
+        assertTrue(log.contains("Ledger: its API takes no create (@expose methods), so no row is made to test"), log);
+        // A text too short to be unique: every row the caller may see, the search's first page compared.
+        String tag = read(project, "src/test/java/com/acme/shop/TagContractTest.java");
+        assertTrue(
+                method(tag, "exportHoldsTheSearchsRowsInItsOrder")
+                        .contains("        Map<String, Object> search = obj(\"sortCode\", \"tagId-\");\n"),
+                tag);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains(" *   - Reel export: its search answers with ReelResultDTO"), s);
+    }
+
+    /** A domain without export gets none of it: its support class is the one it was. */
+    @Test
+    public void aDomainWithoutExportGetsNoneOfIt() throws Exception {
+        File project = project(MODEL, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertFalse(s.contains("export"), s);
+        assertFalse(s.contains("ConfigurableEnvironment"), s);
+        assertFalse(read(project, "src/test/java/com/acme/shop/ShipmentContractTest.java")
+                .contains("export"));
+    }
+
+    @Test
+    public void contractWithExportChangesNothingElse() throws Exception {
+        onlyTheTestsAreAdded(EXPORT, "jpa", "hexagonal", "java", "src/test/java/com/acme/shop/", "java");
+    }
+
+    @Test
+    public void contractWithExportChangesNothingElseInKotlin() throws Exception {
+        onlyTheTestsAreAdded(EXPORT, "jpa", "layered", "kotlin", "src/test/kotlin/com/acme/shop/", "kt");
+    }
+
+    @Test
+    public void contractWithExportChangesNothingElseOverMyBatisAndMongoDb() throws Exception {
+        onlyTheTestsAreAdded(EXPORT, "mybatis", "layered", "java", "src/test/java/com/acme/shop/", "java");
+        onlyTheTestsAreAdded(
+                EXPORT.replace("long @id @sequence", "string(24) @id"),
+                "mongo",
+                "layered",
+                "java",
+                "src/test/java/com/acme/shop/",
+                "java");
+    }
+
+    /**
+     * The build never breaks: a support class kept without the members of the export gets its other tests -
+     * of @access and of @Mask too, where it has those members - and the summary says what is not written.
+     */
+    @Test
+    public void aSupportClassKeptWithoutTheExportMembersKeepsTheOtherTests() throws Exception {
+        String model = ACCESS.replace(
+                        "@expose(20) @owner(staffId)",
+                        "@expose(pageSize=20, methods=\"create,read,search,update,delete,export\") @owner(staffId)")
+                .replace(
+                        "      title:   string(40)!\n",
+                        "      title:   string(40)!\n      note:    string(40) @env:maskname\n");
+        File project = project(model, "contract", "jpa", MASKS);
+        run(project, "hexagonal", "java");
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        String generated = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(read(project, "src/test/java/com/acme/shop/DealContractTest.java")
+                .contains("void exportAboveMaxRowsIsRefusedBeforeAnythingIsWritten()"));
+        int from = generated.indexOf("    // ---- the tests of the export");
+        int to = generated.indexOf("    protected MvcResult post(String path, Object body) throws Exception {");
+        assertTrue(from > 0 && to > from, generated);
+        Files.write(
+                support.toPath(),
+                (generated.substring(0, from) + generated.substring(to)).getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Shop: ShopContractSupport has no exportOf(...) - add the members from"
+                        + " build/elasticore/contract/ShopContractSupport.java, the version this run generated; the"
+                        + " tests of the export are not written"),
+                log);
+        String t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertFalse(t.contains("exportOf("), t);
+        assertFalse(t.contains("What the export promises"), t);
+        assertTrue(t.contains("sentBy("), t);
+        assertTrue(t.contains("void noteIsShownMasked()"), t);
+        assertTrue(t.contains("void titleIsRequired()"), t);
+        assertTrue(log.contains("contract tests: " + tests(project, "src/test/java/com/acme/shop") + " written"), log);
+        // Kept without those of @access and of the export: the tests of @Mask stay.
+        int callers = generated.indexOf("    // ---- the callers of the @access tests");
+        int privacy = generated.indexOf("    // ---- the tests of @Mask and @encrypt");
+        assertTrue(callers > 0 && callers < privacy && privacy < from, generated);
+        Files.write(
+                support.toPath(),
+                (generated.substring(0, callers) + generated.substring(privacy, from) + generated.substring(to))
+                        .getBytes(StandardCharsets.UTF_8));
+        log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("the tests of @access and of the export are not written"), log);
+        t = read(project, "src/test/java/com/acme/shop/DealContractTest.java");
+        assertTrue(t.contains("void noteIsShownMasked()"), t);
+        assertFalse(t.contains("sentBy("), t);
+        assertFalse(t.contains("exportOf("), t);
+        // What the summary says is left out, group by group.
+        assertEquals("the tests of the export", ContractTestSource.Groups.omitted(ContractTestSource.Groups.EXPORT));
+        assertEquals(
+                "the tests of @access, @Mask and @encrypt",
+                ContractTestSource.Groups.omitted(
+                        ContractTestSource.Groups.ACCESS | ContractTestSource.Groups.PRIVACY));
+        assertEquals(
+                "the tests of @Mask and @encrypt and of the export",
+                ContractTestSource.Groups.omitted(
+                        ContractTestSource.Groups.PRIVACY | ContractTestSource.Groups.EXPORT));
+        assertEquals(
+                "the tests of @access, @Mask and @encrypt and of the export",
+                ContractTestSource.Groups.omitted(ContractTestSource.Groups.ALL));
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {
