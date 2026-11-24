@@ -2863,6 +2863,105 @@ public class ContractTestsTest {
         assertEquals(own, read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"));
     }
 
+    /** ACCESS, and a Post a command moves to another Board: by the key of the reference the move keeps. */
+    private static final String MOVE = ACCESS.replace(
+                    "entity:\n",
+                    "  PostStatus:\n"
+                            + "    meta: enum @db(code) @json(code)\n"
+                            + "    fields:\n"
+                            + "      code:  string(3) @code\n"
+                            + "      label: string(20)\n"
+                            + "    enum:\n"
+                            + "      OPEN:  OPN, Open\n"
+                            + "      MOVED: MVD, Moved\n"
+                            + "\n"
+                            + "entity:\n")
+            + String.join(
+                    "\n",
+                    "  Board:",
+                    "    meta: entity @root @editable @expose(20)",
+                    "    fields:",
+                    "      boardId: long @id @sequence",
+                    "      name:    string(20)!",
+                    "",
+                    "  Post:",
+                    "    meta: entity @root @expose(20) @access(read=public, create=user, move=user)",
+                    "    fields:",
+                    "      postId: long @id @sequence",
+                    "      title:  string(40)!",
+                    "      board:  Board @ManyToOne",
+                    "      status: PostStatus",
+                    "    states:",
+                    "      status:",
+                    "        initial: OPEN",
+                    "        move:    OPEN -> MOVED",
+                    "    commands:",
+                    "      move:",
+                    "        boardId: long!",
+                    "        title:   string(40)!",
+                    "");
+
+    /**
+     * A command parameter named as the field that holds a reference's key (boardId, of board: Board) is sent
+     * the key of a row the test makes - as a row that needs a Board makes it - not a fixed 1, which names no
+     * row of the test's (#295). Any other parameter is sent its value as before.
+     */
+    @Test
+    public void aCommandParameterThatNamesAReferenceIsSentARowOfTheTests() throws Exception {
+        File project = project(MOVE, "contract");
+        run(project, "hexagonal", "java");
+        String t = read(project, "src/test/java/com/acme/shop/PostContractTest.java");
+        String body = "obj(\"boardId\", createdId(BOARD, newBoard(), \"boardId\"), \"title\", text(12))";
+        // The post needs no board itself: the board's builder is written for the command.
+        assertTrue(t.contains("    private static final String BOARD = \"/api/shop/board\";\n"), t);
+        assertTrue(
+                t.contains("    private Map<String, Object> newBoard() throws Exception {\n"
+                        + "        return obj(\"name\", text(12));\n"),
+                t);
+        assertTrue(t.contains("        return obj(\"title\", text(12));\n"), t);
+        // The lifecycle: the move, and its refusal after the step there.
+        assertTrue(t.contains("        MvcResult moved = command(POST, id, \"move\", " + body + ");\n"), t);
+        assertTrue(
+                t.contains("        given(command(POST, id, \"move\", " + body + "));\n"
+                        + "        assertRefused(command(POST, id, \"move\", " + body + "), 409,"
+                        + " \"state.Post.status.move\");\n"),
+                t);
+        // @access(move=user): sent by the caller, the board made as the administrator makes the rows.
+        assertTrue(t.contains("sentBy(caller, commanding(POST, id, \"move\", " + body + "))"), t);
+        assertTrue(t.contains("sentBy(null, commanding(POST, id, \"move\", " + body + "))"), t);
+        assertFalse(t.contains("num(\"1\")"), t);
+
+        // No administrator signs in: the board is made as the application itself, as the rows are.
+        File noRole = project(
+                MOVE.replace("      role:    StaffRole @default(StaffRole.USER) @access(admin)\n", ""), "contract");
+        run(noRole, "hexagonal", "java");
+        String n = read(noRole, "src/test/java/com/acme/shop/PostContractTest.java");
+        assertTrue(
+                n.contains("sentBy(caller, commanding(POST, id, \"move\", obj(\"boardId\", asTheSystem(() ->"
+                        + " createdId(BOARD, newBoard(), \"boardId\")), \"title\", text(12))))"),
+                n);
+        // A step there is the application's own already: the board inside it is made the same way.
+        assertFalse(n.contains("num(\"1\")"), n);
+
+        // Kotlin the same way.
+        File kt = project(MOVE, "contract");
+        run(kt, "hexagonal", "kotlin");
+        String k = read(kt, "src/test/kotlin/com/acme/shop/PostContractTest.kt");
+        assertTrue(k.contains("    private val BOARD = \"/api/shop/board\"\n"), k);
+        assertTrue(
+                k.contains("    private fun newBoard(): MutableMap<String, Any?> =\n        obj(\"name\", text(12))\n"),
+                k);
+        assertTrue(k.contains("        val moved = command(POST, id, \"move\", " + body + ")\n"), k);
+        assertTrue(k.contains("sentBy(caller, commanding(POST, id, \"move\", " + body + "))"), k);
+        assertFalse(k.contains("num(\"1\")"), k);
+        File ktNoRole = project(
+                MOVE.replace("      role:    StaffRole @default(StaffRole.USER) @access(admin)\n", ""), "contract");
+        run(ktNoRole, "hexagonal", "kotlin");
+        assertTrue(read(ktNoRole, "src/test/kotlin/com/acme/shop/PostContractTest.kt")
+                .contains("obj(\"boardId\", asTheSystem { createdId(BOARD, newBoard(), \"boardId\") }, \"title\","
+                        + " text(12))"));
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {

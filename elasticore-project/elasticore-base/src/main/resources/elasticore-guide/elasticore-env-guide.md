@@ -755,7 +755,7 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 
 | The DSL says | The test |
 |---|---|
-| a move of `states:` | allowed from each state it lists: 2xx, the state moved, a `@stamp` of the state entered set; refused from each other state a row can reach: 409 `state.<Entity>.<field>.<command>`. A new row starts in `initial` |
+| a move of `states:` | allowed from each state it lists: 2xx, the state moved, a `@stamp` of the state entered set; refused from each other state a row can reach: 409 `state.<Entity>.<field>.<command>`. A new row starts in `initial`. A parameter of the command named as the field that holds a reference's key, of its type (`boardId` of `board: Board`), is sent the key of a row the test makes first, as a row that needs one makes it |
 | `!` (required) | sent as null: 400, the field, `NotNull` |
 | `string(n)`, `@length` | n characters pass, n + 1 are refused: 400 `Size` (and the least length, where one is given) |
 | `@min`, `@max` | the bound passes, one step past it is refused: 400 `Min` / `Max` (`DecimalMin` / `DecimalMax` on a decimal) |

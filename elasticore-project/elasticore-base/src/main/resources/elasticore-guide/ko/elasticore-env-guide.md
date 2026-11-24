@@ -755,7 +755,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
 
 | DSL 이 말하는 것 | 테스트 |
 |---|---|
-| `states:` 의 이동 | 나열한 각 상태에서 허용: 2xx, 상태가 바뀌고 들어간 상태의 `@stamp` 가 채워짐; 행이 도달할 수 있는 다른 각 상태에서 거부: 409 `state.<Entity>.<field>.<command>`. 새 행은 `initial` 에서 시작 |
+| `states:` 의 이동 | 나열한 각 상태에서 허용: 2xx, 상태가 바뀌고 들어간 상태의 `@stamp` 가 채워짐; 행이 도달할 수 있는 다른 각 상태에서 거부: 409 `state.<Entity>.<field>.<command>`. 새 행은 `initial` 에서 시작. 참조의 키를 담는 필드와 같은 이름·타입인 명령 파라미터(`board: Board` 의 `boardId`)에는 테스트가 먼저 만든 행의 키를 - 그 행이 필요한 행이 만들듯이 - 보낸다 |
 | `!` (필수) | null 로 보내면: 400, 그 필드, `NotNull` |
 | `string(n)`, `@length` | n 자는 통과, n + 1 자는 거부: 400 `Size` (최소 길이가 있으면 그것도) |
 | `@min`, `@max` | 경계값은 통과, 한 단계 넘으면 거부: 400 `Min` / `Max` (소수 타입은 `DecimalMin` / `DecimalMax`) |

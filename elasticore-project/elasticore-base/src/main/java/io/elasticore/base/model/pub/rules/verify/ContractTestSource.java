@@ -1602,25 +1602,68 @@ final class ContractTestSource {
 
         /** What a command is sent with: null when it takes no body, obj(...) of its required parameters. */
         private String commandBody(String command) {
+            return commandBody(command, false);
+        }
+
+        /**
+         * As commandBody - where the case of @access sends it as its caller, a row a parameter names is made
+         * as the rows of the case are (sys: the administrator, or the application itself).
+         */
+        private String commandBody(String command, boolean asTheRows) {
             for (EntitySpec.CommandSpec cmd : e.commands()) {
                 if (!cmd.name().equals(command)) continue;
                 if (cmd.dtoName() == null) return "null";
                 List<String[]> parts = new ArrayList<String[]>();
                 for (FieldSpec p : cmd.params()) {
                     if (!sent(p)) continue;
-                    String v = value(
-                            e,
-                            dto,
-                            p,
-                            java.util.Collections.<Promise>emptyList(),
-                            new ArrayDeque<String>(),
-                            new Builder(e));
+                    Builder named = namedRow(p);
+                    String v;
+                    if (named != null && named.problem != null) {
+                        return null;
+                    } else if (named != null) {
+                        String id = named.id(named.e.pkField().name());
+                        v = asTheRows ? sys(id) : id;
+                    } else {
+                        v = value(
+                                e,
+                                dto,
+                                p,
+                                java.util.Collections.<Promise>emptyList(),
+                                new ArrayDeque<String>(),
+                                new Builder(e));
+                    }
                     if (v == null) return null;
                     parts.add(new String[] {p.name(), v});
                 }
                 return obj(parts);
             }
             return "null";
+        }
+
+        /**
+         * The builder of the row a command's parameter names: a parameter named as the field that holds a
+         * reference's key, of its type (boardId of board: Board, by id) - which the generated move keeps
+         * - is the key of a row the test makes first, as a row that needs one makes it: a fixed value
+         * names no row of the test's (issue 295). Null for any other parameter; one with its problem
+         * where the row cannot be made.
+         */
+        private Builder namedRow(FieldSpec p) {
+            FieldSpec held = field(e, p.name());
+            if (held == null || held.isList() || !simple(held.typeName()).equals(simple(p.typeName()))) return null;
+            String ref = reference(held);
+            FieldSpec shown = field(dto, p.name());
+            if (ref == null && shown != null) ref = reference(shown);
+            int dot = ref == null ? -1 : ref.indexOf('.');
+            if (dot <= 0) return null;
+            FieldSpec relation = field(e, ref.substring(0, dot));
+            if (relation == null || relation.isList()) return null;
+            EntitySpec other = entity(simple(relation.typeName()));
+            if (other == null || other.pkField() == null) return null;
+            String keyName = ref.substring(dot + 1);
+            if (!keyName.isEmpty() && !keyName.equals(other.pkField().name())) return null;
+            Builder made = builder(other, new ArrayDeque<String>());
+            if (made.problem == null) guarded |= ServiceAccessRules.guarded(other);
+            return made;
         }
 
         /** The JSON name the answer shows the lifecycle's field by, or null when it does not show it. */
@@ -2223,7 +2266,7 @@ final class ContractTestSource {
             }
             String body = null;
             if (!create && !search && !"read".equals(op) && !"update".equals(op) && !"delete".equals(op)) {
-                body = commandBody(op);
+                body = commandBody(op, true);
                 if (body == null) {
                     accessSkip(where + ": no value can be built for a parameter the command requires");
                     return;
