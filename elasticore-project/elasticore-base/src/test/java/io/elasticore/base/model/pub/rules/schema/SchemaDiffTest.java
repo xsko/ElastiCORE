@@ -278,4 +278,85 @@ public class SchemaDiffTest {
         plain.table("item").index(new Table.Index("uk_item_code", Collections.singletonList("code"), true));
         for (SchemaDiff.Change c : SchemaDiff.between(plain, moved)) assertTrue(c.safe, c.description);
     }
+
+    private static Schema coverage(String table) {
+        return coverage(table, true);
+    }
+
+    private static Schema coverage(String table, boolean indexed) {
+        Table t = new Table(table, "Coverage");
+        t.column(Column.of("coverage_id", ColumnType.BIGINT).nullable(false));
+        t.column(Column.of("coverage_code", ColumnType.TEXT).length(30).nullable(false));
+        t.primaryKey("coverage_id");
+        if (indexed)
+            t.index(new Table.Index("uk_coverage_product_code", Collections.singletonList("coverage_code"), true));
+        Schema s = new Schema();
+        s.table(t);
+        return s;
+    }
+
+    /**
+     * Issue 329: the table renamed (a table.prefix added), the old one kept for its rows. The new table's index takes
+     * the old one's name, which PostgreSQL, Oracle and H2 hold once in a schema: the old index goes first, and the
+     * old table still waits for review.
+     */
+    @Test
+    public void anIndexNameAnotherTableTakesIsDroppedFirst() {
+        Schema before = coverage("coverage");
+        Schema after = coverage("jp_coverage");
+        List<SchemaDiff.Change> changes = SchemaDiff.between(before, after);
+        String pg = SchemaDiff.render(changes, Database.POSTGRESQL, 19, "rename");
+        int drop = pg.indexOf("DROP INDEX uk_coverage_product_code");
+        int create = pg.indexOf("CREATE UNIQUE INDEX uk_coverage_product_code ON jp_coverage");
+        assertTrue(drop >= 0 && create > drop, pg);
+        // Run as written: it drops an index, not rows - the old table's drop still waits.
+        assertTrue(pg.indexOf("-- DROP TABLE coverage") > create, pg);
+        int drops = 0;
+        for (SchemaDiff.Change c : changes) {
+            if (!c.description.startsWith("drop index")) continue;
+            drops++;
+            assertTrue(c.safe, c.description);
+            assertEquals("drop index uk_coverage_product_code of coverage - jp_coverage takes its name", c.description);
+        }
+        assertEquals(1, drops, changes.toString());
+        assertTrue(SchemaDiff.render(changes, Database.SQLSERVER, 19, "rename")
+                .contains("DROP INDEX uk_coverage_product_code ON coverage"));
+    }
+
+    /** An index moved from one kept table to another: dropped once, before it is made on the other. */
+    @Test
+    public void anIndexMovedBetweenTablesIsDroppedOnce() {
+        Schema before = coverage("coverage");
+        Table other = new Table("coverage_line", "CoverageLine");
+        other.column(Column.of("line_id", ColumnType.BIGINT).nullable(false));
+        other.column(Column.of("coverage_code", ColumnType.TEXT).length(30).nullable(false));
+        other.primaryKey("line_id");
+        before.table(other);
+        Schema after = coverage("coverage", false);
+        Table moved = new Table("coverage_line", "CoverageLine");
+        moved.column(Column.of("line_id", ColumnType.BIGINT).nullable(false));
+        moved.column(Column.of("coverage_code", ColumnType.TEXT).length(30).nullable(false));
+        moved.primaryKey("line_id");
+        moved.index(new Table.Index("UK_COVERAGE_PRODUCT_CODE", Collections.singletonList("coverage_code"), true));
+        after.table(moved);
+        String pg = SchemaDiff.render(SchemaDiff.between(before, after), Database.POSTGRESQL, 19, "move");
+        int drop = pg.indexOf("DROP INDEX uk_coverage_product_code");
+        assertTrue(drop >= 0 && pg.indexOf("CREATE UNIQUE INDEX UK_COVERAGE_PRODUCT_CODE ON coverage_line") > drop, pg);
+        assertEquals(drop, pg.lastIndexOf("DROP INDEX"), pg);
+    }
+
+    /** A name the old table keeps in the model is not taken: nothing is dropped. */
+    @Test
+    public void aNameStillHeldIsNotDropped() {
+        Schema before = coverage("coverage");
+        Schema after = coverage("coverage");
+        Table copy = new Table("jp_coverage", "Coverage");
+        copy.column(Column.of("coverage_id", ColumnType.BIGINT).nullable(false));
+        copy.primaryKey("coverage_id");
+        copy.index(new Table.Index("uk_coverage_product_code", Collections.singletonList("coverage_id"), true));
+        after.table(copy);
+        for (SchemaDiff.Change c : SchemaDiff.between(before, after)) {
+            assertFalse(c.description.startsWith("drop index"), c.description);
+        }
+    }
 }

@@ -229,6 +229,7 @@ v3 매퍼는 `@writeonly` 값을 엔티티 -> DTO 로 복사하지 않습니다(
 UserProfile:
   meta: entity @table(user_profile_tbl)
 ```
+env.yml 의 `table.prefix` 는 이 이름 앞에도 붙습니다 (2.x 와 같음): `prefix: jp_` 에서 `@table(PL_QUOT)` 은 테이블 `jp_pl_quot` 입니다. 쓴 그대로의 이름(데이터 사전)을 쓰려면 `table.prefix` 를 빼고 `@table` 마다 전체 이름을 쓰세요.
 
 ### @schema(name)
 > **Since: 2.1.260409**

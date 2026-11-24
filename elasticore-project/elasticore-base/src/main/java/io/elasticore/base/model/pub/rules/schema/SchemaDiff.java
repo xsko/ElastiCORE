@@ -108,6 +108,28 @@ public final class SchemaDiff {
             out.add(c);
         }
 
+        // An index name the model now gives another table - a table renamed (table.prefix, @table, the
+        // entity's name) whose old table is kept for its rows, or an index moved: PostgreSQL, Oracle and H2
+        // hold an index name once in a schema, so the old table's index goes first, before the new one is
+        // made under its name (issue 329). It drops an index, not rows.
+        Set<String> moved = new java.util.HashSet<String>();
+        for (Table t : after.tables()) {
+            for (Table.Index i : t.indexes()) {
+                for (Table old : before.tables()) {
+                    if (old.name.equals(t.name) || stillHolds(after.table(old.name), i.name)) continue;
+                    for (Table.Index o : old.indexes()) {
+                        if (!o.name.equalsIgnoreCase(i.name) || !moved.add(key(o.name))) continue;
+                        Change c = byName(
+                                String.format("drop index %s of %s - %s takes its name", o.name, old.name, t.name),
+                                takenOverOn(before, o.name),
+                                before);
+                        for (Database db : Database.values()) c.sql(db, db.dropIndex(old.name, o.name));
+                        out.add(c);
+                    }
+                }
+            }
+        }
+
         // New tables, then the keys and indexes that may point at them.
         List<Table> added = new ArrayList<Table>();
         for (Table t : after.tables()) {
@@ -142,7 +164,8 @@ public final class SchemaDiff {
                 }
             }
             for (Table.Index i : old.indexes()) {
-                if (!t.indexes().contains(i)) {
+                // Dropped above already, when another table takes its name.
+                if (!t.indexes().contains(i) && !moved.contains(key(i.name))) {
                     Change c = byName("drop index " + i.name, takenOverOn(before, i.name), before);
                     for (Database db : Database.values()) c.sql(db, db.dropIndex(t.name, i.name));
                     out.add(c);
@@ -180,6 +203,18 @@ public final class SchemaDiff {
             if (!kept) out.add(new Change("sequence " + s.name + " is no longer used - drop it by hand", false));
         }
         return out;
+    }
+
+    /** Whether a table of the model still has an index of this name: then the name is not another table's to take. */
+    private static boolean stillHolds(Table t, String index) {
+        if (t == null) return false;
+        for (Table.Index i : t.indexes()) if (i.name.equalsIgnoreCase(index)) return true;
+        return false;
+    }
+
+    /** An index name as the database compares it: unquoted names ignore case. */
+    private static String key(String name) {
+        return name.toLowerCase(java.util.Locale.ROOT);
     }
 
     /** Said of a statement that names a key or an index by a name the state took over. */
