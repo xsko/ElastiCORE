@@ -61,7 +61,11 @@ public class SearchDtoBaseRules implements CodeRules {
     void size(EntitySpec e) {
         if (ctx(e).compatible()) return;
         for (FieldSpec f : e.fields()) {
-            if (!f.isStringType() || f.isList() || f.maxLength() <= 0) continue;
+            if (f.isList()) {
+                listSize(e, f);
+                continue;
+            }
+            if (!f.isStringType() || f.maxLength() <= 0) continue;
             io.elasticore.base.model.pub.rules.FieldCode code = ctx(e).field(f);
             if (code == null || code.isRemoved()) continue;
             // A field another rule turned into something else - a yes or no for isnull, a list - is no text.
@@ -69,6 +73,36 @@ public class SearchDtoBaseRules implements CodeRules {
             if (declared != null && !"String".equals(declared) && !"java.lang.String".equals(declared)) continue;
             code.ensure(AnnoCode.raw("jakarta.validation.constraints.Size", "@Size(max=%d)", f.maxLength()));
         }
+    }
+
+    /**
+     * A list of values searched for (@search(in)) holds what @minsize and @maxsize allow, as the DTO's list does
+     * (issue 324): @Size, with the declared message. Without it one request could bind any number of values into
+     * one in (...). A list another rule turned into one element (an equality on a list) is no list any more.
+     */
+    private void listSize(EntitySpec e, FieldSpec f) {
+        String min = f.dslValueAny("minsize");
+        String max = f.dslValueAny("maxsize");
+        if (min == null && max == null) return;
+        FieldCode code = ctx(e).field(f);
+        if (code == null || code.isRemoved()) return;
+        String declared = code.declaredType();
+        if (declared != null && !declared.contains("List")) return;
+        String[] minBound = min == null ? null : DtoBaseRules.Bound.split(min);
+        String[] maxBound = max == null ? null : DtoBaseRules.Bound.split(max);
+        StringBuilder sb = new StringBuilder();
+        String message = null;
+        if (minBound != null) {
+            sb.append("min=").append(minBound[0].trim());
+            message = minBound[1];
+        }
+        if (maxBound != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("max=").append(maxBound[0].trim());
+            if (message == null) message = maxBound[1];
+        }
+        if (message != null) sb.append(", message=").append(RuleText.quote(message));
+        code.ensure(AnnoCode.raw("jakarta.validation.constraints.Size", "@Size(%s)", sb.toString()));
     }
 
     @Rule(value = "srchdto-field", target = "srchdto", order = 10)

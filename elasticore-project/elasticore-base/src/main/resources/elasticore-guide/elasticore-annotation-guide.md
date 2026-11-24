@@ -1176,6 +1176,10 @@ A search DTO's list of values for one column of the entity - `status: List<Order
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
+An empty list, like one not sent, is no condition (every row, in JPA, MyBatis and MongoDB); for "none of the rows",
+return an empty page in your service before the search. Bound the number of values with `@maxsize(n)` on the search
+DTO's field (`postIds: List<Long> @search(in) @maxsize(200)`): it becomes `@Size(max=200)`, so a longer list is a 400
+before the query is built.
 
 **List<Entity> field:**
 ```java
