@@ -181,7 +181,56 @@ public class IndexColumnsTest {
         assertFalse(plain.contains("or add the rule set"), plain);
     }
 
+    /** commands: on a root the server writes no command for. */
+    private static final String COMMANDS = String.join(
+            "\n",
+            "entity:",
+            "  Ticket:",
+            "    meta: entity @root @expose(20)",
+            "    fields:",
+            "      ticketId: long @id @sequence",
+            "      title:    string(100)",
+            "    commands:",
+            "      close:",
+            "");
+
+    /**
+     * A layered root has no command endpoint: the build says the commands are not served, and the TypeScript client
+     * offers no function that would POST to one. Under hexagonal both are there.
+     */
+    @Test
+    @DisplayName("layered commands: said, and not offered by the TypeScript client; hexagonal serves and offers them")
+    public void commandsTheServerDoesNotServeAreNotOffered() throws Exception {
+        File layered = project("jpa", COMMANDS);
+        String log = generate(layered, null);
+        assertTrue(
+                log.contains("Ticket declares commands: (ddd-command), which the selected rules do not enforce"), log);
+        assertTrue(
+                log.contains("The jpa-springboot-v3 bundle does not carry ddd-command, which writes a command in the"
+                        + " root's behaviour class and serves it as POST /{id}/<command> - a root that is not @editable,"
+                        + " with architecture = 'ddd' or 'hexagonal'. The commands are not served, and the TypeScript"
+                        + " client offers none."),
+                log);
+        generate(layered, null, "elasticore.rules.ts=true");
+        String api = read(layered, "src/main/ts/TicketApi.ts");
+        assertFalse(api.contains("/close'"), api);
+        assertFalse(api.contains("close("), api);
+
+        File hexagonal = project("jpa", COMMANDS);
+        String served = generate(hexagonal, null, "elasticore.architecture=hexagonal");
+        assertFalse(served.contains("declares commands:"), served);
+        generate(hexagonal, null, "elasticore.architecture=hexagonal", "elasticore.rules.ts=true");
+        String offered = read(hexagonal, "src/main/ts/TicketApi.ts");
+        assertTrue(offered.contains("'/close'"), offered);
+    }
+
     // ---- the harness ----------------------------------------------------------------
+
+    private static String read(File project, String path) throws IOException {
+        File f = new File(project, path);
+        assertTrue(f.isFile(), "not generated: " + path);
+        return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+    }
 
     private final List<File> projects = new ArrayList<File>();
 
@@ -218,6 +267,7 @@ public class IndexColumnsTest {
             "elasticore.language",
             "elasticore.rules.force",
             "elasticore.publisher.rules.add",
+            "elasticore.rules.ts",
             "elasticore.ddl.now",
             DdlConfig.DATABASES
         };

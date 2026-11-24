@@ -232,6 +232,7 @@ public final class RulesGenRunner {
         boolean access = selectsNamed("ServiceAccessRules", selection);
         boolean states = selectsNamed("DddStateRules", selection);
         boolean derive = selectsNamed("DddDeriveRules", selection);
+        boolean commands = selectsNamed("DddCommandRules", selection);
         boolean keeps = selectsNamed("JpaEntityAnnotationRules", selection)
                 || selectsNamed("MyBatisMapperRules", selection)
                 || selectsNamed("MongoServiceFileRules", selection);
@@ -274,6 +275,10 @@ public final class RulesGenRunner {
             } else if (wantsStamp && !states) {
                 missing = "@stamp (ddd-state)";
                 ruleSet = "ddd-state";
+            } else if (entity.getCommands() != null && !entity.getCommands().isEmpty() && !commands) {
+                // Without the rule set the commands are not served, and nothing said so.
+                missing = "commands: (ddd-command)";
+                ruleSet = "ddd-command";
             } else if (wantsKept && !keeps) {
                 // The 2.x-compatible bundle writes no delete that keeps the row: a delete would remove it.
                 missing = "@deleted (" + keepingSet + ")";
@@ -340,7 +345,8 @@ public final class RulesGenRunner {
         String head = String.format(
                 "[%s] %s declares %s, which the selected rules do not enforce - nothing is checked, derived or hashed. ",
                 domain, entity, missing);
-        boolean domainModel = "ddd-state".equals(ruleSet) || "ddd-derive".equals(ruleSet);
+        boolean domainModel =
+                "ddd-state".equals(ruleSet) || "ddd-derive".equals(ruleSet) || "ddd-command".equals(ruleSet);
         boolean fromProperty = RulesConfig.PROP_RULES.equals(listKey);
         String list = fromProperty ? "-D" + RulesConfig.PROP_RULES : listKey;
         String where = fromProperty ? "The build's " + list : listKey + " in env.yml";
@@ -393,6 +399,16 @@ public final class RulesGenRunner {
                                     + " the commands, the moves they check, @stamp and the delete: guard are written for"
                                     + " a root with a behaviour class - a root that is not @editable, with architecture ="
                                     + " 'ddd' or 'hexagonal'.",
+                            bundle, ruleSet);
+        }
+        if ("ddd-command".equals(ruleSet)) {
+            // Added to a layered bundle, ddd-command writes nothing: a command lives in a behaviour class.
+            return head
+                    + String.format(
+                            "The %s bundle does not carry %s, which writes a command in the root's behaviour class"
+                                    + " and serves it as POST /{id}/<command> - a root that is not @editable, with"
+                                    + " architecture = 'ddd' or 'hexagonal'. The commands are not served, and the"
+                                    + " TypeScript client offers none.",
                             bundle, ruleSet);
         }
         return head
