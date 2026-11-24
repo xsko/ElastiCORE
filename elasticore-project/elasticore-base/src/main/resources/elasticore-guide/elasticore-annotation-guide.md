@@ -229,6 +229,7 @@ Sets the table name explicitly. If not set, the entity name is converted to snak
 UserProfile:
   meta: entity @table(user_profile_tbl)
 ```
+`table.prefix` of env.yml goes before this name too, as in 2.x: `@table(PL_QUOT)` with `prefix: jp_` is the table `jp_pl_quot`. For names used exactly as written (a data dictionary), leave `table.prefix` out and write the whole name in each `@table`.
 
 ### @schema(name)
 > **Since: 2.1.260409**
