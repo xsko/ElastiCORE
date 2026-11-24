@@ -95,6 +95,17 @@ entities:
       vipProfile: VipProfile @foreignKey(vip_profile_profile_id) -- VipProfile entity relationship @Cascade
       orders: List<Order> @relation(mappedBy="customer") -- List<Order> entity relationship
 
+  Discussion:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Discussion)
+    table: frm_discussion
+    java: io.elasticore.sample.ddd.forum.domain.model.Discussion
+    fields:
+      discussionId: Long @Column(name = "discussion_id") @Id @GeneratedValue
+      member: Member @foreignKey(member_member_id) -- Member entity relationship
+      section: Section @foreignKey(section_section_id) -- Section entity relationship
+      title: string(100) @Column(name = "title", length = 100)
+      status: string(3) @Column(name = "status", length = 3) -- 후보값( OPN=Open, MVD=Moved)
+
   Member:
     meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Member)
     table: frm_member
@@ -246,6 +257,14 @@ entities:
       post: Post @foreignKey(post_post_id) -- Post entity relationship
       comment: Comment @foreignKey(comment_comment_id) -- Comment entity relationship
 
+  Section:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Section)
+    table: frm_section
+    java: io.elasticore.sample.ddd.forum.domain.model.Section
+    fields:
+      sectionId: Long @Column(name = "section_id") @Id @GeneratedValue
+      name: string(50) @Column(name = "name", length = 50)
+
   Shipment:
     meta: entity @java(io.elasticore.sample.ddd.shop.domain.model.Shipment) -- 배송
     table: shop_shipment
@@ -339,6 +358,15 @@ enumeration:
       INDIVIDUAL: I,Individual
       BUSINESS: B,Business
       WHOLESALE: W,Wholesale
+
+  DiscussionStatus:
+    meta: enum
+    fields:
+      code: string(3) @Column(name = "code", length = 3)
+      label: string(20) @Column(name = "label", length = 20)
+    enum:
+      OPEN: OPN,Open
+      MOVED: MVD,Moved
 
   FeeStatus:
     meta: enum -- 배송비 상태
