@@ -260,6 +260,11 @@ Message:
   meta: entity @Index(name="idx_msg_date", columnList="create_date,status")
 ```
 
+`columnList` 에는 테이블의 컬럼 이름을 씁니다. 참조는 그 이름과 키 이름을 이은 컬럼이라
+(layered 에서 키가 `productCode` 인 `product` 는 `product_product_code`) 아키텍처에 따라 달라집니다.
+테이블에 없는 이름은 빌드 때 경고가 나고, 있는 컬럼을 함께 알려 줍니다 - 그대로면 테이블 생성이 실패합니다
+(JPA; MyBatis 는 도메인이 DDL 을 쓸 때).
+
 ### @rollup
 > **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
 부모 테이블로 컬럼 통합. 자신의 테이블 생성 안함. `@id`가 있는 상위 entity를 `@extend`한 상태에서 사용.

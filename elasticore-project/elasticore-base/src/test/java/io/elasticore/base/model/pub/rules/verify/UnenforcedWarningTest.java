@@ -129,12 +129,41 @@ public class UnenforcedWarningTest {
     @DisplayName("a layered bundle: it is named with the set it lacks; declare the architecture or add the set")
     public void aLayeredBundleIsNamedWithTheSetItLacks() {
         String w = RulesGenRunner.unenforcedWarning(
+                "club", "Line", "@snapshot and @compute (ddd-derive)", "ddd-derive", null, "jpa-springboot-v3", JAVA);
+        assertTrue(
+                w.endsWith("nothing is checked, derived or hashed. The jpa-springboot-v3 bundle does not carry"
+                        + " ddd-derive. Declare architecture = 'ddd' or 'hexagonal', or add the rule set."),
+                w);
+        assertFalse(w.contains("env.yml"), w);
+    }
+
+    /** Issue 320: added to a layered bundle, ddd-state sets the initial state alone - it is not offered as a way. */
+    @Test
+    @DisplayName("a layered bundle and a lifecycle: adding ddd-state is said to set the initial state only")
+    public void aLayeredBundleIsNotSentToAddTheLifecycle() {
+        String w = RulesGenRunner.unenforcedWarning(
                 "stshop", "StDoc", "@stamp (ddd-state)", "ddd-state", null, "jpa-springboot-v3", JAVA);
         assertTrue(
                 w.endsWith("nothing is checked, derived or hashed. The jpa-springboot-v3 bundle does not carry"
-                        + " ddd-state. Declare architecture = 'ddd' or 'hexagonal', or add the rule set."),
+                        + " ddd-state, and adding it to this bundle sets the initial state only: the commands, the moves"
+                        + " they check, @stamp and the delete: guard are written for a root with a behaviour class - a"
+                        + " root that is not @editable, with architecture = 'ddd' or 'hexagonal'."),
                 w);
-        assertFalse(w.contains("env.yml"), w);
+        assertFalse(w.contains("or add the rule set"), w);
+    }
+
+    /** What the warning still offers for a layered bundle - adding the set - does the job. */
+    @Test
+    @DisplayName("layered with ddd-derive added: the value is worked out and nothing is said")
+    public void addingDddDeriveToALayeredBundleWorks() throws Exception {
+        File added = project(null, String.join("\n", "entity:", MORE));
+        String log = generate(added, null, "ddd-derive");
+        assertFalse(log.contains("ddd-derive"), log);
+        assertTrue(
+                anySourceContains(added, "quantity * price")
+                        || anySourceContains(added, "getQuantity() * getPrice()")
+                        || anySourceContains(added, "this.quantity * this.price"),
+                "no derived value was written");
     }
 
     @Test
