@@ -173,7 +173,7 @@ User:
   meta: entity @extend(AuditEntity)
 ```
 어느 도메인의 Entity 나 DTO 도 아닌 부모는 오류가 아니라 DSL 경고입니다 (`unresolved @extend parent 'X' - no matching Entity or DTO found in any domain`, `elcoreValidate -Pstrict` 는 이것으로 실패):
-직접 작성한 클래스를 일부러 부모로 둘 수 있습니다. 전체 클래스 이름(`com.acme.support.BaseRecord`)으로 적으세요 - 도메인을 붙인 이름(`other:Parent`)처럼 찾아보지 않습니다. 단순 이름이면 경고합니다.
+직접 작성한 클래스를 일부러 부모로 둘 수 있습니다. 전체 클래스 이름(`com.acme.support.BaseRecord`)으로 적으세요 - 찾아보지 않습니다. 단순 이름이면 경고합니다. 다른 도메인의 부모(`common` 의 공통 `@abstract` 기반 클래스)는 단순 이름 `@extend(AuditEntity)` 로 적고, 그 도메인에서 import 됩니다 - 3.0 코드가 쓰는 모든 모드, 언어, 아키텍처에서. 부모는 자기 도메인에 그대로 있고 다른 도메인은 복사본을 두지 않습니다: 타입 이름은 모든 도메인에서 하나뿐입니다 (두 도메인이 같은 이름을 선언하면 DSL 경고 - 하나의 이름을 바꾸세요). 2.x 처럼 도메인을 붙여 `common:AuditEntity` 로 적어도 같게 읽습니다.
 
 ### @embeddable
 > **동작:** JPA, MyBatis (mode: mybatis) · **안 됨:** MyBatis (mode: mybatis) 에서 다른 값 객체, 관계 또는 컬렉션을 담은 값 객체 (빌드 중단)
@@ -1255,11 +1255,11 @@ dto:
     fields:
       reason: string(100)       # DTO 에 선언한 필드: 항상 남음
 ```
-- 거르는 것은 복사되는 필드뿐입니다. DTO 에 선언한 필드는 항상 남고, 적은 이름이면 복사되는 것을 덮어씁니다. 나중에 엔티티에 추가된 필드는 적기 전까지 DTO 에 없습니다. 다른 도메인의 모델은 `shop:Order[note]` 로 적습니다.
+- 거르는 것은 복사되는 필드뿐입니다. DTO 에 선언한 필드는 항상 남고, 적은 이름이면 복사되는 것을 덮어씁니다. 나중에 엔티티에 추가된 필드는 적기 전까지 DTO 에 없습니다. 다른 도메인의 모델도 단순 이름으로 적습니다: `Order[note]`.
 - 모델이 자기 `@extend` 로 물려받은 필드도 적을 수 있습니다. 관계 이름은 그 id 를 담는 필드를 남깁니다. DDD 참조의 `customer` 는 `customerId` 를 남기고, `customerId` 를 직접 적으면 거부됩니다. 목록을 참조 변환 전에 검사하기 때문입니다.
 - DTO 에 아무 필드도 만들지 못하는 이름은 거부됩니다. id 를 담는 필드가 없는 관계(대신 id 를 선언합니다. `orderId: long @ref(order.orderId)`), 컬렉션, 그리고 DTO 가 값 객체를 담지 않는 경우의 값 객체입니다(`ddd`·`hexagonal` 과 layered MyBatis 는 값 객체를 통째로 담고, layered JPA·호환 출력·2.x 는 담지 않습니다).
 - 모델에 없는 이름, 어느 도메인에도 없는 모델, 같은 모델을 두 번 적은 경우(`Order[note], Order[total]` 또는 `Order, Order[note]`), 같은 필드를 두 번 적은 경우(`Order[note, note]`), 빈 괄호(`Order[]`), 적은 필드에 `--`, `@extend` 와 함께 쓴 목록, 엔티티에 쓴 목록은 생성을 멈춥니다.
-- 목록을 쓸 때 여러 도메인에 있는 이름은 어느 쪽인지 적어야 합니다: `shop:Order[note]`. 괄호가 없는 DTO 는 전과 같습니다.
+- 타입 이름은 모든 도메인에서 하나뿐이므로, 이름은 어느 도메인에 있든 그 모델을 찾습니다. 목록을 쓸 때 두 도메인이 선언한 이름은 빌드를 멈춥니다 (`... both have Order - a type name is unique across domains: rename one`).
 - `@searchable`, `@searchResult` 에는 목록을 쓸 수 없고, 쓰면 생성을 멈춥니다. 검색 DTO 는 이미 검색 조건이 있는 필드만 받습니다.
 - 키를 뺀 목록은 먼저 선언해도 엔티티의 서비스와 컨트롤러가 쓰는 DTO 가 되지 않습니다. 키를 포함한 목록은 될 수 있으므로, 서비스가 쓸 DTO 를 먼저 선언합니다.
 

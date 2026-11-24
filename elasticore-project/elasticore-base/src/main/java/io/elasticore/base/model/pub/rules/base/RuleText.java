@@ -113,6 +113,45 @@ public final class RuleText {
         }
     }
 
+    /**
+     * A model named with its domain, as 2.x accepted (common:ContactDTO), by its simple name: a type
+     * name is unique across domains (issue 331). Any other value is kept, trimmed; null stays null.
+     */
+    public static String simpleModelName(String declared) {
+        if (declared == null) return null;
+        String name = declared.trim();
+        return name.indexOf(':') < 0
+                ? name
+                : DOMAIN_PREFIX.matcher(name).replaceAll("").trim();
+    }
+
+    /** A domain written before a model name: common:ContactDTO, Base&lt;common:Key&gt;. */
+    private static final java.util.regex.Pattern DOMAIN_PREFIX =
+            java.util.regex.Pattern.compile("(?<![\\w.$])[A-Za-z_][\\w-]*:(?=\\s*[A-Za-z_])");
+
+    /**
+     * The model types a written type names - ContactDTO, Page&lt;ContactDTO&gt;, Map&lt;String, Grade&gt; - that
+     * live outside the given packages, by their full names: what a file naming them imports. A type
+     * of another domain is named simply and imported from the domain that declares it (issue 331).
+     */
+    public static List<String> modelTypeImports(String typeText, java.util.Collection<String> ownPackages) {
+        List<String> out = new ArrayList<String>();
+        if (typeText == null) return out;
+        java.util.regex.Matcher m = TYPE_WORD.matcher(typeText);
+        while (m.find()) {
+            String word = m.group();
+            String pkg = componentPackage(word);
+            if (pkg == null || pkg.isEmpty() || ownPackages.contains(pkg)) continue;
+            String fqcn = pkg + "." + word;
+            if (!out.contains(fqcn)) out.add(fqcn);
+        }
+        return out;
+    }
+
+    /** A simple type name inside a written type: not part of a dotted name, starting upper case. */
+    private static final java.util.regex.Pattern TYPE_WORD =
+            java.util.regex.Pattern.compile("(?<![\\w.$])[A-Z][\\w$]*(?![\\w.$])");
+
     /** Drops the blank tail a rendered block ends with. */
     public static String stripTrailing(String s) {
         int end = s.length();

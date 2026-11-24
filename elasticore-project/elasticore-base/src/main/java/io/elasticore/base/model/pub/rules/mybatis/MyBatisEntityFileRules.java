@@ -60,6 +60,8 @@ public class MyBatisEntityFileRules implements CodeRules {
         // the row's (MyBatisSql.fields); a concrete one is refused before here.
         String parent = e.parentName() == null ? "" : e.parentName().trim();
         String extendsClause = parent.isEmpty() || parent.equals(e.getName()) ? "" : " extends " + parent;
+        // A parent of another domain - a shared @abstract base - is imported from there (issue 331).
+        if (!extendsClause.isEmpty()) RuleText.registerParentImport(c, parent, e.pkg("entity"));
         c.var("packageName", e.pkg("entity"))
          .var("className", e.getName())
          .var("classAnnotationList", c.renderClassAnnotations())
