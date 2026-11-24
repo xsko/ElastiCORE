@@ -1176,6 +1176,10 @@ drivers: List<RentDriver> @search(eq)
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
+빈 목록은 보내지 않은 것과 같이 조건이 없습니다 (JPA, MyBatis, MongoDB 모두 전체 행). "해당 행 없음"이 맞다면
+검색 전에 서비스에서 빈 페이지를 돌려주세요. 값의 개수는 검색 DTO 필드에 `@maxsize(n)` 으로 제한합니다
+(`postIds: List<Long> @search(in) @maxsize(200)`): `@Size(max=200)` 이 되어, 더 긴 목록은 쿼리를 만들기 전에
+400 입니다.
 
 **List<Entity> 필드:**
 ```java

@@ -43,6 +43,12 @@ public class SearchSizeTest {
             "    meta: dto @searchable(entity=SzPost, pageSize=20)",
             "    fields:",
             "      keyword: string(50) @search(like) @alias(title)",
+            "  SzPostIdsSrchDTO:",
+            "    meta: dto @searchable(entity=SzPost, pageSize=20)",
+            "    fields:",
+            "      postIds: List<Long> @search(in) @ref(postId) @maxsize(200)",
+            "      nicknames: List<String> @search(in) @alias(nickname) @minsize(1) @maxsize(10, 'ten names at most')",
+            "      titles: List<String> @search(in) @alias(title)",
             "");
 
     private final List<File> projects = new ArrayList<File>();
@@ -59,11 +65,26 @@ public class SearchSizeTest {
         assertTrue(keyword.contains("@Size(max=50)"), keyword);
     }
 
+    /** Issue 324: a list of values searched for is bounded by its @minsize / @maxsize, as the DTO's list is. */
+    @Test
+    public void aSearchedListHoldsWhatItsBoundsAllow() throws Exception {
+        File project = project();
+        assertEquals(0, run(project, "java", "elasticore.rules.v3"));
+        String ids = found(project, "SzPostIdsSrchDTO.java");
+        assertTrue(ids.matches("(?s).*@Size\\(max=200\\)\\s+private (java\\.util\\.)?List<Long> postIds;.*"), ids);
+        assertTrue(ids.contains("@Size(min=1, max=10, message=\"ten names at most\")"), ids);
+        // A list without bounds gets none - its String items are no String field.
+        assertTrue(ids.matches("(?s).*field:titles\"  \\)\\s+private (java\\.util\\.)?List<String> titles;.*"), ids);
+    }
+
     @Test
     public void kotlinAlike() throws Exception {
         File project = project();
         assertEquals(0, run(project, "kotlin", "elasticore.rules.v3"));
         assertTrue(found(project, "SzPostSrchDTO.kt").contains("@Size(max=200)"));
+        String ids = found(project, "SzPostIdsSrchDTO.kt");
+        assertTrue(ids.contains("Size(max=200)"), ids);
+        assertTrue(ids.contains("Size(min=1, max=10, message=\"ten names at most\")"), ids);
     }
 
     @Test
@@ -71,6 +92,7 @@ public class SearchSizeTest {
         File project = project();
         assertEquals(0, run(project, "java", "elasticore.rules.v2"));
         assertFalse(found(project, "SzPostSrchDTO.java").contains("@Size("));
+        assertFalse(found(project, "SzPostIdsSrchDTO.java").contains("@Size("));
     }
 
     // ------------------------------------------------------------------
