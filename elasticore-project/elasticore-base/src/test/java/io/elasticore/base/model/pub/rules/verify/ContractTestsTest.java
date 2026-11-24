@@ -965,7 +965,7 @@ public class ContractTestsTest {
                         ": the generated sign-in's\n * principal cannot be built (Agent (signing in): secret: no value of"),
                 s);
         assertTrue(s.contains("so the requests run as the application itself (CurrentUser.runAsSystem)"), s);
-        assertTrue(s.contains("        if (session == null) return asSystem(builder);\n"), s);
+        assertTrue(s.contains("        if (session == null && cookies.length == 0) return asSystem(builder);\n"), s);
         assertTrue(log.contains("Agent (signing in): secret: no value of"), log);
         // No @signin at all: said so.
         String none = String.join(
@@ -1220,7 +1220,8 @@ public class ContractTestsTest {
         assertTrue(s.contains("        if (role != null) principal.put(\"role\", role);\n"), s);
         assertTrue(
                 s.contains(
-                        "        return new Caller(value(made, \"staffId\"), (MockHttpSession) in.getRequest().getSession(false));\n"),
+                        "        return new Caller(value(made, \"staffId\"), (MockHttpSession) in.getRequest().getSession(false),"
+                                + " in.getResponse().getCookies());\n"),
                 s);
         assertTrue(
                 s.contains(
@@ -1260,7 +1261,10 @@ public class ContractTestsTest {
                         .contains("assertDenied(sentBy(null, reading(DEAL, id)), 401, \"not-signed-in\")"),
                 t);
         String s = read(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
-        assertTrue(s.contains("    protected class Caller(val id: Any?, val session: MockHttpSession?)\n"), s);
+        assertTrue(
+                s.contains("    protected class Caller(val id: Any?, val session: MockHttpSession?, val cookies:"
+                        + " Array<Cookie> = emptyArray())\n"),
+                s);
         assertTrue(s.contains("    protected open fun signIn(role: String?): Caller {\n"), s);
         assertTrue(s.contains("        if (role != null) principal[\"role\"] = role\n"), s);
         assertTrue(
@@ -2408,6 +2412,7 @@ public class ContractTestsTest {
                         + "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the administrator"
                         + " newSignInRow made: \" + answer(in));\n"
                         + "        session = (MockHttpSession) in.getRequest().getSession(false);\n"
+                        + "        cookies = in.getResponse().getCookies();\n"
                         + "    }\n",
                 s.substring(
                         s.indexOf("    protected void signIn() throws Exception {\n"),
@@ -2425,7 +2430,7 @@ public class ContractTestsTest {
                 s);
         assertTrue(
                 s.contains("        return new Caller(principal.get(\"staffId\"), (MockHttpSession)"
-                        + " in.getRequest().getSession(false));\n"),
+                        + " in.getRequest().getSession(false), in.getResponse().getCookies());\n"),
                 s);
         // No row of the model's is posted, and the requests are no longer the application's own.
         assertFalse(s.contains("asSystem(MockMvcRequestBuilders.post(PRINCIPAL)"), s);
@@ -2470,7 +2475,7 @@ public class ContractTestsTest {
                 ks);
         assertTrue(
                 ks.contains("        return Caller(principal[\"staffId\"], signedInAs.request.getSession(false) as"
-                        + " MockHttpSession?)\n"),
+                        + " MockHttpSession?, signedInAs.response.cookies)\n"),
                 ks);
         assertTrue(method(read(kt, "src/test/kotlin/com/acme/shop/DealContractTest.kt"), "readRefusesAVisitor")
                 .contains("401, \"not-signed-in\")"));
@@ -2657,6 +2662,205 @@ public class ContractTestsTest {
         assertFalse(yoursLog.contains("made without their owner"), yoursLog);
         assertFalse(read(project, "src/test/java/com/acme/shop/ShopContractSupport.java")
                 .contains("withoutOwner("));
+    }
+
+    /**
+     * Spring Session (spring-session-jdbc ...) keeps the signed-in session by the cookie the sign-in answers
+     * with (SESSION), not in the container's: the sign-in's cookies are kept with its session - by signIn()
+     * and by signIn(role), on the Caller - and sent with it, by perform and sentBy (#295). Where the
+     * container keeps the sessions the sign-in answers with no cookie, and nothing more is sent.
+     */
+    @Test
+    public void theSignInsCookiesAreKeptAndSentWithItsSession() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "java");
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                s.contains(
+                        "import io.elasticore.springboot3.security.CurrentUser;\nimport jakarta.servlet.http.Cookie;\n"),
+                s);
+        assertTrue(s.contains("    protected MockHttpSession session;\n\n"), s);
+        assertTrue(s.contains("    protected Cookie[] cookies = new Cookie[0];\n"), s);
+        // Kept: the administrator's, and each caller's.
+        assertTrue(
+                s.contains("        session = (MockHttpSession) in.getRequest().getSession(false);\n"
+                        + "        cookies = in.getResponse().getCookies();\n    }\n"),
+                s);
+        assertTrue(s.contains("        public final Cookie[] cookies;\n"), s);
+        assertTrue(
+                s.contains("        public Caller(Object id, MockHttpSession session, Cookie[] cookies) {\n"
+                        + "            this.id = id;\n"
+                        + "            this.session = session;\n"
+                        + "            this.cookies = cookies;\n"),
+                s);
+        // A Caller of the old shape, made in a project's own code, still compiles: it has no cookies.
+        assertTrue(
+                s.contains("        public Caller(Object id, MockHttpSession session) {\n"
+                        + "            this(id, session, new Cookie[0]);\n"),
+                s);
+        assertTrue(
+                s.contains("        return new Caller(value(made, \"staffId\"), (MockHttpSession)"
+                        + " in.getRequest().getSession(false), in.getResponse().getCookies());\n"),
+                s);
+        // Sent with the session.
+        assertTrue(
+                s.contains("        if (session != null) builder.session(session);\n"
+                        + "        if (cookies.length > 0) builder.cookie(cookies);\n"
+                        + "        return mvc.perform(request(builder)).andReturn();\n"),
+                s);
+        assertTrue(
+                s.contains("        if (caller != null && caller.session != null) builder.session(caller.session);\n"
+                        + "        if (caller != null && caller.cookies.length > 0) builder.cookie(caller.cookies);\n"
+                        + "        return mvc.perform(request(builder)).andReturn();\n"),
+                s);
+        // The callers newSignInRow makes: the same.
+        File yours = project(NO_CREATE, "contract");
+        run(yours, "hexagonal", "java");
+        File support = new File(yours, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        Files.write(
+                support.toPath(),
+                atTheEnd(read(yours, "src/test/java/com/acme/shop/ShopContractSupport.java"), SIGN_IN_ROW)
+                        .getBytes(StandardCharsets.UTF_8));
+        run(yours, "hexagonal", "java");
+        String y = read(yours, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(
+                y.contains(
+                        "        Assertions.assertTrue(ok(in), () -> \"the generated sign-in refused the administrator"
+                                + " newSignInRow made: \" + answer(in));\n"
+                                + "        session = (MockHttpSession) in.getRequest().getSession(false);\n"
+                                + "        cookies = in.getResponse().getCookies();\n"),
+                y);
+        assertTrue(
+                y.contains("        return new Caller(principal.get(\"staffId\"), (MockHttpSession)"
+                        + " in.getRequest().getSession(false), in.getResponse().getCookies());\n"),
+                y);
+        // Nobody signs in: the requests are the application's own unless a sign-in of the project's kept either.
+        File none = project(
+                ACCESS.replace("@expose(20) @signin @owner(staffId)", "@expose(20) @owner(staffId)"), "contract");
+        run(none, "hexagonal", "java");
+        assertTrue(read(none, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("        if (session == null && cookies.length == 0) return asSystem(builder);\n"));
+
+        // Kotlin the same way.
+        File kt = project(ACCESS, "contract");
+        run(kt, "hexagonal", "kotlin");
+        String ks = read(kt, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(
+                ks.contains(
+                        "import io.elasticore.springboot3.security.CurrentUser\nimport jakarta.servlet.http.Cookie\n"),
+                ks);
+        assertTrue(ks.contains("    protected var cookies: Array<Cookie> = emptyArray()\n"), ks);
+        assertTrue(
+                ks.contains("        session = signedInAs.request.getSession(false) as MockHttpSession?\n"
+                        + "        cookies = signedInAs.response.cookies\n    }\n"),
+                ks);
+        assertTrue(
+                ks.contains("        session?.let { builder.session(it) }\n"
+                        + "        if (cookies.isNotEmpty()) builder.cookie(*cookies)\n"
+                        + "        return mvc.perform(request(builder)).andReturn()\n"),
+                ks);
+        assertTrue(
+                ks.contains("    protected class Caller(val id: Any?, val session: MockHttpSession?, val cookies:"
+                        + " Array<Cookie> = emptyArray())\n"),
+                ks);
+        assertTrue(
+                ks.contains("        return Caller(value(made, \"staffId\"), signedInAs.request.getSession(false) as"
+                        + " MockHttpSession?, signedInAs.response.cookies)\n"),
+                ks);
+        assertTrue(
+                ks.contains(
+                        "        caller?.session?.let { builder.session(it) }\n"
+                                + "        if (caller != null && caller.cookies.isNotEmpty()) builder.cookie(*caller.cookies)\n"),
+                ks);
+        File ktYours = project(NO_CREATE, "contract");
+        run(ktYours, "hexagonal", "kotlin");
+        File ktSupport = new File(ktYours, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        Files.write(
+                ktSupport.toPath(),
+                atTheEnd(read(ktYours, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt"), SIGN_IN_ROW_KT)
+                        .getBytes(StandardCharsets.UTF_8));
+        run(ktYours, "hexagonal", "kotlin");
+        String ky = read(ktYours, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        assertTrue(ky.contains("        cookies = signedInAs.response.cookies\n"), ky);
+        assertTrue(
+                ky.contains("        return Caller(principal[\"staffId\"], signedInAs.request.getSession(false) as"
+                        + " MockHttpSession?, signedInAs.response.cookies)\n"),
+                ky);
+        File ktNone = project(
+                ACCESS.replace("@expose(20) @signin @owner(staffId)", "@expose(20) @owner(staffId)"), "contract");
+        run(ktNone, "hexagonal", "kotlin");
+        assertTrue(read(ktNone, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt")
+                .contains("        if (session == null && cookies.isEmpty()) return asSystem(builder)\n"));
+    }
+
+    /**
+     * A project's support class an earlier version wrote, edited where every request is sent (request(...)), takes
+     * the cookies over in the merge against what that version wrote; where the project changed the same lines
+     * (its own cookies, say), the file is kept as it is and the run says where.
+     */
+    @Test
+    public void aSupportClassAnEarlierVersionWroteTakesTheCookiesOverInTheMerge() throws Exception {
+        File project = project(ACCESS, "contract");
+        run(project, "hexagonal", "java");
+        Path support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java").toPath();
+        String now = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        // What 3.0.261124 wrote: no cookies.
+        String earlier = now;
+        String[][] back = {
+            {"import jakarta.servlet.http.Cookie;\n", ""},
+            {
+                "    /**\n     * The cookies signIn()'s sign-in answered with, sent with the session: where Spring Session\n"
+                        + "     * keeps the sessions, its SESSION cookie names the one signed in. None where the container"
+                        + " does.\n     */\n    protected Cookie[] cookies = new Cookie[0];\n\n",
+                ""
+            },
+            {"        cookies = in.getResponse().getCookies();\n", ""},
+            {"        if (cookies.length > 0) builder.cookie(cookies);\n", ""},
+            {
+                "        /** The cookies its sign-in answered with: Spring Session's SESSION names its session. */\n"
+                        + "        public final Cookie[] cookies;\n\n"
+                        + "        public Caller(Object id, MockHttpSession session) {\n"
+                        + "            this(id, session, new Cookie[0]);\n"
+                        + "        }\n\n"
+                        + "        public Caller(Object id, MockHttpSession session, Cookie[] cookies) {\n",
+                "\n        public Caller(Object id, MockHttpSession session) {\n"
+            },
+            {"            this.cookies = cookies;\n", ""},
+            {", in.getResponse().getCookies());\n", ");\n"},
+            {"        if (caller != null && caller.cookies.length > 0) builder.cookie(caller.cookies);\n", ""}
+        };
+        for (String[] b : back) earlier = ContractTestSource.replacedOnce(earlier, b[0], b[1]);
+        assertFalse(earlier.contains("Cookie") || earlier.contains("cookies"), earlier);
+        String key = project.toPath().relativize(support).toString().replace('\\', '/');
+        GeneratedCache cache = GeneratedCache.load(project);
+        assertNotNull(cache.get(key), key);
+        cache.put(key, earlier);
+        cache.save();
+        String header = "        return builder.header(\"X-XSRF-TOKEN\", \"t\");\n";
+        Files.write(
+                support, earlier.replace("        return builder;\n", header).getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains(
+                        "contract     src/test/java/com/acme/shop/ShopContractSupport.java  MERGED(your edits kept)"),
+                log);
+        assertEquals(
+                now.replace("        return builder;\n", header),
+                read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"));
+
+        // Its own cookies passed on a line the run now changes too: left as it is, and said.
+        cache = GeneratedCache.load(project);
+        cache.put(key, earlier);
+        cache.save();
+        String own = ContractTestSource.replacedOnce(
+                earlier,
+                "        return new Caller(value(made, \"staffId\"), (MockHttpSession) in.getRequest().getSession(false));\n",
+                "        return new Caller(value(made, \"staffId\"), (MockHttpSession) in.getRequest().getSession(false),"
+                        + " mine(in));\n");
+        Files.write(support, own.getBytes(StandardCharsets.UTF_8));
+        log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("ShopContractSupport.java  KEPT(yours - the DSL's changes to it do not merge)"), log);
+        assertEquals(own, read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"));
     }
 
     // ---- helpers ----------------------------------------------------------------------

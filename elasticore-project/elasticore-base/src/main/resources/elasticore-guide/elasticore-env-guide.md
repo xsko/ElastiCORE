@@ -780,7 +780,10 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
 - The tests of `@access` sign in principals of their own: `signIn(role)` makes one as the application itself, with that role in the
   `@signin` entity's role field (`"M"` for `UserRole.MANAGER` written `@json(code)`), signs it in through the generated sign-in and
   returns a `Caller` - its key, which a row's `@owner` holds, and its session; `sentBy(caller, ...)` sends a request as it, or as a
-  visitor for `null`. A row of a caller's is made by the administrator - as the application itself (`asTheSystem`) where no
+  visitor for `null`. A sign-in's session is kept with the cookies the sign-in answers with, and both are sent (`perform`,
+  `sentBy`): under Spring Session (`spring-session-jdbc`, ...) the signed-in session is the one its `SESSION` cookie names, not the
+  container's; where the container keeps the sessions there is no cookie and nothing more is sent.
+  A row of a caller's is made by the administrator - as the application itself (`asTheSystem`) where no
   administrator signs in - with the owner sent, or by the caller where the server sets `@owner`; the `@signin` entity's own row is
   the caller's. Sign in your way in `signIn(role)`. A support class of yours kept by a merge without these members gets no test of
   `@access` (the build never breaks): the summary names the member, and `build/elasticore/contract/` holds the version generated.

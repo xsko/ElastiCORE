@@ -3,6 +3,7 @@ package io.elasticore.blueprint.domain.shop
 
 import com.jayway.jsonpath.JsonPath
 import io.elasticore.springboot3.security.CurrentUser
+import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assumptions
 import org.springframework.beans.factory.annotation.Autowired
@@ -77,6 +78,12 @@ abstract class ShopContractSupport {
     /** The session signIn() opened, sent with every request after it; null for none. */
     protected var session: MockHttpSession? = null
 
+    /**
+     * The cookies signIn()'s sign-in answered with, sent with the session: where Spring Session
+     * keeps the sessions, its SESSION cookie names the one signed in. None where the container does.
+     */
+    protected var cookies: Array<Cookie> = emptyArray()
+
     private var signedIn = false
 
     /** What the tests of @Mask and @encrypt read past the application: the columns as stored. */
@@ -121,6 +128,7 @@ abstract class ShopContractSupport {
             .content(json(obj("login", principal["login"], "secret", principal["secret"]))))).andReturn()
         Assertions.assertTrue(ok(signedInAs)) { "the generated sign-in refused the administrator: " + answer(signedInAs) }
         session = signedInAs.request.getSession(false) as MockHttpSession?
+        cookies = signedInAs.response.cookies
     }
 
     /** Sends a request as every contract test does: JSON, signed in, with what request(...) adds. */
@@ -131,6 +139,7 @@ abstract class ShopContractSupport {
         }
         builder.accept(MediaType.APPLICATION_JSON)
         session?.let { builder.session(it) }
+        if (cookies.isNotEmpty()) builder.cookie(*cookies)
         return mvc.perform(request(builder)).andReturn()
     }
 
@@ -140,8 +149,8 @@ abstract class ShopContractSupport {
 
     // ---- the callers of the @access tests
 
-    /** Whom a test of @access sends a request as: a principal signIn(role) made - its key, which the @owner of a row of theirs holds - and the session it opened. */
-    protected class Caller(val id: Any?, val session: MockHttpSession?)
+    /** Whom a test of @access sends a request as: a principal signIn(role) made - its key, which the @owner of a row of theirs holds - and the session it opened, with the cookies its sign-in answered with. */
+    protected class Caller(val id: Any?, val session: MockHttpSession?, val cookies: Array<Cookie> = emptyArray())
 
     /**
      * Signs in a principal of its own for a test of @access: an Agent made as the
@@ -159,13 +168,14 @@ abstract class ShopContractSupport {
             .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
             .content(json(obj("login", principal["login"], "secret", principal["secret"]))))).andReturn()
         Assertions.assertTrue(ok(signedInAs)) { "the generated sign-in refused the principal: " + answer(signedInAs) }
-        return Caller(value(made, "agentId"), signedInAs.request.getSession(false) as MockHttpSession?)
+        return Caller(value(made, "agentId"), signedInAs.request.getSession(false) as MockHttpSession?, signedInAs.response.cookies)
     }
 
     /** The request as this caller - or as a visitor, for null: with what request(...) adds, and no other session. */
     protected fun sentBy(caller: Caller?, builder: MockHttpServletRequestBuilder): MvcResult {
         builder.accept(MediaType.APPLICATION_JSON)
         caller?.session?.let { builder.session(it) }
+        if (caller != null && caller.cookies.isNotEmpty()) builder.cookie(*caller.cookies)
         return mvc.perform(request(builder)).andReturn()
     }
 
