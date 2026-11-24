@@ -2222,9 +2222,7 @@ Ticket:
 CurrentUser.runAsSystem(() -> customers.save(admin));
 ```
 
-다른 엔티티의 **행 전체**(중첩 DTO)는 그 엔티티의 읽기 수준이 `public` 일 때만 DTO 에 실립니다.
-`read=owner` 인 고객을 주문 DTO 가 통째로 담으면 주문을 읽는 사람에게 고객 정보가 보이므로, 빌드가
-그 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음).
+다른 엔티티의 **행 전체**(중첩 DTO)는 보유 엔티티를 읽을 수 있는 모든 사람이 참조 엔티티도 읽을 수 있을 때만 DTO 에 실립니다. 즉 보유 엔티티의 읽기 식이 참조 엔티티의 읽기 식을 함의해야 합니다: `user` 는 `user` 를 담을 수 있고, 역할이나 `owner` 는 `user` 를 담을 수 있지만 어떤 수준도 `owner` 를 함의하지 않습니다. `read=user` 인 주문이 `read=owner` 인 고객을 담으면 고객 정보가 노출되므로 빌드가 중첩 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음). 중첩 DTO 는 응답용이며, 참조 엔티티 자체의 쓰기 권한으로 보호되는 행은 cascade 역방향 매핑으로도 수정되지 않습니다.
 
 `@access` 문법 오류(`read=owners`, `read=owner|`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
 애플리케이션이 시작하지 않습니다 (대문자로 시작하는 단어는 역할 이름이라 위처럼 검사함: `read=MANGER`). 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로
