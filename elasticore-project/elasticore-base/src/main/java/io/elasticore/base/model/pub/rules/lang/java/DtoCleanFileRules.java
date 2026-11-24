@@ -100,7 +100,8 @@ public class DtoCleanFileRules implements CodeRules {
      */
     private String parentOf(EntitySpec e) {
         if (e.hasMeta("dto")) return null;
-        return e.metaValue("extend");
+        // A parent of another domain is named simply, as 2.x reads common:ContactDTO (issue 331).
+        return RuleText.simpleModelName(e.metaValue("extend"));
     }
 
     /** Serializable always, plus whatever @implements adds. */

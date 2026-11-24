@@ -55,6 +55,12 @@ public class PortBaseRules implements CodeRules {
              .var("configClassName", SpringHttpPorts.configClassName(p.domainClassName()));
             SpringHttpPorts.operations(c, p);
             if (p.pkg("enumeration") != null) c.var("enumPackageName", p.pkg("enumeration"));
+            // A type of another domain - a DTO, an enum - is imported from there (issue 331).
+            List<String> other = otherDomainImports(p);
+            if (!other.isEmpty()) {
+                String end = c.syntax() == Syntax.KOTLIN ? "" : ";";
+                c.var("importList", String.join(end + "\nimport ", other));
+            }
             return;
         }
         c.var("packageName", p.pkg("port"))
@@ -68,11 +74,40 @@ public class PortBaseRules implements CodeRules {
         // A method that takes the page or the order it asks for names Spring Data's type.
         // The 2.x skeleton imports neither; its output stays as it was.
         if (!c.compatible()) {
-            String paging = pagingImports(p, c.syntax() == Syntax.KOTLIN ? "" : ";");
-            if (!paging.isEmpty()) c.var("importList", paging);
+            String end = c.syntax() == Syntax.KOTLIN ? "" : ";";
+            StringBuilder imports = new StringBuilder(pagingImports(p, end));
+            // A type of another domain - a DTO, an enum - is imported from there (issue 331).
+            for (String fqcn : otherDomainImports(p)) {
+                if (imports.length() > 0) imports.append(end).append("\nimport ");
+                imports.append(fqcn);
+            }
+            if (imports.length() > 0) c.var("importList", imports.toString());
         }
 
         if (p.pkg("enumeration") != null) c.var("enumPackageName", p.pkg("enumeration"));
+    }
+
+    /**
+     * The model types of another domain the port's methods name - a parameter's, a return's - by their
+     * full names. The port's own domain is imported by its packages already.
+     */
+    public static List<String> otherDomainImports(PortSpec p) {
+        List<String> own = new ArrayList<String>();
+        for (String layer : new String[] {"entity", "dto", "enumeration"}) {
+            if (p.pkg(layer) != null) own.add(p.pkg(layer));
+        }
+        List<String> out = new ArrayList<String>();
+        for (PortSpec.Operation op : p.operations()) {
+            List<String> types = new ArrayList<String>();
+            types.add(op.returnType());
+            for (String[] param : op.params()) types.add(PortSpec.Operation.typeOf(param));
+            for (String type : types) {
+                for (String fqcn : RuleText.modelTypeImports(type, own)) {
+                    if (!out.contains(fqcn)) out.add(fqcn);
+                }
+            }
+        }
+        return out;
     }
 
     /** Pageable and Sort, as the methods' parameters name them without a package: the import line's text. */

@@ -40,8 +40,8 @@ public class TypeInfo {
         if (typeInfo == null || typeInfo.length() < 2)
             throw new IllegalArgumentException("type info is not normal. [" + typeInfo + "]");
 
-        this.initTypeInfo = typeInfo;
-        this.types = extractTypes(typeInfo);
+        this.initTypeInfo = simpleNamed(typeInfo);
+        this.types = extractTypes(this.initTypeInfo);
         loadInfo();
     }
 
@@ -50,10 +50,25 @@ public class TypeInfo {
         if (typeInfo == null || typeInfo.length() < 2)
             throw new IllegalArgumentException("type info is not normal. [" + typeInfo + "]");
 
-        this.initTypeInfo = typeInfo;
-        this.types = extractTypes(typeInfo);
+        this.initTypeInfo = simpleNamed(typeInfo);
+        this.types = extractTypes(this.initTypeInfo);
         loadInfo();
 
+    }
+
+    /** A domain written before a type name: common:Grade, List&lt;common:ContactDTO&gt;. */
+    private static final Pattern DOMAIN_PREFIX = Pattern.compile("(?<![\\w.$])[A-Za-z_][\\w-]*:(?=\\s*[A-Za-z_])");
+
+    /**
+     * A type of another domain is named by its simple name: a type name is unique across
+     * domains, and the rule engine imports it from the domain that declares it (issue 331).
+     * The domain written before it (common:Grade), which 2.x accepted, is dropped there, so every
+     * rule reads Grade. The 2.x generator, which writes such a type by its full class name, reads
+     * it as written: the rule engine turns this on while it runs (BaseFieldType.ruleEngineTypes).
+     */
+    public static String simpleNamed(String typeInfo) {
+        if (typeInfo == null || !BaseFieldType.ruleEngineTypes() || typeInfo.indexOf(':') < 0) return typeInfo;
+        return DOMAIN_PREFIX.matcher(typeInfo).replaceAll("");
     }
 
     public Set<String> getTypes() {

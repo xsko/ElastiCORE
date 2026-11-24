@@ -685,7 +685,7 @@ config:
 - What is checked: the types of entity and DTO fields (including the X in `List<X>`, and those with a domain name such as `catalog:Product`), the DTO's
   `@template(...)`, the entity's `@extend(...)`, and the process manager's `on: [shop:OrderPlaced]` ("process manager" in
   `elasticore-dsl-guide.md`). If two domains have the same name, it cannot tell which one is meant, so it does not check
-  (the loader warns separately). The 3.0 rule engine (`elcore3`) checks before generation, and on failure it reports all problems at once and then stops the build.
+  (the loader warns: a type name is unique across domains - rename one). The 3.0 rule engine (`elcore3`) checks before generation, and on failure it reports all problems at once and then stops the build.
   The 2.x generator (`elcore`) does not read `context:`.
 - **Context map**: if any domain has `context:`, `blueprint/context-map.md` is created (a Mermaid diagram -
   GitHub shows it as it is). Arrows go from the side that is used (upstream) to the side that uses it, labeled with the type and event names that cross.

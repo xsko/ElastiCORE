@@ -90,8 +90,8 @@ public class Method implements ModelComponent {
 
 
     public String getReturnType() {
-        if (returnType != null)
-            return returnType;
+        // common:ContactDTO is ContactDTO to the rule engine, as a field's type is (TypeInfo.simpleNamed).
+        if (returnType != null) return io.elasticore.base.model.entity.TypeInfo.simpleNamed(returnType);
         if (this.queryInfo != null)
             return this.queryInfo.getDefaultReturnType();
 

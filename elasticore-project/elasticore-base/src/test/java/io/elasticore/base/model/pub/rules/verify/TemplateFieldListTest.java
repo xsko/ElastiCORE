@@ -454,10 +454,11 @@ public class TemplateFieldListTest {
 
     /**
      * The check looked in the DTO's own domain first and the copy took the first
-     * domain with the name, so a field could pass the one and be lost by the other.
+     * domain with the name, so a field could pass the one and be lost by the other. A type name is
+     * unique across domains, and the refusal says to rename one.
      */
     @Test
-    public void aNameTwoDomainsHaveMustSayWhich() throws Exception {
+    public void aNameTwoDomainsHaveIsRefused() throws Exception {
         File project = Files.createTempDirectory("elcore-list-two").toFile();
         projects.add(project);
         domain(project, "oycrm", "io.acme.oycrm", shared("inCrm"));
@@ -480,8 +481,8 @@ public class TemplateFieldListTest {
         assertEquals(1, run(project, "layered", "elasticore.rules.v3", captured));
         String log = new String(captured.toByteArray(), StandardCharsets.UTF_8);
         assertTrue(
-                log.contains("OyUnsaidDTO: @template(OyShared[nickname]): oycrm and oydesk both have OyShared,"
-                        + " so say which: oycrm:OyShared"),
+                log.contains("OyUnsaidDTO: @template(OyShared[nickname]): oycrm and oydesk both have OyShared"
+                        + " - a type name is unique across domains: rename one"),
                 log);
         assertTrue(
                 log.contains("OyUnsaidBesideDTO: @template(OyShared, oycrm:OyShared[inCrm]): oycrm and oydesk"), log);
