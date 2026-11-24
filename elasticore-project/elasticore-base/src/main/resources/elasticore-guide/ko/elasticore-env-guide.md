@@ -781,10 +781,11 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   그 역할을 넣어 하나를 만들고(`@json(code)` 로 쓴 `UserRole.MANAGER` 면 `"M"`), 생성된 로그인으로 로그인시킨 뒤 `Caller` 를 돌려준다 -
   그 키(행의 `@owner` 가 담는 값)와 세션; `sentBy(caller, ...)` 는 그 호출자로, `null` 이면 방문자로 요청을 보낸다. 로그인의 세션은
   로그인이 응답한 쿠키와 함께 보관되고 둘 다 보내진다(`perform`, `sentBy`): Spring Session(`spring-session-jdbc` 등)에서는 로그인된
-  세션이 컨테이너의 것이 아니라 그 `SESSION` 쿠키가 가리키는 세션이다; 컨테이너가 세션을 보관하는 곳에서는 쿠키가 없어 더 보내는 것이 없다. 호출자의 행은
-  관리자가 - 관리자가 로그인하지 않는 곳에서는 애플리케이션 자신으로서(`asTheSystem`) - owner 를 보내 만들거나, 서버가 `@owner` 를
-  정하는 곳에서는 그 호출자가 만든다; `@signin` 엔티티 자신의 행은 그 호출자의 것이다. 프로젝트의 방식으로 로그인하려면
-  `signIn(role)` 을 고친다. 병합이 이 멤버 없이 남긴 프로젝트의 support 클래스에는 `@access` 의 테스트를 쓰지 않는다(빌드는 깨지지
+  세션이 컨테이너의 것이 아니라 그 `SESSION` 쿠키가 가리키는 세션이다; 컨테이너가 세션을 보관하는 곳에서는 쿠키가 없어 더 보내는 것이 없다.
+  호출자의 행은 관리자가 - 관리자가 로그인하지 않는 곳에서는 애플리케이션 자신으로서(`asTheSystem`) - owner 를 보내 만들거나,
+  서버가 `@owner` 를 정하는 곳에서는 그 호출자가 만든다; `@signin` 엔티티 자신의 행은 그 호출자의 것이다. 프로젝트의 방식으로 로그인하려면
+  `signIn(role)` 을 고친다.
+  병합이 이 멤버 없이 남긴 프로젝트의 support 클래스에는 `@access` 의 테스트를 쓰지 않는다(빌드는 깨지지
   않는다): 요약이 빠진 멤버를 말하고, 생성된 버전은 `build/elasticore/contract/` 에 있다.
 - 프로젝트의 가입이 만드는 호출자: support 클래스에 `newSignInRow(role)` 을 쓴다 - Java `protected Map<String, Object>
   newSignInRow(String role) throws Exception`, Kotlin `protected fun newSignInRow(role: String?): Map<String, Any?>`, 클래스의 맨
