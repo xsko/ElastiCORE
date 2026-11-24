@@ -1,3 +1,109 @@
+## 3.0.261126
+
+### Bug Fixes (tests - `testCode: "contract"`: a command parameter that names a row)
+
+#### A command parameter that fills a reference is sent the key of a row the test makes, not a fixed 1
+- Why (issue 295, a report on a forum: hexagonal, JPA, Java): `Post.move(boardId: long!)` fills `Post.board` (the generated move
+  keeps `boardId`, the key of the reference by id), and its contract tests sent `obj("boardId", num("1"))` - a value built for a
+  `long`. No board 1 exists, since each test makes its own rows: the project's move answered 404 and the administrator's test
+  failed, while `newPost()` made its board with `createdId(BOARD, newBoard(), "boardId")`.
+- Now a command's parameter named as the field of the entity that holds a reference's key, of its type (`boardId` of
+  `board: Board`, a reference by id; the DTO's `@ref` / `@idof` field of that name otherwise) is sent the key of a row the test
+  makes first, as a row that needs one makes it: `obj("boardId", createdId(BOARD, newBoard(), "boardId"))`, in the lifecycle's
+  tests (the move, its refusal, the steps to it) and in those of `@access`. The builder of the row is written in the test class
+  where the entity's own row does not need one (an optional reference). In a test of `@access` the row is made as the rows of
+  the case are: by the administrator, or as the application itself (`asTheSystem`) where no administrator signs in. Where that
+  row cannot be made (its API takes no create, say), the command's tests are left out and counted, as for a parameter no value
+  can be built for. Any other parameter is sent its value as before.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; a command without such a parameter gets the
+  same tests. No DSL word, no runtime library change.
+- Checked: `elasticore-template-ddd`'s `forum` domain has `Section` and `Discussion`, which a MODERATOR moves to another section
+  (`move: sectionId: long!`, `@access(move=MODERATOR)`). With the old generator its tests sent `num("1")`, and the three that
+  make the move - `moveFromOpen`, the refusal after the step, `moveLetsInAModerator` - were aborted, the move refused; now they
+  send a section of their own and pass - the forum's 59 tests, and the module's 262, all pass. `ContractTestsTest` (+1): Java and Kotlin, the builder written for an optional
+  reference, the lifecycle and `@access` tests, the row made as the application where no administrator signs in.
+  `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `verify/ContractTestSource.java`, `ContractTestsTest.java`, the env guide 6.2.1 (en, ko), `elasticore-template-ddd`'s
+  `forum` `entity.yml` and its regenerated `schema.yml`, `semantic_model.yml` and `db/schema-*.sql`.
+
+### Bug Fixes (tests - `testCode: "contract"`: the signed-in session under Spring Session)
+
+#### The contract support class keeps the sign-in's cookies with its session and sends them with it
+- Why (issue 295, a report on a forum: hexagonal, JPA, Spring Boot 4.1, Java, sessions in Spring Session JDBC): the support
+  class kept `in.getRequest().getSession(false)` - the container's `MockHttpSession` - after the generated sign-in, and dropped
+  the answer's cookies. With Spring Session (`spring-session-jdbc`, ...) its `SessionRepositoryFilter` is in front under
+  `@AutoConfigureMockMvc`, and the signed-in session is the one the `SESSION` cookie the sign-in answers with names: every
+  later request was a visitor, and of 186 tests 173 were aborted and 4 failed with 401 `not-signed-in`. `request(...)` could
+  not carry it, as the cookies differ from caller to caller.
+- Now the support class keeps the sign-in's cookies wherever it keeps the session, and sends them wherever it sends the session:
+  - a `cookies` field (Java `Cookie[]`, Kotlin `Array<Cookie>`, empty as generated) that `signIn()` fills with
+    `in.getResponse().getCookies()` - the model's administrator and the one `newSignInRow` makes;
+  - the `Caller` of `signIn(role)` holds them too (`caller.cookies`); Java keeps the two-argument constructor, Kotlin gives the
+    parameter a default, so a `Caller` a project's own code makes still compiles;
+  - `perform(...)` and `sentBy(...)` add them to the request (`builder.cookie(...)`) next to the session;
+  - where nobody signs in, the requests run as the application unless the session or the cookies are set - a `signIn()` of the
+    project's that keeps only cookies is signed in too. The class comment says to set the session and its cookies there.
+  Where the container keeps the sessions the sign-in answers with no cookie, and nothing more is sent.
+- Existing projects: the support class is written once and then merged against what the generator last wrote
+  (`.elasticore/generated-base.zip`). One whose edits are elsewhere - `request(...)`, `newSignInRow` - takes the new lines over
+  (`MERGED(your edits kept)`); one that changed the same lines - its own cookie fix - is `KEPT` and the run says where, to take
+  the change over by hand. A file the run has no base for (no cache) stays as it is, as before.
+- Unchanged: a model without `testCode: "contract"` generates byte-identical output; the generated test classes are as before.
+  No DSL word, no runtime library change.
+- Checked: `elasticore-template-ddd`'s `forum` domain (Java, hexagonal, Member signed in through `newSignInRow`) with
+  `spring-session-jdbc` on the test classpath for the run only: with the old support class 59 forum tests gave 9 passed,
+  3 failed, 47 aborted - every signed-in request 401 `Sign in first`, as reported; with the new one all 59 pass, none aborted. Without Spring
+  Session (the sample as committed) the module's 262 tests pass. `elasticore-template-kt`'s `ShopContractSupport.kt` (the
+  sample's own, kept) updated the same way: its 237 tests pass. `ContractTestsTest` (+2): the cookies kept and sent in Java and Kotlin - the model's
+  principal, `newSignInRow`, nobody signed in - and a support class an earlier version wrote, edited in `request(...)`, merged
+  with them (`MERGED(your edits kept)`), or `KEPT` where its own lines meet them. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF
+  / 2 ACCEPTED, `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
+- Files: `verify/ContractTestSource.java`, `ContractTestsTest.java`, the env guide 6.2.1 (en, ko),
+  `elasticore-template-ddd`'s `ForumContractSupport.java` and `elasticore-template-kt`'s `ShopContractSupport.kt`.
+
+### Bug Fixes (v3 - a type of another domain)
+
+#### A type of another domain is named simply and imported from its domain, in every mode, language and architecture (#331)
+- Why: the rule is 2.x's: a model element of another domain - an `@abstract` parent, an entity, an enum, an
+  `@embeddable` value object, a DTO - is written by its simple name, stays in the domain that declares it, and is
+  imported from there; type names are unique across domains. The 3.0 code broke it in several places. #331: an
+  `@abstract` parent of another domain, `@extend(AuditEntity)`, was not imported by the MyBatis and MongoDB entities
+  (`cannot find symbol`), and `@extend(common:AuditEntity)` was refused under MyBatis as table inheritance. A
+  two-domain model generated in each combination and compiled found the rest: a port's parameter or return of another
+  domain's DTO or enum was not imported (the port interface in every combination, the MyBatis port adapter and mapper
+  too); a command's parameter of another domain's enum was not found in the behaviour class (ddd, hexagonal; Java and
+  Kotlin; JPA and MyBatis); a DTO with `@template` of another domain's entity wrote a copy of that entity's key DTO
+  (`OfficeKeyDTO`) in the using domain. A type written with its domain, which 2.x accepted (`common:Grade`,
+  `List<common:ContactDTO>`, `@template(common:Office)`, a DTO's `@extend(common:ContactDTO)`), stopped the run on a
+  file named `common:OfficeKeyDTO`, or was written as `common:Grade` into the code.
+- Now: the rule engine reads a type written with its domain as its simple name (fields, a port's parameters and
+  returns, the `@extend` of an entity or a DTO); the 2.x generator, which writes such a type by its full class name,
+  is unchanged. The entity files of JPA, MyBatis and MongoDB, Java and Kotlin, import a parent of another domain
+  through one helper (`RuleText.registerParentImport`); a port - the ElastiCORE runtime interface, the Spring HTTP
+  client and the MyBatis adapter and mapper - imports each type of another domain its methods name
+  (`PortBaseRules.otherDomainImports`, on `RuleText.modelTypeImports`); a command's parameter of another domain is
+  written with that domain's package in the aggregate and its behaviour class; the key DTO of another domain's entity
+  is that domain's alone (the 2.x-compatible output keeps the copy 2.x writes). A type two domains declare stays a
+  DSL warning, which now says what to do (`... a type name is unique across domains: rename one, ...`), and the
+  `@template` list refusal for such a name says so too, instead of asking for `domain:Name`.
+- Upgrade: a 3.0 project (Java, Kotlin or TypeScript) with a DTO whose `@template` names another domain's entity no
+  longer gets that entity's key DTO written in its own dto package (`agency.dto.OfficeKeyDTO`); the generated code
+  never used it. Code of your own that imports it imports the declaring domain's (`common.dto.OfficeKeyDTO`).
+- Checked: `OtherDomainTypesTest` - the two-domain model in JPA, MyBatis and MongoDB, Java and Kotlin, layered, ddd
+  and hexagonal (what release/3.0 writes: MyBatis is Java only, MongoDB layered only): each type one class, in
+  `common`; the imports and the parameter above; a model written with `common:` generates the same files as one
+  written simply (TypeScript too); a Spring HTTP port (Boot 4); the duplicate-type warning on an `elcore3` run.
+  `ExtendOtherDomainTest` - #331's model under MyBatis by both names (import, `extends AuditEntity`, the parent's
+  column in the mapper XML, no refusal), JPA and MongoDB. The same model, by simple and by qualified names, generated
+  in the 11 combinations and compiled with javac or kotlinc (main sources and the contract tests), and the
+  TypeScript client with tsc: all 22 compile; before the fix none of the 11 did, and the qualified one did not
+  generate.
+- Files: `TypeInfo` (`simpleNamed`), `Method`, `SpecFactory` (`extendOf`, command parameter packages), `RuleText`
+  (`simpleModelName`, `modelTypeImports`), `DtoCleanFileRules`, `KotlinDtoFileRules`, `JpaEntityFileRules`,
+  `KotlinEntityFileRules`, `MyBatisEntityFileRules`, `MongoEntityFileRules`, `PortBaseRules`, `MyBatisPortRules`,
+  `portSpring.tmpl` (Java, Kotlin), `RulesGenRunner` (key DTO), `ModelExtractor`, `TemplateList`, the annotation, DSL
+  and env guides (en, ko).
+
 ## 3.0.261125
 
 ### Bug Fixes (v3 - TypeScript client, build-time warnings)
