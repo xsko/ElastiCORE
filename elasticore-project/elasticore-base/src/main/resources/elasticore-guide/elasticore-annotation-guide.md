@@ -2222,9 +2222,7 @@ Generated behavior (CoreService):
 CurrentUser.runAsSystem(() -> customers.save(admin));
 ```
 
-The **whole row** of another entity (a nested DTO) is carried in a DTO only when that entity's read level is `public`.
-If an order DTO carried a whole customer with `read=owner`, the customer data would be visible to whoever reads the order, so the build
-drops that field and warns (the identifier `customerId` stays).
+The **whole row** of another entity (a nested DTO) is carried only when everyone allowed to read the holder is also allowed to read the referenced entity. The holder's read expression must imply the referenced entity's read expression: `user` can carry `user`, and a role or `owner` can carry `user`; nothing implies `owner`. If an order with `read=user` carries a customer with `read=owner`, the build drops the nested field and warns (the identifier `customerId` stays). A nested DTO is for the response; cascading reverse mapping still does not write a referenced row protected by its own write access.
 
 The build reports `@access` syntax errors (`read=owners`, `read=owner|`, `@access(admin)` on an entity) as warnings - if you leave them,
 the application does not start (a word with a capital first is a role name and is checked as above: `read=MANGER`). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),

@@ -155,7 +155,7 @@ public class ServiceAccessRules implements CodeRules {
      */
     @Rule(value = "access-dto-nested", target = "dto", order = 0)
     void nested(EntitySpec e, FieldSpec f) {
-        if (!nestsGuarded(e, f)) return;
+        if (nestedIsVisible(e, f)) return;
         ctx(e).removeField(f);
         io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                 "[%s] %s.%s is left out: %s is read under @access(read=%s), and a DTO carrying it would show it"
@@ -1544,5 +1544,20 @@ public class ServiceAccessRules implements CodeRules {
 
     private static String trim(String s) {
         return s == null ? null : s.trim();
+    }
+    /**
+     * Whether readers of the holder entity may also read the referenced entity.
+     */
+    public static boolean nestedIsVisible(EntitySpec e, FieldSpec f) {
+        String referencedLevel = nestedReadLevel(e, f);
+        if (referencedLevel == null) return true;
+
+        String holderLevel = e.readLevelOf(e.getName());
+
+        AccessExpression holderRead = AccessExpression.parse(holderLevel == null ? "public" : holderLevel);
+
+        AccessExpression referencedRead = AccessExpression.parse(referencedLevel);
+
+        return holderRead != null && referencedRead != null && holderRead.implies(referencedRead);
     }
 }
