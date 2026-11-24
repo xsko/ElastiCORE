@@ -763,6 +763,10 @@ public class MyBatisPortRules implements CodeRules {
                 sb.append("import ").append(pkg).append(".*;\n");
             }
         }
+        // A type of another domain the methods name, from there (issue 331).
+        for (String fqcn : io.elasticore.base.model.pub.rules.base.PortBaseRules.otherDomainImports(p)) {
+            sb.append("import ").append(fqcn).append(";\n");
+        }
         return RuleText.stripTrailing(sb.toString());
     }
 

@@ -122,9 +122,15 @@ public class ModelExtractor {
         for (Map.Entry<String, List<String>> entry : typeRegistry.entrySet()) {
             List<String> domains = entry.getValue();
             if (domains.size() > 1) {
-                // Anchor warning to the first domain so it gets routed correctly when printed
-                ConsoleLog.storeLog("DSL_WARN",
-                        String.format("[%s] duplicate type '%s' is defined in multiple domains: %s",
+                // Anchor warning to the first domain so it gets routed correctly when printed.
+                // A type is named by its simple name in every domain and imported from its own, so two
+                // of one name leave a reference to it pointing at either: one of them is renamed.
+                ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format(
+                                "[%s] duplicate type '%s' is defined in multiple domains: %s"
+                                        + " - a type name is unique across domains: rename one, and let the"
+                                        + " other domains use it from where it is declared",
                                 domains.get(0), entry.getKey(), String.join(", ", domains)));
             }
         }

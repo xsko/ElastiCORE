@@ -164,6 +164,8 @@ public class MongoEntityFileRules implements CodeRules {
         String modifier = e.hasMeta("abstract") ? "public abstract" : "public";
         String parent = e.parentName() == null ? "" : e.parentName().trim();
         String extendsClause = parent.isEmpty() || parent.equals(e.getName()) ? "" : " extends " + parent;
+        // A parent of another domain - a shared @abstract base - is imported from there (issue 331).
+        if (!extendsClause.isEmpty()) RuleText.registerParentImport(c, parent, e.pkg("entity"));
         c.var("packageName", e.pkg("entity"))
                 .var("className", e.getName())
                 .var("classAnnotationList", c.renderClassAnnotations())

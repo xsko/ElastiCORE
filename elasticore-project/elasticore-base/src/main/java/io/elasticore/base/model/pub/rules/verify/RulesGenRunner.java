@@ -1881,8 +1881,14 @@ public final class RulesGenRunner {
                                 ECoreModel model, String domainDirName) {
         String template = io.elasticore.base.model.dto.TemplateList.namesOf(dto.getMetaInfo());
         if (template == null || template.isEmpty() || template.indexOf(',') >= 0) return;
+        // An entity of another domain has its key DTO there, beside its service; the 3.0 code writes no
+        // copy of it here (issue 331). The 2.x-compatible output keeps the one 2.x writes.
+        if ((v3 || kotlin || typescript)
+                && SpecFactory.ofAnotherDomain(template, dto.getIdentity().getDomainId())) return;
+        // Named simply: an entity of another domain may be written with its domain (common:Office).
+        String simple = template.substring(template.lastIndexOf(':') + 1).trim();
 
-        String keyName = String.format("%sKeyDTO", template);
+        String keyName = String.format("%sKeyDTO", simple);
         EntitySpec keySpec = SpecFactory.fromDto(dto, model, domainDirName);
         keySpec.keyDtoClassName(keyName);
 

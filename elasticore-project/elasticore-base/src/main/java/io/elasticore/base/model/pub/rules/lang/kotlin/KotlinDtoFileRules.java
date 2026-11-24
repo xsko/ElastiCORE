@@ -112,6 +112,7 @@ public class KotlinDtoFileRules implements CodeRules {
      */
     private String parentName(EntitySpec e) {
         if (e.hasMeta("dto")) return null;
-        return e.metaValue("extend");
+        // A parent of another domain is named simply, as 2.x reads common:ContactDTO (issue 331).
+        return RuleText.simpleModelName(e.metaValue("extend"));
     }
 }

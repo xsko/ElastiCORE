@@ -66,7 +66,7 @@ unitCost:  money(10.2)!  @min(0.01, 'price must be positive')  @terms(price, 가
 | 지울 수 있는 상태 | 같은 `states:` 안의 한 줄 | `delete: CANCELLED` |
 | 업무 지표 | `이름: 식 @표시 -- 설명` 한 줄 | `revenue: sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- 매출 ...` |
 | 권한·소유 | `meta:` 줄의 표시 | `@owner(customerId) @access(read=owner, create=user, cancel=owner)` |
-| 다른 컨텍스트의 타입·이벤트 | `컨텍스트:이름` | `catalog:Product`, `on: [shop:OrderPlaced]` |
+| 다른 컨텍스트의 이벤트 | `컨텍스트:루트이벤트` | `on: [shop:OrderPlaced]` (다른 도메인의 타입은 단순 이름: `Product`) |
 
 DSL 이 잘못되면 생성기가 **한 문장으로** 무엇이 틀렸고 어떻게 고치는지 말합니다
 (`... names SHIPED, which OrderStatus does not have (it has PLACED, SHIPPED, CANCELLED)`). 사람이든 AI 든 그 문장을
@@ -1201,7 +1201,7 @@ processManager:
 
 자세한 것은 `elasticore-rule-guide.md` 의 프로세스 매니저 절.
 
-**다른 컨텍스트의 이벤트**는 필드 타입에서 다른 도메인 모델을 `catalog:Product` 로 적듯이 `컨텍스트:루트이벤트` 로 적습니다.
+**다른 컨텍스트의 이벤트**는 `컨텍스트:루트이벤트` 로 적습니다. 반면 다른 도메인의 타입은 단순 이름(`Product`)으로 적고 그 도메인에서 import 됩니다: 타입 이름은 모든 도메인에서 하나뿐입니다.
 
 ```yaml
 # blueprint/billing/model/domainservice.yml

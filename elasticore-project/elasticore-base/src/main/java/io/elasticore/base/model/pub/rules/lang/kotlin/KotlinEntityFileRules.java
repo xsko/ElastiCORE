@@ -56,12 +56,7 @@ public class KotlinEntityFileRules implements CodeRules {
         for (FieldSpec f : e.fields()) {
             RuleText.registerFieldTypeImport(c, e, f, e.pkg("entity"));
         }
-        if (e.parentName() != null) {
-            String parentPkg = RuleText.componentPackage(e.parentName());
-            if (parentPkg != null && !parentPkg.equals(e.pkg("entity"))) {
-                c.addImport("%s.%s", parentPkg, e.parentName());
-            }
-        }
+        RuleText.registerParentImport(c, e.parentName(), e.pkg("entity"));
 
         c.var("packageName", e.pkg("entity"))
          .var("className", e.getName())
