@@ -353,10 +353,14 @@ public class StateStampTest {
                 layeredLog.contains("StDoc declares @stamp (ddd-state), which the selected rules do not enforce"),
                 layeredLog);
         // The value the build script takes - 'ddd', not the enum's DOMAIN_MODEL.
+        assertTrue(layeredLog.contains("with architecture = 'ddd' or 'hexagonal'."), layeredLog);
+        // The bundle is the selection (no list in env.yml): it is named, with the set it lacks - which,
+        // added to it, sets the initial state only (issue 320).
         assertTrue(
-                layeredLog.contains("Declare architecture = 'ddd' or 'hexagonal', or add the rule set."), layeredLog);
-        // The bundle is the selection (no list in env.yml): it is named, with the set it lacks.
-        assertTrue(layeredLog.contains("The jpa-springboot-v3 bundle does not carry ddd-state."), layeredLog);
+                layeredLog.contains(
+                        "The jpa-springboot-v3 bundle does not carry ddd-state, and adding it to this bundle"
+                                + " sets the initial state only"),
+                layeredLog);
         assertFalse(layeredLog.contains("replaces the architecture's bundle"), layeredLog);
         assertFalse(layeredLog.contains("domain-model"), layeredLog);
     }

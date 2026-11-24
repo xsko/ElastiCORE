@@ -28,12 +28,24 @@ public class InvariantViolationException extends IllegalStateException {
     /**
      * A refusal the API can say in the caller's language: the code is looked
      * up in the application's messages, the message is what is said when no
-     * translation has it.
+     * translation has it, with its {0}, {1} ... filled from the values, as
+     * the other refusals fill theirs. A message without a placeholder is kept
+     * as it is: the generated checks pass their own sentence, which may quote
+     * a value ('CANCELLED') that a MessageFormat would strip.
      */
     public InvariantViolationException(String code, String message, Object... args) {
-        super(message);
+        super(placeholders(message) ? Refusals.format(message, args) : message);
         this.code = code;
         this.args = args == null ? new Object[0] : args.clone();
+    }
+
+    /** Whether the message says {0}, {1} ... somewhere. */
+    static boolean placeholders(String message) {
+        if (message == null) return false;
+        for (int i = message.indexOf('{'); i >= 0 && i + 1 < message.length(); i = message.indexOf('{', i + 1)) {
+            if (Character.isDigit(message.charAt(i + 1))) return true;
+        }
+        return false;
     }
 
     public String getCode() {

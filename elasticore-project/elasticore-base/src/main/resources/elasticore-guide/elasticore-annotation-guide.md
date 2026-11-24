@@ -229,6 +229,7 @@ Sets the table name explicitly. If not set, the entity name is converted to snak
 UserProfile:
   meta: entity @table(user_profile_tbl)
 ```
+`table.prefix` of env.yml goes before this name too, as in 2.x: `@table(PL_QUOT)` with `prefix: jp_` is the table `jp_pl_quot`. For names used exactly as written (a data dictionary), leave `table.prefix` out and write the whole name in each `@table`.
 
 ### @schema(name)
 > **Since: 2.1.260409**
@@ -259,6 +260,11 @@ Defines a database index. Generates `@Table(indexes=...)`.
 Message:
   meta: entity @Index(name="idx_msg_date", columnList="create_date,status")
 ```
+
+`columnList` names the table's columns. A reference is the column of its name and the key's (`product` with the key
+`productCode` is `product_product_code` in layered), so its column depends on the architecture. A name the table does
+not have is a warning at build time, with the columns there are - creating the table would fail on it (JPA; MyBatis when
+the domain writes a DDL).
 
 ### @rollup
 > **Works in:** JPA · **Not in:** MyBatis (mode: mybatis) (stops the build)
@@ -1171,6 +1177,10 @@ A search DTO's list of values for one column of the entity - `status: List<Order
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
+An empty list, like one not sent, is no condition (every row, in JPA, MyBatis and MongoDB); for "none of the rows",
+return an empty page in your service before the search. Bound the number of values with `@maxsize(n)` on the search
+DTO's field (`postIds: List<Long> @search(in) @maxsize(200)`): it becomes `@Size(max=200)`, so a longer list is a 400
+before the query is built.
 
 **List<Entity> field:**
 ```java

@@ -229,6 +229,7 @@ v3 매퍼는 `@writeonly` 값을 엔티티 -> DTO 로 복사하지 않습니다(
 UserProfile:
   meta: entity @table(user_profile_tbl)
 ```
+env.yml 의 `table.prefix` 는 이 이름 앞에도 붙습니다 (2.x 와 같음): `prefix: jp_` 에서 `@table(PL_QUOT)` 은 테이블 `jp_pl_quot` 입니다. 쓴 그대로의 이름(데이터 사전)을 쓰려면 `table.prefix` 를 빼고 `@table` 마다 전체 이름을 쓰세요.
 
 ### @schema(name)
 > **Since: 2.1.260409**
@@ -259,6 +260,11 @@ tableSchema: schema_a
 Message:
   meta: entity @Index(name="idx_msg_date", columnList="create_date,status")
 ```
+
+`columnList` 에는 테이블의 컬럼 이름을 씁니다. 참조는 그 이름과 키 이름을 이은 컬럼이라
+(layered 에서 키가 `productCode` 인 `product` 는 `product_product_code`) 아키텍처에 따라 달라집니다.
+테이블에 없는 이름은 빌드 때 경고가 나고, 있는 컬럼을 함께 알려 줍니다 - 그대로면 테이블 생성이 실패합니다
+(JPA; MyBatis 는 도메인이 DDL 을 쓸 때).
 
 ### @rollup
 > **동작:** JPA · **안 됨:** MyBatis (mode: mybatis) (빌드 중단)
@@ -1171,6 +1177,10 @@ drivers: List<RentDriver> @search(eq)
 ```java
 sp.and((r,q,c) -> r.get("status").in(status));
 ```
+빈 목록은 보내지 않은 것과 같이 조건이 없습니다 (JPA, MyBatis, MongoDB 모두 전체 행). "해당 행 없음"이 맞다면
+검색 전에 서비스에서 빈 페이지를 돌려주세요. 값의 개수는 검색 DTO 필드에 `@maxsize(n)` 으로 제한합니다
+(`postIds: List<Long> @search(in) @maxsize(200)`): `@Size(max=200)` 이 되어, 더 긴 목록은 쿼리를 만들기 전에
+400 입니다.
 
 **List<Entity> 필드:**
 ```java
