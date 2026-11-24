@@ -173,7 +173,7 @@ User:
   meta: entity @extend(AuditEntity)
 ```
 A parent that is no Entity or DTO of any domain is a DSL warning (`unresolved @extend parent 'X' - no matching Entity or DTO found in any domain`, which `elcoreValidate -Pstrict` fails on), not an error:
-a class you wrote by hand can be the parent on purpose. Name it by its full class name (`com.acme.support.BaseRecord`), which is not looked up, as a domain-qualified name (`other:Parent`) is not - by its simple name it warns.
+a class you wrote by hand can be the parent on purpose. Name it by its full class name (`com.acme.support.BaseRecord`), which is not looked up - by its simple name it warns. A parent of another domain (a shared `@abstract` base in `common`) is named simply, `@extend(AuditEntity)`, and imported from its domain, in every mode, language and architecture the 3.0 code writes. It stays in that domain, and no other domain keeps a copy of it: a type name is unique across all domains (a name two domains declare is a DSL warning - rename one). Written with its domain, `common:AuditEntity`, as 2.x accepted, it is read the same.
 
 ### @embeddable
 > **Works in:** JPA, MyBatis (mode: mybatis) · **Not in:** MyBatis (mode: mybatis) for a value object that holds another value object, a relation or a collection (stops the build)
@@ -1255,11 +1255,11 @@ dto:
     fields:
       reason: string(100)       # declared in the DTO: always kept
 ```
-- Only the copied fields are filtered. A field declared in the DTO is always kept, and with a listed name it overrides the copied one. A field added to the entity later is not in the DTO until it is listed. A model of another domain: `shop:Order[note]`.
+- Only the copied fields are filtered. A field declared in the DTO is always kept, and with a listed name it overrides the copied one. A field added to the entity later is not in the DTO until it is listed. A model of another domain is named simply too: `Order[note]`.
 - A field the model inherits through its own `@extend` can be listed. A relation's name keeps the field that holds its id: `customer` keeps the `customerId` of a DDD reference, and `customerId` itself is refused, as the list is checked before the reference is rewritten.
 - A name that would give the DTO nothing is refused: a relation with no field that holds its id (declare the id instead, `orderId: long @ref(order.orderId)`), a collection, and a value object where the DTO does not carry one (it carries one whole in `ddd` and `hexagonal`, and in layered MyBatis; not in layered JPA, the compatible output or 2.x).
 - Generation stops on a name the model does not have, a model no domain has, the same model twice (`Order[note], Order[total]` or `Order, Order[note]`), the same field twice (`Order[note, note]`), empty brackets (`Order[]`), `--` on a listed field, a list together with `@extend`, and a list on an entity.
-- Beside a list, a name more than one domain has must say which: `shop:Order[note]`. A DTO without brackets stays as free as it was.
+- A type name is unique across all domains, so the name finds its model wherever it is. Beside a list, a name two domains declare stops the build (`... both have Order - a type name is unique across domains: rename one`).
 - `@searchable` and `@searchResult` take no list, and generation stops on one: a search DTO already takes only the fields with a search condition.
 - A list without the key is not used as the DTO of the entity's service and controller, even if it is declared first. A list with the key can be, so declare the DTO they should use first.
 

@@ -183,8 +183,8 @@ public final class TemplateList {
             // field the copy does not have. Refused here, so that a name finds one model for both.
             List<String> domains = domainsHaving(contexts, e.model);
             if (domains.size() > 1) {
-                problems.add(at + ": " + String.join(" and ", domains) + " both have " + e.model + ", so say which: "
-                        + domains.get(0) + ":" + e.model);
+                problems.add(at + ": " + String.join(" and ", domains) + " both have " + e.model
+                        + " - a type name is unique across domains: rename one");
                 continue;
             }
             DataModelComponent model = ForcedRefCheck.modelNamed(contexts, e.model, home);

@@ -54,12 +54,7 @@ public class JpaEntityFileRules implements CodeRules {
 
         // A parent declared in another domain's entity package - a shared
         // base class - needs the same import a field's own type would.
-        if (e.parentName() != null) {
-            String parentPkg = RuleText.componentPackage(e.parentName());
-            if (parentPkg != null && !parentPkg.equals(e.pkg("entity"))) {
-                c.addImport("%s.%s", parentPkg, e.parentName());
-            }
-        }
+        RuleText.registerParentImport(c, e.parentName(), e.pkg("entity"));
 
         c.var("packageName", e.pkg("entity"))
          .var("className", e.getName())

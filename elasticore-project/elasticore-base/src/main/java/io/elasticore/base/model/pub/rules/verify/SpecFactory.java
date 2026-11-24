@@ -369,13 +369,24 @@ public final class SpecFactory {
                     spec.typePackage(enums.get(i).getIdentity().getName(), enumPkg);
                 }
             }
+            // A parameter whose type another domain declares - an enum, a value object - is written
+            // with that domain's package (issue 331).
+            for (io.elasticore.base.model.core.Items<Field> params :
+                    entity.getCommands().values()) {
+                if (params == null) continue;
+                for (Field p : params.getItemList()) {
+                    String type = p.getTypeInfo().getCoreItemType();
+                    if (p.getTypeInfo().isBaseType() || type == null || spec.typePackageOf(type) != null) continue;
+                    if (ofAnotherDomain(type, entity)) spec.typePackage(type, componentPackage(type));
+                }
+            }
         }
         declaredQueries(spec, name, model);
         // A declared query may answer with a DTO; the repository rules have
         // to know one when they see it, as 2.x does.
         registerDtos(spec, model);
 
-        String parent = entity.getMetaInfo().getMetaAnnotationValue("extend");
+        String parent = extendOf(entity);
         if (parent != null && !parent.isEmpty()) {
             spec.parent(parent);
             spec.abstractEntityAbove(abstractEntityAbove(entity, model));
@@ -558,7 +569,7 @@ public final class SpecFactory {
                     return items.get(i);
                 }
             }
-            String parent = at.getMetaInfo().getMetaAnnotationValue("extend");
+            String parent = extendOf(at);
             at = parent == null || parent.isEmpty()
                     ? null
                     : model.getEntityModels().findByName(parent);
@@ -646,7 +657,7 @@ public final class SpecFactory {
         registerReadLevels(spec, model);
 
         if (entity != null) {
-            String parent = entity.getMetaInfo().getMetaAnnotationValue("extend");
+            String parent = extendOf(entity);
             if (parent != null && !parent.isEmpty()) spec.parent(parent);
             Field deleted = deletedFieldOf(entity, model);
             spec.softDeleteField(deleted == null ? null : deleted.getName());
@@ -2174,7 +2185,7 @@ public final class SpecFactory {
                 for (int i = 0; i < at.getItems().size(); i++)
                     out.add(at.getItems().get(i));
             }
-            String parent = at.getMetaInfo().getMetaAnnotationValue("extend");
+            String parent = extendOf(at);
             if (parent == null || parent.trim().isEmpty()) break;
             Entity next = model.getEntityModels().findByName(parent.trim());
             at = next != null ? next : globalEntity(parent.trim());
@@ -3084,6 +3095,35 @@ public final class SpecFactory {
         return null;
     }
 
+    /** Whether a model type - entity, DTO, enum - is declared by a domain other than the component's. */
+    static boolean ofAnotherDomain(String typeName, io.elasticore.base.model.DataModelComponent of) {
+        return of != null && ofAnotherDomain(typeName, of.getIdentity().getDomainId());
+    }
+
+    /**
+     * Whether a model type is declared by a domain other than the given one: the own domain is asked
+     * first, as the generator resolves a name, so a name two domains declare is the own domain's. A
+     * name written with its domain (common:Office) is that domain's.
+     */
+    public static boolean ofAnotherDomain(String typeName, String ownDomainId) {
+        if (typeName == null || ownDomainId == null) return false;
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            if (ctx == null) return false;
+            String name = typeName.trim();
+            int colon = name.indexOf(':');
+            if (colon > 0) {
+                io.elasticore.base.model.DataModelComponent named = ctx.findModelComponent(name);
+                return named != null && !ownDomainId.equals(named.getIdentity().getDomainId());
+            }
+            io.elasticore.base.ModelDomain own = ctx.getDomain(ownDomainId);
+            if (own != null && own.getModel() != null && own.getModel().findModelByName(name) != null) return false;
+            return ctx.findModelComponent(name) != null;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     static Entity globalEntity(String typeName) {
         if (typeName == null) return null;
         try {
@@ -3173,22 +3213,37 @@ public final class SpecFactory {
     /** The @abstract(entity) above an entity, through its @extend, of this domain or another; null when there is none. */
     private static String abstractEntityAbove(Entity entity, ECoreModel model) {
         java.util.Set<String> seen = new java.util.HashSet<String>();
-        String parent = entity.getMetaInfo().getMetaAnnotationValue("extend");
+        String parent = extendOf(entity);
         while (parent != null && seen.add(parent)) {
             Entity above = model.getEntityModels().findByName(parent);
             if (above == null) above = globalEntity(parent);
             if (above == null) return null;
             String kind = above.getMetaInfo().getMetaAnnotationValue("abstract");
             if (kind != null && "entity".equalsIgnoreCase(kind.trim())) return parent;
-            parent = above.getMetaInfo().getMetaAnnotationValue("extend");
+            parent = extendOf(above);
         }
         return null;
+    }
+
+    /**
+     * The parent an entity's @extend names, by its simple name: a parent of another domain may be named with its
+     * domain, as other references are (@extend(common:AuditEntity)), and is the class AuditEntity, imported from that
+     * domain (issue 331). A full class name (com.acme.Base) is kept as written; null without @extend.
+     */
+    public static String extendOf(Entity entity) {
+        if (entity == null || entity.getMetaInfo() == null) return null;
+        return simpleParent(entity.getMetaInfo().getMetaAnnotationValue("extend"));
+    }
+
+    /** "common:AuditEntity" is AuditEntity; any other value is kept, trimmed. */
+    static String simpleParent(String declared) {
+        return io.elasticore.base.model.pub.rules.base.RuleText.simpleModelName(declared);
     }
 
     /** Copies the entity's id onto the DTO as "<relation><Id>", searchable by equality. */
     private static void flattenIdentity(io.elasticore.base.model.dto.DataTransfer dto,
                                         Entity entity, String baseFieldNm, ECoreModel model) {
-        String parentNm = entity.getMetaInfo().getMetaAnnotationValue(EntityAnnotation.META_EXTEND);
+        String parentNm = extendOf(entity);
         if (parentNm != null) {
             Entity parent = model.getEntityModels().findByName(parentNm);
             if (parent == null) parent = globalEntity(parentNm);
