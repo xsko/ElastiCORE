@@ -260,6 +260,11 @@ Message:
   meta: entity @Index(name="idx_msg_date", columnList="create_date,status")
 ```
 
+`columnList` names the table's columns. A reference is the column of its name and the key's (`product` with the key
+`productCode` is `product_product_code` in layered), so its column depends on the architecture. A name the table does
+not have is a warning at build time, with the columns there are - creating the table would fail on it (JPA; MyBatis when
+the domain writes a DDL).
+
 ### @rollup
 > **Works in:** JPA · **Not in:** MyBatis (mode: mybatis) (stops the build)
 Merges columns into the parent table. Creates no table of its own. Use it with `@extend` of a parent entity that has an `@id`.

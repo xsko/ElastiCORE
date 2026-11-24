@@ -50,6 +50,8 @@ final class DdlRun {
         final String entityPackage;
         /** The model's entities, each with a source in the entity package once the code is generated. */
         final List<String> entities;
+        /** Whether an entity of the domain declares @Index: its columns are checked against the table's. */
+        final boolean indexed;
 
         Part(
                 String domain,
@@ -57,13 +59,15 @@ final class DdlRun {
                 String root,
                 List<EntitySpec> mybatis,
                 String entityPackage,
-                List<String> entities) {
+                List<String> entities,
+                boolean indexed) {
             this.domain = domain;
             this.config = config;
             this.root = root;
             this.mybatis = mybatis;
             this.entityPackage = entityPackage;
             this.entities = entities;
+            this.indexed = indexed;
         }
     }
 
@@ -156,18 +160,9 @@ final class DdlRun {
         boolean anyJpa = false;
         for (Part p : parts) anyJpa |= p.config.enabled() && p.mybatis == null;
         if (anyJpa) {
-            List<File> resources = new ArrayList<File>();
-            for (String d : new LinkedHashSet<String>(sourceRoots)) resources.add(new File(d, "src/main/resources"));
             boolean oracle = false;
             for (Group g : groups.values()) oracle |= g.databases.contains(Database.ORACLE);
-            reader = new JpaSchemaReader()
-                    .forOracle(oracle)
-                    .readSettings(resources)
-                    .read(roots());
-            // A domain mapped in XML (mapping: xml) says it in orm.xml, which Hibernate reads too.
-            for (String d : new LinkedHashSet<String>(sourceRoots)) {
-                reader.readOrmXml(new File(d, "src/main/resources/META-INF/orm.xml"));
-            }
+            reader = reader(oracle);
         }
         // Each JPA domain's entities are the ones in its entity package; an
         // entity in none - the outbox, a class written by hand - is mapped by
@@ -175,22 +170,7 @@ final class DdlRun {
         // Each entity belongs to the domain whose entity package holds it most closely - a domain the DDL
         // leaves out (ddl: false) keeps its entities out with it.
         Set<String> assigned = new java.util.HashSet<String>();
-        Map<Part, List<String>> entitiesOf = new LinkedHashMap<Part, List<String>>();
-        for (Part p : parts) entitiesOf.put(p, new ArrayList<String>());
-        if (reader != null) {
-            for (String fqcn : reader.entityClasses()) {
-                String pkg = fqcn.substring(0, fqcn.lastIndexOf('.'));
-                Part owner = null;
-                for (Part p : parts) {
-                    if (p.entityPackage == null || p.entityPackage.isEmpty()) continue;
-                    if (!pkg.equals(p.entityPackage) && !pkg.startsWith(p.entityPackage + ".")) continue;
-                    if (owner == null || p.entityPackage.length() > owner.entityPackage.length()) owner = p;
-                }
-                if (owner == null) continue;
-                assigned.add(fqcn);
-                if (owner.mybatis == null) entitiesOf.get(owner).add(fqcn);
-            }
-        }
+        Map<Part, List<String>> entitiesOf = entitiesOf(reader, assigned);
         for (Map.Entry<String, Group> en : groups.entrySet()) {
             Group g = en.getValue();
             Schema schema = new Schema().oracleVersion(project.oracleVersion);
@@ -225,6 +205,96 @@ final class DdlRun {
         if (reader != null) {
             for (String w : reader.warnings()) messages.add("[elcore3] ddl: " + w);
         }
+    }
+
+    /** The JPA domains' entity sources, read once - for the DDL and for the index check. */
+    private JpaSchemaReader reader;
+
+    private JpaSchemaReader reader(boolean oracle) {
+        if (reader != null) return reader;
+        List<File> resources = new ArrayList<File>();
+        for (String d : new LinkedHashSet<String>(sourceRoots)) resources.add(new File(d, "src/main/resources"));
+        reader = new JpaSchemaReader().forOracle(oracle).readSettings(resources).read(roots());
+        // A domain mapped in XML (mapping: xml) says it in orm.xml, which Hibernate reads too.
+        for (String d : new LinkedHashSet<String>(sourceRoots)) {
+            reader.readOrmXml(new File(d, "src/main/resources/META-INF/orm.xml"));
+        }
+        return reader;
+    }
+
+    /** Each JPA part's entity classes - those its entity package holds most closely; the ones placed go in assigned. */
+    private Map<Part, List<String>> entitiesOf(JpaSchemaReader reader, Set<String> assigned) {
+        Map<Part, List<String>> entitiesOf = new LinkedHashMap<Part, List<String>>();
+        for (Part p : parts) entitiesOf.put(p, new ArrayList<String>());
+        if (reader == null) return entitiesOf;
+        for (String fqcn : reader.entityClasses()) {
+            String pkg = fqcn.substring(0, fqcn.lastIndexOf('.'));
+            Part owner = null;
+            for (Part p : parts) {
+                if (p.entityPackage == null || p.entityPackage.isEmpty()) continue;
+                if (!pkg.equals(p.entityPackage) && !pkg.startsWith(p.entityPackage + ".")) continue;
+                if (owner == null || p.entityPackage.length() > owner.entityPackage.length()) owner = p;
+            }
+            if (owner == null) continue;
+            assigned.add(fqcn);
+            if (owner.mybatis == null) entitiesOf.get(owner).add(fqcn);
+        }
+        return entitiesOf;
+    }
+
+    /**
+     * An @Index naming a column its table does not have is said, whether or not a DDL is written:
+     * Hibernate's schema creation fails on it and the entity's table is missing at run time. A JPA
+     * domain's tables are read off its entity sources - the columns as they are generated for this
+     * architecture, references and embedded values included; a MyBatis domain's indexes are only in
+     * the DDL it writes, so it is checked when it writes one.
+     */
+    void checkIndexes() {
+        boolean anyJpa = false;
+        for (Part p : parts) anyJpa |= p.indexed && p.mybatis == null;
+        JpaSchemaReader jpa = anyJpa ? reader(false) : null;
+        Map<Part, List<String>> entitiesOf = entitiesOf(jpa, new java.util.HashSet<String>());
+        for (Part p : parts) {
+            if (!p.indexed) continue;
+            Schema schema;
+            if (p.mybatis != null) {
+                if (!p.config.enabled()) continue;
+                schema = io.elasticore.base.model.pub.rules.mybatis.MyBatisTables.of(p.mybatis);
+            } else {
+                if (entitiesOf.get(p).isEmpty()) continue;
+                schema = jpa.schema(entitiesOf.get(p));
+            }
+            messages.addAll(unknownIndexColumns(p.domain, schema));
+        }
+    }
+
+    /** One message per index of the schema that names a column its table does not have. */
+    static List<String> unknownIndexColumns(String domain, Schema schema) {
+        List<String> out = new ArrayList<String>();
+        for (Table t : schema.tables()) {
+            List<String> columns = new ArrayList<String>();
+            for (io.elasticore.base.model.pub.rules.schema.Column c : t.columns()) columns.add(c.name);
+            for (Table.Index i : t.indexes()) {
+                for (String missing : i.columns) {
+                    if (t.column(missing) != null) continue;
+                    // A reference's column is its name and the key's (product_product_code for product_code).
+                    List<String> near = new ArrayList<String>();
+                    for (String c : columns) if (c.endsWith("_" + missing)) near.add(c);
+                    String entity = t.source.substring(t.source.lastIndexOf('.') + 1);
+                    out.add(String.format(
+                            "[%s] %s @Index(%s): %s has no column %s%s - creating the table fails on it; name the"
+                                    + " columns as the table has them: %s",
+                            domain,
+                            entity,
+                            i.name,
+                            t.name,
+                            missing,
+                            near.isEmpty() ? "" : " (perhaps " + String.join(" or ", near) + ")",
+                            String.join(", ", columns)));
+                }
+            }
+        }
+        return out;
     }
 
     /**

@@ -385,6 +385,16 @@ public final class RulesGenRunner {
                                             + ")"
                                     : ruleSet);
         }
+        if ("ddd-state".equals(ruleSet)) {
+            // Added to a layered bundle, ddd-state writes the initial state alone: the rest lives in a behaviour class.
+            return head
+                    + String.format(
+                            "The %s bundle does not carry %s, and adding it to this bundle sets the initial state only:"
+                                    + " the commands, the moves they check, @stamp and the delete: guard are written for"
+                                    + " a root with a behaviour class - a root that is not @editable, with architecture ="
+                                    + " 'ddd' or 'hexagonal'.",
+                            bundle, ruleSet);
+        }
         return head
                 + String.format(
                         "The %s bundle does not carry %s. Declare architecture = 'ddd' or 'hexagonal', or add the rule set.",
@@ -2629,15 +2639,24 @@ public final class RulesGenRunner {
         ModelComponentItems<Entity> items = model.getEntityModels().getItems();
         for (int i = 0; i < items.size(); i++)
             entities.add(items.get(i).getIdentity().getName());
+        // A collection's index is on its fields, not on a table's columns: checked by the MongoDB rules.
+        boolean indexed = false;
+        if (!RulesConfig.mongo(model.getConfig("mode"))) {
+            for (EntitySpec s : specs) indexed |= !s.indexes().isEmpty();
+        }
         ddlParts.add(new DdlRun.Part(
-                domainDirName, ddl, root, mybatis ? specs : null, model.getNamespace("entity"), entities));
+                domainDirName, ddl, root, mybatis ? specs : null, model.getNamespace("entity"), entities, indexed));
     }
 
-    /** The project's DDL: run when every domain has been generated and the model check passed. */
+    /** The project's DDL, and the check of the indexes' columns: run when every domain has been generated. */
     private void writeDdl() {
         boolean any = false;
-        for (DdlRun.Part p : ddlParts) any |= p.config.enabled();
-        if (!any) return;
+        boolean indexed = false;
+        for (DdlRun.Part p : ddlParts) {
+            any |= p.config.enabled();
+            indexed |= p.indexed;
+        }
+        if (!any && !indexed) return;
         java.util.Set<String> sources = new java.util.LinkedHashSet<String>();
         sources.add(projectRoot);
         if (moduleRoots != null) sources.addAll(moduleRoots.values());
@@ -2676,7 +2695,9 @@ public final class RulesGenRunner {
             });
         }
         try {
-            run.run(projectDdl());
+            // The DDL first: it reads the sources for the databases it is written for, and the check reuses them.
+            if (any) run.run(projectDdl());
+            if (indexed) run.checkIndexes();
         } catch (IOException e) {
             io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] ddl: " + e.getMessage());
         } finally {

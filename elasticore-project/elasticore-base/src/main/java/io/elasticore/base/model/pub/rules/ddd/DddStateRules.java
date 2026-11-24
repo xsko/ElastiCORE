@@ -93,6 +93,7 @@ public class DddStateRules implements CodeRules {
     @Rule(value = "ddd-state-moves", target = "entity", order = 98, phase = Rule.Phase.TAIL)
     void moves(EntitySpec e) {
         if (!DddBehaviorRules.splits(e)) {
+            warnUnmoved(e);
             warnUnstamped(e);
             return;
         }
@@ -467,6 +468,33 @@ public class DddStateRules implements CodeRules {
      * entity without states: - a parent - is stamped by the split root that
      * extends it, if one does.
      */
+    /** The entities whose lifecycle is written: said in each warning about one that is not. */
+    static final String SPLIT_ROOT = "a root that is not @editable, with architecture = 'ddd' or 'hexagonal'";
+
+    /**
+     * An entity without a behaviour class has no command written for its
+     * moves - no endpoint, no check of the state - and only its initial state
+     * set: said, rather than left for the missing endpoints to show it.
+     */
+    private static void warnUnmoved(EntitySpec e) {
+        for (EntitySpec.StateMachine m : e.stateMachines()) {
+            if (m.moves().isEmpty() || e.lifecycleProblem(m) != null) continue;
+            java.util.Set<String> commands = new java.util.LinkedHashSet<String>();
+            for (EntitySpec.Move move : m.moves()) commands.add(move.command());
+            io.elasticore.base.util.ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format(
+                            "[%s] %s states.%s: the commands %s are written only for a root with a behaviour class (%s);"
+                                    + " %s gets its initial state only.",
+                            e.domainClassName(),
+                            e.getName(),
+                            m.field(),
+                            String.join(", ", commands),
+                            SPLIT_ROOT,
+                            e.getName()));
+        }
+    }
+
     private static void warnUnstamped(EntitySpec e) {
         for (FieldSpec f : e.fields()) {
             if (!f.hasDsl(STAMP)) continue;
@@ -475,8 +503,8 @@ public class DddStateRules implements CodeRules {
                             "%s has no states:; it is stamped only by a root with a behaviour class that extends %s"
                                     + " and moves into the state",
                             e.getName(), e.getName())
-                    : "written only for a root with a behaviour class (@root in a DDD bundle); the field is not stamped and"
-                            + " stays writable";
+                    : "written only for a root with a behaviour class (" + SPLIT_ROOT + "); the field is not stamped"
+                            + " and stays writable";
             io.elasticore.base.util.ConsoleLog.storeLog(
                     "DSL_WARN",
                     String.format("[%s] %s.%s @stamp: %s.", e.domainClassName(), e.getName(), f.name(), why));
@@ -556,9 +584,12 @@ public class DddStateRules implements CodeRules {
             // Said rather than dropped: the guard lives in the base of a split root.
             for (EntitySpec.StateMachine m : e.stateMachines()) {
                 if (m.deletable() != null && !DddBehaviorRules.splits(e)) {
-                    io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                            "[%s] %s states.%s.delete: written only for a root with a behaviour class (@root in a DDD bundle);"
-                                    + " deleting %s is not guarded.", e.domainClassName(), e.getName(), m.field(), e.getName()));
+                    io.elasticore.base.util.ConsoleLog.storeLog(
+                            "DSL_WARN",
+                            String.format(
+                                    "[%s] %s states.%s.delete: written only for a root with a behaviour class (%s);"
+                                            + " deleting %s is not guarded.",
+                                    e.domainClassName(), e.getName(), m.field(), SPLIT_ROOT, e.getName()));
                 }
             }
             return;
