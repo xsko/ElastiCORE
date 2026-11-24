@@ -66,7 +66,7 @@ Written by hand, the same fact is written four times in four places, and the bui
 | A state that can be deleted | One line in the same `states:` | `delete: CANCELLED` |
 | Business metric | One line `name: expression @mark -- description` | `revenue: sum(PurchaseOrder.total) where status != CANCELLED @terms(sales, 매출액) -- Revenue ...` |
 | Access and ownership | A mark on the `meta:` line | `@owner(customerId) @access(read=owner, create=user, cancel=owner)` |
-| Type or event of another context | `context:Name` | `catalog:Product`, `on: [shop:OrderPlaced]` |
+| Event of another context | `context:RootEvent` | `on: [shop:OrderPlaced]` (a type of another domain is named simply: `Product`) |
 
 When the DSL is wrong, the generator says **in one sentence** what is wrong and how to fix it
 (`... names SHIPED, which OrderStatus does not have (it has PLACED, SHIPPED, CANCELLED)`). A person or an AI reads that sentence
@@ -1201,7 +1201,7 @@ The generated code is two files, like a domain service.
 
 For details, see the process manager section of `elasticore-rule-guide.md`.
 
-**An event from another context** is written as `context:RootEvent`, just as you write another domain model in a field type as `catalog:Product`.
+**An event from another context** is written as `context:RootEvent`. A type of another domain, by contrast, is named simply (`Product`) and imported from its domain: a type name is unique across all domains.
 
 ```yaml
 # blueprint/billing/model/domainservice.yml
