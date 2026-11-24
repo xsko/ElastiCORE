@@ -114,4 +114,58 @@ public final class AccessExpression {
         }
         return true;
     }
+    
+    /**
+     * Whether this expression implies the target expression.
+     */
+    public boolean implies(AccessExpression target) {
+        if (target == null) return false;
+
+        for (List<String> sourceTerm : any) {
+            boolean matched = false;
+
+            for (List<String> targetTerm : target.any) {
+                boolean satisfied = true;
+
+                for (String targetWord : targetTerm) {
+                    boolean wordMatched = false;
+
+                    for (String sourceWord : sourceTerm) {
+                        if (satisfies(sourceWord, targetWord)) {
+                            wordMatched = true;
+                            break;
+                        }
+                    }
+
+                    if (!wordMatched) {
+                        satisfied = false;
+                        break;
+                    }
+                }
+
+                if (satisfied) {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched) return false;
+        }
+
+        return true;
+    }
+
+    private static boolean satisfies(String source, String target) {
+        if ("public".equals(target)) return true;
+        if ("owner".equals(target)) return false;
+        if (source.equals(target)) return true;
+
+        if ("user".equals(target)) {
+            return "owner".equals(source)
+                    || "admin".equals(source)
+                    || ROLE.matcher(source).matches();
+        }
+
+        return false;
+    }
 }
