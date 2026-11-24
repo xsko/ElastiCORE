@@ -2591,13 +2591,51 @@ Post:
     contentText: text @search(like)                       # its text without tags, for the search
 ```
 
-- `html` is a long text, as `text` is (the same column), marked as HTML. The entity gets `cleanHtml()`, which keeps each html field to a
-  jsoup safelist and writes its text without tags into the `@plain` field. The CoreService calls it on every write - a save, an update,
-  an update by condition, and after a lifecycle command whose parameter sets the field - before the row is written and before
-  `beforeSave`. What is kept is not reformatted.
+- `html` is a long text, as `text` is (the same column), marked as HTML. The CoreService gets a pair of methods per html field that
+  do what `@safe` and `@plain` say: `cleanContent` keeps the markup to a jsoup safelist, and `plainContent` - only where `@plain`
+  names a field - gives its text without tags. The entity sets the field and its copy from what they return (under ddd and
+  hexagonal the copy's setter is the entity's own); `plainContent` gets what `cleanContent` returned. Nothing is reformatted.
+
+  ```java
+  // PostCoreService (generated)
+  protected String cleanContent(Post row, String html) { return Html.clean(html, Safelist.basic()); }  // @safe(basic)
+  protected String plainContent(Post row, String html) { return Html.plain(html); }                   // @plain(contentText)
+  ```
+- They run after the request (or the command) has changed the row, before `beforeSave`, and only where the field changed: on a
+  create unless it is null; on an update, a batch update and an update by condition where the request changed it (the service
+  keeps the value it read); after a lifecycle command where the command changed it - a post an administrator hides is not cleaned
+  again. Neither is called with null, and a field set to null leaves its `@plain` copy null.
+- **Your own rule: override the pair** in your service (`PostService extends PostCoreService`, generated once and yours). The row
+  has the request's values on it (a new row has no key yet). A refusal thrown there - `BadRequestException` with your code, as in
+  `beforeSave` - is answered the same way: 400 with the code and its translation, and nothing is written. Keeping only this site's
+  images (another host's image tells that host who reads the post), refusing an empty post, and a line per paragraph:
+
+  ```java
+  @Override
+  protected String cleanContent(Post row, String html) {
+      Document doc = Jsoup.parseBodyFragment(Html.clean(html, Safelist.relaxed()));
+      for (Element img : doc.select("img")) {
+          if (!img.attr("src").startsWith("/api/files/")) img.remove();     // only files uploaded here
+      }
+      if (doc.body().text().isBlank() && doc.select("img").isEmpty())
+          throw new BadRequestException("post.content.required", "A post needs a body");
+      doc.outputSettings().prettyPrint(false);
+      return doc.body().html();
+  }
+
+  @Override
+  protected String plainContent(Post row, String html) {
+      return Html.plainLines(html);                                          // a line per paragraph
+  }
+  ```
+  In Kotlin the pair is `protected open fun cleanContent(row: Post, html: String?): String?`; override it the same way.
+- `Html.plainLines(html)` (runtime) ends a line after `p`, `h1`-`h6`, `li`, `blockquote`, `pre`, `div`, `tr`, `br` and `hr`, puts no
+  marker before a list item, drops the spaces before a line's end, keeps at most one blank line and strips both ends; blocks inside
+  each other end one line: `<blockquote><p>a</p></blockquote><ul><li><p>b</p></li></ul>` is `a\nb`. `Html.plain` joins it all.
 - Under MongoDB an entity without a collection of its own (no service, no `@repository` - an order's line) is kept inside the
-  document that holds it, and a request writes it with that document: the holder's service calls its `cleanHtml()` on the same
-  writes - a collection's members, a single one, and the members they hold - after the holder's own, before `beforeSave`.
+  document that holds it, and a request writes it with that document: the holder's service has the member's pair too
+  (`cleanNote(OrderLine row, String html)`) and cleans the member on every write of the holder, changed or not - a collection's
+  members, a single one, and the members they hold - after the holder's own fields, before `beforeSave`.
 - `@safe(basic)`, the default, keeps text markup (paragraphs, emphasis, lists, quotes, code) and links (http, https, ftp, mailto) with
   `rel="nofollow"`, and no images. `@safe(relaxed)` also keeps headings, tables and images (http, https), and adds no `rel`. A script and
   its text, `on...` handlers, `javascript:` links and every other tag and attribute are removed: jsoup's `Safelist.basic()` / `relaxed()`.
@@ -2606,10 +2644,10 @@ Post:
   host that `https://host/x.png` would reach anyway. A link to this site gets no `rel`; `rel="nofollow"` is put on a link to another
   host. A link a browser reads as another host's while it looks like a path here (`/\host`, `https:host`) is removed.
 - `@safe(relaxed)` keeps an image of any http or https host, and loading one tells that host who reads the page. Which images a writer
-  may embed (a file they uploaded, say) is the application's to check, in `beforeSave` - after the clean.
+  may embed (a file they uploaded, say) is the application's to check, in its `cleanContent` (above).
 - `@plain(field)` names a long text field of the same entity (`text`, `longtext` or `clob`). The text without tags - entities read,
-  white space collapsed - is written there on every write, and no request writes it (read-only in the DTO and in TypeScript). Put
-  `@search` on that field: a search then reads the words, not the markup and not a removed script's text.
+  white space collapsed - is written there whenever the html field is cleaned, and no request writes it (read-only in the DTO and in
+  TypeScript). Put `@search` on that field: a search then reads the words, not the markup and not a removed script's text.
 - The application adds jsoup: `implementation 'org.jsoup:jsoup:1.23.2'`. ElastiCORE's runtime is only compiled against it, and the
   generated line names `org.jsoup.safety.Safelist`, so without jsoup the build stops at that line.
 - In TypeScript the field's metadata says `html: true`, so a screen knows it may show the value as HTML.
@@ -2617,8 +2655,8 @@ Post:
   `@safe` or `@plain` on a field that is not html; an html field on a member of an aggregate or on a value object (`@embeddable`) -
   the root's service saves those and would not clean them; the 2.x-compatible output; and the 2.x generator (`elcore`), which would
   store what a request sends.
-- A value set after the service has cleaned the row (in `beforeSave`, or through the repository) is not cleaned: call
-  `entity.cleanHtml()` after setting one.
+- A value set after the service has cleaned the row (in `beforeSave`, or through the repository) is not cleaned: hand the entity
+  the pair after setting one, `entity.cleanContent(html -> cleanContent(entity, html), html -> plainContent(entity, html))`.
 
 ## @encrypt - a column kept encrypted, searched by equality (v3)
 > **Works in:** v3 (JPA: layered, ddd, hexagonal), Kotlin, MyBatis (mode: mybatis) · **Not in:** MongoDB (mode: mongo) (build stops); 2.x-compatible output (output = 'v2') (build stops); 2.x generator (build stops)

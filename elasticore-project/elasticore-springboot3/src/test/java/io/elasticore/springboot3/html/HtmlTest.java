@@ -158,5 +158,64 @@ class HtmlTest {
     void nothingStaysNothing() {
         assertNull(Html.clean(null, Safelist.basic()));
         assertNull(Html.plain(null));
+        assertNull(Html.plainLines(null));
+    }
+
+    /** One line per paragraph (issue 217): where plain joins them, plainLines breaks. */
+    @Test
+    void plainLinesKeepsALinePerParagraphAndNoListMarker() {
+        String sent = "<p>First</p><p>Second</p><ul><li>one</li><li>two</li></ul>";
+        assertEquals("First Second one two", Html.plain(sent));
+        assertEquals("First\nSecond\none\ntwo", Html.plainLines(sent));
+        assertEquals(
+                "Title\nSub\nquoted\ncode\ncell 1\ncell 2\nafter rule\nlast",
+                Html.plainLines("<h1>Title</h1><h6>Sub</h6><blockquote>quoted</blockquote><pre>code</pre>"
+                        + "<table><tr><td>cell 1</td></tr><tr><td>cell 2</td></tr></table>"
+                        + "<div>after rule</div><hr>last"));
+    }
+
+    @Test
+    void plainLinesEndsOneLineForBlocksInsideEachOther() {
+        assertEquals("a\nb", Html.plainLines("<blockquote><p>a</p></blockquote><ul><li><p>b</p></li></ul>"));
+        assertEquals("a\nb", Html.plainLines("<div><div><p>a</p></div></div><div><p>b</p></div>"));
+        assertEquals("a\nb", Html.plainLines("<p>a</p><p></p><p> </p><p>b</p>"));
+        assertEquals("a\nb", Html.plainLines("<p>a<br></p><p>b</p>"));
+        // Text outside a block ends its line where one begins, too.
+        assertEquals("a\nb\nc", Html.plainLines("a<p>b</p>c"));
+    }
+
+    /** An editor's empty paragraph, which a browser shows as an empty line. */
+    @Test
+    void plainLinesKeepsAnEditorsEmptyParagraphAsABlankLine() {
+        assertEquals("a\n\nb", Html.plainLines("<p>a</p><p><br></p><p>b</p>"));
+        assertEquals("a\n\nb", Html.plainLines("<p>a</p><p><br></p><p><br></p><p>b</p>"));
+    }
+
+    @Test
+    void plainLinesBreaksAtABrAndKeepsAtMostOneBlankLine() {
+        assertEquals("a\nb", Html.plainLines("a<br>b"));
+        assertEquals("a\n\nb", Html.plainLines("a<br><br>b"));
+        assertEquals("a\n\nb", Html.plainLines("a<br><br><br><br>b"));
+        assertEquals("a\n\nb", Html.plainLines("<p>a<br><br></p><p><br></p><p>b</p>"));
+    }
+
+    @Test
+    void plainLinesCollapsesSpacesTrimsLineEndsAndStripsBothEnds() {
+        assertEquals(
+                "Hello board, see\nnext",
+                Html.plainLines(
+                        "\n  <p>  Hello <strong>board</strong>,\n   <em>see</em>&nbsp; </p>\n\n<p>next \t</p>  "));
+        assertEquals("a b", Html.plainLines("a <b>b</b>"));
+        assertEquals("ab", Html.plainLines("a<b>b</b>"));
+        // An element without a line of its own still parts the words, as plain does.
+        assertEquals("1 2", Html.plainLines("<table><tr><td>1</td><td>2</td></tr></table>"));
+        assertEquals("", Html.plainLines(""));
+        assertEquals("", Html.plainLines("<p></p>"));
+    }
+
+    @Test
+    void plainLinesReadsEntitiesSkipsScriptsAndKeepsThePresLines() {
+        assertEquals("1 < 2 & 3\na", Html.plainLines("<p>1 &lt; 2 &amp; 3</p><script>steal()</script><p>a</p>"));
+        assertEquals("x\nif (a) {\n  b();\n}\ny", Html.plainLines("<p>x</p><pre>if (a) {\n  b();\n}</pre><p>y</p>"));
     }
 }

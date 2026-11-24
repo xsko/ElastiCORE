@@ -105,6 +105,7 @@ public class JpaServiceFileRules implements CodeRules {
         // (ServiceAccessRules), and an empty paragraph takes its line with it.
         for (String slot : io.elasticore.base.model.pub.rules.base.ServiceAccessRules.SLOTS) c.slot(slot);
         c.slot("deriveBeforeSave");
+        for (String slot : io.elasticore.base.model.pub.rules.base.HtmlRules.SLOTS) c.slot(slot);
         for (String inline : io.elasticore.base.model.pub.rules.base.ServiceAccessRules.INLINE) c.var(inline, "");
 
         // A dedicated search-result DTO takes precedence over the plain one,

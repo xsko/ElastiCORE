@@ -134,6 +134,7 @@ public class ${className} {
         if (${pkPresent} && ${cmdRef}.existsById(${pkDtoInfo}))
             throw new DuplicateKeyException("${entityClassName} " + ${pkDtoInfo} + " already exists; update it instead");
         ${entityClassName} entity = ${mapperName}.toEntity(dto);${createVersionReset}
+        ${htmlCleanCreate}
         ${deriveBeforeSave}
         beforeSave(entity, dto);
         ${entityClassName} result = ${readBackOpen}${cmdRef}.save(entity)${readBackClose};
@@ -171,7 +172,9 @@ public class ${className} {
         ${accessUpdate}
         if (entity == null)
             throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${maskKeep}
+        ${htmlBefore}
         ${mapperName}.mapping(dto, entity, ${isSkipNull});
+        ${htmlClean}
         ${deriveBeforeSave}
         beforeSave(entity, dto);
         return ${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose});
@@ -234,7 +237,9 @@ public class ${className} {
 
         List<${entityClassName}> targets = ${qryRef}.findAll(srchDTO, null, (Sort) null);
         for (${entityClassName} entity : targets) {
+            ${htmlBefore}
             ${mapperName}.mapping(dto, entity, true);
+            ${htmlClean}
             ${deriveBeforeSave}
             beforeSave(entity, dto);
             ${cmdRef}.save(entity);

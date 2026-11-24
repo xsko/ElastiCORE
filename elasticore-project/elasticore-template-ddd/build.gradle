@@ -137,7 +137,9 @@ task elcore3clean(type: Delete) {
 	group = 'elasticore'
 	description = 'Removes previously generated sources'
 	// The forum's contract support class is the sample's own (newSignInRow): merged, never removed.
-	delete fileTree(generated), fileTree('src/test/java/io') { exclude '**/forum/ForumContractSupport.java' }
+	// So is the board's PostService, which overrides the html field's cleaning (BoardHtmlTest).
+	delete fileTree(generated) { exclude '**/board/application/PostService.java' },
+		fileTree('src/test/java/io') { exclude '**/forum/ForumContractSupport.java' }
 }
 
 // The plugin registers elcore3 and gives it the classpath, the project path,

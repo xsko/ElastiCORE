@@ -137,7 +137,9 @@ task elcore3clean(type: Delete) {
 	// delete, and the clean is not worth a flaky build.
 	// The contract tests' support class is the sample's own (written once, then edited: it names the
 	// application the tests start), so it stays; the tests beside it are regenerated.
-	delete fileTree('src/main/kotlin'), fileTree('src/test/kotlin/io') { exclude '**/*ContractSupport.kt' },
+	// So is the content domain's CommentService, which overrides the html field's cleaning (CommentHtmlTest).
+	delete fileTree('src/main/kotlin') { exclude '**/content/service/CommentService.kt' },
+			fileTree('src/test/kotlin/io') { exclude '**/*ContractSupport.kt' },
 			fileTree('src/main/ts') { include '*.ts' }
 }
 

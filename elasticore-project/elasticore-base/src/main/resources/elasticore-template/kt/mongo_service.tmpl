@@ -155,6 +155,7 @@ open class ${className}(
             throw DuplicateKeyException("${entityClassName} " + ${pkDtoInfo} + " already exists; update it instead")
         // A non-null DTO maps to a non-null entity; the mapper is declared for both.
         val entity = ${mapperName}.toEntity(dto)!!${createVersionReset}${createIdReset}
+        ${htmlCleanCreate}
         ${deriveBeforeSave}
         beforeSave(entity, dto)${stampCreate}
         prepareMembers(entity)
@@ -206,7 +207,9 @@ open class ${className}(
         val entity = ${cmdRef}.findById(${pkDtoInfo})${liveFilter}.orElse(null)
         ${accessUpdate}
         if (entity == null) throw NotFoundException("Invalid ${dtoClassName} ID")${versionCheck}${maskKeep}
+        ${htmlBefore}
         ${mapperName}.mapping(dto, entity, ${isSkipNull})
+        ${htmlClean}
         ${deriveBeforeSave}
         beforeSave(entity, dto)
         return ${mapperName}.toDTO(write(entity))
@@ -268,7 +271,9 @@ open class ${className}(
 
         val targets = mongo.find(query(srchDTO, null), ${entityClassName}::class.java)
         for (entity in targets) {
+            ${htmlBefore}
             ${mapperName}.mapping(dto, entity, true)
+            ${htmlClean}
             ${deriveBeforeSave}
             beforeSave(entity, dto)
             write(entity)

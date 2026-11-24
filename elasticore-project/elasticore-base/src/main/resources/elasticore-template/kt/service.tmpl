@@ -126,6 +126,7 @@ open class ${className}(
             throw DuplicateKeyException("${entityClassName} " + ${pkDtoInfo} + " already exists; update it instead")
         // A non-null DTO maps to a non-null entity; the mapper is declared for both.
         val entity = ${mapperName}.toEntity(dto, ${emRef})!!${createVersionReset}${createIdReset}
+        ${htmlCleanCreate}
         ${deriveBeforeSave}
         beforeSave(entity, dto)
         val result = ${readBackOpen}${cmdRef}.save(entity)${readBackClose}
@@ -163,7 +164,9 @@ open class ${className}(
         val entity = ${cmdRef}.findById(${pkDtoInfo}).orElse(null)
         ${accessUpdate}
         if (entity == null) throw EntityNotFoundException("Invalid ${dtoClassName} ID")${versionCheck}${maskKeep}
+        ${htmlBefore}
         ${mapperName}.mapping(dto, entity, ${isSkipNull}, ${emRef})
+        ${htmlClean}
         ${deriveBeforeSave}
         beforeSave(entity, dto)
         return ${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})
@@ -238,7 +241,9 @@ open class ${className}(
 
         val targets = ${qryRef}.findAll(spec)
         for (entity in targets) {
+            ${htmlBefore}
             ${mapperName}.mapping(dto, entity, true, em)
+            ${htmlClean}
             ${deriveBeforeSave}
             beforeSave(entity, dto)
             ${cmdRef}.save(entity)

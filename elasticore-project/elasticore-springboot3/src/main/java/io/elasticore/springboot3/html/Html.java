@@ -1,10 +1,17 @@
 package io.elasticore.springboot3.html;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
+import org.jsoup.nodes.TextNode;
 import org.jsoup.safety.Cleaner;
 import org.jsoup.safety.Safelist;
+import org.jsoup.select.NodeTraversor;
+import org.jsoup.select.NodeVisitor;
 
 /**
  * What an {@code html} field holds: markup from a rich-text editor, kept to an
@@ -85,5 +92,127 @@ public final class Html {
     public static String plain(String html) {
         if (html == null) return null;
         return Jsoup.parse(html).text();
+    }
+
+    /** The elements a line ends after in {@link #plainLines}. */
+    private static final Set<String> LINE_ENDS = new HashSet<String>(
+            Arrays.asList("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre", "div", "tr", "br", "hr"));
+
+    /**
+     * The text without tags, one line per paragraph - for a preview or a
+     * summary that shows the first lines. A line ends after a {@code p},
+     * {@code h1}-{@code h6}, {@code li}, {@code blockquote}, {@code pre},
+     * {@code div}, {@code tr}, {@code br} and {@code hr}; a list item gets no
+     * marker. Blocks inside each other end one line, not several:
+     * {@code <blockquote><p>a</p></blockquote><ul><li><p>b</p></li></ul>} is
+     * {@code a\nb}. Two {@code br} in a row leave one blank line, and never
+     * more than one. Within a line white space is collapsed as in
+     * {@link #plain}, spaces before a line's end are dropped, and so is white
+     * space at both ends. The lines of a {@code pre} are kept.
+     */
+    public static String plainLines(String html) {
+        if (html == null) return null;
+        Lines lines = new Lines();
+        NodeTraversor.traverse(lines, Jsoup.parseBodyFragment(html).body());
+        return lines.text();
+    }
+
+    /** Writes the text of the nodes it visits, a line at a time. */
+    private static final class Lines implements NodeVisitor {
+        private final StringBuilder out = new StringBuilder();
+        private boolean space;
+
+        @Override
+        public void head(Node node, int depth) {
+            if (node instanceof TextNode text) {
+                if (insidePre(text)) verbatim(text.getWholeText());
+                else words(text.getWholeText());
+            } else if (node instanceof Element el) {
+                if ("br".equals(el.normalName())) {
+                    out.append('\n');
+                    space = false;
+                } else if (LINE_ENDS.contains(el.normalName())) {
+                    endLine();
+                } else if (el.isBlock()) {
+                    space = true;
+                }
+            }
+        }
+
+        @Override
+        public void tail(Node node, int depth) {
+            if (!(node instanceof Element el)) return;
+            if ("br".equals(el.normalName())) return;
+            if (LINE_ENDS.contains(el.normalName())) endLine();
+            else if (el.isBlock()) space = true;
+        }
+
+        /** Ends the line written so far, unless nothing is written on it. */
+        private void endLine() {
+            if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
+            space = false;
+        }
+
+        /** Text with its white space collapsed to one space, none at the start of a line. */
+        private void words(String text) {
+            for (int i = 0; i < text.length(); i++) {
+                char ch = text.charAt(i);
+                if (isSpace(ch)) {
+                    space = true;
+                    continue;
+                }
+                if (space && out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append(' ');
+                space = false;
+                out.append(ch);
+            }
+        }
+
+        /** A pre's text: its line breaks kept, a carriage return dropped. */
+        private void verbatim(String text) {
+            if (space && out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append(' ');
+            space = false;
+            out.append(text.replace("\r", ""));
+        }
+
+        private static boolean insidePre(TextNode text) {
+            for (Node p = text.parentNode(); p instanceof Element el; p = p.parentNode()) {
+                if ("pre".equals(el.normalName())) return true;
+            }
+            return false;
+        }
+
+        /** Spaces before a line's end dropped, at most one blank line, both ends stripped. */
+        String text() {
+            String[] rows = out.toString().split("\n", -1);
+            StringBuilder sb = new StringBuilder();
+            int blank = 0;
+            for (String row : rows) {
+                String line = stripTrailing(row);
+                if (line.isEmpty()) {
+                    blank++;
+                    continue;
+                }
+                if (sb.length() > 0) sb.append(blank > 0 ? "\n\n" : "\n");
+                blank = 0;
+                sb.append(line);
+            }
+            return stripLeading(sb.toString());
+        }
+
+        private static String stripTrailing(String s) {
+            int end = s.length();
+            while (end > 0 && isSpace(s.charAt(end - 1))) end--;
+            return s.substring(0, end);
+        }
+
+        private static String stripLeading(String s) {
+            int start = 0;
+            while (start < s.length() && isSpace(s.charAt(start))) start++;
+            return s.substring(start);
+        }
+
+        private static boolean isSpace(char ch) {
+            return Character.isWhitespace(ch) || Character.isSpaceChar(ch);
+        }
     }
 }

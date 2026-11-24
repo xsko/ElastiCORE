@@ -174,6 +174,7 @@ public class MyBatisDddRules implements CodeRules {
         if (c.syntax() != Syntax.JAVA) return;
         c.template("mybatis_port_service");
         c.slot("deriveBeforeSave");
+        for (String slot : io.elasticore.base.model.pub.rules.base.HtmlRules.SLOTS) c.slot(slot);
         String root = e.getName();
         c.var("readBackOpen", "readBack(").var("readBackClose", ")");
         c.addMethod(String.format(
