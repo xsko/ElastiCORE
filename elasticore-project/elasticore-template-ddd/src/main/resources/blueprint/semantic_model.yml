@@ -470,6 +470,52 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Verification", "domain": "forum", "owner": "memberId", "access": {"*": "admin", "approve": "MODERATOR", "create": "user", "read": "owner|MODERATOR", "reject": "MODERATOR"}, "states": {"status": {"initial": "PENDING", "approve": "PENDING -> APPROVED", "reject": "PENDING -> REJECTED"}}}
+  - name: Section
+    source: frm_section
+    primary_key: [section_id]
+    fields:
+      - name: section_id
+        expression:
+          sql: "section_id"
+        datatype: Integer
+      - name: name
+        expression:
+          sql: "name"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Section", "domain": "forum"}
+  - name: Discussion
+    source: frm_discussion
+    primary_key: [discussion_id]
+    fields:
+      - name: discussion_id
+        expression:
+          sql: "discussion_id"
+        datatype: Integer
+      - name: title
+        expression:
+          sql: "title"
+        datatype: String
+      - name: status
+        expression:
+          sql: "status"
+        datatype: String
+        ai_context: "Codes: OPN = Open, MVD = Moved"
+        nonportable_extensions:
+          - vendor_name: ELASTICORE
+            data: {"lifecycle": true, "enumeration": "DiscussionStatus", "codes": {"OPN": "Open", "MVD": "Moved"}}
+      - name: member_member_id
+        expression:
+          sql: "member_member_id"
+        datatype: Integer
+      - name: section_section_id
+        expression:
+          sql: "section_section_id"
+        datatype: Integer
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Discussion", "domain": "forum", "owner": "memberId", "access": {"*": "admin", "create": "user", "move": "MODERATOR", "read": "public"}, "states": {"status": {"initial": "OPEN", "move": "OPEN -> MOVED"}}}
   - name: Category
     source: shop_category
     primary_key: [cat_id]
@@ -960,6 +1006,16 @@ relationships:
     to: Member
     from_columns: [member_member_id]
     to_columns: [member_id]
+  - name: Discussion_member
+    from: Discussion
+    to: Member
+    from_columns: [member_member_id]
+    to_columns: [member_id]
+  - name: Discussion_section
+    from: Discussion
+    to: Section
+    from_columns: [section_section_id]
+    to_columns: [section_id]
   - name: Category_parentCategory
     from: Category
     to: Category

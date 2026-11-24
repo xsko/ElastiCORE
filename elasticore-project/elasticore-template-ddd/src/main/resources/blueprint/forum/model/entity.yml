@@ -19,6 +19,15 @@ enumeration:
       APPROVED: APR, Approved
       REJECTED: REJ, Rejected
 
+  DiscussionStatus:
+    meta: enum @db(code) @json(code)
+    fields:
+      code:  string(3) @code
+      label: string(20)
+    enum:
+      OPEN:  OPN, Open
+      MOVED: MVD, Moved
+
 entity:
   # Signs in (@signin), and reads and changes only their own row; the API makes none (create=none, and no
   # create in @expose): a member signs up by the forum's own code. The contract tests make their members
@@ -57,3 +66,29 @@ entity:
         initial: PENDING
         approve: PENDING -> APPROVED
         reject:  PENDING -> REJECTED
+
+  # A section the discussions are filed under.
+  Section:
+    meta: entity @root @editable @expose(20)
+    fields:
+      sectionId: long @id @sequence
+      name:      string(50)!
+
+  # A discussion in a section; a moderator moves it to another. move's sectionId is the key of
+  # Discussion.section, which the generated move keeps: the contract tests make the section they move it to.
+  Discussion:
+    meta: entity @root @expose(20) @owner(memberId)
+          @access(read=public, create=user, move=MODERATOR)
+    fields:
+      discussionId: long @id @sequence
+      member:       Member @ManyToOne
+      section:      Section! @ManyToOne
+      title:        string(100)!
+      status:       DiscussionStatus
+    states:
+      status:
+        initial: OPEN
+        move:    OPEN -> MOVED
+    commands:
+      move:
+        sectionId: long!

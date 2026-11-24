@@ -3,6 +3,7 @@ package io.elasticore.sample.ddd.forum;
 
 import com.jayway.jsonpath.JsonPath;
 import io.elasticore.springboot3.security.CurrentUser;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,6 +75,12 @@ public abstract class ForumContractSupport {
     /** The session signIn() opened, sent with every request after it; null for none. */
     protected MockHttpSession session;
 
+    /**
+     * The cookies signIn()'s sign-in answered with, sent with the session: where Spring Session
+     * keeps the sessions, its SESSION cookie names the one signed in. None where the container does.
+     */
+    protected Cookie[] cookies = new Cookie[0];
+
     private boolean signedIn;
 
     /**
@@ -96,6 +103,7 @@ public abstract class ForumContractSupport {
                 .content(json(obj("email", principal.get("email"), "password", principal.get("password")))))).andReturn();
         Assertions.assertTrue(ok(in), () -> "the generated sign-in refused the administrator newSignInRow made: " + answer(in));
         session = (MockHttpSession) in.getRequest().getSession(false);
+        cookies = in.getResponse().getCookies();
     }
 
     /**
@@ -129,6 +137,7 @@ public abstract class ForumContractSupport {
         }
         builder.accept(MediaType.APPLICATION_JSON);
         if (session != null) builder.session(session);
+        if (cookies.length > 0) builder.cookie(cookies);
         return mvc.perform(request(builder)).andReturn();
     }
 
@@ -154,10 +163,17 @@ public abstract class ForumContractSupport {
         /** The principal's key: what the @owner of a row of theirs holds. */
         public final Object id;
         public final MockHttpSession session;
+        /** The cookies its sign-in answered with: Spring Session's SESSION names its session. */
+        public final Cookie[] cookies;
 
         public Caller(Object id, MockHttpSession session) {
+            this(id, session, new Cookie[0]);
+        }
+
+        public Caller(Object id, MockHttpSession session, Cookie[] cookies) {
             this.id = id;
             this.session = session;
+            this.cookies = cookies;
         }
     }
 
@@ -172,13 +188,14 @@ public abstract class ForumContractSupport {
                 .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
                 .content(json(obj("email", principal.get("email"), "password", principal.get("password")))))).andReturn();
         Assertions.assertTrue(ok(in), () -> "the generated sign-in refused the principal newSignInRow made: " + answer(in));
-        return new Caller(principal.get("memberId"), (MockHttpSession) in.getRequest().getSession(false));
+        return new Caller(principal.get("memberId"), (MockHttpSession) in.getRequest().getSession(false), in.getResponse().getCookies());
     }
 
     /** The request as this caller - or as a visitor, for null: with what request(...) adds, and no other session. */
     protected MvcResult sentBy(Caller caller, MockHttpServletRequestBuilder builder) throws Exception {
         builder.accept(MediaType.APPLICATION_JSON);
         if (caller != null && caller.session != null) builder.session(caller.session);
+        if (caller != null && caller.cookies.length > 0) builder.cookie(caller.cookies);
         return mvc.perform(request(builder)).andReturn();
     }
 
