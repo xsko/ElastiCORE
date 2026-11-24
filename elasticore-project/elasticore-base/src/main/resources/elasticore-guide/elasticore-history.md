@@ -1,3 +1,114 @@
+## 3.0.261125
+
+### Bug Fixes (v3 - TypeScript client, build-time warnings)
+
+#### `commands:` the server does not serve: not offered by the TypeScript client, and said at build time
+- Why: the TypeScript client wrote a function per `commands:` entry (`close(id)` posting to `/{id}/close`) for every
+  entity with a single key, while the server writes and serves a command only for a root with a behaviour class - a
+  root that is not `@editable`, with `architecture = 'ddd'` or `'hexagonal'`. In layered, and for an `@editable` root,
+  the client called an endpoint that does not exist (404). A layered build also ignored `commands:` without a word.
+- Now: the client offers the command functions only where the server writes them, the same test `DddCommandRules`
+  makes. A layered domain declaring `commands:` gets `[...] Ticket declares commands: (ddd-command), which the selected
+  rules do not enforce ... The jpa-springboot-v3 bundle does not carry ddd-command, which writes a command in the
+  root's behaviour class and serves it as POST /{id}/<command> - a root that is not @editable, with architecture =
+  'ddd' or 'hexagonal'. The commands are not served, and the TypeScript client offers none.` (`ddd` and `hexagonal`
+  already said it for an `@editable` root). The generated server code does not change; the client of a layered or
+  `@editable` root loses functions that could only fail.
+- Checked: `IndexColumnsTest.commandsTheServerDoesNotServeAreNotOffered` - layered Java (warning, no `close` in
+  `TicketApi.ts`), hexagonal (no warning, `'/close'` offered).
+- Files: `TypeScriptApiRules` (`serves`), `RulesGenRunner` (`warnUnenforced`, `unenforcedWarning`).
+
+### Bug Fixes (v3 - build-time warnings)
+
+#### An `@Index` naming a column its table does not have is said at build time (#323)
+- Why: `@Index(columnList = "product_code, ...")` on an entity whose reference `product` is the column
+  `product_product_code` in layered passed generation and compilation; Hibernate's schema creation then failed on
+  it and the table was missing at run time - every request on the entity failed. The column a reference gets depends
+  on the architecture, so the same model was right in one project and wrong in another.
+- Now: after generation the tables are read off the generated entity sources - Java and Kotlin, every architecture,
+  references, embedded values and parents included, the way the DDL reads them - and an index column the table does
+  not have is a DSL warning that names the columns there are, with the reference's column when one ends with the name:
+  `[product] Coverage @Index(uk_coverage_product_code): coverage has no column product_code (perhaps
+  product_product_code) - creating the table fails on it; name the columns as the table has them: coverage_id,
+  product_product_code, coverage_code`. It runs whether or not the project writes a DDL, and only when an entity
+  declares `@Index`. A MyBatis domain, whose indexes exist only in the DDL it writes, is checked when it writes one.
+  MongoDB is not checked: an index there may name a path into an embedded document. Nothing generated changes; the
+  build does not fail.
+- Checked: `IndexColumnsTest` - the reported model in layered Java (no DDL, and with a DDL: said once), right columns
+  by column or field name (nothing said), hexagonal Java and layered Kotlin, MyBatis with and without a DDL.
+- Files: `DdlRun` (`checkIndexes`, `unknownIndexColumns`; the entity sources read once for the DDL and the check),
+  `RulesGenRunner` (`recordDdl`, `writeDdl`).
+
+#### `states:` in layered: the warning says what adding `ddd-state` gives, and a lifecycle left unwritten is said (#320)
+- Why: a layered project declaring `states:` was told "Declare architecture = 'ddd' or 'hexagonal', or add the rule
+  set." Adding `ddd-state` to the layered bundle sets only the initial state - the commands, the moves they check,
+  `@stamp` and the `delete:` guard are written for a root with a behaviour class - and the missing commands were then
+  said nowhere. In `ddd` and `hexagonal` too, an `@editable` root has no behaviour class, which no warning named.
+- Now: for `ddd-state` in a layered bundle the warning ends "...adding it to this bundle sets the initial state only:
+  the commands, the moves they check, @stamp and the delete: guard are written for a root with a behaviour class - a
+  root that is not @editable, with architecture = 'ddd' or 'hexagonal'." (the other rule sets keep "or add the rule
+  set", which works - checked for `ddd-derive`). An entity whose lifecycle has moves but no behaviour class gets
+  `[Product] Device states.status: the commands approve, reject, revoke are written only for a root with a behaviour
+  class (a root that is not @editable, with architecture = 'ddd' or 'hexagonal'); Device gets its initial state only.`,
+  and the `@stamp` and `delete:` warnings name the same condition instead of "(@root in a DDD bundle)". Generated code
+  does not change. Writing the lifecycle in layered itself is the feature proposed in #320, under review.
+- Checked: `UnenforcedWarningTest` (the layered advice for `ddd-state` and for `ddd-derive`, adding `ddd-derive` to a
+  layered bundle writes the value), `IndexColumnsTest` (the reported `Device` with `ddd-state` added and without),
+  `StateStampTest`.
+- Files: `RulesGenRunner.unenforcedWarning`, `DddStateRules` (`warnUnmoved`, `SPLIT_ROOT`).
+
+### Bug Fixes (runtime)
+
+#### `InvariantViolationException(code, message, args)` fills its `{0}` like the other refusals (#325)
+- Why: `ForbiddenException`, `NotSignedInException`, `BadRequestException`, `ConflictException` and
+  `NotFoundException` fill the placeholders of their default message from the values; `InvariantViolationException`
+  kept `{0}`, so a 422 whose code the application's messages do not translate answered `"detail": "{0} is your only
+  way to sign in; ..."`.
+- Now: the default message is filled the same way (`Refusals.format`). A message without a placeholder is kept as
+  written: the generated checks pass their own sentence with values for the translation, and a sentence that quotes a
+  value (`status != 'CANCELLED'`, "can't") would otherwise lose its quotes to the formatting. The code and the values
+  still reach the translation unchanged.
+- Checked: `InvariantViolationExceptionTest` (filled as `ConflictException` fills it; quotes kept without a
+  placeholder; no values; what a placeholder is).
+- Files: `InvariantViolationException` (elasticore-springboot3, used by springboot4 too).
+
+### Bug Fixes (v3 - migrations)
+
+#### A migration that gives an index name to another table drops the old index first (#329)
+- Why: when a table's name changed (a `table.prefix` added, `@table` changed, the entity renamed), the migration made
+  the new table's `@Index(name=...)` under its name while the old table - kept on purpose, its `DROP TABLE` waiting
+  for review - still held an index of that name. PostgreSQL, Oracle and H2 hold an index name once in a schema, so
+  the `CREATE INDEX` failed, Flyway stopped and the application did not start; nothing was said at generation. The
+  same happened when an index name moved from one table to another, made before the old one was dropped.
+- Now: an index name the model gives another table than the one holding it in the state is dropped from the old table
+  first, as written (`drop index uk_coverage_product_code of coverage - jp_coverage takes its name`) - it drops an index,
+  not rows; the old table's `DROP TABLE` still waits for review. An index moved between kept tables is dropped once.
+  Foreign keys were not affected (their generated names carry the table's name).
+- Checked: `SchemaDiffTest` (`anIndexNameAnotherTableTakesIsDroppedFirst` - the order in the PostgreSQL migration and
+  the SQL Server form; `anIndexMovedBetweenTablesIsDroppedOnce`; `aNameStillHeldIsNotDropped`).
+- Files: `SchemaDiff.between`.
+
+### Documentation
+
+#### `@table` says that `table.prefix` goes before its name too
+- The annotation guide (en, ko) now says next to `@table` what the env guide said of the prefix: it goes before a name
+  written with `@table` as well, as in 2.x (`@table(PL_QUOT)` with `prefix: jp_` is `jp_pl_quot`); a project using
+  names exactly as written (a data dictionary) leaves `table.prefix` out. Asked in #326 and #328.
+
+### Bug Fixes (v3 - search DTO)
+
+#### A search DTO's list is bounded by its `@minsize` / `@maxsize` (#324)
+- Why: `postIds: List<Long> @search(in) @ref(postId) @maxsize(200)` on a `@searchable` DTO got no `@Size`, while the
+  same mark on a DTO's list did - so one search request could bind any number of values into one `in (...)`, and
+  nothing said the mark was dropped.
+- Now: a list of a search DTO gets `@Size(min=..., max=..., message=...)` from its `@minsize` / `@maxsize`, as a DTO's
+  list does, so a longer list is a 400 before the query is built. Java and Kotlin; a list without the marks, and a list
+  an equality turned into one element (`statusItem`), are as before; the 2.x-compatible search DTO is as 2.x wrote it.
+  The annotation guide (en, ko, 3.6) says it, and that an empty list - like one not sent - is no condition in JPA,
+  MyBatis and MongoDB (every row): a service that means "none" returns an empty page before the search.
+- Checked: `SearchSizeTest` (`aSearchedListHoldsWhatItsBoundsAllow`, `kotlinAlike`, `theTwoXOutputIsAsItWas`).
+- Files: `SearchDtoBaseRules` (`size`, `listSize`), the annotation guides.
+
 ## 3.0.261124
 
 ### New Features (tests - `testCode: "contract"`: `export`)
