@@ -140,13 +140,22 @@ public class ExposeMethodsRulesTest {
 
     @Test
     public void aClientOfCommandsAloneIsStillWritten() {
+        // A root with a behaviour class: the server serves its commands.
         EntitySpec e = article("").addCommand("publish", Collections.<Field>emptyList());
+        e.entitySplitForBehavior("Article");
         SourceCode code = client(e);
         assertTrue(code.isMake());
         String out = code.render();
         assertTrue(out.contains("function publish("), out);
         assertTrue(out.contains("import { request, seg } from './apiSupport';"), out);
         assertFalse(out.contains("function create(") || out.contains("ArticleKeyDTO"), out);
+    }
+
+    @Test
+    public void commandsTheServerDoesNotServeAreNotOffered() {
+        // No behaviour class (layered, or @editable): the server has no command endpoint.
+        EntitySpec e = article("").addCommand("publish", Collections.<Field>emptyList());
+        assertFalse(client(e).isMake());
     }
 
     @Test
