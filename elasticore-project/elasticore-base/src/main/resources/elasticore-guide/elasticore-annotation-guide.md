@@ -2604,7 +2604,8 @@ Post:
 - They run after the request (or the command) has changed the row, before `beforeSave`, and only where the field changed: on a
   create unless it is null; on an update, a batch update and an update by condition where the request changed it (the service
   keeps the value it read); after a lifecycle command where the command changed it - a post an administrator hides is not cleaned
-  again. Neither is called with null, and a field set to null leaves its `@plain` copy null.
+  again. Neither is called with null, and a field set to null leaves its `@plain` copy null. A row saved before `@plain` was
+  declared gets its copy on its next write: the pair also runs when the copy is null or empty and the html field has a value.
 - **Your own rule: override the pair** in your service (`PostService extends PostCoreService`, generated once and yours). The row
   has the request's values on it (a new row has no key yet). A refusal thrown there - `BadRequestException` with your code, as in
   `beforeSave` - is answered the same way: 400 with the code and its translation, and nothing is written. Keeping only this site's
@@ -2657,6 +2658,8 @@ Post:
   store what a request sends.
 - A value set after the service has cleaned the row (in `beforeSave`, or through the repository) is not cleaned: hand the entity
   the pair after setting one, `entity.cleanContent(html -> cleanContent(entity, html), html -> plainContent(entity, html))`.
+  `entity.cleanHtml()` is still there for code that calls it: it applies the generated defaults (`@safe`, `@plain`) to every
+  html field, not your overrides - the generated service no longer calls it.
 
 ## @encrypt - a column kept encrypted, searched by equality (v3)
 > **Works in:** v3 (JPA: layered, ddd, hexagonal), Kotlin, MyBatis (mode: mybatis) · **Not in:** MongoDB (mode: mongo) (build stops); 2.x-compatible output (output = 'v2') (build stops); 2.x generator (build stops)

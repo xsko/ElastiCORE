@@ -140,6 +140,25 @@ class BoardHtmlTest {
     }
 
     /**
+     * A row saved before @plain was declared has no copy: its next write gives it one, though the content is the
+     * same - the cleaning runs then too.
+     */
+    @Test
+    @DisplayName("a row without its text gets it on its next write, the content unchanged")
+    void aRowWithoutItsTextGetsItOnItsNextWrite() throws Exception {
+        ObjectNode body = json.createObjectNode();
+        body.put("title", "no copy yet");
+        body.put("content", "<p>old</p><p>row</p>");
+        long id = send(post(POSTS), body).path("postId").asLong();
+        jdbc.update("UPDATE brd_post SET content_text = NULL WHERE post_id = ?", id);
+
+        send(post(POSTS + "/" + id + "/publish"), json.createObjectNode().put("content", "<p>old</p><p>row</p>"));
+
+        assertThat(jdbc.queryForObject("SELECT content_text FROM brd_post WHERE post_id = ?", String.class, id))
+                .isEqualTo("old\nrow");
+    }
+
+    /**
      * The command's parameter is kept by the move inside the entity, past the save path: the service cleans the row
      * after the move, before it is written.
      */

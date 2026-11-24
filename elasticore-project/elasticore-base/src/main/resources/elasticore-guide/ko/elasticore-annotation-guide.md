@@ -2604,7 +2604,8 @@ Post:
 - 요청(또는 command)이 행을 바꾼 뒤, `beforeSave` 보다 먼저, 그리고 필드가 바뀐 경우에만 불립니다: 생성에서는 null 이 아니면;
   수정, 일괄 수정, 조건 수정에서는 요청이 그 필드를 바꿨을 때 (서비스가 읽은 값을 기억해 둡니다); 라이프사이클 command 뒤에는
   command 가 바꿨을 때 - 관리자가 숨기기만 한 글은 다시 거르지 않습니다. 둘 다 null 로는 불리지 않고, null 이 된 필드는
-  `@plain` 복사본도 null 로 둡니다.
+  `@plain` 복사본도 null 로 둡니다. `@plain` 을 선언하기 전에 저장된 행은 다음 쓰기에서 복사본을 얻습니다: html 필드에 값이 있고
+  복사본이 null 이거나 비어 있으면 쌍이 불립니다.
 - **자기 규칙은 이 쌍을 오버라이드합니다** - 내 서비스(`PostService extends PostCoreService`, 한 번만 생성되고 내 것)에서. 행에는
   요청의 값이 이미 들어 있습니다 (새 행은 아직 키가 없음). 거기서 던진 거절 - 내 코드를 단 `BadRequestException`, `beforeSave` 에서처럼 -
   은 똑같이 답합니다: 400 과 그 코드와 번역, 그리고 아무것도 쓰지 않습니다. 이 사이트의 이미지만 남기기(다른 호스트의 이미지는
@@ -2657,6 +2658,8 @@ Post:
   2.x 생성기(`elcore`).
 - 서비스가 행을 거른 뒤에 넣은 값(`beforeSave` 안이나 리포지터리를 통해)은 걸러지지 않습니다: 값을 넣은 뒤에 엔티티에 쌍을
   넘깁니다, `entity.cleanContent(html -> cleanContent(entity, html), html -> plainContent(entity, html))`.
+  `entity.cleanHtml()` 은 그것을 부르는 코드를 위해 남아 있습니다: 모든 html 필드에 생성된 기본값(`@safe`, `@plain`)을 적용하고,
+  내 오버라이드는 쓰지 않습니다 - 생성된 서비스는 더 이상 부르지 않습니다.
 
 ## @encrypt — 암호화해 저장하고 같음으로 찾는 컬럼 (v3)
 > **동작:** v3 (JPA: layered, ddd, hexagonal), Kotlin, MyBatis (mode: mybatis) · **미동작:** MongoDB (mode: mongo) (빌드 중단); 2.x 호환 출력 (output = 'v2') (빌드 중단); 2.x 생성기 (빌드 중단)

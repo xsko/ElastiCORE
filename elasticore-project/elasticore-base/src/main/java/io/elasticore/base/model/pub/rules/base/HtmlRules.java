@@ -41,8 +41,13 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * null. The service calls it after the request (or the command) changed the row and before the developer's
  * beforeSave, and only where the field changed: on a create unless it is null, on an update and an update by
  * condition where the request changed it (the value read is kept before the mapper writes the row), after a command
- * where the command changed it. A refusal thrown from the developer's method is answered as one from beforeSave, and
- * nothing is written.
+ * where the command changed it - and also, where @plain names a field, when that copy is null or empty while the html
+ * field has a value: a row saved before @plain was declared gets its copy on its next write. A refusal thrown from the
+ * developer's method is answered as one from beforeSave, and nothing is written.
+ *
+ * <p>The entity keeps the public cleanHtml() it had (issue 183), for the developer's own code that calls it: the
+ * generated defaults (the @safe safelist, the @plain copy), field by field through the same methods. The generated
+ * service no longer calls it.
  *
  * <p>An html field on a member or a value object is refused (prepareHtml): no service of theirs writes them. Under
  * MongoDB an entity without a collection of its own is kept inside the document that holds it, and the root's mapper
@@ -118,13 +123,20 @@ public class HtmlRules implements CodeRules {
             String read = s.getter("entity", name);
             String kept = f.name() + "Before";
             String call = call(s, "entity", f);
+            // A row saved before @plain was declared has no copy yet: it gets one on its next write.
+            String plain = plainTarget(f);
+            String copy = plain == null ? null : s.getter("entity", s.escapeName(plain));
             if (s == Syntax.KOTLIN) {
                 before.add(String.format("val %s = %s", kept, read));
-                clean.add(String.format("if (%s != %s) %s", read, kept, call));
+                String missing = copy == null ? "" : String.format(" || %s != null && %s.isNullOrEmpty()", read, copy);
+                clean.add(String.format("if (%s != %s%s) %s", read, kept, missing, call));
                 create.add(String.format("if (%s != null) %s", read, call));
             } else {
                 before.add(String.format("String %s = %s;", kept, read));
-                clean.add(String.format("if (!java.util.Objects.equals(%s, %s))", read, kept));
+                String missing = copy == null
+                        ? ""
+                        : String.format(" || (%s != null && (%s == null || %s.isEmpty()))", read, copy, copy);
+                clean.add(String.format("if (!java.util.Objects.equals(%s, %s)%s)", read, kept, missing));
                 clean.add("    " + s.statement(call));
                 create.add(String.format("if (%s != null)", read));
                 create.add("    " + s.statement(call));
@@ -345,6 +357,44 @@ public class HtmlRules implements CodeRules {
             for (String line : statements(s, f)) c.varLine("fieldList", "    %s", line);
             c.varLine("fieldList", "}");
         }
+        // Kept for the developer's own code, which may call it (issue 183's method): the defaults, each field.
+        c.varLine("fieldList", "")
+                .varLine("fieldList", "/**")
+                .varLine(
+                        "fieldList",
+                        " * Keeps each html field to the safelist @safe names and writes its text without tags")
+                .varLine(
+                        "fieldList",
+                        " * where @plain says - the generated defaults. The generated service no longer calls it:")
+                .varLine(
+                        "fieldList",
+                        " * it hands each field its CoreService pair (cleanX / plainX), which your service may")
+                .varLine(
+                        "fieldList",
+                        " * override. Call it after setting a field yourself when the defaults are what you want.")
+                .varLine("fieldList", " */");
+        c.varLine("fieldList", s == Syntax.KOTLIN ? "fun cleanHtml() {" : "public void cleanHtml() {");
+        for (FieldSpec f : html) c.varLine("fieldList", "    %s", defaultCall(s, f));
+        c.varLine("fieldList", "}");
+    }
+
+    /** One field's line in cleanHtml(): its own method, handed the runtime's defaults. */
+    static String defaultCall(Syntax s, FieldSpec f) {
+        String cap = f.capitalName();
+        String safelist = safelist(f.dslValue("safe"));
+        String clean = String.format(
+                "%s.clean(%s, org.jsoup.safety.Safelist.%s())",
+                RUNTIME, s == Syntax.KOTLIN ? "it" : "html", safelist == null ? "basic" : safelist);
+        String plain = String.format("%s.plain(%s)", RUNTIME, s == Syntax.KOTLIN ? "it" : "html");
+        boolean copy = plainTarget(f) != null;
+        if (s == Syntax.KOTLIN) {
+            return copy
+                    ? String.format("this.clean%s({ %s }, { %s })", cap, clean, plain)
+                    : String.format("this.clean%s { %s }", cap, clean);
+        }
+        return copy
+                ? String.format("this.clean%s(html -> %s, html -> %s);", cap, clean, plain)
+                : String.format("this.clean%s(html -> %s);", cap, clean);
     }
 
     /** What the entity's method does, one statement a line. */

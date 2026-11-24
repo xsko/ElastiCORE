@@ -68,7 +68,21 @@ public class HtmlFieldTest {
     private static final String KEPT = "String contentBefore = entity.getContent();";
 
     /** ... and cleans only where the request changed it. */
-    private static final String CHANGED = "if (!java.util.Objects.equals(entity.getContent(), contentBefore))";
+    private static final String CHANGED = "if (!java.util.Objects.equals(entity.getContent(), contentBefore)"
+            + " || (entity.getContent() != null && (entity.getContentText() == null || entity.getContentText().isEmpty())))";
+
+    /** summary has no @plain: only a change cleans it. */
+    private static final String SUMMARY_CHANGED = "if (!java.util.Objects.equals(entity.getSummary(), summaryBefore))";
+
+    /** The entity keeps cleanHtml() for the developer's own code: the defaults, field by field. */
+    private static final String KEPT_METHOD = String.join(
+            "\n",
+            "\tpublic void cleanHtml() {",
+            "\t    this.cleanContent(html -> io.elasticore.springboot3.html.Html.clean(html, org.jsoup.safety.Safelist.basic()),"
+                    + " html -> io.elasticore.springboot3.html.Html.plain(html));",
+            "\t    this.cleanSummary(html -> io.elasticore.springboot3.html.Html.clean(html,"
+                    + " org.jsoup.safety.Safelist.relaxed()));",
+            "\t}");
 
     /** A create cleans unless the field is null. */
     private static final String CREATED = "if (entity.getContent() != null)";
@@ -154,8 +168,10 @@ public class HtmlFieldTest {
         String entity = found(project, "HtPost.java");
         assertTrue(entity.contains(METHOD), entity);
         assertTrue(entity.contains(SUMMARY_METHOD), entity);
-        assertFalse(entity.contains("cleanHtml"), entity);
-        assertFalse(entity.contains("jsoup"), entity);
+        assertTrue(entity.contains(KEPT_METHOD), entity);
+        assertTrue(all.contains("            " + SUMMARY_CHANGED + "\n                " + SUMMARY_CALL), all);
+        // The generated service no longer calls it.
+        assertFalse(core.contains("cleanHtml"), core);
         assertTrue(
                 entity.contains("@Column(name = \"content\", columnDefinition = \"TEXT\", nullable = false)\n"
                         + "\tprivate String content;"),
@@ -177,8 +193,11 @@ public class HtmlFieldTest {
         assertEquals(3, occurrences(core, call), core);
         assertEquals(3, occurrences(core, "entity.cleanSummary { cleanSummary(entity, it) }\n"), core);
         assertEquals(1, occurrences(core, "\n        if (entity.content != null) " + call), core);
-        assertEquals(1, occurrences(core, "\n        if (entity.content != contentBefore) " + call), core);
-        assertEquals(1, occurrences(core, "\n            if (entity.content != contentBefore) " + call), core);
+        String ktChanged =
+                "if (entity.content != contentBefore || entity.content != null && entity.contentText.isNullOrEmpty()) ";
+        assertEquals(1, occurrences(core, "\n        " + ktChanged + call), core);
+        assertEquals(1, occurrences(core, "\n            " + ktChanged + call), core);
+        assertEquals(2, occurrences(core, "if (entity.summary != summaryBefore) entity.cleanSummary"), core);
         assertEquals(2, occurrences(core, "val contentBefore = entity.content\n"), core);
         String update = section(core, "fun update(dto: HtPostDTO): HtPostDTO? {");
         assertTrue(update.indexOf("val contentBefore") < update.indexOf(".mapping(dto, entity"), update);
@@ -210,7 +229,14 @@ public class HtmlFieldTest {
                         "    }")),
                 entity);
         assertTrue(entity.contains("fun cleanSummary(clean: (String) -> String?) {"), entity);
-        assertFalse(entity.contains("jsoup"), entity);
+        assertTrue(
+                entity.contains("    fun cleanHtml() {\n"
+                        + "        this.cleanContent({ io.elasticore.springboot3.html.Html.clean(it, org.jsoup.safety.Safelist.basic()) },"
+                        + " { io.elasticore.springboot3.html.Html.plain(it) })\n"
+                        + "        this.cleanSummary { io.elasticore.springboot3.html.Html.clean(it, org.jsoup.safety.Safelist.relaxed()) }\n"
+                        + "    }"),
+                entity);
+        assertFalse(core.contains("cleanHtml"), core);
     }
 
     @Test
@@ -242,6 +268,7 @@ public class HtmlFieldTest {
                     "layered".equals(architecture) ? found(project, "HtPost.java") : found(project, "HtPostBase.java");
             assertTrue(entity.contains(METHOD), architecture + "\n" + entity);
             assertTrue(entity.contains(SUMMARY_METHOD), architecture + "\n" + entity);
+            assertTrue(entity.contains(KEPT_METHOD), architecture + "\n" + entity);
         }
     }
 
@@ -458,8 +485,9 @@ public class HtmlFieldTest {
         String ktCore = found(kt, "HtPostCoreService.kt");
         String ktPublish = section(ktCore, "fun publish(");
         int ktMove = ktPublish.indexOf("entity.publish(");
-        String ktCall = "if (entity.content != contentBefore)"
-                + " entity.cleanContent({ cleanContent(entity, it) }, { plainContent(entity, it) })\n";
+        String ktCall =
+                "if (entity.content != contentBefore || entity.content != null && entity.contentText.isNullOrEmpty())"
+                        + " entity.cleanContent({ cleanContent(entity, it) }, { plainContent(entity, it) })\n";
         assertTrue(ktMove >= 0, ktPublish);
         assertTrue(ktPublish.indexOf("        val contentBefore = entity.content\n") < ktMove, ktPublish);
         assertTrue(ktMove < ktPublish.indexOf("        " + ktCall), ktPublish);

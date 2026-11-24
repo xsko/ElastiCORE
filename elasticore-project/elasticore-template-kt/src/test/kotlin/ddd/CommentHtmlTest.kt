@@ -1,6 +1,7 @@
 package ddd
 
 import io.elasticore.blueprint.domain.content.dto.CommentDTO
+import io.elasticore.blueprint.domain.content.entity.Comment
 import io.elasticore.blueprint.domain.content.service.CommentService
 import io.elasticore.springboot3.validation.BadRequestException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -77,5 +78,21 @@ class CommentHtmlTest {
         val unchanged = comments.findById(saved.commentId!!).get().apply { authorName = "lee2" }
         comments.update(unchanged)
         assertEquals("kept", stored(saved.commentId, "content_text"))
+
+        // A row saved before @plain was declared has no copy: its next write gives it one, the content unchanged.
+        jdbc.update("UPDATE cms_comment SET content_text = NULL WHERE comment_id = ?", saved.commentId)
+        comments.update(comments.findById(saved.commentId!!).get().apply { authorName = "lee3" })
+        assertEquals("First\none\ntwo", stored(saved.commentId, "content_text"))
+    }
+
+    /** The entity keeps cleanHtml() for the developer's own code: a hand-written call cleans with the defaults. */
+    @Test
+    fun aHandWrittenCleanHtmlCallStillCleansWithTheDefaults() {
+        val comment = Comment().apply {
+            content = "<p onclick=\"steal()\">Hi <b>there</b></p><script>steal()</script>"
+            cleanHtml()
+        }
+        assertEquals("<p>Hi <b>there</b></p>", comment.content)
+        assertEquals("Hi there", comment.contentText)
     }
 }
