@@ -96,6 +96,14 @@ public class TypeScriptApiRules implements CodeRules {
                 && io.elasticore.base.model.pub.rules.base.ControllerBaseRules.exports(e);
     }
 
+    /**
+     * Whether the server serves the entity's commands: as DddCommandRules writes them, for a root with a
+     * behaviour class and a single key. A layered root, or an @editable one, has no command endpoint.
+     */
+    static boolean serves(EntitySpec e, List<FieldSpec> pks) {
+        return pks.size() == 1 && io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.splits(e);
+    }
+
     @Rule(value = "ts-api", target = "api", order = 10)
     void api(EntitySpec e) {
         SourceCode c = ctx(e);
@@ -263,7 +271,10 @@ public class TypeScriptApiRules implements CodeRules {
 
         // The business commands the DSL declares ("commands:"), one POST each,
         // as the DDD controller serves them: /{id}/ship with the command's DTO.
-        if (pks.size() == 1) {
+        // Only where the server writes them: a root with a behaviour class
+        // (DddCommandRules) - a layered or @editable root has no such endpoint.
+        boolean commands = serves(e, pks);
+        if (commands) {
             for (EntitySpec.CommandSpec cmd : e.commands()) {
                 String path = cmd.name().replaceAll("([a-z0-9])([A-Z])", "$1-$2").toLowerCase();
                 String params = idParams;
@@ -325,7 +336,7 @@ public class TypeScriptApiRules implements CodeRules {
         // noUnusedLocals (the pet store's) fails on an import nothing reads -
         // the key DTO of an entity that deletes nothing, request of one that
         // only reads. Everything, in the same order, when nothing is left out.
-        boolean commands = pks.size() == 1 && !e.commands().isEmpty();
+        commands = commands && !e.commands().isEmpty();
         boolean signsIn = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e);
         boolean checks = !asked.isEmpty() || !guards.isEmpty();
         boolean search = !gone.contains("search");
