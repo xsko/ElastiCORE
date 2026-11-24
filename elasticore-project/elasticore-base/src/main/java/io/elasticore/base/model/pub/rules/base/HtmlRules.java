@@ -41,9 +41,10 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  * null. The service calls it after the request (or the command) changed the row and before the developer's
  * beforeSave, and only where the field changed: on a create unless it is null, on an update and an update by
  * condition where the request changed it (the value read is kept before the mapper writes the row), after a command
- * where the command changed it - and also, where @plain names a field, when that copy is null or empty while the html
+ * where the command changed it - and also, where @plain names a field, when that copy is null while the html
  * field has a value: a row saved before @plain was declared gets its copy on its next write. A refusal thrown from the
- * developer's method is answered as one from beforeSave, and nothing is written.
+ * developer's method is answered as one from beforeSave, and the row is not written (under MongoDB a batch update and an
+ * update by condition write document by document, so the documents before the refused one stay written).
  *
  * <p>The entity keeps the public cleanHtml() it had (issue 183), for the developer's own code that calls it: the
  * generated defaults (the @safe safelist, the @plain copy), field by field through the same methods. The generated
@@ -123,19 +124,18 @@ public class HtmlRules implements CodeRules {
             String read = s.getter("entity", name);
             String kept = f.name() + "Before";
             String call = call(s, "entity", f);
-            // A row saved before @plain was declared has no copy yet: it gets one on its next write.
+            // A row saved before @plain was declared has no copy yet (null): it gets one on its next write. An empty
+            // copy is a result (a body of images only) and is left alone.
             String plain = plainTarget(f);
             String copy = plain == null ? null : s.getter("entity", s.escapeName(plain));
             if (s == Syntax.KOTLIN) {
                 before.add(String.format("val %s = %s", kept, read));
-                String missing = copy == null ? "" : String.format(" || %s != null && %s.isNullOrEmpty()", read, copy);
+                String missing = copy == null ? "" : String.format(" || %s != null && %s == null", read, copy);
                 clean.add(String.format("if (%s != %s%s) %s", read, kept, missing, call));
                 create.add(String.format("if (%s != null) %s", read, call));
             } else {
                 before.add(String.format("String %s = %s;", kept, read));
-                String missing = copy == null
-                        ? ""
-                        : String.format(" || (%s != null && (%s == null || %s.isEmpty()))", read, copy, copy);
+                String missing = copy == null ? "" : String.format(" || (%s != null && %s == null)", read, copy);
                 clean.add(String.format("if (!java.util.Objects.equals(%s, %s)%s)", read, kept, missing));
                 clean.add("    " + s.statement(call));
                 create.add(String.format("if (%s != null)", read));
@@ -190,9 +190,10 @@ public class HtmlRules implements CodeRules {
                                 + "%n",
                         where, safelist == null ? "basic" : safelist))
                 .append("     * an update or a command that changed it - never with null. Override it to keep the\n")
-                .append("     * field your way (the row has the request's values; a new row has no key yet). A\n")
                 .append(
-                        "     * BadRequestException thrown here is answered as one from beforeSave: nothing is written.\n")
+                        "     * field your way (the row has the request's values; on a create its key may not be drawn yet).\n")
+                .append(
+                        "     * A BadRequestException thrown here is answered as one from beforeSave: the row is not written.\n")
                 .append("     */\n");
         String clean = String.format(
                 "%s.clean(html, org.jsoup.safety.Safelist.%s())", RUNTIME, safelist == null ? "basic" : safelist);
@@ -313,8 +314,14 @@ public class HtmlRules implements CodeRules {
     /** The entity's method per html field: it sets the field, and its @plain copy, from the functions it is handed. */
     @Rule(value = "entity-html", target = "entity", order = 98, phase = Rule.Phase.TAIL)
     void entity(EntitySpec e) {
-        List<FieldSpec> html = htmlFields(e);
+        List<FieldSpec> all = htmlFields(e);
+        // A parent's field (@extend) has its methods in the parent's class, which the class extends.
+        List<FieldSpec> html = new ArrayList<FieldSpec>();
+        for (FieldSpec f : all) {
+            if (declared(e, f)) html.add(f);
+        }
         if (html.isEmpty()) return;
+        boolean inherits = html.size() < all.size();
         SourceCode c = ctx(e);
         if (c.compatible()) return;
         Syntax s = c.syntax();
@@ -373,9 +380,28 @@ public class HtmlRules implements CodeRules {
                         "fieldList",
                         " * override. Call it after setting a field yourself when the defaults are what you want.")
                 .varLine("fieldList", " */");
-        c.varLine("fieldList", s == Syntax.KOTLIN ? "fun cleanHtml() {" : "public void cleanHtml() {");
+        if (s == Syntax.KOTLIN) {
+            // A parent's is open for its children (Kotlin members are final otherwise); a child's overrides it.
+            c.varLine(
+                    "fieldList",
+                    inherits
+                            ? "override fun cleanHtml() {"
+                            : e.hasMeta("abstract") ? "open fun cleanHtml() {" : "fun cleanHtml() {");
+        } else {
+            if (inherits) c.varLine("fieldList", "@Override");
+            c.varLine("fieldList", "public void cleanHtml() {");
+        }
+        if (inherits) c.varLine("fieldList", "    %s", s.statement("super.cleanHtml()"));
         for (FieldSpec f : html) c.varLine("fieldList", "    %s", defaultCall(s, f));
         c.varLine("fieldList", "}");
+    }
+
+    /** Whether the field is the entity's own, not a parent's it inherits (@extend). */
+    private static boolean declared(EntitySpec e, FieldSpec f) {
+        for (FieldSpec own : e.fields()) {
+            if (own.name().equals(f.name())) return true;
+        }
+        return false;
     }
 
     /** One field's line in cleanHtml(): its own method, handed the runtime's defaults. */

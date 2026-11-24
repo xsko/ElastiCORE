@@ -34,8 +34,9 @@ entity:
       postId: long @id @sequence
       title: string(100)! @search(like)
       # From a rich-text editor: kept to an allow-list before it is saved (html, @safe(basic) unsaid), and its
-      # text without tags kept beside it for the search (@plain) - no request writes that one.
-      content: html @plain(contentText)
+      # text without tags kept beside it for the search (@plain) - no request writes that one. A writer may edit it
+      # (@editable: PUT /post changes the content alone), cleaned as on a create.
+      content: html @plain(contentText) @editable
       contentText: text @search(like)
       # A post may quote another; deleting the quoted one clears the quote. Versioned: the clearing moves
       # the version of a quoting post the same delete then removes (a search for both).

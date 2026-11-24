@@ -187,13 +187,13 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (c.varValue("htmlBeforeCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlBeforeCommand")));
                 m.append(String.format("        %s%n", call));
+                // An html field the command changed is cleaned right after it, as after a request's mapping.
+                if (c.varValue("htmlAfterCommand") != null)
+                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
                 if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
-                // An html field the command changed is cleaned as on every write.
-                if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s)%n", mapper, open, repo, close))
                  .append("    }");
@@ -210,13 +210,13 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (c.varValue("htmlBeforeCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlBeforeCommand")));
                 m.append(String.format("        %s;%n", call));
+                // An html field the command changed is cleaned right after it, as after a request's mapping.
+                if (c.varValue("htmlAfterCommand") != null)
+                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
                 if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
-                // An html field the command changed is cleaned as on every write.
-                if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
                 m.append("")
                  .append(String.format("        return %s.toDTO(%s%s.save(entity)%s);%n", mapper, open, repo, close))
                  .append("    }");

@@ -234,6 +234,23 @@ public abstract class ShopApi {
     }
 
     /**
+     * A batch update writes document by document, without a transaction (#217, said in the html guide): a request the
+     * service refuses on its second document - here one that does not exist - is answered with its error, and the
+     * first document, written before it, stays written. A refusal from the html cleaning stops the batch the same way.
+     */
+    @Test
+    public void aBatchUpdateRefusedHalfwayKeepsTheDocumentsWrittenBeforeIt() throws Exception {
+        String first = create("product", "{\"name\":\"First\",\"price\":1,\"description\":\"<p>one</p>\"}")
+                .get("productCode").asText();
+        HttpResponse<String> refused = send("PUT", "/product/batch",
+                "[{\"productCode\":\"" + first + "\",\"name\":\"First changed\",\"price\":1},"
+                        + "{\"productCode\":\"none-" + unique() + "\",\"name\":\"Missing\",\"price\":1}]");
+        assertTrue(refused.statusCode() >= 400, refused.statusCode() + " " + refused.body());
+        assertEquals("First changed",
+                mongo.getCollection("product").find(new Document("_id", first)).first().getString("name"));
+    }
+
+    /**
      * An html field on a member the document embeds (OrderLine.note), which has no service of its own: the order's
      * service cleans it with the order on a create, an update, a batch update and an update by condition - in the
      * stored document too.

@@ -2605,11 +2605,16 @@ Post:
   create unless it is null; on an update, a batch update and an update by condition where the request changed it (the service
   keeps the value it read); after a lifecycle command where the command changed it - a post an administrator hides is not cleaned
   again. Neither is called with null, and a field set to null leaves its `@plain` copy null. A row saved before `@plain` was
-  declared gets its copy on its next write: the pair also runs when the copy is null or empty and the html field has a value.
+  declared gets its copy on its next write: the pair also runs when the copy is null and the html field has a value. An empty
+  copy is a result (a body of images only) and is left alone - but Oracle stores an empty text as NULL, so there such a row is
+  cleaned again on its next write. A value stored before the field became html, or under a looser rule, is not cleaned again
+  until it changes: run the pair, or `cleanHtml()`, once over such rows.
 - **Your own rule: override the pair** in your service (`PostService extends PostCoreService`, generated once and yours). The row
-  has the request's values on it (a new row has no key yet). A refusal thrown there - `BadRequestException` with your code, as in
-  `beforeSave` - is answered the same way: 400 with the code and its translation, and nothing is written. Keeping only this site's
-  images (another host's image tells that host who reads the post), refusing an empty post, and a line per paragraph:
+  has the request's values on it (on a create, a key the database draws may not be there yet). A refusal thrown there -
+  `BadRequestException` with your code, as in `beforeSave` - is answered the same way: 400 with the code and its translation, and
+  the row is not written. Under MongoDB a batch update and an update by condition write document by document, without a
+  transaction: the documents before the refused one stay written. Keeping only this site's images (another host's image tells that
+  host who reads the post), refusing an empty post, and a line per paragraph:
 
   ```java
   @Override

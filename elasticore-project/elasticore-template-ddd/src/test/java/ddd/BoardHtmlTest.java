@@ -15,13 +15,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
  * An html field over HTTP (issues 183, 217): Post.content is kept to an allow-list before it is saved - on a create
  * and on the publish command, whose parameter sets it - and Post.contentText holds its text without tags, which the
  * search reads and no request writes. The board's PostService overrides the generated pair: jsoup's basic safelist
  * with the site's own images (/api/files/...), an empty body refused, and a line per paragraph in the text.
- * (A board post is no @editable root: it has no PUT.)
+ * (The content is the post's one @editable field: PUT changes it alone.)
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -115,6 +116,44 @@ class BoardHtmlTest {
         JsonNode kept = read(id);
         assertThat(kept.path("status").asText()).isEqualTo("DRF");
         assertThat(kept.path("content").asText()).isEqualTo("<p>draft</p>");
+    }
+
+    /**
+     * An update (PUT, content being @editable) is cleaned like a create, and a refusal from cleanContent rolls it
+     * back: 400 with its code, and the post keeps its content, its text and its version.
+     */
+    @Test
+    @DisplayName("an update is cleaned, and one the cleaning refuses changes nothing")
+    void anUpdateIsCleanedAndARefusedOneChangesNothing() throws Exception {
+        ObjectNode body = json.createObjectNode();
+        body.put("title", "edited");
+        body.put("content", "<p>before</p>");
+        long id = send(post(POSTS), body).path("postId").asLong();
+        JsonNode before = read(id);
+
+        ObjectNode refusedChange = json.createObjectNode();
+        refusedChange.put("postId", id);
+        refusedChange.put("version", before.path("version").asLong());
+        refusedChange.put("content", "<p> </p><script>steal()</script>");
+        MockHttpServletResponse refused = mvc.perform(put(POSTS).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(refusedChange)))
+                .andReturn().getResponse();
+        assertThat(refused.getStatus()).as(refused.getContentAsString()).isEqualTo(400);
+        assertThat(json.readTree(refused.getContentAsString()).path("code").asText())
+                .isEqualTo("post.content.required");
+        JsonNode kept = read(id);
+        assertThat(kept.path("content").asText()).isEqualTo("<p>before</p>");
+        assertThat(kept.path("contentText").asText()).isEqualTo("before");
+        assertThat(kept.path("version").asLong()).isEqualTo(before.path("version").asLong());
+
+        ObjectNode change = json.createObjectNode();
+        change.put("postId", id);
+        change.put("version", before.path("version").asLong());
+        change.put("content", "<p onclick=\"steal()\">after</p><ul><li>two</li></ul>");
+        send(put(POSTS), change);
+        JsonNode saved = read(id);
+        assertThat(saved.path("content").asText()).isEqualTo("<p>after</p><ul><li>two</li></ul>");
+        assertThat(saved.path("contentText").asText()).isEqualTo("after\ntwo");
     }
 
     /**

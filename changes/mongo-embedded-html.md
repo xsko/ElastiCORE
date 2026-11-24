@@ -27,6 +27,9 @@
       m.cleanHtml()
   }
   ```
+  Superseded in part by `html-clean-hooks.md` (same release): the generated lines now hand each member the pair the holder's
+  service has for it - `m.cleanNote(html -> cleanNote(m, html), html -> plainNote(m, html));` - in place of `m.cleanHtml();`,
+  which stays on the member for code that calls it.
   MongoDB has no lifecycle commands, so there is no other write path. A member written after the clean (in `beforeSave`, or
   through the repository) is the application's to clean, as a root's field is. Members that hold each other (a line's parts
   holding lines) are kept to any depth, which the generated lines cannot reach: an html field among them now stops the build

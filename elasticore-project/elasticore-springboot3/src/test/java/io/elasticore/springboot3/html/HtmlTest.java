@@ -218,4 +218,15 @@ class HtmlTest {
         assertEquals("1 < 2 & 3\na", Html.plainLines("<p>1 &lt; 2 &amp; 3</p><script>steal()</script><p>a</p>"));
         assertEquals("x\nif (a) {\n  b();\n}\ny", Html.plainLines("<p>x</p><pre>if (a) {\n  b();\n}</pre><p>y</p>"));
     }
+
+    /** A pre's text is kept as written: its blank lines, its trailing spaces and its first line's indentation. */
+    @Test
+    void plainLinesKeepsAPreAsWritten() {
+        assertEquals(
+                "x\n    if (a) {\n\n\n        b();   \n    }\ny",
+                Html.plainLines("<p>x</p><pre>    if (a) {\n\n\n        b();   \n    }\n</pre><p>y</p>"));
+        // First in the text, its indentation stays; inline markup inside it gives its text.
+        assertEquals("  <a> & b\n\tc", Html.plainLines("<pre>  &lt;a&gt; <b>&amp;</b> b\n\tc</pre>"));
+        assertEquals("a\nb", Html.plainLines("a<pre>b</pre>"));
+    }
 }

@@ -69,7 +69,7 @@ public class HtmlFieldTest {
 
     /** ... and cleans only where the request changed it. */
     private static final String CHANGED = "if (!java.util.Objects.equals(entity.getContent(), contentBefore)"
-            + " || (entity.getContent() != null && (entity.getContentText() == null || entity.getContentText().isEmpty())))";
+            + " || (entity.getContent() != null && entity.getContentText() == null))";
 
     /** summary has no @plain: only a change cleans it. */
     private static final String SUMMARY_CHANGED = "if (!java.util.Objects.equals(entity.getSummary(), summaryBefore))";
@@ -194,7 +194,7 @@ public class HtmlFieldTest {
         assertEquals(3, occurrences(core, "entity.cleanSummary { cleanSummary(entity, it) }\n"), core);
         assertEquals(1, occurrences(core, "\n        if (entity.content != null) " + call), core);
         String ktChanged =
-                "if (entity.content != contentBefore || entity.content != null && entity.contentText.isNullOrEmpty()) ";
+                "if (entity.content != contentBefore || entity.content != null && entity.contentText == null) ";
         assertEquals(1, occurrences(core, "\n        " + ktChanged + call), core);
         assertEquals(1, occurrences(core, "\n            " + ktChanged + call), core);
         assertEquals(2, occurrences(core, "if (entity.summary != summaryBefore) entity.cleanSummary"), core);
@@ -485,13 +485,68 @@ public class HtmlFieldTest {
         String ktCore = found(kt, "HtPostCoreService.kt");
         String ktPublish = section(ktCore, "fun publish(");
         int ktMove = ktPublish.indexOf("entity.publish(");
-        String ktCall =
-                "if (entity.content != contentBefore || entity.content != null && entity.contentText.isNullOrEmpty())"
-                        + " entity.cleanContent({ cleanContent(entity, it) }, { plainContent(entity, it) })\n";
+        String ktCall = "if (entity.content != contentBefore || entity.content != null && entity.contentText == null)"
+                + " entity.cleanContent({ cleanContent(entity, it) }, { plainContent(entity, it) })\n";
         assertTrue(ktMove >= 0, ktPublish);
         assertTrue(ktPublish.indexOf("        val contentBefore = entity.content\n") < ktMove, ktPublish);
         assertTrue(ktMove < ktPublish.indexOf("        " + ktCall), ktPublish);
         assertTrue(ktPublish.indexOf(ktCall) < ktPublish.indexOf(".save(entity)"), ktPublish);
+    }
+
+    /**
+     * An html field on an @abstract parent: its methods are the parent's class's, which the child extends - written
+     * once, not again in the child (Kotlin would need override) - and the child's cleanHtml() calls the parent's.
+     */
+    private static final String EXTENDED = String.join(
+            "\n",
+            "entity:",
+            "  HtBase:",
+            "    meta: entity @abstract",
+            "    fields:",
+            "      content:     html @plain(contentText)",
+            "      contentText: text",
+            "  HtPost:",
+            "    meta: entity @root @expose(20) @extend(HtBase)",
+            "    fields:",
+            "      postId:  long @id @sequence",
+            "      summary: html @safe(relaxed)",
+            "  HtNote:",
+            "    meta: entity @root @expose(20) @extend(HtBase)",
+            "    fields:",
+            "      noteId: long @id @sequence",
+            "");
+
+    @Test
+    public void aParentsHtmlFieldHasItsMethodsInTheParentOnly() throws Exception {
+        File project = run("elcore-html-extend", "layered", "java", "jpa", EXTENDED, false, 0, new String[1]);
+        String base = found(project, "HtBase.java");
+        assertTrue(base.contains("public void cleanContent(java.util.function.UnaryOperator<String> clean,"), base);
+        assertTrue(base.contains("\tpublic void cleanHtml() {\n\t    this.cleanContent("), base);
+        String post = found(project, "HtPost.java");
+        assertFalse(post.contains("public void cleanContent("), post);
+        assertTrue(post.contains("public void cleanSummary("), post);
+        assertTrue(
+                post.contains(
+                        "\t@Override\n\tpublic void cleanHtml() {\n\t    super.cleanHtml();\n\t    this.cleanSummary("),
+                post);
+        // A child without html of its own inherits both.
+        assertFalse(found(project, "HtNote.java").contains("cleanHtml"), found(project, "HtNote.java"));
+        // Each child's service has the pair of every field it writes, the parent's included.
+        String core = found(project, "HtPostCoreService.java");
+        assertTrue(core.contains("protected String cleanContent(HtPost row, String html) {"), core);
+        assertTrue(core.contains("protected String cleanSummary(HtPost row, String html) {"), core);
+        assertTrue(found(project, "HtNoteCoreService.java").contains("protected String cleanContent(HtNote row"), core);
+
+        File kt = run("elcore-html-extend-kt", "layered", "kotlin", "jpa", EXTENDED, false, 0, new String[1]);
+        String ktBase = found(kt, "HtBase.kt");
+        assertTrue(ktBase.contains("    open fun cleanHtml() {\n"), ktBase);
+        String ktPost = found(kt, "HtPost.kt");
+        assertFalse(ktPost.contains("fun cleanContent("), ktPost);
+        assertTrue(
+                ktPost.contains(
+                        "    override fun cleanHtml() {\n        super.cleanHtml()\n        this.cleanSummary {"),
+                ktPost);
+        assertFalse(found(kt, "HtNote.kt").contains("cleanHtml"), found(kt, "HtNote.kt"));
     }
 
     @Test
@@ -527,6 +582,20 @@ public class HtmlFieldTest {
             assertEquals(0, occurrences(core, "\n\n        beforeSave(entity, dto);"), core);
             assertEquals(0, occurrences(core, "\n\n            beforeSave(entity, dto);"), core);
             assertFalse(core.contains("${"), core);
+        }
+        // Kotlin: JPA and MongoDB (Kotlin has no MyBatis rule set).
+        for (String mode : new String[] {"jpa", "mongo"}) {
+            File project =
+                    run("elcore-html-none-kt-" + mode, "layered", "kotlin", mode, model, false, 0, new String[1]);
+            String core = found(project, "HtNoteCoreService.kt");
+            assertFalse(core.contains("Html."), core);
+            assertFalse(core.contains("Before = entity."), core);
+            assertEquals(3, occurrences(core, "beforeSave(entity, dto)\n"), core);
+            assertEquals(0, occurrences(core, "\n\n        beforeSave(entity, dto)"), core);
+            assertEquals(0, occurrences(core, "\n\n            beforeSave(entity, dto)"), core);
+            assertEquals(0, occurrences(core, "\n\n        HtforumMapper.mapping("), core);
+            assertFalse(core.contains("${"), core);
+            assertFalse(found(project, "HtNote.kt").contains("cleanHtml"), core);
         }
     }
 
