@@ -34,8 +34,8 @@ import java.util.Set;
  *   <li>a DTO field's {@code @ref} path - a reference's key ({@code customer.customerId}) or a joined
  *       value ({@code product.name}) the DTO copies into the response;</li>
  *   <li>the same, again, of a joined row whose DTO the response carries ({@code customer.name} where
- *       the response nests CustomerDTO - only for an entity anyone may read, as the DTO nests no
- *       other), up to three relations deep;</li>
+ *       the response nests CustomerDTO - only for an entity everyone who may read the holder may
+ *       read, as the DTO nests no other), up to three relations deep;</li>
  *   <li>the entity's key, which an export puts after the order, and the default order ({@code @sort}),
  *       which every search without a sort already answers in.</li>
  * </ul>
@@ -124,7 +124,8 @@ final class SortablePaths {
         ListMap<String, Field> entityFields = entity == null ? null : entity.getAllFieldListMap();
         for (Field d : fields.getList()) {
             if (d.hasAnnotation(EncryptRules.INDEX_OF) || d.getTypeInfo().isList() || hidden(d, mode)) continue;
-            if (d.hasAnnotation(EntityAnnotation.META_DEFERRED) && deferred(d, model, prefix, depth, out)) continue;
+            if (d.hasAnnotation(EntityAnnotation.META_DEFERRED) && deferred(d, entity, model, prefix, depth, out))
+                continue;
             String ref = d.getAnnotationValue("ref");
             if (ref != null && !ref.trim().isEmpty()) {
                 // A @ref that reads a @password is left out of the DTO (access-dto-ref-password).
@@ -145,9 +146,10 @@ final class SortablePaths {
                     if (!p.getTypeInfo().isList() && !hidden(p, mode))
                         out.add(prefix + d.getName() + "." + p.getName());
                 }
-            } else if (depth < DEPTH && readByAnyone(target)) {
+            } else if (depth < DEPTH && carried(entity, target, model)) {
                 // A relation is shown as far as the DTO it is carried as shows it - and that DTO is
-                // carried only when anyone may read the row (access-dto-nested); else its key alone.
+                // carried only when everyone who may read the holder may read the row too
+                // (access-dto-nested); else its key alone.
                 DataTransfer nested = dtoNamed(dtoTypeOf(d), model);
                 if (nested != null) shown(nested, target, model, prefix + d.getName() + ".", depth + 1, out);
             }
@@ -157,14 +159,15 @@ final class SortablePaths {
     /**
      * A relation the DSL deferred, read as SpecFactory.resolveDeferredFields writes it into the DTO - without
      * writing it, so the model is left as the run finds it: the related row's key flattened beside it
-     * ({@code customer.customerId}), and the row's own DTO nested (CustomerDTO) where the model has one and anyone
-     * may read the row. False for a field that is no such relation (an embedded value is no relation).
+     * ({@code customer.customerId}), and the row's own DTO nested (CustomerDTO) where the model has one and
+     * everyone who may read the holder may read the row. False for a field that is no such relation (an embedded value is no relation).
      */
-    private static boolean deferred(Field d, ECoreModel model, String prefix, int depth, Set<String> out) {
+    private static boolean deferred(
+            Field d, Entity holder, ECoreModel model, String prefix, int depth, Set<String> out) {
         Entity target = entityNamed(d.getTypeInfo().getDefaultTypeName(), model);
         if (target == null || target.getMetaInfo().hasMetaAnnotation("embeddable")) return false;
         for (String key : keysOf(target, model, 0)) out.add(prefix + d.getName() + "." + key);
-        if (depth < DEPTH && readByAnyone(target)) {
+        if (depth < DEPTH && carried(holder, target, model)) {
             DataTransfer nested = dtoNamed(target.getIdentity().getName() + "DTO", model);
             if (nested != null) shown(nested, target, model, prefix + d.getName() + ".", depth + 1, out);
         }
@@ -187,14 +190,28 @@ final class SortablePaths {
         return out;
     }
 
-    /** Whether anyone may read the entity's rows: no @access, or a read level that lets the public in. */
-    private static boolean readByAnyone(Entity target) {
-        Map<String, Annotation> meta = target.getMetaInfo().getMetaAnnotationMap();
+    /**
+     * Whether a DTO of the holder carries a whole row of the target, as the mapper fills it
+     * (ServiceAccessRules.nestedIsVisible): the target says no @access, or anyone may read it - or,
+     * under config: nestedRows: readers, everyone who may read the holder may read the target too.
+     */
+    private static boolean carried(Entity holder, Entity target, ECoreModel model) {
+        String referenced = readLevelOf(target);
+        if (referenced == null) return true;
+        if (!ServiceAccessRules.readersCarry(model.getConfig(ServiceAccessRules.NESTED_ROWS))) {
+            AccessExpression read = AccessExpression.parse(referenced);
+            return read != null && read.isPublic();
+        }
+        return ServiceAccessRules.readImplies(holder == null ? null : readLevelOf(holder), referenced);
+    }
+
+    /** The level the entity is read at, or null when it says no @access. */
+    private static String readLevelOf(Entity entity) {
+        Map<String, Annotation> meta = entity.getMetaInfo().getMetaAnnotationMap();
         Annotation access = meta == null ? null : meta.get("access");
-        if (access == null) return true;
+        if (access == null) return null;
         String text = access.getValue() != null ? access.getValue() : SpecFactory.keyValues(access);
-        AccessExpression read = AccessExpression.parse(ServiceAccessRules.readLevel(text));
-        return read != null && read.isPublic();
+        return ServiceAccessRules.readLevel(text);
     }
 
     /** Whether a @ref path, followed through the entity's relations, ends at a @password. */

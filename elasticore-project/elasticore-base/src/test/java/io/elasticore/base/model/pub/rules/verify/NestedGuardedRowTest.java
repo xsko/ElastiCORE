@@ -124,10 +124,24 @@ public class NestedGuardedRowTest {
     private static void domain(File project, String name, String model) throws Exception {
         File dir = new File(project, "src/main/resources/blueprint/" + name);
         assertTrue(new File(dir, "model").mkdirs());
-        Files.write(new File(dir, "env.yml").toPath(), String.join("\n",
-                "elasticore:", "  enable: true", "  config:", "    domainName: " + name, "    framework: springboot",
-                "    mode: jpa", "    j2ee: jakarta", "  namespace:", "    base: io.acme." + name, "")
-                .getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(dir, "env.yml").toPath(),
+                String.join(
+                                "\n",
+                                "elasticore:",
+                                "  enable: true",
+                                "  config:",
+                                "    domainName: " + name,
+                                "    framework: springboot",
+                                // nestedRows: readers - the coverage carries the product its readers may read (issue
+                                // 321).
+                                "    mode: jpa",
+                                "    j2ee: jakarta",
+                                "    nestedRows: readers",
+                                "  namespace:",
+                                "    base: io.acme." + name,
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
         Files.write(new File(dir, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -224,6 +238,10 @@ public class NestedGuardedRowTest {
                     project + ": same-level Product DTO was omitted\n" + dto);
 
             String mapper = found(project, kt ? "QmshopMapper.kt" : "QmshopMapper.java");
+            // Shown: the entity -> DTO mapping fills it (the head reads either way round).
+            String forward = reverse(mapper, "QmCoverage", "QmCoverageDTO", kt);
+            assertTrue(
+                    writes(forward, "product", kt), project + ": the product is declared but not filled\n" + forward);
             String body = reverse(mapper, "QmCoverageDTO", "QmCoverage", kt);
             assertFalse(
                     writes(body, "product", kt), project + ": nested Product row is written through Coverage\n" + body);

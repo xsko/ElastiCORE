@@ -114,7 +114,7 @@ public final class AccessExpression {
         }
         return true;
     }
-    
+
     /**
      * Whether this expression implies the target expression.
      */

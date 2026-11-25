@@ -916,6 +916,22 @@ elasticore:
   the label column, else the code. It needs no setting; the body is in `elasticore-annotation-guide.md` (export).
 - Example: `ExportLimitTest` of the pet store (`max-rows=10`: the 32 items are refused, a narrower search is written).
 
+## 6-5. Nested rows for the holder's readers (`nestedRows`, 3.0)
+> **Works in:** the v3 bundles - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal, and the TypeScript types · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator
+
+```yaml
+config:
+  nestedRows: readers      # a nested DTO of an @access entity is carried for whoever may read the holder (default: public)
+```
+
+- `public` (the default on 3.0) - the whole row of another entity (a nested DTO, `product: Product @dtype(ProductDTO)`) is carried only when
+  anyone may read that entity; otherwise the field is left out with a warning. A project that does not say it generates what it did, byte for byte.
+- `readers` (issue 321) - the row is carried when everyone who may read the holder may also read that entity (`read=MANAGER` carries `read=MANAGER`,
+  `read=user` carries `read=user`, nothing carries `owner`). It is in what a read answers (read one, search, export) and sorts; create, update, a command,
+  `me()` and sign-in answer it as `null` (the CoreService's `withoutCarriedRows`); a row a request sends never writes the referenced one.
+- It applies to the whole domain. Responses gain the field - turn it on together with the clients. 3.1 has it on by default.
+- With it off, the warning of a row it would carry names the setting (`elasticore-annotation-guide.md`, `@access`).
+
 ## 7. apiPath setting
 
 ```yaml

@@ -516,6 +516,40 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Discussion", "domain": "forum", "owner": "memberId", "access": {"*": "admin", "create": "user", "move": "MODERATOR", "read": "public"}, "states": {"status": {"initial": "OPEN", "move": "OPEN -> MOVED"}}}
+  - name: Badge
+    source: frm_badge
+    primary_key: [badge_code]
+    fields:
+      - name: badge_code
+        expression:
+          sql: "badge_code"
+        datatype: String
+      - name: name
+        expression:
+          sql: "name"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Badge", "domain": "forum", "access": {"*": "admin", "create": "MODERATOR", "delete": "MODERATOR", "read": "MODERATOR", "update": "MODERATOR"}}
+  - name: Award
+    source: frm_award
+    primary_key: [award_id]
+    fields:
+      - name: award_id
+        expression:
+          sql: "award_id"
+        datatype: Integer
+      - name: note
+        expression:
+          sql: "note"
+        datatype: String
+      - name: badge_badge_code
+        expression:
+          sql: "badge_badge_code"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Award", "domain": "forum", "access": {"*": "admin", "create": "user", "delete": "MODERATOR", "read": "MODERATOR", "update": "MODERATOR"}}
   - name: Category
     source: shop_category
     primary_key: [cat_id]
@@ -1016,6 +1050,11 @@ relationships:
     to: Section
     from_columns: [section_section_id]
     to_columns: [section_id]
+  - name: Award_badge
+    from: Award
+    to: Badge
+    from_columns: [badge_badge_code]
+    to_columns: [badge_code]
   - name: Category_parentCategory
     from: Category
     to: Category

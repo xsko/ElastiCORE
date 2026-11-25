@@ -90,8 +90,8 @@ public class MapperBaseRules implements CodeRules {
             String ref = f.dslValue("ref");
             // The DTO dropped it for the identity field beside it.
             if (SearchDtoBaseRules.flattensAReferenceById(e, f)) continue;
-            // Or because not everyone who reads this DTO may read that row.
-            if (ServiceAccessRules.nestsGuarded(e, f)) continue;
+            // Or because not everyone who may read the holder may read that row (access-dto-nested).
+            if (!ServiceAccessRules.nestedIsVisible(e, f)) continue;
             // Or because a rule left it out of the DTO (a related row's password).
             if (code.isRefHidden(f.name())) continue;
             if (ref != null && ref.contains(".")) {
@@ -146,7 +146,8 @@ public class MapperBaseRules implements CodeRules {
 
             // A field the DTO dropped with "--" has nothing to write from.
             if (!dtoNames.contains(f.name())) continue;
-            if (ServiceAccessRules.nestsGuarded(e, f)) continue;
+            // A row of an entity not anyone's to read is shown at most, never written from the DTO.
+            if (ServiceAccessRules.nestedNotWritten(e, f)) continue;
             // A field the persistence layer owns is read out, never written in;
             // in the clean output so is one the server sets (@readonly), and
             // one only a root's own methods change (WriteGuardRules, ddd-*).
