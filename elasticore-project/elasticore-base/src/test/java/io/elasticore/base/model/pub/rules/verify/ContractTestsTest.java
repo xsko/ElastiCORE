@@ -3167,14 +3167,21 @@ public class ContractTestsTest {
     public void newEntityRowIsReadAsTheTestsCallIt() {
         assertTrue(ContractTestSource.writesRow(
                 "protected Map<String, Object> newNoticeRow() throws Exception {", "Notice", false));
-        assertTrue(ContractTestSource.writesRow("java.util.Map<String,Object> newNoticeRow( ) {", "Notice", false));
+        assertTrue(ContractTestSource.writesRow(
+                "protected final java.util.Map<String,Object> newNoticeRow( ) {", "Notice", false));
+        // A helper of the project's own with the same name, not declared protected, is not it.
+        assertFalse(ContractTestSource.writesRow("private Map<String, Object> newNoticeRow() {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow() {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("private fun newNoticeRow(): Map<String, Any?> {", "Notice", true));
+        assertFalse(ContractTestSource.writesRow("fun newNoticeRow(): Map<String, Any?> = x", "Notice", true));
         assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow(String role) {", "Notice", false));
         assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRows() {", "Notice", false));
         assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow() {", "Log", false));
         assertFalse(ContractTestSource.writesRow("// Map<String, Object> newNoticeRow() {", "Notice", false));
         assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow();", "Notice", false));
         assertTrue(ContractTestSource.writesRow("protected fun newNoticeRow(): Map<String, Any?> {", "Notice", true));
-        assertTrue(ContractTestSource.writesRow("fun newNoticeRow(): MutableMap<String, Any> = x", "Notice", true));
+        assertTrue(ContractTestSource.writesRow(
+                "protected open fun newNoticeRow(): MutableMap<String, Any> = x", "Notice", true));
         assertFalse(ContractTestSource.writesRow("fun newNoticeRow(): Any {", "Notice", true));
         assertFalse(ContractTestSource.writesRow(null, "Notice", true));
     }
