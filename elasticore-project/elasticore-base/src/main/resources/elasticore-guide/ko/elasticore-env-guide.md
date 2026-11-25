@@ -814,7 +814,7 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   요약이 무엇을 쓸지 말한다
   (`AccessLog: its API takes no create (create=none), so no row of it is made to test its fields and @access with - to have
   them written, write protected Map<String, Object> newAccessLogRow() throws Exception in ForumContractSupport: ...`).
-  생성되는 코드도 인터페이스도 아니다. `elasticore-template-ddd` 의 `forum` 도메인이 이렇게 한다(`Notice`, `AccessLog`).
+  `protected` 로 선언한 것만 읽는다 - 같은 이름의 private 도우미는 프로젝트의 것이다. 생성되는 코드도 인터페이스도 아니다. `elasticore-template-ddd` 의 `forum` 도메인이 이렇게 한다(`Notice`, `AccessLog`).
 - `create=none`, `update=none`, `delete=none` (모든 항이 `none` 인 연산): 방문자와 다른 역할의 호출자는 다른 항목처럼 거절되고,
   관리자도 거절된다 - `AccessPolicy` 가 답하는 대로 403 `forbidden`. update 와 delete 는 `new<Entity>Row()` 가 만든 행(생성이
   열려 있으면 생성한 행)에 보낸다.

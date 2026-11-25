@@ -584,15 +584,18 @@ final class ContractTestSource {
     /**
      * Whether the support class - the project's, as it is on disk - declares new&lt;Entity&gt;Row() as the
      * generated tests call it: Java Map&lt;String, Object&gt; newNoticeRow(), Kotlin fun newNoticeRow():
-     * Map&lt;String, Any?&gt; (or Map&lt;String, Any&gt;). Another shape is not read as it, and comments are not read.
+     * Map&lt;String, Any?&gt; (or Map&lt;String, Any&gt;), declared protected - a private or package helper of the
+     * same name, one of the project's own, is not it. Another shape is not read as it, and comments are not read.
      */
     static boolean writesRow(String supportText, String entity, boolean kotlin) {
         if (supportText == null || entity == null) return false;
         String support = supportText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
         String declared = kotlin
-                ? "\\bfun\\s+" + rowMember(entity) + "\\s*\\(\\s*\\)\\s*:\\s*"
+                ? "\\bprotected\\s+(?:(?:open|override|final)\\s+)*fun\\s+" + rowMember(entity)
+                        + "\\s*\\(\\s*\\)\\s*:\\s*"
                         + "(?:kotlin\\.collections\\.)?(?:Mutable)?Map\\s*<\\s*String\\s*,\\s*Any\\??\\s*>"
-                : "(?:java\\.util\\.)?Map\\s*<\\s*(?:java\\.lang\\.)?String\\s*,\\s*(?:java\\.lang\\.)?Object\\s*>\\s+"
+                : "\\bprotected\\s+(?:(?:final|synchronized)\\s+)*"
+                        + "(?:java\\.util\\.)?Map\\s*<\\s*(?:java\\.lang\\.)?String\\s*,\\s*(?:java\\.lang\\.)?Object\\s*>\\s+"
                         + rowMember(entity)
                         + "\\s*\\(\\s*\\)\\s*(?:throws[^{;]*)?\\{";
         return java.util.regex.Pattern.compile(declared).matcher(support).find();
