@@ -813,8 +813,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   as they were; where the API takes no create (`create=none`) no test that needs such a row is written - it could only abort - and
   the summary says what to write (`AccessLog: its API takes no create (create=none), so no row of it is made to test its fields
   and @access with - to have them written, write protected Map<String, Object> newAccessLogRow() throws Exception in
-  ForumContractSupport: ...`). It is not generated and not an interface. `elasticore-template-ddd`'s `forum` domain does so
-  (`Notice`, `AccessLog`).
+  ForumContractSupport: ...`). Only a `protected` one is read - a private helper of that name stays yours. It is not generated
+  and not an interface. `elasticore-template-ddd`'s `forum` domain does so (`Notice`, `AccessLog`).
 - `create=none`, `update=none`, `delete=none` (any operation whose every term says `none`): a visitor and a caller of another role
   are refused as for any entry, and the administrator too - 403 `forbidden`, as `AccessPolicy` answers it; update and delete on a
   row `new<Entity>Row()` made (or a create made, where it is open).

@@ -15,11 +15,12 @@
     one is not built either (`it needs a Notice, which the API does not create (create=none)`), as for an `@expose` without create.
   - Each operation whose every term says `none` (`create=none`, `update=none`, `delete=none`, ...): besides the visitor and the
     caller of another role, a test that the signed-in administrator is refused - 403 `forbidden`, as `AccessPolicy` answers
-    (`rule.single == NONE`; checked by running the tests).
+    (`rule.single == NONE`; checked by running the tests). This test is new in a project's contract tests for every such
+    operation; one whose own access policy lets the administrator through there will see it fail.
   - `new<Entity>Row()` - optional, written by the project in its support class, never by the generator, the same pattern as
     `newSignInRow(role)`: Java `protected Map<String, Object> newNoticeRow() throws Exception`, Kotlin `protected fun
-    newNoticeRow(): Map<String, Any?>`. Read from the support class on disk as `newSignInRow` is (`writesRow`; comments and other
-    shapes are not read). It makes a row of that entity the project's way and answers it with its key; the test class calls it as
+    newNoticeRow(): Map<String, Any?>`. Read from the support class on disk as `newSignInRow` is (`writesRow`; only a `protected`
+    one - a private helper of the same name stays the project's; comments and other shapes are not read). It makes a row of that entity the project's way and answers it with its key; the test class calls it as
     the application itself (`CurrentUser.callAsSystem`, a private `noticeRow()` that checks the key is there), so `create=none`
     lets it in. Where it is written, every row of that entity a test needs is the one it makes - for any entity, create open or
     not: the rows of the `@access` tests, the moves of `states:`, the rows another entity points to. The fields are checked through
