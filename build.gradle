@@ -7,6 +7,9 @@ plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false
     id 'org.jetbrains.kotlin.plugin.allopen' version '1.9.24' apply false
     id 'org.jetbrains.kotlin.plugin.jpa' version '1.9.24' apply false
+    // The SBOM of each published artifact (gradle/publishing.gradle applies it). The plugin build,
+    // elasticore-project/elasticore-gradle-plugin, declares the same version: bump both.
+    id 'org.cyclonedx.bom' version '3.6.1' apply false
 }
 
 allprojects {
@@ -225,7 +228,8 @@ tasks.register('centralBundle', Zip) {
                 poms++
             }
             if (name.endsWith("-${releaseVersion}.jar")) {
-                ['-sources.jar', '-javadoc.jar'].each { classifier ->
+                // the SBOM (gradle/publishing.gradle) as well
+                ['-sources.jar', '-javadoc.jar', '-cyclonedx.json'].each { classifier ->
                     String companion = name - '.jar' + classifier
                     if (!new File(file.parentFile, companion).isFile()) {
                         problems << companion
