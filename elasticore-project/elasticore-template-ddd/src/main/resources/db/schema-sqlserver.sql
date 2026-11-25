@@ -124,6 +124,14 @@ CREATE TABLE cat_supplier (
     PRIMARY KEY (supplier_id)
 );
 
+CREATE TABLE frm_access_log (
+    log_id BIGINT IDENTITY(1,1) NOT NULL,
+    event NVARCHAR(20) NOT NULL,
+    success BIT NOT NULL,
+    reason NVARCHAR(300),
+    PRIMARY KEY (log_id)
+);
+
 CREATE TABLE frm_award (
     award_id BIGINT IDENTITY(1,1) NOT NULL,
     badge_badge_code NVARCHAR(10),
@@ -153,6 +161,14 @@ CREATE TABLE frm_member (
     nickname NVARCHAR(30) NOT NULL,
     role NVARCHAR(1),
     PRIMARY KEY (member_id)
+);
+
+CREATE TABLE frm_notice (
+    notice_id BIGINT IDENTITY(1,1) NOT NULL,
+    title NVARCHAR(50) NOT NULL,
+    body NVARCHAR(200),
+    priority INT,
+    PRIMARY KEY (notice_id)
 );
 
 CREATE TABLE frm_section (

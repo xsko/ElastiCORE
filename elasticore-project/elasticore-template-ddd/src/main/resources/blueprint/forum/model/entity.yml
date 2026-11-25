@@ -108,3 +108,25 @@ entity:
       awardId: long @id @sequence
       badge:   Badge @ManyToOne @dtype(BadgeDTO)
       note:    string(50)
+
+  # The forum's own records (issue 358): the API serves them, and nobody creates one through it (create=none).
+  # A sign-in's trace: a moderator reads it, nobody changes or deletes it - not the administrator either.
+  # ForumContractSupport.newAccessLogRow() makes the rows the contract tests read and are refused to
+  # update and delete; no field is checked - neither create nor update is open.
+  AccessLog:
+    meta: entity @root @editable @expose(20) @access(read=MODERATOR, create=none, update=none, delete=none)
+    fields:
+      logId:   long @id @sequence
+      event:   string(20)!
+      success: boolean!
+      reason:  string(300)
+
+  # A notice the forum posts itself; a moderator edits and removes it. ForumContractSupport.newNoticeRow()
+  # makes the rows the contract tests read, update and delete - and check the fields of through PUT.
+  Notice:
+    meta: entity @root @editable @expose(20) @access(read=public, create=none, update=MODERATOR, delete=MODERATOR)
+    fields:
+      noticeId: long @id @sequence
+      title:    string(50)!
+      body:     string(200)
+      priority: int @min(1) @max(5)
