@@ -550,6 +550,52 @@ datasets:
     nonportable_extensions:
       - vendor_name: ELASTICORE
         data: {"entity": "Award", "domain": "forum", "access": {"*": "admin", "create": "user", "delete": "MODERATOR", "read": "MODERATOR", "update": "MODERATOR"}}
+  - name: AccessLog
+    source: frm_access_log
+    primary_key: [log_id]
+    fields:
+      - name: log_id
+        expression:
+          sql: "log_id"
+        datatype: Integer
+      - name: event
+        expression:
+          sql: "event"
+        datatype: String
+      - name: success
+        expression:
+          sql: "success"
+        datatype: Boolean
+      - name: reason
+        expression:
+          sql: "reason"
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "AccessLog", "domain": "forum", "access": {"*": "admin", "create": "none", "delete": "none", "read": "MODERATOR", "update": "none"}}
+  - name: Notice
+    source: frm_notice
+    primary_key: [notice_id]
+    fields:
+      - name: notice_id
+        expression:
+          sql: "notice_id"
+        datatype: Integer
+      - name: title
+        expression:
+          sql: "title"
+        datatype: String
+      - name: body
+        expression:
+          sql: "body"
+        datatype: String
+      - name: priority
+        expression:
+          sql: "priority"
+        datatype: Integer
+    nonportable_extensions:
+      - vendor_name: ELASTICORE
+        data: {"entity": "Notice", "domain": "forum", "access": {"*": "admin", "create": "none", "delete": "MODERATOR", "read": "public", "update": "MODERATOR"}}
   - name: Category
     source: shop_category
     primary_key: [cat_id]
