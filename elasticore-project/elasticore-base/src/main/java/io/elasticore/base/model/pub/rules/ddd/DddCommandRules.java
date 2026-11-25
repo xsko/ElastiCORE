@@ -166,6 +166,10 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         String answer = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.answered(
                 e, String.format("%s.toDTO(%s%s.save(entity)%s)", mapper, open, repo, close));
 
+        // A rule that refuses after the aggregate changed leaves no trace in what the transaction reads.
+        String rethrow = io.elasticore.base.model.pub.rules.base.RefusedWrites.rethrow(c, e, "entity");
+        String in = rethrow == null ? "        " : "            ";
+
         for (CommandSpec cmd : e.commands()) {
             StringBuilder m = new StringBuilder();
             m.append("    /**\n")
@@ -189,17 +193,24 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 // The html fields as read, so the cleaning after the command runs only where it changed one.
                 if (c.varValue("htmlBeforeCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlBeforeCommand")));
-                m.append(String.format("        %s%n", call));
+                if (rethrow != null) m.append("        try {\n");
+                m.append(String.format("%s%s%n", in, call));
                 // An html field the command changed is cleaned right after it, as after a request's mapping.
                 if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                    m.append(String.format("%s%s%n", in, indented(c.varValue("htmlAfterCommand"), in)));
+                if (DddDeriveRules.derives(e)) m.append(String.format("%s%s%n", in, DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
-                m.append("")
-                        .append(String.format("        return %s%n", answer))
-                        .append("    }");
+                    m.append(String.format("%s%s%n", in, c.varValue("countsAfterCommand")));
+                m.append(String.format("%sreturn %s%n", in, answer));
+                if (rethrow != null) {
+                    m.append(String.format(
+                                    "        %s%n",
+                                    io.elasticore.base.model.pub.rules.base.RefusedWrites.catchClause(c)))
+                            .append(String.format("            %s%n", rethrow))
+                            .append("        }\n");
+                }
+                m.append("    }");
             } else {
                 m.append(String.format("    public %s %s(%s) {%n", dto, cmd.name(), serviceParams(e, cmd, c.syntax())));
                 if (cmd.dtoName() != null) m.append("        BeanValidation.validate(command);\n");
@@ -212,20 +223,32 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 // The html fields as read, so the cleaning after the command runs only where it changed one.
                 if (c.varValue("htmlBeforeCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("htmlBeforeCommand")));
-                m.append(String.format("        %s;%n", call));
+                if (rethrow != null) m.append("        try {\n");
+                m.append(String.format("%s%s;%n", in, call));
                 // An html field the command changed is cleaned right after it, as after a request's mapping.
                 if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                    m.append(String.format("%s%s%n", in, indented(c.varValue("htmlAfterCommand"), in)));
+                if (DddDeriveRules.derives(e)) m.append(String.format("%s%s%n", in, DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
-                m.append("")
-                        .append(String.format("        return %s;%n", answer))
-                        .append("    }");
+                    m.append(String.format("%s%s%n", in, c.varValue("countsAfterCommand")));
+                m.append(String.format("%sreturn %s;%n", in, answer));
+                if (rethrow != null) {
+                    m.append(String.format(
+                                    "        %s%n",
+                                    io.elasticore.base.model.pub.rules.base.RefusedWrites.catchClause(c)))
+                            .append(String.format("            %s%n", rethrow))
+                            .append("        }\n");
+                }
+                m.append("    }");
             }
             c.addMethod(m.toString().replace("\r\n", "\n"));
         }
+    }
+
+    /** A statement of several lines (joined at the method's indentation), each line at {@code in}. */
+    private static String indented(String lines, String in) {
+        return lines.replace("\n        ", "\n" + in);
     }
 
     /** One endpoint per command: POST /{id}/ship. After the method filter (20). */

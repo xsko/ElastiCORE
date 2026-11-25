@@ -153,12 +153,14 @@ public class HtmlFieldTest {
         // An update reads the value before the mapper writes the row, and cleans only where it changed.
         String update = section(core, "public HtPostDTO update(HtPostDTO dto) {");
         assertTrue(update.indexOf(KEPT) < update.indexOf(".mapping(dto, entity"), update);
-        assertTrue(update.contains("        " + CHANGED + "\n            " + CALL), update);
+        // The value is read before the try that discards a refused row (RefusedWrite); the cleaning is inside it.
+        assertTrue(update.indexOf(KEPT) < update.indexOf("try {"), update);
+        assertTrue(update.contains("            " + CHANGED + "\n                " + CALL), update);
         assertTrue(update.indexOf(".mapping(dto, entity") < update.indexOf(CALL), update);
         assertTrue(update.indexOf(CALL) < update.indexOf("beforeSave(entity, dto);"), update);
         String all = section(core, "public int updateBySpecification(HtPostDTO dto, Specification<HtPost> spec) {");
         assertTrue(all.indexOf("            " + KEPT) < all.indexOf(".mapping(dto, entity"), all);
-        assertTrue(all.contains("            " + CHANGED + "\n                " + CALL), all);
+        assertTrue(all.contains("                " + CHANGED + "\n                    " + CALL), all);
         // The pair the developer's service overrides: the safelist @safe names, the text @plain asks for.
         assertTrue(core.contains(PAIR), core);
         assertTrue(core.contains(SUMMARY_PAIR), core);
@@ -169,7 +171,7 @@ public class HtmlFieldTest {
         assertTrue(entity.contains(METHOD), entity);
         assertTrue(entity.contains(SUMMARY_METHOD), entity);
         assertTrue(entity.contains(KEPT_METHOD), entity);
-        assertTrue(all.contains("            " + SUMMARY_CHANGED + "\n                " + SUMMARY_CALL), all);
+        assertTrue(all.contains("                " + SUMMARY_CHANGED + "\n                    " + SUMMARY_CALL), all);
         // The generated service no longer calls it.
         assertFalse(core.contains("cleanHtml"), core);
         assertTrue(
@@ -195,8 +197,9 @@ public class HtmlFieldTest {
         assertEquals(1, occurrences(core, "\n        if (entity.content != null) " + call), core);
         String ktChanged =
                 "if (entity.content != contentBefore || entity.content != null && entity.contentText == null) ";
-        assertEquals(1, occurrences(core, "\n        " + ktChanged + call), core);
+        // Update and update by condition clean inside the try that discards a refused row (RefusedWrite).
         assertEquals(1, occurrences(core, "\n            " + ktChanged + call), core);
+        assertEquals(1, occurrences(core, "\n                " + ktChanged + call), core);
         assertEquals(2, occurrences(core, "if (entity.summary != summaryBefore) entity.cleanSummary"), core);
         assertEquals(2, occurrences(core, "val contentBefore = entity.content\n"), core);
         String update = section(core, "fun update(dto: HtPostDTO): HtPostDTO? {");
@@ -473,7 +476,10 @@ public class HtmlFieldTest {
         // The value read before the move; the cleaning after it, only where the move changed the field.
         assertTrue(publish.indexOf("        " + KEPT) < move, publish);
         assertTrue(publish.indexOf("String summaryBefore = entity.getSummary();") < move, publish);
-        assertTrue(move < publish.indexOf("        " + CHANGED + "\n            " + CALL), publish);
+        // Inside the try that discards a refused row (RefusedWrite): one step further in.
+        assertTrue(move < publish.indexOf("            " + CHANGED + "\n                " + CALL), publish);
+        assertTrue(publish.indexOf(KEPT) < publish.indexOf("try {"), publish);
+        assertTrue(publish.indexOf("try {") < move, publish);
         assertTrue(move < publish.indexOf(SUMMARY_CALL), publish);
         assertTrue(publish.indexOf(CALL) < publish.indexOf(".save(entity)"), publish);
         assertFalse(core.contains("entity.setContent("), core);

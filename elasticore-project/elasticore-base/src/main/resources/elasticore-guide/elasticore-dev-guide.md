@@ -167,6 +167,13 @@ protected void beforeSave(Customer customer, CustomerDTO request) {
 ```
 - The default `beforeSave(entity, request)` calls `beforeSave(entity)`, so you can override either one.
 - For work that must happen "only when first saved", such as the price and total of a new order, tell the cases apart by state: `if (order.getStatus() == null) order.place(...)`.
+- **Refusing is safe.** Throw from `beforeSave` (or let a check the write makes throw - a reference to a row that does not
+  exist, an invariant, a command's rule) and the update is refused with nothing left behind: the row the request was mapped
+  onto is put back as stored (JPA reads the entity
+  again, MyBatis clears its session cache), so a later read in the same transaction - a batch, a caller that catches the refusal -
+  sees the stored value, not the refused one. A method of your own that reads a row, changes it and then refuses does the same:
+  `throw io.elasticore.springboot3.entity.RefusedWrite.discard(entityManager, entity, refused);` (JPA) or
+  `throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);` (MyBatis) in its `catch (RuntimeException refused)`.
 
 ---
 

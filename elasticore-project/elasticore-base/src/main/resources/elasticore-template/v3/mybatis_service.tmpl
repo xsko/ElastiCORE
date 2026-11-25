@@ -196,12 +196,17 @@ public class ${className} {
         if (entity == null)
             throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${maskKeep}${membersBefore}
         ${htmlBefore}
-        ${mapperName}.mapping(dto, entity, ${isSkipNull});
-        ${htmlClean}
-        ${deriveBeforeSave}
-        beforeSave(entity, dto);
-        write(entity);${membersWrite}
-        return ${answerOpen}${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)))${answerClose};
+        try {
+            ${mapperName}.mapping(dto, entity, ${isSkipNull});
+            ${htmlClean}
+            ${deriveBeforeSave}
+            beforeSave(entity, dto);
+            write(entity);${membersWrite}
+            return ${answerOpen}${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)))${answerClose};
+        } catch (RuntimeException refused) {
+            // Refused: the session forgets the row it handed out, so the transaction does not read the refused change.
+            throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);
+        }
     }
 
     /**
@@ -267,11 +272,15 @@ public class ${className} {
         List<${entityClassName}> targets = loaded(${qryRef}.findBySearch(srchDTO, null, null, null, null));
         for (${entityClassName} entity : targets) {${membersBeforeEach}
             ${htmlBefore}
-            ${mapperName}.mapping(dto, entity, true);
-            ${htmlClean}
-            ${deriveBeforeSave}
-            beforeSave(entity, dto);
-            write(entity);${membersWriteEach}
+            try {
+                ${mapperName}.mapping(dto, entity, true);
+                ${htmlClean}
+                ${deriveBeforeSave}
+                beforeSave(entity, dto);
+                write(entity);${membersWriteEach}
+            } catch (RuntimeException refused) {
+                throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);
+            }
         }
         return targets.size();
     }
