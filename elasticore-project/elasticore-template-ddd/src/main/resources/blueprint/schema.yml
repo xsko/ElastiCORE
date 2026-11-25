@@ -4,6 +4,16 @@
 
 entities:
 
+  AccessLog:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.AccessLog)
+    table: frm_access_log
+    java: io.elasticore.sample.ddd.forum.domain.model.AccessLog
+    fields:
+      logId: Long @Column(name = "log_id") @Id @GeneratedValue
+      event: string(20) @Column(name = "event", length = 20)
+      success: Boolean @Column(name = "success")
+      reason: string(300) @Column(name = "reason", length = 300)
+
   Address:
     meta: entity @embeddable @java(io.elasticore.sample.ddd.shop.domain.model.Address)
     table: shop_address
@@ -133,6 +143,16 @@ entities:
       password: string(255) @Column(name = "password", length = 255)
       nickname: string(30) @Column(name = "nickname", length = 30)
       role: string(1) @Column(name = "role", length = 1) -- 후보값( U=User, M=Moderator, A=Admin)
+
+  Notice:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Notice)
+    table: frm_notice
+    java: io.elasticore.sample.ddd.forum.domain.model.Notice
+    fields:
+      noticeId: Long @Column(name = "notice_id") @Id @GeneratedValue
+      title: string(50) @Column(name = "title", length = 50)
+      body: string(200) @Column(name = "body", length = 200)
+      priority: Integer @Column(name = "priority")
 
   Order:
     meta: entity @extend(AuditEntity) @java(io.elasticore.sample.ddd.shop.domain.model.Order)

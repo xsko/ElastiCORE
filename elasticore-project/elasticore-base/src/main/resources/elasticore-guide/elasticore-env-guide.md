@@ -798,6 +798,26 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   principal can be built from the model the summary and the support class's comment say what to write (`Member (signing in): its API
   takes no create, ... - to sign callers in, write protected Map<String, Object> newSignInRow(String role) ...`). The tests still say
   what each entry expects. Another signature is not read as it. `elasticore-template-ddd`'s `forum` domain does so.
+- Rows your code makes (issue 358): write `new<Entity>Row()` in the support class - Java `protected Map<String, Object>
+  newNoticeRow() throws Exception`, Kotlin `protected fun newNoticeRow(): Map<String, Any?>`, at the end of the class, as
+  `newSignInRow`. It makes a row of that entity your way (your service, as your code makes one) and answers it with its key:
+  `obj("noticeId", notices.save(notice).getNoticeId())`; it runs as the application itself, so `create=none` lets it in.
+  Where the run finds it in your support class, on disk, every row of that entity a test needs is the one it makes, not one a
+  `POST` of the model's row makes - the rows of the `@access` tests (read, search, update, delete, commands, the moves of
+  `states:`) and the rows other entities point to. Its fields are checked through `PUT`
+  (`assertUpdated(put(NOTICE, obj("noticeId", id, "title", text(50))))`, then 51 characters refused 400 `Size`) where the API
+  takes an update; `!` (`NotNull`) is not - an update keeps what it does not send. What only a create of the model's row checks:
+  a create let in, `@invariant`, where a new row starts, `@Mask`, `@encrypt`, the export - is not written, and counted. Use it for an
+  entity whose API takes no create (`create=none`: a log the server writes, a record another entity's command makes) and for one whose
+  `beforeSave` refuses the row the model builds (422: a record only made for a parent in a certain state). Without it the tests are
+  as they were; where the API takes no create (`create=none`) no test that needs such a row is written - it could only abort - and
+  the summary says what to write (`AccessLog: its API takes no create (create=none), so no row of it is made to test its fields
+  and @access with - to have them written, write protected Map<String, Object> newAccessLogRow() throws Exception in
+  ForumContractSupport: ...`). It is not generated and not an interface. `elasticore-template-ddd`'s `forum` domain does so
+  (`Notice`, `AccessLog`).
+- `create=none`, `update=none`, `delete=none` (any operation whose every term says `none`): a visitor and a caller of another role
+  are refused as for any entry, and the administrator too - 403 `forbidden`, as `AccessPolicy` answers it; update and delete on a
+  row `new<Entity>Row()` made (or a create made, where it is open).
 - Nobody signed in: the rows of an `@owner` entity are made by the application itself, without their owner (the server sets `@owner`
   from who is calling). The summary counts each such entity (`Verification: its rows are made without their owner (@owner(memberId))
   - ...`), and a 5xx answer on one of its rows - a row a test needs, a step, the move - aborts the test with the reason (`withoutOwner`),
