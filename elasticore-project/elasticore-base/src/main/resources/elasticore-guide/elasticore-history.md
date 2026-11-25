@@ -1,3 +1,162 @@
+## 3.0.261128
+
+### Bug Fixes (contract tests - `create=none` and rows the project makes, issue 358)
+
+#### No contract test that can only abort for an entity nobody creates through the API; `new<Entity>Row()` for rows made the project's way
+- Why: for an entity with `@access(create=none)` every generated contract test made its row with a `POST` the API always
+  refuses (403): the field tests went through `POST`, the `@access` tests read, updated and deleted a row `createdId(...)`
+  made first - and each aborted (129 of one application's tests). The refusal itself was not tested: no test said the
+  administrator's create is refused. And a row the project's own `beforeSave` refuses (422) had no way to be made the
+  project's way, so its field, `@access` and `states:` tests aborted too (92 more).
+- Before and after:
+  - `create=none` (every term of the create level says `none`): no test that needs a row made by a `POST` is written - the
+    field tests, the `@access` tests on a row, `@invariant`, the moves of `states:`, `@Mask`, `@encrypt`, the export - and the
+    summary says why and what to write: `AccessLog: its API takes no create (create=none), so no row of it is made to test its
+    fields and @access with - to have them written, write protected Map<String, Object> newAccessLogRow() throws Exception in
+    ForumContractSupport: an AccessLog made your way, answered as obj("logId", <its key>)`. A row of another entity that needs
+    one is not built either (`it needs a Notice, which the API does not create (create=none)`), as for an `@expose` without create.
+  - Each operation whose every term says `none` (`create=none`, `update=none`, `delete=none`, ...): besides the visitor and the
+    caller of another role, a test that the signed-in administrator is refused - 403 `forbidden`, as `AccessPolicy` answers
+    (`rule.single == NONE`; checked by running the tests). This test is new in a project's contract tests for every such
+    operation; one whose own access policy lets the administrator through there will see it fail.
+  - `new<Entity>Row()` - optional, written by the project in its support class, never by the generator, the same pattern as
+    `newSignInRow(role)`: Java `protected Map<String, Object> newNoticeRow() throws Exception`, Kotlin `protected fun
+    newNoticeRow(): Map<String, Any?>`. Read from the support class on disk as `newSignInRow` is (`writesRow`; only a `protected`
+    one - a private helper of the same name stays the project's; comments and other shapes are not read). It makes a row of that entity the project's way and answers it with its key; the test class calls it as
+    the application itself (`CurrentUser.callAsSystem`, a private `noticeRow()` that checks the key is there), so `create=none`
+    lets it in. Where it is written, every row of that entity a test needs is the one it makes - for any entity, create open or
+    not: the rows of the `@access` tests, the moves of `states:`, the rows another entity points to. The fields are checked through
+    `PUT` on it where the API takes an update not refused to all (`assertUpdated(put(NOTICE, obj("noticeId", id, "title",
+    text(50))))`, then 51 characters refused 400 `Size`); `!` is not (an update keeps what it does not send) and is counted. What
+    only a create of the model's row checks - a create let in, `@invariant`, where a new row starts, `@Mask`, `@encrypt`, the
+    export - is counted, not written; a create refused (visitor, other role, administrator under none) still sends the model's
+    row, refused before it is read. The support class gets `put` and `assertUpdated` where such a test needs them and no test of
+    `@Mask` brings them, and its comment names the members used.
+  - Without `new<Entity>Row()` and without `none`, the output is the one it was (the existing contract tests are unchanged).
+  - The env guide's contract-test section (en, ko) documents both; `elasticore-template-ddd`'s `forum` domain gains `AccessLog`
+    (create, update and delete none) and `Notice` (create=none, a moderator edits) with `newAccessLogRow()` and `newNoticeRow()` in
+    `ForumContractSupport` (and `put`/`assertUpdated`, which a support class the generator no longer merges - this one has no
+    header - has to be given by hand, as the summary says).
+- Checked: the `forum` contract tests generated and run (`elasticore-template-ddd`, H2): with the old generator `AccessLog` 16
+  tests, 12 aborted, `Notice` 15 tests, 12 aborted (the domain 123 tests, 24 aborted); with this one and the two members
+  `AccessLog` 15, `Notice` 15, the domain 122 tests, 0 aborted, 0 failed - the administrator refused 403 `forbidden` on create,
+  update and delete under none, the fields of `Notice` checked through PUT. `ContractTestsTest`: create=none without the member
+  (nothing that aborts, the summary's hint, the refusals), with it (rows by it, PUT field tests, the support's `put`, a create-open
+  entity's row replaced, another entity's reference), Kotlin, and what is read as the member; the whole class passes.
+- Files: `ContractTestSource.java`, `RulesGenRunner.java`, `ContractTestsTest.java`; `elasticore-env-guide.md` and
+  `ko/elasticore-env-guide.md`; `elasticore-template-ddd` `forum/model/entity.yml`, `ForumContractSupport.java`, `db/schema-*.sql`.
+
+### Bug Fixes (DSL loading - the `--` label)
+
+#### A `--` label holding `=` is the whole text, not key=value pairs (#345)
+- Why: `AbstractModelLoader.loadAnnotationMap` wrote the `--` text into the line as `@label(<text>)` and parsed it as
+  annotation parameters, so a label with `=` - a formula, `1 = ...` - was read as key=value pairs. A label such as
+  `-- shortest policy period in calendar months (1 = to the same day of the next month, or that month's last day)`
+  became `day)` in the entity Javadoc, `schema.yml`, the DDL column comment and the migration, without a warning. The
+  DSL guide already said the opposite: `-- sum = price * qty` is a label.
+- Before and after: the `--` text (and, after ` | `, the description) is now taken as written, whatever it holds -
+  `=`, `,`, parentheses - and never parsed as parameters. It still follows the annotations written on the line, as a
+  sibling of an `@label` or `@desc` written there, so a hand-written `@label(...)` keeps its reading (translations, or
+  the 2.x key=value pairs with a `DSL_WARN`). One code path reads every `--` text of the YAML loaders: entity, DTO,
+  enumeration and port fields, and `meta:` lines - in every mode (JPA, MyBatis, MongoDB). A label that had no `=` and
+  balanced parentheses reads as before; one with `=`, or an unbalanced or three-deep parenthesis, now keeps its whole
+  text (a bug fix). None of the template and sample blueprints has such a label, so their output does not change.
+- Checked: `DashLabelAsWrittenTest` (field, formula, parentheses, the description after ` | `, `meta:` lines, a
+  hand-written `@label` beside it - all fail without the fix), `DdlMigrationTest.aLabelWithEqualsIsTheWholeTextEverywhere`
+  (JPA and MyBatis: the H2 schema comment, the Flyway migration and the entity), `LabelTranslationParseTest`,
+  `elasticore-template` regenerated with the 2.x generator (no file changes), `elcoreRulesCheck -Pstrict`
+  (158 MATCH / 0 DIFF / 2 ACCEPTED), `elcoreTreeCheck` (0 / 0 / 0).
+- Files: `AbstractModelLoader.java`, `LabelTranslations.java` (comment), `elasticore-dsl-guide.md` (en, ko).
+
+### Bug Fixes (v3 service - a refused write, issue 344)
+
+#### A refused update leaves no trace in what its transaction reads
+- Why: the generated CoreService reads the row, maps the request onto that same object, then runs what may refuse
+  the write - `beforeSave`, a reference to a row that does not exist, an invariant the write checks, a command's
+  rule. Nothing was committed, but the change stayed in the object the transaction holds: under MyBatis the row in
+  the session's local cache (`localCacheScope` SESSION, its default), under JPA the managed entity - whose change the
+  next query's AUTO flush even wrote into the table inside the transaction. A later read of the row in the same
+  transaction (a batch, a caller that catches the refusal) answered the refused value.
+- Before and after: update, update by condition and the commands (`commands:`, `states:` moves) catch a
+  `RuntimeException` thrown between the mapping and the write, discard the row, and throw the refusal unchanged.
+  The discarding is the runtime's (`elasticore-springboot3` and `-springboot4`), one line of generated code:
+  - JPA: `io.elasticore.springboot3.entity.RefusedWrite.discard(em, entity, refused)` reads the entity again
+    (`refresh`), with the members it cascades to (REFRESH, ALL). Read again rather than detached: the entity stays the
+    one object the persistence context, a parent's collection and the caller share, so none of them keeps the refused
+    value. Where it cannot be read again - a member the request added that was never written, a row no longer there -
+    it is detached (with the members its cascade reaches), and the next read loads it afresh.
+  - MyBatis: `io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused)` clears the local cache of each MyBatis
+    session the transaction holds - what an UPDATE would have done - so the next read reads the database.
+  - MongoDB is not changed: Spring Data MongoDB reads a new object each time, so a refused change is not read back.
+  - A write that is not refused runs exactly as before; the checks before the mapping (validation, the access check
+    of the row, the version) change nothing and stay outside. A create's row is new - nothing else holds it - and a
+    delete changes no field of its row before it is refused, so neither is changed. What an `@onDelete` statement or
+    an earlier row of a batch wrote stays as written until the transaction rolls back, as before.
+  - The dev guide (en, ko) says so under `beforeSave`, with the same call for a method of your own that reads a row,
+    changes it and then refuses.
+  - Upgrading: the generated services call the new runtime classes, so the generator and `elasticore-springboot3` /
+    `-springboot4` go up together (as the plugin's `elasticoreVersion` does); a project that keeps its own copy of the
+    runtime (`runtimePackages`) copies `RefusedWrite` in too, and for MyBatis needs `mybatis-spring` there.
+  - When the row cannot be read again and is detached, Hibernate may have marked the transaction rollback-only: a caller that
+    catches the refusal and goes on gets its commit refused (`UnexpectedRollbackException`) instead of committing the
+    refused change. Reading the row again also drops what the same transaction changed in it, unflushed, before.
+- Checked: reproduced first, each failing without the fix ("expected original but was REFUSED CHANGE"): a
+  `@Transactional` MockMvc test - refused PUT, then GET of the row in the same transaction - on
+  `elasticore-template-mybatis` (layered MyBatis, a `beforeSave` that refuses), `elasticore-template-ddd` (hexagonal
+  JPA) and `elasticore-template-ddd-mybatis` (hexagonal MyBatis), both refused by the reference check after the mapping
+  (404 `reference.Category.parentCategory`); all pass with it, with the modules' other tests, and so does the same test in
+  Kotlin on `elasticore-template-kt` (hexagonal JPA; run with the fix only). `RefusedWriteTest` in the
+  runtime (Hibernate on H2: the row and a cascaded member read again, an added member detached, the AUTO flush no
+  longer writing the refused value; MyBatis-Spring on H2: the session cache cleared), on Boot 3 and Boot 4.
+  `RefusedWriteGenerationTest`: update, update by condition and a command in layered and hexagonal JPA (Java, Kotlin)
+  and MyBatis. `elcoreRulesCheck -Pstrict` and `elcoreTreeCheck` unchanged (the 2.x output is not touched).
+- Files: `v3/service.tmpl`, `kt/service.tmpl`, `v3/mybatis_service.tmpl`, `v3/mybatis_port_service.tmpl`,
+  `MyBatisServiceFileRules.java`, `DddCommandRules.java`, `DddRepositoryPortRules.java` (the entity manager's comment),
+  `RefusedWrites.java`; runtime `entity/RefusedWrite.java`, `mybatis/RefusedWrite.java` (MyBatis-Spring compile-only);
+  `elasticore-dev-guide.md` and `ko/elasticore-dev-guide.md`.
+
+### Bug Fixes (TypeScript client - the compiler settings of a new Vite project)
+
+#### The TypeScript client compiles under create-vite's React-TS settings (#346)
+- Why: a client imported into a Vite + React app did not compile with the checks create-vite's `tsconfig.app.json`
+  turns on. For `elasticore-template-kt` (143 files, TypeScript 5.9.3) that was 147 errors:
+  - `noUnusedParameters` (34, TS6133): `validateXxx(value, partial = false)` and `validateXxxCodes` never read
+    `partial` when the type has no required field to check;
+  - `verbatimModuleSyntax` (111, TS1484): `Page` and the DTOs imported as values in the `...Api.ts` files, and a DTO
+    imported as a value in DTO, invariant and specification files;
+  - `erasableSyntaxOnly` (2, TS1294): `ApiError`'s `status` and `path` were constructor parameter properties.
+  The repository's own checks could not see it: neither the template's `src/main/ts/tsconfig.json` nor the pet store's
+  `web/tsconfig.json` set the three flags.
+- Before and after:
+  - A name used only as a type is imported as one: `import type { OrderDTO } from './OrderDTO';` in DTO, value object,
+    search DTO, invariant, specification and API files, `import { request, seg, type Page } from './apiSupport';`
+    (and `type ExportRequest`). A state enum a lifecycle check compares against (`OrderStatus.PLACED`) stays a value
+    import. New `Syntax.typeImportLine` - the JVM languages write their one import.
+  - `validateXxx` / `validateXxxCodes` name the parameter `_partial` where no field they check is required (no required
+    field, no `@minsize` list); it is still taken, so every validate function is called the same way. A type with a
+    required field is unchanged.
+  - `ApiError` declares `readonly status: number` and `readonly path: string` and assigns them in the constructor - the
+    same public shape and constructor.
+  - `elasticore-template-kt` (`src/main/ts`, TypeScript 5.4.5 -> 5.9.3, the pet store's) and the pet store
+    (`web/tsconfig.json`) type-check with `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`,
+    `isolatedModules`, `verbatimModuleSyntax` and `erasableSyntaxOnly` beside `strict`, so `elcore3tsVerify` and
+    `webBuild` (CI, "TypeScript - the generated clients compile") fail on a client a new Vite project would refuse. The
+    template's `tsconfig.run.json` (CommonJS for `node --test`) turns `verbatimModuleSyntax` off for the emit only. The
+    pet store's pages import their DTOs with `import type`.
+  - Out of scope: a required relation is still not checked by `validateXxx` (the issue's separate idea).
+- Checked: the template-kt client generated before the fix with the new flags: 147 errors (34 TS6133, 111 TS1484,
+  2 TS1294); after: `tsc -p .` 0 errors and `npm test` 15/15 in `src/main/ts`, `elcore3tsVerify -Pstrict`,
+  `elcore3tsTest`, pet store `webBuild` (`tsc --noEmit` and the esbuild bundle). Unit tests on the generated text:
+  `TypeScriptModelTest` (`aTypeIsImportedAsAType`, `partialIsNamedUnreadWhereNothingIsRequired`, the specification
+  import), `ShopModelTest` (the API's type and value imports, `ApiError`'s fields), `ExposeMethodsTest`,
+  `ExposeMethodsRulesTest`, `SearchExportGenerationTest`, `TypeScriptSearchDtoRelationTest`; they fail without the fix.
+  `elcoreRulesCheck -Pstrict` (158 MATCH / 0 DIFF / 2 ACCEPTED) and `elcoreTreeCheck` (0 / 0 / 0): the 2.x output has
+  no TypeScript client.
+- Files: `Syntax.java`, `TypeScriptDtoFileRules.java`, `TypeScriptApiRules.java`, `DddInvariantRules.java`,
+  `DddSpecificationRules.java`, `ts/apiSupport.tmpl`, `elasticore-rule-guide.md` (en, ko), template-kt
+  `src/main/ts/package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.run.json`, pet store `web/tsconfig.json`,
+  `web/src/main.ts`, `cart.ts`, `shop.ts`.
+
 ## 3.0.261127
 
 ### New Features (v3 service - `@access`: `config: nestedRows: readers`, a nested DTO for the holder's readers)
