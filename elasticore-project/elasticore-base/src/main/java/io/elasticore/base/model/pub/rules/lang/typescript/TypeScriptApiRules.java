@@ -470,28 +470,35 @@ public class TypeScriptApiRules implements CodeRules {
             }
         }
 
+        // A name used only as a type is imported as one - inline ("type Page") beside the
+        // functions, "import type" for the DTOs: a project with verbatimModuleSyntax
+        // (create-vite's) refuses a type imported as a value (TS1484).
         StringBuilder sb = new StringBuilder();
         List<String> runtime = new ArrayList<String>();
         if (uses.request) runtime.add("request");
         if (uses.requestOrNull) runtime.add("requestOrNull");
         if (uses.seg) runtime.add("seg");
-        if (paged && uses.search) runtime.add("Page");
+        if (paged && uses.search) runtime.add("type Page");
         if (uses.export) {
             runtime.add("requestFile");
-            runtime.add("ExportRequest");
+            runtime.add("type ExportRequest");
         }
         if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.signsIn(e)) runtime.add("ApiError");
         sb.append(String.format("import { %s } from './apiSupport';%n",
                 String.join(", ", runtime)));
 
-        // The state enums the lifecycle checks compare against.
+        for (String m : models) {
+            sb.append(syntax.typeImportLine(m)).append('\n');
+        }
+        // The state enums the lifecycle checks compare against: values (OrderStatus.PLACED).
+        Set<String> states = new LinkedHashSet<String>();
         for (EntitySpec.StateMachine machine : e.stateMachines()) {
             for (FieldSpec f : e.fields()) {
-                if (f.name().equals(machine.field())) models.add(syntax.typeName(f.typeName()));
+                if (f.name().equals(machine.field())) states.add(syntax.typeName(f.typeName()));
             }
         }
-        for (String m : models) {
-            sb.append(syntax.importLine(m)).append('\n');
+        for (String s : states) {
+            if (!models.contains(s)) sb.append(syntax.importLine(s)).append('\n');
         }
         return sb.toString();
     }

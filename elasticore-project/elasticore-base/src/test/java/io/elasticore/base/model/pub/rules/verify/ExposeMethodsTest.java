@@ -272,12 +272,16 @@ public class ExposeMethodsTest {
         assertTrue(tag.contains("EmTagKeyDTO") && tag.contains("seg"), tag);
 
         String full = found(java, "EmFullApi.ts");
-        assertTrue(full.contains("import { request, requestOrNull, seg, Page } from './apiSupport';"), full);
+        // verbatimModuleSyntax: Page and the DTOs are types, imported as types (issue 346).
+        assertTrue(full.contains("import { request, requestOrNull, seg, type Page } from './apiSupport';"), full);
         // A client that only reads still names the page it answers with, and no request it never makes.
-        assertTrue(code.contains("import { request, requestOrNull, seg, Page } from './apiSupport';"), code);
+        assertTrue(code.contains("import { request, requestOrNull, seg, type Page } from './apiSupport';"), code);
         String typo = found(java, "EmTypoApi.ts");
-        assertTrue(typo.contains("import { request, Page } from './apiSupport';"), typo);
-        assertTrue(full.contains("EmFullKeyDTO") && full.contains("EmFullSrchDTO"), full);
+        assertTrue(typo.contains("import { request, type Page } from './apiSupport';"), typo);
+        assertTrue(
+                full.contains("import type { EmFullKeyDTO } from './EmFullKeyDTO';")
+                        && full.contains("import type { EmFullSrchDTO } from './EmFullSrchDTO';"),
+                full);
     }
 
     @Test
