@@ -203,7 +203,8 @@ public class DddRepositoryPortRules implements CodeRules, ArtifactContributor {
             lines.add("/** Searching and paging: the application's business, through its own port. */");
             lines.add(String.format("protected final %s query;", query));
             lines.add("");
-            lines.add("/** Identity references for the mapper. No query goes through it. */");
+            lines.add(
+                    "/** Identity references for the mapper, and a refused write's row read again. No query goes through it. */");
             lines.add("protected final EntityManager entityManager;");
             lines.add("");
             lines.add(String.format("public %sCoreService(%s repository, %s query, EntityManager entityManager) {",

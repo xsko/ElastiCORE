@@ -171,10 +171,15 @@ public class ${className} {
         ${accessUpdate}
         if (entity == null)
             throw new EntityNotFoundException("Invalid ${dtoClassName} ID");${versionCheck}${maskKeep}
-        ${mapperName}.mapping(dto, entity, ${isSkipNull});
-        ${deriveBeforeSave}
-        beforeSave(entity, dto);
-        return ${answerOpen}${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})${answerClose};
+        try {
+            ${mapperName}.mapping(dto, entity, ${isSkipNull});
+            ${deriveBeforeSave}
+            beforeSave(entity, dto);
+            return ${answerOpen}${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})${answerClose};
+        } catch (RuntimeException refused) {
+            // Refused: the session forgets the row it handed out, so the transaction does not read the refused change.
+            throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);
+        }
     }
 
     /**
@@ -234,10 +239,14 @@ public class ${className} {
 
         List<${entityClassName}> targets = ${qryRef}.findAll(srchDTO, null, (Sort) null);
         for (${entityClassName} entity : targets) {
-            ${mapperName}.mapping(dto, entity, true);
-            ${deriveBeforeSave}
-            beforeSave(entity, dto);
-            ${cmdRef}.save(entity);
+            try {
+                ${mapperName}.mapping(dto, entity, true);
+                ${deriveBeforeSave}
+                beforeSave(entity, dto);
+                ${cmdRef}.save(entity);
+            } catch (RuntimeException refused) {
+                throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);
+            }
         }
         return targets.size();
     }

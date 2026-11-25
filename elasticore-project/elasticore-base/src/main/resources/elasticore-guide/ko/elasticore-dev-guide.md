@@ -167,6 +167,13 @@ protected void beforeSave(Customer customer, CustomerDTO request) {
 ```
 - 기본 `beforeSave(entity, request)` 는 `beforeSave(entity)` 를 부르므로 둘 중 하나만 override 해도 됩니다.
 - 새 주문의 가격·합계처럼 "처음 저장될 때만" 할 일은 상태로 구분합니다: `if (order.getStatus() == null) order.place(...)`.
+- **거절해도 흔적이 남지 않습니다.** `beforeSave` 에서 예외를 던지면(쓰기가 하는 검사 - 없는 행을 가리키는 참조, 불변식,
+  명령의 규칙 - 가 던져도) 수정은 거절되고,
+  요청이 덮어쓴 행은 저장된 값으로 되돌려집니다(JPA 는 엔티티를 다시 읽고, MyBatis 는 세션 캐시를 비웁니다). 그래서 같은
+  트랜잭션의 이후 조회 - 일괄 처리, 거절을 잡고 계속하는 호출자 - 는 거절된 값이 아니라 저장된 값을 봅니다. 행을 읽어 바꾼 뒤
+  거절하는 직접 작성한 메서드도 같은 일을 합니다: `catch (RuntimeException refused)` 에서
+  `throw io.elasticore.springboot3.entity.RefusedWrite.discard(entityManager, entity, refused);` (JPA) 또는
+  `throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);` (MyBatis).
 
 ---
 
