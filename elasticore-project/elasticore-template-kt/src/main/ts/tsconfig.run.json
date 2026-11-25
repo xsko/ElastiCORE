@@ -6,6 +6,9 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    // Emitted as CommonJS for node --test: verbatimModuleSyntax keeps import
+    // statements as written, which a CommonJS module cannot hold. tsconfig.json checks it.
+    "verbatimModuleSyntax": false,
     "types": ["node"]
   }
 }

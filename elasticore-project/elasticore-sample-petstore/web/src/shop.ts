@@ -3,7 +3,7 @@
 // @login and @password; who may call what, and whose orders a search
 // returns, is decided by the server from the DSL.
 import { request } from '../../src/main/ts/apiSupport';
-import { CustomerDTO } from '../../src/main/ts/CustomerDTO';
+import type { CustomerDTO } from '../../src/main/ts/CustomerDTO';
 
 export { signIn, signOut, me } from '../../src/main/ts/CustomerApi';
 

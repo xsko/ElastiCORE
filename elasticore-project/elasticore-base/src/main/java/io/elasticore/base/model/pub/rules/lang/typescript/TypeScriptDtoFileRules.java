@@ -173,10 +173,13 @@ public class TypeScriptDtoFileRules implements CodeRules {
         // replaced.
         String fields = RuleText.stripTrailing(c.renderFieldBlock(1));
 
+        // Every name the file imports is a field's type - a DTO, a value object, an
+        // enum - and nothing else here reads it, so each is a type-only import: a
+        // project with verbatimModuleSyntax (create-vite's) refuses a type imported as a value (TS1484).
         StringBuilder imports = new StringBuilder();
         for (String name : declaredTypesIn(fields)) {
             if (name.equals(className)) continue;
-            imports.append(syntax.importLine(name)).append('\n');
+            imports.append(syntax.typeImportLine(name)).append('\n');
         }
 
         c.var("className", className)
@@ -263,16 +266,28 @@ public class TypeScriptDtoFileRules implements CodeRules {
             }
             c.varLine("metaList", "    %s: { %s },", c.syntax().escapeName(f.name()), m);
         }
+        // Only a required field reads partial. Where none is checked the parameter is
+        // still taken, so every validate function is called the same way, but named
+        // _partial: a project with noUnusedParameters (create-vite's) refuses an unread one (TS6133).
+        String partial = readsPartial(checked) ? "partial" : "_partial";
         c.varLine("metaList", "} as const;")
-         .varLine("metaList", "")
-         .varLine("metaList", "/**")
-         .varLine("metaList", " * The DSL's checks, before sending: field -> message, empty when nothing is")
-         .varLine("metaList", " * wrong. The server checks them again; this is so a form can say it first.")
-         .varLine("metaList", " * partial: an update that sends only what changed - what is required is not asked for.")
-         .varLine("metaList", " */")
-         .varLine("metaList", "export function validate%s(value: Partial<%s> | null | undefined, partial = false): Record<string, string> {", base, className)
-         .varLine("metaList", "    const errors: Record<string, string> = {};")
-         .varLine("metaList", "    if (value == null) return errors;");
+                .varLine("metaList", "")
+                .varLine("metaList", "/**")
+                .varLine("metaList", " * The DSL's checks, before sending: field -> message, empty when nothing is")
+                .varLine("metaList", " * wrong. The server checks them again; this is so a form can say it first.")
+                .varLine(
+                        "metaList",
+                        " * %s: an update that sends only what changed - what is required is not asked for.",
+                        partial)
+                .varLine("metaList", " */")
+                .varLine(
+                        "metaList",
+                        "export function validate%s(value: Partial<%s> | null | undefined, %s = false): Record<string, string> {",
+                        base,
+                        className,
+                        partial)
+                .varLine("metaList", "    const errors: Record<string, string> = {};")
+                .varLine("metaList", "    if (value == null) return errors;");
         // What validateXxxCodes says for the same checks: the code and values per field, in order.
         List<String> codeLines = new ArrayList<String>();
         for (FieldSpec f : checked) {
@@ -393,9 +408,10 @@ public class TypeScriptDtoFileRules implements CodeRules {
                 .varLine("metaList", " */")
                 .varLine(
                         "metaList",
-                        "export function validate%sCodes(value: Partial<%s> | null | undefined, partial = false): %s {",
+                        "export function validate%sCodes(value: Partial<%s> | null | undefined, %s = false): %s {",
                         base,
                         className,
+                        partial,
                         fieldError)
                 .varLine("metaList", "    const errors: %s = [];", fieldError)
                 .varLine("metaList", "    if (value == null) return errors;");
@@ -490,6 +506,17 @@ public class TypeScriptDtoFileRules implements CodeRules {
         java.util.Map<String, io.elasticore.base.model.core.Annotation> map =
                 meta == null ? null : meta.getMetaAnnotationMap();
         return map == null ? null : map.get("label");
+    }
+
+    /**
+     * Whether validateXxx and validateXxxCodes read partial: a checked list (one with a
+     * minsize), or a required field - the checks below that ask "!partial".
+     */
+    private static boolean readsPartial(List<FieldSpec> checked) {
+        for (FieldSpec f : checked) {
+            if (writable(f) && (f.isList() || f.required())) return true;
+        }
+        return false;
     }
 
     /** What a request may write: not shown-only, not derived, not the persistence layer's. */

@@ -63,13 +63,21 @@ export interface ProblemDetail {
 
 /** Raised for any response the server did not answer 2xx to. */
 export class ApiError extends Error {
+    /** The HTTP status the server answered with. */
+    readonly status: number;
+    /** The path that was asked for. */
+    readonly path: string;
     /** The problem detail the server sent, when it sent one. */
     readonly problem?: ProblemDetail;
     /** Field -> message, from a 400's errors: what a form shows beside each field. */
     readonly fieldErrors: Record<string, string> = {};
 
-    constructor(readonly status: number, readonly path: string, message: string) {
+    // Fields assigned here rather than constructor parameter properties, which a
+    // project with erasableSyntaxOnly (create-vite's) refuses (TS1294).
+    constructor(status: number, path: string, message: string) {
         super(message);
+        this.status = status;
+        this.path = path;
         this.name = 'ApiError';
         try {
             const parsed = JSON.parse(message);

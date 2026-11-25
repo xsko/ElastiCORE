@@ -677,6 +677,18 @@ public enum Syntax {
     public abstract String importLine(String fqcn);
 
     /**
+     * The import of a name the file uses only as a type. TypeScript says so
+     * (import type), so a compiler that keeps every value import as written
+     * (verbatimModuleSyntax) erases it; the JVM languages have one kind of
+     * import, the one importLine writes.
+     */
+    public String typeImportLine(String fqcn) {
+        if (this != TYPESCRIPT) return importLine(fqcn);
+        String simple = simpleOf(fqcn);
+        return String.format("import type { %s } from './%s';", simple, simple);
+    }
+
+    /**
      * The model names its types as Java does, so a language that names them
      * differently says so here rather than at each place a type is written.
      */
