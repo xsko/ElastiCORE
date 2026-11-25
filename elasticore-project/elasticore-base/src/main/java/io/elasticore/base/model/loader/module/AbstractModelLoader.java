@@ -296,13 +296,14 @@ public class AbstractModelLoader implements ConstantParam {
             // '=' split it, and the regular expression became "digit'").
             singleValue = parameters;
         }else {
-            //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*([^,]+)|([^,\\s]+)");
-            //Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*\"([^\"]*)\"|(\\w+)\\s*=\\s*([^,\\s]+)");
+            // Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*([^,]+)|([^,\\s]+)");
+            // Pattern kvPattern = Pattern.compile("(\\w+)\\s*=\\s*\"([^\"]*)\"|(\\w+)\\s*=\\s*([^,\\s]+)");
             // A key is a word - or, in @access only, '*' alone:
             // @access(create=public, *=owner) lost its default to the
             // single-value branch, which another entry then discarded. Every
-            // other annotation, a "--" comment's @label included, keeps the
-            // 2.x pattern, so what 2.x reads is parsed as it always was.
+            // other annotation keeps the 2.x pattern, so what 2.x reads is
+            // parsed as it always was. (A "--" comment never comes here: its
+            // text is the label as written.)
             Matcher kvMatcher = ("access".equals(annotationName) ? KV_ACCESS : KV).matcher(parameters);
 
             /*
@@ -466,9 +467,12 @@ public class AbstractModelLoader implements ConstantParam {
         fieldLine = replaceEnvVariables(fieldLine);
 
         boolean chk = false;
-        // Where the annotations built from the "--" comment start: what comes
-        // before is written by the developer, what comes after by this loader.
-        int fromComment = Integer.MAX_VALUE;
+        // The "--" text, as written: the label and, after " | ", the description.
+        // They are never parsed as annotation parameters - "-- sum = price * qty"
+        // or "-- months (1 = the same day, or the last)" is the label whatever
+        // it holds, not key=value pairs (issue 345).
+        String commentLabel = null;
+        String commentDesc = null;
         int p0 = fieldLine.indexOf(" --");
         if(p0<0) {
             p0 = fieldLine.indexOf("--");
@@ -487,7 +491,6 @@ public class AbstractModelLoader implements ConstantParam {
                 comment = fieldLine.substring(p0+3).trim();
             if(!comment.isEmpty() && comment.indexOf("@")<0) {
                 fieldLine = fieldLine.substring(0,p0);
-                fromComment = fieldLine.length();
 
                 String label = comment;
                 String desc = null;
@@ -498,9 +501,8 @@ public class AbstractModelLoader implements ConstantParam {
                         desc = items[1];
                     }
                 }
-                fieldLine = fieldLine +" @label("+label+")";
-                if(desc!=null)
-                    fieldLine = fieldLine +" @desc("+desc+")";
+                commentLabel = label;
+                commentDesc = desc;
             }
         }
 
@@ -543,9 +545,9 @@ public class AbstractModelLoader implements ConstantParam {
             }
             else if (attributeParameters != null && !attributeParameters.isEmpty()) {
                 // @label(en="Unit cost", ja=...) the developer wrote: the label in
-                // other languages. Never the @label built from "--": a comment
-                // such as "-- sum = price" is read as it always was.
-                if ("label".equals(annotationName) && matcher.start() < fromComment) {
+                // other languages. The "--" text is not on the line any more, so
+                // every @label here is one the developer wrote.
+                if ("label".equals(annotationName)) {
                     annotation =
                             io.elasticore.base.model.core.LabelTranslations.parse(annotationName, attributeParameters);
                     if (annotation == null && attributeParameters.indexOf('=') >= 0) {
@@ -570,11 +572,27 @@ public class AbstractModelLoader implements ConstantParam {
             }
 
         }
+        // The "--" text after the annotations written on the line, as the @label
+        // and @desc built from it always came: one value each, the whole text.
+        addCommentAnnotation(annotationMap, "label", commentLabel);
+        addCommentAnnotation(annotationMap, "desc", commentDesc);
         // "@label(en=Unit cost) -- Stueckpreis": the "--" text is the label, the
         // explicit @label its translations - one label, not two.
         Annotation merged = io.elasticore.base.model.core.LabelTranslations.merged(annotationMap.get("label"));
         if (merged != null) annotationMap.put("label", merged);
         return annotationMap;
+    }
+
+    /** One annotation of the "--" text: a sibling when the line already has one of that name. */
+    private static void addCommentAnnotation(Map<String, Annotation> annotationMap, String name, String text) {
+        if (text == null || text.isEmpty()) return;
+        Annotation annotation = Annotation.create(name, text, null);
+        Annotation preAnnot = annotationMap.get(name);
+        if (preAnnot != null) {
+            preAnnot.getSiblings().add(annotation);
+        } else {
+            annotationMap.put(name, annotation);
+        }
     }
 
     /**
