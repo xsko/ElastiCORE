@@ -87,11 +87,43 @@ re-exported private key in `SIGNING_KEY`.
 
 `./gradlew centralBundle` does what the workflow does short of the upload: it signs every published artifact, stages
 it in `build/central-bundle/` and writes `build/central-bundle.zip`, after checking that every file has its signature
-and checksums and every jar its sources and javadoc. It refuses a `-SNAPSHOT` version and a build without a key:
+and checksums and every jar its sources, javadoc and SBOM. It refuses a `-SNAPSHOT` version and a build without a key:
 ```bash
 ORG_GRADLE_PROJECT_signingKey="$(cat signing-key.asc)" ORG_GRADLE_PROJECT_signingPassword=... ./gradlew centralBundle
 ```
 `./gradlew publishToMavenLocal` needs neither. `./gradlew publish` also sends to a Maven repository of your own when
 `elasticorePublishUrl`, `-Username` and `-Password` are set in `~/.gradle/gradle.properties`.
+
+## The SBOMs
+
+Every published artifact carries its SBOM, a CycloneDX 1.6 JSON file published next to the jar as
+`<artifactId>-<version>-cyclonedx.json` (classifier `cyclonedx`, extension `json`), signed like every other file, so
+`<artifactId>-<version>-cyclonedx.json.asc` is its detached signature. There are four: elasticore-base, the two
+runtime libraries and the Gradle plugin; the plugin marker is a POM only and has none. They are in
+`publishToMavenLocal`, in the Central bundle (which refuses a jar without its SBOM), on Maven Central, and attached to
+the GitHub release with their signatures - the Release workflow takes them from the signed bundle.
+
+How they are made (`gradle/publishing.gradle`, applied by all four builds):
+
+- The CycloneDX Gradle plugin (`org.cyclonedx.bom`, version in the root `build.gradle` and in the plugin build's
+  `build.gradle` - bump both) writes the bill from the resolved `runtimeClasspath`, the dependencies the POM declares
+  with the versions Gradle chose - no test, sample or tooling dependency. It gives every component its purl, the
+  hashes of its jar, the licenses of its effective POM, and the dependency graph. A dependency that does not resolve
+  fails the build.
+- The task `sbom` completes it from what the build has in hand: the authors and producing organization
+  (`The ElastiCORE Authors`, the POM's developer - not a legal entity), the lifecycle phase `build`, the artifact's
+  own license and the hashes of the jar published with it, and each component's supplier - the `<organization>` of its
+  POM or of the nearest parent POM that names one, as Maven inherits it, or `unknown` where no POM up the chain names
+  one. The POM's `<developers>` become the component's authors. Nothing is guessed.
+
+To look at one: `./gradlew :elasticore-project:elasticore-springboot3:sbom` writes
+`elasticore-project/elasticore-springboot3/build/reports/sbom/elasticore-springboot3-<version>-cyclonedx.json`.
+For the plugin: `./gradlew -p elasticore-project/elasticore-gradle-plugin sbom`.
+
+GitHub's own dependency graph is fed separately, by the Dependency graph workflow
+(`.github/workflows/dependency-graph.yml`, Gradle dependency submission on pushes to `main` and `release/*`, limited
+to the published artifacts' `runtimeClasspath`), so Dependabot alerts and GitHub's SBOM export include the libraries'
+dependencies. GitHub writes that SPDX export itself, without hashes, suppliers or an author; the CycloneDX files are
+the SBOM to give a customer.
 
 See `BRANCHING.md` for which branch a fix goes to.
