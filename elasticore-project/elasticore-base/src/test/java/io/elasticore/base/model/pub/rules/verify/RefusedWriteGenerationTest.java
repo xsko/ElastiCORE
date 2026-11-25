@@ -236,8 +236,8 @@ public class RefusedWriteGenerationTest {
         SpecFactory.valueObjectsInDto(false);
         SpecFactory.rootsSplitByDefault(false);
         SpecFactory.commandOnlyRoots(false);
-        java.util.List<File> all = new java.util.ArrayList<File>(
-                java.util.Arrays.asList(layered, hexagonal, kotlin, mybatis, mybatisHex));
+        java.util.List<File> all =
+                new java.util.ArrayList<File>(java.util.Arrays.asList(layered, hexagonal, kotlin, mybatis, mybatisHex));
         all.addAll(mongo);
         for (File dir : all) {
             if (dir == null || !dir.exists()) continue;
