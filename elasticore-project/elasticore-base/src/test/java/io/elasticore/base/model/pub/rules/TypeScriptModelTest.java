@@ -329,8 +329,76 @@ public class TypeScriptModelTest {
         String out = render(order(), "specifications");
 
         assertTrue(out.contains("export function highValue(order: OrderDTO | null | undefined): boolean"), out);
-        assertTrue(out.contains("import { OrderDTO } from './OrderDTO';"), out);
+        assertTrue(out.contains("import type { OrderDTO } from './OrderDTO';"), out);
         assertFalse(out.contains("Predicate"), "the JVM's workaround has nothing to translate to: " + out);
+    }
+
+    // ---- what a strict project compiles (issue 346) ----------------------
+    // create-vite's React-TS tsconfig turns on noUnusedParameters, verbatimModuleSyntax and
+    // erasableSyntaxOnly beside strict; the client compiles under each.
+
+    /** verbatimModuleSyntax: a name used only as a type is imported as one (TS1484). */
+    @Test
+    public void aTypeIsImportedAsAType() {
+        assertEquals(
+                "import type { CategoryDTO } from './CategoryDTO';",
+                Syntax.TYPESCRIPT.typeImportLine("io.acme.content.dto.CategoryDTO"));
+        // The JVM languages have one kind of import.
+        assertEquals(
+                Syntax.JAVA.importLine("io.acme.content.dto.CategoryDTO"),
+                Syntax.JAVA.typeImportLine("io.acme.content.dto.CategoryDTO"));
+        assertEquals(
+                Syntax.KOTLIN.importLine("io.acme.content.dto.CategoryDTO"),
+                Syntax.KOTLIN.typeImportLine("io.acme.content.dto.CategoryDTO"));
+
+        assertTrue(render(order(), "invariants").contains("import type { OrderDTO } from './OrderDTO';"));
+        String dto = render(
+                new EntitySpec("Product")
+                        .domain("content", "Content")
+                        .pkg("dto", "io.acme.content.dto")
+                        .addField(loader.parse("productId", "long @id"))
+                        .addField(loader.parse("category", "CategoryDTO")),
+                "dto");
+        assertTrue(dto.contains("import type { CategoryDTO } from './CategoryDTO';"), dto);
+        assertFalse(dto.contains("import { CategoryDTO }"), dto);
+    }
+
+    /**
+     * noUnusedParameters: validateXxx and validateXxxCodes read partial only for a required field;
+     * where none is checked the parameter is still taken - every validate function is called the
+     * same way - and named _partial (TS6133).
+     */
+    @Test
+    public void partialIsNamedUnreadWhereNothingIsRequired() {
+        String optional = render(
+                new EntitySpec("Bookmark")
+                        .domain("content", "Content")
+                        .pkg("dto", "io.acme.content.dto")
+                        .addField(loader.parse("bookmarkId", "long @id"))
+                        .addField(loader.parse("note", "string(40)")),
+                "dto");
+        assertTrue(
+                optional.contains(
+                        "export function validateBookmark(value: Partial<BookmarkDTO> | null | undefined, _partial = false):"),
+                optional);
+        assertTrue(
+                optional.contains(
+                        "export function validateBookmarkCodes(value: Partial<BookmarkDTO> | null | undefined, _partial = false):"),
+                optional);
+        assertFalse(optional.replace("_partial", "").contains("partial ="), optional);
+
+        // A required field reads it, as before.
+        String required = render(article(), "dto");
+        assertTrue(
+                required.contains(
+                        "export function validateArticle(value: Partial<ArticleDTO> | null | undefined, partial = false):"),
+                required);
+        assertTrue(
+                required.contains(
+                        "export function validateArticleCodes(value: Partial<ArticleDTO> | null | undefined, partial = false):"),
+                required);
+        assertTrue(required.contains("partial ? value.title === ''"), required);
+        assertFalse(required.contains("_partial"), required);
     }
 
     /**

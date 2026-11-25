@@ -1,5 +1,5 @@
 // The cart lives in the browser until checkout; the server prices it then.
-import { ItemDTO } from '../../src/main/ts/ItemDTO';
+import type { ItemDTO } from '../../src/main/ts/ItemDTO';
 
 export interface CartLine {
     itemId: number;

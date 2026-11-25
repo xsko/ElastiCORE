@@ -1,9 +1,17 @@
 {
+  // The checks a new Vite + React project (create-vite's tsconfig.app.json) runs, so a
+  // generated client that would not compile there does not compile here either.
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "noEmit": true,
     "skipLibCheck": true
   },

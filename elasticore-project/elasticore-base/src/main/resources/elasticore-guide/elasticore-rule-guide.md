@@ -1760,6 +1760,14 @@ version) in `build/elasticore/ts-client.model`, and `elcore3` says nothing if th
 script (`webBuild` and so on) calls `elcore3ts` is also quiet if nothing changed. If you delete the `build` folder,
 `elcore3` tells you every time until you run `elcore3ts` again.
 
+**The compiler settings it compiles under.** The client compiles with the checks a new Vite + React project
+(create-vite's `tsconfig.app.json`) turns on: `strict`, `noUnusedLocals`, `noUnusedParameters`,
+`noFallthroughCasesInSwitch`, `isolatedModules`, `verbatimModuleSyntax` and `erasableSyntaxOnly` (TypeScript 5.8 or
+later for the last). A name used only as a type is imported with `import type`, `ApiError` declares its fields rather
+than taking them as constructor parameter properties, and `validateXxx(value, partial)` / `validateXxxCodes` name the
+second parameter `_partial` where no field they check is required - they are called the same way. Import a DTO in your
+own pages the same way: `import type { OrderDTO } from './OrderDTO'`.
+
 **Where it sends, and what every request carries (`configureApi`).** By default the client calls the same origin with
 `fetch` and `Content-Type: application/json` only. Set the rest once at startup in `apiSupport.ts`:
 

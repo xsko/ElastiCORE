@@ -138,9 +138,9 @@ public class DddSpecificationRules implements CodeRules, ArtifactContributor {
         // Written directly rather than through addImport: what a TypeScript
         // file imports is a module path, and the collected-import block is
         // built from qualified type names. The DTO rule says the same thing
-        // about its own imports.
-        c.var("className", dto)
-         .var("importList", c.syntax().importLine(dto) + "\n");
+        // about its own imports. The DTO is an interface, a type only: import type
+        // (verbatimModuleSyntax).
+        c.var("className", dto).var("importList", c.syntax().typeImportLine(dto) + "\n");
 
         for (Specification spec : specificationsOf(e, var, Syntax.TYPESCRIPT)) {
             c.varLine("bodyList", "/**")

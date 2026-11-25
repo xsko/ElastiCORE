@@ -136,7 +136,7 @@ public class SearchExportGenerationTest {
         assertTrue(
                 support.contains("export async function requestFile(") && support.contains("ExportRequest<S>"),
                 support);
-        assertTrue(found(tsDomains, "ExItemApi.ts").contains("requestFile, ExportRequest"));
+        assertTrue(found(tsDomains, "ExItemApi.ts").contains("requestFile, type ExportRequest"));
         assertFalse(found(tsDomains, "ZzNoteApi.ts").contains("requestFile"));
     }
 
@@ -214,7 +214,8 @@ public class SearchExportGenerationTest {
                         + " init?: RequestInit): Promise<Blob> {"),
                 client);
         assertTrue(client.contains("return requestFile('POST', BASE + '/export', body, init);"), client);
-        assertTrue(client.contains("requestFile, ExportRequest"), client);
+        // ExportRequest is a type: imported as one (verbatimModuleSyntax, issue 346).
+        assertTrue(client.contains("requestFile, type ExportRequest"), client);
 
         String support = found(ts, "apiSupport.ts");
         assertTrue(support.contains("export interface ExportRequest<S> {"), support);
