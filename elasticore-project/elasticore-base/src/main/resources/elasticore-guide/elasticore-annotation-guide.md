@@ -2222,7 +2222,11 @@ Generated behavior (CoreService):
 CurrentUser.runAsSystem(() -> customers.save(admin));
 ```
 
-The **whole row** of another entity (a nested DTO) is carried only when everyone allowed to read the holder is also allowed to read the referenced entity. The holder's read expression must imply the referenced entity's read expression: `user` can carry `user`, and a role or `owner` can carry `user`; nothing implies `owner`. If an order with `read=user` carries a customer with `read=owner`, the build drops the nested field and warns (the identifier `customerId` stays). A nested DTO is for the response; cascading reverse mapping still does not write a referenced row protected by its own write access.
+The **whole row** of another entity (a nested DTO) is carried in a DTO only when that entity's read level is `public`; otherwise the build drops the field and warns (the identifier `customerId` stays).
+With `config: nestedRows: readers` in env.yml (opt-in on 3.0, for the whole domain; default `public`, the behaviour above, byte for byte - env guide 6-5) the row is carried when everyone who may read the holder may also read that entity: `read=user` carries `read=user`, a role or `owner` carries `user`, `read=MANAGER` carries `read=MANAGER`, and nothing carries `owner`.
+Then the build drops only what no setting carries: an order with `read=user` carrying a customer with `read=owner` keeps only `customerId`. Off, the warning of a row the setting would carry names it.
+Under `readers`, a carried row of an entity not everyone may read is in what a read answers (read one, search, export); create, update, a command, `me()` and sign-in answer it as `null`, because they check other levels - with `Coverage @access(read=MANAGER, create=user)` and `Product @access(read=MANAGER)`, a plain user who creates a coverage gets no product back. The identifier stays.
+A nested DTO is never written on the way in: a row sent in a create or update does not change the referenced one, cascade included; its identifier still points the relation.
 
 The build reports `@access` syntax errors (`read=owners`, `read=owner|`, `@access(admin)` on an entity) as warnings - if you leave them,
 the application does not start (a word with a capital first is a role name and is checked as above: `read=MANGER`). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),

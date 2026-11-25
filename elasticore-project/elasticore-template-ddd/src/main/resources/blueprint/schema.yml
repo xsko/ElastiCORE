@@ -23,6 +23,23 @@ entities:
       authorId: Long @Column(name = "author_id") @Id @GeneratedValue
       name: string(50) @Column(name = "name", length = 50)
 
+  Award:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Award)
+    table: frm_award
+    java: io.elasticore.sample.ddd.forum.domain.model.Award
+    fields:
+      awardId: Long @Column(name = "award_id") @Id @GeneratedValue
+      badge: Badge @foreignKey(badge_badge_code) -- Badge entity relationship
+      note: string(50) @Column(name = "note", length = 50)
+
+  Badge:
+    meta: entity @java(io.elasticore.sample.ddd.forum.domain.model.Badge)
+    table: frm_badge
+    java: io.elasticore.sample.ddd.forum.domain.model.Badge
+    fields:
+      badgeCode: string(10) @Column(name = "badge_code", length = 10) @Id
+      name: string(30) @Column(name = "name", length = 30)
+
   Book:
     meta: entity @java(io.elasticore.sample.ddd.catalog.entity.Book)
     table: cat_book

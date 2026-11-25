@@ -916,6 +916,22 @@ elasticore:
   설정은 없습니다. 본문은 `elasticore-annotation-guide.md`(export)에 있습니다.
 - 예제: 펫스토어의 `ExportLimitTest`(`max-rows=10`: 32 개 품목은 거부되고, 더 좁은 검색은 써집니다).
 
+## 6-5. 보유 엔티티를 읽는 사람에게 싣는 중첩 행 (`nestedRows`, 3.0)
+> **동작:** v3 번들 - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal, 그리고 TypeScript 타입 · **미지원:** 2.x 호환 출력(output = 'v2'), 2.x 생성기
+
+```yaml
+config:
+  nestedRows: readers      # @access 엔티티의 중첩 DTO 를 보유 엔티티를 읽을 수 있는 사람에게 싣는다 (기본값: public)
+```
+
+- `public` (3.0 의 기본값) - 다른 엔티티의 행 전체(중첩 DTO, `product: Product @dtype(ProductDTO)`)는 그 엔티티를 누구나 읽을 수 있을 때만
+  실리고, 아니면 경고와 함께 빠집니다. 이 설정을 쓰지 않은 프로젝트는 바이트 단위로 전과 같은 코드를 생성합니다.
+- `readers` (issue 321) - 보유 엔티티를 읽을 수 있는 모든 사람이 그 엔티티도 읽을 수 있을 때 실립니다 (`read=MANAGER` 는 `read=MANAGER` 를,
+  `read=user` 는 `read=user` 를 담고, `owner` 는 무엇도 담지 못함). 읽기 응답(단건 조회, 검색, export)에 실리고 정렬도 되며, 생성·수정·커맨드·
+  `me()`·로그인 응답에서는 `null` 입니다 (CoreService 의 `withoutCarriedRows`). 요청에 실린 행은 참조 행을 쓰지 않습니다.
+- 도메인 전체에 적용됩니다. 응답에 필드가 늘어나므로 클라이언트와 함께 켜세요. 3.1 에서는 기본으로 켜집니다.
+- 꺼져 있으면, 이 설정으로 실릴 행의 경고가 설정 이름을 알려 줍니다 (`elasticore-annotation-guide.md`, `@access`).
+
 ## 7. apiPath 설정
 
 ```yaml

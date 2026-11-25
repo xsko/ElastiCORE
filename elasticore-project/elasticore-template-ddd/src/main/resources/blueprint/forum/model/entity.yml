@@ -92,3 +92,19 @@ entity:
     commands:
       move:
         sectionId: long!
+
+  # A badge only a moderator reads; an award names one, and only a moderator reads awards either - so
+  # whoever reads an award may read its badge, and the award carries it (issue 321). A member gives an
+  # award but may not read badges: what the create answers leaves the badge out, its code stays.
+  Badge:
+    meta: entity @root @editable @expose(20) @access(read=MODERATOR, create=MODERATOR, update=MODERATOR, delete=MODERATOR)
+    fields:
+      badgeCode: string(10) @id
+      name:      string(30)!
+
+  Award:
+    meta: entity @root @editable @expose(20) @access(read=MODERATOR, create=user, update=MODERATOR, delete=MODERATOR)
+    fields:
+      awardId: long @id @sequence
+      badge:   Badge @ManyToOne @dtype(BadgeDTO)
+      note:    string(50)
