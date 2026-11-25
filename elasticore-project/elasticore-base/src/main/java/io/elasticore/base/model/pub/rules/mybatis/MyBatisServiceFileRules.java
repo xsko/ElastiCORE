@@ -274,13 +274,14 @@ public class MyBatisServiceFileRules implements CodeRules {
                         pk.name()));
             }
         }
+        // The writes sit in the try that discards a refused row (RefusedWrite): one step further in.
         c.var("membersBefore", before.toString())
-         .var("membersWrite", write.toString())
-         .var("membersBeforeEach", before.toString().replace(nl, nl + "    "))
-         .var("membersWriteEach", write.toString().replace(nl, nl + "    "))
-         .var("membersCreate", members.isEmpty() ? "" : nl + "writeMembers(entity, null);")
-         .var("membersDelete", delete.toString())
-         .var("memberMethods", methods.toString());
+                .var("membersWrite", write.toString().replace(nl, nl + "    "))
+                .var("membersBeforeEach", before.toString().replace(nl, nl + "    "))
+                .var("membersWriteEach", write.toString().replace(nl, nl + "        "))
+                .var("membersCreate", members.isEmpty() ? "" : nl + "writeMembers(entity, null);")
+                .var("membersDelete", delete.toString())
+                .var("memberMethods", methods.toString());
     }
 
     /**

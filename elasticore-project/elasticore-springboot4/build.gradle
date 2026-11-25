@@ -65,6 +65,9 @@ dependencies {
     // Only compiled against: the generated MyBatis mappers' enum handler and database id.
     compileOnly 'org.mybatis:mybatis:3.5.19'
     testImplementation 'org.mybatis:mybatis:3.5.19'
+    // Only compiled against: a refused write clears the transaction's MyBatis session cache.
+    compileOnly 'org.mybatis:mybatis-spring:4.0.0'
+    testImplementation 'org.mybatis:mybatis-spring:4.0.0'
     // Only compiled against: the generated MongoDB code's sequences and value converter.
     compileOnly 'org.springframework.data:spring-data-mongodb'
     testImplementation 'org.springframework.data:spring-data-mongodb'
