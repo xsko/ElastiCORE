@@ -163,10 +163,15 @@ open class ${className}(
         val entity = ${cmdRef}.findById(${pkDtoInfo}).orElse(null)
         ${accessUpdate}
         if (entity == null) throw EntityNotFoundException("Invalid ${dtoClassName} ID")${versionCheck}${maskKeep}
-        ${mapperName}.mapping(dto, entity, ${isSkipNull}, ${emRef})
-        ${deriveBeforeSave}
-        beforeSave(entity, dto)
-        return ${answerOpen}${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})${answerClose}
+        try {
+            ${mapperName}.mapping(dto, entity, ${isSkipNull}, ${emRef})
+            ${deriveBeforeSave}
+            beforeSave(entity, dto)
+            return ${answerOpen}${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})${answerClose}
+        } catch (refused: RuntimeException) {
+            // Refused: the row is read again, so the transaction does not read the refused change.
+            throw io.elasticore.springboot3.entity.RefusedWrite.discard(${emRef}, entity, refused)
+        }
     }
 
     /**
@@ -238,10 +243,14 @@ open class ${className}(
 
         val targets = ${qryRef}.findAll(spec)
         for (entity in targets) {
-            ${mapperName}.mapping(dto, entity, true, em)
-            ${deriveBeforeSave}
-            beforeSave(entity, dto)
-            ${cmdRef}.save(entity)
+            try {
+                ${mapperName}.mapping(dto, entity, true, em)
+                ${deriveBeforeSave}
+                beforeSave(entity, dto)
+                ${cmdRef}.save(entity)
+            } catch (refused: RuntimeException) {
+                throw io.elasticore.springboot3.entity.RefusedWrite.discard(em, entity, refused)
+            }
         }
         return targets.size
     }

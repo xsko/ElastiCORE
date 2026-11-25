@@ -166,6 +166,10 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         String answer = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.answered(
                 e, String.format("%s.toDTO(%s%s.save(entity)%s)", mapper, open, repo, close));
 
+        // A rule that refuses after the aggregate changed leaves no trace in what the transaction reads.
+        String rethrow = io.elasticore.base.model.pub.rules.base.RefusedWrites.rethrow(c, e, "entity");
+        String in = rethrow == null ? "        " : "            ";
+
         for (CommandSpec cmd : e.commands()) {
             StringBuilder m = new StringBuilder();
             m.append("    /**\n")
@@ -186,17 +190,24 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.guarded(e)) {
                     m.append(String.format("        accessWrite(entity, \"%s\")%n", cmd.name()));
                 }
-                m.append(String.format("        %s%n", call));
-                if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                if (rethrow != null) m.append("        try {\n");
+                m.append(String.format("%s%s%n", in, call));
+                if (DddDeriveRules.derives(e)) m.append(String.format("%s%s%n", in, DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
+                    m.append(String.format("%s%s%n", in, c.varValue("countsAfterCommand")));
                 // An html field a parameter of the command set is cleaned as on every write.
                 if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                m.append("")
-                        .append(String.format("        return %s%n", answer))
-                        .append("    }");
+                    m.append(String.format("%s%s%n", in, c.varValue("htmlAfterCommand")));
+                m.append(String.format("%sreturn %s%n", in, answer));
+                if (rethrow != null) {
+                    m.append(String.format(
+                                    "        %s%n",
+                                    io.elasticore.base.model.pub.rules.base.RefusedWrites.catchClause(c)))
+                            .append(String.format("            %s%n", rethrow))
+                            .append("        }\n");
+                }
+                m.append("    }");
             } else {
                 m.append(String.format("    public %s %s(%s) {%n", dto, cmd.name(), serviceParams(e, cmd, c.syntax())));
                 if (cmd.dtoName() != null) m.append("        BeanValidation.validate(command);\n");
@@ -206,17 +217,24 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (io.elasticore.base.model.pub.rules.base.ServiceAccessRules.guarded(e)) {
                     m.append(String.format("        accessWrite(entity, \"%s\");%n", cmd.name()));
                 }
-                m.append(String.format("        %s;%n", call));
-                if (DddDeriveRules.derives(e)) m.append(String.format("        %s%n", DddDeriveRules.call(c)));
+                if (rethrow != null) m.append("        try {\n");
+                m.append(String.format("%s%s;%n", in, call));
+                if (DddDeriveRules.derives(e)) m.append(String.format("%s%s%n", in, DddDeriveRules.call(c)));
                 // @count: a command that moves the state touches the counts it is counted in.
                 if (c.varValue("countsAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
+                    m.append(String.format("%s%s%n", in, c.varValue("countsAfterCommand")));
                 // An html field a parameter of the command set is cleaned as on every write.
                 if (c.varValue("htmlAfterCommand") != null)
-                    m.append(String.format("        %s%n", c.varValue("htmlAfterCommand")));
-                m.append("")
-                        .append(String.format("        return %s;%n", answer))
-                        .append("    }");
+                    m.append(String.format("%s%s%n", in, c.varValue("htmlAfterCommand")));
+                m.append(String.format("%sreturn %s;%n", in, answer));
+                if (rethrow != null) {
+                    m.append(String.format(
+                                    "        %s%n",
+                                    io.elasticore.base.model.pub.rules.base.RefusedWrites.catchClause(c)))
+                            .append(String.format("            %s%n", rethrow))
+                            .append("        }\n");
+                }
+                m.append("    }");
             }
             c.addMethod(m.toString().replace("\r\n", "\n"));
         }
