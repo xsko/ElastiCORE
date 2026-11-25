@@ -148,6 +148,12 @@ final class ContractTestSource {
         boolean signInRowWritten;
 
         /**
+         * The domain's support class on disk - the project's - or null: where it declares new&lt;Entity&gt;Row(),
+         * the rows of that entity a test needs are made by it, not by a create of the model's row (issue 358).
+         */
+        String supportText;
+
+        /**
          * Reads which of the domain-model rule sets the run selected. The rule
          * sets are named here, not in the runner, which knows none of them.
          */
@@ -226,6 +232,7 @@ final class ContractTestSource {
         for (EntitySpec e : own) {
             if (!testable(e)) continue;
             EntityTests t = new EntityTests(e, lang, s);
+            t.support = support;
             if (!t.plan()) continue;
             planned.add(t);
             asks |= (t.guarded && !t.tests.isEmpty()) || t.declaresAccess();
@@ -257,6 +264,7 @@ final class ContractTestSource {
             privacy.tests |= t.privacyTests > 0;
             privacy.stored |= t.storedTests;
             privacy.decrypted |= t.decryptedTests;
+            privacy.puts |= t.putTests > 0;
             export.tests |= t.exportTests > 0;
             if (principal == null) withoutOwner(t, unowned);
             Source src = new Source(t.e.getName() + "ContractTest", t.render(pkg, support, Groups.ALL), t.tests.size());
@@ -268,6 +276,13 @@ final class ContractTestSource {
         a.system = system;
         a.signInRow = wanted;
         a.unowned.putAll(unowned);
+        for (EntityTests t : planned) {
+            if (t.tests.isEmpty()) continue;
+            for (Builder b : t.builders.values()) {
+                String member = rowMember(b.e.getName()) + "()";
+                if (b.project && !a.rows.contains(member)) a.rows.add(member);
+            }
+        }
         out.add(
                 0,
                 new Source(
@@ -346,6 +361,8 @@ final class ContractTestSource {
      */
     private void withoutOwner(EntityTests t, Map<String, String[]> unowned) {
         for (Builder b : t.builders.values()) {
+            // A row the project makes, its way: not one the tests send without its owner.
+            if (b.project) continue;
             String declared = b.e.metaValue("owner");
             if (declared == null || declared.trim().isEmpty()) continue;
             FieldSpec owner = ServiceAccessRules.ownerField(b.e);
@@ -374,6 +391,12 @@ final class ContractTestSource {
         boolean stored;
         /** Some test decrypts what the database holds (decrypted, assertEncrypted). */
         boolean decrypted;
+
+        /**
+         * Some test checks a field through PUT, on a row the project made (issue 358): the support class has put
+         * and assertUpdated - which the tests of @Mask bring with them, where there are any.
+         */
+        boolean puts;
 
         final List<String> skipped;
 
@@ -408,6 +431,9 @@ final class ContractTestSource {
          * and what the summary says of each: a 5xx answer on such a row aborts the test.
          */
         final Map<String, String[]> unowned = new LinkedHashMap<String, String[]>();
+
+        /** The members of the project's that make the rows of an entity its way: newNoticeRow (issue 358). */
+        final List<String> rows = new ArrayList<String>();
 
         Access(boolean callers, boolean declared, List<String> skipped) {
             this.callers = callers;
@@ -543,6 +569,47 @@ final class ContractTestSource {
         return java.util.regex.Pattern.compile(declared).matcher(support).find();
     }
 
+    /** The member a project writes in its support class to make a row of an entity its way: newNoticeRow. */
+    static String rowMember(String entity) {
+        return "new" + entity + "Row";
+    }
+
+    /** How it is declared, as the summary and the support class's comment tell a developer to write it. */
+    static String rowSignature(String entity, boolean kotlin) {
+        return kotlin
+                ? "protected fun " + rowMember(entity) + "(): Map<String, Any?>"
+                : "protected Map<String, Object> " + rowMember(entity) + "() throws Exception";
+    }
+
+    /**
+     * Whether the support class - the project's, as it is on disk - declares new&lt;Entity&gt;Row() as the
+     * generated tests call it: Java Map&lt;String, Object&gt; newNoticeRow(), Kotlin fun newNoticeRow():
+     * Map&lt;String, Any?&gt; (or Map&lt;String, Any&gt;). Another shape is not read as it, and comments are not read.
+     */
+    static boolean writesRow(String supportText, String entity, boolean kotlin) {
+        if (supportText == null || entity == null) return false;
+        String support = supportText.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", "");
+        String declared = kotlin
+                ? "\\bfun\\s+" + rowMember(entity) + "\\s*\\(\\s*\\)\\s*:\\s*"
+                        + "(?:kotlin\\.collections\\.)?(?:Mutable)?Map\\s*<\\s*String\\s*,\\s*Any\\??\\s*>"
+                : "(?:java\\.util\\.)?Map\\s*<\\s*(?:java\\.lang\\.)?String\\s*,\\s*(?:java\\.lang\\.)?Object\\s*>\\s+"
+                        + rowMember(entity)
+                        + "\\s*\\(\\s*\\)\\s*(?:throws[^{;]*)?\\{";
+        return java.util.regex.Pattern.compile(declared).matcher(support).find();
+    }
+
+    /**
+     * What the summary adds where no row of an entity can be made for its tests: " - to have them written,
+     * write protected Map&lt;String, Object&gt; newNoticeRow() throws Exception in ForumContractSupport: a
+     * Notice made your way, answered as obj("noticeId", &lt;its key&gt;)".
+     */
+    static String rowHint(EntitySpec e, boolean kotlin, String support) {
+        if (e.pkFields().size() != 1 || support == null) return "";
+        return " - to have them written, write " + rowSignature(e.getName(), kotlin) + " in " + support + ": "
+                + article(e.getName()) + e.getName() + " made your way, answered as obj(\""
+                + json(e.pkFields().get(0)) + "\", <its key>)";
+    }
+
     /** Tests not written after all - their support class lacks what they call: no longer counted as written, and why. */
     void notWritten(int tests, String why) {
         written -= tests;
@@ -646,6 +713,31 @@ final class ContractTestSource {
         if (e == null || !e.hasMeta("expose") || e.pkField() == null || e.hasMeta("readonly")) return false;
         if (ControllerBaseRules.exposeOmitted(e).contains("create")) return false;
         if (ControllerBaseRules.restExcluded(e, true).contains("create")) return false;
+        return true;
+    }
+
+    /**
+     * Whether @access lets nobody create a row of the entity through its API - every term of its create
+     * level says none (create=none), the administrator refused too; false where @access is not read.
+     */
+    static boolean createRefusedToAll(EntitySpec x) {
+        String declared = x == null ? null : x.metaText("access");
+        if (declared == null || declared.trim().isEmpty()) return false;
+        Map<String, String> levels = new HashMap<String, String>();
+        for (String part : declared.split(",", -1)) {
+            if (part.trim().isEmpty()) continue;
+            java.util.regex.Matcher m =
+                    ACCESS_ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+            AccessExpression level = m.matches() ? AccessExpression.parse(m.group(2)) : null;
+            if (level == null) return false;
+            levels.put(m.group(1), level.text());
+        }
+        String text = levels.containsKey("create") ? levels.get("create") : levels.get("*");
+        AccessExpression create = AccessExpression.parse(text == null ? "admin" : text);
+        if (create == null || create.terms().isEmpty()) return false;
+        for (List<String> term : create.terms()) {
+            if (!term.contains("none")) return false;
+        }
         return true;
     }
 
@@ -1068,6 +1160,33 @@ final class ContractTestSource {
         final List<Promise> promises = new ArrayList<Promise>();
         boolean guarded;
 
+        /** The support class the test class extends: where new&lt;Entity&gt;Row(), the project's, is written. */
+        String support;
+
+        /** The rows of the entity a test needs are made by new&lt;Entity&gt;Row(), the project's (issue 358). */
+        boolean projectRow;
+
+        /** A create of the model's row can be sent: the API serves POST and the row can be built. */
+        boolean modelRow;
+
+        /** The tests send a create of the model's row and expect it made: today's tests, through POST. */
+        boolean postsNew;
+
+        /** The fields are checked through PUT, on a row the project made: no create of the model's row is made. */
+        boolean byPut;
+
+        /** How many tests check a field through PUT: the support class then has put and assertUpdated. */
+        int putTests;
+
+        /** Why the tests that create a row with values of their own are not written, where they are not. */
+        String noCreate;
+
+        /** Why the tests that need a stored row are not written - no row of it can be made; null when one is. */
+        String noRow;
+
+        /** An entry of @access not read as operation=level: none of it is tested. */
+        private String unreadAccess;
+
         EntityTests(EntitySpec e, Lang lang, Settings s) {
             this.e = e;
             this.lang = lang;
@@ -1081,7 +1200,9 @@ final class ContractTestSource {
                 skip(e.getName() + ": no " + e.dtoClassName() + " to send");
                 return false;
             }
-            if (!creates(e)) {
+            readEntries();
+            projectRow = projectRow(e);
+            if (!creates(e) && !projectRow) {
                 if (declaresAnything(e))
                     skip(e.getName() + ": its API takes no create (@expose methods), so no row is made to test");
                 return false;
@@ -1096,9 +1217,34 @@ final class ContractTestSource {
             }
             Builder own = builder(e, new ArrayDeque<String>());
             if (own.problem != null) {
-                skip(e.getName() + ": " + own.problem);
-                return false;
+                if (!projectRow) {
+                    skip(e.getName() + ": " + own.problem);
+                    return false;
+                }
+                // No row of the model's to send: the project's rows are the ones the tests use.
+                own = new Builder(e);
+                builders.put(e.getName(), own);
+            } else {
+                modelRow = creates(e);
             }
+            own.project = projectRow;
+            // create=none: nobody may create through the API, the administrator neither (issue 358).
+            boolean createNone = noneOnly("create");
+            postsNew = modelRow && !createNone && !projectRow;
+            if (createNone) noCreate = "its API takes no create (create=none)";
+            else if (!creates(e)) noCreate = "its API takes no create (@expose methods)";
+            else if (projectRow)
+                noCreate = "its rows are made by " + rowMember(e.getName())
+                        + "(), yours, not by a create of the model's row";
+            if (storedRow() == null) {
+                noRow = e.getName() + ": " + noCreate + ", so no row of it is made to test its fields and @access with"
+                        + rowHint(e, lang.kotlin, support);
+            }
+            byPut = !postsNew
+                    && storedRow() != null
+                    && updates()
+                    && !noneOnly("update")
+                    && e.pkFields().size() == 1;
             guarded = ServiceAccessRules.guarded(e);
             for (Builder b : builders.values()) guarded |= ServiceAccessRules.guarded(b.e);
 
@@ -1147,6 +1293,79 @@ final class ContractTestSource {
             return builders.get(e.getName()).call();
         }
 
+        /** Whether the support class on disk makes rows of the entity its way: new&lt;Entity&gt;Row(), one key. */
+        private boolean projectRow(EntitySpec x) {
+            return x.pkFields().size() == 1 && writesRow(s.supportText, x.getName(), lang.kotlin);
+        }
+
+        /**
+         * The key of a stored row of the entity, as an expression: one new&lt;Entity&gt;Row(), the project's,
+         * makes, or one a create of the model's row makes; null where neither can be.
+         */
+        private String storedRow() {
+            Builder own = builders.get(e.getName());
+            if (own != null && own.project) return own.id(e.pkFields().get(0).name());
+            if (!postsNew) return null;
+            return "createdId(" + constant(e) + ", " + newRow() + ", "
+                    + lang.string(json(e.pkFields().get(0))) + ")";
+        }
+
+        /** The levels @access names, read before the tests are planned; an entry not read leaves none. */
+        private void readEntries() {
+            entries.clear();
+            unreadAccess = null;
+            if (!declaresAccess()) return;
+            for (String part : e.metaText("access").split(",", -1)) {
+                if (part.trim().isEmpty()) continue;
+                java.util.regex.Matcher m =
+                        ACCESS_ENTRY.matcher(part.replace("'", "").replace("\"", ""));
+                AccessExpression x = m.matches() ? AccessExpression.parse(m.group(2)) : null;
+                if (x == null) {
+                    unreadAccess = part.trim();
+                    entries.clear();
+                    return;
+                }
+                entries.put(m.group(1), x.text());
+            }
+        }
+
+        /** Whether nobody may do it through the API - every term of its level says none: the administrator neither. */
+        private boolean noneOnly(String op) {
+            return !entries.isEmpty() && noneOnly(level(op));
+        }
+
+        private boolean noneOnly(AccessExpression x) {
+            if (x == null || x.terms().isEmpty()) return false;
+            for (List<String> term : x.terms()) {
+                if (!term.contains("none")) return false;
+            }
+            return true;
+        }
+
+        /** A test of a field's constraint: through PUT it starts with the row it updates. */
+        private Test fieldTest(String method, String display) {
+            Test t = test(method, display);
+            if (byPut) {
+                t.lines.add(lang.val("id", storedRow()));
+                putTests++;
+            }
+            return t;
+        }
+
+        /** The request a field test sends the value with: a create of the model's row, or an update of the row by its key. */
+        private String sending(String pathConstant, String name, String value) {
+            if (byPut) {
+                return "put(" + pathConstant + ", obj("
+                        + lang.string(json(e.pkFields().get(0))) + ", id, " + lang.string(name) + ", " + value + "))";
+            }
+            return "post(" + pathConstant + ", withValue(" + newRow() + ", " + lang.string(name) + ", " + value + "))";
+        }
+
+        /** The value was taken: the row made, or updated. */
+        private String taken(String request) {
+            return (byPut ? "assertUpdated(" : "assertCreated(") + request + ")";
+        }
+
         // ---- builders
 
         /** The builder of an entity's rows, planned with what it needs first; its problem when none can be. */
@@ -1154,6 +1373,12 @@ final class ContractTestSource {
             Builder known = builders.get(target.getName());
             if (known != null) return known;
             Builder b = new Builder(target);
+            // A row the project makes its way (new<Entity>Row()): nothing of the model's is sent for it.
+            if (target != e && projectRow(target)) {
+                b.project = true;
+                builders.put(target.getName(), b);
+                return b;
+            }
             if (visiting.contains(target.getName())) {
                 b.problem =
                         "its references come back to " + target.getName() + " (" + String.join(" -> ", visiting) + ")";
@@ -1172,6 +1397,11 @@ final class ContractTestSource {
             }
             if (target != e && (!creates(target) || !servedAnywhere(target))) {
                 b.problem = "it needs a " + target.getName() + ", which the API does not create";
+                return b;
+            }
+            if (target != e && createRefusedToAll(target)) {
+                b.problem = "it needs a " + target.getName() + ", which the API does not create (create=none)"
+                        + rowHint(target, lang.kotlin, support);
                 return b;
             }
             visiting.push(target.getName());
@@ -1455,6 +1685,10 @@ final class ContractTestSource {
                 }
             }
             if (commands.isEmpty()) return;
+            if (storedRow() == null) {
+                skip(e.getName() + " states: " + noCreate + " - no row is made to move");
+                return;
+            }
             List<EntitySpec.StateMachine> used = new ArrayList<EntitySpec.StateMachine>();
             for (EntitySpec.StateMachine m : machines) {
                 for (String c : commands) {
@@ -1469,6 +1703,10 @@ final class ContractTestSource {
             for (EntitySpec.StateMachine m : used) {
                 String shown = stateJson(m.field());
                 if (m.initial() == null || shown == null) continue;
+                if (!postsNew) {
+                    skip(e.getName() + " states: where a new row starts is checked by a create - " + noCreate);
+                    break;
+                }
                 if (start == null) {
                     start = test(
                             "aNew" + e.getName() + "StartsInItsInitialState",
@@ -1551,7 +1789,7 @@ final class ContractTestSource {
                 name.append(camel(tuple[i]));
             }
             Test t = test(name.toString(), c + ": " + said);
-            t.lines.add(lang.val("id", "createdId(" + pathConstant + ", " + newRow() + ", " + lang.string(key) + ")"));
+            t.lines.add(lang.val("id", storedRow()));
             steps(t, at, bodies, pathConstant);
             t.lines.add(lang.val(
                     "moved",
@@ -1585,7 +1823,7 @@ final class ContractTestSource {
             Test t = test(
                     c + "IsRefusedWhen" + camel(m.field()) + "Is" + camel(state),
                     c + " is refused when " + m.field() + " is " + state + " (409 " + code + ")");
-            t.lines.add(lang.val("id", "createdId(" + pathConstant + ", " + newRow() + ", " + lang.string(key) + ")"));
+            t.lines.add(lang.val("id", storedRow()));
             steps(t, at, bodies, pathConstant);
             t.lines.add(
                     lang.stmt("assertRefused(command(" + pathConstant + ", id, " + lang.string(DddCommandRules.kebab(c))
@@ -1687,19 +1925,31 @@ final class ContractTestSource {
         void constraints(Builder own) {
             String pathConstant = constant(e);
             FieldSpec pk = e.pkFields().size() == 1 ? e.pkFields().get(0) : null;
+            int before = tests.size();
             for (FieldSpec f : dto.fields()) {
                 if (removedKey(dto, f)) continue;
                 String ref = reference(f);
                 if (ref == null && !writable(e, f)) continue;
                 if (pk != null && f.name().equals(pk.name()) && ServiceAccessRules.keyGenerated(pk)) continue;
+                if (byPut && pk != null && f.name().equals(pk.name())) continue;
                 String name = json(f);
                 if (f.required() && (ref != null || writable(e, f))) {
-                    Test t = test(f.name() + "IsRequired", f.name() + " is required (400 NotNull)");
-                    t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", null)), " + lang.string(f.name()) + ", \"NotNull\")"));
+                    if (byPut) {
+                        skip(e.getName() + "." + f.name() + " is required: an update keeps what it does not send, so"
+                                + " it is checked by a create - " + noCreate);
+                    } else {
+                        Test t = test(f.name() + "IsRequired", f.name() + " is required (400 NotNull)");
+                        t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
+                                + lang.string(name) + ", null)), " + lang.string(f.name()) + ", \"NotNull\")"));
+                    }
                 }
                 if (ref != null) continue;
                 if (f.isList()) {
+                    if (byPut) {
+                        if (f.dslValueAny("minsize") != null)
+                            skip(e.getName() + "." + f.name() + " @minsize: checked by a create - " + noCreate);
+                        continue;
+                    }
                     listSize(f, pathConstant);
                     continue;
                 }
@@ -1715,6 +1965,16 @@ final class ContractTestSource {
                     continue;
                 }
                 if (numeric(f)) bounds(f, pathConstant);
+            }
+            // Neither a create nor an update to send the values with: no field is checked (issue 358).
+            if (!postsNew && !byPut && tests.size() > before) {
+                tests.subList(before, tests.size()).clear();
+                String update =
+                        !updates() ? ", and no update" : noneOnly("update") ? ", and no update (update=none)" : "";
+                skip(
+                        storedRow() == null && update.isEmpty() && noRow != null
+                                ? noRow
+                                : e.getName() + ": its fields are not checked - " + noCreate + update);
             }
         }
 
@@ -1735,11 +1995,11 @@ final class ContractTestSource {
                 return;
             }
             if (blank) {
-                Test t = test(f.name() + "NotBlank", f.name() + ": text passes, blank text is refused (400 NotBlank)");
-                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", " + passes + ")))"));
-                t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", \"   \")), " + lang.string(f.name()) + ", \"NotBlank\")"));
+                Test t = fieldTest(
+                        f.name() + "NotBlank", f.name() + ": text passes, blank text is refused (400 NotBlank)");
+                t.lines.add(lang.stmt(taken(sending(pathConstant, name, passes))));
+                t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, "\"   \"") + ", "
+                        + lang.string(f.name()) + ", \"NotBlank\")"));
             }
             if (!email) return;
             if (f.hasDsl("pattern")) {
@@ -1751,14 +2011,12 @@ final class ContractTestSource {
                     return;
                 }
             }
-            Test t = test(
+            Test t = fieldTest(
                     f.name() + "Email",
                     f.name() + ": an address passes, the address without its @ is refused (400 Email)");
-            t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                    + lang.string(name) + ", " + passes + ")))"));
-            t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                    + lang.string(name) + ", " + passes + ".replace(\"@\", \"\"))), " + lang.string(f.name())
-                    + ", \"Email\")"));
+            t.lines.add(lang.stmt(taken(sending(pathConstant, name, passes))));
+            t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, passes + ".replace(\"@\", \"\")")
+                    + ", " + lang.string(f.name()) + ", \"Email\")"));
         }
 
         /**
@@ -1795,18 +2053,16 @@ final class ContractTestSource {
                                     : "its format writes no date"));
                     continue;
                 }
-                Test t = test(
+                Test t = fieldTest(
                         f.name() + mark[1],
                         f.name() + ": a year " + (before ? "ago" : "from now") + " passes, "
                                 + (days == 2
                                         ? (before ? "two days ahead" : "two days ago")
                                         : (before ? "tomorrow" : "yesterday"))
                                 + " is refused (400 " + mark[1] + ")");
-                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", " + passes + ")))"));
-                t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", " + refused + ")), " + lang.string(f.name()) + ", "
-                        + lang.string(mark[1]) + ")"));
+                t.lines.add(lang.stmt(taken(sending(pathConstant, name, passes))));
+                t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, refused) + ", "
+                        + lang.string(f.name()) + ", " + lang.string(mark[1]) + ")"));
             }
         }
 
@@ -1826,17 +2082,16 @@ final class ContractTestSource {
                     skip(e.getName() + "." + f.name() + " @pattern: no value the generator can build "
                             + (matching == null ? "matches" : "fails") + " " + f.patternRegexp());
                 } else {
-                    Test t = test(
+                    Test t = fieldTest(
                             f.name() + "Pattern",
                             f.name() + ": a value that matches passes, one that does not is"
                                     + " refused (400 Pattern)");
                     // Varied per row where the pattern lets it: a unique field takes a value of its own each time.
                     String passes = text(f, false);
-                    t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + (passes != null ? passes : lang.string(matching)) + ")))"));
-                    t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + lang.string(other) + ")), " + lang.string(f.name())
-                            + ", \"Pattern\")"));
+                    t.lines.add(lang.stmt(
+                            taken(sending(pathConstant, name, passes != null ? passes : lang.string(matching)))));
+                    t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, lang.string(other)) + ", "
+                            + lang.string(f.name()) + ", \"Pattern\")"));
                 }
                 // A length past the bound is refused whatever it holds; the bound itself only by a value that matches.
                 if (max >= 0) patternLength(f, pathConstant, regexp, max, max + 1);
@@ -1848,30 +2103,28 @@ final class ContractTestSource {
                 if (email && max < 6) {
                     skip(e.getName() + "." + f.name() + " length: no email is " + max + " characters long");
                 } else {
-                    Test t = test(
+                    Test t = fieldTest(
                             f.name() + "Length",
                             f.name() + ": " + max + " characters pass, " + (max + 1) + " are refused (400 Size)");
                     String fits = email ? "email(" + max + ")" : "text(" + max + ")";
                     String past = email ? "email(" + (max + 1) + ")" : "text(" + (max + 1) + ")";
-                    t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + fits + ")))"));
-                    t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + past + ")), " + lang.string(f.name()) + ", \"Size\")"));
+                    t.lines.add(lang.stmt(taken(sending(pathConstant, name, fits))));
+                    t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, past) + ", "
+                            + lang.string(f.name()) + ", \"Size\")"));
                 }
             }
             if (min > 0) {
                 if (email && min < 7) {
                     skip(e.getName() + "." + f.name() + " length: no email is " + (min - 1) + " characters long");
                 } else {
-                    Test t = test(
+                    Test t = fieldTest(
                             f.name() + "LeastLength",
                             f.name() + ": " + min + " characters pass, " + (min - 1) + " are refused (400 Size)");
                     String fits = email ? "email(" + min + ")" : "text(" + min + ")";
                     String past = email ? "email(" + (min - 1) + ")" : "text(" + (min - 1) + ")";
-                    t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + fits + ")))"));
-                    t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                            + lang.string(name) + ", " + past + ")), " + lang.string(f.name()) + ", \"Size\")"));
+                    t.lines.add(lang.stmt(taken(sending(pathConstant, name, fits))));
+                    t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, past) + ", "
+                            + lang.string(f.name()) + ", \"Size\")"));
                 }
             }
         }
@@ -1880,16 +2133,15 @@ final class ContractTestSource {
         private void patternLength(FieldSpec f, String pathConstant, String regexp, int bound, int past) {
             String name = json(f);
             String fits = PatternSample.matching(regexp, bound, bound);
-            Test t = test(
+            Test t = fieldTest(
                     f.name() + (past > bound ? "Length" : "LeastLength"),
                     f.name() + ": " + (fits == null ? "" : bound + " characters pass, ") + past
                             + (past == 1 ? " character is" : " characters are") + " refused (400 Size)");
             if (fits != null) {
-                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", " + lang.string(fits) + ")))"));
+                t.lines.add(lang.stmt(taken(sending(pathConstant, name, lang.string(fits)))));
             }
-            t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                    + lang.string(name) + ", text(" + past + "))), " + lang.string(f.name()) + ", \"Size\")"));
+            t.lines.add(lang.stmt("assertFieldError(" + sending(pathConstant, name, "text(" + past + ")") + ", "
+                    + lang.string(f.name()) + ", \"Size\")"));
         }
 
         private void bounds(FieldSpec f, String pathConstant) {
@@ -1928,14 +2180,13 @@ final class ContractTestSource {
                 String code = DtoBaseRules.decimalBound(f, DtoBaseRules.Bound.split(declared)[0].trim(), false)
                         ? "Decimal" + end[1]
                         : end[1];
-                Test t = test(
+                Test t = fieldTest(
                         f.name() + end[1],
                         f.name() + ": " + plain(v) + " passes, " + plain(past) + " is refused (400 " + code + ")");
-                t.lines.add(lang.stmt("assertCreated(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", num(" + lang.string(plain(v)) + "))))"));
-                t.lines.add(lang.stmt("assertFieldError(post(" + pathConstant + ", withValue(" + newRow() + ", "
-                        + lang.string(name) + ", num(" + lang.string(plain(past)) + "))), " + lang.string(f.name())
-                        + ", " + lang.string(code) + ")"));
+                t.lines.add(lang.stmt(taken(sending(pathConstant, name, "num(" + lang.string(plain(v)) + ")"))));
+                t.lines.add(lang.stmt("assertFieldError("
+                        + sending(pathConstant, name, "num(" + lang.string(plain(past)) + ")") + ", "
+                        + lang.string(f.name()) + ", " + lang.string(code) + ")"));
             }
         }
 
@@ -1959,6 +2210,10 @@ final class ContractTestSource {
 
         /** Each promise the generator can read: its boundary passes, one past it is refused (422, its code). */
         void invariants(Builder own) {
+            if (!postsNew && !promises.isEmpty()) {
+                skip(e.getName() + " @invariant: checked by a create - " + noCreate);
+                return;
+            }
             String pathConstant = constant(e);
             for (Promise p : promises) {
                 FieldSpec f = p.field == null ? null : field(dto, p.field);
@@ -2116,18 +2371,12 @@ final class ContractTestSource {
                         + (noPrincipal != null ? noPrincipal : "the run has no generated sign-in, @signin") + ")");
                 return;
             }
-            for (String part : e.metaText("access").split(",", -1)) {
-                if (part.trim().isEmpty()) continue;
-                java.util.regex.Matcher m =
-                        ACCESS_ENTRY.matcher(part.replace("'", "").replace("\"", ""));
-                AccessExpression x = m.matches() ? AccessExpression.parse(m.group(2)) : null;
-                if (x == null) {
-                    accessSkip(name + " @access: '" + part.trim() + "' is not read as operation=level, so none of it"
-                            + " is tested (the application would not start)");
-                    entries.clear();
-                    return;
-                }
-                entries.put(m.group(1), x.text());
+            // The entries are read when the tests are planned (readEntries): create=none decides what else is.
+            if (unreadAccess != null) {
+                accessSkip(name + " @access: '" + unreadAccess + "' is not read as operation=level, so none of it"
+                        + " is tested (the application would not start)");
+                entries.clear();
+                return;
             }
             principal = p;
             callers = new Callers(p, entries.values());
@@ -2253,6 +2502,10 @@ final class ContractTestSource {
                     + x.text()
                     + (entries.containsKey(levelOp) ? "" : entries.containsKey("*") ? " (from *)" : " (the default)");
             String where = e.getName() + " " + said;
+            if (create && !modelRow) {
+                accessSkip(where + ": " + noCreate);
+                return;
+            }
             boolean ownerWord =
                     x.mentions("owner") || ("delete".equals(op) && level("read").mentions("owner"));
             if (!create && ownerWord && ownership == null) {
@@ -2279,6 +2532,11 @@ final class ContractTestSource {
                 Who w = callers.forTerm(term);
                 if (w == null) {
                     accessSkip(where + ": " + callers.problem);
+                    continue;
+                }
+                if (create && !postsNew) {
+                    accessSkip(where + ": " + w.label + " is let in by it, which a create of the model's row checks - "
+                            + noCreate);
                     continue;
                 }
                 if (create && w.visitor && keyedByOwner) {
@@ -2313,6 +2571,12 @@ final class ContractTestSource {
             Who visitor = callers.visitor();
             String refusal = outcome(op, visitor, false);
             if (refusal != null) caseOf(op, said, visitor, false, false, refusal, steps, body);
+            // Nobody may (none): the administrator is refused too, as AccessPolicy answers it (403 forbidden).
+            if (noneOnly(x)) {
+                Who admin = callers.admin();
+                if (admin == null) accessSkip(where + ": " + callers.problem);
+                else if (seen.add("none:" + admin.key())) caseOf(op, said, admin, false, false, "403", steps, body);
+            }
             // A caller of a role no term lets in - on a row of theirs, where owner is a word: the role decides.
             for (Who w : callers.candidates()) {
                 boolean byRole = Policy.require(x, w) != null
@@ -2532,12 +2796,23 @@ final class ContractTestSource {
             String path = constant(e);
             String key = lang.string(json(e.pkFields().get(0)));
             if (ownerVar == null) {
-                lines.add(lang.val("id", sys("createdId(" + path + ", " + newRow() + ", " + key + ")")));
+                String stored = storedRow();
+                if (stored == null) {
+                    accessSkip(noRow);
+                    return false;
+                }
+                // The project's row is made as the application itself already.
+                lines.add(lang.val("id", projectRow ? stored : sys(stored)));
                 return true;
             }
             if ("self".equals(ownership)) {
                 lines.add(lang.val("id", ownerVar + ".id"));
                 return true;
+            }
+            if (!postsNew) {
+                accessSkip(where + ": a row of " + ownerWho.label + "'s own is made by a create of the model's row - "
+                        + noCreate);
+                return false;
             }
             if ("sent".equals(ownership)) {
                 lines.add(lang.val(
@@ -2608,6 +2883,10 @@ final class ContractTestSource {
                 }
                 if (!writable(e, f) || f.hasDslAny("writeonly")) {
                     privacySkip(where + ": a request does not write it, so no value of the test's is sent");
+                    continue;
+                }
+                if (!postsNew) {
+                    privacySkip(where + ": checked on a row a create makes with the value - " + noCreate);
                     continue;
                 }
                 Sample value = privateValue(f, declared, maskType);
@@ -2985,6 +3264,10 @@ final class ContractTestSource {
                 exportSkip(name + ": a composite key - the rows of the file are not told apart by one key");
                 return;
             }
+            if (!postsNew) {
+                exportSkip(name + ": its rows are made by a create - " + noCreate);
+                return;
+            }
             if (!searchAnswersKey()) {
                 exportSkip(name + ": its search answers with "
                         + e.searchResultDtoName().trim() + ", which shows no "
@@ -3206,6 +3489,10 @@ final class ContractTestSource {
                 }
             }
             for (Builder b : builders.values()) {
+                if (b.project) s.append(rowMethodText(b, support));
+                // The model's row: of the entity itself where a create of it is sent, never of another the project
+                // makes.
+                if (b.project && (b.e != e || !modelRow)) continue;
                 s.append('\n');
                 s.append("    /** ")
                         .append(capital(article(b.e.getName())))
@@ -3239,6 +3526,67 @@ final class ContractTestSource {
                 s.append("    }\n");
             }
             s.append("}\n");
+            return s.toString();
+        }
+
+        /**
+         * The key of a row new&lt;Entity&gt;Row(), the project's, makes - called as the application itself
+         * (CurrentUser.runAsSystem), as newSignInRow is: every check passes, create=none too.
+         */
+        private String rowMethodText(Builder b, String support) {
+            String entity = b.e.getName();
+            String made = rowMember(entity) + "()";
+            String key = json(b.e.pkFields().get(0));
+            StringBuilder s = new StringBuilder("\n");
+            s.append("    /** The key of ")
+                    .append(article(entity))
+                    .append(entity)
+                    .append(" ")
+                    .append(made)
+                    .append(" makes - yours, in ")
+                    .append(support)
+                    .append(" - as the application itself. */\n");
+            if (lang.kotlin) {
+                s.append("    private fun ")
+                        .append(b.rowMethod())
+                        .append("(): Any {\n")
+                        .append("        val row: Map<String, Any?> =\n")
+                        .append(
+                                "            io.elasticore.springboot3.security.CurrentUser.callAsSystem<Map<String, Any?>> { ")
+                        .append(made)
+                        .append(" }\n")
+                        .append("        return row[")
+                        .append(lang.string(key))
+                        .append("] ?: org.junit.jupiter.api.Assertions.fail<Any>(")
+                        .append(lang.string(made + " answered no " + key + ": "))
+                        .append(" + row)\n")
+                        .append("    }\n");
+                return s.toString();
+            }
+            s.append("    private Object ")
+                    .append(b.rowMethod())
+                    .append("() throws Exception {\n")
+                    .append("        Exception[] failure = new Exception[1];\n")
+                    .append(
+                            "        Map<String, Object> row = io.elasticore.springboot3.security.CurrentUser.callAsSystem(() -> {\n")
+                    .append("            try {\n")
+                    .append("                return ")
+                    .append(made)
+                    .append(";\n")
+                    .append("            } catch (Exception e) {\n")
+                    .append("                failure[0] = e;\n")
+                    .append("                return null;\n")
+                    .append("            }\n")
+                    .append("        });\n")
+                    .append("        if (failure[0] != null) throw failure[0];\n")
+                    .append("        Object id = row == null ? null : row.get(")
+                    .append(lang.string(key))
+                    .append(");\n")
+                    .append("        org.junit.jupiter.api.Assertions.assertNotNull(id, () -> ")
+                    .append(lang.string(made + " answered no " + key + ": "))
+                    .append(" + row);\n")
+                    .append("        return id;\n")
+                    .append("    }\n");
             return s.toString();
         }
 
@@ -3430,6 +3778,8 @@ final class ContractTestSource {
         final String method;
         List<String[]> fields = new ArrayList<String[]>();
         String problem;
+        /** Its rows are made by new&lt;Entity&gt;Row(), the project's, in the support class (issue 358). */
+        boolean project;
 
         Builder(EntitySpec e) {
             this.e = e;
@@ -3440,8 +3790,17 @@ final class ContractTestSource {
             return method + "()";
         }
 
-        /** The row made through the API, and its key: createdId(ITEM, newItem(), "itemId"). */
+        /** The test class's method that answers the key of a row new&lt;Entity&gt;Row() makes: noticeRow. */
+        String rowMethod() {
+            return Character.toLowerCase(e.getName().charAt(0)) + e.getName().substring(1) + "Row";
+        }
+
+        /**
+         * The row made through the API, and its key: createdId(ITEM, newItem(), "itemId") - or, for a row the
+         * project makes, the key of the one its new&lt;Entity&gt;Row() makes: itemRow().
+         */
         String id(String keyField) {
+            if (project) return rowMethod() + "()";
             FieldSpec key = field(e, keyField);
             String name = key == null ? keyField : json(key);
             return "createdId(" + constant(e) + ", " + call() + ", \"" + name + "\")";
@@ -4157,6 +4516,14 @@ final class ContractTestSource {
             d.append(" * No test of @access is written: each needs callers signed in through it.\n");
         }
         if (access.signInRow != null) signInRowDoc(d, access.signInRow, s.kotlin);
+        if (!access.rows.isEmpty()) {
+            d.append(" * The rows the tests need of ")
+                    .append(access.rows.size() == 1 ? "an entity are made by " : "some entities are made by ")
+                    .append(String.join(", ", access.rows))
+                    .append(" - yours, in this class:\n")
+                    .append(" * called as the application itself, each answers a row with its key; their fields\n")
+                    .append(" * are checked through an update of it, where the API takes one.\n");
+        }
         if (!access.skipped.isEmpty()) {
             d.append(" * Not tested of @access, as the build's summary says:\n");
             for (String reason : access.skipped)
@@ -4491,6 +4858,7 @@ final class ContractTestSource {
         }
         if (access.callers && principal != null) j.append(javaCallers(principal, lang, access.system));
         if (privacy.tests) j.append(javaPrivacy(s, privacy));
+        else if (privacy.puts) j.append(JAVA_PUT);
         if (export.tests) j.append(JAVA_EXPORT);
         j.append(access.unowned.isEmpty() ? JAVA_HELPERS : javaWithoutOwner(access.unowned, lang));
         j.append("}\n");
@@ -4929,6 +5297,33 @@ final class ContractTestSource {
         if (p.decrypted) j.append(JAVA_DECRYPTED);
         return j.toString();
     }
+
+    /** What a field checked through PUT calls (Java), where no test of @Mask brings it: the update and its check. */
+    private static final String JAVA_PUT = ""
+            + "    // ---- the fields checked through an update (a row made your way)\n"
+            + "\n"
+            + "    /** An update of the row the body's key names: PUT path. */\n"
+            + "    protected MvcResult put(String path, Object body) throws Exception {\n"
+            + "        return perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)));\n"
+            + "    }\n"
+            + "\n"
+            + "    /** The update was made: 2xx (refused as succeeded says). */\n"
+            + "    protected void assertUpdated(MvcResult result) throws Exception {\n"
+            + "        succeeded(result, \"the update\");\n"
+            + "    }\n"
+            + "\n";
+
+    /** The same in Kotlin. */
+    private static final String KOTLIN_PUT = ""
+            + "    // ---- the fields checked through an update (a row made your way)\n"
+            + "\n"
+            + "    /** An update of the row the body's key names: PUT path. */\n"
+            + "    protected fun put(path: String, body: Any?): MvcResult =\n"
+            + "        perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)))\n"
+            + "\n"
+            + "    /** The update was made: 2xx (refused as succeeded says). */\n"
+            + "    protected fun assertUpdated(result: MvcResult) = succeeded(result, \"the update\")\n"
+            + "\n";
 
     /** Where the JPA read of a column writes the test's transaction out first. */
     private static final String FLUSH = "        // flush\n";
@@ -6048,6 +6443,7 @@ final class ContractTestSource {
         }
         if (access.callers && principal != null) k.append(kotlinCallers(principal, lang, access.system));
         if (privacy.tests) k.append(kotlinPrivacy(s, privacy));
+        else if (privacy.puts) k.append(KOTLIN_PUT);
         if (export.tests) k.append(KOTLIN_EXPORT);
         k.append(access.unowned.isEmpty() ? KOTLIN_HELPERS : kotlinWithoutOwner(access.unowned, lang));
         k.append("}\n");

@@ -3005,8 +3005,9 @@ public final class RulesGenRunner {
         ArtifactTarget supportFile = kotlin
                 ? ArtifactTarget.of("kotlin", "src/test/kotlin", "kt", pkg, supportName, true)
                 : ArtifactTarget.of("java", "src/test/java", "java", pkg, supportName, true);
-        s.signInRowWritten = ContractTestSource.writesSignInRow(
-                readText(new File(rootFor(supportFile) + "/" + supportFile.relativePath())), kotlin);
+        // The same for the rows of an entity it makes its way, new<Entity>Row() (issue 358).
+        s.supportText = readText(new File(rootFor(supportFile) + "/" + supportFile.relativePath()));
+        s.signInRowWritten = ContractTestSource.writesSignInRow(s.supportText, kotlin);
         String support = null;
         ContractTestSource.Source supportSource = null;
         ArtifactTarget supportOut = null;

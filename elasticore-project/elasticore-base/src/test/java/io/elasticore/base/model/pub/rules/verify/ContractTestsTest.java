@@ -2962,6 +2962,223 @@ public class ContractTestsTest {
                         + " text(12))"));
     }
 
+    // ---- rows the project makes: create=none, new<Entity>Row() (issue 358) -------------
+
+    /** ACCESS with rows nobody creates through the API, and one whose create is open but needs such a row. */
+    private static final String ROWS = ACCESS
+            + String.join(
+                    "\n",
+                    "  Log:",
+                    "    meta: entity @root @editable @expose(20) @access(read=MANAGER, create=none, update=none,"
+                            + " delete=none)",
+                    "    fields:",
+                    "      logId:  long @id @sequence",
+                    "      event:  string(20)!",
+                    "      reason: string(300)",
+                    "",
+                    "  Notice:",
+                    "    meta: entity @root @editable @expose(20) @access(read=public, create=none, update=MANAGER,"
+                            + " delete=MANAGER)",
+                    "    fields:",
+                    "      noticeId: long @id @sequence",
+                    "      title:    string(50)!",
+                    "      priority: int @min(1) @max(5)",
+                    "",
+                    "  Quote:",
+                    "    meta: entity @root @editable @expose(20) @access(read=public, create=user, update=user)",
+                    "    fields:",
+                    "      quoteId: long @id @sequence",
+                    "      title:   string(40)!",
+                    "",
+                    "  Pin:",
+                    "    meta: entity @root @editable @expose(20) @access(read=public, create=user)",
+                    "    fields:",
+                    "      pinId:  long @id @sequence",
+                    "      notice: Notice! @ManyToOne",
+                    "");
+
+    /** What a project writes at the end of its support class to make those rows its way (Java). */
+    private static final String ROWS_JAVA = ""
+            + "\n    protected Map<String, Object> newLogRow() throws Exception {\n"
+            + "        return obj(\"logId\", 1L);\n"
+            + "    }\n"
+            + "\n    protected Map<String, Object> newNoticeRow() throws Exception {\n"
+            + "        return obj(\"noticeId\", 1L);\n"
+            + "    }\n"
+            + "\n    protected Map<String, Object> newQuoteRow() throws Exception {\n"
+            + "        return obj(\"quoteId\", 1L);\n"
+            + "    }\n";
+
+    /**
+     * create=none and no new&lt;Entity&gt;Row(): no test that needs a row made through POST is written - it could
+     * only abort - the summary says what to write, and what create=none promises is tested: a create is refused,
+     * the administrator's too (403 forbidden). The same for update=none and delete=none once there is a row.
+     */
+    @Test
+    public void createNoneWritesNoTestThatOnlyAborts() throws Exception {
+        File project = project(ROWS, "contract");
+        String log = run(project, "hexagonal", "java");
+        assertTrue(
+                log.contains("Log: its API takes no create (create=none), so no row of it is made to test its fields"
+                        + " and @access with - to have them written, write protected Map<String, Object> newLogRow()"
+                        + " throws Exception in ShopContractSupport: a Log made your way, answered as"
+                        + " obj(\"logId\", <its key>)"),
+                log);
+        assertTrue(
+                log.contains("Log: its fields are not checked - its API takes no create (create=none), and no"
+                        + " update (update=none)"),
+                log);
+        String l = read(project, "src/test/java/com/acme/shop/LogContractTest.java");
+        assertFalse(l.contains("createdId(LOG"), l);
+        assertFalse(l.contains("post(LOG"), l);
+        assertTrue(
+                method(l, "createRefusesTheAdministrator")
+                        .contains(
+                                "        Caller caller = signIn(\"A\");\n"
+                                        + "        assertDenied(sentBy(caller, creating(LOG, newLog())), 403, \"forbidden\");\n"),
+                l);
+        assertTrue(method(l, "createRefusesAVisitor").contains("403, \"forbidden\");"), l);
+        assertFalse(l.contains("void updateRefusesTheAdministrator"), l);
+        String n = read(project, "src/test/java/com/acme/shop/NoticeContractTest.java");
+        assertFalse(n.contains("void titleLength"), n);
+        assertFalse(n.contains("void readLetsIn"), n);
+        // A row that needs one of them is not made either: said, with what to write.
+        assertTrue(
+                log.contains("Pin: notice: it needs a Notice, which the API does not create (create=none) - to"
+                        + " have them written, write protected Map<String, Object> newNoticeRow() throws Exception in"
+                        + " ShopContractSupport"),
+                log);
+        // Nothing of it where the support class has nothing to make the rows with: no update helpers.
+        assertFalse(read(project, "src/test/java/com/acme/shop/ShopContractSupport.java")
+                .contains("protected MvcResult put("));
+    }
+
+    /**
+     * new&lt;Entity&gt;Row() written in the support class: the rows a test needs are made by it - as the
+     * application itself - the fields are checked through PUT where update is open, and where create is open
+     * too (Quote) the project's row replaces the model's: what only a create of the model's row checks is
+     * counted, not written. A row another entity needs is the project's as well.
+     */
+    @Test
+    public void aRowTheProjectMakesIsUsedInsteadOfTheModels() throws Exception {
+        File project = project(ROWS, "contract");
+        run(project, "hexagonal", "java");
+        File support = new File(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        String yours = atTheEnd(read(project, "src/test/java/com/acme/shop/ShopContractSupport.java"), ROWS_JAVA);
+        Files.write(support.toPath(), yours.getBytes(StandardCharsets.UTF_8));
+        String log = run(project, "hexagonal", "java");
+        assertTrue(log.contains("contract     src/test/java/com/acme/shop/ShopContractSupport.java  MERGED"), log);
+        assertFalse(log.contains("newLogRow() throws Exception in"), log);
+        String s = read(project, "src/test/java/com/acme/shop/ShopContractSupport.java");
+        assertTrue(s.contains(ROWS_JAVA.substring(1)), s);
+        assertTrue(s.contains("    protected MvcResult put(String path, Object body) throws Exception {\n"), s);
+        assertTrue(s.contains("    protected void assertUpdated(MvcResult result) throws Exception {\n"), s);
+        assertTrue(
+                s.contains(" * The rows the tests need of some entities are made by newLogRow(), newNoticeRow(),"), s);
+
+        String l = read(project, "src/test/java/com/acme/shop/LogContractTest.java");
+        assertTrue(
+                l.contains("    private Object logRow() throws Exception {\n"
+                        + "        Exception[] failure = new Exception[1];\n"
+                        + "        Map<String, Object> row = io.elasticore.springboot3.security.CurrentUser.callAsSystem("
+                        + "() -> {\n"
+                        + "            try {\n"
+                        + "                return newLogRow();\n"),
+                l);
+        assertTrue(l.contains("        Object id = row == null ? null : row.get(\"logId\");\n"), l);
+        assertTrue(
+                method(l, "updateRefusesTheAdministrator")
+                        .contains("        Object id = logRow();\n"
+                                + "        Caller caller = signIn(\"A\");\n"
+                                + "        assertDenied(sentBy(caller, updating(LOG, obj(\"logId\", id))), 403,"
+                                + " \"forbidden\");\n"),
+                l);
+        assertTrue(method(l, "deleteRefusesTheAdministrator").contains("403, \"forbidden\");"), l);
+        assertTrue(method(l, "readLetsInAManager").contains("Object id = logRow();"), l);
+        assertFalse(l.contains("createdId("), l);
+
+        String n = read(project, "src/test/java/com/acme/shop/NoticeContractTest.java");
+        assertTrue(
+                method(n, "titleLength")
+                        .contains("        Object id = noticeRow();\n"
+                                + "        assertUpdated(put(NOTICE, obj(\"noticeId\", id, \"title\", text(50))));\n"
+                                + "        assertFieldError(put(NOTICE, obj(\"noticeId\", id, \"title\", text(51))),"
+                                + " \"title\", \"Size\");\n"),
+                n);
+        assertTrue(
+                method(n, "priorityMax").contains("put(NOTICE, obj(\"noticeId\", id, \"priority\", num(\"6\")))"), n);
+        assertFalse(n.contains("void titleIsRequired"), n);
+        assertTrue(
+                log.contains("Notice.title is required: an update keeps what it does not send, so it is checked by"
+                        + " a create - its API takes no create (create=none)"),
+                log);
+
+        // create=user: the project's row replaces the model's - the fields go through PUT, a create let in is
+        // not written, the refused one is (a visitor's, before the row is read).
+        String q = read(project, "src/test/java/com/acme/shop/QuoteContractTest.java");
+        assertTrue(method(q, "titleLength").contains("Object id = quoteRow();"), q);
+        assertFalse(q.contains("void createLetsIn"), q);
+        assertTrue(method(q, "createRefusesAVisitor").contains("creating(QUOTE, newQuote())"), q);
+        assertTrue(
+                log.contains(
+                                "Quote create=user: a signed-in caller is let in by it, which a create of the model's"
+                                        + " row checks - its rows are made by newQuoteRow(), yours, not by a create of the model's row")
+                        || log.contains(
+                                "Quote create=user: a USER is let in by it, which a create of the model's row checks"),
+                log);
+
+        // Another entity's row that needs a Notice: the project's.
+        String p = read(project, "src/test/java/com/acme/shop/PinContractTest.java");
+        assertTrue(p.contains("noticeRow()"), p);
+        assertTrue(p.contains("    private Object noticeRow() throws Exception {\n"), p);
+        assertFalse(p.contains("newNotice()"), p);
+    }
+
+    /** The same in Kotlin: its own declaration read, and the row taken as the application itself. */
+    @Test
+    public void aRowTheProjectMakesInKotlin() throws Exception {
+        File project = project(ROWS, "contract");
+        String first = run(project, "hexagonal", "kotlin");
+        assertTrue(
+                first.contains("write protected fun newNoticeRow(): Map<String, Any?> in ShopContractSupport: "),
+                first);
+        File support = new File(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt");
+        String yours = atTheEnd(
+                read(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt"),
+                "\n    protected fun newNoticeRow(): Map<String, Any?> = obj(\"noticeId\", 1L)\n");
+        Files.write(support.toPath(), yours.getBytes(StandardCharsets.UTF_8));
+        run(project, "hexagonal", "kotlin");
+        String n = read(project, "src/test/kotlin/com/acme/shop/NoticeContractTest.kt");
+        assertTrue(
+                n.contains("    private fun noticeRow(): Any {\n"
+                        + "        val row: Map<String, Any?> =\n"
+                        + "            io.elasticore.springboot3.security.CurrentUser.callAsSystem<Map<String, Any?>>"
+                        + " { newNoticeRow() }\n"
+                        + "        return row[\"noticeId\"] ?: org.junit.jupiter.api.Assertions.fail<Any>("
+                        + "\"newNoticeRow() answered no noticeId: \" + row)\n"),
+                n);
+        assertTrue(method(n, "titleLength").contains("val id = noticeRow()"), n);
+        assertTrue(read(project, "src/test/kotlin/com/acme/shop/ShopContractSupport.kt")
+                .contains("    protected fun put(path: String, body: Any?): MvcResult =\n"));
+    }
+
+    /** What is read as new&lt;Entity&gt;Row(): the declaration the generated tests call, not another shape or a comment. */
+    @Test
+    public void newEntityRowIsReadAsTheTestsCallIt() {
+        assertTrue(ContractTestSource.writesRow(
+                "protected Map<String, Object> newNoticeRow() throws Exception {", "Notice", false));
+        assertTrue(ContractTestSource.writesRow("java.util.Map<String,Object> newNoticeRow( ) {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow(String role) {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRows() {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow() {", "Log", false));
+        assertFalse(ContractTestSource.writesRow("// Map<String, Object> newNoticeRow() {", "Notice", false));
+        assertFalse(ContractTestSource.writesRow("Map<String, Object> newNoticeRow();", "Notice", false));
+        assertTrue(ContractTestSource.writesRow("protected fun newNoticeRow(): Map<String, Any?> {", "Notice", true));
+        assertTrue(ContractTestSource.writesRow("fun newNoticeRow(): MutableMap<String, Any> = x", "Notice", true));
+        assertFalse(ContractTestSource.writesRow("fun newNoticeRow(): Any {", "Notice", true));
+        assertFalse(ContractTestSource.writesRow(null, "Notice", true));
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String run(File project, String architecture, String language) throws Exception {

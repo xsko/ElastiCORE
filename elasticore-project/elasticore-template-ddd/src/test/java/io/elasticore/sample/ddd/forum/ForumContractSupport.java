@@ -293,6 +293,18 @@ public abstract class ForumContractSupport {
         return keys;
     }
 
+    // ---- the fields checked through an update (a row made your way)
+
+    /** An update of the row the body's key names: PUT path. */
+    protected MvcResult put(String path, Object body) throws Exception {
+        return perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(json(body)));
+    }
+
+    /** The update was made: 2xx (refused as succeeded says). */
+    protected void assertUpdated(MvcResult result) throws Exception {
+        succeeded(result, "the update");
+    }
+
     protected MvcResult post(String path, Object body) throws Exception {
         return perform(MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(json(body)));
     }
@@ -549,5 +561,33 @@ public abstract class ForumContractSupport {
         if (role != null) member.setRole(io.elasticore.sample.ddd.forum.domain.model.MemberRole.fromCode(role));
         Long id = members.save(member).getMemberId();
         return obj("email", member.getEmail(), "password", "Secret-1", "memberId", id);
+    }
+
+    @Autowired
+    private io.elasticore.sample.ddd.forum.application.NoticeService notices;
+
+    /**
+     * A notice as the forum posts one - through NoticeService, the API taking no create (create=none); the
+     * contract tests call it as the application itself, read, update and delete it, and check its fields
+     * through PUT.
+     */
+    protected Map<String, Object> newNoticeRow() throws Exception {
+        io.elasticore.sample.ddd.forum.application.dto.NoticeDTO notice =
+                new io.elasticore.sample.ddd.forum.application.dto.NoticeDTO();
+        notice.setTitle(text(20));
+        notice.setPriority(3);
+        return obj("noticeId", notices.save(notice).getNoticeId());
+    }
+
+    @Autowired
+    private io.elasticore.sample.ddd.forum.application.AccessLogService accessLogs;
+
+    /** A sign-in's trace as the forum writes one - through AccessLogService, nobody creating one through the API. */
+    protected Map<String, Object> newAccessLogRow() throws Exception {
+        io.elasticore.sample.ddd.forum.application.dto.AccessLogDTO log =
+                new io.elasticore.sample.ddd.forum.application.dto.AccessLogDTO();
+        log.setEvent("signin");
+        log.setSuccess(true);
+        return obj("logId", accessLogs.save(log).getLogId());
     }
 }

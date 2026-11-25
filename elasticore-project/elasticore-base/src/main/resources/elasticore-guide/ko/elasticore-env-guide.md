@@ -798,6 +798,26 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   주석이 무엇을 쓸지 말한다(`Member (signing in): its API takes no create, ... - to sign callers in, write protected Map<String,
   Object> newSignInRow(String role) ...`). 각 항목이 기대하는 답은 여전히 테스트가 정한다. 다른 시그니처는 이것으로 읽지 않는다.
   `elasticore-template-ddd` 의 `forum` 도메인이 이렇게 한다.
+- 프로젝트 코드가 만드는 행 (issue 358): support 클래스에 `new<Entity>Row()` 를 쓴다 - Java `protected Map<String, Object>
+  newNoticeRow() throws Exception`, Kotlin `protected fun newNoticeRow(): Map<String, Any?>`, `newSignInRow` 처럼 클래스의 맨
+  끝에. 그 엔티티의 행을 프로젝트의 방식으로(프로젝트의 서비스로, 프로젝트 코드가 만들듯이) 만들고 키와 함께 답한다:
+  `obj("noticeId", notices.save(notice).getNoticeId())`. 애플리케이션 자신으로 실행되므로 `create=none` 도 통과한다.
+  실행이 디스크의 support 클래스에서 이것을 찾으면, 테스트가 필요로 하는 그 엔티티의 행은 모두 이것이 만든 행이다 - 모델의 행을
+  `POST` 해서 만든 행이 아니다: `@access` 테스트의 행(read, search, update, delete, 명령, `states:` 의 이동)과 다른 엔티티가
+  가리키는 행. 필드는 API 가 수정을 받을 때 `PUT` 으로 검사한다(`assertUpdated(put(NOTICE, obj("noticeId", id, "title",
+  text(50))))`, 51자는 400 `Size` 로 거절). `!` (`NotNull`) 는 검사하지 않는다 - 수정은 보내지 않은 것을 그대로 둔다. 모델의 행을
+  생성해야만 검사되는 것 - 허용되는 생성, `@invariant`, 새 행이 시작하는 상태, `@Mask`, `@encrypt`, export - 는 쓰지 않고
+  센다. API 가 생성을 받지 않는 엔티티(`create=none`: 서버가 쓰는 로그, 다른 엔티티의 명령이 만드는 기록)와,
+  모델이 만드는 행을 `beforeSave` 가 거절하는(422: 부모가 어떤 상태일 때만 만드는 기록) 엔티티에 쓴다.
+  없으면 테스트는 예전 그대로다. API 가 생성을 받지 않으면(`create=none`) 그런 행이 필요한 테스트는 쓰지 않는다
+  (중단(abort)될 수밖에 없으므로).
+  요약이 무엇을 쓸지 말한다
+  (`AccessLog: its API takes no create (create=none), so no row of it is made to test its fields and @access with - to have
+  them written, write protected Map<String, Object> newAccessLogRow() throws Exception in ForumContractSupport: ...`).
+  생성되는 코드도 인터페이스도 아니다. `elasticore-template-ddd` 의 `forum` 도메인이 이렇게 한다(`Notice`, `AccessLog`).
+- `create=none`, `update=none`, `delete=none` (모든 항이 `none` 인 연산): 방문자와 다른 역할의 호출자는 다른 항목처럼 거절되고,
+  관리자도 거절된다 - `AccessPolicy` 가 답하는 대로 403 `forbidden`. update 와 delete 는 `new<Entity>Row()` 가 만든 행(생성이
+  열려 있으면 생성한 행)에 보낸다.
 - 아무도 로그인하지 않을 때: `@owner` 엔티티의 행은 애플리케이션 자신이 owner 없이 만든다(서버는 호출자로 `@owner` 를 정한다).
   요약은 그런 엔티티를 하나씩 세고(`Verification: its rows are made without their owner (@owner(memberId)) - ...`), 그 행에 대한
   5xx 응답은 - 테스트가 필요로 하는 행, 단계, 이동 - 테스트를 이유와 함께 중단한다(`withoutOwner`): 애플리케이션 자신의 코드가
