@@ -225,6 +225,15 @@ the version in use. Up to 3.0.261031-rc7 they are in Korean. From 3.0.261102-rc8
 that prefers Korean sets `elasticore { guides = 'ko' }` and gets the
 [Korean guides](elasticore-project/elasticore-base/src/main/resources/elasticore-guide/ko/) under the same names.
 
+## SBOM
+
+Every published artifact has a CycloneDX SBOM - its runtime dependencies with versions, purls, hashes, licenses,
+suppliers and the dependency graph - signed like the jar. Get it from
+[Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base), as
+`<artifactId>-<version>-cyclonedx.json` (and `.asc`) next to each jar, or from the files attached to each
+[GitHub release](https://github.com/xsko/ElastiCORE/releases). [RELEASING.md](RELEASING.md#the-sboms) says how they
+are made.
+
 ## Contributing · License
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Reporting a vulnerability](SECURITY.md) · Apache License 2.0 ([LICENSE](LICENSE))

@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a tag v{version} - the version in gradle.properties - builds and checks
 # the tagged commit, signs every published artifact, uploads them to Maven
-# Central and makes the GitHub release. RELEASING.md has the steps around it.
+# Central and makes the GitHub release, with the artifacts' SBOMs attached.
+# RELEASING.md has the steps around it.
 on:
   push:
     tags: ['v*']
@@ -148,6 +149,30 @@ jobs:
           set -o pipefail
           ./gradlew centralBundle --console=plain 2>&1 | tee bundle.log
 
+      # The SBOM of each artifact (gradle/publishing.gradle), with its signature, for the
+      # GitHub release below - the same signed files the bundle takes to Maven Central.
+      - name: The SBOMs, for the GitHub release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/sbom
+          find build/central-bundle -path "*/$VERSION/*" \
+            \( -name "*-$VERSION-cyclonedx.json" -o -name "*-$VERSION-cyclonedx.json.asc" \) -exec cp {} build/sbom/ \;
+          ls -l build/sbom
+          # elasticore-base, -springboot3, -springboot4 and the plugin, each signed
+          count=$(find build/sbom -name '*-cyclonedx.json' | wc -l)
+          signed=$(find build/sbom -name '*-cyclonedx.json.asc' | wc -l)
+          if [ "$count" != 4 ] || [ "$signed" != 4 ]; then
+            echo "::error::Expected 4 SBOMs and 4 signatures in the bundle, found $count and $signed"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: build/sbom/
+          if-no-files-found: error
+
       # USER_MANAGED (the default): Central validates the upload and it waits there
       # for Publish on central.sonatype.com. The environment variable
       # CENTRAL_PUBLISHING_TYPE=AUTOMATIC publishes it as soon as it is valid.
@@ -243,6 +268,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The SBOMs the job above took from the signed bundle
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+
       - name: Release notes, and the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -259,15 +290,19 @@ jobs:
             echo
             echo "Maven Central: \`io.elasticore:elasticore-base:$VERSION\`, \`io.elasticore.springboot3:elasticore-springboot3:$VERSION\`,"
             echo "\`io.elasticore.springboot4:elasticore-springboot4:$VERSION\`, plugin \`id 'io.elasticore' version '$VERSION'\`"
+            echo
+            echo "SBOM: each artifact's CycloneDX bill of materials, \`<artifactId>-$VERSION-cyclonedx.json\` with its"
+            echo "signature (\`.asc\`), is attached here and published next to its jar on Maven Central."
           } >> "$notes"
+          sboms=("$RUNNER_TEMP"/sbom/*-cyclonedx.json "$RUNNER_TEMP"/sbom/*-cyclonedx.json.asc)
           # -alpha1, -beta2, -rc1: marked as a pre-release
           kind=()
           if [[ "$VERSION" == *-* ]]; then kind=(--prerelease); fi
           if [ "$STATE" = PUBLISHED ]; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${kind[@]}" \
+            gh release create "$GITHUB_REF_NAME" "${sboms[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag "${kind[@]}" \
               --title "ElastiCORE $VERSION" --notes-file "$notes"
           else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${kind[@]}" --draft \
+            gh release create "$GITHUB_REF_NAME" "${sboms[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag "${kind[@]}" --draft \
               --title "ElastiCORE $VERSION" --notes-file "$notes"
             {
               echo "### Waiting for Publish"

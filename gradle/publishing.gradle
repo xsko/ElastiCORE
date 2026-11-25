@@ -16,10 +16,23 @@
 // from this file's own location, the repository's gradle/ folder. Staging is a
 // local directory only, so a plain publish that writes there too is harmless.
 // See RELEASING.md.
+//
+// Every artifact is published with its SBOM, <artifactId>-<version>-cyclonedx.json:
+// a CycloneDX bill of what the artifact brings into an application at run time.
+// See "The SBOM" below.
+
+import groovy.json.JsonGenerator
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import groovy.xml.XmlSlurper
+import java.security.MessageDigest
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 
 apply plugin: 'signing'
+apply plugin: 'org.cyclonedx.bom'
 
 def projectUrl = 'https://github.com/xsko/ElastiCORE'
+def authors = 'The ElastiCORE Authors'
 
 publishing.publications.withType(MavenPublication).configureEach {
     pom {
@@ -36,7 +49,7 @@ publishing.publications.withType(MavenPublication).configureEach {
         developers {
             developer {
                 id = 'elasticore'
-                name = 'The ElastiCORE Authors'
+                name = authors
                 url = projectUrl
             }
         }
@@ -45,6 +58,193 @@ publishing.publications.withType(MavenPublication).configureEach {
             connection = 'scm:git:https://github.com/xsko/ElastiCORE.git'
             developerConnection = 'scm:git:ssh://git@github.com/xsko/ElastiCORE.git'
         }
+    }
+}
+
+// The SBOM. The CycloneDX plugin (org.cyclonedx.bom) writes the bill from the
+// resolved runtimeClasspath - what the POM declares, with the versions Gradle
+// chose - and gives every component its purl, the hashes of its jar, the
+// licenses of its effective POM, the <organization> its own POM names (as
+// publisher), and the dependency graph. The task sbom then adds what the plugin
+// leaves out and CISA's minimum elements ask for, from what the build has in
+// hand - never a guess:
+//   - the SBOM's authors and the producing organization (metadata.authors,
+//     .manufacturer, .supplier): the POM's developer, not a legal entity;
+//   - the lifecycle phase it was made in: build;
+//   - the artifact itself, the main component: supplier, license, and the
+//     hashes of the jar published with it;
+//   - each component's supplier: the <organization> of its POM or, as Maven
+//     inherits it, of the nearest parent POM that names one; the ElastiCORE
+//     Authors for an artifact of this repository; otherwise "unknown", since
+//     CISA asks for an unknown producer to be declared rather than left out.
+//     The <developers> of the POM (or its parent) become the component's authors;
+//   - the hashes the plugin leaves out: of the POM of a pom-only component (a
+//     BOM), and of the jar of a module of this build (elasticore-base, in the
+//     runtime libraries' bills);
+//   - the published coordinates as the purl of a module of this build, in place
+//     of the plugin's build-local ?project_path= one.
+// The version-control reference is the public repository, whatever the remote of
+// the checkout that builds it.
+def directBom = tasks.named('cyclonedxDirectBom')
+directBom.configure {
+    includeConfigs.set(['runtimeClasspath'])
+    // A dependency that does not resolve fails the build rather than leaving
+    // the bill without it.
+    failOnUnresolvedDependencies.set(true)
+    componentDescription.set(project.provider { project.description ?: project.name })
+    // JSON only: the file that is published.
+    xmlOutput.unsetConvention()
+}
+def sbomFile = layout.buildDirectory.file("reports/sbom/${project.name}-${project.version}-cyclonedx.json")
+def sbom = tasks.register('sbom') {
+    group = 'publishing'
+    description = 'Writes the CycloneDX SBOM published with this artifact'
+    def bomIn = directBom.flatMap { it.jsonOutput }
+    def jarFile = tasks.named('jar').flatMap { it.archiveFile }
+    def runtimeClasspath = configurations.named('runtimeClasspath')
+    def ourVersion = project.version.toString()
+    dependsOn directBom, tasks.named('jar')
+    inputs.file(bomIn).withPropertyName('directBom')
+    inputs.file(jarFile).withPropertyName('jar')
+    outputs.file(sbomFile)
+    doLast {
+        def organization = [name: authors, url: [projectUrl]]
+        def license = [[license: [id: 'Apache-2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0.txt']]]
+        def hashes = { File file ->
+            ['SHA-256', 'SHA-512'].collect { alg ->
+                def md = MessageDigest.getInstance(alg)
+                file.withInputStream { input ->
+                    byte[] buffer = new byte[65536]
+                    int n
+                    while ((n = input.read(buffer)) > 0) {
+                        md.update(buffer, 0, n)
+                    }
+                }
+                [alg: alg, content: md.digest().encodeHex().toString()]
+            }
+        }
+        // A module's POM, from the repositories the build resolved it from
+        def poms = [:]
+        def pomOf = { String coordinates ->
+            if (!poms.containsKey(coordinates)) {
+                def conf = project.configurations.detachedConfiguration(project.dependencies.create(coordinates + '@pom'))
+                conf.transitive = false
+                def files = conf.incoming.artifactView { lenient = true }.files.files
+                poms[coordinates] = files ? files.iterator().next() : null
+            }
+            poms[coordinates]
+        }
+        def declared = { String text -> text?.trim() && !text.contains('${') ? text.trim() : null }
+        // <organization> and <developers> as Maven inherits them: from the nearest POM up the parent chain that declares them
+        def producerOf = { String coordinates ->
+            String org = null
+            List<String> developers = []
+            for (int depth = 0; coordinates && depth < 12 && (org == null || developers.isEmpty()); depth++) {
+                def file = pomOf(coordinates)
+                if (file == null) {
+                    break
+                }
+                def pom = new XmlSlurper(false, false).parse(file)
+                org = org ?: declared(pom.organization.name.text())
+                if (developers.isEmpty()) {
+                    developers = pom.developers.developer.collect { declared(it.name.text()) ?: declared(it.organization.text()) }
+                            .findAll { it }.unique()
+                }
+                def parent = pom.parent
+                coordinates = parent.size() ? "${parent.groupId.text()}:${parent.artifactId.text()}:${parent.version.text()}" : null
+            }
+            [org, developers]
+        }
+
+        def bom = new JsonSlurper().parse(bomIn.get().asFile)
+        def metadata = bom.metadata
+        metadata.lifecycles = [[phase: 'build']]
+        metadata.authors = [[name: authors]]
+        metadata.manufacturer = organization
+        metadata.supplier = organization
+
+        def main = metadata.component
+        main.supplier = organization
+        main.publisher = authors
+        main.licenses = license
+        main.hashes = hashes(jarFile.get().asFile)
+        main.externalReferences = (main.externalReferences ?: []).findAll { !(it.type in ['vcs', 'website']) } +
+                [[type: 'vcs', url: projectUrl + '.git'], [type: 'website', url: projectUrl]]
+
+        // The jar of each module of this build on the runtime classpath, by project path
+        def projectJars = [:]
+        runtimeClasspath.get().incoming.artifacts.artifacts.each { artifact ->
+            def id = artifact.id.componentIdentifier
+            if (id instanceof ProjectComponentIdentifier) {
+                projectJars[id.projectPath] = artifact.file
+            }
+        }
+        def refs = [:]
+        ([main] + (bom.components ?: [])).each { component ->
+            def local = (component.purl =~ /\?project_path=([^&]+)/)
+            if (local.find()) {
+                if (!component.is(main) && !component.hashes) {
+                    def jar = projectJars[URLDecoder.decode(local.group(1), 'UTF-8')]
+                    if (jar?.isFile()) {
+                        component.hashes = hashes(jar)
+                    }
+                }
+                def published = "pkg:maven/${component.group}/${component.name}@${component.version}?type=jar"
+                refs[component.'bom-ref'] = published
+                component.purl = published
+                component.'bom-ref' = published
+            }
+        }
+        (bom.dependencies ?: []).each { dependency ->
+            dependency.ref = refs[dependency.ref] ?: dependency.ref
+            if (dependency.dependsOn) {
+                dependency.dependsOn = dependency.dependsOn.collect { refs[it] ?: it }
+            }
+        }
+
+        (bom.components ?: []).each { component ->
+            boolean ours = component.group?.startsWith('io.elasticore') && component.version == ourVersion
+            if (ours) {
+                component.supplier = component.supplier ?: organization
+                component.publisher = component.publisher ?: authors
+                component.licenses = component.licenses ?: license
+                return
+            }
+            String coordinates = "${component.group}:${component.name}:${component.version}"
+            def (org, developers) = producerOf(coordinates)
+            if (!component.hashes && component.purl?.endsWith('?type=pom')) {
+                def pom = pomOf(coordinates)
+                if (pom != null) {
+                    component.hashes = hashes(pom)
+                }
+            }
+            def producer = component.publisher ?: org
+            if (!component.supplier) {
+                component.supplier = [name: producer ?: 'unknown']
+            }
+            if (producer && !component.publisher) {
+                component.publisher = producer
+            }
+            if (developers && !component.authors) {
+                component.authors = developers.collect { [name: it] }
+            }
+        }
+
+        def json = new JsonGenerator.Options().disableUnicodeEscaping().build().toJson(bom)
+        def out = sbomFile.get().asFile
+        out.parentFile.mkdirs()
+        out.setText(JsonOutput.prettyPrint(json) + '\n', 'UTF-8')
+    }
+}
+
+// Published next to the jar, as the CycloneDX build plugins publish it
+// (classifier cyclonedx, extension json), and signed with the rest. Not with a
+// plugin marker, which is a POM only.
+publishing.publications.withType(MavenPublication).matching { !it.name.endsWith('PluginMarkerMaven') }.configureEach {
+    artifact(sbomFile) {
+        classifier = 'cyclonedx'
+        extension = 'json'
+        builtBy sbom
     }
 }
 

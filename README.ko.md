@@ -214,6 +214,15 @@ v3 번들의 출력은 프로젝트가 요청할 때(DSL 이나 설정)만 바�
 (3.0.261031-rc7 까지는 한국어). 3.0.261102-rc8 부터는 영어가 기본이고, 한국어 가이드는
 `elasticore { guides = 'ko' }` 로 받습니다 - 파일 이름은 같습니다.
 
+## SBOM
+
+배포하는 아티팩트마다 CycloneDX SBOM 이 있습니다 - 런타임 의존성의 버전, purl, 해시, 라이선스, 공급자와 의존성
+그래프를 담고, jar 처럼 서명되어 있습니다.
+[Maven Central](https://central.sonatype.com/artifact/io.elasticore/elasticore-base) 에서 각 jar 옆의
+`<artifactId>-<version>-cyclonedx.json` (서명은 `.asc`) 으로 받거나, 각
+[GitHub 릴리스](https://github.com/xsko/ElastiCORE/releases)에 첨부된 파일로 받습니다. 만드는 방법은
+[RELEASING.md](RELEASING.md#the-sboms) 에 있습니다.
+
 ## 참여하기 · 라이선스
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [행동 강령](CODE_OF_CONDUCT.md) · [보안 신고](SECURITY.md) · Apache License 2.0 ([LICENSE](LICENSE))

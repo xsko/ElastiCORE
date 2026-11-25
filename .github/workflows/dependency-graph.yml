@@ -1,0 +1,60 @@
+name: Dependency graph
+
+# What the published artifacts bring into an application at run time, sent to
+# GitHub's dependency graph: then Dependabot alerts and GitHub's SBOM export
+# cover Spring, Jackson, Netty and the rest, not only the lockfiles of the
+# samples. The runtimeClasspath of elasticore-base, -springboot3, -springboot4
+# and the Gradle plugin - what their POMs declare - and nothing of the samples,
+# the tests or the build tooling.
+#
+# GitHub writes its SBOM export from this graph, without hashes, suppliers or
+# an author. The SBOM to give a customer is each artifact's own CycloneDX file
+# (gradle/publishing.gradle, RELEASING.md).
+on:
+  push:
+    branches: [main, 'release/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-graph-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Resolves the build and saves the graph as a workflow artifact, with a token
+  # that cannot write to the repository.
+  generate:
+    name: Resolve the published artifacts' dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          dependency-graph: generate-and-upload
+          # The included plugin build is :elasticore-gradle-plugin
+          dependency-graph-include-projects: ':elasticore-project:elasticore-(base|springboot3|springboot4)|:elasticore-gradle-plugin'
+          dependency-graph-include-configurations: 'runtimeClasspath'
+
+  # Only the job that runs no build holds the token that writes the graph.
+  submit:
+    name: Submit the dependency graph
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          dependency-graph: download-and-submit
