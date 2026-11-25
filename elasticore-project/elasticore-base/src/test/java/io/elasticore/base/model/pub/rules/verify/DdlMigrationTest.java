@@ -567,6 +567,39 @@ public class DdlMigrationTest {
         assertTrue(h2.contains("COMMENT ON COLUMN note.title IS 'costs $5 \"a\" month';"), h2 + log);
     }
 
+    /**
+     * Issue 345: a label with '=' and ',' is the whole "--" text in the column comment, the migration and the
+     * entity, not the fragment ("day)") its key=value reading left.
+     */
+    @Test
+    public void aLabelWithEqualsIsTheWholeTextEverywhere() throws Exception {
+        String label = "shortest term in months (1 = to the same day of the next month, or that month's last day)";
+        String sql = "COMMENT ON COLUMN note.title IS '" + label.replace("'", "''") + "';";
+        for (String mode : new String[] {"jpa", "mybatis"}) {
+            File project = project(labelled(label), mode);
+            System.setProperty(DdlConfig.DATABASES, "h2");
+            System.setProperty(DdlConfig.MIGRATION, "flyway");
+            System.setProperty(DdlConfig.COMMENTS, "true");
+            System.setProperty("elasticore.ddl.now", "20260101000001");
+            String log = run(project);
+            String h2 = read(new File(project, "src/main/resources/db/schema-h2.sql"));
+            assertTrue(h2.contains(sql), mode + "\n" + h2 + log);
+            assertTrue(
+                    read(new File(project, "src/main/resources/db/migration/h2/V20260101000001__init.sql"))
+                            .contains(sql),
+                    mode);
+            Path note;
+            try (Stream<Path> all = Files.walk(new File(project, "src/main/java").toPath())) {
+                note = all.filter(p -> p.getFileName().toString().equals("Note.java"))
+                        .findFirst()
+                        .orElse(null);
+            }
+            assertTrue(note != null, mode + "\n" + log);
+            String entity = read(note.toFile());
+            assertTrue(entity.contains(label), mode + "\n" + entity);
+        }
+    }
+
     @Test
     public void withCommentsOffNoLabelIsSaidUnlessTheDomainAsks() throws Exception {
         for (String mode : new String[] {"jpa", "mybatis"}) {
