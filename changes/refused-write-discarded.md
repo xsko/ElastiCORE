@@ -28,6 +28,12 @@
     an earlier row of a batch wrote stays as written until the transaction rolls back, as before.
   - The dev guide (en, ko) says so under `beforeSave`, with the same call for a method of your own that reads a row,
     changes it and then refuses.
+  - Upgrading: the generated services call the new runtime classes, so the generator and `elasticore-springboot3` /
+    `-springboot4` go up together (as the plugin's `elasticoreVersion` does); a project that keeps its own copy of the
+    runtime (`runtimePackages`) copies `RefusedWrite` in too, and for MyBatis needs `mybatis-spring` there.
+  - When the row cannot be read again and is detached, Hibernate may have marked the transaction rollback-only: a caller that
+    catches the refusal and goes on gets its commit refused (`UnexpectedRollbackException`) instead of committing the
+    refused change. Reading the row again also drops what the same transaction changed in it, unflushed, before.
 - Checked: reproduced first, each failing without the fix ("expected original but was REFUSED CHANGE"): a
   `@Transactional` MockMvc test - refused PUT, then GET of the row in the same transaction - on
   `elasticore-template-mybatis` (layered MyBatis, a `beforeSave` that refuses), `elasticore-template-ddd` (hexagonal
