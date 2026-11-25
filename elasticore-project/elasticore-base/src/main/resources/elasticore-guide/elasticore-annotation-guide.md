@@ -2222,9 +2222,11 @@ Generated behavior (CoreService):
 CurrentUser.runAsSystem(() -> customers.save(admin));
 ```
 
-The **whole row** of another entity (a nested DTO) is carried in a DTO only when that entity's read level is `public`.
-If an order DTO carried a whole customer with `read=owner`, the customer data would be visible to whoever reads the order, so the build
-drops that field and warns (the identifier `customerId` stays).
+The **whole row** of another entity (a nested DTO) is carried when everyone who may read the holder may also read that entity: `read=user` carries `read=user`, a role or `owner` carries `user`, `read=MANAGER` carries `read=MANAGER`, and nothing carries `owner`.
+Otherwise the build drops the field and warns: an order with `read=user` carrying a customer with `read=owner` keeps only the identifier `customerId`.
+This is the default from 3.1 (`config: nestedRows: readers`, 3.0's opt-in). `config: nestedRows: public` in env.yml keeps 3.0's default for the whole domain - a row only when its entity's read level is `public` - and the warning of a row it keeps out names it (env guide 6-5).
+A carried row of an entity not everyone may read is in what a read answers (read one, search, export); create, update, a command, `me()` and sign-in answer it as `null`, because they check other levels - with `Coverage @access(read=MANAGER, create=user)` and `Product @access(read=MANAGER)`, a plain user who creates a coverage gets no product back. The identifier stays.
+A nested DTO is never written on the way in: a row sent in a create or update does not change the referenced one, cascade included; its identifier still points the relation.
 
 The build reports `@access` syntax errors (`read=owners`, `read=owner|`, `@access(admin)` on an entity) as warnings - if you leave them,
 the application does not start (a word with a capital first is a role name and is checked as above: `read=MANGER`). In the rule engine (`elcore3`), with a bundle that has no `jpa-service-access` (such as the 2.x-compatible bundle),

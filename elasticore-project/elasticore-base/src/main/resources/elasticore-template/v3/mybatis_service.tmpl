@@ -152,7 +152,7 @@ public class ${className} {
         beforeSave(entity, dto);${stampCreate}
         ${encryptBeforeWrite}
         ${cmdRef}.insert(entity);${membersCreate}
-        return ${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)));
+        return ${answerOpen}${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)))${answerClose};
     }
 
     /**
@@ -201,7 +201,7 @@ public class ${className} {
         ${deriveBeforeSave}
         beforeSave(entity, dto);
         write(entity);${membersWrite}
-        return ${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)));
+        return ${answerOpen}${mapperName}.toDTO(loaded(${cmdRef}.findById(${pkOfEntity}).orElse(entity)))${answerClose};
     }
 
     /**

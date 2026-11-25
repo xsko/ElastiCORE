@@ -916,6 +916,21 @@ elasticore:
   설정은 없습니다. 본문은 `elasticore-annotation-guide.md`(export)에 있습니다.
 - 예제: 펫스토어의 `ExportLimitTest`(`max-rows=10`: 32 개 품목은 거부되고, 더 좁은 검색은 써집니다).
 
+## 6-5. 보유 엔티티를 읽는 사람에게 싣는 중첩 행 (`nestedRows`, 3.0)
+> **동작:** v3 번들 - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal, 그리고 TypeScript 타입 · **미지원:** 2.x 호환 출력(output = 'v2'), 2.x 생성기
+
+```yaml
+config:
+  nestedRows: public       # 3.0 의 기본 동작 유지: 누구나 읽을 수 있는 엔티티의 중첩 DTO 만 (3.1 부터 기본값: readers)
+```
+
+- `readers` (3.1 부터의 기본값; 3.0 의 선택 설정, issue 321) - 다른 엔티티의 행 전체(중첩 DTO, `product: Product @dtype(ProductDTO)`)는
+  보유 엔티티를 읽을 수 있는 모든 사람이 그 엔티티도 읽을 수 있을 때 실립니다 (`read=MANAGER` 는 `read=MANAGER` 를, `read=user` 는 `read=user` 를 담고, `owner` 는 무엇도 담지 못함).
+  읽기 응답(단건 조회, 검색, export)에 실리고 정렬도 되며, 생성·수정·커맨드·`me()`·로그인 응답에서는 `null` 입니다 (CoreService 의
+  `withoutCarriedRows`). 요청에 실린 행은 참조 행을 쓰지 않습니다. 3.0 에서 `nestedRows: readers` 를 쓴 프로젝트는 그대로 동작하며, 그 줄은 지워도 됩니다.
+- `public` (3.0 의 기본값) - 그 엔티티를 누구나 읽을 수 있을 때만 실리고, 아니면 이 설정 이름을 알려 주는 경고와 함께 빠집니다.
+- 도메인 전체에 적용됩니다. 3.0 에서 올라온 프로젝트는 응답에 그 필드가 늘어납니다: 전과 같이 두려면 `public` 을 쓰세요.
+
 ## 7. apiPath 설정
 
 ```yaml

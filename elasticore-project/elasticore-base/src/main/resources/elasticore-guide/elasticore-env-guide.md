@@ -916,6 +916,21 @@ elasticore:
   the label column, else the code. It needs no setting; the body is in `elasticore-annotation-guide.md` (export).
 - Example: `ExportLimitTest` of the pet store (`max-rows=10`: the 32 items are refused, a narrower search is written).
 
+## 6-5. Nested rows for the holder's readers (`nestedRows`, 3.0)
+> **Works in:** the v3 bundles - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal, and the TypeScript types · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator
+
+```yaml
+config:
+  nestedRows: public       # keep 3.0's default: a nested DTO only of an entity anyone may read (default from 3.1: readers)
+```
+
+- `readers` (the default from 3.1; 3.0's opt-in, issue 321) - the whole row of another entity (a nested DTO, `product: Product @dtype(ProductDTO)`) is
+  carried when everyone who may read the holder may also read that entity (`read=MANAGER` carries `read=MANAGER`, `read=user` carries `read=user`, nothing carries `owner`).
+  It is in what a read answers (read one, search, export) and sorts; create, update, a command, `me()` and sign-in answer it as `null` (the CoreService's
+  `withoutCarriedRows`); a row a request sends never writes the referenced one. A 3.0 project that said `nestedRows: readers` keeps it; the line can go.
+- `public` (3.0's default) - the row is carried only when anyone may read that entity; otherwise the field is left out with a warning that names the setting.
+- It applies to the whole domain. A project coming from 3.0 sees its responses gain those fields: say `public` to keep them as they were.
+
 ## 7. apiPath setting
 
 ```yaml

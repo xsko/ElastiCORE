@@ -162,6 +162,9 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         String close = orDefault(c.varValue("readBackClose"), "");
         String dto = String.format("%sDTO", e.getName());
         FieldSpec pk = e.pkFields().get(0);
+        // A row the DTO carries for readers alone is not handed to whoever may give the command.
+        String answer = io.elasticore.base.model.pub.rules.base.ServiceAccessRules.answered(
+                e, String.format("%s.toDTO(%s%s.save(entity)%s)", mapper, open, repo, close));
 
         for (CommandSpec cmd : e.commands()) {
             StringBuilder m = new StringBuilder();
@@ -195,8 +198,8 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (c.varValue("countsAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
                 m.append("")
-                 .append(String.format("        return %s.toDTO(%s%s.save(entity)%s)%n", mapper, open, repo, close))
-                 .append("    }");
+                        .append(String.format("        return %s%n", answer))
+                        .append("    }");
             } else {
                 m.append(String.format("    public %s %s(%s) {%n", dto, cmd.name(), serviceParams(e, cmd, c.syntax())));
                 if (cmd.dtoName() != null) m.append("        BeanValidation.validate(command);\n");
@@ -218,8 +221,8 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
                 if (c.varValue("countsAfterCommand") != null)
                     m.append(String.format("        %s%n", c.varValue("countsAfterCommand")));
                 m.append("")
-                 .append(String.format("        return %s.toDTO(%s%s.save(entity)%s);%n", mapper, open, repo, close))
-                 .append("    }");
+                        .append(String.format("        return %s;%n", answer))
+                        .append("    }");
             }
             c.addMethod(m.toString().replace("\r\n", "\n"));
         }

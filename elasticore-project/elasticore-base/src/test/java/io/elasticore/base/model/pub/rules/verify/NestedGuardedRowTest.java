@@ -28,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class NestedGuardedRowTest {
 
     /** The review's model, plus a row that guards nothing and a list from another domain. */
-    private static final String SHOP = String.join("\n",
+    private static final String SHOP = String.join(
+            "\n",
             "entity:",
             "  QmMember:",
             "    meta: entity @root @editable @expose(20) @signin @owner(memberId) @access(read=public, create=public, update=owner)",
@@ -51,6 +52,18 @@ public class NestedGuardedRowTest {
             "      member:    QmMember @OneToOne @cascade(merge) @dtype(QmMemberDTO)",
             "      buddy:     QmMember @OneToOne @cascade",
             "      note:      QmNote @OneToOne @cascade(merge) @dtype(QmNoteDTO)",
+            "",
+            "  QmProduct:",
+            "    meta: entity @root @editable @expose(20) @access(read=user, create=user, update=owner)",
+            "    fields:",
+            "      productCode: string(20) @id",
+            "      name:        string(50)",
+            "",
+            "  QmCoverage:",
+            "    meta: entity @root @editable @expose(20) @access(read=user, create=user, update=user)",
+            "    fields:",
+            "      coverageId: long @id @sequence",
+            "      product:    QmProduct @ManyToOne @cascade(merge) @dtype(QmProductDTO)",
             "");
 
     private static final String CLUB = String.join("\n",
@@ -111,10 +124,23 @@ public class NestedGuardedRowTest {
     private static void domain(File project, String name, String model) throws Exception {
         File dir = new File(project, "src/main/resources/blueprint/" + name);
         assertTrue(new File(dir, "model").mkdirs());
-        Files.write(new File(dir, "env.yml").toPath(), String.join("\n",
-                "elasticore:", "  enable: true", "  config:", "    domainName: " + name, "    framework: springboot",
-                "    mode: jpa", "    j2ee: jakarta", "  namespace:", "    base: io.acme." + name, "")
-                .getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(dir, "env.yml").toPath(),
+                String.join(
+                                "\n",
+                                "elasticore:",
+                                "  enable: true",
+                                "  config:",
+                                "    domainName: " + name,
+                                "    framework: springboot",
+                                // nestedRows not said: readers, the default - the coverage carries the product its
+                                // readers may read (issue 321).
+                                "    mode: jpa",
+                                "    j2ee: jakarta",
+                                "  namespace:",
+                                "    base: io.acme." + name,
+                                "")
+                        .getBytes(StandardCharsets.UTF_8));
         Files.write(new File(dir, "model/model.yml").toPath(), model.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -197,6 +223,30 @@ public class NestedGuardedRowTest {
             assertTrue(body.contains("MemberMemberId") || body.contains("memberMemberId"), project + ": the key no longer points it\n" + body);
             // A cascade into a row that guards nothing is written as before.
             assertTrue(writes(body, "note", kt), project + ": the note is no longer written\n" + body);
+        }
+    }
+
+    @Test
+    public void sameLevelNestedDtoIsVisibleButItsReferencedRowIsNotWritten() throws Exception {
+        File[] projects = {layeredJava, layeredKotlin, hexJava, hexKotlin};
+        for (File project : projects) {
+            boolean kt = project == layeredKotlin || project == hexKotlin;
+            String dto = found(project, kt ? "QmCoverageDTO.kt" : "QmCoverageDTO.java");
+            assertTrue(
+                    dto.contains("QmProductDTO") || dto.contains("QmProductDTO?"),
+                    project + ": same-level Product DTO was omitted\n" + dto);
+
+            String mapper = found(project, kt ? "QmshopMapper.kt" : "QmshopMapper.java");
+            // Shown: the entity -> DTO mapping fills it (the head reads either way round).
+            String forward = reverse(mapper, "QmCoverage", "QmCoverageDTO", kt);
+            assertTrue(
+                    writes(forward, "product", kt), project + ": the product is declared but not filled\n" + forward);
+            String body = reverse(mapper, "QmCoverageDTO", "QmCoverage", kt);
+            assertFalse(
+                    writes(body, "product", kt), project + ": nested Product row is written through Coverage\n" + body);
+            assertTrue(
+                    body.contains("ProductProductCode") || body.contains("productProductCode"),
+                    project + ": Product identity field no longer links the relation\n" + body);
         }
     }
 

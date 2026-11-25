@@ -47,9 +47,12 @@ public class ServiceAccessRules implements CodeRules {
             "accessFindAll", "accessDeleteBySearch", "accessSearch", "accessFindById",
             "accessCreate", "accessUpdate", "accessDelete", "accessUpdateAll"};
 
-    /** The template's inline slots around a search's specification, empty by default. */
-    public static final List<String> INLINE = java.util.Collections.unmodifiableList(
-            java.util.Arrays.asList("accessSpecOpen", "accessSpecClose", "deleteEachOpen", "deleteEachClose"));
+    /**
+     * The template's inline slots around a search's specification and around
+     * what create and update answer (carriedRows), empty by default.
+     */
+    public static final List<String> INLINE = java.util.Collections.unmodifiableList(java.util.Arrays.asList(
+            "accessSpecOpen", "accessSpecClose", "deleteEachOpen", "deleteEachClose", "answerOpen", "answerClose"));
 
     private static final String RT = "io.elasticore.springboot3.security.";
     private static final java.util.regex.Pattern ENTRY =
@@ -128,8 +131,15 @@ public class ServiceAccessRules implements CodeRules {
         return star != null ? star : "admin";
     }
 
-    /** A DTO field carrying a whole row of an entity not every reader may see: read=public|MANAGER is anyone's. */
-    public static boolean nestsGuarded(EntitySpec e, FieldSpec f) {
+    /**
+     * May it be written: whether a DTO field carrying a whole row of another
+     * entity is left out of the DTO -> entity mapping - when that entity is
+     * not anyone's to read (read=public|MANAGER is anyone's). A row sent in a
+     * create or update never writes the referenced one, cascade included;
+     * its key still points the relation. Not whether it is shown: that is
+     * nestedIsVisible.
+     */
+    public static boolean nestedNotWritten(EntitySpec e, FieldSpec f) {
         String level = nestedReadLevel(e, f);
         if (level == null) return false;
         AccessExpression read = AccessExpression.parse(level);
@@ -149,18 +159,29 @@ public class ServiceAccessRules implements CodeRules {
     }
 
     /**
-     * A row of another entity travels in a DTO only if anyone may read it:
-     * a ticket must not hand its readers the agent behind it when only that
-     * agent may read the agent. The identity stays; the row does not.
+     * A row of another entity travels in a DTO only if everyone who may read
+     * the holder may read it too (nestedIsVisible) - or, under config:
+     * nestedRows: public, only if anyone may read it: a ticket must not hand its
+     * readers the agent behind it when only that agent may read the agent,
+     * while a coverage read at user carries a product read at user. The
+     * identity stays; the row does not. Where a row travels for the holder's
+     * readers, it does so in what a read answers; what a write answers leaves
+     * it out (carriedRows).
      */
     @Rule(value = "access-dto-nested", target = "dto", order = 0)
     void nested(EntitySpec e, FieldSpec f) {
-        if (!nestsGuarded(e, f)) return;
+        if (nestedIsVisible(e, f)) return;
         ctx(e).removeField(f);
+        // Under public, a row the default would carry says which setting keeps it out.
+        String level = nestedReadLevel(e, f);
+        String hint = !readersCarry(e) && readImplies(e.readLevelOf(e.getName()), level)
+                ? " Every reader of " + e.getName() + " may read it: config: " + NESTED_ROWS
+                        + ": public in env.yml keeps it out (readers, the default, carries it)."
+                : "";
         io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(String.format(
                 "[%s] %s.%s is left out: %s is read under @access(read=%s), and a DTO carrying it would show it"
-                        + " to whoever reads %s. Its identity stays.",
-                e.domainClassName(), e.getName(), f.name(), simple(f.typeName()), nestedReadLevel(e, f), e.getName()));
+                        + " to whoever reads %s. Its identity stays.%s",
+                e.domainClassName(), e.getName(), f.name(), simple(f.typeName()), level, e.getName(), hint));
     }
 
     /**
@@ -654,6 +675,7 @@ public class ServiceAccessRules implements CodeRules {
             m.add("}");
         }
         c.addMethod(m.text());
+        carriedOut(e, c, kt, dto);
 
         authenticate(e, c, kt, passwords);
     }
@@ -708,8 +730,8 @@ public class ServiceAccessRules implements CodeRules {
                     .append(password.name())
                     .append(")) return Optional.empty()\n")
                     .append("        return Optional.ofNullable(")
-                    .append(mapper)
-                    .append(".toDTO(found[0]))\n")
+                    .append(answered(e, mapper + ".toDTO(found[0])"))
+                    .append(")\n")
                     .append("    }");
         } else {
             m.append("    public Optional<").append(dto).append("> authenticate(String ").append(loginName).append(", String password) {\n")
@@ -726,14 +748,17 @@ public class ServiceAccessRules implements CodeRules {
                         .append(byLogin)
                         .append(");\n");
             }
-            m
-             .append("        if (found.size() != 1) {\n")
-             .append("            passwordHasher.hash(password);\n")
-             .append("            return Optional.empty();\n")
-             .append("        }\n")
-             .append("        if (!passwordHasher.matches(password, found.get(0).").append(getterName(password.name())).append("())) return Optional.empty();\n")
-             .append("        return Optional.of(").append(mapper).append(".toDTO(found.get(0)));\n")
-             .append("    }");
+            m.append("        if (found.size() != 1) {\n")
+                    .append("            passwordHasher.hash(password);\n")
+                    .append("            return Optional.empty();\n")
+                    .append("        }\n")
+                    .append("        if (!passwordHasher.matches(password, found.get(0).")
+                    .append(getterName(password.name()))
+                    .append("())) return Optional.empty();\n")
+                    .append("        return Optional.of(")
+                    .append(answered(e, mapper + ".toDTO(found.get(0))"))
+                    .append(");\n")
+                    .append("    }");
         }
         c.addMethod(m.toString());
         me(e, c, kt);
@@ -772,8 +797,8 @@ public class ServiceAccessRules implements CodeRules {
                     .append("::class.javaObjectType))")
                     .append(live)
                     .append(".map { ")
-                    .append(mapper)
-                    .append(".toDTO(it) }\n")
+                    .append(answered(e, mapper + ".toDTO(it)"))
+                    .append(" }\n")
                     .append("    }");
         } else {
             m.append("    public Optional<")
@@ -790,8 +815,8 @@ public class ServiceAccessRules implements CodeRules {
                     .append(".class))")
                     .append(live)
                     .append(".map(row -> ")
-                    .append(mapper)
-                    .append(".toDTO(row));\n")
+                    .append(answered(e, mapper + ".toDTO(row)"))
+                    .append(");\n")
                     .append("    }");
         }
         c.addMethod(m.toString());
@@ -1544,5 +1569,122 @@ public class ServiceAccessRules implements CodeRules {
 
     private static String trim(String s) {
         return s == null ? null : s.trim();
+    }
+
+    /**
+     * May it be shown: whether a DTO field carrying a whole row of another
+     * entity is carried at all - when everyone who passes the holder's read
+     * also passes the referenced entity's, or, under config: nestedRows:
+     * public, when anyone may read that entity. A field that carries no such row
+     * is always shown. The DTO (access-dto-nested), the entity -> DTO pass
+     * of the mapper and the sortable paths ask this.
+     */
+    public static boolean nestedIsVisible(EntitySpec e, FieldSpec f) {
+        String referencedLevel = nestedReadLevel(e, f);
+        if (referencedLevel == null) return true;
+        if (!readersCarry(e)) return !nestedNotWritten(e, f);
+        return readImplies(e.readLevelOf(e.getName()), referencedLevel);
+    }
+
+    /**
+     * The env.yml setting, domain-wide: config: nestedRows. "readers" (the
+     * default from 3.1; 3.0's opt-in) carries a whole row of another entity
+     * for whoever may read the holder (issue 321): readImplies, left out of
+     * what a write answers (carriedRows), never written inbound. "public"
+     * keeps 3.0's default: a row only when anyone may read it.
+     */
+    public static final String NESTED_ROWS = "nestedRows";
+
+    /** Whether the domain carries rows for the holder's readers: unless it says config: nestedRows: public. */
+    public static boolean readersCarry(EntitySpec e) {
+        return readersCarry(e.config(NESTED_ROWS));
+    }
+
+    /** The same, from a domain's config value (SortablePaths reads the model, not a spec). */
+    public static boolean readersCarry(String nestedRows) {
+        return !"public".equalsIgnoreCase(trim(nestedRows));
+    }
+
+    /**
+     * Whether every caller who passes the holder's read level (null: no
+     * {@literal @}access, public) passes the referenced one too - read=user
+     * carries read=user, read=MANAGER carries read=user, nothing carries
+     * read=owner (the owner of one row is not the owner of the other).
+     */
+    public static boolean readImplies(String holderLevel, String referencedLevel) {
+        AccessExpression holderRead = AccessExpression.parse(holderLevel == null ? "public" : holderLevel);
+        AccessExpression referencedRead = AccessExpression.parse(referencedLevel);
+        return holderRead != null && referencedRead != null && holderRead.implies(referencedRead);
+    }
+
+    /**
+     * The rows the DTO carries only for those who passed the holder's read:
+     * shown (nestedIsVisible), and of an entity not everyone may read. They
+     * are cleared from what a write answers - create, update, a command,
+     * me() and sign-in check create, update or nothing, never read - so a
+     * caller who may create a Coverage does not get the MANAGER-only
+     * Product back through it. Empty for a model that carries no such row,
+     * whose service is then what it was.
+     */
+    public static List<FieldSpec> carriedRows(EntitySpec e) {
+        List<FieldSpec> out = new ArrayList<FieldSpec>();
+        for (FieldSpec f : e.dtoFields()) {
+            if (nestedNotWritten(e, f) && nestedIsVisible(e, f)) out.add(f);
+        }
+        return out;
+    }
+
+    /** An answer of a write, without the carried rows (carriedRows): the expression as it was when there are none. */
+    public static String answered(EntitySpec e, String expression) {
+        return carriedRows(e).isEmpty() ? expression : CARRIED_OUT + "(" + expression + ")";
+    }
+
+    /** The service's method that clears the carried rows from a DTO it answers a write with. */
+    static final String CARRIED_OUT = "withoutCarriedRows";
+
+    /** withoutCarriedRows(dto), when the DTO carries a row only a reader of the holder may see; nothing otherwise. */
+    private static void carriedOut(EntitySpec e, SourceCode c, boolean kt, String dto) {
+        List<FieldSpec> carried = carriedRows(e);
+        if (carried.isEmpty()) return;
+        c.var("answerOpen", CARRIED_OUT + "(").var("answerClose", ")");
+        StringBuilder names = new StringBuilder();
+        for (FieldSpec f : carried)
+            names.append(names.length() == 0 ? "" : ", ").append(f.name());
+        StringBuilder m = new StringBuilder();
+        m.append("    /**\n")
+                .append("     * What a write answers, without the rows the DTO carries only for those who\n")
+                .append("     * passed the read of ")
+                .append(e.getName())
+                .append(" (")
+                .append(names)
+                .append("): create, update, a command\n")
+                .append("     * and me() check other levels. Their identity fields stay.\n")
+                .append("     */\n");
+        if (kt) {
+            m.append("    protected fun ")
+                    .append(CARRIED_OUT)
+                    .append("(dto: ")
+                    .append(dto)
+                    .append("?): ")
+                    .append(dto)
+                    .append("? {\n");
+            for (FieldSpec f : carried)
+                m.append("        dto?.").append(f.name()).append(" = null\n");
+            m.append("        return dto\n");
+        } else {
+            m.append("    protected ")
+                    .append(dto)
+                    .append(' ')
+                    .append(CARRIED_OUT)
+                    .append('(')
+                    .append(dto)
+                    .append(" dto) {\n")
+                    .append("        if (dto == null) return null;\n");
+            for (FieldSpec f : carried)
+                m.append("        dto.").append(setterName(f.name())).append("(null);\n");
+            m.append("        return dto;\n");
+        }
+        m.append("    }");
+        c.addMethod(m.toString());
     }
 }

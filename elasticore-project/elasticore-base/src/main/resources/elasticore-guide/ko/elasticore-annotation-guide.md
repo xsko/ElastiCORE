@@ -2222,9 +2222,11 @@ Ticket:
 CurrentUser.runAsSystem(() -> customers.save(admin));
 ```
 
-다른 엔티티의 **행 전체**(중첩 DTO)는 그 엔티티의 읽기 수준이 `public` 일 때만 DTO 에 실립니다.
-`read=owner` 인 고객을 주문 DTO 가 통째로 담으면 주문을 읽는 사람에게 고객 정보가 보이므로, 빌드가
-그 필드를 빼고 경고합니다 (식별자 `customerId` 는 남음).
+다른 엔티티의 **행 전체**(중첩 DTO)는 보유 엔티티를 읽을 수 있는 모든 사람이 그 엔티티도 읽을 수 있을 때 실립니다: `read=user` 는 `read=user` 를, 역할이나 `owner` 는 `user` 를, `read=MANAGER` 는 `read=MANAGER` 를 담고, 어떤 수준도 `owner` 를 담지 못합니다.
+그렇지 않으면 빌드가 그 필드를 빼고 경고합니다: `read=user` 인 주문이 `read=owner` 인 고객을 담으면 식별자 `customerId` 만 남습니다.
+3.1 부터의 기본 동작입니다 (`config: nestedRows: readers`, 3.0 의 선택 설정). env.yml 에 `config: nestedRows: public` 을 쓰면 도메인 전체가 3.0 의 기본 동작 - 읽기 수준이 `public` 인 엔티티의 행만 실음 - 을 유지하고, 그 때문에 빠지는 행의 경고가 이 설정을 알려 줍니다 (env 가이드 6-5).
+모두가 읽을 수는 없는 엔티티의 행은 읽기 응답(단건 조회, 검색, export)에만 실리고, 생성·수정·커맨드·`me()`·로그인 응답에서는 `null` 입니다 - 이들은 다른 수준을 검사하기 때문입니다. `Coverage @access(read=MANAGER, create=user)` 와 `Product @access(read=MANAGER)` 에서 일반 사용자가 coverage 를 생성하면 응답에 product 가 없습니다. 식별자는 남습니다.
+중첩 DTO 는 들어오는 방향으로는 쓰이지 않습니다: 생성이나 수정 요청에 실린 행은 cascade 가 있어도 참조 행을 바꾸지 않으며, 식별자는 여전히 관계를 가리킵니다.
 
 `@access` 문법 오류(`read=owners`, `read=owner|`, 엔티티에 `@access(admin)`)는 빌드 경고로 알려 줍니다 - 그대로 두면
 애플리케이션이 시작하지 않습니다 (대문자로 시작하는 단어는 역할 이름이라 위처럼 검사함: `read=MANGER`). 규칙 엔진(`elcore3`)에서 `jpa-service-access` 가 없는 번들(2.x 호환 번들 등)로

@@ -159,7 +159,7 @@ open class ${className}(
         ${deriveBeforeSave}
         beforeSave(entity, dto)${stampCreate}
         prepareMembers(entity)
-        return ${mapperName}.toDTO(${cmdRef}.insert(entity))
+        return ${answerOpen}${mapperName}.toDTO(${cmdRef}.insert(entity))${answerClose}
     }
 
     /**
@@ -212,7 +212,7 @@ open class ${className}(
         ${htmlClean}
         ${deriveBeforeSave}
         beforeSave(entity, dto)
-        return ${mapperName}.toDTO(write(entity))
+        return ${answerOpen}${mapperName}.toDTO(write(entity))${answerClose}
     }
 
     /**

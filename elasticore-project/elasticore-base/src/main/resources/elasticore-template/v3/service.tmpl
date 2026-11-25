@@ -146,7 +146,7 @@ public class ${className} {
         ${deriveBeforeSave}
         beforeSave(entity, dto);
         ${entityClassName} result = ${readBackOpen}${cmdRef}.save(entity)${readBackClose};
-        return ${mapperName}.toDTO(result);
+        return ${answerOpen}${mapperName}.toDTO(result)${answerClose};
     }
 
     /**
@@ -185,7 +185,7 @@ public class ${className} {
         ${htmlClean}
         ${deriveBeforeSave}
         beforeSave(entity, dto);
-        return ${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose});
+        return ${answerOpen}${mapperName}.toDTO(${readBackOpen}${cmdRef}.save(entity)${readBackClose})${answerClose};
     }
 
     /**
