@@ -119,8 +119,8 @@ public class ExposeMethodsRulesTest {
     public void aClientThatOnlyDeletesImportsTheKeyAndNotTheDto() {
         String out = client(article("delete")).render();
         assertTrue(out.contains("import { request, seg } from './apiSupport';"), out);
-        assertTrue(out.contains("import { ArticleKeyDTO }") || out.contains("ArticleKeyDTO } from"), out);
-        assertFalse(out.contains("import { ArticleDTO }") || out.contains("ArticleSrchDTO"), out);
+        assertTrue(out.contains("import type { ArticleKeyDTO } from './ArticleKeyDTO';"), out);
+        assertFalse(out.contains("{ ArticleDTO }") || out.contains("ArticleSrchDTO"), out);
     }
 
     @Test

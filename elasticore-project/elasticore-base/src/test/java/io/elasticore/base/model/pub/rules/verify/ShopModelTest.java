@@ -631,7 +631,10 @@ public class ShopModelTest {
     public void theClientHasTheServersShape() throws Exception {
         String order = ts("PtOrderDTO");
         assertTrue(order.contains("buyerId?: number;"), order);
-        assertTrue(order.contains("address?: PtAddress;") && order.contains("import { PtAddress } from './PtAddress';"), order);
+        assertTrue(
+                order.contains("address?: PtAddress;")
+                        && order.contains("import type { PtAddress } from './PtAddress';"),
+                order);
         assertTrue(order.contains("card?: PtCard;"), order);
         assertTrue(ts("PtLineDTO").contains("itemId?: number;"), ts("PtLineDTO"));
 
@@ -678,8 +681,17 @@ public class ShopModelTest {
         assertFalse(ts("PtOrderDTO").contains("buyer?: PtBuyerDTO"), "the browser is not promised the row the server leaves out");
         String api = ts("PtOrderApi");
         assertTrue(api.contains("export function canShip(value: PtOrderDTO | null | undefined): boolean"), api);
+        // The state enum is compared as a value (PtOrderStatus.SHIPPED): a value import; the DTO a type one.
         assertTrue(api.contains("import { PtOrderStatus } from './PtOrderStatus';"), api);
-        assertTrue(read("src/main/ts/apiSupport.ts").contains("readonly fieldErrors: Record<string, string>"));
+        assertTrue(api.contains("import type { PtOrderDTO } from './PtOrderDTO';"), api);
+        String support = read("src/main/ts/apiSupport.ts");
+        assertTrue(support.contains("readonly fieldErrors: Record<string, string>"));
+        // erasableSyntaxOnly: fields, not constructor parameter properties (TS1294) - the same public shape.
+        assertTrue(
+                support.contains("    readonly status: number;") && support.contains("    readonly path: string;"),
+                support);
+        assertTrue(support.contains("constructor(status: number, path: string, message: string) {"), support);
+        assertFalse(support.contains("constructor(readonly"), support);
     }
 
     /** A search may leave any condition out, and pages and sorts as the Java one does. */

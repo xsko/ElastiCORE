@@ -120,7 +120,8 @@ public class TypeScriptSearchDtoRelationTest {
     public void anEnumIsStillImported() throws Exception {
         String dto = found("SaleSrchDTO.ts");
         assertTrue(dto.contains("status?: SaleStatus;"), dto);
-        assertTrue(dto.contains("import { SaleStatus } from './SaleStatus';"), dto);
+        // Only a field's type in a DTO file: a type-only import (verbatimModuleSyntax, issue 346).
+        assertTrue(dto.contains("import type { SaleStatus } from './SaleStatus';"), dto);
     }
 
     @Test

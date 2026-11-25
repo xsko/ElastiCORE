@@ -405,8 +405,8 @@ public class DddInvariantRules implements CodeRules,
         String var = e.varName();
         List<Invariant> invariants = invariantsOf(e, var, Syntax.TYPESCRIPT);
 
-        c.var("className", dto + " invariants")
-         .var("importList", c.syntax().importLine(dto) + "\n");
+        // The DTO is an interface, a type only: import type (verbatimModuleSyntax).
+        c.var("className", dto + " invariants").var("importList", c.syntax().typeImportLine(dto) + "\n");
 
         c.varLine("bodyList", "/**")
          .varLine("bodyList", " * What %s promises about itself, checked here as a courtesy.", dto)

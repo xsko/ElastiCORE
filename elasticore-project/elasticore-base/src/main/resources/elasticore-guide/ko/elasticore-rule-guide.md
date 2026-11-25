@@ -1760,6 +1760,14 @@ model change, or set typescriptClient = true in the elasticore { } block so the 
 스크립트의 다른 태스크(`webBuild` 등)가 `elcore3ts` 를 부르는 프로젝트도 바꾼 것이 없으면 조용합니다. `build` 폴더를
 지우면 `elcore3ts` 를 다시 돌릴 때까지 `elcore3` 가 매번 알려 줍니다.
 
+**어떤 컴파일러 설정에서 컴파일되는가.** 클라이언트는 새 Vite + React 프로젝트(create-vite 의 `tsconfig.app.json`)가
+켜는 검사로 컴파일됩니다: `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`,
+`isolatedModules`, `verbatimModuleSyntax`, `erasableSyntaxOnly`(마지막은 TypeScript 5.8 이상). 타입으로만 쓰는 이름은
+`import type` 으로 가져오고, `ApiError` 는 필드를 생성자 parameter property 가 아니라 선언으로 가지며,
+`validateXxx(value, partial)` / `validateXxxCodes` 는 검사하는 필드 중 필수가 없으면 둘째 파라미터 이름이
+`_partial` 입니다 - 부르는 방법은 같습니다. 직접 쓰는 페이지에서도 DTO 는 같은 방식으로 가져옵니다:
+`import type { OrderDTO } from './OrderDTO'`.
+
 **어디로 보내고, 모든 요청에 무엇을 싣는가 (`configureApi`).** 기본은 같은 origin 에 `fetch` 로,
 `Content-Type: application/json` 만 실어 보냅니다. 나머지는 시작할 때 한 번 `apiSupport.ts` 의 함수로 정합니다:
 
