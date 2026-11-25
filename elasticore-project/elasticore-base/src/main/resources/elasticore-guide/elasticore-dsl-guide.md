@@ -95,6 +95,8 @@ entity:
 **How the `--` comment parser works**
 - Simple form (`-- text`) -> generates an `@label(text)` annotation
 - Extended form (`-- label | desc`) -> generates two annotations, `@label(label)` + `@desc(desc)`
+- The text is taken as written, whatever it holds: `=`, `,` and parentheses are part of it, never parameters.
+  `-- term in months (1 = to the same day of the next month, or its last day)` is that whole label.
 
 **Reading the comment string at runtime**
 - `field.getDescription()` -> returns the `--` comment text (label first, falls back to desc if there is no label). Supported from `v2.2.260421-2+`
@@ -122,7 +124,8 @@ entity:
   the TypeScript key; the bundle file takes it with `_` (`_pt_BR`), the name a `ResourceBundle` looks for.
 - A value runs to the next comma, spaces and apostrophes included (`en=Owner's name`); quote it when it holds a comma
   (`en="Cost, per unit"`). Several `@label(...)` on one line are one label.
-- Only a `@label` you write is read this way, never the `--` text: `-- sum = price * qty` is a label, as before. A
+- Only a `@label` you write is read this way, never the `--` text: `-- sum = price * qty` is the label
+  `sum = price * qty`. A
   `@label(...)` with a key that is not a language tag (`@label(en=Unit cost, note=x)`) is read as in 2.x, and the build
   warns (`DSL_WARN`).
 - Write only the languages you have. A field without `@label(...)` keeps its `--` label in every language.

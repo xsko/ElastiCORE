@@ -18,9 +18,9 @@ import java.util.regex.Pattern;
  * the same tag). A value runs to the next comma, spaces and apostrophes
  * included; it is quoted when it holds a comma.
  *
- * Only an @label the developer writes is read this way. The one the loader
- * builds from a "--" comment is read as it always was, so a comment such as
- * "-- sum = price * qty" is never a translation.
+ * Only an @label the developer writes is read this way. The "--" text is the
+ * label as written, whatever it holds, so a comment such as
+ * "-- sum = price * qty" is never a translation and never key=value pairs.
  */
 public final class LabelTranslations {
 
