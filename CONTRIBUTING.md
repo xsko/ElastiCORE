@@ -148,6 +148,15 @@ and are registered in `RuleCatalog`.
 4. **Cover all three languages, or say which one.** Java, Kotlin and TypeScript
    have separate template sets. A rule that only makes sense in one is fine;
    silently producing Java into a Kotlin project is not.
+5. **Every mode it can reach, or a warning.** JPA, MyBatis and MongoDB,
+   layered, ddd and hexagonal: a change works in each combination it reaches,
+   or the build warns a project in one it leaves out, naming what is missing.
+   Generating nothing there without a word is the bug - the developer finds out
+   at run time.
+6. **Test the output, not the build.** A build that passes proves the code
+   compiles, not that it does what the DSL says: a field declared in a DTO that
+   the mapper never fills compiles. A test checks the generated file itself, or
+   calls the generated application.
 
 ## Things this codebase has learned the hard way
 
@@ -196,6 +205,11 @@ they recur.
 
 - One concern per pull request. A rule change and a refactor in the same diff
   makes the compatibility report impossible to read.
+- A change to what existing projects generate goes to `main` only, not to
+  `release/3.0`: a project that takes a 3.0 fix release regenerates what it
+  generated before. When a change has an additive part (a new DSL word, a new
+  warning) and a part that changes existing output, open two pull requests, so
+  the additive one can go to both lines.
 - Include the `elcoreRulesCheck -Pstrict` summary line in the description.
 - Write comments in English. Each guide is written twice, in English
   (`elasticore-guide/`, what a project gets by default) and in Korean
