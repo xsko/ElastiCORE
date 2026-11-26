@@ -39,10 +39,8 @@ import java.util.Set;
  *       across the boundary ties two models into one; hold its id, or use a
  *       DTO it publishes.</li>
  * </ul>
- * A process manager that reacts to another context's event
- * ({@code on: [shop:OrderPlaced]}) crosses the same way: the event is
- * checked like a type, and publishes may list events (RootEvent) as well as
- * DTOs, enums and embeddables.
+ * publishes may list the events its roots raise (RootEvent) as well as DTOs,
+ * enums and embeddables.
  * The problems are the build's (ModelCheck.fail); the map itself is drawn as
  * context-map.md beside schema.yml.
  */
@@ -57,8 +55,6 @@ public final class ContextMap {
         private final Set<String> publishes = new LinkedHashSet<String>();
         /** RootEvent (OrderPlaced) -> the class generated for it, for every @event of its roots. */
         private final Map<String, String> events = new LinkedHashMap<String, String>();
-        /** RootEvent an entity declares that raises nothing -> why (a member, no key). */
-        private final Map<String, String> unraised = new LinkedHashMap<String, String>();
 
         Context(String name) {
             this.name = name;
@@ -80,7 +76,7 @@ public final class ContextMap {
             return publishes;
         }
 
-        /** The domain events its roots declare, by the name a process manager reacts to. */
+        /** The domain events its roots declare, by the name publishes lists them with. */
         public Map<String, String> events() {
             return events;
         }
@@ -126,7 +122,6 @@ public final class ContextMap {
     private final List<String> problems = new ArrayList<String>();
     private final List<String> warnings = new ArrayList<String>();
     private final Map<String, String> domainNames = new LinkedHashMap<String, String>();
-    private final Map<String, List<ECoreModel>> models = new LinkedHashMap<String, List<ECoreModel>>();
 
     private ContextMap() {
     }
@@ -142,7 +137,6 @@ public final class ContextMap {
 
     static ContextMap of(Map<String, List<ECoreModel>> byContext) {
         ContextMap map = new ContextMap();
-        map.models.putAll(byContext);
 
         // Who owns each name. A name two contexts both define is left out: the
         // loader already warns of it, and either answer would be a guess.
@@ -166,7 +160,7 @@ public final class ContextMap {
                     if (before != null && !before.equals(en.getKey())) ambiguous.add(name);
                     kind.put(name, kindOf(model, name));
                 }
-                c.events.putAll(events(model, c.unraised));
+                c.events.putAll(events(model));
             }
         }
         for (String name : ambiguous) owner.remove(name);
@@ -213,31 +207,10 @@ public final class ContextMap {
                         map.reference(from, name + " @template", t, own, owner, kind, false);
                     }
                 }
-                // processManager on: [shop:OrderPlaced] - another context's event.
-                for (io.elasticore.base.model.domainservice.DomainService pm : processManagers(model)) {
-                    for (String event : pm.getOn()) {
-                        if (event.indexOf(':') > 0) {
-                            map.eventReference(from, "processManager " + pm.getIdentity().getName(), event);
-                        }
-                    }
-                }
             }
         }
         map.check();
         return map;
-    }
-
-    /**
-     * The class another context generates for one of its events, named the
-     * way a process manager names it: "shop:OrderPlaced" (the context by its
-     * directory or its domainName). Null when there is no such context or
-     * event.
-     */
-    public String eventClass(String qualifiedName) {
-        int colon = qualifiedName.indexOf(':');
-        if (colon <= 0) return null;
-        Context c = contexts.get(contextNamed(qualifiedName.substring(0, colon)));
-        return c == null ? null : c.events.get(eventKey(c, qualifiedName.substring(colon + 1).trim()));
     }
 
     /** OrderPlaced, also when written as the class (OrderPlacedEvent), as a local name may be. */
@@ -250,44 +223,11 @@ public final class ContextMap {
     }
 
     /**
-     * shop:OrderPlaced named by a process manager of another context. An
-     * unknown context or event is not recorded: the rule that writes the
-     * handler says what is wrong with the name, and a boundary message
-     * ("shop does not publish OrderShiped") would send the user the wrong way.
-     */
-    private void eventReference(String from, String where, String qualifiedName) {
-        int colon = qualifiedName.indexOf(':');
-        String to = contextNamed(qualifiedName.substring(0, colon));
-        if (to == null || to.equals(from)) return;
-        Context c = contexts.get(to);
-        String key = eventKey(c, qualifiedName.substring(colon + 1).trim());
-        if (!c.events.containsKey(key)) return;
-        references.add(new Reference(from, to, key, where, false));
-    }
-
-    /**
-     * The one other context that declares an event written without a context,
-     * so the warning can say how to name it. Null when the context itself
-     * declares it, or none or several others do.
-     */
-    public String contextDeclaringEvent(String context, String eventName) {
-        Context own = contexts.get(context);
-        if (own != null && own.events.containsKey(eventName)) return null;
-        String found = null;
-        for (Context c : contexts.values()) {
-            if (!c.events.containsKey(eventName)) continue;
-            if (found != null) return null;
-            found = c.name;
-        }
-        return found;
-    }
-
-    /**
      * The events of one model: RootEvent -> package.RootEventEvent, as ddd-event
      * names the class. Only what EntitySpec.events() raises: a root (not a
      * member of another aggregate, not an embeddable) with a key of its own.
      */
-    private static Map<String, String> events(ECoreModel model, Map<String, String> unraised) {
+    private static Map<String, String> events(ECoreModel model) {
         Map<String, String> out = new LinkedHashMap<String, String>();
         String pkg = model.getNamespace("event");
         if (pkg == null || pkg.isEmpty()) pkg = model.getNamespace("entity");
@@ -296,28 +236,13 @@ public final class ContextMap {
             Entity e = entities.get(i);
             if (!e.getMetaInfo().hasMetaAnnotation("event") || e.getMetaInfo().hasMetaAnnotation("embeddable")) continue;
             String root = e.getIdentity().getName();
-            String holder = SpecFactory.aggregateOfModel(root, model);
-            String why = holder != null ? root + " is a member of " + holder + "; only a root raises events"
-                    : !hasKey(e) ? root + " has no @id; only a root with a key raises events" : null;
+            if (SpecFactory.aggregateOfModel(root, model) != null || !hasKey(e)) continue;
             for (String event : io.elasticore.base.model.pub.rules.EntitySpec.eventNames(
                     e.getMetaInfo().getMetaAnnotationValue("event"))) {
-                if (why != null) unraised.put(root + event, why);
-                else out.put(root + event, pkg + "." + root + event + "Event");
+                out.put(root + event, pkg + "." + root + event + "Event");
             }
         }
         return out;
-    }
-
-    /** Why another context's event, declared there, raises nothing - or null when that is not the reason. */
-    public String whyNoEvent(String qualifiedName) {
-        int colon = qualifiedName.indexOf(':');
-        if (colon <= 0) return null;
-        Context c = contexts.get(contextNamed(qualifiedName.substring(0, colon)));
-        if (c == null) return null;
-        String name = qualifiedName.substring(colon + 1).trim();
-        String why = c.unraised.get(name);
-        if (why == null && name.endsWith("Event")) why = c.unraised.get(name.substring(0, name.length() - 5));
-        return why;
     }
 
     /** Whether an entity declares its own key (@id / @pk), as EntitySpec.pkField() asks. */
@@ -337,24 +262,6 @@ public final class ContextMap {
         String n = name.trim();
         if (contexts.containsKey(n)) return n;
         return domainNames.get(n);
-    }
-
-    /** The models one context loaded, for a question only its own settings answer. */
-    public List<ECoreModel> modelsOf(String context) {
-        List<ECoreModel> m = models.get(context);
-        return m == null ? java.util.Collections.<ECoreModel>emptyList() : m;
-    }
-
-    /** The process managers a model declares - read off the list, not the shared cursor. */
-    private static List<io.elasticore.base.model.domainservice.DomainService> processManagers(ECoreModel model) {
-        List<io.elasticore.base.model.domainservice.DomainService> out =
-                new ArrayList<io.elasticore.base.model.domainservice.DomainService>();
-        if (model.getDomainServiceModels() == null) return out;
-        for (io.elasticore.base.model.domainservice.DomainService s
-                : model.getDomainServiceModels().getOrgItems().getItemList()) {
-            if (s.isProcessManager()) out.add(s);
-        }
-        return out;
     }
 
     private void fields(String from, String holder, ModelComponentItems<Field> fields,
@@ -413,8 +320,7 @@ public final class ContextMap {
                 problems.add(String.format("[%s] %s uses %s from %s, but %s does not declare it (config.context.uses: %s).",
                         r.from, r.where, r.type, r.to, r.from, r.to));
             }
-            if (to.declared && to.publishesDeclared && !to.publishes.contains(r.type)
-                    && !(to.events.containsKey(r.type) && to.publishes.contains(r.type + "Event"))) {
+            if (to.declared && to.publishesDeclared && !to.publishes.contains(r.type)) {
                 problems.add(String.format("[%s] %s uses %s from %s, which %s does not publish (config.context.publishes).",
                         r.from, r.where, r.type, r.to, r.to));
             }

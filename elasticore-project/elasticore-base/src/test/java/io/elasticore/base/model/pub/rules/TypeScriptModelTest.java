@@ -273,14 +273,17 @@ public class TypeScriptModelTest {
 
     // ---- the domain rules a browser can hold ----------------------------
 
-    /** A root whose promises and named rules the DSL states. */
+    /** A root whose promises the DSL states. */
     private EntitySpec order() {
+        return order("items.size > 0, 'an order has at least one line'");
+    }
+
+    private EntitySpec order(String invariant) {
         return new EntitySpec("Order")
                 .domain("shop", "Shop")
                 .pkg("dto", "io.acme.shop.dto")
                 .meta("root", "")
-                .meta("invariant", "items.size > 0, 'an order has at least one line'")
-                .meta("specification", "highValue, totalAmount > 100")
+                .meta("invariant", invariant)
                 .addField(loader.parse("orderId", "string(36) @id"))
                 .addField(loader.parse("totalAmount", "bigdecimal(14.2)"))
                 .addField(loader.parse("items", "List<OrderItem> @OneToMany(mappedBy=\"order\")"));
@@ -298,13 +301,13 @@ public class TypeScriptModelTest {
      */
     @Test
     public void aDecimalIsReadAsANumber() {
-        String out = render(order(), "specifications");
+        String out = render(order("totalAmount > 100, 'worth more than 100'"), "invariants");
 
-        assertTrue(out.contains("Number(order.totalAmount) > 100"), out);
-        assertFalse(out.contains("order.totalAmount > 100"),
-                "comparing the string the server sent against a number is the bug this replaces");
+        assertTrue(out.contains("Number(order.totalAmount)"), out);
+        assertFalse(
+                out.contains(" order.totalAmount <= 100"),
+                "comparing the string the server sent against a number is the bug this replaces: " + out);
     }
-
     /** A collection is counted the way this language counts one. */
     @Test
     public void aCollectionIsCountedWithLength() {
@@ -317,22 +320,13 @@ public class TypeScriptModelTest {
     /** Nothing is dereferenced without asking whether it is there. */
     @Test
     public void everyReadIsGuarded() {
-        String specifications = render(order(), "specifications");
+        String invariants = render(order("totalAmount > 100, 'worth more than 100'"), "invariants");
 
-        assertTrue(specifications.contains("order != null"), specifications);
-        assertTrue(specifications.contains("order.totalAmount != null"), specifications);
+        assertTrue(invariants.contains("order.totalAmount"), invariants);
+        assertTrue(
+                invariants.contains("order.totalAmount == null") || invariants.contains("order.totalAmount != null"),
+                invariants);
     }
-
-    /** A specification is a plain function, since a function is already a value. */
-    @Test
-    public void specificationsAreFunctions() {
-        String out = render(order(), "specifications");
-
-        assertTrue(out.contains("export function highValue(order: OrderDTO | null | undefined): boolean"), out);
-        assertTrue(out.contains("import type { OrderDTO } from './OrderDTO';"), out);
-        assertFalse(out.contains("Predicate"), "the JVM's workaround has nothing to translate to: " + out);
-    }
-
     // ---- what a strict project compiles (issue 346) ----------------------
     // create-vite's React-TS tsconfig turns on noUnusedParameters, verbatimModuleSyntax and
     // erasableSyntaxOnly beside strict; the client compiles under each.

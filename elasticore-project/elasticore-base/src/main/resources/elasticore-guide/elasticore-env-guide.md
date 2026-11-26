@@ -261,7 +261,7 @@ The domain model and hexagonal are generated with MyBatis too (bundles `ddd-myba
 it is read as the MyBatis version). Since: 3.0.261030-rc6
 
 The model is the same as the JPA version, and so is what is generated - the root and `<Root>Base`, members, value objects, domain events, invariants, factories,
-specifications, commands (`commands:`), lifecycle (`states:`), `@snapshot` and `@compute`, domain services and process managers, ports
+commands (`commands:`), lifecycle (`states:`), `@snapshot` and `@compute`, ports
 (`<Root>RepositoryPort`, `<Root>QueryPort`, `<Root>UseCase`), the outbox, architecture tests. The domain (`domain.model`) has no JPA or Spring
 Data name at all (the JPA version gets this with `mapping: xml`; here you get it as it is).
 
@@ -682,13 +682,12 @@ config:
 | It uses a type of a context that is not in `uses` | **Build fails** (`... does not declare it (config.context.uses: catalog)`) |
 | The other side declared `publishes` and the type is not in it (`publishes: []` publishes nothing) | **Build fails** (`... which catalog does not publish`) |
 | The other side has `context:` but does not declare `publishes` | Passes if it is in `uses` |
-| A process manager of another context receives an event with `on: [shop:OrderPlaced]` | The same check as for types: `shop` in the receiver's `uses`, and if `shop` declared `publishes`, `OrderPlaced` in it |
 | `publishes` lists an entity or a name that does not exist | DSL warning (event names of that context are fine) |
 | Neither side has `context:` | Same as before (names are looked up in all domains, and the DDD bundle only warns) |
 
 - What is checked: the types of entity and DTO fields (including the X in `List<X>`, and those with a domain name such as `catalog:Product`), the DTO's
-  `@template(...)`, the entity's `@extend(...)`, and the process manager's `on: [shop:OrderPlaced]` ("process manager" in
-  `elasticore-dsl-guide.md`). If two domains have the same name, it cannot tell which one is meant, so it does not check
+  `@template(...)` and the entity's `@extend(...)` - not the classes your own code imports (a listener of another context's
+  event, `elasticore-dsl-guide.md` 8). If two domains have the same name, it cannot tell which one is meant, so it does not check
   (the loader warns: a type name is unique across domains - rename one). The 3.0 rule engine (`elcore3`) checks before generation, and on failure it reports all problems at once and then stops the build.
   The 2.x generator (`elcore`) does not read `context:`.
 - **Context map**: if any domain has `context:`, `blueprint/context-map.md` is created (a Mermaid diagram -
@@ -1122,7 +1121,7 @@ namespace:
   port: io.example.domain.port              # Transaction port package
   proto: io.example.proto                    # Protocol Buffer package
   event: io.example.domain.event             # Domain event package (ddd-event rule)
-  domainService: io.example.domain.service   # Domain service package (ddd-domain-service rule, deprecated - removed in 3.1)
+  domainService: io.example.domain.service   # Domain service package (yours; the architecture test checks it as domain code)
   inboundPort: io.example.application.port.in          # Inbound port (UseCase)
   domainRepository: io.example.domain.repository       # Repository port (owned by the domain)
   queryPort: io.example.application.port.out           # Query port (application-layer search, default service)
@@ -1132,11 +1131,11 @@ namespace:
 `event` is used only when there is an aggregate root that declares `@event(...)`. If you do not
 declare one, the event classes are placed in the `entity` package.
 
-`domainService` is used only in a domain that declares a `domainService:` section. If you do not
-declare one, it is placed in the `entity` package. **Do not put it in the same package as `service` (the
+`domainService` is the package of the domain services you write: the architecture test checks it as domain code (with
+`base:`, `base.domain.service`). **Do not put it in the same package as `service` (the
 application service)** - a domain service belongs to the domain and an application service is a layer above it, so putting
 them in the same place breaks the dependency direction.
-The `domainService:` and `processManager:` sections are deprecated and removed in 3.1 (annotation guide, "domainService").
+The `domainService:` and `processManager:` sections are no longer read since 3.1 (`elasticore-dsl-guide.md` 8).
 
 It is used in the `package` declaration and the `import` statements of each generated class.
 

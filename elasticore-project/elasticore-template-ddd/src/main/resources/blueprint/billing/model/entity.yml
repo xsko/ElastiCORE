@@ -1,7 +1,8 @@
 entity:
   # Billing keeps its own record of an order: the id and the amount, copied
   # from the event - never a relation to shop's Order, which is shop's model.
-  # The process manager writes it; the API only reads it.
+  # Written by a listener of shop's OrderPlaced (billing.application.ReceiptingListener,
+  # hand-written); the API only reads it.
   Receipt:
     meta: entity @root @expose(pageSize=20, methods="read,search,export") --영수증
     fields:

@@ -91,8 +91,23 @@ public final class RuleCatalog {
         return out;
     }
 
+    /**
+     * The rule sets removed in 3.1 (issue 370): domainService:,
+     * processManager: and @specification are written by hand now. A selection
+     * that still names one runs without it rather than stopping the build;
+     * the generator says so once (RemovedDsl).
+     */
+    private static final java.util.Set<String> REMOVED = java.util.Collections.unmodifiableSet(
+            new java.util.LinkedHashSet<String>(java.util.Arrays.asList("ddd-specification", "ddd-domain-service")));
+
+    /** Whether a name is a rule set removed in 3.1, which a selection may still list. */
+    public static boolean removed(String name) {
+        return name != null && REMOVED.contains(name.trim());
+    }
+
     private List<CodeRules> resolve(String name) {
         List<CodeRules> result = new ArrayList<CodeRules>();
+        if (removed(name) && !sets.containsKey(name.trim())) return result;
         if (bundles.containsKey(name)) {
             for (String member : bundles.get(name)) {
                 result.addAll(resolve(member));
@@ -210,11 +225,6 @@ public final class RuleCatalog {
                 return new io.elasticore.base.model.pub.rules.ddd.DddFactoryRules();
             }
         });
-        c.register("ddd-specification", new Factory() {
-            public CodeRules create() {
-                return new io.elasticore.base.model.pub.rules.ddd.DddSpecificationRules();
-            }
-        });
         c.register("ddd-repository-port", new Factory() {
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.ddd.DddRepositoryPortRules();
@@ -289,11 +299,6 @@ public final class RuleCatalog {
             @Override
             public CodeRules create() {
                 return new io.elasticore.base.model.pub.rules.graphql.GraphQlRules();
-            }
-        });
-        c.register("ddd-domain-service", new Factory() {
-            public CodeRules create() {
-                return new io.elasticore.base.model.pub.rules.ddd.DddDomainServiceRules();
             }
         });
         c.register("ddd-outbox", new Factory() {
@@ -767,13 +772,23 @@ public final class RuleCatalog {
         // A Kotlin project composes the pieces instead -
         //   publisher.rules: [jpa-springboot-kt, ddd-aggregate]
         // since the boundary is language-neutral and Lombok is not.
-        c.bundle("ddd-springboot",
+        c.bundle(
+                "ddd-springboot",
                 "jpa-springboot-v3",
-                "ddd-aggregate", "ddd-reference", "ddd-mapper-ref",
-                "ddd-collection", "ddd-value-object", "ddd-event",
-                "ddd-invariant", "ddd-factory", "ddd-specification", "ddd-domain-service",
-                "ddd-repository-port", "ddd-behavior", "ddd-command", "ddd-outbox",
-                "ddd-state", "ddd-derive");
+                "ddd-aggregate",
+                "ddd-reference",
+                "ddd-mapper-ref",
+                "ddd-collection",
+                "ddd-value-object",
+                "ddd-event",
+                "ddd-invariant",
+                "ddd-factory",
+                "ddd-repository-port",
+                "ddd-behavior",
+                "ddd-command",
+                "ddd-outbox",
+                "ddd-state",
+                "ddd-derive");
         // The full hexagon: the domain reading plus the inbound port. The
         // name waited until it was earned - an interface alone was not it.
         // What makes it whole now is that both directions exist and run:
@@ -789,13 +804,24 @@ public final class RuleCatalog {
         // the callbacks become the aggregate's Lifecycle, which the
         // generated repository adapter calls, and the JPA annotations the
         // domain rules write go.
-        c.bundle("ddd-mybatis-springboot",
+        c.bundle(
+                "ddd-mybatis-springboot",
                 "mybatis-springboot",
-                "ddd-aggregate", "ddd-reference", "ddd-mapper-ref",
-                "ddd-collection", "ddd-value-object", "ddd-event",
-                "ddd-invariant", "ddd-factory", "ddd-specification", "ddd-domain-service",
-                "ddd-repository-port", "ddd-behavior", "ddd-command", "ddd-outbox",
-                "ddd-state", "ddd-derive", "mybatis-ddd");
+                "ddd-aggregate",
+                "ddd-reference",
+                "ddd-mapper-ref",
+                "ddd-collection",
+                "ddd-value-object",
+                "ddd-event",
+                "ddd-invariant",
+                "ddd-factory",
+                "ddd-repository-port",
+                "ddd-behavior",
+                "ddd-command",
+                "ddd-outbox",
+                "ddd-state",
+                "ddd-derive",
+                "mybatis-ddd");
         c.bundle("hexagonal-mybatis-springboot",
                 "ddd-mybatis-springboot", "hex-usecase");
 
@@ -847,13 +873,23 @@ public final class RuleCatalog {
         // than a language flag on one because the members differ: the value
         // object is made immutable by Lombok in Java and by the language
         // itself in Kotlin, so each names its own rule for that.
-        c.bundle("ddd-springboot-kt",
+        c.bundle(
+                "ddd-springboot-kt",
                 "jpa-springboot-kt",
-                "ddd-aggregate", "ddd-reference", "ddd-mapper-ref",
-                "ddd-collection", "ddd-value-object-kt",
-                "ddd-invariant", "ddd-specification", "ddd-factory",
-                "ddd-event", "ddd-domain-service", "ddd-repository-port", "ddd-behavior", "ddd-command", "ddd-outbox",
-                "ddd-state", "ddd-derive");
+                "ddd-aggregate",
+                "ddd-reference",
+                "ddd-mapper-ref",
+                "ddd-collection",
+                "ddd-value-object-kt",
+                "ddd-invariant",
+                "ddd-factory",
+                "ddd-event",
+                "ddd-repository-port",
+                "ddd-behavior",
+                "ddd-command",
+                "ddd-outbox",
+                "ddd-state",
+                "ddd-derive");
         c.bundle("hexagonal-springboot-kt",
                 "ddd-springboot-kt", "hex-usecase");
 
@@ -861,16 +897,20 @@ public final class RuleCatalog {
         // data - no service, no repository, nothing that runs on the server.
         // The field walks are the shared ones; what they annotate is dropped
         // by the renderer, since this language has no annotations.
-        // The domain rules a browser can honestly hold: a specification is a
-        // question about data it already has, and an invariant is what the
+        // The domain rule a browser can honestly hold: an invariant is what the
         // server will refuse - worth asking early, never worth trusting here.
         // The boundary needs no member: a member of an aggregate has no
         // endpoint, so ts-api generates no client for one and the browser
         // cannot reach past a root even if it wanted to.
-        c.bundle("ts-model",
-                "jpa-dto", "jpa-dto-file-ts",
-                "jpa-searchdto", "jpa-enum-ts", "ts-api", "jpa-service-access",
-                "ddd-specification", "ddd-invariant");
+        c.bundle(
+                "ts-model",
+                "jpa-dto",
+                "jpa-dto-file-ts",
+                "jpa-searchdto",
+                "jpa-enum-ts",
+                "ts-api",
+                "jpa-service-access",
+                "ddd-invariant");
         return c;
     }
 }

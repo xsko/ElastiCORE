@@ -61,11 +61,9 @@ DSL(yml) ──▶ Spec ──▶ 규칙들 ──▶ 스켈레톤(.tmpl) ──
 | `dto`, `srchdto` | `SalesOrderDTO.java`, `PartnerSrchDTO.java` | 생성기 | `v3-dto-file`, `v3-srchdto-file` (tail 90) |
 | `event` | `SalesOrderShippedEvent.java` | 생성기 | `ddd-event` (head 10) |
 | `repositoryPort`, `queryPort`, `usecase` | `PartnerRepositoryPort.java`, `PartnerQueryPort.java`, `PartnerUseCase.java` | 생성기 | `ddd-repository-port`, `ddd-query-port`, `hex-usecase` (head 10) |
-| `domainServiceBase`, `processManagerBase` | `ShippingDomainServiceBase.java`, `BillingProcessManagerBase.java` | 생성기 (포트, 리스너, 추상 `handle`) - 폐지 예정, 3.1 에서 제거 | `ddd-domain-service-base`, `ddd-process-manager-base` (10 — 도메인 단위) |
-| `domainService`, `processManager` | `ShippingDomainService.java`, `BillingProcessManager.java` | **개발자** - 폐지 예정, 3.1 에서 제거 | `ddd-domain-service`, `ddd-process-manager` (once 10 — 도메인 단위) |
 | `service` / `service_extend` | `PartnerCoreService.java` / `PartnerService.java` | 생성기 / **개발자** | 없음 |
 | `control` | `PartnerController.java` | **개발자** | 없음 |
-| `invariants`, `removalCheck`, `factory`, `specifications`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` … | 생성기 (`factory`는 **개발자**; `specifications` 는 폐지 예정, 3.1 에서 제거) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-specification`, `ddd-repository-adapter` (head 10) |
+| `invariants`, `removalCheck`, `factory`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` … | 생성기 (`factory`는 **개발자**) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-repository-adapter` (head 10) |
 | `mapper`, `repository`, `repositoryHelper`, `outbox…` | `ErpMapper.java`, `PartnerRepository.java` … | 생성기 | 없음 |
 
 "없음"인 파일에는 클래스 어노테이션을 붙일 수 없습니다(붙여도 아무 일도 일어나지 않음).

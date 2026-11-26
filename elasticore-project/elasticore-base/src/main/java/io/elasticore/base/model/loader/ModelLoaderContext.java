@@ -27,9 +27,6 @@ public class ModelLoaderContext {
 
     private Items<Port> portItems = Items.create(Port.class);
 
-    private Items<io.elasticore.base.model.domainservice.DomainService> domainServiceItems =
-            Items.create(io.elasticore.base.model.domainservice.DomainService.class);
-
     private String baseFilePath;
 
     // Module redirect map: package prefix -> module alias (e.g. "com.acme.shop.domain.service" -> "app-admin")
@@ -151,8 +148,12 @@ public class ModelLoaderContext {
         return this.portItems;
     }
 
-    public Items<io.elasticore.base.model.domainservice.DomainService> getDomainServiceItems() {
-        return this.domainServiceItems;
+    /** The domainService: and processManager: entries 3.1 no longer reads, in file order. */
+    private final java.util.List<io.elasticore.base.model.RemovedDeclaration> removedDeclarations =
+            new java.util.ArrayList<io.elasticore.base.model.RemovedDeclaration>();
+
+    public java.util.List<io.elasticore.base.model.RemovedDeclaration> getRemovedDeclarations() {
+        return this.removedDeclarations;
     }
 
     /** metrics: name -> its line as written ("sum(Order.total) where ... -- label"), in file order. */

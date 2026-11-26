@@ -33,12 +33,12 @@ public class ECoreModel {
     private PortModels portModels;
 
     /**
-     * Operations the domain performs that belong to no single aggregate.
-     *
-     * Null for a model whose loader has no such section, which is every
-     * loader but the YAML one and every project written before this existed.
+     * The domainService: and processManager: entries the model still
+     * declares, which 3.1 no longer reads - kept only to say so. Null or
+     * empty for a model that declares none, and for every loader but the
+     * YAML one.
      */
-    private io.elasticore.base.model.domainservice.DomainServiceModels domainServiceModels;
+    private List<RemovedDeclaration> removedDeclarations;
 
     /**
      * The business's measures (metrics:), name -> the line as written. Null

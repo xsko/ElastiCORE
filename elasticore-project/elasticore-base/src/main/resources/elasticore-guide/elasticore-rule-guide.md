@@ -119,9 +119,8 @@ In that language nullability is part of the signature, so if they do not match i
 | `ddd-value-object` / `ddd-value-object-kt` | each | each | - | The difference is whether immutability comes from Lombok or from the language |
 | `ddd-event` | O | O | - | Tied to the moment of saving |
 | `ddd-invariant` | O | O | **O** | In TS it is a pre-check, not enforcement |
-| `ddd-specification` | O | O | **O** | Deprecated - removed in 3.1 |
 | `ddd-factory` | O | O | - | Creating the aggregate belongs to the server |
-| `ddd-domain-service` | O | O | - | Gets ports injected. Deprecated - removed in 3.1 |
+| `ddd-specification` / `ddd-domain-service` | - | - | - | Removed in 3.1 (`@specification`, `domainService:`, `processManager:` are written by hand); a selection that still names one runs without it |
 | `ddd-behavior` | O | O | - | Split into `XxxBase` (regenerated) + `Xxx` (owned by the developer) |
 | `ddd-command` | O | O | - | `commands:` -> endpoint, command DTO, use case, service, abstract method |
 | `ddd-outbox` | O | O | - | When `outbox: true` in `env.yml` |
@@ -132,7 +131,6 @@ In that language nullability is part of the signature, so if they do not match i
 | `jpa-html` | O | O | - | `html` fields: the CoreService's `clean<Field>` / `plain<Field>` pair (jsoup safelist, the `@plain` copy; overridable), handed to the entity after a write or a command that changed the field; the 2.x-compatible output stops the build (all bundles) |
 | `jpa-encrypt` | O | O | - | `@encrypt` fields: `@Convert(EncryptConverter)` on the JPA field (MyBatis binds `EncryptTypeHandler`), the column as long as the ciphertext, and the entity's `indexEncrypted()` for the blind index of an `@search(eq)` one, called just before the row is written (JPA: the runtime's `BlindIndexListener`; MyBatis: the root's `Lifecycle`, or the layered service after `beforeSave`); MongoDB and the 2.x-compatible output stop the build (all bundles) |
 | `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |
-| Process manager (`processManager:` of `ddd-domain-service`) | O | O | - | After the event commits, in a separate transaction. Deprecated - removed in 3.1 |
 | `ddd-repository-port` / `-adapter` | O | O | - | The browser has no repository |
 | `hex-usecase` | O | O | - | Skeletons exist for both languages |
 
@@ -230,12 +228,12 @@ returns something makes it to production.
 The signature is the root's required fields (the generated identifier and collections are excluded). It is the most the model can
 say; what comes next is the developer's file.
 
-#### Specification (`ddd-specification`)
+#### Specification (`ddd-specification`) - Removed in 3.1
 
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the predicate
-> yourself instead - a static `Predicate<Order>` method of your own - and remove the `@specification`. If a screen needs
-> it, write the TypeScript function too (`Number(order.totalAmount) > 100`, see below), in a file of your own:
+`@specification` is no longer read since 3.1 (issue 370): the build prints a notice for each (not a `DSL_WARN`), a 3.0
+`OrderSpecifications` class stays while your code still uses it, and `OrderSpecifications.ts` is handed over to the
+project. Write the predicate yourself - a static `Predicate<Order>` method of your own - and, if a screen needs it, the
+TypeScript function (`Number(order.totalAmount) > 100`, see below):
 
 ```java
 // domain/model/OrderRules.java - yours
@@ -254,26 +252,12 @@ public final class OrderRules {
 }
 ```
 
-A domain rule worth giving a name. It stops the same comparison from being retyped in the service, in the report and in the test,
-with one of them typed differently.
+A predicate, not a boolean, so that rules combine: `highValue().and(hasLines())` is a rule made of rules. It selects
+from what has already been read; a query is a Spring Data `Specification<Order>` of your own.
 
-```yaml
-Order:
-  meta: entity @root @specification(highValue, totalAmount > 100)
-```
+#### Condition syntax (`@invariant`)
 
-The generated code is `OrderSpecifications.highValue()`, and it returns a `Predicate<Order>`.
-It is a predicate, not a boolean, because **composition is the point of this pattern**:
-`highValue().and(hasLines())` is a rule made of rules.
-
-**It is not a query.** Exporting it as a Spring Data `Specification<Order>` and pushing it down into SQL
-would be a better artifact, but only for rules that the criteria API can express.
-Some rules running in the DB and some in memory, with **no way to tell which**,
-is the worst property a generated artifact can have. It selects from what has already been read.
-
-#### Condition syntax (shared by `@invariant` and `@specification`)
-
-The two patterns only write the same sentence differently, so they share a syntax.
+What a promise of the root may say; a rule you name yourself is plain code (`@specification` above).
 
 | Form | Meaning |
 |---|---|
@@ -287,12 +271,12 @@ A field, a comparison and a literal, nothing more. Accepting an arbitrary expres
 look like a place to put logic, and it is not only that.
 
 > A single `=` **cannot be used** - equality is `==`. The DSL annotation parser reads a single `=`
-> inside an argument as the start of a key/value list (in `@invariant`, `@specification` and `@count`,
+> inside an argument as the start of a key/value list (in `@invariant` and `@count`,
 > one that is part of `==`, `>=`, `<=`, `!=` is a comparison). For a similar reason `:` is not used
 > either - the meta line is a YAML scalar, so `name: ` is read as the start of a mapping and the file does not
 > load at all.
 
-Values are always read **through accessors**. Both generated artifacts live outside the entity, so fields are not
+Values are always read **through accessors**. The generated listener lives outside the entity, so fields are not
 visible, and a lazy-loaded to-many is initialized only when read through the getter.
 
 #### Replacing a value object (`ddd-value-object`)
@@ -314,9 +298,7 @@ What the rule emits is the same; only the way each language says it differs.
 | | Java | Kotlin |
 |---|---|---|
 | Event class | Fields + constructor + getters | `val` in the primary constructor |
-| Specification class | `private` constructor | `object` |
 | Factory | `private` constructor + `static` | `object` + `fun` |
-| Port of a domain service / process manager | `@Autowired protected` field of `XxxBase` | `@Autowired protected lateinit var` of `XxxBase` |
 | Condition expression | `order.getItems()` | `order.items!!` |
 | Invariant listener | `@EntityListeners({A.class, B.class})` | `@EntityListeners(A::class, B::class)` - an array attribute takes a vararg, so brackets do not compile |
 
@@ -528,13 +510,13 @@ OutboxPublisher kafka(KafkaTemplate<String, String> kafka) {
 - If there is no `OutboxPublisher` bean, the relay does nothing and messages pile up in the table.
 - You can see the number of waiting messages with `pending()` (monitoring).
 
-#### Process manager (saga) - `processManager:`
+#### Process manager (saga) - `processManager:` - Removed in 3.1
 
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the listener
-> yourself instead - a `@Component` method with the two annotations of the base below - and remove the entry from
-> `processManager:`. When the step must run in the caller's transaction (and roll back with it), put a plain
-> `@EventListener` on the method instead of the two:
+`processManager:` is no longer read since 3.1 (issue 370): the build prints a notice for each entry (not a `DSL_WARN`),
+and a 3.0 process manager and its base stay while your code still uses them - an edited one is yours, and its base
+keeps its listener. Write the listener yourself - a `@Component` method with the two annotations below - and remove the
+entry. When the step must run in the caller's transaction (and roll back with it), put a plain `@EventListener` on the
+method instead of the two:
 
 ```java
 // application/ReceiptingListener.java (billing) - yours
@@ -563,67 +545,12 @@ public class ReceiptingListener {
 }
 ```
 
-A flow where the events of one aggregate call **the next step of another aggregate** (when an order comes in, issue a receipt).
-The `billing` of `elasticore-template-ddd` is exactly such an example.
-
-```yaml
-# blueprint/billing/model/domainservice.yml
-processManager:
-  Receipting:
-    desc: When an order comes in, create one receipt
-    on: [shop:OrderPlaced]       # (context:)root name + event name (without the Event suffix)
-    uses: [Receipt]              # domain port of the aggregate to be injected
-```
-
-The generated code is two files (in the application package or `namespace.processManager`). It is the same split as `XxxBase` + `Xxx` of a business command,
-so if you fix the DSL the wiring is regenerated and the steps the developer wrote stay. This is the real generated code with only the imports and the class
-comments removed:
-
-```java
-// ReceiptingProcessManagerBase - regenerated every time (rule ddd-process-manager-base)
-public abstract class ReceiptingProcessManagerBase {
-
-	@Autowired
-	protected ReceiptRepositoryPort receiptRepositoryPort;
-
-	/** After OrderPlacedEvent has committed, in a transaction of its own. */
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void on(OrderPlacedEvent event) {
-	    handle(event);
-	}
-
-	/** What shop:OrderPlaced means here - the next step, written in ReceiptingProcessManager. */
-	protected abstract void handle(OrderPlacedEvent event);
-
-}
-
-// ReceiptingProcessManager - generated once, then owned by the developer (rule ddd-process-manager)
-@Component
-
-public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
-
-	@Override
-	protected void handle(OrderPlacedEvent event) {
-	    // The next step goes here.
-	}
-
-}
-```
-
-- If you add an event to `on`, the Base gets a listener and an abstract `handle(new event)`, and the developer class gets an empty
-  `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did. The project builds, and the event
-  does nothing until you write the step (a file the merge does not reach is left as it is, and the compiler names the missing `handle`). An aggregate added to `uses` becomes a field of the Base, so you do not need to edit the developer class - that is why the port is
-  injected as a field, not through the constructor.
-- It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, the shipment that has already
-  happened is not undone - retry and compensation are decided by `handle` (the compensation step of a saga).
+- It runs **after the transaction that raised the event has committed, in its own transaction**. If it fails here, what
+  has already happened is not undone - retry and compensation are the method's (the compensation step of a saga).
 - If you put the needed values in the event content (payload), you do not have to read the original aggregate again.
 - Write it idempotent, to be ready for duplicate delivery (for example, check with `findByOrderId` whether it was already issued).
-- If a declared event is not in the `@event` of any root, the DSL gives a warning.
-- You receive an event of another bounded context with `on: [shop:OrderPlaced]`. The generator finds that context's
-  event class in the context map and imports it (if two events in `on` have the same simple name, the one written later is written with its full name), and checks with the `uses` and
-  `publishes` of `config.context`. For the syntax and the limit (delivery only inside the same application), see
-  "Process manager" in `elasticore-dsl-guide.md`.
+- An event of another bounded context is imported like any of its classes; delivery stays inside the same application.
+  The `billing` of `elasticore-template-ddd` is such an example (`ReceiptingListener`, `CrossContextEventTest`).
 
 #### Read model - projection queries
 
@@ -732,12 +659,11 @@ If you reference an entity of another domain (blueprint) directly, the DDD bundl
 shape, so keep the other side's identifier as a column, look it up through a port (the `port:` DSL), and
 convert it to your own model (Anti-Corruption Layer). The generator does not block it.
 
-#### Domain service (`ddd-domain-service`)
+#### Domain service (`ddd-domain-service`) - Removed in 3.1
 
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the class
-> yourself instead - a `@Service` in the `domain.service` package that takes the repository ports in its constructor -
-> and remove the entry from `domainService:`:
+`domainService:` is no longer read since 3.1 (issue 370): the build prints a notice for each entry (not a `DSL_WARN`),
+and a 3.0 `PricingDomainService` / `PricingDomainServiceBase` stays while your code still uses it. Write the class
+yourself - a `@Service` in the `domain.service` package that takes the repository ports in its constructor:
 
 ```java
 // domain/service/PricingService.java - yours
@@ -760,32 +686,8 @@ public class PricingService {
 }
 ```
 
-An operation that belongs to no aggregate. **Declare it on the domain, not on an entity** -
-every other DDD annotation goes on an entity, but a domain service is defined by "belonging to no one".
-Picking one root and hanging it there would be the cheap choice, but then it
-stops being this pattern and becomes "a method someone forgot to put in an aggregate".
-
-```yaml
-# model/domainservice.yml
-domainService:
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-`uses` is not decoration. It is **what the generator injects**, and it is the sentence
-that says why this service exists. If you list only one, the DSL warns - an operation on a single aggregate
-is usually a method of that aggregate.
-
-The output is two files. `PricingDomainServiceBase` is **regenerated every time** and has fields that receive the domain ports
-of the named aggregates (`OrderRepositoryPort`, `ProductRepositoryPort`) (rule `ddd-domain-service-base`);
-`PricingDomainService` is a **generate-once** class that extends it (rule `ddd-domain-service`). When you add an
-aggregate to `uses`, the Base gets a port and the developer class is not touched. The operation itself is not generated -
-for the same reason as `@factory`: the model declares data, so what can be generated is the place and the wiring, not the behavior.
-
-The place is set by `namespace.domainService`. If you do not declare it, it is the same
-package as the entity. **Do not put it in the application namespace** - it is domain code, and next to the use cases
-the dependency direction is reversed.
+`namespace.domainService` stays: the architecture test checks that package as domain code. **Do not put it in the
+application namespace** - it is domain code, and next to the use cases the dependency direction is reversed.
 
 #### What reaches TypeScript (`ts-model`)
 
@@ -794,14 +696,13 @@ comes here - **only what the browser can honestly hold** does.
 
 | Rule | TS | Reason |
 |---|---|---|
-| `ddd-specification` | Yes | It is a question about data you already have |
 | `ddd-invariant` | Yes | Asks in advance what the server will refuse (not enforcement) |
 | Aggregate boundary | **Already reached** | Members have no endpoints, so `ts-api` does not create a client |
-| `ddd-event` / `ddd-factory` / `ddd-domain-service` | No | They are tied to save time and to the repository, so the browser has no counterpart |
+| `ddd-event` / `ddd-factory` | No | They are tied to save time and to the repository, so the browser has no counterpart |
 
-##### Why it is worth generating the specification
+##### Why a decimal is read with `Number(...)`
 
-`@specification` is deprecated (removed in 3.1): what follows is why a function you write yourself compares with `Number(...)`.
+The generated invariants compare this way, and so should a rule you write for a screen yourself (`@specification` above).
 
 In this language a hand-written copy is not just a duplicate - **it is usually wrong.**
 
@@ -861,8 +762,8 @@ namespace:
 The contract of a `dbms` / `http` port is written in **application DTOs**, and when it pages it uses Spring's
 `Page` too. So this is an **outbound port of the application**.
 
-If you list it in the `uses:` of a domain service, it is **ignored with a warning** - because the domain code would depend on the layer
-above. The domain receives aggregates (= repository ports), and
+A domain service you write does not take one - the domain code would depend on the layer above (the architecture
+test refuses it). The domain receives aggregates (= repository ports), and
 the service that calls them uses the sql/http ports.
 
 ##### The adapter must be a bean
@@ -1755,7 +1656,7 @@ After you change a rule, you **must** pass the following.
 > **There is one reason in this language why a type check alone is not enough.** Decimals
 > arrive as strings, so a hand-written `order.totalAmount > 100` is accepted by the compiler and JavaScript
 > answers false regardless of the amount - the only defect this language causes is exactly what a type
-> check cannot see. That is why the generated specifications and invariants are **run** with node.
+> check cannot see. That is why the generated invariants and the sample's own rules are **run** with node.
 
 > The verification tasks **empty the generated tree first.** A file with a generate-once marker is
 > not regenerated when you fix a rule, so a stale file can be checked and reported as passing.

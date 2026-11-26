@@ -1,7 +1,14 @@
 # Generated on every build; the module exists to compile and run what the
 # domain rules write over MyBatis, not to keep it. What is committed is the
 # blueprint and the tests.
-src/main/java/
+src/main/java/**
+# ... but the hand-written domain service, listeners and order rules (they replace domainService:,
+# processManager: and @specification, issue 370).
+!src/main/java/**/
+!src/main/java/io/elasticore/sample/dddmybatis/shop/domain/service/PricingService.java
+!src/main/java/io/elasticore/sample/dddmybatis/shop/domain/model/OrderRules.java
+!src/main/java/io/elasticore/sample/dddmybatis/shop/application/LoyaltyListener.java
+!src/main/java/io/elasticore/sample/dddmybatis/billing/application/ReceiptingListener.java
 src/test/java/io/
 /src/main/resources/io/
 /src/main/resources/db/

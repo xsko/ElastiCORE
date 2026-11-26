@@ -6,7 +6,7 @@ flowchart LR
     ctx_billing["billing"]
     ctx_catalog["catalog<br/><small>publishes: AuthorDTO, BookDTO</small>"]
     ctx_shop["shop<br/><small>publishes: OrderPlaced</small>"]
-    ctx_shop -->|OrderPlaced| ctx_billing
+    ctx_shop --> ctx_billing
 ```
 
 An arrow points from the context that is used (upstream) to the one that uses it.

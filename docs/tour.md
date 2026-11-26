@@ -251,17 +251,8 @@ config:                                      config:
           - hold its id (productId: long), or use a DTO catalog publishes.
 ```
 
-Events cross the same way. A process manager in one context names another context's event as `context:RootEvent`,
-and runs after that context's transaction commits. It is checked like a type: the reacting context lists the other in
-`uses`, and a context that declares `publishes` lists the events it lets out:
-
-```yaml
-# blueprint/billing/model/domainservice.yml  # blueprint/shop/env.yml
-processManager:                              config:
-  Receipting:                                  context:
-    on: [shop:OrderPlaced]                       publishes: [OrderPlaced]
-    uses: [Receipt]
-```
+A context may publish the events its roots raise too (`publishes: [OrderPlaced]`); another context reacts with a
+listener of your own (`@TransactionalEventListener`) that imports the event class.
 
 The declarations also produce `blueprint/context-map.md`, a Mermaid context map. Declare nothing and nothing changes.
 

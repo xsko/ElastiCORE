@@ -61,11 +61,9 @@ The first word of each line in the generation log (`./gradlew elcore3`) is the t
 | `dto`, `srchdto` | `SalesOrderDTO.java`, `PartnerSrchDTO.java` | Generator | `v3-dto-file`, `v3-srchdto-file` (tail 90) |
 | `event` | `SalesOrderShippedEvent.java` | Generator | `ddd-event` (head 10) |
 | `repositoryPort`, `queryPort`, `usecase` | `PartnerRepositoryPort.java`, `PartnerQueryPort.java`, `PartnerUseCase.java` | Generator | `ddd-repository-port`, `ddd-query-port`, `hex-usecase` (head 10) |
-| `domainServiceBase`, `processManagerBase` | `ShippingDomainServiceBase.java`, `BillingProcessManagerBase.java` | Generator (ports, listeners, abstract `handle`) - deprecated, removed in 3.1 | `ddd-domain-service-base`, `ddd-process-manager-base` (10 - per domain) |
-| `domainService`, `processManager` | `ShippingDomainService.java`, `BillingProcessManager.java` | **Developer** - deprecated, removed in 3.1 | `ddd-domain-service`, `ddd-process-manager` (once 10 - per domain) |
 | `service` / `service_extend` | `PartnerCoreService.java` / `PartnerService.java` | Generator / **Developer** | None |
 | `control` | `PartnerController.java` | **Developer** | None |
-| `invariants`, `removalCheck`, `factory`, `specifications`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` ... | Generator (`factory` is the **developer's**; `specifications` is deprecated, removed in 3.1) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-specification`, `ddd-repository-adapter` (head 10) |
+| `invariants`, `removalCheck`, `factory`, `repositoryAdapter` | `ItemInvariants.java`, `PartnerRepositoryAdapter.java` ... | Generator (`factory` is the **developer's**) | `ddd-invariant`, `ddd-invariant-removal`, `ddd-factory`, `ddd-repository-adapter` (head 10) |
 | `mapper`, `repository`, `repositoryHelper`, `outbox...` | `ErpMapper.java`, `PartnerRepository.java` ... | Generator | None |
 
 You cannot put a class annotation on a file marked "None" (if you try, nothing happens).

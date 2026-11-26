@@ -3,7 +3,7 @@
 ## 1. YAML DSL 개요
 
 ElastiCORE DSL은 YAML 기반의 도메인 모델 정의 언어입니다.
-Entity, DTO, Enumeration, Repository, Transaction Port, Domain Service를 선언적으로
+Entity, DTO, Enumeration, Repository, Transaction Port를 선언적으로
 정의하면 빌드 시 Java 또는 Kotlin 코드가 자동 생성됩니다.
 **동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
@@ -14,8 +14,8 @@ Entity, DTO, Enumeration, Repository, Transaction Port, Domain Service를 선언
 | `enumeration:` | 열거형 | 5장 |
 | `repository:` | 리포지터리 쿼리 | 6장 |
 | `port:` | 트랜잭션 포트 | 7장 |
-| `domainService:` | 어느 애그리거트에도 속하지 않는 연산 | **8장** |
-| `processManager:` | 이벤트를 받아 다음 단계를 진행 (다른 컨텍스트의 이벤트 포함) | 8장 |
+| `domainService:` | 3.1 에서 제거됨 - 직접 쓰는 `@Service` | 8장 |
+| `processManager:` | 3.1 에서 제거됨 - 직접 쓰는 리스너 | 8장 |
 | `metrics:` | 업무 지표 (매출 = 취소 제외 합계 ...) | 2장 "업무 지표" |
 
 엔티티 안에서는 `fields:` 외에 `commands:` (업무 명령), `states:` (생명주기) 가 같은 들여쓰기로 옵니다 (2장).
@@ -256,9 +256,9 @@ enumeration:
 | `@invariant(조건, '메시지')` | 루트가 항상 참으로 유지하는 것. 행이 쓰일 때 검사 |
 | `@factory(name)` | 유효한 애그리거트를 만드는 자리 (generate-once) |
 | `@behavior` | 필드에 붙이면 요청으로 보낼 수 없고 업무 메서드로만 바뀜. (루트는 적지 않아도 `XxxBase` + `Xxx` 로 분리됨. 나뉘지 않는 `@editable` 루트·멤버에서는 경고만 - 거기서는 `@readonly`) |
-| `@specification(name, 조건)` | 이름을 가질 만한 도메인 규칙. `Predicate` 로 생성 |
+| `@specification` | 3.1 에서 제거됨 - static `Predicate` 를 직접 씁니다 (annotation guide, `@specification`) |
 
-`@invariant` 와 `@specification` 의 조건 문법은 **필드·비교·리터럴**로 제한됩니다
+`@invariant` 의 조건 문법은 **필드·비교·리터럴**로 제한됩니다
 (`items.size > 0`, `totalAmount > 100`, `notes notNull`, `items notEmpty`).
 `>=`·`<=`·`==`·`!=` 로 비교합니다. `=` 하나와 `:` 는 쓸 수 없습니다 — 각각 DSL 애노테이션 파서와
 YAML 이 다르게 읽기 때문입니다. 자세한 이유는 annotation guide 에 있습니다.
@@ -1081,7 +1081,7 @@ repository:
 // StockRepositoryPort (생성)
 Optional<Stock> findByItemItemCodeAndWarehouse(String itemCode, String warehouse);
 
-// ShippingDomainService (개발자)
+// ShippingService (당신의 파일)
 Stock stock = stockRepositoryPort.findByItemItemCodeAndWarehouse(code, "MAIN").orElseThrow(...);
 ```
 
@@ -1114,13 +1114,16 @@ port:
 
 ---
 
-## 8. Domain Service 정의
-> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
+## 8. Domain Service 와 프로세스 매니저 - 3.1 에서 제거됨
 
-> **폐지 예정 - 아래 `processManager:` 와 함께 3.1 에서 제거됩니다.** 3.0 에서는 둘 다 이 장의 설명대로 그대로
-> 생성되고, 빌드가 선언마다 알림을 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는
-> 세지 않습니다). 대신 클래스를 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리
-> 포트를 받습니다 - 그리고 `domainService:` 에서 그 항목을 지웁니다:
+`domainService:` 와 `processManager:` 섹션은 3.1 부터 읽지 않습니다(issue 370). 이 섹션이 남은 프로젝트도
+빌드됩니다: 빌드가 항목마다 알림을 출력하고(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지
+않습니다), 3.0 이 생성한 클래스는 당신의 코드가 쓰는 동안 남습니다. 둘 다 평범한 Spring 코드 몇 줄이니
+직접 쓰고 그 항목을 지우세요.
+
+도메인 서비스 - 어느 애그리거트 하나에도 속하지 않는 연산 - 는 `domain.service` 패키지
+(`namespace.domainService`, 아키텍처 테스트가 도메인 코드로 검사하는 패키지)의 `@Service` 로, 걸치는
+애그리거트의 리포지터리 포트를 생성자에서 받습니다:
 
 ```java
 // domain/service/PricingService.java - 당신의 파일
@@ -1143,76 +1146,11 @@ public class PricingService {
 }
 ```
 
-어느 애그리거트에도 속하지 않는 연산입니다. **엔티티가 아니라 도메인에 선언**하는
-것이 이 섹션의 요점입니다 — 다른 모든 어노테이션은 엔티티에 쓰는데, 도메인 서비스는
-"누구의 것도 아니다"가 정의이기 때문입니다. 루트 하나를 골라 매다는 순간 그 정의와
-어긋납니다.
-
-```yaml
-# blueprint/{domain}/model/domainservice.yml
-domainService:
-
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-| 키 | 필수 | 설명 |
-|---|------|------|
-| `uses` | O | 이 연산이 걸치는 애그리거트들. 도메인 포트(`XxxRepositoryPort`)로 주입됩니다 |
-| `desc` | X | 생성 클래스의 주석 |
-
-### 생성물 — 두 파일
-
-`namespace.domainService` 패키지에 두 파일이 생깁니다. 엔티티의 `XxxBase` + `Xxx` 와 같은 나눔입니다.
-
-| 파일 | 성격 | 내용 |
-|---|---|---|
-| `PricingDomainServiceBase` | **매번 재생성** | `uses` 의 포트 (주입되는 필드) |
-| `PricingDomainService` | 한 번 생성, 이후 개발자 소유 | 연산을 쓰는 자리 |
-
-```java
-public abstract class PricingDomainServiceBase {       // 재생성 - 고치지 않음
-
-	@Autowired
-	protected OrderRepositoryPort orderRepositoryPort;
-
-	@Autowired
-	protected ProductRepositoryPort productRepositoryPort;
-}
-
-@Service
-public class PricingDomainService extends PricingDomainServiceBase {   // 개발자
-	// The operation goes here. ...
-}
-```
-
-**DSL 을 고치면 소스가 따라옵니다.** `uses` 에 애그리거트를 더하면 재생성되는 `PricingDomainServiceBase` 에 포트
-필드가 생기고, 개발자 클래스는 고치지 않고 바로 씁니다. 포트를 생성자가 아니라 필드로 주입하는 이유가 이것입니다 —
-생성자였다면 개발자 클래스의 생성자도 함께 고쳐야 합니다.
-
-연산 자체를 생성하지 않는 것은 `@factory` 와 같은 이유입니다: 모델은 데이터를 선언하므로 생성할 수 있는 것은
-행위가 아니라 행위를 쓸 자리와 연결입니다. 개발자 파일을 아직 고치지 않았다면 그것도 DSL 을 따라 다시 생성됩니다.
-
-### 주의
-
-- `uses` 가 비었거나 하나뿐이면 `DSL_WARN` 이 납니다. 애그리거트 하나에 대한 연산은
-  보통 그 애그리거트의 메서드입니다.
-- `namespace.domainService` 를 `namespace.service`(응용 서비스)와 같은 패키지로
-  두지 마세요. 도메인 서비스는 도메인의 것이고 응용 서비스는 그 위 계층이라, 같은
-  자리에 두면 의존 방향이 무너집니다.
-- `ddd-domain-service` 규칙이 있는 번들에서만 동작합니다.
-
----
-
-### 프로세스 매니저 (`processManager:`)
-> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
-
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 리스너를
-> 직접 쓰세요 - 생성되는 Base 가 리스너에 붙이는 두 어노테이션을 단 `@Component` 의 메서드로 - 그리고
-> `processManager:` 에서 그 항목을 지웁니다. 다음 단계가 호출한 쪽의 트랜잭션 안에서(함께 롤백되게) 돌아야
-> 하면, 두 어노테이션 대신 `@EventListener` 하나를 메서드에 붙입니다:
+프로세스 매니저 - 이벤트에 반응해 다음 단계를 진행하는 것 - 는 아래 두 어노테이션을 단 `@Component` 의
+메서드입니다: 이벤트를 낸 트랜잭션이 커밋된 뒤, 자기 트랜잭션에서 돕니다. 다음 단계가 호출한 쪽의 트랜잭션
+안에서(함께 롤백되게) 돌아야 하면, 두 어노테이션 대신 `@EventListener` 하나를 메서드에 붙입니다. 다른 컨텍스트의
+이벤트는 그 컨텍스트의 다른 클래스처럼 import 합니다. `config.context` 는 DSL 이 경계를 넘겨 쓰는 타입을
+검사하고, 코드가 import 하는 클래스는 검사하지 않습니다.
 
 ```java
 // application/BillingListener.java - 당신의 파일
@@ -1241,73 +1179,8 @@ public class BillingListener {
 }
 ```
 
-도메인 서비스와 같은 파일에 선언합니다. 이벤트에 반응해 다음 단계를 진행하는 자리입니다.
-
-```yaml
-processManager:
-  Billing:
-    desc: 출고된 수주마다 청구서를 한 장 만든다
-    on: [SalesOrderShipped]
-    uses: [Invoice]
-```
-
-생성물은 도메인 서비스처럼 두 파일입니다.
-
-| 파일 | 성격 | 내용 |
-|---|---|---|
-| `BillingProcessManagerBase` | **매번 재생성** | `uses` 의 포트, `on` 의 이벤트마다 리스너(커밋 후, 별도 트랜잭션)와 추상 메서드 `handle(...)` |
-| `BillingProcessManager` | 한 번 생성, 이후 개발자 소유 | 이벤트마다 `handle(...)` — 다음 단계를 쓰는 자리 |
-
-**DSL 을 고치면 소스가 따라옵니다.**
-- `on` 에 이벤트를 더하면 재생성되는 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는
-  빈 `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합(`MERGED(your edits kept)`).
-  프로젝트는 빌드되고, 그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다: `on` 에 더한 뒤에는 개발자 클래스에서
-  새로 생긴 빈 `handle` 을 찾으세요. 병합이 닿지 않는 파일(`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`)은 그대로 두고,
-  빠진 `handle` 을 컴파일러가 알려 줍니다.
-- `uses` 에 애그리거트를 더하면 Base 에 포트 필드가 생기고, 개발자 클래스는 고치지 않습니다.
-- `on` 에서 이벤트를 빼면, 고친 적 없는 `handle(그 이벤트)` 는 빠지고(다시 생성 또는 병합) 고친 것은 남아
-  (`KEPT(yours ...)`) `@Override` 가 덮어쓸 것이 없어 컴파일 오류가 납니다 — 지울 코드를 컴파일러가 가리킵니다.
-- 개발자 파일을 아직 고치지 않았다면 그것도 DSL 을 따라 다시 생성됩니다.
-- 이 나눔 전에 만들어 이미 고친 파일은 그대로 두고 Base 만 새로 생깁니다. 생성기가 경고합니다
-  (`... does not extend XxxBase, which is regenerated from the DSL ...`): `extends XxxBase` 를 붙이고, 리스너를
-  `protected void handle(...)` 로 바꾸고(어노테이션 제거), 생성자를 지우세요. 파일을 지우면 새로 생성됩니다.
-- `handle` 은 Base 의 리스너가 연 트랜잭션(`REQUIRES_NEW`) 안에서 실행됩니다. 같은 객체 안의 호출이라 `handle` 에
-  붙인 `@Transactional` 은 적용되지 않습니다 — 필요 없습니다.
-- 포트는 주입되는 필드라, Spring 없이 단위 테스트하려면 필드를 직접 채웁니다 (Java 는 같은 패키지에서 `protected`
-  필드에 대입, Kotlin 은 `lateinit var` 에 대입 — 채우지 않고 쓰면 `UninitializedPropertyAccessException`).
-
-자세한 것은 `elasticore-rule-guide.md` 의 프로세스 매니저 절.
-
-**다른 컨텍스트의 이벤트**는 `컨텍스트:루트이벤트` 로 적습니다. 반면 다른 도메인의 타입은 단순 이름(`Product`)으로 적고 그 도메인에서 import 됩니다: 타입 이름은 모든 도메인에서 하나뿐입니다.
-
-```yaml
-# blueprint/billing/model/domainservice.yml
-processManager:
-  Receipting:
-    desc: 주문이 들어오면 영수증을 한 장 만든다
-    on: [shop:OrderPlaced]       # shop 컨텍스트(폴더 이름 또는 domainName)의 Order 루트, Placed 이벤트
-    uses: [Receipt]
-```
-
-- 생성물은 같은 두 파일이고, 이벤트 클래스만 `shop` 의 것입니다 (`shop` 의 `event` 네임스페이스에서 import).
-  `ReceiptingProcessManagerBase` 의 리스너 `on(OrderPlacedEvent event)` 가 받아 개발자 클래스의
-  `handle(OrderPlacedEvent event)` 로 넘기고, 거기서 이벤트에 실은 값(`@event(Placed(totalAmount))`)을 그대로 읽습니다.
-- 어느 한쪽이라도 `context:` 를 선언했다면 경계 검사를 받습니다: `billing` 이 선언했다면 그 `uses` 에 `shop`, `shop` 이
-  `publishes` 를 선언했다면 거기 `OrderPlaced` (`elasticore-env-guide.md` 6.1.4). 빠지면 생성 전에 빌드 실패.
-- `OrderPlacedEvent` 처럼 클래스 이름으로 적어도 됩니다 (`publishes` 도 마찬가지).
-- 받지 못하는 이름은 DSL 경고 후 그 핸들러만 빠집니다:
-  - 컨텍스트 없이 `OrderPlaced` 만 적었는데 다른 컨텍스트의 이벤트일 때 — `... OrderPlaced is an event of shop - write shop:OrderPlaced`
-  - 없는 이벤트(`shop declares no event OrderShiped`), 없는 컨텍스트(`there is no context nowhere`)
-  - 상대 컨텍스트의 규칙이 이벤트 클래스를 만들지 않을 때 (예: `jpa-springboot-v3` 만 쓰는 컨텍스트, `publisher.suppress`
-    로 `ddd-event` 를 끈 컨텍스트 — `ddd-event` 가 든 ddd·헥사고날 번들이어야 함)
-  - 멤버 엔티티(다른 루트에 속한 것)나 키가 없는 엔티티의 `@event` 는 이벤트를 만들지 않으므로 받을 수 없습니다.
-- 같은 이벤트를 두 번 적으면 핸들러는 하나만 생기고 DSL 경고. 엔티티가 하나도 없는 컨텍스트는 아무것도 생성되지 않으므로
-  (DSL 경고) 받는 쪽에도 자기 엔티티가 하나는 있어야 합니다.
-- 전달은 Spring 의 애플리케이션 이벤트라서 **같은 애플리케이션 안**(모듈러 모놀리스)에서 이루어집니다. 컨텍스트를 따로
-  배포한다면 내보내는 쪽은 Outbox(`outbox: true`)로 브로커에 보내고, 받는 쪽은 그 메시지를 직접 구독해야 합니다 — 이
-  부분은 생성하지 않습니다.
-- 예시: `elasticore-template-ddd` 의 `billing` (`CrossContextEventTest` 가 shop 에서 주문을 커밋하면 billing 이 받고,
-  롤백하면 받지 않는 것을 확인).
+예: `elasticore-template-ddd` - `PricingService`, `LoyaltyListener`, 그리고 `billing` 의 `ReceiptingListener`
+(`CrossContextEventTest` 가 shop 이 커밋한 주문을 billing 이 받는지, shop 이 롤백하면 받지 않는지 검사합니다).
 
 ## 9. 고급 기능
 

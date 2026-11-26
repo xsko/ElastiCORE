@@ -254,17 +254,8 @@ config:                                      config:
           - hold its id (productId: long), or use a DTO catalog publishes.
 ```
 
-이벤트도 같은 방식으로 넘깁니다. 한 컨텍스트의 프로세스 매니저가 다른 컨텍스트의 이벤트를 `컨텍스트:루트이벤트`로
-적으면, 그 컨텍스트의 트랜잭션이 커밋된 뒤에 실행됩니다. 검사는 타입과 같습니다: 받는 쪽은 상대를 `uses` 에 적고,
-`publishes` 를 선언한 컨텍스트는 내보낼 이벤트를 거기 적습니다.
-
-```yaml
-# blueprint/billing/model/domainservice.yml  # blueprint/shop/env.yml
-processManager:                              config:
-  Receipting:                                  context:
-    on: [shop:OrderPlaced]                       publishes: [OrderPlaced]
-    uses: [Receipt]
-```
+컨텍스트는 루트가 내는 이벤트도 내보낼 수 있고(`publishes: [OrderPlaced]`), 다른 컨텍스트는 그 이벤트 클래스를
+import 하는 직접 쓴 리스너(`@TransactionalEventListener`)로 반응합니다.
 
 선언에서 `blueprint/context-map.md` (Mermaid 컨텍스트 지도)가 만들어집니다. 아무것도 선언하지 않으면 예전과 같습니다.
 

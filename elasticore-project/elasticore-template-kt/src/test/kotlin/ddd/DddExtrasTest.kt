@@ -7,7 +7,7 @@ import io.elasticore.blueprint.domain.shop.entity.OrderItem
 import io.elasticore.blueprint.domain.shop.event.OrderPlacedEvent
 import io.elasticore.blueprint.domain.shop.repository.CustomerRepositoryPort
 import io.elasticore.blueprint.domain.shop.repository.OrderRepositoryPort
-import io.elasticore.blueprint.domain.shop.service.LoyaltyProcessManager
+import io.elasticore.blueprint.domain.shop.service.LoyaltyListener
 import io.elasticore.blueprint.domain.shop.service.OrderQueryPort
 import io.elasticore.blueprint.domain.shop.infrastructure.ShopOutboxRelay
 import io.elasticore.springboot3.outbox.OutboxEnvelope
@@ -46,7 +46,7 @@ class DddExtrasTest {
     @Autowired lateinit var customers: CustomerRepositoryPort
     @Autowired lateinit var relay: ShopOutboxRelay
     @Autowired lateinit var orderQuery: OrderQueryPort
-    @Autowired lateinit var loyalty: LoyaltyProcessManager
+    @Autowired lateinit var loyalty: LoyaltyListener
 
     private fun placeOrder(): String = tx.execute {
         val customer = Customer()
@@ -81,10 +81,10 @@ class DddExtrasTest {
     }
 
     @Test
-    @DisplayName("the process manager is a bean that reacts to the event after commit")
-    fun processManagerIsWired() {
+    @DisplayName("the hand-written listener is a bean that reacts to the event after commit")
+    fun listenerIsWired() {
         assertThat(loyalty).isNotNull
-        assertThat(LoyaltyProcessManager::class.java.getMethod("on", OrderPlacedEvent::class.java)
+        assertThat(LoyaltyListener::class.java.getMethod("on", OrderPlacedEvent::class.java)
             .isAnnotationPresent(TransactionalEventListener::class.java)).isTrue()
         placeOrder()
     }

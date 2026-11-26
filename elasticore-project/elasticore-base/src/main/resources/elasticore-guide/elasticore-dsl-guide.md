@@ -3,7 +3,7 @@
 ## 1. YAML DSL Overview
 
 The ElastiCORE DSL is a YAML-based domain model definition language.
-You declare Entity, DTO, Enumeration, Repository, Transaction Port and Domain Service,
+You declare Entity, DTO, Enumeration, Repository and Transaction Port,
 and Java or Kotlin code is generated at build time.
 A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
@@ -14,8 +14,8 @@ A section marked **Works in:** works only there; **Not in:** says what happens e
 | `enumeration:` | Enum | Chapter 5 |
 | `repository:` | Repository query | Chapter 6 |
 | `port:` | Transaction port | Chapter 7 |
-| `domainService:` | An operation that belongs to no aggregate | **Chapter 8** |
-| `processManager:` | Receives events and drives the next step (including events from other contexts) | Chapter 8 |
+| `domainService:` | Removed in 3.1 - a `@Service` of your own | Chapter 8 |
+| `processManager:` | Removed in 3.1 - a listener of your own | Chapter 8 |
 | `metrics:` | Business metrics (revenue = total excluding cancelled ...) | Chapter 2, "Business metrics" |
 
 Inside an entity, `commands:` (business commands) and `states:` (lifecycle) sit at the same indentation as `fields:` (Chapter 2).
@@ -256,9 +256,9 @@ For parameters and examples of generated output, see `elasticore-annotation-guid
 | `@invariant(condition, 'message')` | What the root always keeps true. Checked when a row is written |
 | `@factory(name)` | The place that creates a valid aggregate (generate-once) |
 | `@behavior` | On a field, it cannot be sent in a request and changes only through business methods. (A root is split into `XxxBase` + `Xxx` even if you do not write it. On an `@editable` root or member that is not split, it only warns - use `@readonly` there) |
-| `@specification(name, condition)` | A domain rule worth giving a name. Generated as a `Predicate` |
+| `@specification` | Removed in 3.1 - write a static `Predicate` of your own (annotation guide, `@specification`) |
 
-The condition syntax of `@invariant` and `@specification` is limited to **fields, comparisons and literals**
+The condition syntax of `@invariant` is limited to **fields, comparisons and literals**
 (`items.size > 0`, `totalAmount > 100`, `notes notNull`, `items notEmpty`).
 `>=`, `<=`, `==` and `!=` compare; a single `=` and `:` cannot be used - the DSL annotation parser and
 YAML read each of them differently. The annotation guide explains the reasons in detail.
@@ -1081,7 +1081,7 @@ and the adapter delegates them to the Spring Data methods.
 // StockRepositoryPort (generated)
 Optional<Stock> findByItemItemCodeAndWarehouse(String itemCode, String warehouse);
 
-// ShippingDomainService (developer)
+// ShippingService (yours)
 Stock stock = stockRepositoryPort.findByItemItemCodeAndWarehouse(code, "MAIN").orElseThrow(...);
 ```
 
@@ -1114,13 +1114,16 @@ For the detailed syntax and examples, see `elasticore-dsl-port-guide.md`.
 
 ---
 
-## 8. Domain service definition
-> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
+## 8. Domain service and process manager - Removed in 3.1
 
-> **Deprecated - removed in 3.1, with `processManager:` below.** In 3.0 both still generate what this chapter describes,
-> and the build prints a notice for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not
-> count it). Write the class yourself instead - a `@Service` in the `domain.service` package that takes the repository
-> ports in its constructor - and remove the entry from `domainService:`:
+The `domainService:` and `processManager:` sections are no longer read since 3.1 (issue 370). A project that still has
+them builds: the build prints a notice for each entry (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not
+count it), and a class 3.0 generated for one stays while your code still uses it. Each is a few lines of plain Spring
+code; write it yourself and remove the entry.
+
+A domain service - an operation of no single aggregate - is a `@Service` in the `domain.service` package
+(`namespace.domainService`, which the architecture test checks as domain code) that takes the repository ports of what
+it spans in its constructor:
 
 ```java
 // domain/service/PricingService.java - yours
@@ -1143,76 +1146,11 @@ public class PricingService {
 }
 ```
 
-An operation that belongs to no aggregate. The point of this section is that you **declare it on the domain, not on an entity** -
-every other annotation goes on an entity, but a domain service is defined as "belonging to no one".
-The moment you pick one root and hang it there,
-it contradicts that definition.
-
-```yaml
-# blueprint/{domain}/model/domainservice.yml
-domainService:
-
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-| Key | Required | Description |
-|---|------|------|
-| `uses` | Yes | The aggregates this operation spans. They are injected as domain ports (`XxxRepositoryPort`) |
-| `desc` | No | Comment on the generated class |
-
-### Generated code - two files
-
-Two files are created in the `namespace.domainService` package. It is the same split as an entity's `XxxBase` + `Xxx`.
-
-| File | Kind | Content |
-|---|---|---|
-| `PricingDomainServiceBase` | **Regenerated every time** | The ports from `uses` (injected fields) |
-| `PricingDomainService` | Generated once, then owned by the developer | The place to write the operation |
-
-```java
-public abstract class PricingDomainServiceBase {       // regenerated - do not edit
-
-	@Autowired
-	protected OrderRepositoryPort orderRepositoryPort;
-
-	@Autowired
-	protected ProductRepositoryPort productRepositoryPort;
-}
-
-@Service
-public class PricingDomainService extends PricingDomainServiceBase {   // developer
-	// The operation goes here. ...
-}
-```
-
-**When you change the DSL, the source follows.** If you add an aggregate to `uses`, the regenerated `PricingDomainServiceBase` gets a port
-field, and you use it in the developer class right away without editing that class. This is why the ports are injected as fields, not through the constructor -
-with a constructor, you would have to change the developer class's constructor too.
-
-The generator does not generate the operation itself, for the same reason as `@factory`: the model declares data, so what it can generate is
-not the behavior but the place to write the behavior and its wiring. If you have not yet edited the developer file, it is regenerated to follow the DSL too.
-
-### Warning
-
-- If `uses` is empty or has only one entry, a `DSL_WARN` is raised. An operation on a single aggregate
-  is usually a method of that aggregate.
-- Do not put `namespace.domainService` in the same package as `namespace.service` (the application service).
-  A domain service belongs to the domain and an application service is a layer above it, so putting them in the same
-  place breaks the dependency direction.
-- It works only in bundles that have the `ddd-domain-service` rule.
-
----
-
-### Process manager (`processManager:`)
-> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
-
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the listener
-> yourself instead - a `@Component` method with the two annotations the generated base puts on its listener - and remove
-> the entry from `processManager:`. When the step must run in the caller's transaction (and roll back with it), put a
-> plain `@EventListener` on the method instead of the two:
+A process manager - what reacts to an event and takes the next step - is a method of a `@Component` with the two
+annotations below: it runs after the transaction that raised the event has committed, in a transaction of its own. When
+the step must run in the caller's transaction (and roll back with it), put a plain `@EventListener` on the method
+instead. An event of another context is imported like any of its classes; `config.context` checks the types the DSL
+takes across, not the classes your code imports.
 
 ```java
 // application/BillingListener.java - yours
@@ -1241,73 +1179,8 @@ public class BillingListener {
 }
 ```
 
-You declare it in the same file as the domain service. It is the place that reacts to events and moves on to the next step.
-
-```yaml
-processManager:
-  Billing:
-    desc: Creates one invoice for each shipped sales order
-    on: [SalesOrderShipped]
-    uses: [Invoice]
-```
-
-The generated code is two files, like a domain service.
-
-| File | Kind | Content |
-|---|---|---|
-| `BillingProcessManagerBase` | **Regenerated every time** | The ports from `uses`, a listener for each event in `on` (after commit, in a separate transaction) and an abstract method `handle(...)` |
-| `BillingProcessManager` | Generated once, then owned by the developer | A `handle(...)` for each event - the place to write the next step |
-
-**When you change the DSL, the source follows.**
-- If you add an event to `on`, the regenerated Base gets a listener and an abstract `handle(new event)`, and the developer class gets an
-  empty `handle(new event)` (`// The next step goes here.`) - regenerated if you never edited it, merged if you did (`MERGED(your edits kept)`).
-  The project builds, and the event does nothing until you write the step: after adding to `on`, look in the developer class
-  for the new empty `handle`. A file the merge does not reach (`KEPT(yours ...)`, `SKIP(user-owned)`, `merge = false`) is left as it is,
-  and the compiler names the missing `handle`.
-- If you add an aggregate to `uses`, the Base gets a port field, and you do not edit the developer class.
-- If you remove an event from `on`, a `handle(that event)` you never edited is taken out (regenerated or merged); one you edited stays
-  (`KEPT(yours ...)`), its `@Override` has nothing to override and fails to compile - the compiler points at the code to delete.
-- If you have not yet edited the developer file, it is regenerated to follow the DSL too.
-- A file that was created before this split and already edited is left as it is, and only the Base is newly created. The generator warns
-  (`... does not extend XxxBase, which is regenerated from the DSL ...`): add `extends XxxBase`, change the listener to
-  `protected void handle(...)` (remove the annotation) and delete the constructor. If you delete the file, it is generated anew.
-- `handle` runs inside the transaction (`REQUIRES_NEW`) that the Base's listener opens. It is a call within the same object, so a `@Transactional` put on `handle`
-  does not apply - and is not needed.
-- The ports are injected fields, so to unit test without Spring you fill the fields directly (in Java, assign to the `protected`
-  field from the same package; in Kotlin, assign to the `lateinit var` - using it without filling it gives `UninitializedPropertyAccessException`).
-
-For details, see the process manager section of `elasticore-rule-guide.md`.
-
-**An event from another context** is written as `context:RootEvent`. A type of another domain, by contrast, is named simply (`Product`) and imported from its domain: a type name is unique across all domains.
-
-```yaml
-# blueprint/billing/model/domainservice.yml
-processManager:
-  Receipting:
-    desc: Creates one receipt when an order comes in
-    on: [shop:OrderPlaced]       # the Placed event of the Order root in the shop context (folder name or domainName)
-    uses: [Receipt]
-```
-
-- The generated code is the same two files, and only the event class is `shop`'s (imported from the `event` namespace of `shop`).
-  The listener `on(OrderPlacedEvent event)` in `ReceiptingProcessManagerBase` receives it and passes it to the developer class's
-  `handle(OrderPlacedEvent event)`, where you read the values carried by the event (`@event(Placed(totalAmount))`) as they are.
-- If either side declares `context:`, the boundary check applies: if `billing` declared it, `shop` must be in its `uses`; if `shop`
-  declared `publishes`, `OrderPlaced` must be in it (`elasticore-env-guide.md` 6.1.4). If not, the build fails before generation.
-- You may also write the class name, such as `OrderPlacedEvent` (the same holds for `publishes`).
-- A name that cannot be received gives a DSL warning, and only that handler is dropped:
-  - You wrote only `OrderPlaced` without a context, but it is an event of another context - `... OrderPlaced is an event of shop - write shop:OrderPlaced`
-  - An event that does not exist (`shop declares no event OrderShiped`), a context that does not exist (`there is no context nowhere`)
-  - The other context's rules do not create the event class (for example, a context that uses only `jpa-springboot-v3`, or a context where `publisher.suppress`
-    turned off `ddd-event` - it must be a ddd or hexagonal bundle that contains `ddd-event`)
-  - An `@event` on a member entity (one that belongs to another root) or on an entity without a key creates no event, so it cannot be received.
-- If you write the same event twice, only one handler is created, with a DSL warning. A context with no entities generates nothing
-  (DSL warning), so the receiving side needs at least one entity of its own.
-- Delivery uses Spring application events, so it happens **within the same application** (modular monolith). If you deploy the contexts separately,
-  the sending side sends to the broker through the Outbox (`outbox: true`), and the receiving side must subscribe to that message itself - this
-  part is not generated.
-- Example: `billing` in `elasticore-template-ddd` (`CrossContextEventTest` checks that billing receives the order when shop commits it,
-  and does not receive it when shop rolls back).
+Example: `elasticore-template-ddd` - `PricingService`, `LoyaltyListener`, and `billing`'s `ReceiptingListener`, which
+`CrossContextEventTest` checks hears shop's order once shop has committed it, and not when shop rolls back.
 
 ## 9. Advanced features
 

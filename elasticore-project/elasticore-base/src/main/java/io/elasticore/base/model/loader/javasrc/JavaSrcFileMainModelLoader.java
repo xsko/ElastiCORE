@@ -95,39 +95,20 @@ public class JavaSrcFileMainModelLoader implements MainModelLoader {
         DataTransferModels dataTransferModels = DataTransferModels.create(context.getDomainId(), "dto", null, context.getDataTransferItems());
         RepositoryModels repositoryModels = RepositoryModels.create(context.getDomainId(), "repoGroup", null, context.getRepositoryItems());
 
-        //EnumModels enumModels = getEnumModels();
-        //EntityModels entityModels = getEntityModels();
+        // EnumModels enumModels = getEnumModels();
+        // EntityModels entityModels = getEntityModels();
 
         return ECoreModel.builder()
                 .entityModels(entityModels)
                 .enumModels(enumModels)
                 .dataTransferModels(dataTransferModels)
                 .repositoryModels(repositoryModels)
-                .domainServiceModels(domainServiceModels(context))
+                .removedDeclarations(context.getRemovedDeclarations())
                 .metrics(context.getMetrics())
                 .configMap(context.getConfigMap())
                 .namespaceMap(context.getNsMap())
                 .namespaceModuleRedirectMap(context.getModuleRedirectMap())
                 .build();
-    }
-
-    /**
-     * The domain services this context loaded, or null when it loaded none.
-     *
-     * Every builder site calls this rather than only the one whose loader
-     * reads the section: a field populated for some modes and not others is
-     * the failure this project has already had once, and it reads as the
-     * feature being broken rather than as the field being absent.
-     */
-    private io.elasticore.base.model.domainservice.DomainServiceModels domainServiceModels(
-            io.elasticore.base.model.loader.ModelLoaderContext context) {
-        if (context.getDomainServiceItems() == null
-                || context.getDomainServiceItems().size() == 0) {
-            return null;
-        }
-        return io.elasticore.base.model.domainservice.DomainServiceModels.create(
-                context.getDomainId(), "domainServiceGroup", null,
-                context.getDomainServiceItems());
     }
 
 

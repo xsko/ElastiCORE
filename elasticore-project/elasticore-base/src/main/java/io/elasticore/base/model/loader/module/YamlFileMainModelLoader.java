@@ -110,12 +110,7 @@ public class YamlFileMainModelLoader implements MainModelLoader {
         io.elasticore.base.model.loader.ModelLoader<DataTransfer> dataTransferModelLoader = new DataTransferModelLoader();
         io.elasticore.base.model.loader.ModelLoader<Repository> repositoryModelLoader = new RepositoryModelLoader();
         io.elasticore.base.model.loader.ModelLoader<Port> portModelLoader = new PortModelLoader();
-        io.elasticore.base.model.loader.ModelLoader<io.elasticore.base.model.domainservice.DomainService>
-                domainServiceModelLoader = new DomainServiceModelLoader();
-
-
-
-
+        DomainLevelModelLoader domainLevelModelLoader = new DomainLevelModelLoader();
 
         for (FileSource fileSource : fileSources) {
 
@@ -130,7 +125,7 @@ public class YamlFileMainModelLoader implements MainModelLoader {
             dataTransferModelLoader.loadModel(context, fileSource);
             repositoryModelLoader.loadModel(context, fileSource);
             portModelLoader.loadModel(context, fileSource);
-            domainServiceModelLoader.loadModel(context, fileSource);
+            domainLevelModelLoader.loadModel(context, fileSource);
         }
 
         entityModelLoader.completeLoad();
@@ -159,8 +154,8 @@ public class YamlFileMainModelLoader implements MainModelLoader {
         repositoryModelLoader.completeLoad();
         RepositoryModels repositoryModels = RepositoryModels.create(context.getDomainId(), "repoGroup", null, context.getRepositoryItems());
 
-        //EnumModels enumModels = getEnumModels();
-        //EntityModels entityModels = getEntityModels();
+        // EnumModels enumModels = getEnumModels();
+        // EntityModels entityModels = getEntityModels();
 
         return ECoreModel.builder()
                 .entityModels(entityModels)
@@ -168,25 +163,13 @@ public class YamlFileMainModelLoader implements MainModelLoader {
                 .dataTransferModels(dataTransferModels)
                 .repositoryModels(repositoryModels)
                 .portModels(portModels)
-                .domainServiceModels(domainServiceModels(context))
+                .removedDeclarations(context.getRemovedDeclarations())
                 .metrics(context.getMetrics())
                 .configMap(context.getConfigMap())
                 .namespaceMap(context.getNsMap())
                 .namespaceModuleRedirectMap(context.getModuleRedirectMap())
                 .internalDomainName(context.getDomainId())
                 .build();
-    }
-
-    /** The domain services this context loaded, or null when it loaded none. */
-    private io.elasticore.base.model.domainservice.DomainServiceModels domainServiceModels(
-            io.elasticore.base.model.loader.ModelLoaderContext context) {
-        if (context.getDomainServiceItems() == null
-                || context.getDomainServiceItems().size() == 0) {
-            return null;
-        }
-        return io.elasticore.base.model.domainservice.DomainServiceModels.create(
-                context.getDomainId(), "domainServiceGroup", null,
-                context.getDomainServiceItems());
     }
 
     private File getOrDownload(String path, int index, String baseDir) throws IOException {

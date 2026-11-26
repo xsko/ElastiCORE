@@ -119,9 +119,8 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-value-object` / `ddd-value-object-kt` | 각자 | 각자 | - | 불변을 Lombok 으로 만드느냐 언어로 만드느냐의 차이 |
 | `ddd-event` | O | O | - | 저장 시점에 매여 있음 |
 | `ddd-invariant` | O | O | **O** | TS 에서는 강제가 아니라 사전 확인 |
-| `ddd-specification` | O | O | **O** | 폐지 예정 - 3.1 에서 제거 |
 | `ddd-factory` | O | O | - | 애그리거트를 만드는 일은 서버의 것 |
-| `ddd-domain-service` | O | O | - | 포트를 주입받음. 폐지 예정 - 3.1 에서 제거 |
+| `ddd-specification` / `ddd-domain-service` | - | - | - | 3.1 에서 제거됨 (`@specification`·`domainService:`·`processManager:` 는 직접 씀); 아직 이 이름을 적은 선택은 이것 없이 실행 |
 | `ddd-behavior` | O | O | - | `XxxBase`(재생성) + `Xxx`(개발자 소유) 로 분리 |
 | `ddd-command` | O | O | - | `commands:` -> 엔드포인트·명령 DTO·유스케이스·서비스·추상 메서드 |
 | `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
@@ -132,7 +131,6 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `jpa-html` | O | O | - | `html` 필드: CoreService 의 `clean<Field>` / `plain<Field>` 쌍 (jsoup 허용 목록, `@plain` 복사본; 오버라이드 가능) 을 필드를 바꾼 쓰기나 command 뒤에 엔티티에 넘김; 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-encrypt` | O | O | - | `@encrypt` 필드: JPA 필드에 `@Convert(EncryptConverter)` (MyBatis 는 `EncryptTypeHandler` 로 바인딩), 암호문만큼 긴 컬럼, `@search(eq)` 필드의 블라인드 인덱스를 쓰는 엔티티의 `indexEncrypted()` 를 행을 쓰기 바로 전에 부름 (JPA: 런타임의 `BlindIndexListener`; MyBatis: 루트의 `Lifecycle`, 또는 layered 서비스가 `beforeSave` 뒤); MongoDB 와 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
-| 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션. 폐지 예정 - 3.1 에서 제거 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
 | `hex-usecase` | O | O | - | 두 언어의 스켈레톤이 모두 있음 |
 
@@ -230,12 +228,12 @@ Order:
 시그니처는 루트의 필수 필드입니다(생성되는 식별자와 컬렉션은 제외). 모델이 말할
 수 있는 최대치이고, 그 다음은 개발자의 파일입니다.
 
-#### 명세 (`ddd-specification`)
+#### 명세 (`ddd-specification`) - 3.1 에서 제거됨
 
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 조건을
-> 직접 쓰세요 - 당신의 static `Predicate<Order>` 메서드로 - 그리고 `@specification` 을 지웁니다. 화면에 필요하면
-> TypeScript 함수도(`Number(order.totalAmount) > 100`, 아래 참고) 당신의 파일에 씁니다:
+`@specification` 은 3.1 부터 읽지 않습니다(issue 370): 빌드가 선언마다 알림을 출력하고(`DSL_WARN` 이 아님), 3.0 의
+`OrderSpecifications` 클래스는 당신의 코드가 쓰는 동안 남으며, `OrderSpecifications.ts` 는 프로젝트에
+넘겨집니다. 조건을 직접 쓰세요 - 당신의 static `Predicate<Order>` 메서드로 - 그리고 화면에 필요하면
+TypeScript 함수도(`Number(order.totalAmount) > 100`, 아래 참고):
 
 ```java
 // domain/model/OrderRules.java - 당신의 파일
@@ -254,26 +252,12 @@ public final class OrderRules {
 }
 ```
 
-이름을 가질 만한 도메인 규칙입니다. 같은 비교가 서비스와 리포트와 테스트에 각각
-다시 타이핑되다가 하나만 다르게 타이핑되는 것을 막습니다.
+boolean 이 아니라 predicate 라서 규칙이 조합됩니다: `highValue().and(hasLines())` 는 규칙으로 만든 규칙입니다.
+이미 읽어온 것에서 고르며, 쿼리는 직접 쓰는 Spring Data `Specification<Order>` 입니다.
 
-```yaml
-Order:
-  meta: entity @root @specification(highValue, totalAmount > 100)
-```
+#### 조건 문법 (`@invariant`)
 
-생성물은 `OrderSpecifications.highValue()` 이고 `Predicate<Order>` 를 돌려줍니다.
-boolean 이 아니라 predicate 인 이유는 **조합이 이 패턴의 요점**이기 때문입니다:
-`highValue().and(hasLines())` 는 규칙으로 만든 규칙입니다.
-
-**쿼리가 아닙니다.** Spring Data `Specification<Order>` 로 내보내 SQL 로 밀어넣는
-편이 더 나은 아티팩트겠지만, criteria API 로 표현되는 규칙에서만 그렇습니다.
-어떤 규칙은 DB 에서 어떤 규칙은 메모리에서 동작하는데 **어느 쪽인지 알 수 없는**
-것은 생성물이 가질 수 있는 최악의 성질입니다. 이미 읽어온 것에서 고릅니다.
-
-#### 조건 문법 (`@invariant` 와 `@specification` 공통)
-
-두 패턴은 같은 문장을 다르게 쓸 뿐이라 문법을 공유합니다.
+루트의 약속이 말할 수 있는 것입니다. 직접 이름 붙이는 규칙은 평범한 코드입니다(위의 `@specification`).
 
 | 형태 | 뜻 |
 |---|---|
@@ -287,12 +271,12 @@ boolean 이 아니라 predicate 인 이유는 **조합이 이 패턴의 요점**
 보이기 시작하는데, 그것만은 아닙니다.
 
 > `=` 하나는 **쓸 수 없습니다** - 같음은 `==` 입니다. DSL 애노테이션 파서가 인자 안의 `=` 하나를
-> 키/값 목록의 시작으로 읽기 때문입니다(`@invariant`·`@specification`·`@count` 에서는
+> 키/값 목록의 시작으로 읽기 때문입니다(`@invariant`·`@count` 에서는
 > `==`·`>=`·`<=`·`!=` 의 `=` 는 비교로 읽습니다). 비슷한 이유로 `:` 도 쓰지
 > 않습니다 — meta 줄은 YAML 스칼라라 `이름: ` 을 매핑 시작으로 읽고 파일이 아예
 > 로드되지 않습니다.
 
-값은 항상 **접근자로** 읽습니다. 두 생성물 모두 엔티티 바깥에 있어 필드가 보이지
+값은 항상 **접근자로** 읽습니다. 생성되는 리스너가 엔티티 바깥에 있어 필드가 보이지
 않고, 지연 로딩 to-many 는 게터로 읽어야 초기화됩니다.
 
 #### 값 객체의 교체 (`ddd-value-object`)
@@ -314,9 +298,7 @@ Address moved = address.withCity("Rotterdam");   // 원본은 그대로
 | | Java | Kotlin |
 |---|---|---|
 | 이벤트 클래스 | 필드 + 생성자 + 게터 | 주 생성자의 `val` |
-| 명세 클래스 | `private` 생성자 | `object` |
 | 팩토리 | `private` 생성자 + `static` | `object` + `fun` |
-| 도메인 서비스·프로세스 매니저의 포트 | `XxxBase` 의 `@Autowired protected` 필드 | `XxxBase` 의 `@Autowired protected lateinit var` |
 | 조건식 | `order.getItems()` | `order.items!!` |
 | 불변식 리스너 | `@EntityListeners({A.class, B.class})` | `@EntityListeners(A::class, B::class)` — 배열 속성을 vararg 로 받으므로 대괄호를 쓰면 컴파일되지 않습니다 |
 
@@ -528,13 +510,13 @@ OutboxPublisher kafka(KafkaTemplate<String, String> kafka) {
 - `OutboxPublisher` 빈이 없으면 Relay 는 아무것도 하지 않고 메시지는 테이블에 쌓입니다.
 - `pending()` 으로 대기 건수를 볼 수 있습니다(모니터링).
 
-#### 프로세스 매니저 (사가) — `processManager:`
+#### 프로세스 매니저 (사가) — `processManager:` - 3.1 에서 제거됨
 
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 리스너를
-> 직접 쓰세요 - 아래 Base 의 두 어노테이션을 단 `@Component` 의 메서드로 - 그리고 `processManager:` 에서 그
-> 항목을 지웁니다. 다음 단계가 호출한 쪽의 트랜잭션 안에서(함께 롤백되게) 돌아야 하면, 두 어노테이션 대신
-> `@EventListener` 하나를 메서드에 붙입니다:
+`processManager:` 는 3.1 부터 읽지 않습니다(issue 370): 빌드가 항목마다 알림을 출력하고(`DSL_WARN` 이 아님),
+3.0 의 프로세스 매니저와 그 Base 는 당신의 코드가 쓰는 동안 남습니다 - 고친 것은 당신의 것이 되고, 그 Base 가
+리스너를 계속 갖습니다. 리스너를 직접 쓰세요 - 아래 두 어노테이션을 단 `@Component` 의 메서드로 - 그리고 그
+항목을 지웁니다. 다음 단계가 호출한 쪽의 트랜잭션 안에서(함께 롤백되게) 돌아야 하면, 두 어노테이션 대신
+`@EventListener` 하나를 메서드에 붙입니다:
 
 ```java
 // application/ReceiptingListener.java (billing) - 당신의 파일
@@ -563,67 +545,12 @@ public class ReceiptingListener {
 }
 ```
 
-한 애그리거트의 이벤트가 **다른 애그리거트의 다음 단계**를 부르는 흐름(주문이 들어오면 영수증 발행)입니다.
-`elasticore-template-ddd` 의 `billing` 이 그대로의 예입니다.
-
-```yaml
-# blueprint/billing/model/domainservice.yml
-processManager:
-  Receipting:
-    desc: 주문이 들어오면 영수증을 한 장 만든다
-    on: [shop:OrderPlaced]       # (컨텍스트:)루트 이름 + 이벤트 이름 (Event 접미사 없이)
-    uses: [Receipt]              # 주입받을 애그리거트의 도메인 포트
-```
-
-생성물은 두 파일입니다 (application 패키지 또는 `namespace.processManager`). 업무 명령의 `XxxBase` + `Xxx` 와 같은
-나눔이라, DSL 을 고치면 연결은 다시 생성되고 개발자가 쓴 단계는 그대로 남습니다. 실제 생성물에서 import 와 클래스
-주석만 뺐습니다:
-
-```java
-// ReceiptingProcessManagerBase - 매번 재생성 (규칙 ddd-process-manager-base)
-public abstract class ReceiptingProcessManagerBase {
-
-	@Autowired
-	protected ReceiptRepositoryPort receiptRepositoryPort;
-
-	/** After OrderPlacedEvent has committed, in a transaction of its own. */
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void on(OrderPlacedEvent event) {
-	    handle(event);
-	}
-
-	/** What shop:OrderPlaced means here - the next step, written in ReceiptingProcessManager. */
-	protected abstract void handle(OrderPlacedEvent event);
-
-}
-
-// ReceiptingProcessManager - 한 번 생성, 이후 개발자 소유 (규칙 ddd-process-manager)
-@Component
-
-public class ReceiptingProcessManager extends ReceiptingProcessManagerBase {
-
-	@Override
-	protected void handle(OrderPlacedEvent event) {
-	    // The next step goes here.
-	}
-
-}
-```
-
-- `on` 에 이벤트를 더하면 Base 에 리스너와 추상 `handle(새 이벤트)` 가 생기고, 개발자 클래스에는 빈
-  `handle(새 이벤트)` (`// The next step goes here.`) 가 들어갑니다 - 고친 적이 없으면 다시 생성, 고쳤으면 병합. 프로젝트는 빌드되고,
-  그 단계를 쓸 때까지 이벤트는 아무 일도 하지 않습니다(병합이 닿지 않는 파일은 그대로 두고, 빠진 `handle` 을 컴파일러가 알려 줌). `uses` 에 더한 애그리거트는 Base 의 필드가 되어 개발자 클래스를 고칠 필요가 없습니다 — 포트를
-  생성자가 아니라 필드로 주입하는 이유입니다.
 - 이벤트를 낸 트랜잭션이 **커밋된 뒤, 자기 트랜잭션에서** 실행됩니다. 여기서 실패해도 이미 일어난
-  출고는 되돌려지지 않습니다 — 재시도·보상은 `handle` 이 정합니다(사가의 보상 단계).
+  일은 되돌려지지 않습니다 — 재시도·보상은 그 메서드가 정합니다(사가의 보상 단계).
 - 이벤트 내용(payload)에 필요한 값을 실어 두면 원래 애그리거트를 다시 읽지 않아도 됩니다.
 - 중복 전달에 대비해 멱등하게 작성하세요(예: `findByOrderId` 로 이미 발행했는지 확인).
-- 선언한 이벤트가 어느 루트의 `@event` 에도 없으면 DSL 경고.
-- 다른 바운디드 컨텍스트의 이벤트는 `on: [shop:OrderPlaced]` 로 받습니다. 생성기가 컨텍스트 지도에서 그 컨텍스트의
-  이벤트 클래스를 찾아 import 하고(`on` 의 두 이벤트가 단순 이름이 같으면 나중에 적은 쪽을 전체 이름으로 씀), `config.context` 의
-  `uses`·`publishes` 로 검사합니다. 문법과 한계(같은 애플리케이션 안에서만 전달)는 `elasticore-dsl-guide.md` 의
-  "프로세스 매니저".
+- 다른 바운디드 컨텍스트의 이벤트는 그 컨텍스트의 다른 클래스처럼 import 합니다. 전달은 같은 애플리케이션 안에서만입니다.
+  `elasticore-template-ddd` 의 `billing` 이 그런 예입니다(`ReceiptingListener`, `CrossContextEventTest`).
 
 #### 읽기 모델 — 투영 쿼리
 
@@ -732,12 +659,11 @@ private Partner partner;                // 같은 컬럼의 읽기 전용 조인
 모양을 공유하게 되므로, 상대의 식별자를 컬럼으로 두고 포트(`port:` DSL)로 조회해 이쪽 모델로
 변환하는 것을 권장합니다(Anti-Corruption Layer). 생성은 막지 않습니다.
 
-#### 도메인 서비스 (`ddd-domain-service`)
+#### 도메인 서비스 (`ddd-domain-service`) - 3.1 에서 제거됨
 
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 클래스를
-> 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리 포트를 받습니다 -
-> 그리고 `domainService:` 에서 그 항목을 지웁니다:
+`domainService:` 는 3.1 부터 읽지 않습니다(issue 370): 빌드가 항목마다 알림을 출력하고(`DSL_WARN` 이 아님),
+3.0 의 `PricingDomainService` / `PricingDomainServiceBase` 는 당신의 코드가 쓰는 동안 남습니다. 클래스를
+직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리 포트를 받습니다:
 
 ```java
 // domain/service/PricingService.java - 당신의 파일
@@ -760,32 +686,8 @@ public class PricingService {
 }
 ```
 
-어느 애그리거트에도 속하지 않는 연산입니다. **엔티티가 아니라 도메인에 선언**합니다 —
-다른 DDD 애노테이션은 전부 엔티티에 쓰는데, 도메인 서비스는 "누구의 것도 아니다"가
-정의이기 때문입니다. 루트 하나를 골라 매다는 것이 값싼 선택이었지만, 그러면 이
-패턴이기를 그만두고 "누가 애그리거트에 넣는 걸 잊은 메서드"가 됩니다.
-
-```yaml
-# model/domainservice.yml
-domainService:
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-`uses` 는 장식이 아닙니다. **생성기가 주입하는 대상**이고, 이 서비스가 존재할 이유를
-말하는 문장입니다. 하나만 적으면 DSL 경고가 납니다 — 애그리거트 하나에 대한 연산은
-보통 그 애그리거트의 메서드입니다.
-
-생성물은 두 파일입니다. `PricingDomainServiceBase` 는 **매번 재생성**되며 명명한 애그리거트의 도메인 포트
-(`OrderRepositoryPort`, `ProductRepositoryPort`)를 주입받는 필드를 갖고(규칙 `ddd-domain-service-base`),
-`PricingDomainService` 는 그것을 상속하는 **generate-once** 클래스입니다(규칙 `ddd-domain-service`). `uses` 에
-애그리거트를 더하면 Base 에 포트가 생기고 개발자 클래스는 고치지 않습니다. 연산 자체는 생성하지 않습니다 —
-`@factory` 와 같은 이유로, 모델은 데이터를 선언하므로 생성할 수 있는 것은 행위가 아니라 자리와 연결입니다.
-
-놓일 자리는 `namespace.domainService` 로 정합니다. 선언하지 않으면 엔티티와 같은
-패키지입니다. **application 네임스페이스에 두지 마세요** — 도메인 코드라서 유스케이스
-옆에 있으면 의존 방향이 뒤집힙니다.
+`namespace.domainService` 는 그대로입니다: 아키텍처 테스트가 그 패키지를 도메인 코드로 검사합니다. **application
+네임스페이스에 두지 마세요** — 도메인 코드라서 유스케이스 옆에 있으면 의존 방향이 뒤집힙니다.
 
 #### TypeScript 에 닿는 것 (`ts-model`)
 
@@ -794,14 +696,13 @@ domainService:
 
 | 규칙 | TS | 이유 |
 |---|---|---|
-| `ddd-specification` | O | 이미 가진 데이터에 대한 질문입니다 |
 | `ddd-invariant` | O | 서버가 거절할 것을 미리 물어보는 것 (강제 아님) |
 | 애그리거트 경계 | **이미 닿아 있음** | 멤버는 엔드포인트가 없으므로 `ts-api` 가 클라이언트를 만들지 않습니다 |
-| `ddd-event` / `ddd-factory` / `ddd-domain-service` | X | 저장 시점·리포지터리에 매인 것들이라 브라우저에 대응물이 없습니다 |
+| `ddd-event` / `ddd-factory` | X | 저장 시점·리포지터리에 매인 것들이라 브라우저에 대응물이 없습니다 |
 
-##### 왜 명세를 생성할 가치가 있는가
+##### 왜 소수를 `Number(...)` 로 읽는가
 
-`@specification` 은 폐지 예정입니다(3.1 에서 제거): 아래는 직접 쓰는 함수가 `Number(...)` 로 비교해야 하는 이유입니다.
+생성되는 불변식이 이렇게 비교하고, 화면을 위해 직접 쓰는 규칙도 그래야 합니다(위의 `@specification`).
 
 이 언어에서는 손으로 쓴 사본이 단순 중복이 아니라 **대개 틀립니다.**
 
@@ -861,8 +762,8 @@ namespace:
 `dbms` / `http` 포트의 계약은 **application DTO** 로 쓰이고, 페이징하면 Spring 의
 `Page` 도 씁니다. 그래서 이건 **애플리케이션의 아웃바운드 포트**입니다.
 
-도메인 서비스의 `uses:` 에 적으면 **경고와 함께 무시됩니다** — 도메인 코드가 위
-계층에 의존하게 되기 때문입니다. 도메인은 애그리거트(=리포지터리 포트)를 받고,
+직접 쓰는 도메인 서비스는 그것을 받지 않습니다 — 도메인 코드가 위 계층에 의존하게 되기
+때문입니다(아키텍처 테스트가 거절). 도메인은 애그리거트(=리포지터리 포트)를 받고,
 sql/http 포트는 그것을 호출하는 서비스가 씁니다.
 
 ##### 어댑터는 빈이어야 합니다
@@ -1755,7 +1656,7 @@ XML·SQL·properties·`.proto`·TypeScript 는 `<!-- //ecd:... -->`, `-- //ecd:.
 > **타입 체크만으로는 부족한 이유가 이 언어에 하나 있습니다.** 소수가 문자열로
 > 오므로, 손으로 쓴 `order.totalAmount > 100` 은 컴파일러가 받아들이고 JavaScript 가
 > 금액과 무관하게 false 를 답합니다 — 이 언어가 부르는 유일한 결함이 정확히 타입
-> 체크가 볼 수 없는 것입니다. 그래서 생성된 명세·불변식은 node 로 **실행**됩니다.
+> 체크가 볼 수 없는 것입니다. 그래서 생성된 불변식과 샘플이 직접 쓴 규칙은 node 로 **실행**됩니다.
 
 > 검증 태스크는 **생성 트리를 먼저 비웁니다.** generate-once 마커가 붙은 파일은
 > 규칙을 고쳐도 재생성되지 않아서, 낡은 파일이 검사되고 통과로 보고될 수 있습니다.

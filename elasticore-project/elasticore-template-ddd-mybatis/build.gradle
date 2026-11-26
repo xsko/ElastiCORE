@@ -125,8 +125,11 @@ tasks.register('dbTest', Test) {
 task elcore3clean(type: Delete) {
 	group = 'elasticore'
 	description = 'Removes previously generated sources'
-	delete fileTree(generated), fileTree('src/test/java/io'), fileTree('src/main/resources/io'),
-			fileTree('src/main/resources/db')
+	// The hand-written domain service, listeners and order rules stay (issue 370).
+	delete fileTree(generated) {
+		exclude '**/shop/domain/service/PricingService.java', '**/shop/domain/model/OrderRules.java',
+				'**/shop/application/LoyaltyListener.java', '**/billing/application/ReceiptingListener.java'
+	}, fileTree('src/test/java/io'), fileTree('src/main/resources/io'), fileTree('src/main/resources/db')
 }
 
 tasks.named('elcore3') {

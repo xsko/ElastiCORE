@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { OrderDTO } from '../OrderDTO';
-import { hasLines, highValue } from '../OrderSpecifications';
+// highValue and hasLines are written by hand (orderRules.ts); the invariants are generated.
+import { hasLines, highValue } from './orderRules';
 import { isValid, violations } from '../OrderInvariants';
 
 /**
