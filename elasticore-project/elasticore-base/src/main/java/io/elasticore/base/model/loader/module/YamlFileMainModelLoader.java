@@ -332,11 +332,59 @@ public class YamlFileMainModelLoader implements MainModelLoader {
             // and the compile errors that follow point anywhere but here.
             String why = String.valueOf(e.getMessage()).replaceAll("\\s+", " ").trim();
             if (why.length() > 240) why = why.substring(0, 240) + " ...";
+            String hint = labelHint(f, e);
+            if (hint != null) {
+                ConsoleLog.printWarn(" * " + hint);
+                why = why + " - " + hint;
+            }
             io.elasticore.base.model.pub.rules.ModelCheck.failSaid(
                     "LOAD ERROR " + f.getAbsolutePath() + " - not read, nothing it declares was generated: " + why);
             return FileSource.builder().filepath(f.getAbsolutePath()).error(e).build();
         }
 
+    }
+
+    /** A field line: its name, then ": " and the value. */
+    private static final java.util.regex.Pattern FIELD_LINE =
+            java.util.regex.Pattern.compile("^\\s*([A-Za-z_$][A-Za-z0-9_$]*)\\s*:\\s");
+
+    /**
+     * What to say when YAML could not parse a field's "--" label: a ": " in it starts
+     * a mapping, and the parser's message points into the middle of the label without
+     * naming it. Null when the error is not inside a label - the message is then left
+     * as it was.
+     */
+    static String labelHint(File f, Throwable e) {
+        org.yaml.snakeyaml.error.Mark mark = null;
+        // A cause chain is short; the bound only keeps a cycle from running forever.
+        Throwable t = e;
+        for (int depth = 0; t != null && mark == null && depth < 16; depth++, t = t.getCause()) {
+            if (t instanceof org.yaml.snakeyaml.error.MarkedYAMLException)
+                mark = ((org.yaml.snakeyaml.error.MarkedYAMLException) t).getProblemMark();
+        }
+        if (mark == null) return null;
+        List<String> lines;
+        try {
+            lines = java.nio.file.Files.readAllLines(f.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException notRead) {
+            return null;
+        }
+        return labelHint(lines, mark.getLine(), mark.getColumn());
+    }
+
+    /** The same, for the lines of the file and the error's line and column (both from 0, as SnakeYAML counts). */
+    static String labelHint(List<String> lines, int line, int column) {
+        if (line < 0 || line >= lines.size()) return null;
+        String text = lines.get(line);
+        java.util.regex.Matcher field = FIELD_LINE.matcher(text);
+        if (!field.find()) return null;
+        int dashes = text.indexOf(" -- ", field.end() - 1);
+        if (dashes < 0) return null;
+        int labelStart = dashes + " -- ".length();
+        // SnakeYAML counts the column in code points.
+        if (column < text.codePointCount(0, labelStart)) return null;
+        if (text.indexOf(':', labelStart) < 0) return null;
+        return "the label of " + field.group(1) + " contains ': ' - quote the whole value or reword it";
     }
 
     /** Whether the YAML file holds no document content at all - no token, only comments and blank lines. */

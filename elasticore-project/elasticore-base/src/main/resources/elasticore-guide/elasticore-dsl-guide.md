@@ -97,6 +97,13 @@ entity:
 - Extended form (`-- label | desc`) -> generates two annotations, `@label(label)` + `@desc(desc)`
 - The text is taken as written, whatever it holds: `=`, `,` and parentheses are part of it, never parameters.
   `-- term in months (1 = to the same day of the next month, or its last day)` is that whole label.
+- **YAML reads the line before the DSL does.** Two things in a label break it unless the whole value is quoted:
+  - `": "` (a colon and a space) starts a mapping: the file does not load - `LOAD ERROR`, `mapping values are not allowed here`,
+    and `the label of versionNo contains ': ' - quote the whole value or reword it`.
+  - `" #"` (a space and a hash) starts a YAML comment: the label ends before it, silently (`-- price #2` is the label `price`).
+
+  Quote the whole value, type and marks included: `versionNo: "int -- version: raised when the same kind is uploaded again"`.
+  In single quotes an apostrophe is written twice: `owner: 'string(30)! -- owner''s name: as signed'`.
 
 **Reading the comment string at runtime**
 - `field.getDescription()` -> returns the `--` comment text (label first, falls back to desc if there is no label). Supported from `v2.2.260421-2+`
