@@ -752,6 +752,11 @@ config:
 
 The generated test files are placed under `src/test/java/` at the path of the service package.
 
+**Testing a method of your own in `*Service`.** The generated tests do not cover it. A method that writes needs `@Transactional`
+of its own (the CoreService is `readOnly = true`, JPA and MyBatis), and a test transaction - `@Transactional` on the test class -
+hides a missing one: test it with `@Transactional(propagation = Propagation.NOT_SUPPORTED)` or through the HTTP API, on the
+database you deploy to (H2 does not refuse the write). `elasticore-dev-guide.md`, "Methods of your own in `*Service`".
+
 #### 6.2.1 Contract tests (`testCode: "contract"`, 3.0)
 
 Tests of what the DSL declares, over the project's own API. `"contract"` writes these and nothing else - no Mockito, no service

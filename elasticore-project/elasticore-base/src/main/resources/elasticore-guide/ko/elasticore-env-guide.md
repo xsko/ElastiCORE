@@ -752,6 +752,11 @@ config:
 
 생성된 테스트 파일은 `src/test/java/` 하위에 서비스 패키지 경로로 배치된다.
 
+**`*Service` 에 직접 쓴 메서드의 테스트.** 생성된 테스트는 이를 다루지 않는다. 쓰는 메서드에는 자기 `@Transactional` 이
+필요하고(CoreService 는 `readOnly = true`, JPA 와 MyBatis), 테스트 트랜잭션 - 테스트 클래스의 `@Transactional` - 은
+빠진 것을 가린다: `@Transactional(propagation = Propagation.NOT_SUPPORTED)` 나 HTTP API 로, 배포할 데이터베이스에서
+테스트한다(H2 는 그 쓰기를 거절하지 않는다). `elasticore-dev-guide.md` 의 "`*Service` 에 직접 쓴 메서드".
+
 #### 6.2.1 계약 테스트 (`testCode: "contract"`, 3.0)
 
 DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. `"contract"` 는 이것만 쓴다 - Mockito 도, 서비스 단위 테스트도
