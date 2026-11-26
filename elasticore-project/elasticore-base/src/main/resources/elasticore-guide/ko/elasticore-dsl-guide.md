@@ -337,7 +337,7 @@ entity:
 ```
 
 ### 업무 명령 (`commands:`) - DDD 번들
-> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
+> **동작:** ddd, hexagonal · **안 됨:** layered (경고, 생성 안 됨)
 
 CRUD 는 "이 필드들을 바꿔라" 이고, 도메인은 "이 수주를 확정해라" 라고 요청받습니다. 엔티티에
 `commands:` 를 쓰면 명령 하나가 **엔드포인트부터 규칙까지 한 길**로 생성됩니다.
@@ -370,6 +370,9 @@ SalesOrder:
 - 파라미터는 **값**입니다. 다른 애그리거트는 식별자로 받고(`itemCode: string(20)`) 서비스에서 불러옵니다
   - 엔티티 타입 파라미터는 DSL 경고.
 - 명령은 행위 클래스가 있는 루트(= `@editable` 이 아닌 단일 키 루트)에만 생성됩니다. 그 밖에는 DSL 경고 후 무시.
+  layered 도 3.0.261125 부터 그렇습니다(그 전에는 아무 말 없었음): `... declares commands: (ddd-command), which the selected rules do not enforce ...
+  The commands are not served, and the TypeScript client offers none.` TypeScript 클라이언트는 서버가 제공하는 곳에서만 명령 함수를
+  씁니다(그 전에는 layered 나 `@editable` 루트의 클라이언트가 없는 엔드포인트를 불러 404 였음).
 - **`@editable` 필드가 하나도 없는 루트**는 PUT(`update`, `batchUpdate`)을 만들지 않습니다: API 는
   생성·조회·삭제와 명령입니다.
 
@@ -379,6 +382,11 @@ SalesOrder:
 "주문은 접수(PLACED)로 시작해서, 배송하면 SHIPPED, 취소하면 CANCELLED" 처럼 **상태가 어디서 어디로만
 바뀌는 규칙**은 코드 대신 DSL 에 씁니다. 명령 메서드(`ship()`, `cancel()`)의 본문까지 생성되므로
 행위 클래스에 손으로 쓸 것이 없습니다.
+
+layered 에서는 빌드가 `states:` 를 지키지 않는다고 경고합니다(`elasticore-env-guide.md` 7-1). layered 번들에 `ddd-state` 를 더하면
+초기 상태만 정해지고, 행위 클래스가 없는 루트(layered, 또는 `@editable` 루트)의 생명주기는 이렇게 알립니다(3.0.261125 부터):
+`[Product] Device states.status: the commands approve, reject, revoke are written only for a root with a behaviour class (a root that is
+not @editable, with architecture = 'ddd' or 'hexagonal'); Device gets its initial state only.`
 
 #### 1. 세 곳이 이렇게 연결됩니다
 

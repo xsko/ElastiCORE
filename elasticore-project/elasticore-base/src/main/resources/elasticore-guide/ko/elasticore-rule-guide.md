@@ -453,6 +453,8 @@ DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노�
 - 템플릿의 슬롯(`${accessCreate}` 등)은 선언이 없으면 비어 있어 생성물이 바뀌지 않습니다.
 - 런타임: `io.elasticore.springboot3.security` 의 `CurrentUser`(기본 `SessionCurrentUser`),
   `AccessPolicy`, `PasswordHasher`(기본 PBKDF2), 401·403 예외. 빈을 등록하면 그것을 씁니다.
+  `AccessPolicy.level(op)` 은 역할을 적거나 단어를 잇는 항목(`owner|MANAGER`)에는 `null` 을 답합니다(3.0.261123 부터): 그것을
+  읽는 직접 쓴 코드는 `null` 을 처리하거나, 모든 항목을 읽는 `require`, `owns`, `ownerFilter` 를 부르세요.
 - `@login` + `@password` 엔티티의 CoreService·유스케이스에는 `authenticate` 가 생깁니다. 엔티티 줄에 `@signin` 까지
   있으면 `me()` 와 그 컨트롤러의 `signin`·`signout`·`me` 엔드포인트도 이 규칙이 쓰고, 로그인 컬럼은 unique 가 됩니다
   (unique 는 `@signin` 만으로 - 아래 조건에 걸려 엔드포인트를 만들지 않을 때도).
@@ -921,8 +923,8 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort, OrderQueryPo
 v3 출력에서는 빠진 메서드를 부르는 것도 함께 빠져 컴파일이 깨지지 않습니다: `update` 는 `batchUpdate` 를, `deleteById` 는
 `delete`·`deleteBatch` 를, `delete` 는 `deleteBatch` 를, `save` 는 `create` 를 데려갑니다. 헥사고날의 유스케이스
 인터페이스도 서비스가 뺀 메서드를 약속하지 않습니다(전에는 `@restExclude(batchUpdate)` 가 `XxxService is not abstract
-and does not override abstract method batchUpdate` 로 컴파일되지 않았음). Kotlin 서비스는 메서드를 빼지 않고 그대로 두며,
-컨트롤러·유스케이스만 따릅니다. 2.x 호환 번들은 적힌 대로만 뺍니다. 프로젝트 규칙이 `ctx(e).excludeMethod("update")` 로
+and does not override abstract method batchUpdate` 로 컴파일되지 않았음). Kotlin 서비스도 Java 처럼 뺍니다(3.0.261120 부터; 그 전에는 남겼음),
+`@readonly` 도 마찬가지입니다: 빠진 메서드를 override 하거나 부르는 직접 쓴 Kotlin 코드는 컴파일되지 않으니 그 override 나 호출을 지우세요. 2.x 호환 번들은 적힌 대로만 뺍니다. 프로젝트 규칙이 `ctx(e).excludeMethod("update")` 로
 직접 뺄 때도 v3 출력은 같이 데려갑니다(`batchUpdate` 가 없는 `update` 를 부르지 않음). TypeScript 클라이언트는 서버를
 따라, 서버가 2.x 호환 출력이면 적힌 것만 뺍니다(`@restExclude(update)` 여도 2.x 서버에 남는 `PUT /batch` 의 `batchUpdate` 는
 클라이언트에도 남음). 서버의 모드는 `elcore3ts` 자신의 설정(아키텍처·언어·`output`·`-Pv2`/`-Pv3`·도메인의 규칙)으로
@@ -950,9 +952,11 @@ DDD 번들의 매퍼는 여기에 더해 **`@jpa:Version` 과 Spring Data 감사
 생성합니다. 위 표의 상태 코드를 답하고, 그 패키지의 컨트롤러에만 적용됩니다.
 generate-once 라 응답 형식은 개발자 것입니다. 생성자에서 Spring 이 구성한 Validator 를
 `BeanValidation.use(...)` 로 넘겨, 서비스 측 검증도 주입이 필요한 커스텀 제약과
-애플리케이션 메시지를 씁니다. 불변식이 실려 오는 두 래퍼(`InvalidDataAccessApiUsageException`,
-`TransactionSystemException`)만 잡으므로 unique 충돌 같은 다른 데이터 접근 오류는 사용자의
-핸들러로 갑니다.
+애플리케이션 메시지를 씁니다. 데이터 접근 오류 중에서는 불변식이 실려 오는 두 래퍼(`InvalidDataAccessApiUsageException`,
+`TransactionSystemException`)를 잡고, 저장소의 거절은 종류만 말합니다 - `unique`·`referenced`(409), `required`·`check`(400),
+`stale`(409) - SQL·인덱스·값을 드러내는 드라이버의 글은 내보내지 않습니다. MongoDB 에서 이미 있는 `@unique` 값도 3.0.261120 부터
+`409 unique` 입니다(그 전에는 드라이버의 글). 고친 `XxxApiErrors` 는 깨끗이 병합될 때 이것을 받고, `KEPT(yours ...)` 로 남으면
+새로 생성된 것에서 `duplicate(...)` 의 `if (ex.getCause() != null)` 분기를 가져와 넣으세요.
 
 **컨트롤러에 닿기 전의 거절 (`RequestShapeErrors`).** 생성된 `ShopApiErrors` 는 런타임의
 `io.elasticore.springboot3.validation.RequestShapeErrors` 를 `@Import` 합니다. Spring MVC 가 컨트롤러 메서드를 부르기
@@ -1176,6 +1180,8 @@ HTTP/1.1 409                       (헤더 없음)
 - 불변식처럼 상태를 코드로 고르는 거절은 `InvariantViolationException(code, message, args...)` 입니다 (`state.` 409,
   `reference.` 404, 그 밖 422). 생성된 코드를 손으로 던지면서 그 문장이 부르는 것보다 값을 적게 주면 (`state.*` 에
   코드 둘만), 응답은 준 메시지입니다 - `{3}` 이 남은 문장은 나가지 않습니다.
+  기본 문장의 `{0}`, `{1}` ... 은 표의 예외들처럼 값으로 채웁니다(3.0.261125 부터; 그 전에는 `{0}` 이 남았음).
+  자리표시가 없는 문장은 따옴표까지 적은 그대로 둡니다.
 - 확인: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (테스트용 컨트롤러가 던진 것).
 - 고친 적이 있는 `XxxApiErrors` 는 다시 생성되지 않아 처리기가 `ex.getMessage()` 만 씁니다. 새로 생성된 파일처럼
   `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())` 로 고치세요.
@@ -1291,6 +1297,8 @@ Java 는 자기 키가 없으므로, Java 빌드는 `ts:` 만 적어 TypeScript 
 - 어떤 실행도 읽지 않는 키(`java:`, `kts:` 같은 오타)는 빠지고, 읽히는 키를 알려 주는 DSL 경고가 나옵니다:
   `publisher.rules has a key no run reads: java - the keys are kt (a Kotlin build's elcore3) and ts (elcore3ts)`.
 - `kt:` 아래의 Java 번들은 목록에서와 같이 Kotlin 빌드를 멈춥니다(위의 "잘못 조합하면 실패합니다" 참고).
+- `ossie-export` 는 서버 규칙 세트입니다: 서버의 목록(Kotlin 빌드에서는 `kt:`)이나 플러그인의 `rules = [...]` 에 적습니다.
+  `ts:` 아래에만 적으면 내보내기가 켜지지 않습니다(3.0.261121 부터).
 - 다른 표기는 읽히지 않고, 경고도 없습니다: `publisher:` 아래 `rules:` 옆의 따옴표 친 `"rules.kt":`, 또는
   `config:` 아래의 `"publisher.rules.kt":` 키. 실행이 어떤 목록을 썼는지는 `-PlistRules` 가 보여 줍니다.
 
@@ -1427,6 +1435,19 @@ e.isKnownEnum(type)      // 모델이 아는 열거형인가
 ```
 
 > `Field.getType()`은 private입니다. 타입은 `FieldSpec`을 통해 읽으세요.
+
+### 기본 규칙 세트가 알아내 주는 것 (3.0.261123 부터 public)
+
+계약 테스트가 이것들을 읽으므로(패키지 `io.elasticore.base.model.pub.rules.base` 와 `.ddd`) 직접 쓴 규칙도 읽어도 됩니다 - 규칙
+세트의 다른 도우미처럼 모양은 버전 사이에 바뀔 수 있습니다:
+
+| 호출 | 답 |
+|---|---|
+| `ServiceAccessRules.level(e, "update")` | 연산의 수준, `AccessPolicy` 가 읽는 대로: 자기 항목, 없으면 `*`, 없으면 `admin`; `@access` 가 없으면 `public` |
+| `ServiceAccessRules.keyGenerated(pk)` | 키를 보내지 않고 만들어 내는지(시퀀스, `@genid`, `@jpa:GeneratedValue`) |
+| `DddInvariantRules.declaredPromises(e)` | 리스너가 검사하는 루트의 `@invariant` 조건, 순서대로, 각각 `{condition, code}` |
+| `DddStateRules.stampedStates(e)` | 이동이 쓰는 스탬프, 각각 `{field, lifecycle field, state}` |
+| `DddCommandRules.kebab("shipPartially")` | `ship-partially`, 명령의 경로 조각 |
 
 ---
 
@@ -1915,7 +1936,9 @@ elasticore {
 
 **업그레이드.** 새 ElastiCORE 가 생성하는 코드는 사본에 아직 없는 클래스·메서드·생성자를 부를 수 있습니다. 업그레이드한 뒤
 `build/elasticore/runtime-classes.txt` 를 지난번 것과 비교하고, 새로 생겼거나 바뀐 클래스를 새 버전의 소스 jar 에서 가져오세요.
-컴파일 오류가 아직 빠진 것을 알려 줍니다.
+컴파일 오류가 아직 빠진 것을 알려 줍니다. 예를 들어 3.0.261128 부터 생성된 서비스는 쓰기가 거절되면
+`entity.RefusedWrite`(JPA)나 `mybatis.RefusedWrite`(MyBatis)를 부릅니다: 이것들을 사본에 가져오고, MyBatis 는 사본의 클래스패스에
+`mybatis-spring` 을 두세요 - jar 는 그것에 대해 컴파일만 했습니다.
 
 `elasticore-template-ddd`(hexagonal Java, Spring Boot 3.3)에서 확인했습니다: 목록 38개, 런타임 클래스 140개 중 92개 복사
 (목록과 그것이 쓰는 것). 클래스패스에 `io.elasticore` 아티팩트 없이 컴파일되고 테스트가 돌았습니다.
@@ -1943,6 +1966,8 @@ elasticore {
     publisher:
       rules: [hexagonal-springboot, ossie-export]   # env.yml: 번들과 함께 적기
 ```
+
+`publisher.rules` 가 맵인 Kotlin 빌드에서는 `kt:` 아래에 둡니다. `ts:` 아래에만 두면 읽히지 않습니다("언어별 규칙 선택").
 
 생성할 때마다 blueprint 루트에 `semantic_model.yml` 이 다시 만들어집니다 (프로젝트 전체가 **한 모델** -
 도메인을 넘는 관계가 끊기지 않게).

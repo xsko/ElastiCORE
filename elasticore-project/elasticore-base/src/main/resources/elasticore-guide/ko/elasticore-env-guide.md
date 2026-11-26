@@ -318,7 +318,7 @@ config:
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>` 와 검색: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (`SORT_FIELDS` 만) |
 | `<Entity>CoreService.java` | JPA 판과 **메서드 이름·시그니처가 같은** 서비스. 저장소와 `MongoTemplate` 위에서 동작(검색은 Criteria 의 `Query`, 페이지) |
 
-**Kotlin 으로** (`language = 'kotlin'`, 3.1 부터) 같은 파일이 `.kt` 로 나옵니다: 엔티티는 같은 애노테이션을 단 `var` 프로퍼티의 클래스, 저장소의 검색은 `companion object` (`@JvmStatic` 이라 `OrderRepository.criteria(...)` 를 Java 와 Kotlin 에서 똑같이 부름), 번들은 `mongo-springboot-kt`. 참조는 참조 대상 클래스의 프록시로 지연 로딩되는데 Kotlin 클래스는 final 이므로, Kotlin JPA 프로젝트가 `@Entity` 를 여는 것처럼 `build.gradle` 에서 문서를 엽니다:
+**Kotlin 으로** (`language = 'kotlin'`, 3.0.261121 부터) 같은 파일이 `.kt` 로 나옵니다: 엔티티는 같은 애노테이션을 단 `var` 프로퍼티의 클래스, 저장소의 검색은 `companion object` (`@JvmStatic` 이라 `OrderRepository.criteria(...)` 를 Java 와 Kotlin 에서 똑같이 부름), 번들은 `mongo-springboot-kt`. 참조는 참조 대상 클래스의 프록시로 지연 로딩되는데 Kotlin 클래스는 final 이므로, Kotlin JPA 프로젝트가 `@Entity` 를 여는 것처럼 `build.gradle` 에서 문서를 엽니다:
 
 ```groovy
 plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<사용하는 Kotlin 버전>' }
@@ -490,7 +490,7 @@ entity:
 - `genid` 키는 특별 처리되며, 엔티티 필드에 `@genid` 사용 시 지정된 ID 생성기 메서드가 `@PrePersist`에 등록됨
 - 형식: `genid(패키지.클래스.메서드)`
 
-**응답에서 개인정보 가리기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+**응답에서 개인정보 가리기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.0.261121 부터):
 ```yaml
 config:
   annotations:
@@ -505,9 +505,9 @@ config:
 - Jackson 모듈은 런타임이 스스로 등록한다(Boot 3 은 Jackson 2, Boot 4 는 Jackson 3). 생성되는 DTO 는 둘 다 같다.
 - `MaskType`: `PHONE`(가운데 묶음), `EMAIL`(로컬 부분 앞 두 글자만), `NAME`(첫 글자와 끝 글자만), `PLATE`(끝 숫자 네 개), `CARD`(앞뒤 네 자리만), `RRN`(앞 일곱 자리만).
 - 가리는 것은 응답 JSON 뿐이고 요청은 보낸 그대로 읽는다. 본인과 관리자도 가린 값을 받는다.
-- 읽은 DTO 를 그대로 다시 보내도 된다: 3.0 코드의 수정(`PUT`, `PUT /batch`; JPA, MyBatis, MongoDB, Java, Kotlin)은 가린 필드의 글자를 저장된 값을 가린 것 - `@encrypt` 면 복호화한 값 - 과 비교해 같으면 저장된 값을 그대로 둔다. 그 밖의 글자는 저장하고, 생성은 보낸 그대로 저장한다. 필드는 클래스 이름 `io.elasticore.springboot3.mask.Mask`(또는 `runtimePackages` 가 바꾼 이름)로 찾는다. 지켜지지 않는 곳: 조건 수정(`updateBySpecification`), 매퍼를 직접 부르는 직접 짠 코드.
+- 읽은 DTO 를 그대로 다시 보내도 된다: 3.0 코드의 수정(`PUT`, `PUT /batch`; JPA, MyBatis, MongoDB, Java, Kotlin)은 가린 필드의 글자를 저장된 값을 가린 것 - `@encrypt` 면 복호화한 값 - 과 비교해 같으면 저장된 값을 그대로 둔다. 그 밖의 글자는 저장하고, 생성은 보낸 그대로 저장한다. 필드는 클래스 이름 `io.elasticore.springboot3.mask.Mask`(또는 `runtimePackages` 가 바꾼 이름)로 찾는다. 지켜지지 않는 곳: 조건 수정(`updateBySpecification`), 매퍼를 직접 부르는 직접 짠 코드. 인자가 `MaskType` 상수가 아닌 `@Mask` 는 DSL 경고(`... names no MaskType constant - an update writes the field as sent, masked text included`)를 내고, 수정은 그 필드를 보낸 그대로 저장한다.
 
-**컬럼을 암호화해 저장하기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): 3.0 코드의 `@encrypt`(어노테이션 가이드)가 하고, `@search(eq)` 에는 블라인드 인덱스도 쓴다. 생성기 없이 쓸 때는 런타임의 컨버터를 이름으로 둔다:
+**컬럼을 암호화해 저장하기** (`elasticore-springboot3` / `elasticore-springboot4`, 3.0.261121 부터): 3.0 코드의 `@encrypt`(어노테이션 가이드)가 하고, `@search(eq)` 에는 블라인드 인덱스도 쓴다. 생성기 없이 쓸 때는 런타임의 컨버터를 이름으로 둔다:
 ```yaml
 config:
   annotations:
@@ -637,12 +637,16 @@ config:
 - 네임스페이스가 기본 패키지 아래에서 단어로 계층을 나눌 때 - `namespace: { base: ... }` 가 그렇게 놓습니다:
   `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - 직접 쓴 코드가 거기 더한 패키지도
   읽습니다. 기본 패키지 다음 첫 단어로 놓습니다: `domain.*` 는 도메인, `application.*` 은 애플리케이션,
-  `adapter.*`, `infrastructure.*` 와 `control`·`repository` 의 단어(`interfaces` 같은 것)는 둘 다의 바깥. 그래서
+  `adapter.*`, `infrastructure.*` 와 `control`·`repository`·`persistence` 의 첫 단어(`interfaces` 같은 것)는
+  둘 다의 바깥이고, `adapter.out.*` 은 영속성(바깥으로 나가는 쪽)과 함께 놓습니다. 그래서
   직접 쓴 `domain.policy` 클래스가 `infrastructure.mail` 을 쓰면 테스트가 실패합니다. 놓을 수 없는 패키지
   (`config` 같은 것)는 DSL 경고를 한 번 내고 검사하지 않습니다. 기본 패키지 자신(애플리케이션 클래스)과 테스트
   소스는 빼고 봅니다. 단어가 계층을 말하지 않는 layered 레이아웃은 네임스페이스만으로 읽습니다.
 - 한 번 생성된 파일은 다른 한 번 생성 파일처럼 사용자의 것입니다: 고치지 않았으면 다음 빌드에서 새 패키지 목록을 받고,
   고쳤으면 3-way 병합(9-2)을 거칩니다 - 겹치지 않는 곳의 사용자 규칙은 남습니다.
+  3.0.261121 이후로 올릴 때: 아무도 고치지 않은 테스트는 DSL 을 바꾸지 않아도 넓어진 목록을 받으므로, 직접 쓴 `domain.*` 코드가
+  `infrastructure.*`·`adapter.*` 를 쓰거나 `application.*` 코드가 포트를 거치지 않고 그것들을 쓰는 곳에서 이제 실패할 수 있습니다.
+  예전 목록으로 돌리는 스위치는 없습니다: 그 의존을 도메인이나 애플리케이션이 선언한 포트 뒤로 옮기세요.
 - `ddd`·`hexagonal` 의 규칙 (도메인의 규칙에 `ddd-aggregate` 가 있을 때): 도메인은 바깥 계층에 의존하지 않음 / 애플리케이션은 어댑터·영속성 클래스에 의존하지 않음(포트로만) /
   도메인은 웹을 모름 / (`mapping: xml` 이면) 도메인은 `jakarta.persistence`·`org.hibernate` 를 모름.
 - `layered` 의 규칙 (그 밖의 선택): 서비스(`service`, `dto`)는 웹(`control`)에 의존하지 않음 / 영속성과 엔티티는 서비스나 웹에
@@ -782,6 +786,8 @@ DSL 이 선언한 것을 프로젝트 자신의 API 로 확인하는 테스트. 
   그 키(행의 `@owner` 가 담는 값)와 세션; `sentBy(caller, ...)` 는 그 호출자로, `null` 이면 방문자로 요청을 보낸다. 로그인의 세션은
   로그인이 응답한 쿠키와 함께 보관되고 둘 다 보내진다(`perform`, `sentBy`): Spring Session(`spring-session-jdbc` 등)에서는 로그인된
   세션이 컨테이너의 것이 아니라 그 `SESSION` 쿠키가 가리키는 세션이다; 컨테이너가 세션을 보관하는 곳에서는 쿠키가 없어 더 보내는 것이 없다.
+  이전 버전(3.0.261126 전)이 쓴 지원 클래스는 병합으로 이 줄들을 받는다(`MERGED(your edits kept)`). 사용자가 고친 줄이 그 줄들과
+  만나면 `KEPT` 로 남고 실행이 위치를 알려 준다 - `cookies` 줄을 `build/elasticore/contract/` 에서 직접 옮겨 온다.
   호출자의 행은 관리자가 - 관리자가 로그인하지 않는 곳에서는 애플리케이션 자신으로서(`asTheSystem`) - owner 를 보내 만들거나,
   서버가 `@owner` 를 정하는 곳에서는 그 호출자가 만든다; `@signin` 엔티티 자신의 행은 그 호출자의 것이다. 프로젝트의 방식으로 로그인하려면
   `signIn(role)` 을 고친다.
@@ -894,6 +900,8 @@ config:
 - `referenceColumn: field` - 식별자 참조마다 컬럼이 관계 필드 이름 + `_id` 입니다: `author: Member` ->
   `author_id`, `editor: Member` -> `editor_id`, 루트가 자기 종류를 가리키는 참조도 (`parent: Post` -> `parent_id`).
   필드에 직접 쓴 `@db(...)` 가 여전히 우선입니다. 바뀌는 것은 테이블뿐이고 id 필드 이름은 그대로(`authorMemberId`). 역시 새 프로젝트용입니다.
+- layered 는 `referenceColumn` 을 읽지 않고, 빌드가 그렇게 알립니다: `[shop] referenceColumn: short is read by architecture = 'ddd'
+  and 'hexagonal' only - ...` (3.0.261120 부터). DSL 경고이므로 설정을 지울 때까지 `elcoreValidate -Pstrict` 가 실패합니다.
 - `adminRole` - `SessionCurrentUser.signIn(request, id, "ADMIN")` 처럼 로그인 때 넣은 역할 중 이 이름이
   있으면 관리자입니다. 엔티티 줄의 `@signin` 으로 생성되는 `signin` 은 그 엔티티의 `role` 필드(또는 `@role` 필드)가
   `@access(admin)` 인 enum·문자열일 때 그 값을 넣습니다.
@@ -1043,6 +1051,29 @@ dependencies { elasticore project(':acme-rules') }
 ```
 
 지금 도는 규칙과 순서는 `./gradlew elcore3 -PlistRules` 로 봅니다. 자세한 것은 `elasticore-ddd-customize-guide.md`.
+
+### 선택한 규칙에 DSL 이 선언한 것이 빠졌을 때
+
+도메인이 `@access`, `@owner`, `@password`, `states:`, `@stamp`, `commands:`, `@deleted`, `@snapshot`, `@compute` 를 선언했는데
+선택한 규칙에 그것을 맡는 규칙 세트가 없으면 DSL 경고가 나오고, 그 부분은 생성되지 않습니다. 예를 들어
+`publisher.rules: [ossie-export]` 인 hexagonal 도메인에 `@access` 엔티티가 있으면:
+
+```text
+[shop] Customer declares @access, @owner and @password (jpa-service-access), which the selected rules do not enforce - nothing is checked, derived or hashed. publisher.rules in env.yml replaces the architecture's bundle rather than adding to it, and its list does not name jpa-service-access. To add rule sets to the bundle, leave publisher.rules out and name them in rules = [...] in the elasticore { } block (-Delasticore.publisher.rules.add=...); to keep the list, name jpa-service-access in it.
+```
+
+경고의 끝은 선택이 어디서 왔는지에 맞춥니다 (3.0.261124 부터):
+
+| 선택 | 경고가 하라고 하는 것 |
+|---|---|
+| env.yml 의 `publisher.rules` 목록, 또는 `-Delasticore.publisher.rules` | 목록은 번들을 대신함: 목록에 그 규칙 세트를 적거나, 목록을 빼고 `rules = [...]` 로 규칙 세트를 더함 |
+| `jpa-springboot` 을 적은 목록 (3.0.261028-rc3 전의 마법사가 씀) | 목록에서 `jpa-springboot` 을, `elasticore { }` 블록에서 `output = 'v2'` 를 뺌 |
+| 2.x 코드 (`output = 'v2'`) | `elasticore { output = 'v3' }` (`elasticore-migration-guide.md`) |
+| layered 번들 (`jpa-springboot-v3`) | `Declare architecture = 'ddd' or 'hexagonal', or add the rule set.` 대신 `states:` 에는: 이 번들에 `ddd-state` 를 더하면 초기 상태만 정해짐; `commands:` (3.0.261125 부터)에는: 명령이 제공되지 않고 TypeScript 클라이언트도 내지 않음 |
+| MongoDB 의 `states:`, `commands:` 와 파생 값 | MongoDB 에는 도메인 모델 번들이 없음: JPA 와 MyBatis 에서만 생성됨 |
+
+경고로 남고 빌드는 계속됩니다. 3.0.261124 전에는 경고가 늘 layered 조언으로 끝났고, `-Delasticore.publisher.rules` 로 준
+목록은 아예 검사하지 않았습니다.
 
 ### 주의: 이 설정은 규칙엔진이 읽습니다
 
@@ -1338,6 +1369,7 @@ spring:
 | 길이·정밀도 늘림 | `ALTER COLUMN` - DB 마다 문법이 다릅니다 (Oracle `MODIFY`, SQL Server 는 인덱스를 잠시 지웠다 다시) |
 | 필수 → 선택 | `DROP NOT NULL` |
 | 관계·`@unique`·`@Index` 추가/삭제 | 외래키·인덱스 추가/삭제 |
+| 다른 테이블이 이제 가져가는 `@Index` 이름 (테이블 이름 변경, `table.prefix` 추가, 인덱스 이동) | 그 이름의 옛 테이블 인덱스를 먼저 지우고(`drop index uk_coverage_product_code of coverage - jp_coverage takes its name`) 새 테이블에 만듦: PostgreSQL·Oracle·H2 는 한 스키마에 인덱스 이름을 한 번만 둠. 지우는 것은 인덱스이지 행이 아니며, 옛 테이블의 `DROP TABLE` 은 여전히 검토를 기다림 (3.0.261125 부터) |
 | 필드·엔티티 삭제, 타입 변경·줄임, 선택 → 필수, 키 변경 | **검토**: 파일 끝에 주석으로 - 데이터를 잃거나 기존 행에서 실패할 수 있는 것 |
 | Oracle 테이블이 있는 데서 `oracleVersion` 을 23 이상으로 (또는 다시 해제) | Oracle 만, **검토**: boolean 컬럼마다 다른 타입의 새 컬럼으로 옮겨, 그 컬럼이 자리를 잇습니다 (위) |
 
@@ -1476,7 +1508,7 @@ DSL 이 바꾸지 않은 파일(두 번째 줄)은 블록까지 그대로 남습
      들어옵니다. 캐시와 다른 쪽을 고르면 캐시 쪽 브랜치의 DSL 변경이 "개발자가 지운 것"으로 보여 조용히 빠질 수 있습니다.
   3. **양쪽 브랜치가 같은 생성 파일을 각자 손으로 고쳤다면** 그 파일은 직접 합칩니다 - 양쪽의 생성된 줄과 고친 줄을 모두
      남깁니다. 한쪽만 고르면 다른 쪽이 고친 것이 빠집니다.
-  4. **이름이 바뀌기 전의 브랜치**에는 `.elasticore/cache` 가 남아 있습니다(그 파일에 수정/삭제 충돌). 기준은 2 에서 고른 쪽입니다: 그 브랜치 쪽을 골랐다면 `git checkout <브랜치> -- .elasticore/cache` 와 `git mv -f .elasticore/cache .elasticore/generated-base.zip`, 아니면 `git rm .elasticore/cache`.
+  4. **이름이 바뀌기 전의 브랜치**에는 `.elasticore/cache` 가 남아 있습니다(그 파일에 수정/삭제 충돌). 기준은 1 에서 고른 쪽입니다: 그 브랜치 쪽을 골랐다면 `git checkout <브랜치> -- .elasticore/cache` 와 `git mv -f .elasticore/cache .elasticore/generated-base.zip`, 아니면 `git rm .elasticore/cache`.
 - 기준 파일을 읽을 수 없으면(깨짐) 아무것도 쓰지 않고 실패합니다. git 에서 다시 받으세요. `generated-base.zip` 파일만 지우면 다음 빌드는 기준 파일에
   없는 파일 중 지금 생성되는 것과 다른 것을 모두 건드리지 않고 알립니다 - 생성된 그대로 받을 파일은 지웁니다. `.elasticore/`
   폴더째 지우면 처음 병합하는 프로젝트로 보아, 늘 덮어쓰던 `orm.xml` 과 메시지 파일은 전처럼 새로 씁니다.
