@@ -97,6 +97,13 @@ entity:
 - 확장형 (`-- label | desc`) → `@label(label)` + `@desc(desc)` 두 어노테이션 생성
 - 텍스트는 쓴 그대로이다. `=`, `,`, 괄호도 텍스트의 일부이고 파라미터로 읽지 않는다.
   `-- 기간(월) (1 = 다음 달 같은 날, 없으면 그 달 말일)` 은 그 전체가 라벨이다.
+- **DSL 보다 YAML 이 먼저 줄을 읽는다.** 라벨에 다음 두 가지가 있으면 값 전체를 따옴표로 감싸야 한다:
+  - `": "` (콜론과 공백) 은 매핑의 시작이다. 파일이 로드되지 않는다 - `LOAD ERROR`, `mapping values are not allowed here`,
+    그리고 `the label of versionNo contains ': ' - quote the whole value or reword it`.
+  - `" #"` (공백과 샵) 은 YAML 주석의 시작이다. 라벨이 그 앞에서 조용히 끝난다 (`-- price #2` 의 라벨은 `price`).
+
+  타입과 마크까지 값 전체를 감싼다: `versionNo: "int -- version: raised when the same kind is uploaded again"`.
+  작은따옴표 안에서는 아포스트로피를 두 번 쓴다: `owner: 'string(30)! -- owner''s name: as signed'`.
 
 **런타임에서 주석 문자열 조회**
 - `field.getDescription()` → `--` 주석 텍스트 반환 (label 우선, 없으면 desc 로 폴백). `v2.2.260421-2+` 부터 지원
