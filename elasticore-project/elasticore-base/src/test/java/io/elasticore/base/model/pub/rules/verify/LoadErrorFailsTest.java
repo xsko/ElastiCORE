@@ -47,6 +47,8 @@ public class LoadErrorFailsTest {
         assertEquals(1, status, "the build must stop");
         assertTrue(log.contains("the model check failed"), log);
         assertTrue(log.contains("broken.yml - not read, nothing it declares was generated: mapping values are not allowed here"), log);
+        // The parser's column points into the label; the error says the label is the cause (issue 345).
+        assertTrue(log.contains("- the label of memberId contains ': ' - quote the whole value or reword it"), log);
         // The good file still generates, so every finding is said in one run.
         assertTrue(new File(project, "src/main/java/io/acme/ldshop").exists());
     }
