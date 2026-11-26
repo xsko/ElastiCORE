@@ -597,6 +597,12 @@ public class ElastiCorePluginTest {
                         + "        def t = tasks.getByName('elcore3')\n"
                         + "        println '<<<' + t.systemProperties.collect { k, v -> k + '=' + v }.join(';') + '>>>'\n"
                         + "    }\n"
+                        + "}",
+                "tasks.register('reportElcore3ts') {\n"
+                        + "    doLast {\n"
+                        + "        def t = tasks.getByName('elcore3ts')\n"
+                        + "        println '<<<' + t.systemProperties.collect { k, v -> k + '=' + v }.join(';') + '>>>'\n"
+                        + "    }\n"
                         + "}");
         String on = run("compileJava", "--dry-run").getOutput();
         assertTrue(on.contains(":elcore3 SKIPPED"), on);
@@ -605,6 +611,8 @@ public class ElastiCorePluginTest {
         assertTrue(on.indexOf(":elcore3ts SKIPPED") < on.indexOf(":compileJava SKIPPED"), on);
         // elcore3 is told, so it does not warn of a client it did not refresh.
         assertTrue(reportOf(run("reportElcore3")).contains("elasticore.rules.tsWithBuild=true"));
+        // And so is the client's run: what the server's run said about the DSL is not said twice (issue 370).
+        assertTrue(reportOf(run("reportElcore3ts")).contains("elasticore.rules.tsWithBuild=true"));
     }
 
     @Test

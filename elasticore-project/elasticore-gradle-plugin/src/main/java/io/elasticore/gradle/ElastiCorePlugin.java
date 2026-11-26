@@ -213,7 +213,11 @@ public class ElastiCorePlugin implements Plugin<Project> {
                     task.systemProperty("elasticore.rules.tsWithBuild", "true");
                     task.finalizedBy(elcore3ts);
                 });
-                elcore3ts.configure(task -> task.mustRunAfter(elcore3));
+                // And the client's run, so that what the server's run said about the DSL is not said twice.
+                elcore3ts.configure(task -> {
+                    task.systemProperty("elasticore.rules.tsWithBuild", "true");
+                    task.mustRunAfter(elcore3);
+                });
             }
 
             if (usesGraphQl(evaluated)) wireGraphQl(evaluated, elcoreGraphQl);

@@ -82,7 +82,8 @@ public class DomainLevelModelLoader extends AbstractModelLoader implements Const
      * leniently - whatever shape it has, the load does not fail on it.
      */
     private void removed(ModelLoaderContext ctx, String section, String listKey, Object body) {
-        if (!(body instanceof Map)) {
+        // Not a map of entries, or an empty one: the section itself is the leftover.
+        if (!(body instanceof Map) || ((Map<?, ?>) body).isEmpty()) {
             ctx.getRemovedDeclarations().add(new RemovedDeclaration(section, null, null));
             return;
         }

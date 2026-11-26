@@ -7,11 +7,11 @@ import io.elasticore.base.model.pub.rules.Syntax;
 /**
  * The small grammar the DDD rules read conditions in.
  *
- * Two patterns state a rule about an aggregate and differ only in what is
- * done with the answer: an invariant refuses a write when it is false, a
- * specification hands it out as something to ask. Sharing the reading means
- * the two cannot drift into accepting different dialects of what looks like
- * one language - which is the way a DSL acquires corners nobody documented.
+ * An invariant states a rule about an aggregate, and a write is refused when
+ * it is false (the server's listener; the browser asks the same question
+ * early). One reading for every language the rule is written in means they
+ * cannot drift into accepting different dialects of what looks like one
+ * language - which is the way a DSL acquires corners nobody documented.
  *
  * <h3>What it accepts, and why so little</h3>
  *
@@ -105,8 +105,8 @@ final class DddCondition {
         if (f == null) return null;
 
         // Null is a violation and is not a satisfaction: an aggregate with no
-        // collection has not kept a promise about its members, and is not a
-        // candidate a specification about them should select.
+        // collection has not kept a promise about its members, and a condition
+        // asked the other way round (negated false) does not hold for it either.
         String guard = guard(var, f, syntax, negated);
 
         // Kotlin has no == between two kinds of number (a Long and the Int literal 0, an Int and 1.5);

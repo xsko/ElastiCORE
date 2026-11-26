@@ -1746,9 +1746,10 @@ public final class RulesGenRunner {
             }
 
             generateDtos(domainDirName, model);
-            if (!typescript) {
-                warnUnenforced(model);
-                // Said by the server's run, as @restExclude is; the client's run reads the same DSL.
+            if (!typescript) warnUnenforced(model);
+            // Said by the server's run; a client's run says it too, unless the build runs it right
+            // after the server's (tsWithBuild), which has said it already.
+            if (!typescript || !Boolean.getBoolean("elasticore.rules.tsWithBuild")) {
                 RemovedDsl.record(RemovedDsl.of(model.getInternalDomainName(), model, specs), deprecationsSaid);
             }
             // The rule sets a selection names are the run's own: publisher.rules.ts is the client's.
@@ -5473,6 +5474,11 @@ public final class RulesGenRunner {
                 // with a class that is going too.
                 if (cache == null && stillExtended(f)) continue;
                 HashUtils.Response st = readStatus(f);
+                // An edited browser copy of a specification, still under its 3.0 stamp: handed over as an
+                // unedited one is (an edited stamped file is otherwise passed over below).
+                if (st != null && st.getStatus() == HashUtils.MODIFIED && stamped3(f) && handOver(f, false, relative(f))) {
+                    continue;
+                }
                 if (st == null || st.getOldEcdLine() == null || st.getStatus() == HashUtils.UNTRACKED
                         || st.getStatus() == HashUtils.NO_ECD) continue;
                 String version;
@@ -5517,7 +5523,9 @@ public final class RulesGenRunner {
     private void removeUnused() {
         java.util.Set<File> all = new java.util.LinkedHashSet<File>(staleStamped.keySet());
         all.addAll(staleMerged.keySet());
-        Map<File, File> used = cache != null ? stillUsed(all) : stillUsed(specificationsClasses(all));
+        // A project that does not merge asks only for the specifications classes, and every
+        // other stale file goes as it always has - so it never counts as one of their users.
+        Map<File, File> used = cache != null ? stillUsed(all) : stillUsed(all, specificationsClasses(all));
         Map<String, File> keptNames = new java.util.HashMap<String, File>();
         for (Map.Entry<File, File> en : used.entrySet()) keptNames.put(baseName(en.getKey()), en.getValue());
         int removed = 0;
@@ -5527,6 +5535,8 @@ public final class RulesGenRunner {
             String label = merged ? staleMerged.get(f) : staleStamped.get(f);
             File user = used.get(f);
             String n = f.getName();
+            // The browser copy of a specification is the project's whatever JVM class shares its name.
+            if (user == null && handOver(f, merged, label)) continue;
             if (user == null && !n.endsWith(".java") && !n.endsWith(".kt")) user = keptNames.get(baseName(f));
             if (user != null) {
                 keptInUse(label, user);
@@ -5534,7 +5544,6 @@ public final class RulesGenRunner {
                 if (tracksRuntime()) runtimeFiles.add(f);
                 continue;
             }
-            if (handOver(f, merged, label)) continue;
             if (preview != null) {
                 preview.removed(f, label);
                 System.out.println("  " + label + "  REMOVED(the DSL no longer produces it)");
@@ -5564,15 +5573,37 @@ public final class RulesGenRunner {
      * generated until 3.1 (issue 370). A project's code calls them, and a
      * project that does not merge would otherwise lose them with no
      * question asked, as it loses every stale stamped file - so for these
-     * alone the stamped run asks what still uses them too.
+     * alone the stamped run asks what still uses them too. Told by the name
+     * and by the comment 3.0 wrote on each rule, so a class of another kind
+     * that happens to be named so (an entity ProductSpecifications) goes as
+     * it always has.
      */
     private static java.util.List<File> specificationsClasses(java.util.Collection<File> stale) {
         java.util.List<File> out = new ArrayList<File>();
         for (File f : stale) {
             String n = f.getName();
-            if (n.endsWith("Specifications.java") || n.endsWith("Specifications.kt")) out.add(f);
+            if (!n.endsWith("Specifications.java") && !n.endsWith("Specifications.kt")) continue;
+            String text = readLf(f);
+            if (text != null && text.contains(SPECIFICATION_RULE)) out.add(f);
         }
         return out;
+    }
+
+    /** A line of the comment 3.0 wrote on each rule of a Java or Kotlin specifications class. */
+    static final String SPECIFICATION_RULE = "Combine it rather than restating it - and() and or() are why this";
+
+    /** Whether a file's first line is a 3.x stamp. */
+    private static boolean stamped3(File f) {
+        String text = readLf(f);
+        if (text == null || !text.startsWith("//ecd:")) return false;
+        int eol = text.indexOf('\n');
+        String first = eol < 0 ? text : text.substring(0, eol);
+        try {
+            String version = HashUtils.getVersion(first);
+            return version != null && version.trim().startsWith("3");
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** A line of the header 3.0 wrote into every browser copy of an entity's @specification. */
@@ -5626,7 +5657,23 @@ public final class RulesGenRunner {
      * counted, so a dropped entity's files still go together.
      */
     Map<File, File> stillUsed(java.util.Collection<File> stale) {
+        return stillUsed(stale, null);
+    }
+
+    /**
+     * The same, where only some of the stale files may be kept: the others go
+     * whatever names them, and so never count as a user of one that could
+     * stay. Null: any of them may be kept.
+     */
+    Map<File, File> stillUsed(java.util.Collection<File> stale, java.util.Collection<File> keepable) {
+        java.util.Set<File> mayStay = null;
+        if (keepable != null) {
+            mayStay = new java.util.HashSet<File>();
+            for (File f : keepable) mayStay.add(canonical(f));
+        }
         Map<File, File> used = new java.util.LinkedHashMap<File, File>();
+        // Nothing may stay: nothing to ask, and no source tree to read.
+        if (mayStay != null && mayStay.isEmpty()) return used;
         java.util.Set<File> going = new java.util.HashSet<File>();
         for (File f : stale) {
             if (f.getName().endsWith(".java") || f.getName().endsWith(".kt")) going.add(canonical(f));
@@ -5648,6 +5695,7 @@ public final class RulesGenRunner {
             changed = false;
             for (File f : new ArrayList<File>(going)) {
                 if (twinned.contains(f)) continue;
+                if (mayStay != null && !mayStay.contains(f)) continue;
                 String text = sources.get(f);
                 if (text == null) text = readLf(f);
                 if (text == null) continue;
@@ -6934,6 +6982,9 @@ public final class RulesGenRunner {
             String disk = f.isFile() ? readLf(f) : null;
             if (disk != null && disk.equals(cache.get(key))) {
                 unedited.put(f, key);
+                continue;
+            } else if (disk != null && handOver(f, true, key)) {
+                // An edited browser copy of a specification: handed over, and said so, as an unedited one.
                 continue;
             } else if (disk != null) {
                 File twin = twinOf(f, disk);
