@@ -167,13 +167,21 @@ protected void beforeSave(Customer customer, CustomerDTO request) {
 ```
 - 기본 `beforeSave(entity, request)` 는 `beforeSave(entity)` 를 부르므로 둘 중 하나만 override 해도 됩니다.
 - 새 주문의 가격·합계처럼 "처음 저장될 때만" 할 일은 상태로 구분합니다: `if (order.getStatus() == null) order.place(...)`.
-- **거절해도 흔적이 남지 않습니다.** `beforeSave` 에서 예외를 던지면(쓰기가 하는 검사 - 없는 행을 가리키는 참조, 불변식,
+- **거절해도 안전합니다.** `beforeSave` 에서 예외를 던지면(쓰기가 하는 검사 - 없는 행을 가리키는 참조, 불변식,
   명령의 규칙 - 가 던져도) 수정은 거절되고,
   요청이 덮어쓴 행은 저장된 값으로 되돌려집니다(JPA 는 엔티티를 다시 읽고, MyBatis 는 세션 캐시를 비웁니다). 그래서 같은
   트랜잭션의 이후 조회 - 일괄 처리, 거절을 잡고 계속하는 호출자 - 는 거절된 값이 아니라 저장된 값을 봅니다. 행을 읽어 바꾼 뒤
   거절하는 직접 작성한 메서드도 같은 일을 합니다: `catch (RuntimeException refused)` 에서
   `throw io.elasticore.springboot3.entity.RefusedWrite.discard(entityManager, entity, refused);` (JPA) 또는
   `throw io.elasticore.springboot3.mybatis.RefusedWrite.discard(refused);` (MyBatis).
+  3.0.261128 부터, JPA 와 MyBatis; MongoDB 는 매번 새 객체를 읽으므로 필요 없습니다. 되돌리지 않는 것:
+  - JPA 는 행을 다시 읽으므로, 같은 트랜잭션이 그 행에 앞서 바꾸고 아직 쓰지 않은 변경도 함께 사라집니다.
+  - 행을 다시 읽을 수 없는 곳(요청이 더한 멤버, 이미 없는 행)에서는 분리(detach)하며, 이때 Hibernate 가 트랜잭션을
+    rollback-only 로 표시했을 수 있습니다: 거절을 잡고 계속하는 호출자는 거절된 변경을 커밋하는 대신
+    커밋에서 `UnexpectedRollbackException` 을 받습니다.
+  - `@onDelete` 문장이나 일괄 처리의 앞 행이 쓴 것은 예전처럼 트랜잭션이 롤백될 때까지 남습니다.
+  - 생성된 서비스가 이 런타임 클래스를 부르므로, `elasticore-springboot3` / `-springboot4` 를 플러그인과 함께 플러그인의 버전으로
+    올리세요(`runtimePackages` 면 `RefusedWrite` 를 사본에 가져옵니다, `elasticore-rule-guide.md`).
 
 ---
 

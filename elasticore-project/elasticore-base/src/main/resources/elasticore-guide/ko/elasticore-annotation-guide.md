@@ -32,7 +32,7 @@ Notice:
 - 3.0.261116-rc16 까지는 `methods` 옆의 페이지 크기가 빠졌습니다(검색이 20 건씩). 3.0.261117-rc17 부터 `@expose(50, methods="...")` 도 50 건입니다.
 - 값은 `@Index(columnList="a,b")` 처럼 따옴표 안의 목록 하나입니다. 쉼표 뒤 공백은 괜찮고, 따옴표가 없으면 첫 이름만 읽힙니다.
 - 모르는 이름은 DSL 경고이고 아무것도 제공하지 않습니다(`methods="raed,search"` 는 search 만) - 오타는 엔드포인트를
-  줄일 뿐 늘리지 않습니다. `methods=""` 는 다섯 가지 중 아무것도 제공하지 않습니다.
+  줄일 뿐 늘리지 않습니다. `methods=""` 는 여섯 가지 중 아무것도 제공하지 않습니다.
 - 나중에 줄이면, 고치지 않았거나 다른 곳만 고친(merge 되는) 생성 Controller 에서 엔드포인트가 빠집니다. 빠질 엔드포인트를
   직접 고친 Controller 는 그대로 남고, 빌드가 아직 제공하는 엔드포인트를 짚어 줍니다.
 
@@ -97,7 +97,7 @@ Supplier:
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x generator (생성 안 됨)
 
 조회만 하는 엔티티. Controller 는 조회 엔드포인트(`read`·`search`·`schemaInfo`)만 생성하고 생성·수정·일괄 수정·삭제는
-제외. v3 Java Service, TypeScript 클라이언트, AI 확장 서비스의 도구도 조회만 남김. 필드의 `@readonly`(서버가 정하는
+제외. v3 Service - Java, 그리고 3.0.261120 부터 Kotlin (그 전에는 Kotlin 서비스가 쓰기 메서드를 남겼음) - 와 TypeScript 클라이언트도 조회만 남김. 필드의 `@readonly`(서버가 정하는
 필드, §2.2)와 다름.
 ```yaml
 CommonCode:
@@ -479,6 +479,8 @@ onHand: int! @min(0, '재고는 음수가 될 수 없다')
 최소 개수는 컬렉션이 아예 없을 때(null)도 위반입니다. n 이 1 이상이면 TypeScript 클라이언트의 `validate...()` 도
 같은 메시지로 먼저 검사합니다 - `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "..."`
 (부분 수정 `partial` 에서는 묻지 않음). `...Fields` 상수에는 컬렉션이 들어가지 않습니다.
+검색 DTO 의 목록도 두 표시를 받습니다(3.0.261125 부터; 그 전에는 버려졌음): `postIds: List<Long> @search(in) @maxsize(200)` 은
+`@Size(max=200)` 이 되어, 더 긴 목록은 쿼리를 만들기 전에 400 입니다(3.6). Java 와 Kotlin; 거기에는 `@NotNull` 을 더하지 않습니다.
 ```yaml
 lines: List<SalesOrderLine> @OneToMany(mappedBy="order") @minsize(1, '수주에는 품목이 하나 이상 있어야 한다')
 ```
@@ -1260,6 +1262,7 @@ dto:
 - DTO 에 아무 필드도 만들지 못하는 이름은 거부됩니다. id 를 담는 필드가 없는 관계(대신 id 를 선언합니다. `orderId: long @ref(order.orderId)`), 컬렉션, 그리고 DTO 가 값 객체를 담지 않는 경우의 값 객체입니다(`ddd`·`hexagonal` 과 layered MyBatis 는 값 객체를 통째로 담고, layered JPA·호환 출력·2.x 는 담지 않습니다).
 - 모델에 없는 이름, 어느 도메인에도 없는 모델, 같은 모델을 두 번 적은 경우(`Order[note], Order[total]` 또는 `Order, Order[note]`), 같은 필드를 두 번 적은 경우(`Order[note, note]`), 빈 괄호(`Order[]`), 적은 필드에 `--`, `@extend` 와 함께 쓴 목록, 엔티티에 쓴 목록은 생성을 멈춥니다.
 - 타입 이름은 모든 도메인에서 하나뿐이므로, 이름은 어느 도메인에 있든 그 모델을 찾습니다. 목록을 쓸 때 두 도메인이 선언한 이름은 빌드를 멈춥니다 (`... both have Order - a type name is unique across domains: rename one`).
+- 다른 도메인 엔티티의 키 DTO 는 그 도메인에만 있습니다(3.0.261126 부터): `agency` 의 `@template(Office)` 는 생성 코드가 쓴 적 없는 사본 `agency.dto.OfficeKeyDTO` 를 더 이상 쓰지 않습니다. 올릴 때: 그 사본을 import 하는 직접 쓴 코드는 `common.dto.OfficeKeyDTO` 를 import 하도록 바꿉니다. 그러면 빌드가 고치지 않은 사본을 지우고, 고친 사본은 경고와 함께 남으니 지우세요.
 - `@searchable`, `@searchResult` 에는 목록을 쓸 수 없고, 쓰면 생성을 멈춥니다. 검색 DTO 는 이미 검색 조건이 있는 필드만 받습니다.
 - 키를 뺀 목록은 먼저 선언해도 엔티티의 서비스와 컨트롤러가 쓰는 DTO 가 되지 않습니다. 키를 포함한 목록은 될 수 있으므로, 서비스가 쓸 DTO 를 먼저 선언합니다.
 
@@ -1271,6 +1274,8 @@ dto:
     meta: dto @searchable(entity=User, pageSize=25)
 ```
 pageSize 지정시 `PageableObject` 인터페이스 구현. 자동 생성 필드: `pageNumber`(기본0), `pageSize`(설정값), `sortCode`.
+엔티티의 도메인에 선언하세요: 검색 DTO 는 그 도메인에서만 검색됩니다. `entity` 가 다른 도메인에 있는 것은 `toSpec` 을 받지 못하고,
+빌드가 그렇게 알립니다(v3): `[search] OrderSearchDTO @searchable(entity=PurchaseOrder): PurchaseOrder is declared in domain 'shop', ... Declare OrderSearchDTO in domain 'shop'.`
 
 ### 4.2.1 @sort - 기본 정렬
 > **동작:** v3, Kotlin · **안 됨:** 2.x generator (생성 안 됨)
@@ -1325,9 +1330,9 @@ private static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Colle
         new java.util.LinkedHashSet<String>(java.util.Arrays.asList(
                 "orderId",
                 "orderDate",
-                "deliveryAddress.city",
-                "creditCard.creditCardType",
-                "total",
+                "status",
+                "deliveryAddress.street1",
+                // ... PurchaseOrderDTO 가 보여 주는 나머지: deliveryAddress.city, creditCard.creditCardType, total, version ...
                 "customerId")));
 
 @Override
@@ -2273,8 +2278,10 @@ null) 가 생깁니다. 쿠키 세션이라 화면과 API 가 같은 출처(orig
 빌드가 DSL 경고를 내고 역할 없이 로그인합니다. 역할 필드가 없으면 모두 일반 사용자입니다. enum 역할 필드의
 상수가 `@access` 에 적을 수 있는 역할 이름입니다 (`read=owner|MANAGER`, 위 "역할 이름" 참고).
 
-**`@signin(refresh=request)` - 세션이 행을 따라갑니다.** 이것이 없으면 세션은 로그인 때 받은 키와 역할을 다음 로그인까지 그대로 가집니다.
-관리자가 바꾼 역할은 다음 로그인을 기다리고, 삭제된 회원의 세션도 계속 동작합니다. 이것을 쓰면 엔티티에 컨트롤러 옆의 필터
+**`@signin(refresh=request)` - 세션이 행을 따라갑니다.** 이것이 없으면 세션은 로그인 때 받은 키와 역할을 세션이 만료될 때까지 그대로 가집니다.
+관리자가 바꾼 역할은 새 로그인을 기다리고, 삭제된 회원의 세션도 계속 동작합니다 - 빌드는 `@deleted` 가 있는 `@signin` 엔티티에
+경고합니다(`... a member deleted (@deleted) signs in no more, but a session it already has keeps working - an administrator's
+role included - until it expires. Say @signin(refresh=request) to end it with its next request.`). 이것을 쓰면 엔티티에 컨트롤러 옆의 필터
 `CustomerSessionRefresh` 가 더 생깁니다 (모델과 함께 다시 생성되므로, 컨트롤러를 어떻게 고쳤든 동작합니다). 로그인한 키가 든 세션의
 요청마다 먼저 `me()` 로 행을 다시 읽습니다 - `@deleted` 로 남긴 행은 없는 것으로 봅니다. 행이 없으면 세션을 끝내고 요청은 방문자의 것으로
 이어집니다 (로그인이 필요한 요청은 401). 역할이 바뀌었으면 이 요청부터 세션이 새 역할을 가지고, 세션 id 는 그대로입니다.
@@ -2600,6 +2607,9 @@ Post:
 - MongoDB 에서 자기 컬렉션이 없는 엔티티(서비스도 `@repository` 도 없는 것 - 주문의 줄)는 그것을 가진 문서 안에 저장되고,
   요청이 그 문서와 함께 씁니다: 가진 쪽의 서비스가 같은 쓰기마다 그 엔티티의 `cleanHtml()` 을 부릅니다 - 컬렉션의 멤버,
   하나뿐인 멤버, 그리고 그들이 가진 멤버까지 - 가진 쪽 자신의 것 다음, `beforeSave` 보다 먼저.
+  서로를 가지는 멤버(줄의 부품이 다시 줄을 가짐)는 깊이 끝없이 담기는데 생성된 정리는 정해진 깊이까지만 닿으므로, 그 안의
+  html 필드는 빌드를 멈춥니다(3.0.261124 부터): `[Shop] HtLine.note: MongoDB keeps HtLine inside the HtOrder document to any
+  depth (HtLine -> HtPart -> HtLine), and the service cleans an html field only to a fixed depth - break the cycle, or declare the field text`.
 - 기본값 `@safe(basic)` 은 글 서식(문단, 강조, 목록, 인용, 코드)과 링크(http, https, ftp, mailto)를 `rel="nofollow"` 와 함께 남기고,
   이미지는 남기지 않습니다. `@safe(relaxed)` 는 제목, 표, 이미지(http, https)도 남기고 `rel` 은 붙이지 않습니다. 스크립트와 그 내용,
   `on...` 핸들러, `javascript:` 링크, 그 밖의 태그·속성은 모두 지웁니다: jsoup 의 `Safelist.basic()` / `relaxed()`.
@@ -2662,7 +2672,8 @@ Customer:
   조건, `words:` - 매번 글자가 다른 컬럼에서는 일부, 범위, 대소문자를 찾을 수 없기 때문; 관계를 거쳐
   암호화 필드에 닿는 검색 (`@ref(customer.phone)`, `words: customer.phone`); 단일 문자열이 아닌 필드,
   키, `@unique` 와 함께, `@formula` 와 함께, 값 객체(`@embeddable`)의 `@encrypt`, 또는 `digits` 외의 값;
-  애그리거트 멤버의 검색되는 암호화 필드; 암호화 필드를 같음 외로 찾거나
+  애그리거트 멤버의 검색되는 암호화 필드; Kotlin 에서 클래스와 그 부모 양쪽에 둔 검색되는 암호화 필드
+  (`... searched encrypted fields both here and in Person - in Kotlin keep them in one class of the hierarchy`); 암호화 필드를 같음 외로 찾거나
   엔티티의 `@search(eq)` 없이 찾는 선언한 검색 DTO; MongoDB; 값을 보낸 그대로 저장할 2.x 호환 출력과
   2.x 생성기. 암호화 컬럼으로 정렬하면 암호문 순서로 정렬됩니다.
 - **이미 있는 행** 은 평문을 담고 있고, 평문은 읽히지 않습니다 (`a stored value without a key version`). 새 코드가 요청을 받기

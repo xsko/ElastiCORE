@@ -256,3 +256,14 @@ ElastiCORE가 Boot 버전을 읽어 enum과 outbox를 Jackson 3에 맞게 생성
 그 표시를 첫 줄 `//ecd:` 아래에서만 찾습니다). 3.0 만 만든 파일은 지워지지 않고 남고, `.elasticore/generated-base.zip` 는 2.x 가 읽지
 않습니다. 옮기기 전 커밋으로 소스를 되돌린 뒤 버전을 내리십시오. (`elasticore { merge = false }` 로 생성해 온 프로젝트는
 파일에 `//ecd:` 가 있어, 2.x 도 고친 파일을 건너뜁니다.)
+
+**Q. 플러그인과 런타임 라이브러리의 버전이 같아야 하나요?**
+네. `id 'io.elasticore'` 와 `elasticore-springboot3`(또는 `-springboot4`)를 함께 올리세요: 플러그인의 버전이 생성기의 버전이고,
+그것이 생성하는 코드는 그 버전의 런타임 클래스를 부릅니다 - 3.0.261124 부터 `SortCheck`, 3.0.261128 부터 `RefusedWrite`.
+옛 런타임으로는 컴파일되지 않습니다.
+
+**Q. ElastiCORE 라이브러리의 SBOM 이 있나요?**
+네, 3.0.261127 부터. 배포하는 아티팩트마다 - `elasticore-base`, 두 런타임 라이브러리, Gradle 플러그인 - CycloneDX SBOM(런타임
+의존성의 버전, purl, 해시, 라이선스, 공급자)이 있고 jar 처럼 서명되어 있습니다: Maven Central 에서 각 jar 옆의
+`<artifactId>-<version>-cyclonedx.json`(서명은 `.asc`)으로, 그리고 각 GitHub 릴리스의 첨부 파일로 받습니다. 고객이나 보안 검토에는
+이 파일을 주세요; GitHub 자체의 SPDX 내보내기에는 해시와 공급자가 없습니다. 생성 코드와 jar 는 바뀌지 않았습니다.
