@@ -1122,7 +1122,7 @@ namespace:
   port: io.example.domain.port              # Transaction port package
   proto: io.example.proto                    # Protocol Buffer package
   event: io.example.domain.event             # Domain event package (ddd-event rule)
-  domainService: io.example.domain.service   # Domain service package (ddd-domain-service rule)
+  domainService: io.example.domain.service   # Domain service package (ddd-domain-service rule, deprecated - removed in 3.1)
   inboundPort: io.example.application.port.in          # Inbound port (UseCase)
   domainRepository: io.example.domain.repository       # Repository port (owned by the domain)
   queryPort: io.example.application.port.out           # Query port (application-layer search, default service)
@@ -1136,6 +1136,7 @@ declare one, the event classes are placed in the `entity` package.
 declare one, it is placed in the `entity` package. **Do not put it in the same package as `service` (the
 application service)** - a domain service belongs to the domain and an application service is a layer above it, so putting
 them in the same place breaks the dependency direction.
+The `domainService:` and `processManager:` sections are deprecated and removed in 3.1 (annotation guide, "domainService").
 
 It is used in the `package` declaration and the `import` statements of each generated class.
 

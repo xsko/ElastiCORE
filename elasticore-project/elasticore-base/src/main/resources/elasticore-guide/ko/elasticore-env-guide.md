@@ -1122,7 +1122,7 @@ namespace:
   port: io.example.domain.port              # Transaction Port 패키지
   proto: io.example.proto                    # Protocol Buffer 패키지
   event: io.example.domain.event             # 도메인 이벤트 패키지 (ddd-event 규칙)
-  domainService: io.example.domain.service   # 도메인 서비스 패키지 (ddd-domain-service 규칙)
+  domainService: io.example.domain.service   # 도메인 서비스 패키지 (ddd-domain-service 규칙, 폐지 예정 - 3.1 에서 제거)
   inboundPort: io.example.application.port.in          # 인바운드 포트 (UseCase)
   domainRepository: io.example.domain.repository       # 리포지터리 포트 (도메인 소유)
   queryPort: io.example.application.port.out           # 조회 포트 (응용 계층 검색, 기본값 service)
@@ -1136,6 +1136,7 @@ namespace:
 않으면 `entity` 패키지에 놓입니다. **`service`(응용 서비스)와 같은 패키지로 두지
 마세요** — 도메인 서비스는 도메인의 것이고 응용 서비스는 그 위 계층이라, 같은 자리에
 두면 의존 방향이 무너집니다.
+`domainService:` 와 `processManager:` 섹션은 폐지 예정이며 3.1 에서 제거됩니다(애노테이션 가이드 "domainService").
 
 각 생성 클래스의 `package` 선언과 `import` 문에 사용된다.
 

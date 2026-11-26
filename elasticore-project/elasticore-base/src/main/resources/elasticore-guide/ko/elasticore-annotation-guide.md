@@ -1883,6 +1883,32 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 ## domainService — 도메인 서비스 (DDD 룰셋)
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 클래스를
+> 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리 포트를 받습니다 -
+> 그리고 `domainService:` 에서 그 항목을 지웁니다:
+
+```java
+// domain/service/PricingService.java - 당신의 파일
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // 연산은 여기에.
+}
+```
+
 **애노테이션이 아니라 DSL 섹션입니다.** 어느 엔티티에도 속하지 않는 연산이라,
 엔티티의 meta 줄에 쓸 자리가 없기 때문입니다.
 
@@ -2092,6 +2118,35 @@ add 메서드로 들어갑니다.
 
 ## @specification — 명세 (DDD 룰셋)
 > **동작:** ddd, hexagonal, TypeScript client · **안 됨:** layered (생성 안 됨)
+
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 조건을
+> 직접 쓰세요 - 당신의 static `Predicate<Order>` 메서드로 - 그리고 `@specification` 을 지웁니다. 화면에 필요하면
+> TypeScript 함수도 당신의 파일에 씁니다(`OrderSpecifications.ts` 는 생성기의 것입니다):
+
+```java
+// domain/model/OrderRules.java - 당신의 파일
+import java.math.BigDecimal;
+import java.util.function.Predicate;
+
+public final class OrderRules {
+
+    private OrderRules() {
+    }
+
+    public static Predicate<Order> highValue() {
+        return order -> order.getTotalAmount() != null
+                && order.getTotalAmount().compareTo(new BigDecimal("100")) > 0;
+    }
+}
+```
+
+```ts
+// orderRules.ts - 당신의 파일; Number(...) 는 숫자로 오든 문자열로 오든 소수를 읽습니다
+export function highValue(order: OrderDTO | null | undefined): boolean {
+    return order != null && order.totalAmount != null && Number(order.totalAmount) > 100;
+}
+```
 
 이름을 가질 만한 도메인 규칙을 선언합니다.
 
