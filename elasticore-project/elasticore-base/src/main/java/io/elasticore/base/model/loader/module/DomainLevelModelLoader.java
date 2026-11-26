@@ -121,6 +121,4 @@ public class DomainLevelModelLoader extends AbstractModelLoader implements Const
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
     }
-
-    public void completeLoad() {}
 }
