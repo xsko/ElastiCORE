@@ -101,6 +101,9 @@ public final class RulesGenRunner {
     private int failed = 0;
     private final List<String> notes = new ArrayList<String>();
 
+    /** The deprecation notices this run has said (DeprecatedDsl): one per declaration. */
+    private final java.util.Set<String> deprecationsSaid = new java.util.HashSet<String>();
+
     private RulesGenRunner(String projectRoot, boolean v3, boolean force,
                            boolean kotlin, boolean typescript) {
         this.projectRoot = projectRoot;
@@ -1187,6 +1190,7 @@ public final class RulesGenRunner {
         // to get them stored and never shown.
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                 "[elcore3] DSL validation warnings:", "  ", true);
+        DeprecatedDsl.print();
 
         // The schema every domain contributes to, written beside the model it
         // describes. Every domain is loaded regardless of the filter, so the
@@ -1748,6 +1752,8 @@ public final class RulesGenRunner {
             generateDtos(domainDirName, model);
             if (!typescript) {
                 warnUnenforced(model);
+                // Said by the server's run, as @restExclude is; the client's run reads the same DSL.
+                DeprecatedDsl.record(DeprecatedDsl.of(model.getInternalDomainName(), model, specs), deprecationsSaid);
                 warnStubsOverMoves(specs);
                 recordDdl(domainDirName, model, specs);
             }
@@ -5757,6 +5763,7 @@ public final class RulesGenRunner {
         runner.printSummary();
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
                 "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
+        DeprecatedDsl.print();
         System.setOut(shown);
         MigrationPreview done = preview;
         preview = null;
@@ -5807,6 +5814,9 @@ public final class RulesGenRunner {
         int warnings = io.elasticore.base.util.ConsoleLog.countStoredLogkey("DSL_WARN");
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
                 "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
+        // Listed in the report, and never a reason to fail: -Pstrict counts the warnings above only.
+        List<String> deprecated = io.elasticore.base.util.ConsoleLog.storedLogs(DeprecatedDsl.NOTICE);
+        DeprecatedDsl.print();
         System.setOut(shown);
         MigrationPreview done = preview;
         preview = null;
@@ -5897,6 +5907,13 @@ public final class RulesGenRunner {
             b.append("## Notes of the run\n\n");
             for (String n : runner.notes)
                 b.append("- ").append(n.replace("\n", " ")).append('\n');
+            b.append('\n');
+        }
+        if (!deprecated.isEmpty()) {
+            b.append(
+                    "## Deprecated DSL - still generated, removed in 3.1 (not a failure; -Pstrict does not count it)\n\n");
+            for (String d : deprecated)
+                b.append("- ").append(d.replace("\n", " ")).append('\n');
             b.append('\n');
         }
         b.append("Up to date: ")

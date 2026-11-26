@@ -119,9 +119,9 @@ In that language nullability is part of the signature, so if they do not match i
 | `ddd-value-object` / `ddd-value-object-kt` | each | each | - | The difference is whether immutability comes from Lombok or from the language |
 | `ddd-event` | O | O | - | Tied to the moment of saving |
 | `ddd-invariant` | O | O | **O** | In TS it is a pre-check, not enforcement |
-| `ddd-specification` | O | O | **O** | |
+| `ddd-specification` | O | O | **O** | Deprecated - removed in 3.1 |
 | `ddd-factory` | O | O | - | Creating the aggregate belongs to the server |
-| `ddd-domain-service` | O | O | - | Gets ports injected |
+| `ddd-domain-service` | O | O | - | Gets ports injected. Deprecated - removed in 3.1 |
 | `ddd-behavior` | O | O | - | Split into `XxxBase` (regenerated) + `Xxx` (owned by the developer) |
 | `ddd-command` | O | O | - | `commands:` -> endpoint, command DTO, use case, service, abstract method |
 | `ddd-outbox` | O | O | - | When `outbox: true` in `env.yml` |
@@ -132,7 +132,7 @@ In that language nullability is part of the signature, so if they do not match i
 | `jpa-html` | O | O | - | `html` fields: the CoreService's `clean<Field>` / `plain<Field>` pair (jsoup safelist, the `@plain` copy; overridable), handed to the entity after a write or a command that changed the field; the 2.x-compatible output stops the build (all bundles) |
 | `jpa-encrypt` | O | O | - | `@encrypt` fields: `@Convert(EncryptConverter)` on the JPA field (MyBatis binds `EncryptTypeHandler`), the column as long as the ciphertext, and the entity's `indexEncrypted()` for the blind index of an `@search(eq)` one, called just before the row is written (JPA: the runtime's `BlindIndexListener`; MyBatis: the root's `Lifecycle`, or the layered service after `beforeSave`); MongoDB and the 2.x-compatible output stop the build (all bundles) |
 | `jpa-value-object-boundary` | O | O | - | The DTO's validation and JSON rules on `@embeddable` fields, `@Valid` on the DTO side (all v3 bundles) |
-| Process manager (`processManager:` of `ddd-domain-service`) | O | O | - | After the event commits, in a separate transaction |
+| Process manager (`processManager:` of `ddd-domain-service`) | O | O | - | After the event commits, in a separate transaction. Deprecated - removed in 3.1 |
 | `ddd-repository-port` / `-adapter` | O | O | - | The browser has no repository |
 | `hex-usecase` | O | O | - | Skeletons exist for both languages |
 
@@ -231,6 +231,28 @@ The signature is the root's required fields (the generated identifier and collec
 say; what comes next is the developer's file.
 
 #### Specification (`ddd-specification`)
+
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the predicate
+> yourself instead - a static `Predicate<Order>` method of your own - and remove the `@specification`. If a screen needs
+> it, write the TypeScript function too (`Number(order.totalAmount) > 100`, see below), in a file of your own:
+
+```java
+// domain/model/OrderRules.java - yours
+import java.math.BigDecimal;
+import java.util.function.Predicate;
+
+public final class OrderRules {
+
+    private OrderRules() {
+    }
+
+    public static Predicate<Order> highValue() {
+        return order -> order.getTotalAmount() != null
+                && order.getTotalAmount().compareTo(new BigDecimal("100")) > 0;
+    }
+}
+```
 
 A domain rule worth giving a name. It stops the same comparison from being retyped in the service, in the report and in the test,
 with one of them typed differently.
@@ -508,6 +530,39 @@ OutboxPublisher kafka(KafkaTemplate<String, String> kafka) {
 
 #### Process manager (saga) - `processManager:`
 
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the listener
+> yourself instead - a `@Component` method with the two annotations of the base below - and remove the entry from
+> `processManager:`. When the step must run in the caller's transaction (and roll back with it), put a plain
+> `@EventListener` on the method instead of the two:
+
+```java
+// application/ReceiptingListener.java (billing) - yours
+import com.acme.billing.domain.repository.ReceiptRepositoryPort;
+import com.acme.shop.domain.event.OrderPlacedEvent;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+@Component
+public class ReceiptingListener {
+
+    private final ReceiptRepositoryPort receipts;
+
+    public ReceiptingListener(ReceiptRepositoryPort receipts) {
+        this.receipts = receipts;
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(OrderPlacedEvent event) {
+        // The next step goes here.
+    }
+}
+```
+
 A flow where the events of one aggregate call **the next step of another aggregate** (when an order comes in, issue a receipt).
 The `billing` of `elasticore-template-ddd` is exactly such an example.
 
@@ -679,6 +734,32 @@ convert it to your own model (Anti-Corruption Layer). The generator does not blo
 
 #### Domain service (`ddd-domain-service`)
 
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the class
+> yourself instead - a `@Service` in the `domain.service` package that takes the repository ports in its constructor -
+> and remove the entry from `domainService:`:
+
+```java
+// domain/service/PricingService.java - yours
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // The operation goes here.
+}
+```
+
 An operation that belongs to no aggregate. **Declare it on the domain, not on an entity** -
 every other DDD annotation goes on an entity, but a domain service is defined by "belonging to no one".
 Picking one root and hanging it there would be the cheap choice, but then it
@@ -719,6 +800,8 @@ comes here - **only what the browser can honestly hold** does.
 | `ddd-event` / `ddd-factory` / `ddd-domain-service` | No | They are tied to save time and to the repository, so the browser has no counterpart |
 
 ##### Why it is worth generating the specification
+
+`@specification` is deprecated (removed in 3.1): what follows is why a function you write yourself compares with `Number(...)`.
 
 In this language a hand-written copy is not just a duplicate - **it is usually wrong.**
 

@@ -1117,6 +1117,32 @@ For the detailed syntax and examples, see `elasticore-dsl-port-guide.md`.
 ## 8. Domain service definition
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
+> **Deprecated - removed in 3.1, with `processManager:` below.** In 3.0 both still generate what this chapter describes,
+> and the build prints a notice for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not
+> count it). Write the class yourself instead - a `@Service` in the `domain.service` package that takes the repository
+> ports in its constructor - and remove the entry from `domainService:`:
+
+```java
+// domain/service/PricingService.java - yours
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // The operation goes here.
+}
+```
+
 An operation that belongs to no aggregate. The point of this section is that you **declare it on the domain, not on an entity** -
 every other annotation goes on an entity, but a domain service is defined as "belonging to no one".
 The moment you pick one root and hang it there,
@@ -1181,6 +1207,39 @@ not the behavior but the place to write the behavior and its wiring. If you have
 
 ### Process manager (`processManager:`)
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
+
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the listener
+> yourself instead - a `@Component` method with the two annotations the generated base puts on its listener - and remove
+> the entry from `processManager:`. When the step must run in the caller's transaction (and roll back with it), put a
+> plain `@EventListener` on the method instead of the two:
+
+```java
+// application/BillingListener.java - yours
+import com.acme.erp.domain.event.SalesOrderShippedEvent;
+import com.acme.erp.domain.repository.InvoiceRepositoryPort;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+@Component
+public class BillingListener {
+
+    private final InvoiceRepositoryPort invoices;
+
+    public BillingListener(InvoiceRepositoryPort invoices) {
+        this.invoices = invoices;
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(SalesOrderShippedEvent event) {
+        // The next step goes here.
+    }
+}
+```
 
 You declare it in the same file as the domain service. It is the place that reacts to events and moves on to the next step.
 

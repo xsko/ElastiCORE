@@ -119,9 +119,9 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `ddd-value-object` / `ddd-value-object-kt` | 각자 | 각자 | - | 불변을 Lombok 으로 만드느냐 언어로 만드느냐의 차이 |
 | `ddd-event` | O | O | - | 저장 시점에 매여 있음 |
 | `ddd-invariant` | O | O | **O** | TS 에서는 강제가 아니라 사전 확인 |
-| `ddd-specification` | O | O | **O** | |
+| `ddd-specification` | O | O | **O** | 폐지 예정 - 3.1 에서 제거 |
 | `ddd-factory` | O | O | - | 애그리거트를 만드는 일은 서버의 것 |
-| `ddd-domain-service` | O | O | - | 포트를 주입받음 |
+| `ddd-domain-service` | O | O | - | 포트를 주입받음. 폐지 예정 - 3.1 에서 제거 |
 | `ddd-behavior` | O | O | - | `XxxBase`(재생성) + `Xxx`(개발자 소유) 로 분리 |
 | `ddd-command` | O | O | - | `commands:` -> 엔드포인트·명령 DTO·유스케이스·서비스·추상 메서드 |
 | `ddd-outbox` | O | O | - | `env.yml` 의 `outbox: true` 일 때 |
@@ -132,7 +132,7 @@ Kotlin 판은 시그니처의 널 허용까지 서비스와 맞춥니다 (`save(
 | `jpa-html` | O | O | - | `html` 필드: CoreService 의 `clean<Field>` / `plain<Field>` 쌍 (jsoup 허용 목록, `@plain` 복사본; 오버라이드 가능) 을 필드를 바꾼 쓰기나 command 뒤에 엔티티에 넘김; 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-encrypt` | O | O | - | `@encrypt` 필드: JPA 필드에 `@Convert(EncryptConverter)` (MyBatis 는 `EncryptTypeHandler` 로 바인딩), 암호문만큼 긴 컬럼, `@search(eq)` 필드의 블라인드 인덱스를 쓰는 엔티티의 `indexEncrypted()` 를 행을 쓰기 바로 전에 부름 (JPA: 런타임의 `BlindIndexListener`; MyBatis: 루트의 `Lifecycle`, 또는 layered 서비스가 `beforeSave` 뒤); MongoDB 와 2.x 호환 출력은 빌드 중단 (번들 전부) |
 | `jpa-value-object-boundary` | O | O | - | `@embeddable` 필드에 DTO 의 검증·JSON 규칙, DTO 쪽 `@Valid` (v3 번들 전부) |
-| 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션 |
+| 프로세스 매니저 (`ddd-domain-service` 의 `processManager:`) | O | O | - | 이벤트 커밋 후 별도 트랜잭션. 폐지 예정 - 3.1 에서 제거 |
 | `ddd-repository-port` / `-adapter` | O | O | - | 브라우저에는 리포지터리가 없음 |
 | `hex-usecase` | O | O | - | 두 언어의 스켈레톤이 모두 있음 |
 
@@ -231,6 +231,28 @@ Order:
 수 있는 최대치이고, 그 다음은 개발자의 파일입니다.
 
 #### 명세 (`ddd-specification`)
+
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 조건을
+> 직접 쓰세요 - 당신의 static `Predicate<Order>` 메서드로 - 그리고 `@specification` 을 지웁니다. 화면에 필요하면
+> TypeScript 함수도(`Number(order.totalAmount) > 100`, 아래 참고) 당신의 파일에 씁니다:
+
+```java
+// domain/model/OrderRules.java - 당신의 파일
+import java.math.BigDecimal;
+import java.util.function.Predicate;
+
+public final class OrderRules {
+
+    private OrderRules() {
+    }
+
+    public static Predicate<Order> highValue() {
+        return order -> order.getTotalAmount() != null
+                && order.getTotalAmount().compareTo(new BigDecimal("100")) > 0;
+    }
+}
+```
 
 이름을 가질 만한 도메인 규칙입니다. 같은 비교가 서비스와 리포트와 테스트에 각각
 다시 타이핑되다가 하나만 다르게 타이핑되는 것을 막습니다.
@@ -508,6 +530,39 @@ OutboxPublisher kafka(KafkaTemplate<String, String> kafka) {
 
 #### 프로세스 매니저 (사가) — `processManager:`
 
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 리스너를
+> 직접 쓰세요 - 아래 Base 의 두 어노테이션을 단 `@Component` 의 메서드로 - 그리고 `processManager:` 에서 그
+> 항목을 지웁니다. 다음 단계가 호출한 쪽의 트랜잭션 안에서(함께 롤백되게) 돌아야 하면, 두 어노테이션 대신
+> `@EventListener` 하나를 메서드에 붙입니다:
+
+```java
+// application/ReceiptingListener.java (billing) - 당신의 파일
+import com.acme.billing.domain.repository.ReceiptRepositoryPort;
+import com.acme.shop.domain.event.OrderPlacedEvent;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+@Component
+public class ReceiptingListener {
+
+    private final ReceiptRepositoryPort receipts;
+
+    public ReceiptingListener(ReceiptRepositoryPort receipts) {
+        this.receipts = receipts;
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(OrderPlacedEvent event) {
+        // 다음 단계는 여기에.
+    }
+}
+```
+
 한 애그리거트의 이벤트가 **다른 애그리거트의 다음 단계**를 부르는 흐름(주문이 들어오면 영수증 발행)입니다.
 `elasticore-template-ddd` 의 `billing` 이 그대로의 예입니다.
 
@@ -679,6 +734,32 @@ private Partner partner;                // 같은 컬럼의 읽기 전용 조인
 
 #### 도메인 서비스 (`ddd-domain-service`)
 
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 클래스를
+> 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리 포트를 받습니다 -
+> 그리고 `domainService:` 에서 그 항목을 지웁니다:
+
+```java
+// domain/service/PricingService.java - 당신의 파일
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // 연산은 여기에.
+}
+```
+
 어느 애그리거트에도 속하지 않는 연산입니다. **엔티티가 아니라 도메인에 선언**합니다 —
 다른 DDD 애노테이션은 전부 엔티티에 쓰는데, 도메인 서비스는 "누구의 것도 아니다"가
 정의이기 때문입니다. 루트 하나를 골라 매다는 것이 값싼 선택이었지만, 그러면 이
@@ -719,6 +800,8 @@ domainService:
 | `ddd-event` / `ddd-factory` / `ddd-domain-service` | X | 저장 시점·리포지터리에 매인 것들이라 브라우저에 대응물이 없습니다 |
 
 ##### 왜 명세를 생성할 가치가 있는가
+
+`@specification` 은 폐지 예정입니다(3.1 에서 제거): 아래는 직접 쓰는 함수가 `Number(...)` 로 비교해야 하는 이유입니다.
 
 이 언어에서는 손으로 쓴 사본이 단순 중복이 아니라 **대개 틀립니다.**
 
