@@ -2548,6 +2548,55 @@ CurrentUser currentUser(AccountLinks links) {
 고객의 것으로 생성됨 (`Long` 키); 관리자는 모든 행을 보고 주문을 배송함; 방문자는 401 이고 틀린 비밀번호는
 Spring Security 가 거절함.
 
+### 어느 엔티티에도 속하지 않는 작업 - 직접 쓴 클래스의 `AccessPolicy`
+> **동작:** v3 Java 와 Kotlin, Spring Boot 3 과 4 (`elasticore-springboot3` / `elasticore-springboot4`); JPA, MyBatis, MongoDB · **안 됨:** 2.x generator
+
+`@access` 는 엔티티의 작업을 지킵니다. 두 버전 비교, 여러 엔티티에 걸친 리포트, "만약 이렇다면" 계산은
+어느 엔티티에도 속하지 않고, `domainService:` 는 `@access` 를 받지 않습니다. 그런 작업은 직접 쓴 클래스에서 런타임의
+`io.elasticore.springboot3.security.AccessPolicy` 로 지킵니다. 생성된 검사가 쓰는 바로 그 클래스이므로 역할 이름도,
+관리자도, `runAsSystem` 도 같습니다.
+
+```java
+@Service
+public class RateTools {
+
+    // operation=entry, @access 와 같다. 세 번째 인자는 관리자 역할: env.yml 의
+    // config: adminRole, 기본 ADMIN - 생성된 CoreService 가 넘기는 값 (AccessPolicy.parse("Order", "...", "ADMIN")).
+    private static final AccessPolicy ACCESS = AccessPolicy.parse(
+            "RateTools", "compare=RATING_ADMIN, performance=BRANCH_SALES|ACCOUNTING", "ADMIN");
+
+    private final CurrentUser currentUser;
+
+    // 애플리케이션의 CurrentUser 빈(예: Spring Security 의 것), 없으면 세션의 것 - 생성된 서비스가 고르는 방식 그대로.
+    public RateTools(ObjectProvider<CurrentUser> currentUser) {
+        this.currentUser = currentUser.getIfAvailable(SessionCurrentUser::new);
+    }
+
+    public RateComparison compare(long from, long to) {
+        ACCESS.require(currentUser, "compare");   // 무엇을 읽기도 전에 401 또는 403
+        ...
+    }
+}
+```
+
+- **선언**은 엔티티의 `@access(...)` 안의 텍스트입니다: 쉼표로 나눈 `operation=entry` 쌍. 항목은 수준
+  (`public`, `user`, `admin`, `none`) 이나 역할 이름(대문자로 시작, `CurrentUser.hasRole` 과 쓴 그대로 비교)이고,
+  `|` (둘 중 하나) 와 `&` (둘 다, 더 먼저 묶임) 로 잇습니다. 선언이 이름 붙이지 않은 작업은 관리자의 것이고, `*=user` 로 바꿉니다.
+  어느 쪽도 아닌 단어(`compare=rating_admin`)면 `parse` 가 `IllegalArgumentException` 을 던져 애플리케이션이 뜨지 않습니다.
+  빌드가 엔티티의 `@access` 를 확인하듯 역할 enum 과 대조하지는 않습니다: 철자가 틀린 역할은 관리자만 들여보냅니다.
+- **여기서 `owner` 에는 행이 없습니다.** `require` 는 이를 로그인한 누구나로 봅니다. 행은 직접 확인하세요.
+- **`require` 가 던지는 것:** 로그인하면 될 방문자에게는 `NotSignedInException` (`Sign in to compare RateTools`),
+  나머지에게는 `ForbiddenException` (`compare RateTools is for RATING_ADMIN`; 이름 붙이지 않은 작업이면
+  `purge RateTools is for the administrator`). 관리자는 `none` 이 아닌 모든 항목을 통과하고, `CurrentUser.runAsSystem` 안에서는 모두 통과합니다.
+  `ACCESS.isAdmin(currentUser)` 는 관리자인지만 묻고, `requireAll` 은 여러 행에 대한 `owner` 규칙만 더합니다.
+- **상태 코드.** 생성된 `<Domain>ApiErrors` 가 두 예외를 401 과 403 으로 답합니다 - 그 패키지와 하위 패키지의 컨트롤러에 대해
+  (`@RestControllerAdvice(basePackageClasses = ...)`). 작업의 컨트롤러를 거기 두거나, 두 예외를 직접 만든 advice 에서
+  답하세요. 다른 곳에서는 클라이언트에 500 으로 갑니다.
+- **`CurrentUser` 가 아니라 `ObjectProvider<CurrentUser>` 를 주입하세요.** 애플리케이션이 선언하지 않으면 `CurrentUser` 빈은 없고
+  (세션 로그인, `@signin` 은 선언하지 않음), `CurrentUser` 를 요구하는 생성자는 애플리케이션을 멈춥니다.
+- `AccessPolicyOwnOperationTest` (`elasticore-springboot3`) 가 이 클래스를 실행합니다: 방문자, 각 역할, 다른 역할, 관리자,
+  `runAsSystem`, 행이 없는 `owner`.
+
 ## @password / @login — 자격 증명 (v3)
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2') (경고); 2.x generator (생성 안 됨)
 
