@@ -1753,8 +1753,8 @@ public final class RulesGenRunner {
             }
             // The rule sets a selection names are the run's own: publisher.rules.ts is the client's.
             if (captured == null) {
-                RemovedDsl.record(RemovedDsl.ofRuleSets(model.getInternalDomainName(), contributingRules()),
-                        deprecationsSaid);
+                RemovedDsl.record(
+                        RemovedDsl.ofRuleSets(model.getInternalDomainName(), contributingRules()), deprecationsSaid);
             }
             if (!typescript) {
                 warnStubsOverMoves(specs);
@@ -4305,9 +4305,11 @@ public final class RulesGenRunner {
             return;
         }
         if (existing.contains("extends " + base) || existing.contains(": " + base + "()")) return;
-        String message = String.format("[elcore3] %s does not extend %s, which is regenerated from the DSL - so a change"
-                + " to the DSL does not reach it. Make it extend %s (Kotlin: ': %s()'), or delete the file to"
-                + " have it generated anew.", out.relativePath(), base, base, base);
+        String message = String.format(
+                "[elcore3] %s does not extend %s, which is regenerated from the DSL - so a change"
+                        + " to the DSL does not reach it. Make it extend %s (Kotlin: ': %s()'), or delete the file to"
+                        + " have it generated anew.",
+                out.relativePath(), base, base, base);
         io.elasticore.base.util.ConsoleLog.printWarn(message);
         notes.add(message);
     }
@@ -5574,7 +5576,8 @@ public final class RulesGenRunner {
     }
 
     /** A line of the header 3.0 wrote into every browser copy of an entity's @specification. */
-    static final String SPECIFICATIONS_TS = "Stated once on the server and generated here, so the browser asks the same";
+    static final String SPECIFICATIONS_TS =
+            "Stated once on the server and generated here, so the browser asks the same";
 
     /** The line that hands a stamped file over to the project (HashUtils reads it as not managed). */
     private static final String HANDED_OVER =
@@ -5884,8 +5887,7 @@ public final class RulesGenRunner {
             b.append('\n');
         }
         if (!deprecated.isEmpty()) {
-            b.append(
-                    "## DSL no longer read since 3.1 - remove it (not a failure; -Pstrict does not count it)\n\n");
+            b.append("## DSL no longer read since 3.1 - remove it (not a failure; -Pstrict does not count it)\n\n");
             for (String d : deprecated)
                 b.append("- ").append(d.replace("\n", " ")).append('\n');
             b.append('\n');

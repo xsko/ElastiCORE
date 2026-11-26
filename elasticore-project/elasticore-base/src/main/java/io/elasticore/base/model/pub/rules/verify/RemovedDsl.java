@@ -90,7 +90,8 @@ final class RemovedDsl {
     }
 
     static String processManager(String domain, String name, List<String> on) {
-        String events = on == null || on.isEmpty() ? "each event" : "each event of 'on' (" + String.join(", ", on) + ")";
+        String events =
+                on == null || on.isEmpty() ? "each event" : "each event of 'on' (" + String.join(", ", on) + ")";
         return String.format(
                 "[%s] processManager%s %s write a @Component with a method for %s annotated"
                         + " @TransactionalEventListener(phase = AFTER_COMMIT, fallbackExecution = true) and"

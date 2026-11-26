@@ -145,8 +145,12 @@ public class ExtensionPointTest {
     @DisplayName("a domain with nothing to contribute contributes none")
     public void anEmptyDomainContributesNothing() {
         DomainSpec empty = new DomainSpec("shop", "Shop");
-        assertTrue(new io.elasticore.base.model.pub.rules.base.ApiErrorRules().artifactsFor(empty).isEmpty());
-        assertTrue(new io.elasticore.base.model.pub.rules.ddd.DddOutboxRules().artifactsFor(empty).isEmpty());
+        assertTrue(new io.elasticore.base.model.pub.rules.base.ApiErrorRules()
+                .artifactsFor(empty)
+                .isEmpty());
+        assertTrue(new io.elasticore.base.model.pub.rules.ddd.DddOutboxRules()
+                .artifactsFor(empty)
+                .isEmpty());
     }
 
     /**

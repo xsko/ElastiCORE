@@ -112,10 +112,6 @@ public class YamlFileMainModelLoader implements MainModelLoader {
         io.elasticore.base.model.loader.ModelLoader<Port> portModelLoader = new PortModelLoader();
         DomainLevelModelLoader domainLevelModelLoader = new DomainLevelModelLoader();
 
-
-
-
-
         for (FileSource fileSource : fileSources) {
 
             Map<String, Map> map = fileSource.getInfoMap();
@@ -158,8 +154,8 @@ public class YamlFileMainModelLoader implements MainModelLoader {
         repositoryModelLoader.completeLoad();
         RepositoryModels repositoryModels = RepositoryModels.create(context.getDomainId(), "repoGroup", null, context.getRepositoryItems());
 
-        //EnumModels enumModels = getEnumModels();
-        //EntityModels entityModels = getEntityModels();
+        // EnumModels enumModels = getEnumModels();
+        // EntityModels entityModels = getEntityModels();
 
         return ECoreModel.builder()
                 .entityModels(entityModels)

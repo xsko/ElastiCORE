@@ -59,16 +59,18 @@ public class DomainLevelModelLoader extends AbstractModelLoader implements Const
     @SuppressWarnings("unchecked")
     private void loadMetrics(ModelLoaderContext ctx, Object section) {
         if (!(section instanceof Map)) {
-            ConsoleLog.storeLog("DSL_WARN", String.format("[%s] metrics: is a list of name: line entries; it is left out.",
-                    ctx.getDomainId()));
+            ConsoleLog.storeLog(
+                    "DSL_WARN",
+                    String.format("[%s] metrics: is a list of name: line entries; it is left out.", ctx.getDomainId()));
             return;
         }
         for (Map.Entry<Object, Object> e : ((Map<Object, Object>) section).entrySet()) {
             if (e.getKey() == null || e.getValue() == null) continue;
             String name = String.valueOf(e.getKey()).trim();
             if (ctx.getMetrics().containsKey(name)) {
-                ConsoleLog.storeLog("DSL_WARN", String.format("[%s] metric %s is declared twice; the first is kept.",
-                        ctx.getDomainId(), name));
+                ConsoleLog.storeLog(
+                        "DSL_WARN",
+                        String.format("[%s] metric %s is declared twice; the first is kept.", ctx.getDomainId(), name));
                 continue;
             }
             ctx.getMetrics().put(name, String.valueOf(e.getValue()).trim());
@@ -120,6 +122,5 @@ public class DomainLevelModelLoader extends AbstractModelLoader implements Const
         return text.isEmpty() ? null : text;
     }
 
-    public void completeLoad() {
-    }
+    public void completeLoad() {}
 }

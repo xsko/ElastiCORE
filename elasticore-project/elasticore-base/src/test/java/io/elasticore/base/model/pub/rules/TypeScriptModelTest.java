@@ -304,7 +304,8 @@ public class TypeScriptModelTest {
         String out = render(order("totalAmount > 100, 'worth more than 100'"), "invariants");
 
         assertTrue(out.contains("Number(order.totalAmount)"), out);
-        assertFalse(out.contains(" order.totalAmount <= 100"),
+        assertFalse(
+                out.contains(" order.totalAmount <= 100"),
                 "comparing the string the server sent against a number is the bug this replaces: " + out);
     }
     /** A collection is counted the way this language counts one. */
@@ -322,7 +323,8 @@ public class TypeScriptModelTest {
         String invariants = render(order("totalAmount > 100, 'worth more than 100'"), "invariants");
 
         assertTrue(invariants.contains("order.totalAmount"), invariants);
-        assertTrue(invariants.contains("order.totalAmount == null") || invariants.contains("order.totalAmount != null"),
+        assertTrue(
+                invariants.contains("order.totalAmount == null") || invariants.contains("order.totalAmount != null"),
                 invariants);
     }
     // ---- what a strict project compiles (issue 346) ----------------------

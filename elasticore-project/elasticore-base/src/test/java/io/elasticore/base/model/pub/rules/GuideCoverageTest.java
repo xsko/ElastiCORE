@@ -153,19 +153,20 @@ public class GuideCoverageTest {
 
         // Read by DddAggregateRules, DddDomainEventRules, DddInvariantRules
         // and DddFactoryRules respectively.
-        for (String word : new String[]{
-                "@root", "@aggregate", "@event", "@invariant", "@factory"}) {
+        for (String word : new String[] {"@root", "@aggregate", "@event", "@invariant", "@factory"}) {
             if (!annotations.contains(word)) missing.add(word);
         }
         assertTrue(missing.isEmpty(), "undocumented in the annotation guide: " + missing);
 
         // Removed in 3.1 (issue 370), and still in projects: where each was described, the reader
         // finds what to write instead - as the generator tells a project that still declares one.
-        assertTrue(annotations.contains("## `@specification` - ") && annotations.contains("(issue 370)"),
+        assertTrue(
+                annotations.contains("## `@specification` - ") && annotations.contains("(issue 370)"),
                 "the annotation guide's @specification section");
         assertTrue(annotations.contains("## `domainService` - "), "the annotation guide's domainService section");
-        assertTrue(read(DSL_GUIDE).contains("`processManager:` sections are no longer read since 3.1")
-                || read(DSL_GUIDE).contains("`processManager:` 섹션은 3.1 부터 읽지 않습니다"),
+        assertTrue(
+                read(DSL_GUIDE).contains("`processManager:` sections are no longer read since 3.1")
+                        || read(DSL_GUIDE).contains("`processManager:` 섹션은 3.1 부터 읽지 않습니다"),
                 "the DSL guide's chapter 8");
     }
 

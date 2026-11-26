@@ -95,8 +95,8 @@ public class JavaSrcFileMainModelLoader implements MainModelLoader {
         DataTransferModels dataTransferModels = DataTransferModels.create(context.getDomainId(), "dto", null, context.getDataTransferItems());
         RepositoryModels repositoryModels = RepositoryModels.create(context.getDomainId(), "repoGroup", null, context.getRepositoryItems());
 
-        //EnumModels enumModels = getEnumModels();
-        //EntityModels entityModels = getEntityModels();
+        // EnumModels enumModels = getEnumModels();
+        // EntityModels entityModels = getEntityModels();
 
         return ECoreModel.builder()
                 .entityModels(entityModels)

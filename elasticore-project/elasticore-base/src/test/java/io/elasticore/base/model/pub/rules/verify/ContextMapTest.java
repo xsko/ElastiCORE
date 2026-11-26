@@ -212,24 +212,28 @@ public class ContextMapTest {
     @Test
     public void aContextPublishesTheEventsItsRootsRaise() throws Exception {
         root = Files.createTempDirectory("elcore-contexts").toFile();
-        domain("shop", String.join("\n",
-                "    context:",
-                "      publishes: [OrderPlaced, OrderCancelledEvent, OrderLineAdded]"), String.join("\n",
-                "entity:",
-                "  Order:",
-                "    meta: entity @root @event(Placed, Cancelled)",
-                "    fields:",
-                "      orderId: long @id",
-                "      lines:   List<OrderLine> @OneToMany(mappedBy=\"order\")",
-                "  OrderLine:",
-                "    meta: entity @event(Added)",
-                "    fields:",
-                "      lineId: long @id",
-                "      order:  Order @ManyToOne",
-                ""));
+        domain(
+                "shop",
+                String.join(
+                        "\n", "    context:", "      publishes: [OrderPlaced, OrderCancelledEvent, OrderLineAdded]"),
+                String.join(
+                        "\n",
+                        "entity:",
+                        "  Order:",
+                        "    meta: entity @root @event(Placed, Cancelled)",
+                        "    fields:",
+                        "      orderId: long @id",
+                        "      lines:   List<OrderLine> @OneToMany(mappedBy=\"order\")",
+                        "  OrderLine:",
+                        "    meta: entity @event(Added)",
+                        "    fields:",
+                        "      lineId: long @id",
+                        "      order:  Order @ManyToOne",
+                        ""));
 
         ContextMap map = ContextMap.of(BlueprintLoader.load(root.getAbsolutePath()));
-        assertEquals(java.util.Arrays.asList("[shop] context publishes OrderLineAdded, which is no model or event of shop."),
+        assertEquals(
+                java.util.Arrays.asList("[shop] context publishes OrderLineAdded, which is no model or event of shop."),
                 map.warnings());
         assertTrue(map.problems().isEmpty(), map.problems().toString());
         assertEquals("shop", map.contextNamed("shop"));
@@ -245,16 +249,16 @@ public class ContextMapTest {
     @Test
     public void aLeftoverProcessManagerCrossesNothing() throws Exception {
         root = Files.createTempDirectory("elcore-contexts").toFile();
-        domain("shop", String.join("\n",
-                "    context:",
-                "      publishes: [OrderPlaced]"), ORDERS);
-        domain("billing", String.join("\n",
-                "    context:",
-                "      uses: []"), String.join("\n",
-                "processManager:",
-                "  Receipting:",
-                "    on: [shop:OrderPlaced, shop:OrderCancelled]",
-                ""));
+        domain("shop", String.join("\n", "    context:", "      publishes: [OrderPlaced]"), ORDERS);
+        domain(
+                "billing",
+                String.join("\n", "    context:", "      uses: []"),
+                String.join(
+                        "\n",
+                        "processManager:",
+                        "  Receipting:",
+                        "    on: [shop:OrderPlaced, shop:OrderCancelled]",
+                        ""));
 
         ContextMap map = ContextMap.of(BlueprintLoader.load(root.getAbsolutePath()));
         assertTrue(map.problems().isEmpty(), map.problems().toString());

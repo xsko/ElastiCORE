@@ -1619,14 +1619,14 @@ public final class SpecFactory {
         }
 
         spec.pkg("entity", model.getNamespace("entity"))
-            .pkg("dto", model.getNamespace("dto"))
-            .pkg("repository", model.getNamespace("repository"))
-            .pkg("service", model.getNamespace("service"))
-            .pkg("control", model.getNamespace("control"))
-            .pkg("domainService", model.getNamespace("domainService"))
-            .pkg("domainRepository", model.getNamespace("domainRepository"))
-            .pkg("persistence", model.getNamespace("persistence"))
-            .pkg("event", model.getNamespace("event"));
+                .pkg("dto", model.getNamespace("dto"))
+                .pkg("repository", model.getNamespace("repository"))
+                .pkg("service", model.getNamespace("service"))
+                .pkg("control", model.getNamespace("control"))
+                .pkg("domainService", model.getNamespace("domainService"))
+                .pkg("domainRepository", model.getNamespace("domainRepository"))
+                .pkg("persistence", model.getNamespace("persistence"))
+                .pkg("event", model.getNamespace("event"));
         // Every key the domain declares, for namespace(key) - base: expands
         // several, and a project's rule set may add one of its own. Kept
         // apart from pkg(), whose null for an undeclared key the built-in
