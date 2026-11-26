@@ -2548,6 +2548,55 @@ leave the decisions to `@access` (`anyRequest().permitAll()`, as the pet store's
 order is created for the customer signed in (the `Long` key); the administrator sees every row and ships the order; a visitor
 gets 401 and a wrong password is refused by Spring Security.
 
+### An operation of no entity - `AccessPolicy` in your own class
+> **Works in:** v3 Java and Kotlin, Spring Boot 3 and 4 (`elasticore-springboot3` / `elasticore-springboot4`); JPA, MyBatis, MongoDB · **Not in:** 2.x generator
+
+`@access` guards the operations of an entity. A compare of two versions, a report across entities or a "what if" calculation
+belongs to no entity, and `domainService:` takes no `@access`. Guard such an operation in a class of your own with the runtime's
+`io.elasticore.springboot3.security.AccessPolicy`, the class the generated checks are made of: the same role names, the same
+administrator, the same `runAsSystem`.
+
+```java
+@Service
+public class RateTools {
+
+    // operation=entry, as in @access. The third argument is the administrator's role: env.yml's
+    // config: adminRole, ADMIN by default - what the generated CoreService passes (AccessPolicy.parse("Order", "...", "ADMIN")).
+    private static final AccessPolicy ACCESS = AccessPolicy.parse(
+            "RateTools", "compare=RATING_ADMIN, performance=BRANCH_SALES|ACCOUNTING", "ADMIN");
+
+    private final CurrentUser currentUser;
+
+    // The application's CurrentUser bean (Spring Security's, say), or the session's - as the generated services take it.
+    public RateTools(ObjectProvider<CurrentUser> currentUser) {
+        this.currentUser = currentUser.getIfAvailable(SessionCurrentUser::new);
+    }
+
+    public RateComparison compare(long from, long to) {
+        ACCESS.require(currentUser, "compare");   // 401 or 403 before anything is read
+        ...
+    }
+}
+```
+
+- **The declaration** is the text of an entity's `@access(...)`: `operation=entry` pairs, separated by commas. An entry is a level
+  (`public`, `user`, `admin`, `none`) or a role name (a capital first, compared with `CurrentUser.hasRole` as written), combined with
+  `|` (either) and `&` (both, binds tighter). An operation it does not name is the administrator's; `*=user` changes that. A word that
+  is neither (`compare=rating_admin`) makes `parse` throw `IllegalArgumentException`, so the application does not start. The
+  role enum is not checked here, as the build checks an entity's `@access`: a misspelt role lets in only the administrator.
+- **`owner` has no row here.** `require` takes it as anyone signed in; check the row yourself.
+- **What `require` throws:** `NotSignedInException` to a visitor where signing in could help (`Sign in to compare RateTools`), and
+  `ForbiddenException` to the rest (`compare RateTools is for RATING_ADMIN`; `purge RateTools is for the administrator` for an
+  operation not named). The administrator passes every entry but `none`, and inside `CurrentUser.runAsSystem` everything passes.
+  `ACCESS.isAdmin(currentUser)` asks for the administrator alone; `requireAll` adds only the rule of `owner` over many rows.
+- **The status.** The generated `<Domain>ApiErrors` answers the two 401 and 403 - for the controllers in its package and below
+  (`@RestControllerAdvice(basePackageClasses = ...)`). Put the controller of the operation there, or answer the two exceptions in
+  an advice of your own; anywhere else they reach the client as a 500.
+- **Inject `ObjectProvider<CurrentUser>`, not `CurrentUser`.** There is no `CurrentUser` bean unless the application declares one
+  (the session's sign-in, `@signin`, declares none), so a constructor that asks for `CurrentUser` stops the application.
+- `AccessPolicyOwnOperationTest` (`elasticore-springboot3`) runs this class: a visitor, each role, another role, the administrator,
+  `runAsSystem` and `owner` without a row.
+
 ## @password / @login - credentials (v3)
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2') (warning); 2.x generator (not generated)
 
