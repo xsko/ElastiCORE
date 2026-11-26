@@ -183,6 +183,43 @@ protected void beforeSave(Customer customer, CustomerDTO request) {
   - The generated services call these runtime classes, so upgrade `elasticore-springboot3` / `-springboot4` to the plugin's
     version together with the plugin (`runtimePackages`: copy `RefusedWrite` in, `elasticore-rule-guide.md`).
 
+### Methods of your own in `*Service` - read-only, the status of a refusal, and their tests
+> **Works in:** JPA and MyBatis; Java and Kotlin; layered, ddd, hexagonal; v3 and the 2.x generator · **Not in:** MongoDB (mode: mongo) - its CoreService is not read-only, so the first point does not apply
+
+Business logic of your own goes in the extended service (`*Service.java`, generated once): `beforeSave` above, a command's
+rule, a method you add. Three things decide how such a method behaves.
+
+**1. The class is read-only.** The generated `*CoreService` is `@Transactional(readOnly = true)` at class level; its writing
+methods (`save`, `update`, `delete`, the commands) carry `@Transactional` of their own. Your `*Service` extends it and inherits
+the class-level setting, so **a method you add without `@Transactional` runs in a read-only transaction**, and what it calls
+joins it - the inherited `save`, another service's `@Transactional` method. PostgreSQL refuses the write there
+(`cannot execute INSERT in a read-only transaction`, SQLSTATE 25006) and the client gets a 500. H2 lets it through, so a test on
+H2 does not show it. A method that writes says so:
+
+```java
+@Transactional   // the class is read-only; this method writes
+public void recordUpload(Long id) {
+    ...
+}
+```
+
+**2. The code of an `InvariantViolationException` picks the status.** The generated `<Domain>ApiErrors` reads its prefix, and
+the body's `code` is the code thrown:
+
+| The code starts with | Status | Title | Generated for |
+|---|---|---|---|
+| `state.` | 409 | Not allowed in this state | a command, or a delete, that the row's state does not allow (`state.Order.status.ship`) |
+| `reference.` | 404 | Not found | a reference to a row that does not exist (`reference.Loan.member`) |
+| anything else, or no code | 422 | Refused by the domain | an `@invariant` (`invariant.Order.total-ge-0`); a rule of your own (`rule.Account.password.current`) |
+
+So a rule of yours that should answer 409 like the state refusals takes a `state.` code - or throws `ConflictException` (409,
+the runtime's, with a code of its own).
+
+**3. A test transaction hides the first point.** `@Transactional` on a test class starts a transaction that is not read-only,
+and a method of yours joins it: the write succeeds in the test and fails in the application. Test a writing method of your own
+without one - `@Transactional(propagation = Propagation.NOT_SUPPORTED)` on the test, or through the HTTP API - and on the
+database you deploy to (PostgreSQL), since H2 does not refuse the write either.
+
 ---
 
 ## 4. Q class structure

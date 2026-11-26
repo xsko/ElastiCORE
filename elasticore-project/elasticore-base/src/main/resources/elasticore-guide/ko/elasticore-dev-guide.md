@@ -183,6 +183,43 @@ protected void beforeSave(Customer customer, CustomerDTO request) {
   - 생성된 서비스가 이 런타임 클래스를 부르므로, `elasticore-springboot3` / `-springboot4` 를 플러그인과 함께 플러그인의 버전으로
     올리세요(`runtimePackages` 면 `RefusedWrite` 를 사본에 가져옵니다, `elasticore-rule-guide.md`).
 
+### `*Service` 에 직접 쓴 메서드 - 읽기 전용, 거절의 상태 코드, 그리고 테스트
+> **동작:** JPA 와 MyBatis; Java 와 Kotlin; layered, ddd, hexagonal; v3 와 2.x generator · **안 됨:** MongoDB (mode: mongo) - CoreService 가 읽기 전용이 아니라 첫 항목이 해당하지 않음
+
+직접 쓰는 비즈니스 로직은 확장 서비스(`*Service.java`, 한 번만 생성)에 둡니다: 위의 `beforeSave`, 명령의
+규칙, 직접 더한 메서드. 그런 메서드가 어떻게 동작하는지는 다음 세 가지가 정합니다.
+
+**1. 클래스는 읽기 전용입니다.** 생성된 `*CoreService` 는 클래스 수준에서 `@Transactional(readOnly = true)` 이고, 쓰는
+메서드(`save`, `update`, `delete`, 명령)에만 각자의 `@Transactional` 이 붙어 있습니다. `*Service` 는 이를 상속해 클래스 수준
+설정을 물려받으므로 **`@Transactional` 없이 더한 메서드는 읽기 전용 트랜잭션에서 돌고**, 그 메서드가 부르는 것 - 상속한
+`save`, 다른 서비스의 `@Transactional` 메서드 - 도 그 트랜잭션에 합류합니다. PostgreSQL 은 거기서의 쓰기를 거절하고
+(`cannot execute INSERT in a read-only transaction`, SQLSTATE 25006) 클라이언트는 500 을 받습니다. H2 는 통과시키므로 H2 에서의
+테스트로는 드러나지 않습니다. 쓰는 메서드는 그렇다고 밝힙니다:
+
+```java
+@Transactional   // 클래스는 읽기 전용; 이 메서드는 쓴다
+public void recordUpload(Long id) {
+    ...
+}
+```
+
+**2. `InvariantViolationException` 의 코드가 상태 코드를 고릅니다.** 생성된 `<Domain>ApiErrors` 가 코드의 접두사를 읽고,
+응답 본문의 `code` 는 던진 코드 그대로입니다:
+
+| 코드의 시작 | 상태 | 제목 | 생성되는 곳 |
+|---|---|---|---|
+| `state.` | 409 | Not allowed in this state | 행의 상태가 허용하지 않는 명령이나 삭제 (`state.Order.status.ship`) |
+| `reference.` | 404 | Not found | 없는 행을 가리키는 참조 (`reference.Loan.member`) |
+| 그 밖의 코드, 또는 코드 없음 | 422 | Refused by the domain | `@invariant` (`invariant.Order.total-ge-0`); 직접 만든 규칙 (`rule.Account.password.current`) |
+
+그래서 상태 거절처럼 409 로 답해야 할 직접 만든 규칙은 `state.` 코드를 쓰거나 - `ConflictException` 을 던집니다(409,
+런타임의 것, 자기 코드와 함께).
+
+**3. 테스트 트랜잭션은 첫 항목을 가립니다.** 테스트 클래스의 `@Transactional` 은 읽기 전용이 아닌 트랜잭션을 열고,
+직접 쓴 메서드는 거기에 합류합니다: 테스트에서는 쓰기가 성공하고 애플리케이션에서는 실패합니다. 직접 쓴 쓰기 메서드는
+테스트 트랜잭션 없이 - 테스트에 `@Transactional(propagation = Propagation.NOT_SUPPORTED)`, 또는 HTTP API 로 - 그리고
+배포할 데이터베이스(PostgreSQL)에서 테스트하세요. H2 도 그 쓰기를 거절하지 않습니다.
+
 ---
 
 ## 4. Q 클래스 구조
