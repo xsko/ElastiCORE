@@ -4,6 +4,11 @@ src/main/kotlin/**
 # ... but the content domain's CommentService, the sample's own (its cleanContent / plainContent, issue 217).
 !src/main/kotlin/**/
 !src/main/kotlin/io/elasticore/blueprint/domain/content/service/CommentService.kt
+# ... and the hand-written domain service, listener and order rules (they replace domainService:,
+# processManager: and @specification, issue 370).
+!src/main/kotlin/io/elasticore/blueprint/domain/shop/domainservice/PricingService.kt
+!src/main/kotlin/io/elasticore/blueprint/domain/shop/entity/OrderRules.kt
+!src/main/kotlin/io/elasticore/blueprint/domain/shop/service/LoyaltyListener.kt
 src/test/kotlin/io/**
 # ... but the contract tests' support class, which the sample edited (it names the application).
 !src/test/kotlin/io/**/

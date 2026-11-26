@@ -1626,8 +1626,7 @@ public final class SpecFactory {
             .pkg("domainService", model.getNamespace("domainService"))
             .pkg("domainRepository", model.getNamespace("domainRepository"))
             .pkg("persistence", model.getNamespace("persistence"))
-            .pkg("event", model.getNamespace("event"))
-            .pkg("processManager", model.getNamespace("processManager"));
+            .pkg("event", model.getNamespace("event"));
         // Every key the domain declares, for namespace(key) - base: expands
         // several, and a project's rule set may add one of its own. Kept
         // apart from pkg(), whose null for an undeclared key the built-in
@@ -1638,37 +1637,16 @@ public final class SpecFactory {
         }
         spec.configSource(configOf(model));
 
-        // The ports the DSL declares, so a domain service naming one is handed
-        // the interface rather than a repository port that does not exist.
+        // The ports the DSL declares, for a rule set that names a domain's ports.
         if (model.getPortModels() != null) {
             io.elasticore.base.model.ModelComponentItems<io.elasticore.base.model.port.Port>
                     ports = model.getPortModels().getItems();
             for (int i = 0; i < ports.size(); i++) {
                 String portName = ports.get(i).getIdentity().getName();
                 // The port loader builds one of these per entity as well, and
-                // the port rule declines for them. A name that is an entity is
-                // an aggregate reference - registering it as a port had a
-                // domain service asking to be given an Order rather than an
-                // OrderRepositoryPort.
+                // the port rule declines for them: a name that is an entity is no port.
                 if (model.getEntityModels().findByName(portName) != null) continue;
                 spec.port(portName, model.getNamespace("port"));
-            }
-        }
-
-        // A domain-level section, so it is read here rather than off any
-        // entity - which is the definition of the pattern, not a filing
-        // choice. Absent for every loader that has no such section and for
-        // every project written before it existed.
-        if (model.getDomainServiceModels() != null) {
-            io.elasticore.base.model.ModelComponentItems<io.elasticore.base.model.domainservice.DomainService>
-                    services = model.getDomainServiceModels().getItems();
-            while (services.hasNext()) {
-                io.elasticore.base.model.domainservice.DomainService service = services.next();
-                spec.domainService(new io.elasticore.base.model.pub.rules.DomainSpec.DomainServiceSpec(
-                        service.getIdentity().getName(),
-                        service.getDescription(),
-                        service.getUses(),
-                        service.getOn()));
             }
         }
 

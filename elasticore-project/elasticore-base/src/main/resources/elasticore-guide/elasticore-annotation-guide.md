@@ -1880,13 +1880,12 @@ A value object has no separate annotation - **`@embeddable` already means that**
 (it has no identifier of its own and is stored inline in its owner). For details,
 see `elasticore-rule-guide.md`.
 
-## domainService - domain service (DDD rule set)
-> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
+## `domainService` - Removed in 3.1
 
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the class
-> yourself instead - a `@Service` in the `domain.service` package that takes the repository ports in its constructor -
-> and remove the entry from `domainService:`:
+The `domainService:` section is no longer read since 3.1 (issue 370). A project that still has one builds: the build
+prints a notice for each entry (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it), and a class
+3.0 generated for it stays while your code still uses it. Write the class yourself - a `@Service` in the
+`domain.service` package that takes the repository ports in its constructor - and remove the entry:
 
 ```java
 // domain/service/PricingService.java - yours
@@ -1909,48 +1908,7 @@ public class PricingService {
 }
 ```
 
-**This is a DSL section, not an annotation.** The operation belongs to no entity,
-so there is no place for it on an entity's meta line.
-
-```yaml
-# blueprint/<domain>/model/domainservice.yml
-domainService:
-
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-| Key | Required | Description |
-|---|---|---|
-| `uses` | Yes | The aggregates this operation spans. They are injected as domain ports into the regenerated Base |
-| `desc` | No | Class comment |
-
-If `uses` is empty or has only one entry, a `DSL_WARN` is raised (the build continues). An operation on a single aggregate
-is usually a method of that aggregate.
-
-### Generated output
-
-```java
-public abstract class PricingDomainServiceBase {     // regenerated every time - follows changes to uses
-
-	@Autowired
-	protected OrderRepositoryPort orderRepositoryPort;
-
-	@Autowired
-	protected ProductRepositoryPort productRepositoryPort;
-}
-
-@Service
-public class PricingDomainService extends PricingDomainServiceBase {
-	// Put the operations here. It is generate-once, so this file is yours and your edits stay.
-}
-```
-
-If you add an aggregate to `uses`, the Base gets a port, and you use it without editing your class.
-
-`namespace.domainService` in `env.yml` sets the location. If omitted, it is the same
-package as the entities.
+`namespace.domainService` in `env.yml` stays: the architecture test checks that package as domain code.
 
 ## @behavior - entity behavior (DDD rule set)
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
@@ -2088,6 +2046,8 @@ a save that deletes the last item is refused. Replacing everything with `replace
 allowed because it is already filled at flush time, and deleting the root itself is also allowed. If the member has no field that points to the root (a one-way relationship), this check
 cannot be made and the build raises a DSL warning - map the relationship as two-way (`mappedBy`).
 
+With the `ts-model` bundle the browser gets `OrderInvariants.ts` too - `violations(order)` and `isValid(order)`, a pre-check for a form, not enforcement.
+
 ## @factory - factory (DDD rule set)
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
@@ -2116,13 +2076,13 @@ The signature holds the root's required fields. The generated identifier (`@geni
 a factory that is handed the identifier before creating anything has created nothing, and members go in
 through the root's add method.
 
-## @specification - specification (DDD rule set)
-> **Works in:** ddd, hexagonal, TypeScript client · **Not in:** layered (not generated)
+## `@specification` - Removed in 3.1
 
-> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
-> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the predicate
-> yourself instead - a static `Predicate<Order>` method of your own - and remove the `@specification`. If a screen needs
-> it, write the TypeScript function too, in a file of your own (`OrderSpecifications.ts` is the generator's):
+`@specification` is no longer read since 3.1 (issue 370). A meta line that still has one builds: the build prints a
+notice for each (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it), a 3.0 `OrderSpecifications`
+class stays while your code still uses it, and the browser's `OrderSpecifications.ts` is handed over to your project -
+kept as it is, no longer generated or removed. Write the predicate yourself - a static `Predicate<Order>` method of
+your own - and remove the `@specification`. If a screen needs it, write the TypeScript function too:
 
 ```java
 // domain/model/OrderRules.java - yours
@@ -2148,49 +2108,7 @@ export function highValue(order: OrderDTO | null | undefined): boolean {
 }
 ```
 
-Declares a domain rule worth a name.
-
-```yaml
-  Order:
-    meta: entity @root @specification(highValue, totalAmount > 100) @specification(hasLines, items notEmpty)
-```
-
-| Parameter | Required | Description |
-|---|---|---|
-| Name | Yes | The name of the generated method. Before the first comma |
-| Condition | Yes | The condition syntax below |
-
-### Generated output
-
-```java
-OrderSpecifications.highValue()                          // Predicate<Order>
-OrderSpecifications.highValue().and(OrderSpecifications.hasLines())
-```
-
-It is a `Predicate`, not a boolean, because **combining is the point of this pattern**.
-You select from what has already been read, not by a query.
-
-### In TypeScript
-
-With the `ts-model` bundle, the same declaration also produces a file for the browser.
-
-```ts
-// OrderSpecifications.ts
-export function highValue(order: OrderDTO | null | undefined): boolean {
-    return order != null && (order.totalAmount != null
-            && Number(order.totalAmount) > 100);
-}
-
-// OrderInvariants.ts - a pre-check, not enforcement
-export function violations(order: OrderDTO | null | undefined): string[]
-export function isValid(order: OrderDTO | null | undefined): boolean
-```
-
-`Number(...)` compares correctly whether the server sends a decimal as a JSON number (the Jackson default) or as a string.
-A hand-written `order.totalAmount > 100` is false regardless of the amount on a server that sends strings.
-The TS type declaration is `number`, to match the default serialization.
-
-## Condition syntax (common to `@invariant` and `@specification`)
+## Condition syntax (`@invariant`)
 
 | Form | Meaning | Example |
 |---|---|---|
@@ -2607,7 +2525,7 @@ gets 401 and a wrong password is refused by Spring Security.
 > **Works in:** v3 Java and Kotlin, Spring Boot 3 and 4 (`elasticore-springboot3` / `elasticore-springboot4`); JPA, MyBatis, MongoDB · **Not in:** 2.x generator
 
 `@access` guards the operations of an entity. A compare of two versions, a report across entities or a "what if" calculation
-belongs to no entity, and `domainService:` takes no `@access`. Guard such an operation in a class of your own with the runtime's
+belongs to no entity, so no `@access` reaches it. Guard such an operation in a class of your own with the runtime's
 `io.elasticore.springboot3.security.AccessPolicy`, the class the generated checks are made of: the same role names, the same
 administrator, the same `runAsSystem`.
 

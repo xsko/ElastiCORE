@@ -204,66 +204,20 @@ public class ContextMapTest {
             "      total:   long",
             "");
 
-    private static String reacting(String name, String on) {
-        return String.join("\n",
-                "processManager:",
-                "  " + name + ":",
-                "    on: [" + on + "]",
-                "");
-    }
-
     /**
-     * A process manager of one context reacting to another's event: the event
-     * crosses like a type - the reacting context names it in uses, and a
-     * context that declares publishes lists the events it lets out.
+     * A context may publish the events its roots raise, by the event's name
+     * or its class name; a member's or a keyless entity's @event raises
+     * nothing, so publishing it is said.
      */
     @Test
-    public void anEventCrossesLikeATypeAndResolvesToItsClass() throws Exception {
+    public void aContextPublishesTheEventsItsRootsRaise() throws Exception {
         root = Files.createTempDirectory("elcore-contexts").toFile();
         domain("shop", String.join("\n",
                 "    context:",
-                "      publishes: [OrderPlaced]"), ORDERS);
-        domain("billing", String.join("\n",
-                "    context:",
-                "      uses: [shop]"), reacting("Receipting", "shop:OrderPlaced, shop:OrderCancelled"));
-        domain("crm", String.join("\n",
-                "    context:",
-                "      uses: []"), reacting("Welcome", "shop:OrderPlaced"));
-
-        ContextMap map = ContextMap.of(BlueprintLoader.load(root.getAbsolutePath()));
-        assertEquals(java.util.Arrays.asList(
-                "[billing] processManager Receipting uses OrderCancelled from shop, which shop does not publish (config.context.publishes).",
-                "[crm] processManager Welcome uses OrderPlaced from shop, but crm does not declare it (config.context.uses: shop)."),
-                map.problems());
-        assertTrue(map.warnings().isEmpty(), "an event shop raises is something it may publish: " + map.warnings());
-
-        assertEquals("io.acme.shop.domain.event.OrderPlacedEvent", map.eventClass("shop:OrderPlaced"));
-        assertEquals("io.acme.shop.domain.event.OrderCancelledEvent", map.eventClass("shop:OrderCancelled"));
-        assertEquals(null, map.eventClass("shop:OrderShipped"));
-        assertEquals(null, map.eventClass("nowhere:OrderPlaced"));
-        assertEquals("shop", map.contextDeclaringEvent("billing", "OrderPlaced"));
-        assertEquals(null, map.contextDeclaringEvent("shop", "OrderPlaced"), "shop's own name needs no context");
-
-        String md = map.markdown();
-        assertTrue(md.contains("ctx_shop -->|OrderPlaced, OrderCancelled| ctx_billing"), md);
-        assertTrue(md.contains("ctx_shop -->|OrderPlaced| ctx_crm"), md);
-    }
-
-    /**
-     * Only what ddd-event generates is an event to react to: a member's or a
-     * keyless entity's @event raises nothing. A context may be named by its
-     * domainName, an event by its class name, and a name nobody declares is
-     * left to the rule to explain rather than reported as unpublished.
-     */
-    @Test
-    public void onlyARootsEventsCountAndNamesResolveAsWritten() throws Exception {
-        root = Files.createTempDirectory("elcore-contexts").toFile();
-        domain("shop", String.join("\n",
-                "    context:",
-                "      publishes: [OrderPlacedEvent]"), String.join("\n",
+                "      publishes: [OrderPlaced, OrderCancelledEvent, OrderLineAdded]"), String.join("\n",
                 "entity:",
                 "  Order:",
-                "    meta: entity @root @event(Placed)",
+                "    meta: entity @root @event(Placed, Cancelled)",
                 "    fields:",
                 "      orderId: long @id",
                 "      lines:   List<OrderLine> @OneToMany(mappedBy=\"order\")",
@@ -272,49 +226,42 @@ public class ContextMapTest {
                 "    fields:",
                 "      lineId: long @id",
                 "      order:  Order @ManyToOne",
-                "  Note:",
-                "    meta: entity @root @event(Written)",
-                "    fields:",
-                "      text: string(20)",
                 ""));
-        // A second context raising OrderPlaced, so the name alone points nowhere in particular.
-        domain("legacy", "", ORDERS);
-        // The directory is "sales", the domainName "store": both name it.
-        File dir = new File(root, "sales/model");
-        assertTrue(dir.mkdirs());
-        Files.write(new File(root, "sales/env.yml").toPath(), String.join("\n",
-                "elasticore:",
-                "  enable: true",
-                "  config:",
-                "    domainName: store",
-                "    framework: springboot",
-                "    mode: jpa",
-                "    j2ee: jakarta",
-                "  namespace:",
-                "    base: io.acme.store",
-                "").getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(dir, "model.yml").toPath(), ORDERS.getBytes(StandardCharsets.UTF_8));
-        domain("billing", String.join("\n",
-                "    context:",
-                "      uses: [shop]"), reacting("Receipting", "shop:OrderPlacedEvent, shop:OrderShiped, shop:OrderLineAdded"));
 
         ContextMap map = ContextMap.of(BlueprintLoader.load(root.getAbsolutePath()));
-        assertTrue(map.problems().isEmpty(), "published as its class name, misspelt and member events are not boundary"
-                + " problems: " + map.problems());
-        assertTrue(map.warnings().isEmpty(), map.warnings().toString());
-
-        assertEquals(null, map.eventClass("shop:OrderLineAdded"), "a member raises no event");
-        assertEquals(null, map.eventClass("shop:NoteWritten"), "an entity without a key raises no event");
-        assertEquals("io.acme.shop.domain.event.OrderPlacedEvent", map.eventClass("shop:OrderPlacedEvent"));
-        assertEquals("io.acme.store.domain.event.OrderPlacedEvent", map.eventClass("store:OrderPlaced"));
-        assertEquals("io.acme.store.domain.event.OrderPlacedEvent", map.eventClass("sales:OrderPlaced"));
-        assertEquals("sales", map.contextNamed("store"));
+        assertEquals(java.util.Arrays.asList("[shop] context publishes OrderLineAdded, which is no model or event of shop."),
+                map.warnings());
+        assertTrue(map.problems().isEmpty(), map.problems().toString());
+        assertEquals("shop", map.contextNamed("shop"));
         assertEquals(null, map.contextNamed("nowhere"));
-        assertEquals(null, map.contextDeclaringEvent("billing", "OrderPlaced"), "three contexts raise it");
-
-        assertTrue(map.markdown().contains("ctx_shop -->|OrderPlaced| ctx_billing"), map.markdown());
     }
 
+    /**
+     * A processManager: section is no longer read (3.1, issue 370): an event
+     * it names from another context crosses nothing - no reference, no
+     * boundary problem, nothing drawn - so a project that still has one
+     * builds as before.
+     */
+    @Test
+    public void aLeftoverProcessManagerCrossesNothing() throws Exception {
+        root = Files.createTempDirectory("elcore-contexts").toFile();
+        domain("shop", String.join("\n",
+                "    context:",
+                "      publishes: [OrderPlaced]"), ORDERS);
+        domain("billing", String.join("\n",
+                "    context:",
+                "      uses: []"), String.join("\n",
+                "processManager:",
+                "  Receipting:",
+                "    on: [shop:OrderPlaced, shop:OrderCancelled]",
+                ""));
+
+        ContextMap map = ContextMap.of(BlueprintLoader.load(root.getAbsolutePath()));
+        assertTrue(map.problems().isEmpty(), map.problems().toString());
+        assertTrue(map.warnings().isEmpty(), map.warnings().toString());
+        assertTrue(map.references().isEmpty(), map.references().toString());
+        assertFalse(map.markdown().contains("ctx_shop -->"), map.markdown());
+    }
     /** Nobody declares a context: names resolve anywhere, as they always have. */
     @Test
     public void undeclaredDomainsAreLeftAsTheyWere() throws Exception {

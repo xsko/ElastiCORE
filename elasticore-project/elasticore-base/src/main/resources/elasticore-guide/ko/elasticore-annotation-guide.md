@@ -1880,13 +1880,12 @@ if(createDateTimeFrom != null && createDateTimeTo != null) {
 (자기 식별자가 없고 소유자에 인라인 저장). 자세한 내용은 `elasticore-rule-guide.md`를
 보세요.
 
-## domainService — 도메인 서비스 (DDD 룰셋)
-> **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
+## `domainService` - 3.1 에서 제거됨
 
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 클래스를
-> 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리 포트를 받습니다 -
-> 그리고 `domainService:` 에서 그 항목을 지웁니다:
+`domainService:` 섹션은 3.1 부터 읽지 않습니다(issue 370). 이 섹션이 남은 프로젝트도 빌드됩니다: 빌드가
+항목마다 알림을 출력하고(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다), 3.0 이
+생성한 클래스는 당신의 코드가 쓰는 동안 남습니다. 클래스를 직접 쓰세요 - `domain.service` 패키지의
+`@Service` 로, 생성자에서 리포지터리 포트를 받습니다 - 그리고 그 항목을 지웁니다:
 
 ```java
 // domain/service/PricingService.java - 당신의 파일
@@ -1909,48 +1908,7 @@ public class PricingService {
 }
 ```
 
-**애노테이션이 아니라 DSL 섹션입니다.** 어느 엔티티에도 속하지 않는 연산이라,
-엔티티의 meta 줄에 쓸 자리가 없기 때문입니다.
-
-```yaml
-# blueprint/<domain>/model/domainservice.yml
-domainService:
-
-  Pricing:
-    desc: What an order costs once the products it names are priced
-    uses: [Order, Product]
-```
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `uses` | O | 이 연산이 걸치는 애그리거트들. 재생성되는 Base 에 도메인 포트로 주입됩니다 |
-| `desc` | X | 클래스 주석 |
-
-`uses` 가 비었거나 하나뿐이면 `DSL_WARN` 이 납니다(빌드는 계속). 애그리거트 하나에
-대한 연산은 보통 그 애그리거트의 메서드입니다.
-
-### 생성물
-
-```java
-public abstract class PricingDomainServiceBase {     // 매번 재생성 - uses 가 바뀌면 따라 바뀜
-
-	@Autowired
-	protected OrderRepositoryPort orderRepositoryPort;
-
-	@Autowired
-	protected ProductRepositoryPort productRepositoryPort;
-}
-
-@Service
-public class PricingDomainService extends PricingDomainServiceBase {
-	// 연산은 여기에. generate-once 라 이 파일은 당신 것이고, 고친 내용은 남습니다.
-}
-```
-
-`uses` 에 애그리거트를 더하면 Base 에 포트가 생기고, 당신의 클래스는 고치지 않고 씁니다.
-
-`env.yml` 의 `namespace.domainService` 로 자리를 정합니다. 생략하면 엔티티와 같은
-패키지입니다.
+`env.yml` 의 `namespace.domainService` 는 그대로입니다: 아키텍처 테스트가 그 패키지를 도메인 코드로 검사합니다.
 
 ## @behavior — 엔티티 행위 (DDD 룰셋)
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
@@ -2088,6 +2046,8 @@ public class OrderInvariants {
 허용되고, 루트 자체를 지우는 것도 허용됩니다. 멤버에 루트를 가리키는 필드가 없으면(단방향 관계) 이 검사를
 만들 수 없어 빌드가 DSL 경고를 냅니다 - 관계를 양방향(`mappedBy`)으로 매핑하세요.
 
+`ts-model` 번들을 쓰면 브라우저에도 `OrderInvariants.ts` 가 생깁니다 - `violations(order)` 와 `isValid(order)`, 강제가 아니라 폼의 사전 확인입니다.
+
 ## @factory — 팩토리 (DDD 룰셋)
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
@@ -2116,13 +2076,13 @@ public static Order place(LocalDateTime orderDate) {
 만들기 전에 식별자를 건네받는 팩토리는 아무것도 만들지 않은 것이고, 멤버는 루트의
 add 메서드로 들어갑니다.
 
-## @specification — 명세 (DDD 룰셋)
-> **동작:** ddd, hexagonal, TypeScript client · **안 됨:** layered (생성 안 됨)
+## `@specification` - 3.1 에서 제거됨
 
-> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
-> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 조건을
-> 직접 쓰세요 - 당신의 static `Predicate<Order>` 메서드로 - 그리고 `@specification` 을 지웁니다. 화면에 필요하면
-> TypeScript 함수도 당신의 파일에 씁니다(`OrderSpecifications.ts` 는 생성기의 것입니다):
+`@specification` 은 3.1 부터 읽지 않습니다(issue 370). 이것이 남은 meta 줄도 빌드됩니다: 빌드가 선언마다
+알림을 출력하고(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다), 3.0 의 `OrderSpecifications`
+클래스는 당신의 코드가 쓰는 동안 남으며, 브라우저용 `OrderSpecifications.ts` 는 당신의 프로젝트에 넘겨집니다 -
+그대로 남고, 더는 생성되거나 지워지지 않습니다. 조건을 직접 쓰세요 - 당신의 static `Predicate<Order>`
+메서드로 - 그리고 `@specification` 을 지웁니다. 화면에 필요하면 TypeScript 함수도 씁니다:
 
 ```java
 // domain/model/OrderRules.java - 당신의 파일
@@ -2148,49 +2108,7 @@ export function highValue(order: OrderDTO | null | undefined): boolean {
 }
 ```
 
-이름을 가질 만한 도메인 규칙을 선언합니다.
-
-```yaml
-  Order:
-    meta: entity @root @specification(highValue, totalAmount > 100) @specification(hasLines, items notEmpty)
-```
-
-| 파라미터 | 필수 | 설명 |
-|---|---|---|
-| 이름 | O | 생성될 메서드 이름. 첫 콤마 앞 |
-| 조건 | O | 아래 조건 문법 |
-
-### 생성물
-
-```java
-OrderSpecifications.highValue()                          // Predicate<Order>
-OrderSpecifications.highValue().and(OrderSpecifications.hasLines())
-```
-
-boolean 이 아니라 `Predicate` 인 이유는 **조합이 이 패턴의 요점**이기 때문입니다.
-쿼리가 아니라 이미 읽어온 것에서 고릅니다.
-
-### TypeScript 에서
-
-`ts-model` 번들을 쓰면 같은 선언에서 브라우저용 파일도 나옵니다.
-
-```ts
-// OrderSpecifications.ts
-export function highValue(order: OrderDTO | null | undefined): boolean {
-    return order != null && (order.totalAmount != null
-            && Number(order.totalAmount) > 100);
-}
-
-// OrderInvariants.ts — 강제가 아니라 사전 확인입니다
-export function violations(order: OrderDTO | null | undefined): string[]
-export function isValid(order: OrderDTO | null | undefined): boolean
-```
-
-`Number(...)` 는 서버가 소수를 JSON 숫자(Jackson 기본)로 보내든 문자열로 보내든 맞게
-비교합니다. 손으로 쓴 `order.totalAmount > 100` 은 문자열로 오는 서버에서 금액과 무관하게
-false 입니다. TS 타입 선언은 기본 직렬화에 맞춰 `number` 입니다.
-
-## 조건 문법 (`@invariant`, `@specification` 공통)
+## 조건 문법 (`@invariant`)
 
 | 형태 | 뜻 | 예 |
 |---|---|---|
@@ -2607,7 +2525,7 @@ Spring Security 가 거절함.
 > **동작:** v3 Java 와 Kotlin, Spring Boot 3 과 4 (`elasticore-springboot3` / `elasticore-springboot4`); JPA, MyBatis, MongoDB · **안 됨:** 2.x generator
 
 `@access` 는 엔티티의 작업을 지킵니다. 두 버전 비교, 여러 엔티티에 걸친 리포트, "만약 이렇다면" 계산은
-어느 엔티티에도 속하지 않고, `domainService:` 는 `@access` 를 받지 않습니다. 그런 작업은 직접 쓴 클래스에서 런타임의
+어느 엔티티에도 속하지 않아 `@access` 가 닿지 않습니다. 그런 작업은 직접 쓴 클래스에서 런타임의
 `io.elasticore.springboot3.security.AccessPolicy` 로 지킵니다. 생성된 검사가 쓰는 바로 그 클래스이므로 역할 이름도,
 관리자도, `runAsSystem` 도 같습니다.
 

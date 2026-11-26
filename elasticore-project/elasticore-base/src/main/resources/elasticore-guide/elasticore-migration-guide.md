@@ -116,7 +116,7 @@ binaries keep working without recompiling.
 ### 4. The DSL validation 3.0 adds does not react to 2.2 models
 
 The `DSL_WARN` that **3.0 adds**
-applies only to DDD-specific syntax such as `domainService` and `uses:`, so a model that passes on 2.2 passes on 3.0, and a `-Pmode=valid` CI does not
+applies only to the syntax of the DDD bundles (`@root`, `commands:` ...), so a model that passes on 2.2 passes on 3.0, and a `-Pmode=valid` CI does not
 suddenly fail. A 2.0/2.1 model meets the checks 2.2.260415 added for the first time, and any one of them fails `elcore` ("Coming from 2.0 or 2.1" above). Moving to the 3.0 code (`elcore3`), an enum value longer than its field stops the build there too from the release after 3.0.261119 (before, a warning).
 
 ### 5. `supportAI` is removed

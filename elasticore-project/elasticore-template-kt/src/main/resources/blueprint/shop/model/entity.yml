@@ -78,7 +78,7 @@ entity:
   # The same aggregate the Java sample declares, so the DDD rules can be
   # compared language to language rather than described as comparable.
   Order:
-    meta: entity @root @expose(30) @behavior @invariant(items.size > 0, 'an order has at least one line') @specification(highValue, totalAmount > 100) @specification(hasLines, items notEmpty) @event(Placed(totalAmount), Cancelled) @factory(place) @extend(AuditEntity) @audited @Index(name="idx_shop_ord_date", columnList="order_date") @sort(orderDate-)
+    meta: entity @root @expose(30) @behavior @invariant(items.size > 0, 'an order has at least one line') @event(Placed(totalAmount), Cancelled) @factory(place) @extend(AuditEntity) @audited @Index(name="idx_shop_ord_date", columnList="order_date") @sort(orderDate-)
     fields:
       orderId: string(36) @id @genid
       orderDate: datetime! @search(between)

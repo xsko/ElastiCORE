@@ -22,7 +22,7 @@ A hexagon has two directions, and the generated code is split in two:
 | Outbound (persistence) | `OrderRepositoryPort` (`ddd-repository-port` rule) | `domainRepository` |
 
 > **This port belongs to the application.** Its contract is written in application DTOs, and when it pages
-> it also uses Spring's `Page`. So if you list it in the `uses:` of a `domainService`, it is ignored with a warning -
+> it also uses Spring's `Page`. So a domain service (domain code) does not take one - the architecture test refuses it:
 > the domain code would depend on a layer above it. The outbound port that the domain owns is the repository port,
 > and the two are not interchangeable.
 

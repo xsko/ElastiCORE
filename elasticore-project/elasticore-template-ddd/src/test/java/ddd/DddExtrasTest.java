@@ -1,6 +1,6 @@
 package ddd;
 
-import io.elasticore.sample.ddd.shop.application.LoyaltyProcessManager;
+import io.elasticore.sample.ddd.shop.application.LoyaltyListener;
 import io.elasticore.sample.ddd.shop.infrastructure.persistence.ShopOutboxRelay;
 import io.elasticore.sample.ddd.shop.application.dto.CustomerOrderCountDTO;
 import io.elasticore.sample.ddd.shop.application.port.out.OrderQueryPort;
@@ -30,8 +30,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What an event carries, how it leaves (outbox), what reacts to it (process
- * manager), and the read side (a projection typed as its DTO) - generated
+ * What an event carries, how it leaves (outbox), what reacts to it (a
+ * listener written by hand), and the read side (a projection typed as its DTO) - generated
  * from the shop DSL and run.
  */
 @SpringBootTest
@@ -53,7 +53,7 @@ class DddExtrasTest {
     @Autowired private CustomerRepositoryPort customers;
     @Autowired private ShopOutboxRelay relay;
     @Autowired private OrderQueryPort orderQuery;
-    @Autowired private LoyaltyProcessManager loyalty;
+    @Autowired private LoyaltyListener loyalty;
 
     private String placeOrder() {
         return tx.execute(status -> {
@@ -93,10 +93,10 @@ class DddExtrasTest {
     }
 
     @Test
-    @DisplayName("the process manager is a bean that reacts to the event after commit")
-    void processManagerIsWired() throws Exception {
+    @DisplayName("the listener is a bean that reacts to the event after commit")
+    void listenerIsWired() throws Exception {
         assertThat(loyalty).isNotNull();
-        assertThat(LoyaltyProcessManager.class.getMethod("on", OrderPlacedEvent.class)
+        assertThat(LoyaltyListener.class.getMethod("on", OrderPlacedEvent.class)
                 .isAnnotationPresent(TransactionalEventListener.class)).isTrue();
         placeOrder();
     }

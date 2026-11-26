@@ -261,7 +261,7 @@ SQL Server").
 적어도 MyBatis 판으로 읽습니다). Since: 3.0.261030-rc6
 
 모델은 JPA 판과 같고, 만들어지는 것도 같습니다 - 루트와 `<Root>Base`, 멤버, 값 객체, 도메인 이벤트, 불변식, 팩토리,
-명세, 명령(`commands:`), 생명주기(`states:`), `@snapshot`·`@compute`, 도메인 서비스·프로세스 매니저, 포트
+명령(`commands:`), 생명주기(`states:`), `@snapshot`·`@compute`, 포트
 (`<Root>RepositoryPort`·`<Root>QueryPort`·`<Root>UseCase`), 아웃박스, 아키텍처 테스트. 도메인(`domain.model`)에는 JPA·Spring
 Data 의 이름이 하나도 없습니다(JPA 판은 `mapping: xml` 로 얻는 것을 여기서는 그대로).
 
@@ -682,13 +682,12 @@ config:
 | `uses` 에 없는 컨텍스트의 타입을 씀 | **빌드 실패** (`... does not declare it (config.context.uses: catalog)`) |
 | 상대가 `publishes` 를 선언했는데 거기 없는 타입을 씀 (`publishes: []` 는 아무것도 내보내지 않음) | **빌드 실패** (`... which catalog does not publish`) |
 | 상대가 `context:` 는 있지만 `publishes` 를 선언하지 않음 | `uses` 에만 있으면 통과 |
-| 다른 컨텍스트의 프로세스 매니저가 `on: [shop:OrderPlaced]` 로 이벤트를 받음 | 타입과 같은 검사: 받는 쪽 `uses` 에 `shop`, `shop` 이 `publishes` 를 선언했다면 거기 `OrderPlaced` |
 | `publishes` 에 엔티티나 없는 이름을 적음 | DSL 경고 (그 컨텍스트의 이벤트 이름은 정상) |
 | 어느 쪽도 `context:` 가 없음 | 예전과 같음 (이름은 모든 도메인에서 찾고, DDD 번들은 경고만) |
 
 - 검사 대상: 엔티티·DTO 필드의 타입(`List<X>` 의 X 포함, `catalog:Product` 처럼 도메인 이름을 붙인 것 포함), DTO 의
-  `@template(...)`, 엔티티의 `@extend(...)`, 프로세스 매니저의 `on: [shop:OrderPlaced]` (`elasticore-dsl-guide.md` 의
-  "프로세스 매니저"). 두 도메인에 같은 이름이 있으면 어느 쪽인지 정할 수 없어 검사하지 않습니다
+  `@template(...)`, 엔티티의 `@extend(...)` - 직접 쓴 코드가 import 하는 클래스(다른 컨텍스트 이벤트의 리스너,
+  `elasticore-dsl-guide.md` 8장)는 아닙니다. 두 도메인에 같은 이름이 있으면 어느 쪽인지 정할 수 없어 검사하지 않습니다
   (로더가 경고: 타입 이름은 모든 도메인에서 하나뿐 - 하나의 이름을 바꾸세요). 3.0 규칙 엔진(`elcore3`)이 생성 전에 검사하고, 실패하면 모든 문제를 한 번에 말한 뒤 빌드를 멈춥니다.
   2.x 생성기(`elcore`)는 `context:` 를 읽지 않습니다.
 - **컨텍스트 지도**: 어느 도메인이든 `context:` 를 적으면 `blueprint/context-map.md` 가 생깁니다 (Mermaid 그림 —
@@ -1122,7 +1121,7 @@ namespace:
   port: io.example.domain.port              # Transaction Port 패키지
   proto: io.example.proto                    # Protocol Buffer 패키지
   event: io.example.domain.event             # 도메인 이벤트 패키지 (ddd-event 규칙)
-  domainService: io.example.domain.service   # 도메인 서비스 패키지 (ddd-domain-service 규칙, 폐지 예정 - 3.1 에서 제거)
+  domainService: io.example.domain.service   # 도메인 서비스 패키지 (직접 쓴 것; 아키텍처 테스트가 도메인 코드로 검사)
   inboundPort: io.example.application.port.in          # 인바운드 포트 (UseCase)
   domainRepository: io.example.domain.repository       # 리포지터리 포트 (도메인 소유)
   queryPort: io.example.application.port.out           # 조회 포트 (응용 계층 검색, 기본값 service)
@@ -1132,11 +1131,11 @@ namespace:
 `event`는 `@event(...)`를 선언한 애그리거트 루트가 있을 때만 쓰입니다. 선언하지
 않으면 이벤트 클래스는 `entity` 패키지에 놓입니다.
 
-`domainService`는 `domainService:` 섹션을 선언한 도메인에서만 쓰입니다. 선언하지
-않으면 `entity` 패키지에 놓입니다. **`service`(응용 서비스)와 같은 패키지로 두지
+`domainService`는 직접 쓰는 도메인 서비스의 패키지입니다: 아키텍처 테스트가 도메인 코드로 검사합니다(`base:`
+이면 `base.domain.service`). **`service`(응용 서비스)와 같은 패키지로 두지
 마세요** — 도메인 서비스는 도메인의 것이고 응용 서비스는 그 위 계층이라, 같은 자리에
 두면 의존 방향이 무너집니다.
-`domainService:` 와 `processManager:` 섹션은 폐지 예정이며 3.1 에서 제거됩니다(애노테이션 가이드 "domainService").
+`domainService:` 와 `processManager:` 섹션은 3.1 부터 읽지 않습니다(`elasticore-dsl-guide.md` 8장).
 
 각 생성 클래스의 `package` 선언과 `import` 문에 사용된다.
 

@@ -140,35 +140,13 @@ public class ExtensionPointTest {
                 "an artifact that names no fallback gets none invented for it");
     }
 
-    /** A domain has its own contributors, on the same terms as an entity. */
+    /** A domain has its own contributors, on the same terms as an entity: nothing to say, no file. */
     @Test
-    @DisplayName("a domain-level set declares its artifacts the same way")
-    public void domainContributionsAreDeclared() {
-        DomainSpec domain = new DomainSpec("shop", "Shop")
-                .domainService(new DomainSpec.DomainServiceSpec(
-                        "Pricing", "what an order costs", Arrays.asList("Order", "Product")));
-
-        List<ContributedArtifact> declared =
-                new io.elasticore.base.model.pub.rules.ddd.DddDomainServiceRules()
-                        .artifactsFor(domain);
-
-        assertEquals(2, declared.size(), "the regenerated wiring and the developer's class");
-        assertEquals("PricingDomainServiceBase", declared.get(0).className());
-        assertEquals("domainServiceBase", declared.get(0).target());
-        assertEquals("PricingDomainService", declared.get(1).className());
-        assertEquals("domainService", declared.get(1).target());
-        for (ContributedArtifact a : declared) {
-            assertEquals("domainService", a.namespaceKey());
-            assertEquals("entity", a.fallbackNamespaceKey(),
-                    "a project whose env.yml predates domain services still gets the files");
-        }
-    }
-
-    @Test
-    @DisplayName("a domain with none contributes none")
-    public void noDomainServicesNoArtifacts() {
-        assertTrue(new io.elasticore.base.model.pub.rules.ddd.DddDomainServiceRules()
-                .artifactsFor(new DomainSpec("shop", "Shop")).isEmpty());
+    @DisplayName("a domain with nothing to contribute contributes none")
+    public void anEmptyDomainContributesNothing() {
+        DomainSpec empty = new DomainSpec("shop", "Shop");
+        assertTrue(new io.elasticore.base.model.pub.rules.base.ApiErrorRules().artifactsFor(empty).isEmpty());
+        assertTrue(new io.elasticore.base.model.pub.rules.ddd.DddOutboxRules().artifactsFor(empty).isEmpty());
     }
 
     /**

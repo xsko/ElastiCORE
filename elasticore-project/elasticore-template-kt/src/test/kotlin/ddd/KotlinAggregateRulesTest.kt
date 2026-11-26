@@ -4,7 +4,7 @@ import io.elasticore.blueprint.domain.shop.entity.Order
 import io.elasticore.blueprint.domain.shop.entity.OrderInvariants
 import io.elasticore.blueprint.domain.shop.entity.OrderItem
 import io.elasticore.blueprint.domain.shop.entity.OrderFactory
-import io.elasticore.blueprint.domain.shop.entity.OrderSpecifications
+import io.elasticore.blueprint.domain.shop.entity.OrderRules
 import io.elasticore.blueprint.domain.shop.event.OrderCancelledEvent
 import io.elasticore.blueprint.domain.shop.event.OrderPlacedEvent
 import org.assertj.core.api.Assertions.assertThat
@@ -52,33 +52,33 @@ class KotlinAggregateRulesTest {
     }
 
     @Test
-    @DisplayName("the numeric specification compares the way BigDecimal has to be compared")
+    @DisplayName("the hand-written numeric rule (OrderRules) compares the way BigDecimal has to be compared")
     fun numericSpecification() {
-        assertThat(OrderSpecifications.highValue().test(order("150.00"))).isTrue()
-        assertThat(OrderSpecifications.highValue().test(order("100.00")))
+        assertThat(OrderRules.highValue().test(order("150.00"))).isTrue()
+        assertThat(OrderRules.highValue().test(order("100.00")))
             .`as`("the bound is exclusive, as the condition wrote it")
             .isFalse()
-        assertThat(OrderSpecifications.highValue().test(Order()))
+        assertThat(OrderRules.highValue().test(Order()))
             .`as`("an unset property is not a match, and is not an exception either")
             .isFalse()
     }
 
     @Test
-    @DisplayName("the collection specification reads the members through the property")
+    @DisplayName("the hand-written collection rule reads the members through the property")
     fun collectionSpecification() {
         val empty = order("10.00")
-        assertThat(OrderSpecifications.hasLines().test(empty)).isFalse()
+        assertThat(OrderRules.hasLines().test(empty)).isFalse()
 
         val filled = order("10.00")
         filled.addOrderItem(item())
-        assertThat(OrderSpecifications.hasLines().test(filled)).isTrue()
+        assertThat(OrderRules.hasLines().test(filled)).isTrue()
     }
 
     @Test
     @DisplayName("two rules combine, which is why they are predicates")
     fun specificationsCombine() {
         val worthShipping =
-            OrderSpecifications.highValue().and(OrderSpecifications.hasLines())
+            OrderRules.highValue().and(OrderRules.hasLines())
 
         val valuableWithLines = order("150.00")
         valuableWithLines.addOrderItem(item())

@@ -1,6 +1,6 @@
 package ddd;
 
-import io.elasticore.sample.ddd.billing.application.ReceiptingProcessManager;
+import io.elasticore.sample.ddd.billing.application.ReceiptingListener;
 import io.elasticore.sample.ddd.shop.domain.event.OrderPlacedEvent;
 import io.elasticore.sample.ddd.shop.domain.model.Customer;
 import io.elasticore.sample.ddd.shop.domain.model.Order;
@@ -31,11 +31,10 @@ import static org.mockito.Mockito.verify;
 /**
  * One bounded context reacting to another's event.
  *
- * billing/model/domainservice.yml declares {@code on: [shop:OrderPlaced]};
- * billing's env.yml says it uses shop, and shop's says it publishes the
- * event. The generated ReceiptingProcessManager is billing's code, and it
- * hears shop's order being placed - after shop's transaction committed, and
- * only then.
+ * billing's ReceiptingListener, written by hand, listens to shop's
+ * OrderPlacedEvent; billing's env.yml says it uses shop, and shop's says it
+ * publishes the event. It hears shop's order being placed - after shop's
+ * transaction committed, and only then.
  */
 @SpringBootTest
 class CrossContextEventTest {
@@ -43,7 +42,7 @@ class CrossContextEventTest {
     @Autowired private TransactionTemplate tx;
     @Autowired private OrderRepositoryPort orders;
     @Autowired private CustomerRepositoryPort customers;
-    @SpyBean private ReceiptingProcessManager receipting;
+    @SpyBean private ReceiptingListener receipting;
 
     private String placeOrder(boolean rollback) {
         return tx.execute(status -> {
@@ -90,11 +89,11 @@ class CrossContextEventTest {
     }
 
     @Test
-    @DisplayName("the context map draws the event crossing from shop to billing")
+    @DisplayName("the context map draws billing using shop, and what shop publishes")
     void contextMapDrawsIt() throws Exception {
         String map = new String(Files.readAllBytes(Paths.get("src/main/resources/blueprint/context-map.md")),
                 StandardCharsets.UTF_8);
-        assertThat(map).contains("ctx_shop -->|OrderPlaced| ctx_billing");
+        assertThat(map).contains("ctx_shop --> ctx_billing");
         assertThat(map).contains("| shop |  | OrderPlaced |");
     }
 }

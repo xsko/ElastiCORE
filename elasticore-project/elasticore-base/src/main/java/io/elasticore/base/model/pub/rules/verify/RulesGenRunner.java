@@ -78,9 +78,6 @@ public final class RulesGenRunner {
     /** Where the domain being generated writes, when the project has modules. */
     private String domainRoot;
 
-    /** The project's contexts, for a process manager that reacts to another context's event. */
-    private ContextMap contextMap;
-
     /** Package prefix -> module alias, as the domain's env.yml declares it. */
     private Map<String, String> packageModuleMap;
 
@@ -101,7 +98,7 @@ public final class RulesGenRunner {
     private int failed = 0;
     private final List<String> notes = new ArrayList<String>();
 
-    /** The deprecation notices this run has said (DeprecatedDsl): one per declaration. */
+    /** The notices of removed DSL this run has said (RemovedDsl): one per declaration. */
     private final java.util.Set<String> deprecationsSaid = new java.util.HashSet<String>();
 
     private RulesGenRunner(String projectRoot, boolean v3, boolean force,
@@ -1037,7 +1034,6 @@ public final class RulesGenRunner {
         ContextMap contextMap = ContextMap.of(loader);
         for (String w : contextMap.warnings()) io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", w);
         for (String p : contextMap.problems()) io.elasticore.base.model.pub.rules.ModelCheck.fail("[elcore3] context: " + p);
-        runner.contextMap = contextMap;
         // The domains that turn GraphQL on share one schema and one endpoint.
         for (String p : io.elasticore.base.model.pub.rules.graphql.GraphQlSettings.problems(allModels)) {
             io.elasticore.base.model.pub.rules.ModelCheck.fail(p);
@@ -1190,7 +1186,7 @@ public final class RulesGenRunner {
         // to get them stored and never shown.
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans("DSL_WARN",
                 "[elcore3] DSL validation warnings:", "  ", true);
-        DeprecatedDsl.print();
+        RemovedDsl.print();
 
         // The schema every domain contributes to, written beside the model it
         // describes. Every domain is loaded regardless of the filter, so the
@@ -1753,7 +1749,14 @@ public final class RulesGenRunner {
             if (!typescript) {
                 warnUnenforced(model);
                 // Said by the server's run, as @restExclude is; the client's run reads the same DSL.
-                DeprecatedDsl.record(DeprecatedDsl.of(model.getInternalDomainName(), model, specs), deprecationsSaid);
+                RemovedDsl.record(RemovedDsl.of(model.getInternalDomainName(), model, specs), deprecationsSaid);
+            }
+            // The rule sets a selection names are the run's own: publisher.rules.ts is the client's.
+            if (captured == null) {
+                RemovedDsl.record(RemovedDsl.ofRuleSets(model.getInternalDomainName(), contributingRules()),
+                        deprecationsSaid);
+            }
+            if (!typescript) {
                 warnStubsOverMoves(specs);
                 recordDdl(domainDirName, model, specs);
             }
@@ -2332,10 +2335,7 @@ public final class RulesGenRunner {
     /** The artifacts a domain has one of, rather than one per entity. */
     private void generateDomainArtifacts(String domainDirName, ECoreModel model,
                                          List<EntitySpec> specs) {
-        if (specs.isEmpty()) {
-            warnNothingToHang(domainDirName, model);
-            return;
-        }
+        if (specs.isEmpty()) return;
 
         io.elasticore.base.model.pub.rules.DomainSpec domain =
                 SpecFactory.fromDomain(domainDirName, model, specs);
@@ -3170,26 +3170,10 @@ public final class RulesGenRunner {
                 "jpa-mapper-file");
     }
 
-    /**
-     * A domain with no entity gets no domain-level files - including the
-     * process managers and domain services it declares, which is said rather
-     * than left for the user to find missing.
-     */
-    private void warnNothingToHang(String domainDirName, ECoreModel model) {
-        if (model.getDomainServiceModels() == null) return;
-        if (model.getDomainServiceModels().getOrgItems().size() == 0) return;
-        io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
-                "[%s] declares domain services or process managers but no entity, so nothing is generated for them"
-                        + " - a context that only reacts needs at least one entity of its own.", domainDirName));
-    }
-
     /** The domain-level artifacts the kt bundle covers so far. */
     private void generateKotlinDomainArtifacts(String domainDirName, ECoreModel model,
                                                List<EntitySpec> specs) {
-        if (specs.isEmpty()) {
-            warnNothingToHang(domainDirName, model);
-            return;
-        }
+        if (specs.isEmpty()) return;
         io.elasticore.base.model.pub.rules.DomainSpec domain =
                 SpecFactory.fromDomain(domainDirName, model, specs);
         // Q is the JPA Criteria's metadata; a MongoDB domain has its repositories instead.
@@ -4160,7 +4144,6 @@ public final class RulesGenRunner {
      */
     private void emitContributedDomain(io.elasticore.base.model.pub.rules.DomainSpec domain,
                                        ECoreModel model) {
-        lendEvents(domain);
         // A rule set selected twice - in a bundle and by name - declares its files once.
         java.util.Set<Class<?>> asked = new java.util.HashSet<Class<?>>();
         for (String name : contributingRules()) {
@@ -4184,69 +4167,6 @@ public final class RulesGenRunner {
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * What a process manager needs from the other contexts: the class of each
-     * event it names as context:RootEvent, and which context declares a name
-     * written without one. The domain alone cannot know either.
-     */
-    private void lendEvents(io.elasticore.base.model.pub.rules.DomainSpec domain) {
-        if (contextMap == null) return;
-        for (io.elasticore.base.model.pub.rules.DomainSpec.DomainServiceSpec pm : domain.domainServices()) {
-            for (String event : pm.on()) {
-                int colon = event.indexOf(':');
-                if (colon > 0) {
-                    String other = contextMap.contextNamed(event.substring(0, colon));
-                    String cls = contextMap.eventClass(event);
-                    if (other == null) {
-                        domain.foreignEventProblem(event, String.format("there is no context %s (a blueprint folder"
-                                + " or domainName)", event.substring(0, colon).trim()));
-                    } else if (cls == null && contextMap.whyNoEvent(event) != null) {
-                        domain.foreignEventProblem(event, contextMap.whyNoEvent(event));
-                    } else if (cls != null && !generatesEvents(contextMap.modelsOf(other))) {
-                        // Declared, but the rules that context runs write no event
-                        // classes: the import would name a class nobody generates.
-                        domain.foreignEventProblem(event, String.format("%s declares it, but its rules generate no"
-                                + " event classes - select ddd-event there (a ddd or hexagonal bundle has it)"
-                                + " and do not suppress it", other));
-                    } else if (cls != null) {
-                        domain.foreignEvent(event, cls);
-                    }
-                } else {
-                    String other = contextMap.contextDeclaringEvent(domain.getName(), event);
-                    if (other != null) domain.eventElsewhere(event, other);
-                }
-            }
-        }
-    }
-
-    /**
-     * Whether another domain's rule selection - as this run would resolve it
-     * there, suppressions included - has a rule writing the event artifact.
-     * Asked of the rules' declarations, as -PlistRules reads them, so the
-     * runner still names no rule set.
-     */
-    private boolean generatesEvents(List<ECoreModel> models) {
-        ECoreModel saved = currentModel;
-        try {
-            for (ECoreModel m : models) {
-                currentModel = m;
-                java.util.List<String> off = RulesConfig.resolveSuppress(domainConfig("publisher.suppress"));
-                for (String name : contributingRules()) {
-                    for (io.elasticore.base.model.pub.rules.CodeRules rs : RuleCatalog.standard().rulesOf(name)) {
-                        for (java.lang.reflect.Method method : rs.getClass().getDeclaredMethods()) {
-                            io.elasticore.base.model.pub.rules.Rule r =
-                                    method.getAnnotation(io.elasticore.base.model.pub.rules.Rule.class);
-                            if (r != null && "event".equals(r.target()) && !off.contains(r.value())) return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        } finally {
-            currentModel = saved;
         }
     }
 
@@ -4369,11 +4289,10 @@ public final class RulesGenRunner {
      */
     /**
      * A file the developer owns that the generator would now write as the
-     * subclass of a regenerated base - a process manager or domain service
-     * written before they were split - does not extend that base. Kept, it
-     * stops following the DSL: an event added to 'on' or a name added to
-     * 'uses' reaches only the base nobody extends, and nothing fails. So it
-     * is said, with what to do.
+     * subclass of a regenerated base - a behaviour class written before the
+     * entity was split - does not extend that base. Kept, it stops following
+     * the DSL: a change reaches only the base nobody extends, and nothing
+     * fails. So it is said, with what to do.
      */
     private void warnIfBaseNotExtended(ArtifactTarget out, File file, String wouldWrite) {
         String base = out.fileName() + "Base";
@@ -4387,9 +4306,7 @@ public final class RulesGenRunner {
         }
         if (existing.contains("extends " + base) || existing.contains(": " + base + "()")) return;
         String message = String.format("[elcore3] %s does not extend %s, which is regenerated from the DSL - so a change"
-                + " to the DSL ('on', 'uses') does not reach it. Make it extend %s (Kotlin: ': %s()'), turn each"
-                + " listener into 'protected void handle(...)' (Kotlin: 'override fun handle(...)') without its"
-                + " annotations, and drop the constructor - the ports are fields of the base. Or delete the file to"
+                + " to the DSL does not reach it. Make it extend %s (Kotlin: ': %s()'), or delete the file to"
                 + " have it generated anew.", out.relativePath(), base, base, base);
         io.elasticore.base.util.ConsoleLog.printWarn(message);
         notes.add(message);
@@ -5598,7 +5515,7 @@ public final class RulesGenRunner {
     private void removeUnused() {
         java.util.Set<File> all = new java.util.LinkedHashSet<File>(staleStamped.keySet());
         all.addAll(staleMerged.keySet());
-        Map<File, File> used = cache != null ? stillUsed(all) : new java.util.HashMap<File, File>();
+        Map<File, File> used = cache != null ? stillUsed(all) : stillUsed(specificationsClasses(all));
         Map<String, File> keptNames = new java.util.HashMap<String, File>();
         for (Map.Entry<File, File> en : used.entrySet()) keptNames.put(baseName(en.getKey()), en.getValue());
         int removed = 0;
@@ -5615,6 +5532,7 @@ public final class RulesGenRunner {
                 if (tracksRuntime()) runtimeFiles.add(f);
                 continue;
             }
+            if (handOver(f, merged, label)) continue;
             if (preview != null) {
                 preview.removed(f, label);
                 System.out.println("  " + label + "  REMOVED(the DSL no longer produces it)");
@@ -5637,6 +5555,62 @@ public final class RulesGenRunner {
         String n = f.getName();
         int dot = n.lastIndexOf('.');
         return dot < 0 ? n : n.substring(0, dot);
+    }
+
+    /**
+     * The stale OrderSpecifications.java / .kt among these: what @specification
+     * generated until 3.1 (issue 370). A project's code calls them, and a
+     * project that does not merge would otherwise lose them with no
+     * question asked, as it loses every stale stamped file - so for these
+     * alone the stamped run asks what still uses them too.
+     */
+    private static java.util.List<File> specificationsClasses(java.util.Collection<File> stale) {
+        java.util.List<File> out = new ArrayList<File>();
+        for (File f : stale) {
+            String n = f.getName();
+            if (n.endsWith("Specifications.java") || n.endsWith("Specifications.kt")) out.add(f);
+        }
+        return out;
+    }
+
+    /** A line of the header 3.0 wrote into every browser copy of an entity's @specification. */
+    static final String SPECIFICATIONS_TS = "Stated once on the server and generated here, so the browser asks the same";
+
+    /** The line that hands a stamped file over to the project (HashUtils reads it as not managed). */
+    private static final String HANDED_OVER =
+            "// Initially generated by ElastiCORE; no longer managed - do not remove this line.";
+
+    /**
+     * The browser copy of an entity's @specification (OrderSpecifications.ts),
+     * as 3.0 wrote it. 3.1 no longer generates it (issue 370), and the screens
+     * that import it are TypeScript, which stillUsed does not read - deleted,
+     * they would stop compiling. So it is handed over instead, whether
+     * imported or not: kept as it is, no longer tracked as generated, and
+     * said. Any other stale file goes the way it always has.
+     *
+     * @return whether the file was handed over
+     */
+    private boolean handOver(File f, boolean merged, String label) {
+        if (!f.getName().endsWith("Specifications.ts")) return false;
+        String text = readLf(f);
+        if (text == null || !text.contains(SPECIFICATIONS_TS)) return false;
+        String message = "[elcore3] " + label + " is no longer generated (@specification was removed in 3.1)"
+                + " - it is yours now: kept as it is, and ElastiCORE no longer updates or removes it.";
+        io.elasticore.base.util.ConsoleLog.printWarn(message);
+        notes.add(message);
+        // A check writes nothing: the build hands it over.
+        if (preview != null) return true;
+        if (merged) {
+            cache.remove(label);
+        } else {
+            // A stamped copy keeps its stamp line, followed by the line that says it is the project's.
+            int eol = text.indexOf('\n');
+            String handed = eol < 0
+                    ? text + "\n" + HANDED_OVER + "\n"
+                    : text.substring(0, eol + 1) + HANDED_OVER + "\n" + text.substring(eol + 1);
+            writeLf(label, f, handed);
+        }
+        return true;
     }
 
     /**
@@ -5763,7 +5737,7 @@ public final class RulesGenRunner {
         runner.printSummary();
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
                 "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
-        DeprecatedDsl.print();
+        RemovedDsl.print();
         System.setOut(shown);
         MigrationPreview done = preview;
         preview = null;
@@ -5815,8 +5789,8 @@ public final class RulesGenRunner {
         io.elasticore.base.util.ConsoleLog.printRemainingAsOrphans(
                 "DSL_WARN", "[elcore3] DSL validation warnings:", "  ", true);
         // Listed in the report, and never a reason to fail: -Pstrict counts the warnings above only.
-        List<String> deprecated = io.elasticore.base.util.ConsoleLog.storedLogs(DeprecatedDsl.NOTICE);
-        DeprecatedDsl.print();
+        List<String> deprecated = io.elasticore.base.util.ConsoleLog.storedLogs(RemovedDsl.NOTICE);
+        RemovedDsl.print();
         System.setOut(shown);
         MigrationPreview done = preview;
         preview = null;
@@ -5911,7 +5885,7 @@ public final class RulesGenRunner {
         }
         if (!deprecated.isEmpty()) {
             b.append(
-                    "## Deprecated DSL - still generated, removed in 3.1 (not a failure; -Pstrict does not count it)\n\n");
+                    "## DSL no longer read since 3.1 - remove it (not a failure; -Pstrict does not count it)\n\n");
             for (String d : deprecated)
                 b.append("- ").append(d.replace("\n", " ")).append('\n');
             b.append('\n');

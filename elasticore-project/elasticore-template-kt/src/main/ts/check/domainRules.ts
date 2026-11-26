@@ -2,7 +2,7 @@
  * A hand-written consumer of the generated browser model.
  *
  * Type-checked with the generated files on every build, which is what makes
- * it a gate: a renamed specification, a changed signature or a DTO field that
+ * it a gate: a changed signature or a DTO field that
  * stopped existing fails here rather than in somebody's application.
  *
  * It asserts types, not behaviour - nothing runs it. Behaviour is held down
@@ -16,12 +16,12 @@
  * directory of *.ts on every run.
  */
 import type { OrderDTO } from '../OrderDTO';
-import { hasLines, highValue } from '../OrderSpecifications';
+import { hasLines, highValue } from './orderRules';
 import { isValid, violations } from '../OrderInvariants';
 import * as OrderApi from '../OrderApi';
 import type { OrderItemDTO } from '../OrderItemDTO';
 
-/** A specification answers about a value the browser already holds. */
+/** A named rule (orderRules.ts) answers about a value the browser already holds. */
 export function isWorthShipping(order: OrderDTO): boolean {
     // Composition is composition: a function is already a value here, so the
     // JVM's Predicate.and() has nothing to translate to.
