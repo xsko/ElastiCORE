@@ -32,7 +32,7 @@ Notice:
 - Up to 3.0.261116-rc16 a page size beside `methods` was lost (the search paged by 20): `@expose(50, methods="...")` pages by 50 from 3.0.261117-rc17.
 - The value is one quoted list, as in `@Index(columnList="a,b")`. Spaces after the commas are fine; unquoted, only the first name is read.
 - A name it does not know is a DSL warning and serves nothing (`methods="raed,search"` serves search only) - a typo gives fewer
-  endpoints, never more. `methods=""` serves none of the five.
+  endpoints, never more. `methods=""` serves none of the six.
 - Narrowing it later takes the endpoints out of a generated Controller you have not edited, or edited elsewhere (merged). A Controller
   edited in an endpoint that goes is kept as it is, and the build names the endpoints it still serves.
 
@@ -97,7 +97,7 @@ Supplier:
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x generator (not generated)
 
 An entity that is only read. The Controller gets only the read endpoints (`read`, `search`, `schemaInfo`); create, update, batch update and delete are left out.
-The v3 Java Service, the TypeScript client and the tools of the AI extension service also keep only reads.
+The v3 Service - Java, and Kotlin from 3.0.261120 (before, the Kotlin service kept its write methods) - and the TypeScript client also keep only reads.
 Not the same as the field `@readonly` (a field the server decides, §2.2).
 ```yaml
 CommonCode:
@@ -479,6 +479,8 @@ The number of members a collection holds. On the DTO it becomes `@Size(min=n, me
 A minimum count is violated also when the collection is absent (null). If n is 1 or more, the `validate...()` of the TypeScript client
 also checks first with the same message - `if (!partial && (value.lines == null || value.lines.length < 1)) errors.lines = "..."`
 (not asked on a partial update, `partial`). The collection does not go into the `...Fields` constants.
+A search DTO's list takes both marks too (since 3.0.261125; before, they were dropped): `postIds: List<Long> @search(in) @maxsize(200)`
+becomes `@Size(max=200)`, so a longer list is a 400 before the query is built (3.6). Java and Kotlin; it adds no `@NotNull` there.
 ```yaml
 lines: List<SalesOrderLine> @OneToMany(mappedBy="order") @minsize(1, 'A sales order must have at least one item')
 ```
@@ -1260,6 +1262,7 @@ dto:
 - A name that would give the DTO nothing is refused: a relation with no field that holds its id (declare the id instead, `orderId: long @ref(order.orderId)`), a collection, and a value object where the DTO does not carry one (it carries one whole in `ddd` and `hexagonal`, and in layered MyBatis; not in layered JPA, the compatible output or 2.x).
 - Generation stops on a name the model does not have, a model no domain has, the same model twice (`Order[note], Order[total]` or `Order, Order[note]`), the same field twice (`Order[note, note]`), empty brackets (`Order[]`), `--` on a listed field, a list together with `@extend`, and a list on an entity.
 - A type name is unique across all domains, so the name finds its model wherever it is. Beside a list, a name two domains declare stops the build (`... both have Order - a type name is unique across domains: rename one`).
+- The key DTO of another domain's entity is that domain's alone (since 3.0.261126): `@template(Office)` in `agency` no longer writes a copy `agency.dto.OfficeKeyDTO`, which the generated code never used. Upgrading: code of yours that imports the copy imports `common.dto.OfficeKeyDTO` instead; the build then deletes an unedited copy, and an edited one stays with a warning - delete it.
 - `@searchable` and `@searchResult` take no list, and generation stops on one: a search DTO already takes only the fields with a search condition.
 - A list without the key is not used as the DTO of the entity's service and controller, even if it is declared first. A list with the key can be, so declare the DTO they should use first.
 
@@ -1271,6 +1274,8 @@ dto:
     meta: dto @searchable(entity=User, pageSize=25)
 ```
 With pageSize set, it implements the `PageableObject` interface. Generated fields: `pageNumber` (default 0), `pageSize` (the set value), `sortCode`.
+Declare it in the domain of its entity: a search DTO is searched only there. One whose `entity` is in another domain gets no `toSpec`, and
+the build says so (v3): `[search] OrderSearchDTO @searchable(entity=PurchaseOrder): PurchaseOrder is declared in domain 'shop', ... Declare OrderSearchDTO in domain 'shop'.`
 
 ### 4.2.1 @sort - default order
 > **Works in:** v3, Kotlin · **Not in:** 2.x generator (not generated)
@@ -1325,9 +1330,9 @@ private static final java.util.Set<String> SORTABLE_PROPERTIES = java.util.Colle
         new java.util.LinkedHashSet<String>(java.util.Arrays.asList(
                 "orderId",
                 "orderDate",
-                "deliveryAddress.city",
-                "creditCard.creditCardType",
-                "total",
+                "status",
+                "deliveryAddress.street1",
+                // ... the rest PurchaseOrderDTO shows: deliveryAddress.city, creditCard.creditCardType, total, version ...
                 "customerId")));
 
 @Override
@@ -2273,8 +2278,10 @@ and **only an enum or string field with `@access(admin)`** is used (for an enum 
 so the build gives a DSL warning and signs in without a role. Without a role field, everyone is an ordinary user. The constants of an enum
 role field are the role names `@access` may use (`read=owner|MANAGER`, see "Role names" above).
 
-**`@signin(refresh=request)` - the session follows the row.** Without it, the session keeps the key and the role from sign-in until the next
-sign-in: a role the admin changes waits for that sign-in, and a deleted member keeps a working session. With it, the entity also gets
+**`@signin(refresh=request)` - the session follows the row.** Without it, the session keeps the key and the role from sign-in until it
+expires: a role the admin changes waits for a new sign-in, and a deleted member keeps a working session - the build warns about a `@signin`
+entity with `@deleted` (`... a member deleted (@deleted) signs in no more, but a session it already has keeps working - an administrator's
+role included - until it expires. Say @signin(refresh=request) to end it with its next request.`). With it, the entity also gets
 `CustomerSessionRefresh`, a filter beside the controller (regenerated with the model, so it works whatever you did to the controller). Before each
 request whose session holds a signed-in key, it reads the row again through `me()` - a row kept under `@deleted` counts as gone. No row: the session
 ends and the request goes on as a visitor's (what needs a signed-in user answers 401). A changed role: the session takes it from this request on and
@@ -2644,6 +2651,9 @@ Post:
   document that holds it, and a request writes it with that document: the holder's service has the member's pair too
   (`cleanNote(OrderLine row, String html)`) and cleans the member on every write of the holder, changed or not - a collection's
   members, a single one, and the members they hold - after the holder's own fields, before `beforeSave`.
+  Members that hold each other (a line's parts holding lines) are kept to any depth, which the generated clean cannot reach, so an
+  html field among them stops the build (since 3.0.261124): `[Shop] HtLine.note: MongoDB keeps HtLine inside the HtOrder document to any
+  depth (HtLine -> HtPart -> HtLine), and the service cleans an html field only to a fixed depth - break the cycle, or declare the field text`.
 - `@safe(basic)`, the default, keeps text markup (paragraphs, emphasis, lists, quotes, code) and links (http, https, ftp, mailto) with
   `rel="nofollow"`, and no images. `@safe(relaxed)` also keeps headings, tables and images (http, https), and adds no `rel`. A script and
   its text, `on...` handlers, `javascript:` links and every other tag and attribute are removed: jsoup's `Safelist.basic()` / `relaxed()`.
@@ -2708,7 +2718,8 @@ Customer:
   ignore-case conditions, `words:` - since a part, a range or a case cannot be found in a column whose text differs each time; a
   search through a relation that reaches an encrypted field (`@ref(customer.phone)`, `words: customer.phone`); `@encrypt` on a field
   that is not a single string, on a key, with `@unique`, with `@formula`, on a value object (`@embeddable`), or with a value other
-  than `digits`; a searched encrypted field on a member of an aggregate; a declared search DTO that searches an encrypted field other
+  than `digits`; a searched encrypted field on a member of an aggregate; in Kotlin, searched encrypted fields both in a class and in
+  its parent (`... searched encrypted fields both here and in Person - in Kotlin keep them in one class of the hierarchy`); a declared search DTO that searches an encrypted field other
   than by equality, or one without the entity's `@search(eq)`; MongoDB; the 2.x-compatible output and the 2.x generator, which
   would store the value as sent. Sorting by an encrypted column sorts its ciphertext.
 - **Rows that are already there** hold the plain value, which is not read (`a stored value without a key version`). Encrypt them once,

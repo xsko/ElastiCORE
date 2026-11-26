@@ -337,7 +337,7 @@ entity:
 ```
 
 ### Business commands (`commands:`) - DDD bundle
-> **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
+> **Works in:** ddd, hexagonal · **Not in:** layered (warning, not generated)
 
 CRUD is "change these fields"; a domain is asked "confirm this sales order". On an entity,
 if you write `commands:`, each command is generated as **one path, from the endpoint to the rule**.
@@ -370,6 +370,9 @@ SalesOrder:
 - Parameters are **values**. Take another aggregate by its identifier (`itemCode: string(20)`) and load it in the service
   - an entity-type parameter is a DSL warning.
 - A command is generated only on a root that has a behavior class (= a single-key root that is not `@editable`). Anywhere else it is ignored after a DSL warning.
+  In layered too, from 3.0.261125 (before, without a word): `... declares commands: (ddd-command), which the selected rules do not enforce ...
+  The commands are not served, and the TypeScript client offers none.` The TypeScript client writes a command's function only where the
+  server serves it (before, a layered or `@editable` root's client called an endpoint that does not exist: 404).
 - A **root with no `@editable` field at all** does not get PUT (`update`, `batchUpdate`): its API is
   create, read, delete and commands.
 
@@ -379,6 +382,11 @@ SalesOrder:
 A **rule that a state changes only from
 here to there** - "an order starts as PLACED, becomes SHIPPED when shipped and CANCELLED when cancelled" - is written in the DSL instead of in code. The bodies of the command methods (`ship()`, `cancel()`) are generated too, so
 there is nothing to write by hand in the behavior class.
+
+In layered the build warns that `states:` is not enforced (`elasticore-env-guide.md` 7-1). Adding `ddd-state` to the layered bundle
+sets the initial state only, and a lifecycle on a root without a behavior class (layered, or an `@editable` root) is said (since 3.0.261125):
+`[Product] Device states.status: the commands approve, reject, revoke are written only for a root with a behaviour class (a root that is
+not @editable, with architecture = 'ddd' or 'hexagonal'); Device gets its initial state only.`
 
 #### 1. How the three places connect
 

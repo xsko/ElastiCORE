@@ -318,7 +318,7 @@ as in JPA. Only the storage side differs; the project declares `spring-boot-star
 | `<Entity>Repository.java` | `extends MongoRepository<Entity, Id>`, and the search: `criteria(searchDTO, owner)`, `hasCondition`, `sort` (only `SORT_FIELDS`) |
 | `<Entity>CoreService.java` | The **same method names and signatures** as the JPA version, over the repository and `MongoTemplate` (a search is a `Query` of the Criteria, paged) |
 
-**In Kotlin** (`language = 'kotlin'`, since 3.1) the same files are `.kt`: the entity is a class of `var` properties with the same annotations, the repository's search is its `companion object` (`@JvmStatic`, so `OrderRepository.criteria(...)` reads the same from Java and Kotlin), and the bundle is `mongo-springboot-kt`. A reference is read lazily through a proxy of the referenced class, which Kotlin makes final - open the documents in `build.gradle`, as a Kotlin JPA project opens `@Entity`:
+**In Kotlin** (`language = 'kotlin'`, since 3.0.261121) the same files are `.kt`: the entity is a class of `var` properties with the same annotations, the repository's search is its `companion object` (`@JvmStatic`, so `OrderRepository.criteria(...)` reads the same from Java and Kotlin), and the bundle is `mongo-springboot-kt`. A reference is read lazily through a proxy of the referenced class, which Kotlin makes final - open the documents in `build.gradle`, as a Kotlin JPA project opens `@Entity`:
 
 ```groovy
 plugins { id 'org.jetbrains.kotlin.plugin.allopen' version '<your Kotlin version>' }
@@ -490,7 +490,7 @@ The `@env:` prefix refers to an annotation defined in env.yml. It is replaced wi
 - The `genid` key is handled specially: when an entity field uses `@genid`, the given ID generator method is registered in `@PrePersist`
 - Form: `genid(package.Class.method)`
 
-**Masking personal data in responses** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1):
+**Masking personal data in responses** (`elasticore-springboot3` / `elasticore-springboot4`, since 3.0.261121):
 ```yaml
 config:
   annotations:
@@ -505,9 +505,9 @@ config:
 - The runtime registers the Jackson module by itself (Jackson 2 on Boot 3, Jackson 3 on Boot 4), and the generated DTO is the same on both.
 - `MaskType`: `PHONE` (the middle group), `EMAIL` (two letters of the local part), `NAME` (the first and last letter), `PLATE` (the last four digits), `CARD` (all but the first and last four digits), `RRN` (all but the first seven digits).
 - Only the response JSON is masked; a request is read as sent. Everyone gets the masked value - the owner and the admin too.
-- A client may send a read DTO back unchanged: the 3.0 code's update (`PUT` and `PUT /batch`; JPA, MyBatis, MongoDB, Java and Kotlin) compares a masked field's text with the stored value masked - with `@encrypt`, the decrypted value - and keeps the stored value when they are the same. Any other text is written, and a create writes what it is sent. The field is found by the class name `io.elasticore.springboot3.mask.Mask` (or the name `runtimePackages` gives it). Not kept: an update by condition (`updateBySpecification`), and code of your own that calls the mapper.
+- A client may send a read DTO back unchanged: the 3.0 code's update (`PUT` and `PUT /batch`; JPA, MyBatis, MongoDB, Java and Kotlin) compares a masked field's text with the stored value masked - with `@encrypt`, the decrypted value - and keeps the stored value when they are the same. Any other text is written, and a create writes what it is sent. The field is found by the class name `io.elasticore.springboot3.mask.Mask` (or the name `runtimePackages` gives it). Not kept: an update by condition (`updateBySpecification`), and code of your own that calls the mapper. A `@Mask` whose argument is not a `MaskType` constant is a DSL warning (`... names no MaskType constant - an update writes the field as sent, masked text included`), and the update writes that field as sent.
 
-**Keeping a column encrypted** (`elasticore-springboot3` / `elasticore-springboot4`, 3.1): the 3.0 code's `@encrypt` (annotation guide) does it, with the blind index for `@search(eq)`. Without the generator, name the runtime's converter:
+**Keeping a column encrypted** (`elasticore-springboot3` / `elasticore-springboot4`, since 3.0.261121): the 3.0 code's `@encrypt` (annotation guide) does it, with the blind index for `@search(eq)`. Without the generator, name the runtime's converter:
 ```yaml
 config:
   annotations:
@@ -637,12 +637,16 @@ config:
 - Where the namespaces name their layers by segment under the base package - `namespace: { base: ... }` lays them out so:
   `domain.model`, `application`, `adapter.in.web`, `infrastructure.persistence` - the packages your own code adds there are
   read too, by their first segment after the base: `domain.*` with the domain, `application.*` with the application, and
-  outside both `adapter.*`, `infrastructure.*` and the segments of `control` and `repository` (`interfaces`, say). A
+  outside both `adapter.*`, `infrastructure.*` and the first segments of `control`, `repository` and `persistence`
+  (`interfaces`, say); `adapter.out.*` goes with persistence (the outbound side). A
   hand-written `domain.policy` class that uses `infrastructure.mail` then fails the test. A package it cannot place
   (`config`, say) is a DSL warning, once, and is not checked; the base package itself (the application class) and the test
   sources are left out. A layered layout, whose segments name no layers, is read from the namespaces alone.
 - Once written the file is yours, as every file generated once: one you did not edit takes new package lists on the next
   build, and an edited one goes through the three-way merge (9-2) - it keeps your rules where they do not overlap.
+  Upgrading to 3.0.261121 or later: a test nobody edited takes the wider lists with no DSL change, so it can now fail where your
+  `domain.*` code uses `infrastructure.*` or `adapter.*`, or `application.*` code uses them past a port. There is no switch for the
+  old lists: move the dependency behind a port the domain or the application declares.
 - Rules for `ddd` and `hexagonal` (the domain's rules include `ddd-aggregate`): the domain does not depend on outer layers / the application does not depend on adapter or persistence classes (only through ports) /
   the domain does not know the web / (with `mapping: xml`) the domain does not know `jakarta.persistence` or `org.hibernate`.
 - Rules for `layered` (any other selection): the services (`service`, `dto`) do not depend on the web (`control`) / persistence and the entities do not depend on
@@ -783,6 +787,8 @@ unit test; `"true"` keeps its meaning, and a model without `"contract"` generate
   visitor for `null`. A sign-in's session is kept with the cookies the sign-in answers with, and both are sent (`perform`,
   `sentBy`): under Spring Session (`spring-session-jdbc`, ...) the signed-in session is the one its `SESSION` cookie names, not the
   container's; where the container keeps the sessions there is no cookie and nothing more is sent.
+  A support class an earlier version wrote (before 3.0.261126) takes these lines by the merge (`MERGED(your edits kept)`); one whose
+  own lines meet them is `KEPT`, and the run says where - copy the `cookies` lines over from `build/elasticore/contract/` by hand.
   A row of a caller's is made by the administrator - as the application itself (`asTheSystem`) where no
   administrator signs in - with the owner sent, or by the caller where the server sets `@owner`; the `@signin` entity's own row is
   the caller's. Sign in your way in `signIn(role)`. A support class of yours kept by a merge without these members gets no test of
@@ -894,6 +900,8 @@ config:
 - `referenceColumn: field` - the column is the relation field's name + `_id`, for every reference by id: `author: Member` ->
   `author_id`, `editor: Member` -> `editor_id`, and a root's reference to its own kind too (`parent: Post` -> `parent_id`).
   A field's own `@db(...)` still wins. Only the table changes: the id field keeps its name (`authorMemberId`). Also for new projects.
+- In layered, `referenceColumn` is not read, and the build says so: `[shop] referenceColumn: short is read by architecture = 'ddd'
+  and 'hexagonal' only - ...` (since 3.0.261120). It is a DSL warning, so `elcoreValidate -Pstrict` fails until you remove the setting.
 - `adminRole` - if the roles put in at sign-in, as in `SessionCurrentUser.signIn(request, id, "ADMIN")`, include this name,
   the user is an admin. The `signin` generated by `@signin` on an entity line puts that value in when the `role` field (or the `@role` field) of that entity
   is an enum or string with `@access(admin)`.
@@ -1042,6 +1050,29 @@ dependencies { elasticore project(':acme-rules') }
 ```
 
 See the rules that are running now, and their order, with `./gradlew elcore3 -PlistRules`. For details, see `elasticore-ddd-customize-guide.md`.
+
+### When the selected rules leave out what the DSL declares
+
+A domain that declares `@access`, `@owner`, `@password`, `states:`, `@stamp`, `commands:`, `@deleted`, `@snapshot` or `@compute`
+while the selected rules do not carry the rule set for it gets a DSL warning, and that part is not generated. For example, a
+hexagonal domain with `publisher.rules: [ossie-export]` and an `@access` entity:
+
+```text
+[shop] Customer declares @access, @owner and @password (jpa-service-access), which the selected rules do not enforce - nothing is checked, derived or hashed. publisher.rules in env.yml replaces the architecture's bundle rather than adding to it, and its list does not name jpa-service-access. To add rule sets to the bundle, leave publisher.rules out and name them in rules = [...] in the elasticore { } block (-Delasticore.publisher.rules.add=...); to keep the list, name jpa-service-access in it.
+```
+
+The end of the warning fits where the selection came from (since 3.0.261124):
+
+| The selection | What the warning tells you to do |
+|---|---|
+| A `publisher.rules` list in env.yml, or `-Delasticore.publisher.rules` | The list replaces the bundle: name the rule set in the list, or leave the list out and add the rule set with `rules = [...]` |
+| A list that names `jpa-springboot` (the wizard wrote it before 3.0.261028-rc3) | Take `jpa-springboot` out of the list, and `output = 'v2'` out of the `elasticore { }` block |
+| The 2.x code (`output = 'v2'`) | `elasticore { output = 'v3' }` (`elasticore-migration-guide.md`) |
+| The layered bundle (`jpa-springboot-v3`) | `Declare architecture = 'ddd' or 'hexagonal', or add the rule set.` Instead, for `states:`: adding `ddd-state` to this bundle sets the initial state only; for `commands:` (since 3.0.261125): the commands are not served, and the TypeScript client offers none |
+| MongoDB, for `states:`, `commands:` and derived values | MongoDB has no domain-model bundle: they are generated for JPA and MyBatis only |
+
+It stays a warning: the build goes on. Before 3.0.261124 the warning always ended with the layered advice, and a list given as
+`-Delasticore.publisher.rules` was not checked at all.
 
 ### Warning: the rule engine reads this setting
 
@@ -1337,6 +1368,7 @@ Dependencies: `spring-boot-starter-flyway` (Boot 4; for Boot 3 it is `org.flyway
 | Length or precision increased | `ALTER COLUMN` - the syntax differs per DB (Oracle `MODIFY`; SQL Server drops the index briefly and recreates it) |
 | Required -> optional | `DROP NOT NULL` |
 | Relation, `@unique`, `@Index` added/removed | Foreign key or index added/removed |
+| An `@Index` name another table now takes (the table renamed, a `table.prefix` added, the index moved) | The old table's index of that name is dropped first (`drop index uk_coverage_product_code of coverage - jp_coverage takes its name`), then made on the new table: PostgreSQL, Oracle and H2 hold an index name once per schema. It drops an index, not rows; the old table's `DROP TABLE` still waits for review (since 3.0.261125) |
 | Field or entity removed, type changed or narrowed, optional -> required, key changed | **Review**: as a comment at the end of the file - what can lose data or fail on existing rows |
 | `oracleVersion` set to 23 or later (or unset again) over Oracle tables | Oracle only, **review**: each boolean column copied into a new one of the other type, which takes its place (above) |
 
@@ -1475,7 +1507,7 @@ and below it the list of files that still have markers.
      the side different from the cache, the DSL changes of the cache's branch look like "things the developer deleted" and may silently drop out.
   3. **If both branches edited the same generated file by hand**, merge that file yourself - keep the generated lines and the edited lines of both sides. If you
      pick only one side, what the other side edited is lost.
-  4. **A branch from before the rename** still has `.elasticore/cache` (a modify/delete conflict on it). The base is the side you picked in step 2: if that is the branch's side, `git checkout <branch> -- .elasticore/cache` and `git mv -f .elasticore/cache .elasticore/generated-base.zip`; otherwise `git rm .elasticore/cache`.
+  4. **A branch from before the rename** still has `.elasticore/cache` (a modify/delete conflict on it). The base is the side you picked in step 1: if that is the branch's side, `git checkout <branch> -- .elasticore/cache` and `git mv -f .elasticore/cache .elasticore/generated-base.zip`; otherwise `git rm .elasticore/cache`.
 - If the base cannot be read (corrupt), nothing is written and the build fails. Fetch it again from git. If you delete only the `generated-base.zip` file, the next build reports, without touching them, all files that are not
   in the base and differ from what is generated now - delete the files you want to get as generated. If you delete the whole `.elasticore/`
   folder, it is treated as a project merging for the first time, and `orm.xml` and the message files, which were always overwritten, are written anew as before.
