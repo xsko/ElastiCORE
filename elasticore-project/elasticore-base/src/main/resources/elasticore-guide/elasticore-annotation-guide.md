@@ -1883,6 +1883,32 @@ see `elasticore-rule-guide.md`.
 ## domainService - domain service (DDD rule set)
 > **Works in:** ddd, hexagonal · **Not in:** layered (not generated)
 
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the class
+> yourself instead - a `@Service` in the `domain.service` package that takes the repository ports in its constructor -
+> and remove the entry from `domainService:`:
+
+```java
+// domain/service/PricingService.java - yours
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // The operation goes here.
+}
+```
+
 **This is a DSL section, not an annotation.** The operation belongs to no entity,
 so there is no place for it on an entity's meta line.
 
@@ -2092,6 +2118,35 @@ through the root's add method.
 
 ## @specification - specification (DDD rule set)
 > **Works in:** ddd, hexagonal, TypeScript client · **Not in:** layered (not generated)
+
+> **Deprecated - removed in 3.1.** In 3.0 it still generates what this section describes, and the build prints a notice
+> for each declaration (a notice, not a `DSL_WARN`: `elcoreValidate -Pstrict` does not count it). Write the predicate
+> yourself instead - a static `Predicate<Order>` method of your own - and remove the `@specification`. If a screen needs
+> it, write the TypeScript function too, in a file of your own (`OrderSpecifications.ts` is the generator's):
+
+```java
+// domain/model/OrderRules.java - yours
+import java.math.BigDecimal;
+import java.util.function.Predicate;
+
+public final class OrderRules {
+
+    private OrderRules() {
+    }
+
+    public static Predicate<Order> highValue() {
+        return order -> order.getTotalAmount() != null
+                && order.getTotalAmount().compareTo(new BigDecimal("100")) > 0;
+    }
+}
+```
+
+```ts
+// orderRules.ts - yours; Number(...) reads a decimal sent as a number or as a string
+export function highValue(order: OrderDTO | null | undefined): boolean {
+    return order != null && order.totalAmount != null && Number(order.totalAmount) > 100;
+}
+```
 
 Declares a domain rule worth a name.
 

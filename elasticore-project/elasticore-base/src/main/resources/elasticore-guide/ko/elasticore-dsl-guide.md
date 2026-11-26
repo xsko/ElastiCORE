@@ -1117,6 +1117,32 @@ port:
 ## 8. Domain Service 정의
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
 
+> **폐지 예정 - 아래 `processManager:` 와 함께 3.1 에서 제거됩니다.** 3.0 에서는 둘 다 이 장의 설명대로 그대로
+> 생성되고, 빌드가 선언마다 알림을 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는
+> 세지 않습니다). 대신 클래스를 직접 쓰세요 - `domain.service` 패키지의 `@Service` 로, 생성자에서 리포지터리
+> 포트를 받습니다 - 그리고 `domainService:` 에서 그 항목을 지웁니다:
+
+```java
+// domain/service/PricingService.java - 당신의 파일
+import com.acme.shop.domain.repository.OrderRepositoryPort;
+import com.acme.shop.domain.repository.ProductRepositoryPort;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PricingService {
+
+    private final OrderRepositoryPort orders;
+    private final ProductRepositoryPort products;
+
+    public PricingService(OrderRepositoryPort orders, ProductRepositoryPort products) {
+        this.orders = orders;
+        this.products = products;
+    }
+
+    // 연산은 여기에.
+}
+```
+
 어느 애그리거트에도 속하지 않는 연산입니다. **엔티티가 아니라 도메인에 선언**하는
 것이 이 섹션의 요점입니다 — 다른 모든 어노테이션은 엔티티에 쓰는데, 도메인 서비스는
 "누구의 것도 아니다"가 정의이기 때문입니다. 루트 하나를 골라 매다는 순간 그 정의와
@@ -1181,6 +1207,39 @@ public class PricingDomainService extends PricingDomainServiceBase {   // 개발
 
 ### 프로세스 매니저 (`processManager:`)
 > **동작:** ddd, hexagonal · **안 됨:** layered (생성 안 됨)
+
+> **폐지 예정 - 3.1 에서 제거됩니다.** 3.0 에서는 이 절의 설명대로 그대로 생성되고, 빌드가 선언마다 알림을
+> 한 번 출력합니다(`DSL_WARN` 이 아닌 알림이라 `elcoreValidate -Pstrict` 는 세지 않습니다). 대신 리스너를
+> 직접 쓰세요 - 생성되는 Base 가 리스너에 붙이는 두 어노테이션을 단 `@Component` 의 메서드로 - 그리고
+> `processManager:` 에서 그 항목을 지웁니다. 다음 단계가 호출한 쪽의 트랜잭션 안에서(함께 롤백되게) 돌아야
+> 하면, 두 어노테이션 대신 `@EventListener` 하나를 메서드에 붙입니다:
+
+```java
+// application/BillingListener.java - 당신의 파일
+import com.acme.erp.domain.event.SalesOrderShippedEvent;
+import com.acme.erp.domain.repository.InvoiceRepositoryPort;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+@Component
+public class BillingListener {
+
+    private final InvoiceRepositoryPort invoices;
+
+    public BillingListener(InvoiceRepositoryPort invoices) {
+        this.invoices = invoices;
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(SalesOrderShippedEvent event) {
+        // 다음 단계는 여기에.
+    }
+}
+```
 
 도메인 서비스와 같은 파일에 선언합니다. 이벤트에 반응해 다음 단계를 진행하는 자리입니다.
 

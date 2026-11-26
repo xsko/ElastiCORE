@@ -202,6 +202,11 @@ public class ConsoleLog {
         return 0;
     }
 
+    /** A copy of what is stored under the key, in the order it was stored; empty when nothing is. */
+    public static List<String> storedLogs(String key) {
+        List<String> logs = consoleLogMap.get(key);
+        return logs == null ? new ArrayList<String>() : new ArrayList<String>(logs);
+    }
 
     public static boolean hasStoredLogkey(String key) {
         return consoleLogMap.containsKey(key);
