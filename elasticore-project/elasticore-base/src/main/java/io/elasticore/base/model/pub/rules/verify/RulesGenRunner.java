@@ -5476,7 +5476,10 @@ public final class RulesGenRunner {
                 HashUtils.Response st = readStatus(f);
                 // An edited browser copy of a specification, still under its 3.0 stamp: handed over as an
                 // unedited one is (an edited stamped file is otherwise passed over below).
-                if (st != null && st.getStatus() == HashUtils.MODIFIED && stamped3(f) && handOver(f, false, relative(f))) {
+                if (st != null
+                        && st.getStatus() == HashUtils.MODIFIED
+                        && stamped3(f)
+                        && handOver(f, false, relative(f))) {
                     continue;
                 }
                 if (st == null || st.getOldEcdLine() == null || st.getStatus() == HashUtils.UNTRACKED

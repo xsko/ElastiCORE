@@ -590,7 +590,8 @@ public class ElastiCorePluginTest {
         // Registered, never run by a build: the client went stale after every model change.
         assertTrue(!off.contains(":elcore3ts"), off);
 
-        writeBuild("plugins { id 'io.elasticore'; id 'java' }",
+        writeBuild(
+                "plugins { id 'io.elasticore'; id 'java' }",
                 "elasticore { architecture = 'hexagonal'; typescriptClient = true }",
                 "tasks.register('reportElcore3') {\n"
                         + "    doLast {\n"
