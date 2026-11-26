@@ -453,6 +453,8 @@ so if you fix the DSL, it reaches every entry point in the next build. For the t
 - The template's slots (`${accessCreate}` and so on) are empty when there is no declaration, so the generated code does not change.
 - Runtime: `CurrentUser` (default `SessionCurrentUser`) of `io.elasticore.springboot3.security`,
   `AccessPolicy`, `PasswordHasher` (default PBKDF2), and the 401 and 403 exceptions. If you register a bean, it is used.
+  `AccessPolicy.level(op)` answers `null` for an entry that names a role or joins words (`owner|MANAGER`, from 3.0.261123): code of
+  yours that reads it handles `null`, or asks `require`, `owns` and `ownerFilter`, which read every entry.
 - The CoreService and use case of an `@login` + `@password` entity get `authenticate`. If the entity line also has `@signin`,
   this rule also writes `me()` and the controller's `signin`, `signout` and `me` endpoints, and the login column becomes unique
   (unique comes from `@signin` alone - even when the conditions below stop the endpoints from being produced).
@@ -921,8 +923,8 @@ every method. It replaces `@restExclude`, which is deprecated and still applies 
 In v3 output, the calls to a removed method are removed with it, so the compile does not break: `update` takes `batchUpdate` with it, `deleteById` takes
 `delete` and `deleteBatch`, `delete` takes `deleteBatch`, and `save` takes `create`. The hexagonal use case
 interface does not promise a method that the service removed either (before, `@restExclude(batchUpdate)` did not compile, with `XxxService is not abstract
-and does not override abstract method batchUpdate`). The Kotlin service does not remove methods and leaves them as they are,
-and only the controller and use case follow. The 2.x-compatible bundle removes only what is written. When a project rule removes a method itself with `ctx(e).excludeMethod("update")`,
+and does not override abstract method batchUpdate`). The Kotlin service removes them as the Java one does (from 3.0.261120; before, it kept them),
+and so does `@readonly`: Kotlin code of yours that overrides or calls a removed method no longer compiles - remove that override or call. The 2.x-compatible bundle removes only what is written. When a project rule removes a method itself with `ctx(e).excludeMethod("update")`,
 v3 output takes the dependents with it too (`update` without `batchUpdate` is not called). The TypeScript client follows the server;
 if the server is 2.x-compatible output, it removes only what is written (even with `@restExclude(update)`, `batchUpdate` of the `PUT /batch` that stays on a 2.x server
 also stays in the client). The server's mode is known from the settings of `elcore3ts` itself (architecture, language, `output`, `-Pv2`/`-Pv3`, the domain's rules).
@@ -950,9 +952,11 @@ package `ShopApiErrors` (`@RestControllerAdvice`, RFC 9457 `ProblemDetail`) once
 It answers with the status codes in the table above, and applies only to the controllers in that package.
 It is generate-once, so the response format belongs to the developer. In the constructor it passes the Validator that Spring configured to
 `BeanValidation.use(...)`, so service-side validation also uses custom constraints that need injection and
-the application's messages. It catches only the two wrappers that carry invariants (`InvalidDataAccessApiUsageException`,
-`TransactionSystemException`), so other data-access errors such as a unique conflict go to the user's
-handler.
+the application's messages. Of the data-access errors it catches the two wrappers that carry invariants (`InvalidDataAccessApiUsageException`,
+`TransactionSystemException`), and says a store's refusal by its kind only - `unique` and `referenced` (409), `required` and `check` (400),
+`stale` (409) - never the driver's text, which names the SQL, the index and the value. Over MongoDB a taken `@unique` value is `409 unique`
+too from 3.0.261120 (before, the driver's text). An `XxxApiErrors` you edited takes that when it merges cleanly; if it is `KEPT(yours ...)`,
+add the `if (ex.getCause() != null)` branch of `duplicate(...)` from a newly generated one.
 
 **Refusals before the controller (`RequestShapeErrors`).** The generated `ShopApiErrors` does an `@Import` of the runtime's
 `io.elasticore.springboot3.validation.RequestShapeErrors`. For a request that Spring MVC refuses before
@@ -1176,6 +1180,8 @@ HTTP/1.1 409                       (no header)
 - A refusal that picks the state by code, like an invariant, is `InvariantViolationException(code, message, args...)` (`state.` is 409,
   `reference.` is 404, anything else 422). Thrown by hand with a generated code and fewer values than its sentence names
   (`state.*` with the two codes), the answer is the message you gave - never a sentence with `{3}` left in it.
+  Its default text fills `{0}`, `{1}` ... from the values, as the exceptions in the table do (from 3.0.261125; before, it kept `{0}`);
+  a text without a placeholder is kept as written, quotes included.
 - Checked in: Pet Store `ShopFlowTest.aRefusalHandCodeThrowsIsSaidByItsCode` (what a test controller threw).
 - An `XxxApiErrors` that has been edited is not regenerated, so the handler uses only `ex.getMessage()`. Change it, as in a newly generated file, to
   `coded(problem(..., messages.text(ex.getCode(), ex.getMessage(), ex.getArgs())), ex.getCode())`.
@@ -1291,6 +1297,8 @@ and its `elcore3` runs the Java default:
 - A key no run reads (`java:`, a typo such as `kts:`) is left out with a DSL warning naming the keys that are read:
   `publisher.rules has a key no run reads: java - the keys are kt (a Kotlin build's elcore3) and ts (elcore3ts)`.
 - A Java bundle under `kt:` stops a Kotlin build, as in the list (see "A wrong combination fails" above).
+- `ossie-export` is a server rule set: name it in the server's list (`kt:` in a Kotlin build) or in the plugin's `rules = [...]`.
+  Named only under `ts:` it does not turn the export on (from 3.0.261121).
 - Other spellings are not read, and nothing warns: a quoted `"rules.kt":` beside `rules:` under `publisher:`, or a
   `"publisher.rules.kt":` key under `config:`. `-PlistRules` shows the list a run took.
 
@@ -1427,6 +1435,19 @@ e.isKnownEnum(type)      // is it an enum the model knows
 ```
 
 > `Field.getType()` is private. Read the type through `FieldSpec`.
+
+### What the built-in rule sets work out (public from 3.0.261123)
+
+The contract tests read these (packages `io.elasticore.base.model.pub.rules.base` and `.ddd`), so a rule of yours may too - as with
+the rule sets' other helpers, the shape can change between versions:
+
+| Call | Answers |
+|---|---|
+| `ServiceAccessRules.level(e, "update")` | The level an operation is at, as `AccessPolicy` reads it: its own entry, else `*`, else `admin`; `public` with no `@access` |
+| `ServiceAccessRules.keyGenerated(pk)` | Whether the key is generated (a sequence, `@genid`, a `@jpa:GeneratedValue`) rather than sent |
+| `DddInvariantRules.declaredPromises(e)` | The root's `@invariant` conditions the listener checks, in order, each as `{condition, code}` |
+| `DddStateRules.stampedStates(e)` | The stamps the moves write, each as `{field, lifecycle field, state}` |
+| `DddCommandRules.kebab("shipPartially")` | `ship-partially`, a command's path segment |
 
 ---
 
@@ -1915,7 +1936,9 @@ elasticore {
 
 **Upgrading.** The code a newer ElastiCORE generates can name classes, methods or constructors your copy does not have yet.
 After an upgrade, compare `build/elasticore/runtime-classes.txt` with the last one, and take the classes that are new or changed
-from the new version's sources jar; a compile error names what is still missing.
+from the new version's sources jar; a compile error names what is still missing. For example, from 3.0.261128 the generated
+services call `entity.RefusedWrite` (JPA) or `mybatis.RefusedWrite` (MyBatis) when a write is refused: copy them in, and for MyBatis
+put `mybatis-spring` on your copy's classpath - the jar only compiled against it.
 
 Checked on `elasticore-template-ddd` (hexagonal Java, Spring Boot 3.3): 38 classes listed, 92 of the runtime's 140 classes copied
 (the list and what it uses); the project compiled and its tests ran with no `io.elasticore` artifact on the classpath.
@@ -1943,6 +1966,8 @@ so it is not refused together with `output = 'v2'`.
     publisher:
       rules: [hexagonal-springboot, ossie-export]   # env.yml: write it together with the bundle
 ```
+
+In a Kotlin build whose `publisher.rules` is a map, it goes under `kt:`; under `ts:` alone it is not read ("Choosing rules per language").
 
 Every time you generate, `semantic_model.yml` is rebuilt in the blueprint root (the whole project is **one model** -
 so that relationships across domains are not cut).
