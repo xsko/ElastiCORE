@@ -30,6 +30,8 @@ web/node_modules/
 # The label bundle, every file of it generated from @label(en=...) (elasticore-dsl-guide.md 2).
 /src/main/resources/i18n/*-labels.properties
 /src/main/resources/i18n/*-labels_*.properties
+# What GET /schema/info answers from (config: schemaInfo: model, elasticore-env-guide.md 6-6).
+/src/main/resources/elasticore/*-schema.json
 
 # What the generator last wrote, merged against (elasticore-env-guide.md 9-2). A project
 # commits it with its generated files; this one keeps most of those out of git and

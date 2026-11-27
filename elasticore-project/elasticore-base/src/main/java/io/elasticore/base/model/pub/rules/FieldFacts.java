@@ -100,6 +100,21 @@ public final class FieldFacts {
         return v.matches("-?\\d+(\\.\\d+)?") ? v : null;
     }
 
+    // ---- what a field refers to ---------------------------------------------------
+
+    /**
+     * The relation a DTO field reads, as relation.field: its @ref (customerCustomerId @ref(customer.customerId)
+     * holds the key, customerName @ref(customer.name) shows the row) - or, for a reference by id (the DDD
+     * rule sets), its @idof as relation. with nothing after the dot (customerId @idof(customer)). Null when it
+     * reads none.
+     */
+    public static String reference(FieldSpec f) {
+        String ref = f.dslValue("ref");
+        if (ref != null) return ref;
+        String of = f.dslValue("idof");
+        return of == null || of.trim().isEmpty() ? null : of.trim() + ".";
+    }
+
     // ---- the type's label --------------------------------------------------------
 
     /** A label and the same label in other languages (language -> text). */
@@ -232,13 +247,17 @@ public final class FieldFacts {
      * the model), Object (a DTO or value object carried inline), Money (the
      * runtime's amount) and Html (markup the server cleans).
      *
-     * Provisional: nothing calls it yet, and the vocabulary - its words and
-     * their spelling - is not decided (issue 373). It may change before the
-     * first writer reads it.
+     * The kind GET /schema/info answers with (config: schemaInfo: model,
+     * issue 373). A field that holds a reference's key - customerId, the
+     * {@code @idof(customer)} of a reference by id - is a value here;
+     * SchemaCatalog says it as a Ref, since only the model around the field
+     * tells a key from a shown value.
      */
     public static String kind(FieldSpec f) {
         if (f.isList()) return "List";
         if (!f.isBaseType()) {
+            // A value object is declared as an entity (@embeddable) but carried inline: no row to point at.
+            if (isValueObject(f)) return "Object";
             if (f.isEntityRef()) return "Ref";
             if (isEnum(f)) return "Enum";
             return "Object";
@@ -246,6 +265,20 @@ public final class FieldFacts {
         if (f.isMoney()) return "Money";
         if (html(f)) return "Html";
         return OssieSemanticModelExporter.ossieType(f.raw());
+    }
+
+    /** Whether the field's type is a value object (@embeddable) of its domain, or of another the model knows. */
+    private static boolean isValueObject(FieldSpec f) {
+        String type = f.coreItemType();
+        if (f.entity() != null && f.entity().isEmbeddableType(type)) return true;
+        try {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            io.elasticore.base.model.entity.Entity named =
+                    ctx == null ? null : ctx.findModelComponent(type, io.elasticore.base.model.entity.Entity.class);
+            return named != null && named.getMetaInfo().hasMetaAnnotation("embeddable");
+        } catch (RuntimeException notInTheModel) {
+            return false;
+        }
     }
 
     /** Whether the field's type is an enumeration of its domain, or of another the model knows. */

@@ -1749,6 +1749,7 @@ public final class RulesGenRunner {
             }
 
             generateDtos(domainDirName, model);
+            if (!typescript) writeSchemaInfo(model);
             if (!typescript) warnUnenforced(model);
             // Said by the server's run; a client's run says it too, unless the build runs it right
             // after the server's (tsWithBuild), which has said it already.
@@ -4243,6 +4244,7 @@ public final class RulesGenRunner {
             }
             String text = code.render();
             write(label, out, text);
+            recordSchemaInfo(spec, target, out, code, text);
             // POST /export where the controller has it: a rule set may leave it out (isMethodExcluded), and a
             // controller the merge keeps as the developer's is read as it is on disk.
             if ("control".equals(target) && currentModel != null) {
@@ -5219,6 +5221,159 @@ public final class RulesGenRunner {
         String pkg = out.packageName();
         if (pkg == null) return false;
         return pkg.equals(currentModel.getNamespace("entity")) || pkg.equals(currentModel.getNamespace("enumeration"));
+    }
+
+    /** The DTOs the domain's run wrote, by class name, for GET /schema/info from the model (issue 373). */
+    private final Map<String, io.elasticore.base.model.pub.rules.SchemaCatalog.Dto> schemaDtos =
+            new java.util.HashMap<String, io.elasticore.base.model.pub.rules.SchemaCatalog.Dto>();
+
+    /** The domain's controllers that serve GET /schema/info, in the order they were written. */
+    private final List<io.elasticore.base.model.pub.rules.SchemaCatalog.Served> schemaServed =
+            new ArrayList<io.elasticore.base.model.pub.rules.SchemaCatalog.Served>();
+
+    /** The domain's entities whose controller serves POST /search. */
+    private final java.util.Set<String> schemaSearched = new java.util.HashSet<String>();
+
+    /** The module the domain's controllers are written to: the schema file goes beside them. */
+    private String schemaRoot;
+
+    /**
+     * What GET /schema/info answers from, with config: schemaInfo: model in the 3.0 code: each DTO as it was
+     * written (the fields its class declares) and each controller that serves the endpoint. A controller the
+     * developer keeps without the runtime's call is said, by its file.
+     */
+    private void recordSchemaInfo(
+            EntitySpec spec,
+            String target,
+            ArtifactTarget out,
+            io.elasticore.base.model.pub.rules.SourceCode code,
+            String text) {
+        if (currentModel == null
+                || !(v3 || kotlin)
+                || typescript
+                || code.compatible()
+                || !io.elasticore.base.model.pub.rules.SchemaCatalog.asked(
+                        currentModel.getConfig(io.elasticore.base.model.pub.rules.SchemaCatalog.SETTING))) return;
+        if ("dto".equals(target)) {
+            List<io.elasticore.base.model.pub.rules.FieldSpec> fields =
+                    new ArrayList<io.elasticore.base.model.pub.rules.FieldSpec>();
+            for (io.elasticore.base.model.pub.rules.FieldSpec f : spec.fields()) {
+                io.elasticore.base.model.pub.rules.FieldCode fc = code.field(f);
+                if (fc != null && !fc.isRemoved()) fields.add(f);
+            }
+            schemaDtos.put(
+                    out.fileName(),
+                    new io.elasticore.base.model.pub.rules.SchemaCatalog.Dto(
+                            out.packageName() + "." + out.fileName(), spec, fields));
+        } else if ("control".equals(target) && !code.isMethodExcluded("schemaInfo")) {
+            schemaServed.add(new io.elasticore.base.model.pub.rules.SchemaCatalog.Served(
+                    spec,
+                    String.format(
+                            "%s/%s/%s",
+                            code.varValue("apiPath"), code.varValue("domainName"), code.varValue("entityName")),
+                    code.varValue("dtoClassName"),
+                    code.varValue("searchDTOClassName")));
+            if (!code.isMethodExcluded("search")) schemaSearched.add(spec.getName());
+            if (schemaRoot == null) schemaRoot = rootFor(out);
+            // A preview writes nothing: the file on disk is not yet what this run would leave.
+            if (preview != null) return;
+            String problem = io.elasticore.base.model.pub.rules.SchemaCatalog.keptControllerProblem(
+                    out.relativePath(), text, readText(new File(rootFor(out) + "/" + out.relativePath())));
+            if (problem != null) io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(problem);
+        }
+    }
+
+    /**
+     * src/main/resources/elasticore/<domain>-schema.json, with config: schemaInfo: model: what each controller's
+     * GET /schema/info answers (SchemaCatalog), beside the controllers. A value the setting does not take, and
+     * the setting in a domain of the 2.x code, are said.
+     */
+    private void writeSchemaInfo(ECoreModel model) {
+        try {
+            String domain = model.getInternalDomainName();
+            String setting = model.getConfig(io.elasticore.base.model.pub.rules.SchemaCatalog.SETTING);
+            String problem = io.elasticore.base.model.pub.rules.SchemaCatalog.settingProblem(domain, setting);
+            if (problem != null) io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(problem);
+            if (!io.elasticore.base.model.pub.rules.SchemaCatalog.asked(setting)) return;
+            if (!(v3 || kotlin)) {
+                io.elasticore.base.model.pub.rules.SourceCode.dslWarnOnce(
+                        io.elasticore.base.model.pub.rules.SchemaCatalog.compatibleProblem(domain));
+                return;
+            }
+            if (schemaServed.isEmpty() || schemaRoot == null || captured != null) return;
+            String name = schemaServed.get(0).entity().domainName();
+            String text = io.elasticore.base.model.pub.rules.SchemaCatalog.json(
+                    name, schemaServed, new io.elasticore.base.model.pub.rules.SchemaCatalog.Model() {
+                        @Override
+                        public io.elasticore.base.model.pub.rules.SchemaCatalog.Dto dto(String className) {
+                            return schemaDtos.get(className);
+                        }
+
+                        @Override
+                        public EntitySpec entity(String entityName) {
+                            EntitySpec own = ownModelSpec(entityName);
+                            return own != null ? own : foreignSpec(entityName);
+                        }
+
+                        @Override
+                        public io.elasticore.base.model.pub.rules.EnumSpec enumeration(String enumName) {
+                            ECoreModel m = modelOfEnum(enumName);
+                            return m == null
+                                    ? null
+                                    : SpecFactory.fromEnum(
+                                            m.getEnumModels().getItems().findByName(enumName), m);
+                        }
+
+                        @Override
+                        public String enumerationDomain(String enumName) {
+                            ECoreModel m = modelOfEnum(enumName);
+                            // The domain being written is named as its controllers are; another by its own name.
+                            return m == null
+                                    ? null
+                                    : java.util.Objects.equals(m, currentModel) ? name : m.getInternalDomainName();
+                        }
+
+                        @Override
+                        public boolean searches(EntitySpec entity) {
+                            if (entity.domainName() != null
+                                    && entity.domainName().equals(name)) {
+                                return schemaSearched.contains(entity.getName());
+                            }
+                            return entity.hasMeta("expose")
+                                    && !io.elasticore.base.model.pub.rules.base.ControllerBaseRules.exposeOmitted(
+                                                    entity)
+                                            .contains("search");
+                        }
+                    });
+            File file = new File(schemaRoot + "/src/main/resources/"
+                    + io.elasticore.base.model.pub.rules.SchemaCatalog.resource(name));
+            writeResource("schema", file, text);
+        } catch (RuntimeException e) {
+            // As a failed artifact: said, counted, and the run goes on to say the rest.
+            failed++;
+            String message = String.format(
+                    "src/main/resources/%s: %s",
+                    io.elasticore.base.model.pub.rules.SchemaCatalog.resource(model.getInternalDomainName()), e);
+            notes.add(message);
+            System.out.println("    schema       " + message + "  ERROR");
+        } finally {
+            schemaDtos.clear();
+            schemaServed.clear();
+            schemaSearched.clear();
+            schemaRoot = null;
+        }
+    }
+
+    /** The model of the run that declares an enumeration, the domain being written first; null when none does. */
+    private ECoreModel modelOfEnum(String enumName) {
+        List<ECoreModel> models = new ArrayList<ECoreModel>();
+        if (currentModel != null) models.add(currentModel);
+        models.addAll(runModels);
+        for (ECoreModel m : models) {
+            if (m == null || m.getEnumModels() == null) continue;
+            if (m.getEnumModels().getItems().findByName(enumName) != null) return m;
+        }
+        return null;
     }
 
     /**

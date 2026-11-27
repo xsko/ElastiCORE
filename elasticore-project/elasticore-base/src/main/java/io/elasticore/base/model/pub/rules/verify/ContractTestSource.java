@@ -835,10 +835,7 @@ final class ContractTestSource {
      * rule sets - its @idof (customerId, the identity the entity holds).
      */
     private static String reference(FieldSpec f) {
-        String ref = f.dslValue("ref");
-        if (ref != null) return ref;
-        String of = f.dslValue("idof");
-        return of == null || of.trim().isEmpty() ? null : of.trim() + ".";
+        return io.elasticore.base.model.pub.rules.FieldFacts.reference(f);
     }
 
     /** A flattened key the DTO leaves out for the identity that holds the same key (dto-reference-once). */

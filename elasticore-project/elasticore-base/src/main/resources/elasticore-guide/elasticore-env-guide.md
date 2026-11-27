@@ -963,6 +963,92 @@ config:
 - `public` (3.0's default) - the row is carried only when anyone may read that entity; otherwise the field is left out with a warning that names the setting.
 - It applies to the whole domain. A project coming from 3.0 sees its responses gain those fields: say `public` to keep them as they were.
 
+## 6-6. What `GET /schema/info` answers (`schemaInfo: model`, 3.1)
+> **Works in:** the v3 bundles - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal · **Not in:** 2.x-compatible output (output = 'v2': a `DSL_WARN`, and the endpoint answers as before), 2.x generator
+
+```yaml
+config:
+  schemaInfo: model        # GET .../schema/info answers from the model (optional; unset: as before)
+```
+
+- Without it, `GET /api/<domain>/<entity>/schema/info` answers as it always did, `DTOUtils.getMetaInfo(XxxDTO.class)`: each
+  field of the DTO with its `type` (the Java class name, `enumeration` for an enum), `description` (`@Schema`), `maxSize`
+  (`@Size`) and, for an enum, `enums`. Nothing changes in a project that does not set it, byte for byte.
+- With it, the generator writes `src/main/resources/elasticore/<domain>-schema.json` beside the controllers - regenerated
+  with the model, merged like every generated file and removed when the setting goes; do not edit it, change the DSL -
+  and the controller's one line returns the runtime's answer from that file (`io.elasticore.springboot3.schema.SchemaInfo`).
+  Generated (the pet store's `ItemController`):
+
+```java
+    @Operation(summary = "Retrieve metadata information for ItemDTO")
+    @GetMapping("/schema/info")
+    public ResponseEntity<Map<String, Object>> getMetaInfo() {
+        return io.elasticore.springboot3.schema.SchemaInfo.answer("petstore", "Item");
+    }
+```
+
+  Kotlin writes the same line without the `;`. The `DTOUtils` import goes, since nothing else in the controller uses it.
+- The answer (`metaVersion: 1`, so a screen can rely on its shape) - the pet store's Item, `Accept-Language: en`, shortened:
+
+```json
+{
+  "metaVersion": 1,
+  "language": "en",
+  "entity": {
+    "name": "Item", "domain": "petstore", "label": "Item for sale", "labels": {"en": "Item for sale", "ja": "販売単位"},
+    "path": "/api/petstore/item", "key": "itemId", "dto": "ItemDTO", "searchDto": "ItemSrchDTO"
+  },
+  "fields": {
+    "productName": {"type": "String", "description": "productName", "kind": "String", "label": "productName", "labels": {},
+                    "required": false, "readOnly": true, "html": false},
+    "name": {"type": "String", "description": "name", "maxSize": 30, "kind": "String", "label": "name", "labels": {},
+             "required": true, "maxLength": 30, "readOnly": false, "html": false},
+    "unitCost": {"type": "Money", "description": "단가", "kind": "Money", "label": "Unit cost",
+                 "labels": {"en": "Unit cost", "ja": "単価"}, "required": true, "min": 0.01, "readOnly": false, "html": false},
+    "productId": {"type": "Long", "description": "productId", "kind": "Ref", "label": "productId", "labels": {},
+                  "required": false, "readOnly": false, "html": false,
+                  "ref": {"entity": "Product", "domain": "petstore", "key": "productId",
+                          "search": "/api/petstore/product/search", "display": {"field": "productName", "of": "name"}}}
+  }
+}
+```
+
+- `language` - the language the labels are said in, chosen as the API's error messages choose it (`elasticore-rule-guide.md`,
+  "Error codes and languages"); `null` when nobody chose one (the bundles' own wording).
+- `entity` - `name`, `domain`, `label` (in the request's language), `labels` (every other language the DSL writes it in), `path`,
+  `key` (the key field; a list of names for a composite key), `dto`, `searchDto`.
+- `fields` - every field of the DTO class with the keys it always had (`type`, `description`, `maxSize`, `enums`, the same values
+  as before); each field the DSL declares also says what the model says - the facts the TypeScript client's `XxxFields` is written from:
+
+| Key | What it says |
+|---|---|
+| `kind` | The model's kind of value, in the Ossie export's words: `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, `Opaque`; and `Enum`, `Ref` (holds another entity's key), `Money`, `Html`, `List`, `Object` (a value object or a DTO carried inline) |
+| `label`, `labels` | The label in the request's language; the label in every other language the DSL writes it in (`@label(en=...)`) |
+| `required` | A request must carry it (`!`) |
+| `maxLength`, `minLength` | A text's length (`string(30)`, `@length(min=2)`), only where there is one |
+| `min`, `max` | A number's bounds (`@min(0.01)`, `@max(999)`), only where there is one |
+| `readOnly` | No request writes it (`@readonly`, `@ref(...)`, a lifecycle's state, `@compute` ...). A read-only field says no `required`, lengths or bounds |
+| `html` | Markup the server cleans (`@html`) |
+| `options` | An enum's values: `value` (as the JSON sends it), `name` (the constant), `label` (in the request's language), `labels` (`label_ko` ... columns) |
+| `ref` | What the key points at: `entity`, `domain`, `key`, `search` (its `POST .../search`, where its controller serves one - for another domain's entity, as its `@expose` says) and `display` (`{field, of}`) only when the DTO has a field that shows that row, `productName @ref(product.name)` - the model has no other display field |
+
+- A label is said in the request's language: the domain's label file of that language (`i18n/<domain>-labels_<lang>`; with no
+  language chosen, the English file `_en`), else its default file, else the DSL's `--` text, else the field's name. An enum's
+  values are said by the label file of the domain that declares the enum. `labelLanguage` (6-3) gives the `--` text a file of its own language.
+- The answer is `Cache-Control: private`: it is in the caller's language.
+- **Access is not changed.** The controller answers `/schema/info` itself, without the service, so the entity's `@access`
+  does not apply to it - an entity with `read=admin` shows its field list to anyone who reaches the controller, with
+  this setting or without it. To close it, give it a rule of your own, with Spring Security
+  `.requestMatchers(HttpMethod.GET, "/api/*/*/schema/info").hasRole("ADMIN")` (`/api/**/schema/info` is refused by Spring's
+  path patterns: `**` only at the start or the end), or turn the endpoint off with `@expose(..., schema=false)`.
+  `/v3/api-docs` (springdoc) carries the same field list and needs the same rule.
+- Said by the build (`DSL_WARN`): the setting in a domain of the 2.x code; a value other than `model`; a project's own
+  `control.tmpl` without `${schemaInfoAnswer}` (it answers as before); a controller you keep whose `GET /schema/info` does
+  not call `SchemaInfo.answer` - the build names the file and the line to write, or delete the file to have it generated anew.
+- The search DTO's fields and what the signed-in user may do are not in the answer yet.
+- Example: `SchemaInfoTest` of the pet store (a label in two languages, an enum, a reference and its display, a read-only
+  field, required and lengths, over HTTP).
+
 ## 7. apiPath setting
 
 ```yaml

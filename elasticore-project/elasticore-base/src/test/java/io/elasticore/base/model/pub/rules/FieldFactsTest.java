@@ -325,4 +325,27 @@ public class FieldFactsTest {
         assertEquals("Object", FieldFacts.kind(e.fields().get(2)));
         assertEquals("List", FieldFacts.kind(e.fields().get(3)));
     }
+
+    /** A value object is declared as an entity, but carried inline: no row to point at (issue 373). */
+    @Test
+    public void aValueObjectIsAnObjectNotARef() {
+        EntitySpec e = item().knownEntity("Address").knownEmbeddable("Address", Collections.singletonList("city"));
+        e.addField(loader.parse("home", "Address @Embedded"));
+        assertEquals("Object", FieldFacts.kind(e.fields().get(0)));
+    }
+
+    // ---- reference -------------------------------------------------------------------
+
+    @Test
+    public void theReferenceIsTheRelationAndWhatOfItTheFieldReads() {
+        assertEquals(
+                "customer.customerId",
+                FieldFacts.reference(field("customerCustomerId", "long @ref(customer.customerId)")));
+        assertEquals("customer.name", FieldFacts.reference(field("customerName", "string @ref(customer.name)")));
+        // A reference by id holds the key, whatever it is called.
+        assertEquals("customer.", FieldFacts.reference(field("customerId", "long @idof(customer)")));
+        assertEquals("customer.", FieldFacts.reference(field("customerId", "long @idof( customer )")));
+        assertNull(FieldFacts.reference(field("customerId", "long @idof()")));
+        assertNull(FieldFacts.reference(field("name", "string(30)")));
+    }
 }

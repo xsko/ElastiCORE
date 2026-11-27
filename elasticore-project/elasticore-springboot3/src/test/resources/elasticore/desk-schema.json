@@ -1,0 +1,144 @@
+{
+  "metaVersion": 1,
+  "domain": "desk",
+  "entities": {
+    "Item": {
+      "class": "io.elasticore.springboot3.schema.SchemaInfoTest$ItemDTO",
+      "entity": {
+        "name": "Item",
+        "domain": "desk",
+        "label": "판매 단위",
+        "labels": {
+          "en": "Item for sale"
+        },
+        "path": "/api/desk/item",
+        "key": "itemId",
+        "dto": "ItemDTO",
+        "searchDto": "ItemSrchDTO"
+      },
+      "fields": {
+        "name": {
+          "kind": "String",
+          "label": "이름",
+          "labels": {},
+          "required": true,
+          "maxLength": 30,
+          "readOnly": false,
+          "html": false
+        },
+        "unitCost": {
+          "kind": "Decimal",
+          "label": "단가",
+          "labels": {
+            "en": "Unit cost"
+          },
+          "required": true,
+          "min": 0.01,
+          "readOnly": false,
+          "html": false
+        },
+        "status": {
+          "kind": "Enum",
+          "label": "status",
+          "labels": {},
+          "required": false,
+          "readOnly": true,
+          "html": false,
+          "enum": "ItemStatus",
+          "options": [
+            {
+              "value": "ON",
+              "name": "ON_SALE",
+              "label": "On sale",
+              "labels": {
+                "ko": "판매 중"
+              }
+            },
+            {
+              "value": "OF",
+              "name": "OFF",
+              "label": "Off",
+              "labels": {}
+            }
+          ]
+        },
+        "productId": {
+          "kind": "Ref",
+          "label": "productId",
+          "labels": {},
+          "required": false,
+          "readOnly": false,
+          "html": false,
+          "ref": {
+            "entity": "Product",
+            "domain": "desk",
+            "key": "productId"
+          }
+        },
+        "currency": {
+          "kind": "Enum",
+          "label": "currency",
+          "labels": {},
+          "required": false,
+          "readOnly": false,
+          "html": false,
+          "enum": "Currency",
+          "enumDomain": "common",
+          "options": [
+            {
+              "value": "KRW",
+              "name": "KRW",
+              "label": "Won",
+              "labels": {
+                "ko": "원"
+              }
+            }
+          ]
+        },
+        "written": {
+          "kind": "String",
+          "label": "written",
+          "labels": {},
+          "required": false,
+          "readOnly": true,
+          "html": false
+        }
+      }
+    },
+    "Gone": {
+      "class": "io.elasticore.springboot3.schema.NoSuchDTO",
+      "entity": {
+        "name": "Gone",
+        "domain": "desk",
+        "label": "Gone",
+        "labels": {},
+        "path": "/api/desk/gone",
+        "key": "goneId",
+        "dto": "GoneDTO",
+        "searchDto": "GoneSrchDTO"
+      },
+      "fields": {
+        "goneId": {
+          "kind": "Integer",
+          "label": "goneId",
+          "labels": {},
+          "required": false,
+          "readOnly": false,
+          "html": false
+        }
+      }
+    },
+    "Bare": {
+      "entity": {
+        "name": "Bare",
+        "domain": "desk",
+        "label": "Bare",
+        "labels": {},
+        "path": "/api/desk/bare",
+        "key": "bareId",
+        "dto": "BareDTO",
+        "searchDto": "BareSrchDTO"
+      }
+    }
+  }
+}
