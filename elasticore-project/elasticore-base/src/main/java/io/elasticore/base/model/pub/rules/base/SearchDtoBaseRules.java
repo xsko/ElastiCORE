@@ -105,21 +105,162 @@ public class SearchDtoBaseRules implements CodeRules {
         code.ensure(AnnoCode.raw("jakarta.validation.constraints.Size", "@Size(%s)", sb.toString()));
     }
 
-    @Rule(value = "srchdto-field", target = "srchdto", order = 10)
-    void field(EntitySpec e, FieldSpec f) {
-        if (searchedByItsFlattenedId(f)) {
-            ctx(e).removeField(f);
-            return;
+    /**
+     * One property of the search DTO: what it is called, the field it
+     * searches, the condition it searches by and, for a range, which end it
+     * is. The search DTO is rendered from these, so whatever else describes a
+     * search (issue 373) reads the same decisions rather than making them again.
+     */
+    public static final class SearchProperty {
+
+        /** What a property is: how the search DTO declares it. */
+        public enum Kind {
+            /** A field the DTO declares that searches by nothing: a plain property, op null. */
+            PLAIN,
+            /** One value compared by the condition, under the field's name or its alias. */
+            VALUE,
+            /** One end of a range, xFrom or xTo (between, ~). */
+            RANGE,
+            /** One element searched for in a list (an equality on a list), xItem. */
+            ITEM,
+            /** Whether the column is empty (isnull, clean output): a yes or no, xEmpty. */
+            EMPTY,
+            /** The words of one search box, looked for in other fields ({@code @search(words: a, b)}). */
+            WORDS
         }
+
+        /** The end of a range a RANGE property is. */
+        public static final String FROM = "from";
+
+        public static final String TO = "to";
+
+        private final String name;
+        private final FieldSpec field;
+        private final String op;
+        private final Kind kind;
+        private final String end;
+        private final String alias;
+        private final java.util.List<String> words;
+
+        SearchProperty(
+                String name,
+                FieldSpec field,
+                String op,
+                Kind kind,
+                String end,
+                String alias,
+                java.util.List<String> words) {
+            this.name = name;
+            this.field = field;
+            this.op = op;
+            this.kind = kind;
+            this.end = end;
+            this.alias = alias;
+            this.words = words;
+        }
+
+        /** The property's name, as a request sends it: priceFrom, statusItem, openEmpty, customerName. */
+        public String name() {
+            return name;
+        }
+
+        /** The field it searches. */
+        public FieldSpec field() {
+            return field;
+        }
+
+        /**
+         * The condition, as the search applies it (effectiveCondition): eq, %__%, between, >=, isnull, in,
+         * auto; "words" for WORDS; null for PLAIN.
+         */
+        public String op() {
+            return op;
+        }
+
+        public Kind kind() {
+            return kind;
+        }
+
+        /** FROM or TO for a RANGE property; null for every other one. */
+        public String end() {
+            return end;
+        }
+
+        /** The name the condition gives the property ({@code @search(like,customerName)}), or null. */
+        public String alias() {
+            return alias;
+        }
+
+        /** The fields a WORDS property looks for each word in; null for every other one. */
+        public java.util.List<String> words() {
+            return words;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof SearchProperty)) return false;
+            SearchProperty p = (SearchProperty) o;
+            return name.equals(p.name)
+                    && field == p.field
+                    && java.util.Objects.equals(op, p.op)
+                    && kind == p.kind
+                    && java.util.Objects.equals(end, p.end)
+                    && java.util.Objects.equals(alias, p.alias)
+                    && java.util.Objects.equals(words, p.words);
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(name, field.name(), op, kind, end, alias, words);
+        }
+
+        @Override
+        public String toString() {
+            return String.format(
+                    "%s(%s %s %s%s%s)",
+                    name, field.name(), kind, op, end == null ? "" : " " + end, words == null ? "" : " " + words);
+        }
+    }
+
+    /**
+     * The properties of a search DTO, in the order of its fields: what its
+     * srchdto-field rule decided for each - the same decision it renders
+     * from, made again from the spec. It writes nothing (not even
+     * FieldSpec.derivedSearch).
+     *
+     * Only inside a rule run of the srchdto target: the decision reads the
+     * run's SourceCode, and ctx(e) throws without one. The list is this
+     * rule's decision, not necessarily what is written: a search DTO another
+     * rule does not make (a DDD member's, DddAggregateRules) has the list but
+     * no file, and a later project rule may still rename or remove a field.
+     */
+    public static java.util.List<SearchProperty> properties(EntitySpec e) {
+        SourceCode c = ctx(e);
+        java.util.List<SearchProperty> out = new java.util.ArrayList<SearchProperty>();
+        for (FieldSpec f : e.fields()) out.addAll(decide(c, e, f).properties);
+        return java.util.Collections.unmodifiableList(out);
+    }
+
+    /** What the rule decides for one field: its properties, and a condition derived for it, or null. */
+    private static final class Decision {
+        final java.util.List<SearchProperty> properties;
+        final String derived;
+
+        Decision(String derived, SearchProperty... properties) {
+            this.derived = derived;
+            this.properties = java.util.Arrays.asList(properties);
+        }
+    }
+
+    /** Decides one field's properties. Writes nothing: the rule writes what it decides. */
+    private static Decision decide(SourceCode c, EntitySpec e, FieldSpec f) {
+        if (searchedByItsFlattenedId(f)) return new Decision(null);
 
         // The same relation searched twice: customerCustomerId through the
         // join and customerId on the root's own column. The identity the DDD
         // reference wrote is kept and the flattening dropped. Only a DDD run
         // writes @idof, so the 2.x output never reaches this.
-        if (flattensAReferenceById(e, f)) {
-            ctx(e).removeField(f);
-            return;
-        }
+        if (flattensAReferenceById(e, f)) return new Decision(null);
 
         // Nor is a collection of them. A list is searchable when its items
         // are values - a base type, or an enum of the model - and a list of
@@ -127,56 +268,102 @@ public class SearchDtoBaseRules implements CodeRules {
         if (f.isList()
                 && !f.isBaseItemType()
                 && !e.isKnownEnum(f.coreItemType())) {
-            ctx(e).removeField(f);
-            return;
+            return new Decision(null);
         }
 
-        String condition = conditionOf(e, f);
+        String declared = declaredCondition(f);
+        String derived = declared == null ? derivedCondition(e, f, c.compatible()) : null;
+        String condition = declared != null ? declared : derived;
         if (condition == null) {
             // A field the DTO's own body declares stays, as a plain property
             // without a condition; one the referenced entity carried in was
             // only worth keeping for its condition.
-            if (f.declaredInDto()) {
-                plainProperty(e, f);
-            } else {
-                ctx(e).removeField(f);
-            }
-            return;
+            return f.declaredInDto()
+                    ? new Decision(
+                            null, new SearchProperty(f.name(), f, null, SearchProperty.Kind.PLAIN, null, null, null))
+                    : new Decision(null);
         }
 
         // "@search(words: a, b)": the text of one search box, looked for in those fields.
         java.util.List<String> words = wordsOf(f);
-        if (words != null && ctx(e).compatible()) {
-            // Not searched there (the mapper says so): a property a client could send to no effect is left out.
+        if (words != null) {
+            // Not searched in the 2.x-compatible output (the mapper says so): a property a client
+            // could send to no effect is left out.
+            if (c.compatible()) return new Decision(derived);
+            return new Decision(
+                    derived, new SearchProperty(f.name(), f, "words", SearchProperty.Kind.WORDS, null, null, words));
+        }
+
+        // "@search(like,alias)" renames the property it produces. A derived condition has neither.
+        String[] parts = splitCondition(f.searchValue());
+        String alias = parts.length == 2 ? parts[1] : null;
+        String name = alias != null ? alias : f.name();
+        String op = effectiveCondition(c, f, parts[0].isEmpty() ? condition : parts[0]);
+
+        // "@search(isnull)" asks whether the column is empty, so the caller
+        // sends a yes or no rather than a value of the field's own type.
+        // Clean output only: the 2.x publisher reads it as an equality.
+        if (isNullCheck(op) && !c.compatible()) {
+            return new Decision(
+                    derived, new SearchProperty(name + "Empty", f, op, SearchProperty.Kind.EMPTY, null, alias, null));
+        }
+        if (isRange(op)) {
+            return new Decision(
+                    derived,
+                    new SearchProperty(
+                            name + "From", f, op, SearchProperty.Kind.RANGE, SearchProperty.FROM, alias, null),
+                    new SearchProperty(name + "To", f, op, SearchProperty.Kind.RANGE, SearchProperty.TO, alias, null));
+        }
+        if (f.isList() && isEquality(op)) {
+            // One element of the list is what the caller searches for.
+            return new Decision(
+                    derived, new SearchProperty(name + "Item", f, op, SearchProperty.Kind.ITEM, null, alias, null));
+        }
+        return new Decision(derived, new SearchProperty(name, f, op, SearchProperty.Kind.VALUE, null, alias, null));
+    }
+
+    @Rule(value = "srchdto-field", target = "srchdto", order = 10)
+    void field(EntitySpec e, FieldSpec f) {
+        Decision decision = decide(ctx(e), e, f);
+
+        // Kept for the mapper's toSpec and MyBatis's search, not written into
+        // the field: inherited fields are objects every extending entity
+        // shares, and a condition written there reached only the search DTOs
+        // that came after this one (issue 376). Which inherited fields a
+        // search DTO that is not @expose takes is shared with the 2.x
+        // publisher (AutoSearch, marked by SpecFactory); the condition itself
+        // is derived here, from this rule's own type tests (derivedCondition),
+        // not from AutoSearch.conditionByType.
+        if (decision.derived != null) f.derivedSearch(decision.derived);
+
+        java.util.List<SearchProperty> properties = decision.properties;
+        if (properties.isEmpty()) {
             ctx(e).removeField(f);
             return;
         }
-        if (words != null) {
+        SearchProperty p = properties.get(0);
+        if (p.kind() == SearchProperty.Kind.PLAIN) {
+            plainProperty(e, f);
+            return;
+        }
+        if (p.kind() == SearchProperty.Kind.WORDS) {
             ctx(e).field(f)
                     .ensure(AnnoCode.raw(
                             "io.swagger.v3.oas.annotations.media.Schema",
                             String.format(
                                     "@Schema(description = %s  )",
                                     RuleText.quote(conditionText(
-                                            f, "every word (the first five) in any of " + String.join(", ", words))))));
+                                            f,
+                                            "every word (the first five) in any of "
+                                                    + String.join(", ", p.words()))))));
+            return;
+        }
+        if (p.kind() == SearchProperty.Kind.EMPTY) {
+            nullCheckProperty(e, f, p.name());
             return;
         }
 
-        // "@search(like,alias)" renames the property it produces.
-        String[] parts = splitCondition(f.searchValue());
-        String name = parts.length == 2 ? parts[1] : f.name();
-        String conditionCode = effectiveCondition(ctx(e), f, parts[0].isEmpty() ? condition : parts[0]);
-
-        // "@search(isnull)" asks whether the column is empty, so the caller
-        // sends a yes or no rather than a value of the field's own type.
-        // Clean output only: the 2.x publisher reads it as an equality.
-        if (isNullCheck(conditionCode) && !ctx(e).compatible()) {
-            nullCheckProperty(e, f, name);
-            return;
-        }
-
-        ctx(e).field(f).ensure(AnnoCode.raw(
-                "io.swagger.v3.oas.annotations.media.Schema", schemaLine(e, f, conditionCode)));
+        ctx(e).field(f).ensure(AnnoCode.raw("io.swagger.v3.oas.annotations.media.Schema", schemaLine(e, f, p.op())));
 
         String pattern = FieldDoc.formatPattern(f);
         if (pattern != null) {
@@ -187,18 +374,15 @@ public class SearchDtoBaseRules implements CodeRules {
                             .qualified().val("pattern", pattern));
         }
 
-        if (isRange(conditionCode)) {
-            rangeProperty(e, f, name, pattern);
+        if (p.kind() == SearchProperty.Kind.RANGE) {
+            rangeProperty(e, f, p.name(), properties.get(1).name(), pattern);
             return;
         }
-
-        if (f.isList() && isEquality(conditionCode)) {
-            // One element of the list is what the caller searches for.
-            ctx(e).field(f).type(f.coreItemType()).rename(String.format("%sItem", name));
+        if (p.kind() == SearchProperty.Kind.ITEM) {
+            ctx(e).field(f).type(f.coreItemType()).rename(p.name());
             return;
         }
-
-        if (!name.equals(f.name())) ctx(e).field(f).rename(name);
+        if (!p.name().equals(f.name())) ctx(e).field(f).rename(p.name());
     }
 
     /**
@@ -231,8 +415,8 @@ public class SearchDtoBaseRules implements CodeRules {
      * The two ends of a range. The second carries the format annotations again
      * but no @Schema, which is how 2.x documents the pair as one thing.
      */
-    private void rangeProperty(EntitySpec e, FieldSpec f, String name, String pattern) {
-        FieldCode from = ctx(e).field(f).rename(String.format("%sFrom", name));
+    private void rangeProperty(EntitySpec e, FieldSpec f, String fromName, String toName, String pattern) {
+        FieldCode from = ctx(e).field(f).rename(fromName);
 
         if (pattern != null) {
             from.after("@org.springframework.format.annotation.DateTimeFormat(pattern = %s)", RuleText.quote(pattern))
@@ -242,8 +426,7 @@ public class SearchDtoBaseRules implements CodeRules {
         // than one the model declared, so it goes through the language seam -
         // written as Java text it lands verbatim in a Kotlin file.
         Syntax syntax = ctx(e).syntax();
-        from.after("%s", syntax.declaration(syntax.fieldModifier(), f.typeName(),
-                String.format("%sTo", name), "", false));
+        from.after("%s", syntax.declaration(syntax.fieldModifier(), f.typeName(), toName, "", false));
     }
 
     /**
@@ -254,11 +437,13 @@ public class SearchDtoBaseRules implements CodeRules {
      */
     private void nullCheckProperty(EntitySpec e, FieldSpec f, String name) {
         ctx(e).field(f)
-              .ensure(AnnoCode.raw("io.swagger.v3.oas.annotations.media.Schema",
-                      String.format("@Schema(description = %s  )", RuleText.quote(conditionText(f,
-                              StringUtils.getOperatorDescription("isnull", true))))))
-              .type("Boolean")
-              .rename(String.format("%sEmpty", name));
+                .ensure(AnnoCode.raw(
+                        "io.swagger.v3.oas.annotations.media.Schema",
+                        String.format(
+                                "@Schema(description = %s  )",
+                                RuleText.quote(conditionText(f, StringUtils.getOperatorDescription("isnull", true))))))
+                .type("Boolean")
+                .rename(name);
     }
 
     /** The @Schema line, whose description says what the condition means. */
@@ -322,39 +507,26 @@ public class SearchDtoBaseRules implements CodeRules {
     }
 
     /**
-     * The condition a field searches by, or null when it is not searchable.
-     *
-     * Which fields reach this rule is decided when the search DTO's model is
-     * built, not here: an @searchable(entity=X) DTO carries the fields worth
-     * searching plus whatever it declares itself. What is decided here is how
-     * each of them searches - an @expose DTO derives a condition from the
-     * field's type, so text matches by pattern, temporal by range, and
-     * everything else by equality.
+     * The condition a field declares (@search), "auto" for an @search without
+     * one, or null when it declares none.
      */
-    private String conditionOf(EntitySpec e, FieldSpec f) {
+    private static String declaredCondition(FieldSpec f) {
         String declared = f.searchValue();
         if (declared != null && !declared.isEmpty()) return declared;
         if (f.hasSearch()) return "auto";
-
-        String derived = derivedCondition(e, f, ctx(e).compatible());
-        if (derived == null) return null;
-
-        // Kept for the mapper's toSpec and MyBatis's search, not written into
-        // the field: inherited fields are objects every extending entity
-        // shares, and a condition written there reached only the search DTOs
-        // that came after this one (issue 376). Which inherited fields a
-        // search DTO that is not @expose takes is shared with the 2.x
-        // publisher (AutoSearch, marked by SpecFactory); the condition itself
-        // is derived here, from this rule's own type tests (derivedCondition),
-        // not from AutoSearch.conditionByType.
-        f.derivedSearch(derived);
-        return derived;
+        return null;
     }
 
     /**
      * The condition a search DTO derives for a field without a @search of its own, or null when it
      * derives none: every field of an @expose search DTO, and the inherited fields another search DTO
      * takes (FieldSpec.searchedAsInherited).
+     *
+     * Which fields reach this rule is decided when the search DTO's model is
+     * built, not here: an @searchable(entity=X) DTO carries the fields worth
+     * searching plus whatever it declares itself. What is decided here is how
+     * each of them searches - text matches by pattern, temporal by range, and
+     * everything else by equality.
      */
     private static String derivedCondition(EntitySpec searchDto, FieldSpec f, boolean compatible) {
         if (f.hasSearch()) return null;

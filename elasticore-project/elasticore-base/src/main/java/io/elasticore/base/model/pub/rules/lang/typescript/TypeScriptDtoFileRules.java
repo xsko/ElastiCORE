@@ -4,6 +4,7 @@ import io.elasticore.base.model.pub.rules.base.DtoBaseRules;
 import io.elasticore.base.model.pub.rules.base.RuleText;
 import io.elasticore.base.model.pub.rules.CodeRules;
 import io.elasticore.base.model.pub.rules.EntitySpec;
+import io.elasticore.base.model.pub.rules.FieldFacts;
 import io.elasticore.base.model.pub.rules.FieldSpec;
 import io.elasticore.base.model.pub.rules.Rule;
 import io.elasticore.base.model.pub.rules.SourceCode;
@@ -218,18 +219,12 @@ public class TypeScriptDtoFileRules implements CodeRules {
         String base = className.endsWith("DTO") ? className.substring(0, className.length() - 3) : className;
 
         // The type's own label, for a page title or a column of types: only where the DSL gives one.
-        String typeLabel = e.metaValue("label");
-        java.util.Map<String, String> typeLabels = e.labelTranslations();
-        if (typeLabel == null || typeLabel.trim().isEmpty()) {
-            io.elasticore.base.model.core.Annotation entityLabel = entityLabel(e);
-            typeLabel = entityLabel == null ? null : entityLabel.getValue();
-            typeLabels = io.elasticore.base.model.core.LabelTranslations.of(entityLabel);
-        }
+        FieldFacts.Label typeLabel = FieldFacts.entityLabel(e);
         // A name the file already imports or declares - a type ItemMeta a field holds - is left
         // to it: a second declaration of it does not compile (TS2440).
         String metaName = base + "Meta";
         boolean taken = metaName.equals(className) || named.contains(metaName);
-        if (!taken && typeLabel != null && !typeLabel.trim().isEmpty()) {
+        if (!taken && typeLabel != null) {
             c.varLine("metaList", "")
                     .varLine(
                             "metaList",
@@ -238,8 +233,8 @@ public class TypeScriptDtoFileRules implements CodeRules {
                             "metaList",
                             "export const %sMeta: { label: string; labels: Record<string, string> } = { label: %s, labels: %s };",
                             base,
-                            string(typeLabel.trim()),
-                            languages(typeLabels));
+                            string(typeLabel.text()),
+                            languages(typeLabel.translations()));
         }
 
         c.varLine("metaList", "")
@@ -247,23 +242,23 @@ public class TypeScriptDtoFileRules implements CodeRules {
          .varLine("metaList", "export const %sFields = {", base);
         for (FieldSpec f : shown) {
             StringBuilder m = new StringBuilder();
-            m.append("label: ").append(RuleText.quote(labelOf(f)));
+            m.append("label: ").append(RuleText.quote(FieldFacts.label(f)));
             // @label(en="Unit cost"): the label in the other languages the DSL gives it.
-            java.util.Map<String, String> translations = f.labelTranslations();
+            java.util.Map<String, String> translations = FieldFacts.labels(f);
             if (!translations.isEmpty()) m.append(", labels: ").append(languages(translations));
             // Markup the server cleaned before saving: a screen may render it as HTML.
-            if (f.hasDsl(io.elasticore.base.model.pub.rules.base.HtmlRules.HTML)) m.append(", html: true");
-            if (!writable(f)) {
-                m.append(", readOnly: true");
-            } else {
-                if (f.required()) m.append(", required: true");
-                if (f.validationMaxLength() >= 0 && f.isStringType()) m.append(", maxLength: ").append(f.validationMaxLength());
-                if (f.minLength() > 0 && f.isStringType()) m.append(", minLength: ").append(f.minLength());
-                String min = bound(f.dslValueAny("min", "minval", "minvalue"));
-                if (min != null) m.append(", min: ").append(min);
-                String max = bound(f.dslValueAny("max", "maxval", "maxvalue"));
-                if (max != null) m.append(", max: ").append(max);
-            }
+            if (FieldFacts.html(f)) m.append(", html: true");
+            // A read-only field is asked for nothing else: FieldFacts says none of the rest of it.
+            if (FieldFacts.readOnly(f)) m.append(", readOnly: true");
+            if (FieldFacts.required(f)) m.append(", required: true");
+            Integer maxLength = FieldFacts.maxLength(f);
+            if (maxLength != null) m.append(", maxLength: ").append(maxLength);
+            Integer minLength = FieldFacts.minLength(f);
+            if (minLength != null) m.append(", minLength: ").append(minLength);
+            String min = FieldFacts.min(f);
+            if (min != null) m.append(", min: ").append(min);
+            String max = FieldFacts.max(f);
+            if (max != null) m.append(", max: ").append(max);
             c.varLine("metaList", "    %s: { %s },", c.syntax().escapeName(f.name()), m);
         }
         // Only a required field reads partial. Where none is checked the parameter is
@@ -291,10 +286,10 @@ public class TypeScriptDtoFileRules implements CodeRules {
         // What validateXxxCodes says for the same checks: the code and values per field, in order.
         List<String> codeLines = new ArrayList<String>();
         for (FieldSpec f : checked) {
-            if (!writable(f)) continue;
+            if (FieldFacts.readOnly(f)) continue;
             String name = c.syntax().escapeName(f.name());
             String v = "value." + name;
-            String label = labelOf(f);
+            String label = FieldFacts.label(f);
             Checks checks = new Checks(name, f.name());
             if (f.isList()) {
                 // @minsize(1, '...'): what the server's @NotNull and @Size refuse with 400, said first.
@@ -321,7 +316,8 @@ public class TypeScriptDtoFileRules implements CodeRules {
                 codeLines.addAll(checks.codes());
                 continue;
             }
-            if (f.required()) {
+            // The same facts XxxFields states (FieldFacts), read-only fields skipped above.
+            if (FieldFacts.required(f)) {
                 // Only a string can be empty; comparing anything else with '' does not compile.
                 checks.add(
                         f.isStringType()
@@ -334,17 +330,19 @@ public class TypeScriptDtoFileRules implements CodeRules {
             if (f.isStringType()) {
                 // One @Size carries both lengths, so a value too long and one too short name both.
                 String size = sizeValues(f);
-                if (f.validationMaxLength() >= 0) {
+                Integer maxLength = FieldFacts.maxLength(f);
+                if (maxLength != null) {
                     checks.add(
-                            String.format("%s != null && String(%s).length > %d", v, v, f.validationMaxLength()),
-                            RuleText.quote(label + " is at most " + f.validationMaxLength() + " characters"),
+                            String.format("%s != null && String(%s).length > %d", v, v, maxLength),
+                            RuleText.quote(label + " is at most " + maxLength + " characters"),
                             "Size",
                             size);
                 }
-                if (f.minLength() > 0) {
+                Integer minLength = FieldFacts.minLength(f);
+                if (minLength != null) {
                     checks.add(
-                            String.format("%s != null && %s !== '' && String(%s).length < %d", v, v, v, f.minLength()),
-                            RuleText.quote(label + " is at least " + f.minLength() + " characters"),
+                            String.format("%s != null && %s !== '' && String(%s).length < %d", v, v, v, minLength),
+                            RuleText.quote(label + " is at least " + minLength + " characters"),
                             "Size",
                             size);
                 }
@@ -369,7 +367,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
                 }
             }
             String minDecl = f.dslValueAny("min", "minval", "minvalue");
-            String min = bound(minDecl);
+            String min = FieldFacts.min(f);
             if (min != null) {
                 checks.add(
                         String.format("%s != null && Number(%s) < %s", v, v, min),
@@ -378,7 +376,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
                         String.format("{ value: %s }", min));
             }
             String maxDecl = f.dslValueAny("max", "maxval", "maxvalue");
-            String max = bound(maxDecl);
+            String max = FieldFacts.max(f);
             if (max != null) {
                 checks.add(
                         String.format("%s != null && Number(%s) > %s", v, v, max),
@@ -456,11 +454,13 @@ public class TypeScriptDtoFileRules implements CodeRules {
         }
     }
 
-    /** The values of the server's @Size on a text: the least and the most length it declares. */
+    /** The values of the server's @Size on a writable text: the least and the most length it declares. */
     private static String sizeValues(FieldSpec f) {
         List<String> values = new ArrayList<String>();
-        if (f.minLength() > 0) values.add("min: " + f.minLength());
-        if (f.validationMaxLength() >= 0) values.add("max: " + f.validationMaxLength());
+        Integer minLength = FieldFacts.minLength(f);
+        if (minLength != null) values.add("min: " + minLength);
+        Integer maxLength = FieldFacts.maxLength(f);
+        if (maxLength != null) values.add("max: " + maxLength);
         StringBuilder sb = new StringBuilder("{ ");
         for (int i = 0; i < values.size(); i++) sb.append(i == 0 ? "" : ", ").append(values.get(i));
         return sb.append(" }").toString();
@@ -490,43 +490,14 @@ public class TypeScriptDtoFileRules implements CodeRules {
     }
 
     /**
-     * The meta label of the entity a DTO stands for, or null: a DTO without a
-     * label of its own is shown by its entity's.
-     */
-    private static io.elasticore.base.model.core.Annotation entityLabel(EntitySpec e) {
-        io.elasticore.base.model.DataModelComponent named;
-        try {
-            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
-            named = ctx == null ? null : ctx.findModelComponent(e.getName());
-        } catch (RuntimeException notInTheModel) {
-            return null;
-        }
-        if (!(named instanceof io.elasticore.base.model.entity.Entity)) return null;
-        io.elasticore.base.model.MetaInfo meta = ((io.elasticore.base.model.entity.Entity) named).getMetaInfo();
-        java.util.Map<String, io.elasticore.base.model.core.Annotation> map =
-                meta == null ? null : meta.getMetaAnnotationMap();
-        return map == null ? null : map.get("label");
-    }
-
-    /**
      * Whether validateXxx and validateXxxCodes read partial: a checked list (one with a
      * minsize), or a required field - the checks below that ask "!partial".
      */
     private static boolean readsPartial(List<FieldSpec> checked) {
         for (FieldSpec f : checked) {
-            if (writable(f) && (f.isList() || f.required())) return true;
+            if (FieldFacts.required(f) || (FieldFacts.writable(f) && f.isList())) return true;
         }
         return false;
-    }
-
-    /** What a request may write: not shown-only, not derived, not the persistence layer's. */
-    private static boolean writable(FieldSpec f) {
-        if (f.hasDslAny("readonly", "noinput", "behavior", "statefield", "snapshot", "compute", "formula")) return false;
-        if (f.dslValue("ref") != null || f.systemManaged()) return false;
-        // A stamp is the lifecycle's to write - where there is one to write it (a split root).
-        if (f.hasDsl(io.elasticore.base.model.pub.rules.ddd.DddStateRules.STAMP)
-                && io.elasticore.base.model.pub.rules.ddd.DddBehaviorRules.splits(f.entity())) return false;
-        return true;
     }
 
     /** The least size @minsize(n) or @minsize(n, 'message') declares; 0 when none, or not a number. */
@@ -539,18 +510,6 @@ public class TypeScriptDtoFileRules implements CodeRules {
             // a bound the server does not read as a number either
             return 0;
         }
-    }
-
-    private static String labelOf(FieldSpec f) {
-        String label = f.label();
-        return label == null || label.trim().isEmpty() ? f.name() : label.trim();
-    }
-
-    /** The number of @min(1) or @min(0.01, 'message'). */
-    private static String bound(String declared) {
-        if (declared == null) return null;
-        String v = declared.split(",")[0].trim();
-        return v.matches("-?\\d+(\\.\\d+)?") ? v : null;
     }
 
     /** The message of @min(0.01, 'message'), or the fallback. */

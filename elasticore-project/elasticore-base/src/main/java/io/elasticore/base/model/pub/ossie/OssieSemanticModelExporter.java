@@ -1150,9 +1150,10 @@ public final class OssieSemanticModelExporter {
 
     /**
      * The DSL's value types in Ossie's portable vocabulary (core spec, "Data
-     * types"). The table in the DSL guide says the same, type by type.
+     * types"). The table in the DSL guide says the same, type by type. A
+     * field's kind for a screen starts from it (FieldFacts.kind).
      */
-    static String ossieType(Field field) {
+    public static String ossieType(Field field) {
         // A JSON column is text to the database but not a string to anyone
         // reading it; a large binary is nothing the vocabulary has a word for.
         String columnDef = field.getAnnotationValue("columndef");

@@ -435,8 +435,7 @@ public class ServiceAccessRules implements CodeRules {
                 ? String.format("%s.findById(%s).ifPresent { accessWrite(it, \"delete\") }", repo, id)
                 : String.format("%s.findById(%s).ifPresent(e -> accessWrite(e, \"delete\"));", repo, id));
 
-        String declaration = e.metaText("access");
-        String adminRole = orDefault(e.config("adminRole"), "ADMIN");
+        String policy = policyArguments(e).literal();
         String ownerRead = owner == null ? "null" : getter(kt, "entity", owner.name());
 
         Lines m = new Lines(kt);
@@ -452,15 +451,19 @@ public class ServiceAccessRules implements CodeRules {
             }
         } else {
             m.add("/** @access of the DSL. */")
-             .add("protected static final %sAccessPolicy ACCESS =", RT)
-             .add("        %sAccessPolicy.parse(\"%s\", %s, \"%s\");", RT, entity, quoted(declaration), adminRole).add("")
-             .add("/** Who is asking: a visitor unless signed in, the application itself inside CurrentUser.runAsSystem. */")
-             .add("protected %sCurrentUser currentUser = new %sSessionCurrentUser();", RT, RT).add("")
-             .add("/** The application's CurrentUser bean, when it has one - Spring Security's, say. */")
-             .add("@org.springframework.beans.factory.annotation.Autowired(required = false)")
-             .add("public void setCurrentUser(%sCurrentUser currentUser) {", RT)
-             .add("    this.currentUser = currentUser;")
-             .add("}").add("");
+                    .add("protected static final %sAccessPolicy ACCESS =", RT)
+                    .add("        %sAccessPolicy.parse(%s);", RT, policy)
+                    .add("")
+                    .add(
+                            "/** Who is asking: a visitor unless signed in, the application itself inside CurrentUser.runAsSystem. */")
+                    .add("protected %sCurrentUser currentUser = new %sSessionCurrentUser();", RT, RT)
+                    .add("")
+                    .add("/** The application's CurrentUser bean, when it has one - Spring Security's, say. */")
+                    .add("@org.springframework.beans.factory.annotation.Autowired(required = false)")
+                    .add("public void setCurrentUser(%sCurrentUser currentUser) {", RT)
+                    .add("    this.currentUser = currentUser;")
+                    .add("}")
+                    .add("");
             if (!passwords.isEmpty()) {
                 m.add("/** How a password is kept: PBKDF2 unless the application has a PasswordHasher bean. */")
                  .add("protected %sPasswordHasher passwordHasher = %sPasswordHasher.standard();", RT, RT).add("")
@@ -659,13 +662,13 @@ public class ServiceAccessRules implements CodeRules {
                 m.add("    dto.%s?.let { dto.%s = passwordHasher.hash(it) }", f.name(), f.name());
             }
             m.add("}")
-             .add("")
-             .add("companion object {")
-             .add("    /** @access of the DSL. */")
-             .add("    @JvmStatic")
-             .add("    protected val ACCESS: %sAccessPolicy =", RT)
-             .add("        %sAccessPolicy.parse(\"%s\", %s, \"%s\")", RT, entity, quoted(declaration), adminRole)
-             .add("}");
+                    .add("")
+                    .add("companion object {")
+                    .add("    /** @access of the DSL. */")
+                    .add("    @JvmStatic")
+                    .add("    protected val ACCESS: %sAccessPolicy =", RT)
+                    .add("        %sAccessPolicy.parse(%s)", RT, policy)
+                    .add("}");
         } else {
             m.add("private void hashPasswords(%s dto) {", dto);
             for (FieldSpec f : passwords) {
@@ -1558,9 +1561,51 @@ public class ServiceAccessRules implements CodeRules {
         return dot >= 0 ? t.substring(dot + 1) : t;
     }
 
-    private static String quoted(String declaration) {
-        if (declaration == null) return "null";
-        return "\"" + declaration.trim().replace("\\", "\\\\").replace("\"", "'") + "\"";
+    /**
+     * What the service's {@code ACCESS = AccessPolicy.parse(entity, declaration, adminRole)} is given,
+     * in Java and Kotlin alike: one place, so that whatever else states an entity's access - the
+     * schema answer of issue 373 - states the policy the service enforces.
+     */
+    public static PolicyArguments policyArguments(EntitySpec e) {
+        String declared = e.metaText("access");
+        return new PolicyArguments(
+                e.getName(),
+                declared == null ? null : declared.trim().replace("\"", "'"),
+                orDefault(e.config("adminRole"), "ADMIN"));
+    }
+
+    /** The three arguments of AccessPolicy.parse, as the policy receives them. */
+    public static final class PolicyArguments {
+        private final String entity;
+        private final String declaration;
+        private final String adminRole;
+
+        PolicyArguments(String entity, String declaration, String adminRole) {
+            this.entity = entity;
+            this.declaration = declaration;
+            this.adminRole = adminRole;
+        }
+
+        /** The entity's name: what a refusal names. */
+        public String entity() {
+            return entity;
+        }
+
+        /** The @access declaration, trimmed, its double quotes made single; null when the entity has none. */
+        public String declaration() {
+            return declaration;
+        }
+
+        /** The role that is the administrator: env.yml adminRole, ADMIN when not set. */
+        public String adminRole() {
+            return adminRole;
+        }
+
+        /** The three as the generated source passes them: {@code "Order", "read=owner", "ADMIN"}. */
+        public String literal() {
+            String decl = declaration == null ? "null" : "\"" + declaration.replace("\\", "\\\\") + "\"";
+            return String.format("\"%s\", %s, \"%s\"", entity, decl, adminRole);
+        }
     }
 
     private static String orDefault(String value, String fallback) {
