@@ -472,6 +472,11 @@ Only the expressions `a * b`, `a + b`, `a - b` (fields or numbers) and `sum(memb
 so if you fix the DSL, it reaches every entry point in the next build. For the table of annotations, see `elasticore-annotation-guide.md`,
 "@access / @owner".
 
+`GET /schema/info` is the exception: the controller answers it itself from the DTO class, so `@access` does not apply to it.
+To close it, add a Spring Security rule, such as `.requestMatchers(HttpMethod.GET, "/api/*/*/schema/info").hasRole("ADMIN")`
+(`/api/**/schema/info` is refused by Spring's path patterns), or turn it off with `@expose(..., schema=false)`.
+`/v3/api-docs` (springdoc) carries the same field list and needs the same rule.
+
 - The template's slots (`${accessCreate}` and so on) are empty when there is no declaration, so the generated code does not change.
 - Runtime: `CurrentUser` (default `SessionCurrentUser`) of `io.elasticore.springboot3.security`,
   `AccessPolicy`, `PasswordHasher` (default PBKDF2), and the 401 and 403 exceptions. If you register a bean, it is used.

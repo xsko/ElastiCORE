@@ -472,6 +472,11 @@ DSL 문법과 생성물 표는 `elasticore-dsl-guide.md` 의 "업무 명령" 을
 DSL 을 고치면 다음 빌드에 모든 진입점에 반영됩니다. 어노테이션 표는 `elasticore-annotation-guide.md`
 의 "@access / @owner" 를 보세요.
 
+`GET /schema/info` 는 예외입니다: 컨트롤러가 DTO 클래스로 직접 답하므로 `@access` 가 적용되지 않습니다.
+막으려면 Spring Security 규칙을 두거나(예: `.requestMatchers(HttpMethod.GET, "/api/*/*/schema/info").hasRole("ADMIN")`,
+`/api/**/schema/info` 는 Spring 의 경로 패턴이 거부합니다) `@expose(..., schema=false)` 로 끄세요.
+`/v3/api-docs` (springdoc) 도 같은 필드 목록을 담으므로 같은 규칙이 필요합니다.
+
 - 템플릿의 슬롯(`${accessCreate}` 등)은 선언이 없으면 비어 있어 생성물이 바뀌지 않습니다.
 - 런타임: `io.elasticore.springboot3.security` 의 `CurrentUser`(기본 `SessionCurrentUser`),
   `AccessPolicy`, `PasswordHasher`(기본 PBKDF2), 401·403 예외. 빈을 등록하면 그것을 씁니다.
