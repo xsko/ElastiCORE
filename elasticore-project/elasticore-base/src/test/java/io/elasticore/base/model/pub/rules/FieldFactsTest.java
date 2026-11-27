@@ -170,6 +170,12 @@ public class FieldFactsTest {
         assertNull(FieldFacts.bound("1."));
         assertNull(FieldFacts.bound(".5"));
         assertNull(FieldFacts.bound("1e3"));
+        // Nothing before the comma is no number either (it stopped the generation before).
+        assertNull(FieldFacts.bound(","));
+        assertNull(FieldFacts.bound(",,"));
+        assertNull(FieldFacts.bound(" , 'message'"));
+        assertNull(FieldFacts.bound(""));
+        assertEquals("7", FieldFacts.bound("7,"));
     }
 
     // ---- the entity's label --------------------------------------------------------

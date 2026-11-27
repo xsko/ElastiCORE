@@ -89,12 +89,14 @@ public final class FieldFacts {
         return writable(f) ? bound(f.dslValueAny("max", "maxval", "maxvalue")) : null;
     }
 
-    /** The number of @min(1) or @min(0.01, 'message'); null when none, or not a number. */
-    // Moved as it was from TypeScriptDtoFileRules: the TypeScript client and this fact read a bound alike.
-    @SuppressWarnings("StringSplitter")
+    /**
+     * The number of @min(1) or @min(0.01, 'message'): the text before the first comma; null when
+     * none, or not a number - @min(,) too, which has no text there.
+     */
     public static String bound(String declared) {
         if (declared == null) return null;
-        String v = declared.split(",")[0].trim();
+        int comma = declared.indexOf(',');
+        String v = (comma < 0 ? declared : declared.substring(0, comma)).trim();
         return v.matches("-?\\d+(\\.\\d+)?") ? v : null;
     }
 
