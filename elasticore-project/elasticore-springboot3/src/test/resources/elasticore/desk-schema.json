@@ -103,6 +103,24 @@
           "readOnly": true,
           "html": false
         }
+      },
+      "search": {
+        "pageSize": 20,
+        "sortable": [
+          "itemId",
+          "name"
+        ],
+        "fields": {
+          "name": {
+            "field": "name",
+            "op": "like"
+          },
+          "unitCostFrom": {
+            "field": "unitCost",
+            "op": "between",
+            "end": "from"
+          }
+        }
       }
     },
     "Gone": {

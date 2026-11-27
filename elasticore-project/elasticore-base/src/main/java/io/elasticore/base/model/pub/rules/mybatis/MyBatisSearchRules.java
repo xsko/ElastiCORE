@@ -113,8 +113,11 @@ public class MyBatisSearchRules implements CodeRules {
         c.line(BLOCK, "%s\t%s\t%s\t%s", op, path, prop, type);
     }
 
-    /** The condition as one of the operators MyBatisMapperRules writes, or null for an unknown one. */
-    static String operator(String condition) {
+    /**
+     * The condition as one of the operators MyBatisMapperRules writes, or null for an unknown one. GET /schema/info
+     * reads JPA's conditions through it too (SchemaSearch), whose mapper writes the same ones.
+     */
+    public static String operator(String condition) {
         if (condition == null || condition.isEmpty() || "auto".equals(condition)) return "auto";
         if (SearchDtoBaseRules.isNullCheck(condition)) return "isnull";
         switch (condition) {

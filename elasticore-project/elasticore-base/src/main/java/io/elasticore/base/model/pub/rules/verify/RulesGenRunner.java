@@ -1749,7 +1749,6 @@ public final class RulesGenRunner {
             }
 
             generateDtos(domainDirName, model);
-            if (!typescript) writeSchemaInfo(model);
             if (!typescript) warnUnenforced(model);
             // Said by the server's run; a client's run says it too, unless the build runs it right
             // after the server's (tsWithBuild), which has said it already.
@@ -1798,6 +1797,8 @@ public final class RulesGenRunner {
                 generateProtoPorts(model);
                 generateKotlinDomainArtifacts(domainDirName, model, specs);
                 generateSupportTypes(domainDirName, model, specs);
+                // After the repositories: a MongoDB search is what they resolve (schemaInfo: model).
+                writeSchemaInfo(model);
                 continue;
             }
 
@@ -1805,6 +1806,8 @@ public final class RulesGenRunner {
             generatePorts(model);
             generateProtoPorts(model);
             generateDomainArtifacts(domainDirName, model, specs);
+            // After the mappers and repositories: a MyBatis or MongoDB search is what they resolve.
+            writeSchemaInfo(model);
         }
     }
 
@@ -5234,6 +5237,14 @@ public final class RulesGenRunner {
     /** The domain's entities whose controller serves POST /search. */
     private final java.util.Set<String> schemaSearched = new java.util.HashSet<String>();
 
+    /** The search DTOs the domain's run wrote, by class name: what POST /search takes. */
+    private final Map<String, io.elasticore.base.model.pub.rules.SchemaSearch.Dto> schemaSearchDtos =
+            new java.util.HashMap<String, io.elasticore.base.model.pub.rules.SchemaSearch.Dto>();
+
+    /** What each entity's MyBatis mapper or MongoDB repository applies of its search, by entity name. */
+    private final Map<String, io.elasticore.base.model.pub.rules.SchemaSearch.Query> schemaQueries =
+            new java.util.HashMap<String, io.elasticore.base.model.pub.rules.SchemaSearch.Query>();
+
     /** The module the domain's controllers are written to: the schema file goes beside them. */
     private String schemaRoot;
 
@@ -5265,6 +5276,39 @@ public final class RulesGenRunner {
                     out.fileName(),
                     new io.elasticore.base.model.pub.rules.SchemaCatalog.Dto(
                             out.packageName() + "." + out.fileName(), spec, fields));
+        } else if ("srchdto".equals(target)) {
+            // The properties as the search DTO rule decided them, those still declared; its page and its sort.
+            List<io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.SearchProperty> properties =
+                    new ArrayList<io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.SearchProperty>();
+            for (io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.SearchProperty p :
+                    io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.properties(spec)) {
+                io.elasticore.base.model.pub.rules.FieldCode fc = code.field(p.field());
+                if (fc != null && !fc.isRemoved()) properties.add(p);
+            }
+            schemaSearchDtos.put(
+                    out.fileName(),
+                    new io.elasticore.base.model.pub.rules.SchemaSearch.Dto(
+                            properties,
+                            spec.searchPageSize(),
+                            io.elasticore.base.model.pub.rules.base.SearchSortList.listed(spec)));
+        } else if (io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.REPOSITORY.equals(target)
+                && !"false"
+                        .equals(spec.config(
+                                io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.SERVICED_CONFIG))) {
+            schemaQueries.put(
+                    spec.getName(),
+                    new io.elasticore.base.model.pub.rules.SchemaSearch.Query(
+                            io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.searched(spec),
+                            io.elasticore.base.model.pub.rules.mybatis.MyBatisMapperRules.sortable(spec)));
+        } else if (io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.TARGET.equals(target)
+                && "true"
+                        .equals(spec.config(
+                                io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.SERVICED_CONFIG))) {
+            schemaQueries.put(
+                    spec.getName(),
+                    new io.elasticore.base.model.pub.rules.SchemaSearch.Query(
+                            io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.searched(spec),
+                            io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.sortable(spec)));
         } else if ("control".equals(target) && !code.isMethodExcluded("schemaInfo")) {
             schemaServed.add(new io.elasticore.base.model.pub.rules.SchemaCatalog.Served(
                     spec,
@@ -5272,7 +5316,8 @@ public final class RulesGenRunner {
                             "%s/%s/%s",
                             code.varValue("apiPath"), code.varValue("domainName"), code.varValue("entityName")),
                     code.varValue("dtoClassName"),
-                    code.varValue("searchDTOClassName")));
+                    code.varValue("searchDTOClassName"),
+                    "Page".equals(code.varValue("searchReturnType"))));
             if (!code.isMethodExcluded("search")) schemaSearched.add(spec.getName());
             if (schemaRoot == null) schemaRoot = rootFor(out);
             // A preview writes nothing: the file on disk is not yet what this run would leave.
@@ -5302,6 +5347,8 @@ public final class RulesGenRunner {
             }
             if (schemaServed.isEmpty() || schemaRoot == null || captured != null) return;
             String name = schemaServed.get(0).entity().domainName();
+            // A MyBatis or MongoDB search is the query its mapper or repository writes; JPA's is the mapper's toSpec.
+            final boolean queried = persistence() != RulesConfig.Persistence.JPA;
             String text = io.elasticore.base.model.pub.rules.SchemaCatalog.json(
                     name, schemaServed, new io.elasticore.base.model.pub.rules.SchemaCatalog.Model() {
                         @Override
@@ -5344,6 +5391,24 @@ public final class RulesGenRunner {
                                                     entity)
                                             .contains("search");
                         }
+
+                        @Override
+                        public io.elasticore.base.model.pub.rules.SchemaSearch.Dto searchDto(String className) {
+                            return schemaSearchDtos.get(className);
+                        }
+
+                        @Override
+                        public io.elasticore.base.model.pub.rules.SchemaSearch.Query query(EntitySpec entity) {
+                            if (!queried) return null;
+                            io.elasticore.base.model.pub.rules.SchemaSearch.Query q =
+                                    schemaQueries.get(entity.getName());
+                            // No query written for it: it searches by nothing.
+                            return q != null
+                                    ? q
+                                    : new io.elasticore.base.model.pub.rules.SchemaSearch.Query(
+                                            java.util.Collections.<String[]>emptyList(),
+                                            java.util.Collections.<String>emptyList());
+                        }
                     });
             File file = new File(schemaRoot + "/src/main/resources/"
                     + io.elasticore.base.model.pub.rules.SchemaCatalog.resource(name));
@@ -5360,6 +5425,8 @@ public final class RulesGenRunner {
             schemaDtos.clear();
             schemaServed.clear();
             schemaSearched.clear();
+            schemaSearchDtos.clear();
+            schemaQueries.clear();
             schemaRoot = null;
         }
     }

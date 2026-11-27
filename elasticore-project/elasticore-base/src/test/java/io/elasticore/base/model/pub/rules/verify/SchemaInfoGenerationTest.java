@@ -63,6 +63,135 @@ public class SchemaInfoGenerationTest {
 
     private static final String SETTING = "    schemaInfo: model\n";
 
+    /** The model with a search DTO of Item's own: words, a like, a range, a list, an emptiness check. */
+    private static final String SEARCH_MODEL = MODEL.replace(
+                    "      product:  Product @ManyToOne\n",
+                    "      product:  Product @ManyToOne\n      note:     string(20)\n")
+            + String.join(
+                    "\n",
+                    "  ItemSrchDTO:",
+                    "    meta: dto @searchable(entity=Item, pageSize=10)",
+                    "    fields:",
+                    "      keyword:  string(50) @search(words:name)",
+                    "      name:     string(30) @search(like)",
+                    "      unitCost: int @search(between)",
+                    "      status:   List<ItemStatus> @search(in)",
+                    "      note:     string(20) @search(isnull)",
+                    "");
+
+    /** One property of the search part, as the file writes it. */
+    private static String property(String name, String field, String op, String more) {
+        return "\"" + name + "\": {\n            \"field\": " + field + ",\n            \"op\": " + op + more
+                + "\n          }";
+    }
+
+    /**
+     * The search part: what POST /search takes, as each mode applies it - JPA's mapper searches the words, MyBatis
+     * and MongoDB do not (op null; the build says so). The page size and what a sort may name.
+     */
+    @Test
+    public void theSearchAsEachModeAppliesIt() throws Exception {
+        String[][] runs = {
+            {"jpa", "hexagonal", "java", "words"},
+            {"jpa", "ddd", "kotlin", "words"},
+            {"jpa", "layered", "java", "words"},
+            {"mybatis", "layered", "java", "null"},
+            {"mybatis", "hexagonal", "java", "null"},
+            {"mongo", "layered", "java", "null"},
+            {"mongo", "layered", "kotlin", "null"},
+        };
+        for (String[] run : runs) {
+            String what = String.join("/", run);
+            String model =
+                    run[0].equals("mongo") ? SEARCH_MODEL.replace("long @id @sequence", "string @id") : SEARCH_MODEL;
+            File project = Files.createTempDirectory("elcore-schema").toFile();
+            try {
+                String log = generate(project, model, run[0], run[1], run[2], SETTING, false);
+                String json = read(find(project, "desk-schema.json"));
+                String item = json.substring(
+                        json.indexOf("\"Item\": {"),
+                        json.indexOf("\"Hidden\"") < 0 ? json.length() : json.indexOf("\"Hidden\""));
+                String words = "null".equals(run[3]) ? "null" : "\"words\"";
+                assertTrue(
+                        item.contains("\"search\": {\n        \"pageSize\": 10,\n        \"sortable\": [\n"),
+                        what + "\n" + item);
+                assertTrue(
+                        item.contains(property("keyword", "[\n              \"name\"\n            ]", words, "")),
+                        what + "\n" + item);
+                assertTrue(item.contains(property("name", "\"name\"", "\"like\"", "")), what + "\n" + item);
+                assertTrue(
+                        item.contains(property(
+                                "unitCostFrom", "\"unitCost\"", "\"between\"", ",\n            \"end\": \"from\"")),
+                        what + "\n" + item);
+                assertTrue(
+                        item.contains(property(
+                                "unitCostTo", "\"unitCost\"", "\"between\"", ",\n            \"end\": \"to\"")),
+                        what + "\n" + item);
+                assertTrue(
+                        item.contains(property("status", "\"status\"", "\"in\"", ",\n            \"in\": true")),
+                        what + "\n" + item);
+                assertTrue(item.contains(property("noteEmpty", "\"note\"", "\"isnull\"", "")), what + "\n" + item);
+                // Sorted by what the response shows - and, under MyBatis and MongoDB, what the query has.
+                assertTrue(item.contains("          \"name\",\n"), what + "\n" + item);
+                if (!run[0].equals("jpa")) {
+                    assertTrue(log.contains("@search(words: ...) is not searched under mode: mybatis"), what);
+                }
+            } finally {
+                delete(project);
+            }
+        }
+    }
+
+    /** MongoDB matches text only on a text value: a like, or an auto, on a number or an enumeration is an equality. */
+    @Test
+    public void mongoMatchesTextOnlyOnText() throws Exception {
+        String model = MODEL.replace("long @id @sequence", "string @id")
+                + String.join(
+                        "\n",
+                        "  ItemSrchDTO:",
+                        "    meta: dto @searchable(entity=Item, pageSize=10)",
+                        "    fields:",
+                        "      name:     string(30) @search",
+                        "      unitCost: int @search(like)",
+                        "      status:   ItemStatus @search",
+                        "");
+        File project = Files.createTempDirectory("elcore-schema").toFile();
+        try {
+            generate(project, model, "mongo", "layered", "java", SETTING, false);
+            String json = read(find(project, "desk-schema.json"));
+            assertTrue(json.contains(property("name", "\"name\"", "\"auto\"", "")), json);
+            assertTrue(json.contains(property("unitCost", "\"unitCost\"", "\"eq\"", "")), json);
+            assertTrue(json.contains(property("status", "\"status\"", "\"eq\"", "")), json);
+        } finally {
+            delete(project);
+        }
+    }
+
+    /** A controller that serves no search: no search part, and a reference to it names no search. */
+    @Test
+    public void noSearchWhereTheControllerServesNone() throws Exception {
+        File project = Files.createTempDirectory("elcore-schema").toFile();
+        try {
+            String model = MODEL.replace(
+                    "    meta: entity @root @expose(20) -- Product",
+                    "    meta: entity @root @expose(pageSize=20, methods=\"create,read,update,delete\") -- Product");
+            generate(project, model, "jpa", "layered", "java", SETTING, false);
+            String json = read(find(project, "desk-schema.json"));
+            String product = json.substring(json.indexOf("\"Product\": {"), json.indexOf("\"Item\": {"));
+            assertFalse(product.contains("\"search\""), product);
+            assertFalse(json.contains("\"search\": \"/api/desk/product/search\""), json);
+            // Item's, derived by @expose: every field, as the search DTO names it.
+            assertTrue(json.contains(property("itemId", "\"itemId\"", "\"eq\"", "")), json);
+            // name has no @search of its own here: text derives auto.
+            assertTrue(json.contains(property("name", "\"name\"", "\"auto\"", "")), json);
+            // A reference searched by the key it flattens.
+            assertTrue(json.contains(property("productProductId", "\"product.productId\"", "\"eq\"", "")), json);
+            assertTrue(json.contains("\"pageSize\": 20,"), json);
+        } finally {
+            delete(project);
+        }
+    }
+
     /** The JPA hexagon in Java: the file, the line, and no DTOUtils left in the controller. */
     @Test
     public void theControllerAnswersFromTheFileBesideIt() throws Exception {

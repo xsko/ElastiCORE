@@ -1045,9 +1045,33 @@ config:
 - Said by the build (`DSL_WARN`): the setting in a domain of the 2.x code; a value other than `model`; a project's own
   `control.tmpl` without `${schemaInfoAnswer}` (it answers as before); a controller you keep whose `GET /schema/info` does
   not call `SchemaInfo.answer` - the build names the file and the line to write, or delete the file to have it generated anew.
-- The search DTO's fields and what the signed-in user may do are not in the answer yet.
+- `search` - what `POST .../search` takes, where the controller serves it (left out otherwise) - the pet store's Item:
+
+```json
+"search": {
+  "pageSize": 50,
+  "sortable": ["itemId", "product.name", "name", "description", "imagePath", "unitCost", "productId"],
+  "fields": {"itemId": {"field": "itemId", "op": "eq"}, "name": {"field": "name", "op": "like"},
+             "description": {"field": "description", "op": "auto"}, "imagePath": {"field": "imagePath", "op": "auto"},
+             "unitCost": {"field": "unitCost", "op": "eq"}, "productId": {"field": "productId", "op": "eq"}}
+}
+```
+
+- `search.pageSize` - the page a request gets when it sends none (it may send `pageSize`, and `pageNumber` from 0).
+- `search.sortable` - what `sortCode` / `sortColumn` may name; anything else is a 400. Under MyBatis and MongoDB, only what
+  the query has a column for. `null` under JPA when nothing checks it (your own `interface.sortable`; no response DTO).
+- `search.fields` - each property of the search DTO, named as the request sends it (`xFrom`/`xTo`, an alias, `xEmpty`,
+  `xItem`, `words`): `field` (the entity field it searches; a list for `words`), `op`, `end` (`from` or `to` of a range)
+  and `in: true` (a list of values).
+- `op` - the DSL's word for what the search applies: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like` (contains, ignoring
+  case; `%__%` says it too), `%_%` (contains), `__=`, `_%`, `__%`, `%_` (a lone `%` too), `%__`, `in`, `between`, `isnull`
+  (send `true`/`false`), `auto`, `words`. An unknown condition says `eq`, as applied. `null`: it searches by nothing.
+- Under MyBatis and MongoDB these say `null` (the build says why): `@search(words: ...)`, one element of a list (`xItem`),
+  a `@formula`, and (MyBatis) a large value searched by anything but text. MongoDB compares a number or an enum by `eq`,
+  even for a `like`.
+- What the signed-in user may do is not in the answer yet.
 - Example: `SchemaInfoTest` of the pet store (a label in two languages, an enum, a reference and its display, a read-only
-  field, required and lengths, over HTTP).
+  field, required and lengths, the search's properties and a search by one, over HTTP).
 
 ## 7. apiPath setting
 
