@@ -3054,11 +3054,6 @@ final class ContractTestSource {
             FieldSpec declared = field(e, f.name());
             if (sf == null || sf.isList() || declared == null) return null;
             String condition = declared.dslValueAny("search", "s", "srch", "filter", "searchable");
-            // Without a @search of its own, the condition its search DTO derives (issue 376: no longer
-            // written into the field, where this used to read it).
-            if (condition == null && !declared.hasSearch())
-                condition =
-                        io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.derivedCondition(srch, sf, false);
             String c = condition == null ? "" : condition.trim().toLowerCase(java.util.Locale.ROOT);
             if (!c.isEmpty() && !EncryptRules.equality(c) && !"like".equals(c)) return null;
             return json(sf);

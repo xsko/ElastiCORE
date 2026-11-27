@@ -354,10 +354,9 @@ public class SearchDtoBaseRules implements CodeRules {
     /**
      * The condition a search DTO derives for a field without a @search of its own, or null when it
      * derives none: every field of an @expose search DTO, and the inherited fields another search DTO
-     * takes (FieldSpec.searchedAsInherited). Shared with the contract tests, which ask how a field is
-     * searched without running this rule.
+     * takes (FieldSpec.searchedAsInherited).
      */
-    public static String derivedCondition(EntitySpec searchDto, FieldSpec f, boolean compatible) {
+    private static String derivedCondition(EntitySpec searchDto, FieldSpec f, boolean compatible) {
         if (f.hasSearch()) return null;
         if (!searchDto.hasMeta("expose") && !f.searchedAsInherited()) return null;
 

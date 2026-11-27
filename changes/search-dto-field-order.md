@@ -54,10 +54,11 @@
   `toSpec` lines are the same for every entity) was taken for unchanged and never rewritten. Lines are counted now;
   whitespace, line order, braces and an `import` written twice are still no change. `-Pmode=valid` shows a line whose
   count alone differs with its counts, e.g. `(2 vs 1)`.
-- The contract tests read how a field is searched from the field's own `@search`, which used to hold the written
-  condition; they now ask the search DTO rule for the derived one (`SearchDtoBaseRules.derivedCondition`), so they
-  are generated as before. The rule engine collects the `@expose` search DTOs' fields once per generation run, not
-  once per search DTO spec (a contract test builds one per field).
+- The contract tests, which read how a field is searched from the field's own `@search` (where the condition used to
+  be written), are generated as before: the fields they ask about are text, whose derived condition `auto` they take
+  as an equality, the same as no condition; an encrypted field they search by has a `@search` of its own. The rule
+  engine collects the `@expose` search DTOs' fields once per generation run, not once per search DTO spec (a contract
+  test builds one per field).
 - The annotation guide (`@searchable`, English and Korean) says which fields such a search DTO searches and that
   `@searchBypass` keeps a parent's field out.
 - Checked: `SearchDtoFieldOrderTest` (new, 16 tests):
@@ -75,12 +76,20 @@
   - `@searchBypass` on a parent field keeps it out of the `@service` and the `@expose` search DTO and their `toSpec`
     (2.x generator and 3.0 code).
   - All 16 fail without the change, each on the order or file it depends on (or the crash, the missed rewrite).
+  - In the test JVM, on a model loaded there (`SearchDtoFieldOrderTest` runs each generator in a JVM of its own):
+    `AutoSearchTest` (the condition of each type kind - `time` by equality, as 2.x does - inherited fields, the
+    searched entity, which DTOs' fields count as an `@expose` search DTO's, the 2.x publisher's condition per search
+    DTO kind), `SemanticLineCountTest` (counts differing by one and by more, equal counts, the `(3 vs 1)` of the
+    diff), `SearchDtoOrderInProcessTest` (the 2.x generator in both orders) and `SearchedAsInheritedTest` (the
+    marks `SpecFactory` sets, the collection made once per run and per context and kept by nothing after the run).
+    `diffMutation`: 96.6% of the 59 mutations of the changed lines detected.
   - The samples generated before and after the change differ only in the files listed above, by added lines;
     `elasticore-template-ddd` (332 tests) and `elasticore-template-kt` (240 tests) pass on the new output, and the
     contract tests they generate are unchanged. `elcoreRulesCheck -Pstrict` 158 MATCH / 0 DIFF / 2 ACCEPTED,
     `elcoreTreeCheck` 0 differ / 0 missing / 0 extra.
 - Files: `AutoSearch.java` (new), `SrcFilePublisher.java`, `SearchDtoSrcFilePublisher.java`, `MapperSrcPublisher.java`,
   `FieldSpec.java`, `SearchDtoBaseRules.java`, `MapperSpecRules.java`, `MyBatisSearchRules.java`, `SpecFactory.java`,
-  `RulesGenRunner.java`, `ContractTestSource.java`, `SearchDtoFieldOrderTest.java` (new),
+  `RulesGenRunner.java`, `SearchDtoFieldOrderTest.java`, `AutoSearchTest.java`, `SemanticLineCountTest.java`,
+  `SearchDtoOrderInProcessTest.java`, `SearchedAsInheritedTest.java` (all new),
   `elasticore-annotation-guide.md` and its `ko/` copy; `elasticore-template` `ArticleSrchDTO.java`,
   `EmployeeSrchDTO.java`, `ContentMapper.java`, `HrMapper.java`; `elasticore-template-ddd` `graphql/shop.graphqls`.
