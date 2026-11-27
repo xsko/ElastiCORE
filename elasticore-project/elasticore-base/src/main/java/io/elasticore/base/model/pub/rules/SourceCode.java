@@ -630,7 +630,7 @@ public final class SourceCode {
         if (templateSet != TemplateSet.COMPATIBLE
                 && templateSet.syntax() != Syntax.TYPESCRIPT
                 && "control".equals(target)
-                && !excludedMethods.isEmpty()) {
+                && (!excludedMethods.isEmpty() || unusedImportsDropped)) {
             rendered = withoutUnusedImports(rendered);
         }
         // A package segment Kotlin reserves - the "in" of adapter.in.web,
@@ -639,6 +639,28 @@ public final class SourceCode {
         return templateSet.syntax() == Syntax.KOTLIN
                 ? io.elasticore.base.model.pub.rules.lang.kotlin.KotlinKeywords.escapeQualifiedNames(rendered)
                 : rendered;
+    }
+
+    private boolean unusedImportsDropped;
+
+    /**
+     * Has the controller keep no import nothing in it names - the DTOUtils of a GET /schema/info that the
+     * runtime answers from the model (schemaInfo: model). The 3.0 controller only, as for @expose(methods).
+     */
+    public SourceCode dropUnusedImports() {
+        this.unusedImportsDropped = true;
+        return this;
+    }
+
+    /** The text of the skeleton this artifact is rendered from, as render() resolves it; empty when none is found. */
+    public String skeleton() {
+        String name = templateName == null ? target : templateName;
+        String tmplName = String.format("%s%s.tmpl", templateSet.dir(), name);
+        if (templateSet.dir().length() > 0
+                && SourceCode.class.getResource("/elasticore-template/" + tmplName) == null) {
+            tmplName = String.format("%s.tmpl", name);
+        }
+        return rawTemplate(tmplName);
     }
 
     private String templateName;

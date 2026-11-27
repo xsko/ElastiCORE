@@ -87,6 +87,6 @@ ${updateMethodJsonView}    @PutMapping
     @Operation(summary = "Retrieve metadata information for ${dtoClassName}")
     @GetMapping("/schema/info")
     public ResponseEntity<Map<String, Object>> getMetaInfo() {
-        return ResponseEntity.ok(DTOUtils.getMetaInfo(${dtoClassName}.class));
+        return ${schemaInfoAnswer};
     }
 }

@@ -20,7 +20,7 @@ Product:
 > **동작:** v3, Kotlin, TypeScript client · **안 됨:** 2.x-compatible output (output = 'v2'), 2.x generator (생성 안 됨)
 
 Controller 가 제공할 것을 나열합니다. 적지 않은 것은 생성하지 않습니다. 이름은 `create`·`read`·`search`·`update`·
-`delete`·`export`(아래) - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117-rc17). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다.
+`delete`·`export`(아래) - `update` 는 `PUT /` 와 `PUT /batch`, `delete` 는 `DELETE /{id}` 와 `POST /delete` 입니다. 짝 중 하나만은 `updateOne`(`PUT /`), `updateBatch`(`PUT /batch`), `deleteOne`(`DELETE /{id}`), `deleteBatch`(`POST /delete`) 입니다 (3.0.261117-rc17). `GET /schema/info` 는 남고, `@expose(..., schema=false)` 면 빠집니다. 무엇을 답하는지는 `elasticore-env-guide.md` (6-6, `schemaInfo: model`) 에 있습니다.
 TypeScript 클라이언트(`XxxApi.ts`)도 그것만 부르고, 헥사고날/DDD 유스케이스(`XxxUseCase`)도 적은 쓰기만 약속합니다.
 Service 는 모든 메서드를 그대로 둡니다 - 도메인에서는 계속 부를 수 있습니다. `methods` 가 없으면 지금처럼 전체 CRUD 이고, `export` 는 적은 곳에만 생깁니다.
 ```yaml

@@ -20,7 +20,7 @@ Product:
 > **Works in:** v3, Kotlin, TypeScript client · **Not in:** 2.x-compatible output (output = 'v2'), 2.x generator (not generated)
 
 Lists what the Controller serves; anything not listed is not generated. The names are `create`, `read`, `search`, `update`,
-`delete` and `export` (below) - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117-rc17). `GET /schema/info` stays, unless `@expose(..., schema=false)`.
+`delete` and `export` (below) - `update` is `PUT /` and `PUT /batch`, `delete` is `DELETE /{id}` and `POST /delete`; one of each pair is `updateOne` (`PUT /`), `updateBatch` (`PUT /batch`), `deleteOne` (`DELETE /{id}`), `deleteBatch` (`POST /delete`) (3.0.261117-rc17). `GET /schema/info` stays, unless `@expose(..., schema=false)`; what it answers is in `elasticore-env-guide.md` (6-6, `schemaInfo: model`).
 The TypeScript client (`XxxApi.ts`) calls only those, and the hexagonal/DDD use case (`XxxUseCase`) promises only the writes listed.
 The Service keeps every method - the domain can still call them. Without `methods` the entity gets full CRUD, as before - and no `export`, which comes only where it is listed.
 ```yaml

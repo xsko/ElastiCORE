@@ -963,6 +963,92 @@ config:
 - `public` (3.0 의 기본값) - 그 엔티티를 누구나 읽을 수 있을 때만 실리고, 아니면 이 설정 이름을 알려 주는 경고와 함께 빠집니다.
 - 도메인 전체에 적용됩니다. 3.0 에서 올라온 프로젝트는 응답에 그 필드가 늘어납니다: 전과 같이 두려면 `public` 을 쓰세요.
 
+## 6-6. `GET /schema/info` 가 답하는 것 (`schemaInfo: model`, 3.1)
+> **동작:** v3 번들 - JPA, MyBatis, MongoDB, Java, Kotlin, layered, ddd, hexagonal · **안 됨:** 2.x-compatible output (output = 'v2': `DSL_WARN` 이고 엔드포인트는 전처럼 답함), 2.x generator
+
+```yaml
+config:
+  schemaInfo: model        # GET .../schema/info 가 모델로 답한다 (선택; 없으면 전과 같음)
+```
+
+- 없으면 `GET /api/<domain>/<entity>/schema/info` 는 늘 그랬듯 `DTOUtils.getMetaInfo(XxxDTO.class)` 로 답합니다: DTO 의
+  필드마다 `type`(Java 클래스 이름, enum 은 `enumeration`), `description`(`@Schema`), `maxSize`
+  (`@Size`), enum 이면 `enums`. 설정하지 않은 프로젝트는 한 바이트도 바뀌지 않습니다.
+- 있으면 생성기가 컨트롤러 옆에 `src/main/resources/elasticore/<domain>-schema.json` 을 씁니다 - 모델과 함께 다시 생성되고,
+  다른 생성 파일처럼 병합되며, 설정을 빼면 지워집니다. 고치지 말고 DSL 을 바꾸세요 -
+  그리고 컨트롤러의 한 줄이 그 파일로 만든 런타임의 답을 돌려줍니다(`io.elasticore.springboot3.schema.SchemaInfo`).
+  생성 결과(펫스토어의 `ItemController`):
+
+```java
+    @Operation(summary = "Retrieve metadata information for ItemDTO")
+    @GetMapping("/schema/info")
+    public ResponseEntity<Map<String, Object>> getMetaInfo() {
+        return io.elasticore.springboot3.schema.SchemaInfo.answer("petstore", "Item");
+    }
+```
+
+  Kotlin 은 같은 줄을 `;` 없이 씁니다. 컨트롤러에서 더 쓰는 곳이 없으므로 `DTOUtils` import 는 빠집니다.
+- 답(`metaVersion: 1` - 화면이 모양을 믿을 수 있게) - 펫스토어의 Item, `Accept-Language: en`, 줄인 것:
+
+```json
+{
+  "metaVersion": 1,
+  "language": "en",
+  "entity": {
+    "name": "Item", "domain": "petstore", "label": "Item for sale", "labels": {"en": "Item for sale", "ja": "販売単位"},
+    "path": "/api/petstore/item", "key": "itemId", "dto": "ItemDTO", "searchDto": "ItemSrchDTO"
+  },
+  "fields": {
+    "productName": {"type": "String", "description": "productName", "kind": "String", "label": "productName", "labels": {},
+                    "required": false, "readOnly": true, "html": false},
+    "name": {"type": "String", "description": "name", "maxSize": 30, "kind": "String", "label": "name", "labels": {},
+             "required": true, "maxLength": 30, "readOnly": false, "html": false},
+    "unitCost": {"type": "Money", "description": "단가", "kind": "Money", "label": "Unit cost",
+                 "labels": {"en": "Unit cost", "ja": "単価"}, "required": true, "min": 0.01, "readOnly": false, "html": false},
+    "productId": {"type": "Long", "description": "productId", "kind": "Ref", "label": "productId", "labels": {},
+                  "required": false, "readOnly": false, "html": false,
+                  "ref": {"entity": "Product", "domain": "petstore", "key": "productId",
+                          "search": "/api/petstore/product/search", "display": {"field": "productName", "of": "name"}}}
+  }
+}
+```
+
+- `language` - 라벨을 말한 언어. API 오류 메시지와 같은 방식으로 고릅니다(`elasticore-rule-guide.md`, "오류 코드와 다국어").
+  아무도 고르지 않았으면 `null`(번들의 기본 문구).
+- `entity` - `name`, `domain`, `label`(요청 언어), `labels`(DSL 이 적은 다른 모든 언어), `path`,
+  `key`(키 필드; 복합 키는 이름 목록), `dto`, `searchDto`.
+- `fields` - DTO 클래스의 모든 필드에 늘 있던 키(`type`, `description`, `maxSize`, `enums` - 값도 전과 같음)가 있고,
+  DSL 이 선언한 필드에는 모델이 말하는 것이 더해집니다 - TypeScript 클라이언트의 `XxxFields` 를 쓰는 것과 같은 사실입니다:
+
+| 키 | 뜻 |
+|---|---|
+| `kind` | 모델이 보는 값의 종류, Ossie 내보내기의 낱말로: `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, `Opaque`; 그리고 `Enum`, `Ref`(다른 엔티티의 키를 담음), `Money`, `Html`, `List`, `Object`(값 객체나 그대로 실리는 DTO) |
+| `label`, `labels` | 요청 언어의 라벨; DSL 이 적은 다른 모든 언어의 라벨(`@label(en=...)`) |
+| `required` | 요청에 반드시 있어야 함(`!`) |
+| `maxLength`, `minLength` | 문자열 길이(`string(30)`, `@length(min=2)`), 있을 때만 |
+| `min`, `max` | 숫자의 한계(`@min(0.01)`, `@max(999)`), 있을 때만 |
+| `readOnly` | 어떤 요청도 쓰지 않음(`@readonly`, `@ref(...)`, 생명주기의 상태, `@compute` ...). 읽기 전용 필드에는 `required`·길이·한계가 없음 |
+| `html` | 서버가 정리하는 마크업(`@html`) |
+| `options` | enum 의 값: `value`(JSON 이 보내는 값), `name`(상수), `label`(요청 언어), `labels`(`label_ko` ... 컬럼) |
+| `ref` | 키가 가리키는 것: `entity`, `domain`, `key`, `search`(그 엔티티의 컨트롤러가 제공할 때 `POST .../search` - 다른 도메인의 엔티티는 그 `@expose` 대로), `display`(`{field, of}`) 는 DTO 에 그 행을 보여 주는 필드가 있을 때만(`productName @ref(product.name)`) - 모델에는 다른 표시 필드가 없습니다 |
+
+- 라벨은 요청 언어로 말합니다: 도메인 라벨 파일의 그 언어 파일(`i18n/<domain>-labels_<lang>`; 언어를 아무도 고르지 않았으면
+  영어 파일 `_en`), 없으면 기본 파일, 없으면 DSL 의 `--` 문구, 없으면 필드 이름. enum 의 값은 그 enum 을 선언한
+  도메인의 라벨 파일로 말합니다. `labelLanguage`(6-3)는 `--` 문구에 그 언어의 파일을 줍니다.
+- 답은 `Cache-Control: private` 입니다: 호출한 사람의 언어로 말한 답입니다.
+- **접근은 바뀌지 않습니다.** `/schema/info` 는 서비스를 거치지 않고 컨트롤러가 직접 답하므로 엔티티의 `@access` 가
+  적용되지 않습니다 - `read=admin` 인 엔티티도 컨트롤러에 닿는 누구에게나 필드 목록을 보여 줍니다. 이 설정이 있든 없든
+  같습니다. 막으려면 규칙을 직접 주세요. Spring Security 라면
+  `.requestMatchers(HttpMethod.GET, "/api/*/*/schema/info").hasRole("ADMIN")` (`/api/**/schema/info` 는 Spring 의 경로 패턴이
+  거부합니다: `**` 는 처음이나 끝에만), 아니면 `@expose(..., schema=false)` 로 엔드포인트를 끄세요.
+  `/v3/api-docs`(springdoc)도 같은 필드 목록을 담으니 같은 규칙이 필요합니다.
+- 빌드가 말하는 것(`DSL_WARN`): 2.x 코드를 만드는 도메인의 이 설정; `model` 이 아닌 값; `${schemaInfoAnswer}` 가 없는
+  프로젝트 자체 `control.tmpl`(전처럼 답함); 직접 가진 컨트롤러의 `GET /schema/info` 가 `SchemaInfo.answer` 를 부르지
+  않을 때 - 빌드가 파일과 써야 할 줄을 알려 주고, 파일을 지우면 새로 생성됩니다.
+- 검색 DTO 의 필드와 로그인한 사용자가 할 수 있는 일은 아직 답에 없습니다.
+- 예제: 펫스토어의 `SchemaInfoTest`(두 언어의 라벨, enum, 참조와 그 표시, 읽기 전용
+  필드, 필수와 길이를 HTTP 로).
+
 ## 7. apiPath 설정
 
 ```yaml

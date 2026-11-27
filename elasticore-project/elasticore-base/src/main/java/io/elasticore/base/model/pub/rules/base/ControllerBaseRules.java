@@ -85,6 +85,7 @@ public class ControllerBaseRules implements CodeRules {
         }
 
         primaryKeyVars(c, e);
+        if (!c.compatible() && c.syntax() != Syntax.TYPESCRIPT) schemaInfoAnswer(c, e, dtoName);
 
         if (e.jsonView()) {
             // The import slot has a line to itself; the method slots sit
@@ -114,6 +115,26 @@ public class ControllerBaseRules implements CodeRules {
              .var("updateParamJsonView", "")
              .var("batchParamJsonView", "");
         }
+    }
+
+    /**
+     * What GET /schema/info returns (issue 373): with env.yml config: schemaInfo: model, the runtime's answer from
+     * the model, SchemaInfo.answer("shop", "Order"), which leaves DTOUtils unused; without it, the line it always
+     * had. Always set: a slot left unset renders its line blank. A skeleton of the project's without the slot
+     * answers as before, and the build says so.
+     */
+    static void schemaInfoAnswer(SourceCode c, EntitySpec e, String dtoName) {
+        String setting = e.config(io.elasticore.base.model.pub.rules.SchemaCatalog.SETTING);
+        boolean model = io.elasticore.base.model.pub.rules.SchemaCatalog.asked(setting);
+        c.var(
+                io.elasticore.base.model.pub.rules.SchemaCatalog.SLOT,
+                io.elasticore.base.model.pub.rules.SchemaCatalog.answer(
+                        model, c.syntax() == Syntax.KOTLIN, e.domainName(), e.getName(), dtoName));
+        if (!model) return;
+        c.dropUnusedImports();
+        String problem = io.elasticore.base.model.pub.rules.SchemaCatalog.skeletonProblem(
+                e.domainName(), e.getName(), c.skeleton());
+        if (problem != null) SourceCode.dslWarnOnce(problem);
     }
 
     /**
