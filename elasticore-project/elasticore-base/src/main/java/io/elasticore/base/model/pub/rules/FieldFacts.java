@@ -229,6 +229,10 @@ public final class FieldFacts {
      * List (any collection), Ref (another entity), Enum (an enumeration of
      * the model), Object (a DTO or value object carried inline), Money (the
      * runtime's amount) and Html (markup the server cleans).
+     *
+     * Provisional: nothing calls it yet, and the vocabulary - its words and
+     * their spelling - is not decided (issue 373). It may change before the
+     * first writer reads it.
      */
     public static String kind(FieldSpec f) {
         if (f.isList()) return "List";

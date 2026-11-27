@@ -226,7 +226,13 @@ public class SearchDtoBaseRules implements CodeRules {
      * The properties of a search DTO, in the order of its fields: what its
      * srchdto-field rule decided for each - the same decision it renders
      * from, made again from the spec. It writes nothing (not even
-     * FieldSpec.derivedSearch), so it may be read before or after the rule.
+     * FieldSpec.derivedSearch).
+     *
+     * Only inside a rule run of the srchdto target: the decision reads the
+     * run's SourceCode, and ctx(e) throws without one. The list is this
+     * rule's decision, not necessarily what is written: a search DTO another
+     * rule does not make (a DDD member's, DddAggregateRules) has the list but
+     * no file, and a later project rule may still rename or remove a field.
      */
     public static java.util.List<SearchProperty> properties(EntitySpec e) {
         SourceCode c = ctx(e);

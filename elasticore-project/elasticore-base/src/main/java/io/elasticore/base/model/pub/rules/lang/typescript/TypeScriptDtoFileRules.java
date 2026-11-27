@@ -316,7 +316,8 @@ public class TypeScriptDtoFileRules implements CodeRules {
                 codeLines.addAll(checks.codes());
                 continue;
             }
-            if (f.required()) {
+            // The same facts XxxFields states (FieldFacts), read-only fields skipped above.
+            if (FieldFacts.required(f)) {
                 // Only a string can be empty; comparing anything else with '' does not compile.
                 checks.add(
                         f.isStringType()
@@ -329,17 +330,19 @@ public class TypeScriptDtoFileRules implements CodeRules {
             if (f.isStringType()) {
                 // One @Size carries both lengths, so a value too long and one too short name both.
                 String size = sizeValues(f);
-                if (f.validationMaxLength() >= 0) {
+                Integer maxLength = FieldFacts.maxLength(f);
+                if (maxLength != null) {
                     checks.add(
-                            String.format("%s != null && String(%s).length > %d", v, v, f.validationMaxLength()),
-                            RuleText.quote(label + " is at most " + f.validationMaxLength() + " characters"),
+                            String.format("%s != null && String(%s).length > %d", v, v, maxLength),
+                            RuleText.quote(label + " is at most " + maxLength + " characters"),
                             "Size",
                             size);
                 }
-                if (f.minLength() > 0) {
+                Integer minLength = FieldFacts.minLength(f);
+                if (minLength != null) {
                     checks.add(
-                            String.format("%s != null && %s !== '' && String(%s).length < %d", v, v, v, f.minLength()),
-                            RuleText.quote(label + " is at least " + f.minLength() + " characters"),
+                            String.format("%s != null && %s !== '' && String(%s).length < %d", v, v, v, minLength),
+                            RuleText.quote(label + " is at least " + minLength + " characters"),
                             "Size",
                             size);
                 }
@@ -451,11 +454,13 @@ public class TypeScriptDtoFileRules implements CodeRules {
         }
     }
 
-    /** The values of the server's @Size on a text: the least and the most length it declares. */
+    /** The values of the server's @Size on a writable text: the least and the most length it declares. */
     private static String sizeValues(FieldSpec f) {
         List<String> values = new ArrayList<String>();
-        if (f.minLength() > 0) values.add("min: " + f.minLength());
-        if (f.validationMaxLength() >= 0) values.add("max: " + f.validationMaxLength());
+        Integer minLength = FieldFacts.minLength(f);
+        if (minLength != null) values.add("min: " + minLength);
+        Integer maxLength = FieldFacts.maxLength(f);
+        if (maxLength != null) values.add("max: " + maxLength);
         StringBuilder sb = new StringBuilder("{ ");
         for (int i = 0; i < values.size(); i++) sb.append(i == 0 ? "" : ", ").append(values.get(i));
         return sb.append(" }").toString();
@@ -490,7 +495,7 @@ public class TypeScriptDtoFileRules implements CodeRules {
      */
     private static boolean readsPartial(List<FieldSpec> checked) {
         for (FieldSpec f : checked) {
-            if (FieldFacts.writable(f) && (f.isList() || f.required())) return true;
+            if (FieldFacts.required(f) || (FieldFacts.writable(f) && f.isList())) return true;
         }
         return false;
     }

@@ -222,6 +222,61 @@ public class SearchPropertyTest {
         assertNull(unmarked.fields().get(0).derivedSearch());
     }
 
+    /** A relation's list on an @expose search DTO is no search, and nothing is derived for it. */
+    @Test
+    public void anExposedDtoDoesNotSearchAListOfRows() {
+        EntitySpec e = srch("Order")
+                .meta("expose", "20")
+                .knownEntity("OrderLine")
+                .addField(loader.parse("lines", "List<OrderLine> @OneToMany(mappedBy=\"order\")"))
+                .addField(loader.parse("total", "int"));
+        List<SearchProperty> props = clean(e);
+        assertEquals(1, props.size(), props.toString());
+        assertProperty(props.get(0), "total", "total", "eq", SearchProperty.Kind.VALUE, null, null);
+        assertNull(e.fields().get(0).derivedSearch());
+        assertNull(e.fields().get(0).searchValue());
+        assertEquals("eq", e.fields().get(1).derivedSearch());
+    }
+
+    /** The names of the properties written into the search DTO, in order: "private Type name;". */
+    private static List<String> declaredNames(String rendered) {
+        List<String> names = new java.util.ArrayList<String>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^private\\s+\\S+\\s+(\\w+)\\s*;")
+                .matcher(rendered);
+        while (m.find()) names.add(m.group(1));
+        return names;
+    }
+
+    /** Each property is what the search DTO declares: the same names, in the same order, and no other. */
+    @Test
+    public void eachPropertyIsOneTheSearchDtoDeclares() {
+        Field declared = loader.parse("note", "string(30)");
+        EntitySpec e = srch("Order")
+                .knownEntity("Customer")
+                .addField(loader.parse("sku", "string(50) @search(eq)"))
+                .addField(loader.parse("price", "bigdecimal(10.2) @search(between)"))
+                .addField(loader.parse("customerFirstName", "string @search(like,customerName)"))
+                .addField(loader.parse("tags", "List<String> @search(eq)"))
+                .addField(loader.parse("codes", "List<String> @search(in)"))
+                .addField(loader.parse("returnedDate", "date @search(isnull,open)"))
+                .addField(loader.parse("q", "string(100) @search(words: sku, note)"))
+                .addField(loader.parse("customer", "Customer @ManyToOne @deferred"))
+                .addField(declared);
+        e.fields().get(8).declaredInDto(true);
+        String rendered = new RuleEngine()
+                .templateSet(SourceCode.TemplateSet.V3)
+                .register(new SearchDtoBaseRules())
+                .run(e, "srchdto")
+                .renderFieldBlock(1);
+        List<String> names = new java.util.ArrayList<String>();
+        for (SearchProperty p : SearchDtoBaseRules.properties(e)) names.add(p.name());
+        assertEquals(
+                Arrays.asList(
+                        "sku", "priceFrom", "priceTo", "customerName", "tagsItem", "codes", "openEmpty", "q", "note"),
+                names);
+        assertEquals(declaredNames(rendered), names, rendered);
+    }
+
     @Test
     public void aDeclaredFieldWithoutAConditionIsAPlainProperty() {
         Field declared = loader.parse("note", "string(30)");
