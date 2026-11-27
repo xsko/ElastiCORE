@@ -526,9 +526,12 @@ public final class RulesGenRunner {
         // (Instant, UUID, short ...): on for this run, off after it, so a 2.x
         // generation in the same JVM resolves them as it always did.
         io.elasticore.base.model.entity.BaseFieldType.ruleEngineTypes(true);
+        // The @expose search DTOs' fields, collected once for this run and forgotten at its end (issue 376).
+        SpecFactory.exposedSearchPerRun(true);
         try {
             return generateAll(args);
         } finally {
+            SpecFactory.exposedSearchPerRun(false);
             // A run that ended on an exception has still written what it
             // wrote: the cache follows the files (a no-op when it already has).
             if (merging != null) {

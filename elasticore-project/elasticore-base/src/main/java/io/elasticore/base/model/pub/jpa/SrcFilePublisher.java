@@ -1042,6 +1042,25 @@ public class SrcFilePublisher {
         return false;
     }
 
+    private java.util.Set<Map<String, Annotation>> exposedSearchAnnotationMaps;
+
+    /**
+     * Returns the condition a search DTO gives a field without its own @search, or null when the
+     * field is not searched automatically - see AutoSearch, which the rule engine shares.
+     */
+    protected String getAutoSearchCondition(DataModelComponent searchDto, Field f) {
+        if (f.hasAnnotation(EntityAnnotation.SEARCH)) return null;
+
+        if (!searchDto.getMetaInfo().hasMetaAnnotation(EntityAnnotation.META_EXPOSE)) {
+            io.elasticore.base.ECoreModelContext ctx = this.publisher.getECoreModelContext();
+            if (!AutoSearch.isInherited(AutoSearch.searchedEntity(ctx, searchDto.getMetaInfo()), f)) return null;
+            if (exposedSearchAnnotationMaps == null)
+                exposedSearchAnnotationMaps = AutoSearch.exposedSearchAnnotationMaps(ctx);
+            if (!exposedSearchAnnotationMaps.contains(f.getAnnotationMap())) return null;
+        }
+
+        return AutoSearch.conditionByType(f);
+    }
 
     /**
      * Retrieves the full class name if the given className includes a domain prefix.
@@ -1299,67 +1318,56 @@ public class SrcFilePublisher {
     }
 
     /**
-     * Check if two source contents are semantically identical (same non-empty, non-brace lines as a set).
-     * Returns true if the set-based diff would produce zero additions and zero removals.
+     * Check if two source contents are semantically identical: the same non-empty, non-brace lines,
+     * each the same number of times, in any order. Counted, not a set: a generated method often
+     * repeats lines another method already has (the same audit fields in every toSpec), and a set
+     * took a file with such a method added for unchanged, so the file was never rewritten.
+     * Import lines count once: generated files often import a package twice and an IDE removes the
+     * repeat, which is not a change.
      */
     private boolean isSemanticallyIdentical(String existing, String generated) {
-        java.util.Set<String> existSet = new java.util.LinkedHashSet<>();
-        java.util.Set<String> genSet = new java.util.LinkedHashSet<>();
-        if (existing != null) {
-            for (String line : existing.split("\n", -1)) {
+        return countSemanticLines(existing).equals(countSemanticLines(generated));
+    }
+
+    // trimmed non-empty, non-brace lines -> how many times each occurs, in first-seen order
+    private static Map<String, Integer> countSemanticLines(String content) {
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        if (content != null) {
+            for (String line : content.split("\n", -1)) {
                 String trimmed = line.trim();
                 if (!trimmed.isEmpty() && !trimmed.equals("{") && !trimmed.equals("}")) {
-                    existSet.add(trimmed);
+                    Integer count = counts.get(trimmed);
+                    if (count == null || trimmed.startsWith("import ")) counts.put(trimmed, 1);
+                    else counts.put(trimmed, count + 1);
                 }
             }
         }
-        if (generated != null) {
-            for (String line : generated.split("\n", -1)) {
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty() && !trimmed.equals("{") && !trimmed.equals("}")) {
-                    genSet.add(trimmed);
-                }
-            }
+        return counts;
+    }
+
+    // lines of 'from' that occur more often in 'from' than in 'to'; "(2 vs 1)" when both have it
+    private static List<String> linesNotCoveredBy(Map<String, Integer> from, Map<String, Integer> to) {
+        List<String> lines = new java.util.ArrayList<>();
+        for (Map.Entry<String, Integer> e : from.entrySet()) {
+            Integer other = to.get(e.getKey());
+            if (other == null) lines.add(e.getKey());
+            else if (other < e.getValue()) lines.add(e.getKey() + "  (" + e.getValue() + " vs " + other + ")");
         }
-        return existSet.equals(genSet);
+        return lines;
     }
 
     private String generateUnifiedDiff(String existing, String generated, String filePath) {
         StringBuilder diff = new StringBuilder();
         diff.append(filePath).append("\n");
 
-        // Collect trimmed non-empty lines from each version
-        java.util.Set<String> existSet = new java.util.LinkedHashSet<>();
-        java.util.Set<String> genSet = new java.util.LinkedHashSet<>();
-
-        if (existing != null) {
-            for (String line : existing.split("\n", -1)) {
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty() && !trimmed.equals("{") && !trimmed.equals("}")) {
-                    existSet.add(trimmed);
-                }
-            }
-        }
-        if (generated != null) {
-            for (String line : generated.split("\n", -1)) {
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty() && !trimmed.equals("{") && !trimmed.equals("}")) {
-                    genSet.add(trimmed);
-                }
-            }
-        }
+        Map<String, Integer> existCounts = countSemanticLines(existing);
+        Map<String, Integer> genCounts = countSemanticLines(generated);
 
         // Lines in existing but not in generated (removed/modified by user)
-        List<String> removed = new java.util.ArrayList<>();
-        for (String line : existSet) {
-            if (!genSet.contains(line)) removed.add(line);
-        }
+        List<String> removed = linesNotCoveredBy(existCounts, genCounts);
 
         // Lines in generated but not in existing (would be added by regeneration)
-        List<String> added = new java.util.ArrayList<>();
-        for (String line : genSet) {
-            if (!existSet.contains(line)) added.add(line);
-        }
+        List<String> added = linesNotCoveredBy(genCounts, existCounts);
 
         if (!removed.isEmpty()) {
             diff.append("  [current] only in current file:\n");

@@ -164,9 +164,10 @@ public class MapperSrcPublisher extends SrcFilePublisher {
             if(shadowModel!=null && shadowModel.getField(f.getName())==null)
                 continue;
 
+            // the same decision as SearchDtoSrcFilePublisher, which no longer writes it into the field
+            String autoCondition = getAutoSearchCondition(searchDto, f);
 
-            if(!f.hasAnnotation(EntityAnnotation.SEARCH))
-                continue;
+            if (!f.hasAnnotation(EntityAnnotation.SEARCH) && autoCondition == null) continue;
 
             if ("entity".equals(searchDto.getMetaInfo().getMetaAnnotationValue("type"))
                     && f.getTypeInfo().isList())
@@ -179,8 +180,9 @@ public class MapperSrcPublisher extends SrcFilePublisher {
             String type = f.getTypeInfo().getDefaultTypeName();
             String fieldNm = f.getName();
 
-
-            String condition = f.getAnnotationValue(EntityAnnotation.SEARCH); // =, eq, like, between, !=, neq
+            String condition = autoCondition != null
+                    ? autoCondition
+                    : f.getAnnotationValue(EntityAnnotation.SEARCH); // =, eq, like, between, !=, neq
             String[] conditionItems = splitConditionText(condition);
 
             String customerFieldName = null;

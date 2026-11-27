@@ -1,4 +1,4 @@
-//ecd:87493042H20260207233343_V1.0
+//ecd:-1664759905H20261127190213_V3.1
 package io.elasticore.blueprint.domain.content.dto;
 
 import io.elasticore.blueprint.domain.content.enums.*;
@@ -60,6 +60,30 @@ public  class ArticleSrchDTO  implements java.io.Serializable, SortableObject, P
 	
 	@Schema(description = "Field matches any value in the given list. field:articleStatus"  , example="DRF: Draft | REV: Review | PUB: Published | ARC: Archived")
 	private ArticleStatus articleStatus;
+	
+	@Schema(description = "Use 'like' if value has %, else 'equal' field:createdBy"  )
+	private String createdBy;
+	
+	@Schema(description = "Field is between two values (inclusive). field:createDate"  , example="yyyy-MM-dd HH:mm:ss")
+	@org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	@com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	private java.time.LocalDateTime createDateFrom;
+	
+	@org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	@com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	private java.time.LocalDateTime createDateTo;
+	
+	@Schema(description = "Use 'like' if value has %, else 'equal' field:lastModifiedBy"  )
+	private String lastModifiedBy;
+	
+	@Schema(description = "Field is between two values (inclusive). field:lastModifiedDate"  , example="yyyy-MM-dd HH:mm:ss")
+	@org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	@com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	private java.time.LocalDateTime lastModifiedDateFrom;
+	
+	@org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	@com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+	private java.time.LocalDateTime lastModifiedDateTo;
 	
 	
 	private String sortCode;

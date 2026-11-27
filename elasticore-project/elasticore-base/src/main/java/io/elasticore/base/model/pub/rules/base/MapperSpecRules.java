@@ -19,9 +19,10 @@ import static io.elasticore.base.model.pub.rules.Ctx.ctx;
  *   public static Specification&lt;E&gt; toSpec(ESrchDTO searchDTO, Specification&lt;E&gt; sp){...}
  *
  * The spec fed to this rule set is the SEARCH DTO: only fields carrying a
- * @search annotation take part, and the annotation value selects the
- * condition. Deriving those annotations from the entity is the search-DTO
- * publisher's job, upstream of emission.
+ * search annotation (@search), or a condition the search DTO rule derived
+ * for them (FieldSpec.derivedSearch), take part, and that value selects the
+ * condition. Deriving it from the entity is the search-DTO rule's job,
+ * upstream of emission.
  *
  * Conditions, exactly as 2.x resolves them:
  *   (no value) auto   sp=setSpec(sp, "f", searchDTO.getF())
@@ -50,7 +51,9 @@ public class MapperSpecRules implements CodeRules {
 
     @Rule(value = "mapper-spec-field", target = "mapper", order = 110)
     void field(EntitySpec e, FieldSpec f) {
-        if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter")) return;
+        // A condition the search DTO rule derived counts as declared.
+        String derived = f.derivedSearch();
+        if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter") && derived == null) return;
 
         SourceCode c = ctx(e);
         // The search DTO dropped it; the identity field carries the condition.
@@ -67,6 +70,7 @@ public class MapperSpecRules implements CodeRules {
         }
 
         String raw = f.dslValueAny("searchable", "search", "s", "srch", "filter");
+        if (raw == null && derived != null) raw = derived;
         String condition;
         if (raw == null) {
             condition = "auto";

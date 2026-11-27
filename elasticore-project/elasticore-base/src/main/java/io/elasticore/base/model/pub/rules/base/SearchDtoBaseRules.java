@@ -336,27 +336,40 @@ public class SearchDtoBaseRules implements CodeRules {
         if (declared != null && !declared.isEmpty()) return declared;
         if (f.hasSearch()) return "auto";
 
-        if (!e.hasMeta("expose")) return null;
+        String derived = derivedCondition(e, f, ctx(e).compatible());
+        if (derived == null) return null;
+
+        // Kept for the mapper's toSpec and MyBatis's search, not written into
+        // the field: inherited fields are objects every extending entity
+        // shares, and a condition written there reached only the search DTOs
+        // that came after this one (issue 376). Which inherited fields a
+        // search DTO that is not @expose takes is shared with the 2.x
+        // publisher (AutoSearch, marked by SpecFactory); the condition itself
+        // is derived here, from this rule's own type tests (derivedCondition),
+        // not from AutoSearch.conditionByType.
+        f.derivedSearch(derived);
+        return derived;
+    }
+
+    /**
+     * The condition a search DTO derives for a field without a @search of its own, or null when it
+     * derives none: every field of an @expose search DTO, and the inherited fields another search DTO
+     * takes (FieldSpec.searchedAsInherited).
+     */
+    private static String derivedCondition(EntitySpec searchDto, FieldSpec f, boolean compatible) {
+        if (f.hasSearch()) return null;
+        if (!searchDto.hasMeta("expose") && !f.searchedAsInherited()) return null;
 
         // A value no reply shows is not one to search by either: a derived
         // "like" on a password let anyone read its hash one prefix at a time.
         // An explicit @search above still wins. Clean output only.
-        if (!ctx(e).compatible() && f.hasDslAny("writeonly", "nooutput", "password")) return null;
+        if (!compatible && f.hasDslAny("writeonly", "nooutput", "password")) return null;
         // When a row was deleted: a search never finds a deleted row (SoftDelete).
-        if (!ctx(e).compatible() && f.hasDsl(SoftDelete.DELETED)) return null;
+        if (!compatible && f.hasDsl(SoftDelete.DELETED)) return null;
 
-        String derived;
-        if (f.isStringType()) derived = "auto";
-        else if (f.isDate() || f.isDateTime()) derived = "between";
-        else derived = "eq";
-
-        // 2.x writes the derived condition into the field's annotation map,
-        // and inherited audit fields are shared objects: once one @expose DTO
-        // derives their conditions, every later search DTO sees them declared.
-        // Reproduced as is - order-dependent, but the order is load order.
-        f.raw().getAnnotationMap().put("search",
-                io.elasticore.base.model.core.Annotation.create("search", derived));
-        return derived;
+        if (f.isStringType()) return "auto";
+        if (f.isDate() || f.isDateTime()) return "between";
+        return "eq";
     }
 
     /**

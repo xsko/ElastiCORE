@@ -31,7 +31,9 @@ public class MyBatisSearchRules implements CodeRules {
 
     @Rule(value = "mybatis-search-field", target = TARGET, order = 10)
     void field(EntitySpec e, FieldSpec f) {
-        if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter")) return;
+        // A condition the search DTO rule derived counts as declared, as in the mapper.
+        String derived = f.derivedSearch();
+        if (!f.hasDsl("search") && !f.hasDslAny("searchable", "s", "srch", "filter") && derived == null) return;
         // As in the mapper: the search DTO dropped it for its flattened id.
         if (SearchDtoBaseRules.searchedByItsFlattenedId(f)) return;
         if (SearchDtoBaseRules.flattensAReferenceById(e, f)) return;
@@ -54,6 +56,7 @@ public class MyBatisSearchRules implements CodeRules {
         }
 
         String raw = f.dslValueAny("searchable", "search", "s", "srch", "filter");
+        if (raw == null && derived != null) raw = derived;
         String condition = "auto";
         String prop = f.name();
         if (raw != null) {
