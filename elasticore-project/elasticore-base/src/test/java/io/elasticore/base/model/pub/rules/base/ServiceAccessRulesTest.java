@@ -153,6 +153,48 @@ class ServiceAccessRulesTest {
         }
     }
 
+    // ---- what ACCESS = AccessPolicy.parse(...) is given (issue 373)
+
+    @Test
+    void thePolicyIsTheEntityItsDeclarationAndTheAdministratorsRole() {
+        EntitySpec order = new EntitySpec("Order").metaKeyValues("access", " read=owner, delete=admin ");
+        ServiceAccessRules.PolicyArguments args = ServiceAccessRules.policyArguments(order);
+        assertEquals("Order", args.entity());
+        assertEquals("read=owner, delete=admin", args.declaration());
+        assertEquals("ADMIN", args.adminRole());
+        assertEquals("\"Order\", \"read=owner, delete=admin\", \"ADMIN\"", args.literal());
+    }
+
+    @Test
+    void theAdministratorsRoleIsTheConfiguredOne() {
+        EntitySpec order = new EntitySpec("Order").meta("access", "user").config("adminRole", "BOSS");
+        ServiceAccessRules.PolicyArguments args = ServiceAccessRules.policyArguments(order);
+        assertEquals("user", args.declaration());
+        assertEquals("BOSS", args.adminRole());
+        assertEquals("\"Order\", \"user\", \"BOSS\"", args.literal());
+        // Set but empty is not set.
+        assertEquals(
+                "ADMIN",
+                ServiceAccessRules.policyArguments(new EntitySpec("Order").config("adminRole", ""))
+                        .adminRole());
+    }
+
+    @Test
+    void withoutADeclarationThePolicyIsGivenNull() {
+        ServiceAccessRules.PolicyArguments args = ServiceAccessRules.policyArguments(new EntitySpec("Order"));
+        assertEquals(null, args.declaration());
+        assertEquals("\"Order\", null, \"ADMIN\"", args.literal());
+    }
+
+    /** A double quote becomes a single one; a backslash is the source's to escape, not the policy's. */
+    @Test
+    void theDeclarationIsWhatTheParserReceives() {
+        EntitySpec odd = new EntitySpec("Order").meta("access", "read=\"MANAGER\\x\"");
+        ServiceAccessRules.PolicyArguments args = ServiceAccessRules.policyArguments(odd);
+        assertEquals("read='MANAGER\\x'", args.declaration());
+        assertEquals("\"Order\", \"read='MANAGER\\\\x'\", \"ADMIN\"", args.literal());
+    }
+
     /** Carried for readers alone: shown, and of an entity not everyone may read - cleared from write answers. */
     @Test
     void onlyARowNotEveryoneMayReadIsClearedFromWriteAnswers() {
