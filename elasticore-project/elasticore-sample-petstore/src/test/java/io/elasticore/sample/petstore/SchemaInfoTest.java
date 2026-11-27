@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -14,6 +15,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -112,6 +114,57 @@ class SchemaInfoTest {
         assertThat(customer).containsEntry("entity", "Customer").containsEntry("key", "customerId").doesNotContainKey("display");
         // An embedded value is carried inline: no reference.
         assertThat((String) JsonPath.read(order, "$.fields.deliveryAddress.kind")).isEqualTo("Object");
+    }
+
+    /** POST .../search with a body, its rows' values at a path. */
+    private List<String> search(String entity, String body, String path) throws Exception {
+        MockHttpServletResponse response = mvc.perform(post("/api/petstore/" + entity + "/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse();
+        response.setCharacterEncoding("UTF-8");
+        return JsonPath.read(response.getContentAsString(), path);
+    }
+
+    @Test
+    void theSearchSaysWhatItTakesAndAPropertyItNamesFilters() throws Exception {
+        String json = info("item", "en");
+        // @expose(pageSize=50): every field of Item, as the search DTO names it; name: string(30)! @search(like).
+        assertThat((Integer) JsonPath.read(json, "$.search.pageSize")).isEqualTo(50);
+        List<String> sortable = JsonPath.read(json, "$.search.sortable");
+        assertThat(sortable).contains("itemId", "name", "unitCost", "product.name");
+        Map<String, Object> fields = JsonPath.read(json, "$.search.fields");
+        assertThat(fields).containsOnlyKeys("itemId", "name", "description", "imagePath", "unitCost", "productId");
+        assertThat((String) JsonPath.read(json, "$.search.fields.name.field")).isEqualTo("name");
+        // The 3.0 like on text: contains, ignoring case.
+        assertThat((String) JsonPath.read(json, "$.search.fields.name.op")).isEqualTo("like");
+        assertThat((String) JsonPath.read(json, "$.search.fields.description.op")).isEqualTo("auto");
+        assertThat((String) JsonPath.read(json, "$.search.fields.itemId.op")).isEqualTo("eq");
+
+        // The property the answer names, sent as it says: only the rows whose name contains it, in any case.
+        List<String> all = search("item", "{\"pageSize\":500}", "$.content[*].name");
+        List<String> puppies = search("item", "{\"pageSize\":500,\"name\":\"PUPPY\"}", "$.content[*].name");
+        assertThat(puppies).isNotEmpty().allMatch(n -> n.toLowerCase(java.util.Locale.ROOT).contains("puppy"));
+        assertThat(puppies.size()).isLessThan(all.size());
+        // Sorted by a property the answer lists.
+        List<String> sorted = search("item", "{\"pageSize\":500,\"name\":\"puppy\",\"sortCode\":\"name+\"}",
+                "$.content[*].name");
+        assertThat(sorted).isSortedAccordingTo(String::compareTo).hasSameSizeAs(puppies);
+    }
+
+    @Test
+    void wordsLookInEachOfTheirFields() throws Exception {
+        // ProductSrchDTO: keyword: string(50) @search(words:name, description, category.name).
+        String json = info("product", "en");
+        assertThat((String) JsonPath.read(json, "$.search.fields.keyword.op")).isEqualTo("words");
+        List<String> in = JsonPath.read(json, "$.search.fields.keyword.field");
+        assertThat(in).containsExactly("name", "description", "category.name");
+        // Every word, each in any of them: "fish" and "Japan" are both only in Koi's description.
+        List<String> found =
+                search("product", "{\"pageSize\":500,\"keyword\":\"fish japan\"}", "$.content[*].name");
+        assertThat(found).containsExactly("Koi");
     }
 
     @Test

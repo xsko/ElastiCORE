@@ -33,7 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code fields}: every field the answer always had, with the keys it always had ({@code type},
  *       {@code description}, {@code maxSize}, {@code enums} - DTOUtils.getMetaInfo), and what the model says of
  *       it: kind, label, labels, required, maxLength, minLength, min, max, readOnly, html, the enumeration's
- *       options and what a reference points at (ref).</li>
+ *       options and what a reference points at (ref);</li>
+ *   <li>{@code search}, where the controller serves POST /search: {@code pageSize}, {@code sortable} and
+ *       {@code fields} - each property of the search DTO with the entity {@code field} it searches, its
+ *       {@code op}, the {@code end} of a range and {@code in} for a list - as the generator wrote them.</li>
  * </ul>
  * A label is said in the request's language: the domain's label bundle ({@code i18n/<domain>-labels}) for that
  * language, else its default file, else the DSL's "--" text. {@code labels} is the label in every other language
@@ -157,6 +160,9 @@ public final class SchemaInfo {
             fields.put(en.getKey(), field(labels, (Map<String, Object>) en.getValue(), en.getKey(), name, dto));
         }
         out.put("fields", fields);
+        // What POST /search takes, as the generator wrote it; absent where the controller serves no search.
+        Object search = one.get("search");
+        if (search != null) out.put("search", search);
         return out;
     }
 

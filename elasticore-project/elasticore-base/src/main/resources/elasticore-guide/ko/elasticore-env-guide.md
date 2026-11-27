@@ -1045,9 +1045,33 @@ config:
 - 빌드가 말하는 것(`DSL_WARN`): 2.x 코드를 만드는 도메인의 이 설정; `model` 이 아닌 값; `${schemaInfoAnswer}` 가 없는
   프로젝트 자체 `control.tmpl`(전처럼 답함); 직접 가진 컨트롤러의 `GET /schema/info` 가 `SchemaInfo.answer` 를 부르지
   않을 때 - 빌드가 파일과 써야 할 줄을 알려 주고, 파일을 지우면 새로 생성됩니다.
-- 검색 DTO 의 필드와 로그인한 사용자가 할 수 있는 일은 아직 답에 없습니다.
+- `search` - 컨트롤러가 `POST .../search` 를 제공할 때 그 검색이 받는 것(제공하지 않으면 빠집니다) - 펫스토어의 Item:
+
+```json
+"search": {
+  "pageSize": 50,
+  "sortable": ["itemId", "product.name", "name", "description", "imagePath", "unitCost", "productId"],
+  "fields": {"itemId": {"field": "itemId", "op": "eq"}, "name": {"field": "name", "op": "like"},
+             "description": {"field": "description", "op": "auto"}, "imagePath": {"field": "imagePath", "op": "auto"},
+             "unitCost": {"field": "unitCost", "op": "eq"}, "productId": {"field": "productId", "op": "eq"}}
+}
+```
+
+- `search.pageSize` - 요청이 보내지 않을 때의 한 페이지 크기(요청은 `pageSize` 와 0 부터 세는 `pageNumber` 를 보낼 수 있습니다).
+- `search.sortable` - `sortCode` / `sortColumn` 이 이름 댈 수 있는 것; 그 밖은 400 입니다. MyBatis 와 MongoDB 에서는
+  쿼리에 열이 있는 것만. JPA 에서 아무것도 정렬을 확인하지 않으면(직접 만든 `interface.sortable`; 응답 DTO 없음) `null`.
+- `search.fields` - 검색 DTO 의 각 속성을 요청이 보내는 이름 그대로(`xFrom`/`xTo`, 별칭, `xEmpty`,
+  `xItem`, `words`): `field`(검색하는 엔티티 필드; `words` 는 목록), `op`, `end`(범위의 `from` 또는 `to`)
+  와 `in: true`(값의 목록).
+- `op` - 검색이 실제로 적용하는 것을 DSL 의 말로: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`(대소문자 무시
+  포함; `%__%` 도 이것), `%_%`(포함), `__=`, `_%`, `__%`, `%_`(`%` 하나도 이것), `%__`, `in`, `between`, `isnull`
+  (`true`/`false` 를 보냄), `auto`, `words`. 모르는 조건은 적용하는 대로 `eq`. `null`: 아무것으로도 검색하지 않습니다.
+- MyBatis 와 MongoDB 에서 다음은 `null` 입니다(빌드가 이유를 말합니다): `@search(words: ...)`, 목록의 한 요소(`xItem`),
+  `@formula`, 그리고 (MyBatis) 텍스트 외의 조건으로 검색하는 큰 값. MongoDB 는 숫자나 enum 을 `like` 라도
+  `eq` 로 비교합니다.
+- 로그인한 사용자가 할 수 있는 일은 아직 답에 없습니다.
 - 예제: 펫스토어의 `SchemaInfoTest`(두 언어의 라벨, enum, 참조와 그 표시, 읽기 전용
-  필드, 필수와 길이를 HTTP 로).
+  필드, 필수와 길이, 검색의 속성과 그 속성 하나로 하는 검색을 HTTP 로).
 
 ## 7. apiPath 설정
 

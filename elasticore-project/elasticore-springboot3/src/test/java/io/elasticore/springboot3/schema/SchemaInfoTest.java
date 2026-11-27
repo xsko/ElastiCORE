@@ -171,6 +171,23 @@ public class SchemaInfoTest {
         assertTrue(map(SchemaInfo.of("desk", "Bare").get("fields")).isEmpty());
     }
 
+    /** What POST /search takes, after the fields, as the file has it; none where the controller serves no search. */
+    @Test
+    public void theSearchAsTheFileHasIt() {
+        Map<String, Object> answer = SchemaInfo.of("desk", "Item");
+        assertEquals(
+                java.util.Arrays.asList("metaVersion", "language", "entity", "fields", "search"),
+                new java.util.ArrayList<String>(answer.keySet()));
+        Map<String, Object> search = map(answer.get("search"));
+        assertEquals(20, search.get("pageSize"));
+        assertEquals(java.util.Arrays.asList("itemId", "name"), search.get("sortable"));
+        Map<String, Object> from = map(map(search.get("fields")).get("unitCostFrom"));
+        assertEquals("unitCost", from.get("field"));
+        assertEquals("between", from.get("op"));
+        assertEquals("from", from.get("end"));
+        assertFalse(SchemaInfo.of("desk", "Gone").containsKey("search"));
+    }
+
     @Test
     public void theAnswerIsPrivate() {
         ResponseEntity<Map<String, Object>> response = SchemaInfo.answer("desk", "Item");

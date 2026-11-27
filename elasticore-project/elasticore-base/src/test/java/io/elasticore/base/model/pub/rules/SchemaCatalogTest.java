@@ -159,6 +159,17 @@ public class SchemaCatalogTest {
         public boolean searches(EntitySpec entity) {
             return searched.contains(entity.getName());
         }
+
+        final Map<String, SchemaSearch.Dto> searchDtos = new HashMap<String, SchemaSearch.Dto>();
+        final Map<String, SchemaSearch.Query> queries = new HashMap<String, SchemaSearch.Query>();
+
+        public SchemaSearch.Dto searchDto(String className) {
+            return searchDtos.get(className);
+        }
+
+        public SchemaSearch.Query query(EntitySpec entity) {
+            return queries.get(entity.getName());
+        }
     }
 
     private Run run() {
@@ -495,6 +506,48 @@ public class SchemaCatalogTest {
                 Collections.singletonList(new SchemaCatalog.Served(served, "/api/shop/sc373Desk", "Sc373DeskDTO", "S")),
                 run);
         assertTrue(json.contains("\"label\": \"Desk\","), json);
+    }
+
+    /** What POST /search takes, after the fields: where the controller serves it and the run wrote its search DTO. */
+    @Test
+    public void theSearchWhereTheControllerServesOne() {
+        EntitySpec served = spec("Sc373Shelf", "shelfId", "long @id");
+        Run run = run();
+        run.searchDtos.put(
+                "Sc373ShelfSrchDTO",
+                new SchemaSearch.Dto(
+                        Collections
+                                .<io.elasticore.base.model.pub.rules.base.SearchDtoBaseRules.SearchProperty>emptyList(),
+                        30,
+                        Arrays.asList("shelfId", "name")));
+        List<SchemaCatalog.Served> one = Collections.singletonList(
+                new SchemaCatalog.Served(served, "/api/shop/sc373Shelf", "Sc373ShelfDTO", "Sc373ShelfSrchDTO"));
+        // The controller serves no search: none.
+        assertFalse(SchemaCatalog.json("shop", one, run).contains("\"search\""));
+
+        run.searched.add("Sc373Shelf");
+        assertTrue(
+                SchemaCatalog.json("shop", one, run)
+                        .contains("      \"fields\": {},\n      \"search\": {\n        \"pageSize\": 30,\n"
+                                + "        \"sortable\": [\n          \"shelfId\",\n          \"name\"\n        ],\n"
+                                + "        \"fields\": {}\n      }\n"),
+                SchemaCatalog.json("shop", one, run));
+        // What a query sorts by, where the mode writes one; a list, not a page: no page size.
+        run.queries.put(
+                "Sc373Shelf",
+                new SchemaSearch.Query(Collections.<String[]>emptyList(), Collections.singletonList("name")));
+        String queried = SchemaCatalog.json(
+                "shop",
+                Collections.singletonList(new SchemaCatalog.Served(
+                        served, "/api/shop/sc373Shelf", "Sc373ShelfDTO", "Sc373ShelfSrchDTO", false)),
+                run);
+        assertTrue(
+                queried.contains(
+                        "\"search\": {\n        \"pageSize\": null,\n        \"sortable\": [\n          \"name\"\n"),
+                queried);
+        // A search DTO the run did not write: none.
+        run.searchDtos.clear();
+        assertFalse(SchemaCatalog.json("shop", one, run).contains("\"search\""));
     }
 
     @Test

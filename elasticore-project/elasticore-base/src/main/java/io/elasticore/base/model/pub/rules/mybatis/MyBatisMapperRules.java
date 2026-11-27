@@ -638,6 +638,20 @@ public class MyBatisMapperRules implements CodeRules {
     }
 
     /**
+     * The search conditions the XML writes for an entity - operator, entity path, search DTO property, type - and,
+     * below, what its sort may name: what GET /schema/info says its search applies (issue 373). Read after the
+     * mapper was written, from the same entity: a condition it leaves out has been said already.
+     */
+    public static List<String[]> searched(EntitySpec e) {
+        return resolved(e, joins(e));
+    }
+
+    /** The properties a sort of the entity's search may name (sortColumnList). */
+    public static java.util.Set<String> sortable(EntitySpec e) {
+        return sortColumns(e).keySet();
+    }
+
+    /**
      * The search conditions the XML can write. One whose path reaches no
      * column - deeper than a joined row - stops the build: left out, it
      * would search by nothing and widen an update or a delete by condition

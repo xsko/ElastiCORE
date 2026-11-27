@@ -318,6 +318,25 @@ public class MongoRepositoryRules implements CodeRules {
         return out;
     }
 
+    /**
+     * The search conditions the Criteria holds for an entity - the operator as it applies it (Condition.applied),
+     * the entity path, the search DTO property, the type - and, below, what its sort may name: what GET
+     * /schema/info says its search applies (issue 373). A path that is not stored stopped the build already.
+     */
+    public static List<String[]> searched(EntitySpec e) {
+        List<String[]> out = new ArrayList<String[]>();
+        for (String[] cond : conditions(e)) {
+            Condition resolved = resolve(e, cond);
+            if (resolved != null) out.add(new String[] {resolved.applied(), cond[1], cond[2], cond[3]});
+        }
+        return out;
+    }
+
+    /** The properties a sort of the entity's search may name (SORT_FIELDS). */
+    public static java.util.Set<String> sortable(EntitySpec e) {
+        return sortFields(e).keySet();
+    }
+
     /** A field of the entity, its inherited ones included. */
     static FieldSpec field(EntitySpec e, String name) {
         for (FieldSpec f : MyBatisSql.fields(e)) {
@@ -386,6 +405,26 @@ public class MongoRepositoryRules implements CodeRules {
             this.path = path;
             this.converted = converted;
             this.ref = ref;
+        }
+
+        /**
+         * The operator as the query applies it: a text match - auto included - on a value that is not text, or
+         * that is stored converted, is an equality (textMatch, and auto's is). Java and Kotlin write it alike.
+         */
+        String applied() {
+            switch (op) {
+                case "like":
+                case "ilike":
+                case "ieq":
+                case "prefix":
+                case "iprefix":
+                case "suffix":
+                case "isuffix":
+                case "auto":
+                    return text() && !converted ? op : "eq";
+                default:
+                    return op;
+            }
         }
 
         private String getter(String suffix) {

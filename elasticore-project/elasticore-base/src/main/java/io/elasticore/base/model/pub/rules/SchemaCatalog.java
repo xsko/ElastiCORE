@@ -12,9 +12,10 @@ import java.util.Map;
  * The generator writes {@code src/main/resources/elasticore/<domain>-schema.json}: for each entity whose
  * controller serves the endpoint, the entity (its label, path, key, DTO and search DTO) and each field of the
  * DTO the endpoint describes, with the facts the TypeScript client is written from (FieldFacts): kind, label,
- * labels, required, lengths, bounds, read-only, html, the enumeration's values and what a reference points at.
- * The controller's line calls the runtime's SchemaInfo, which reads that file, says each label in the request's
- * language and adds the keys the answer always had (DTOUtils.getMetaInfo). The file is ASCII: every other
+ * labels, required, lengths, bounds, read-only, html, the enumeration's values and what a reference points at -
+ * and, where the controller serves POST /search, what the search takes (SchemaSearch). The controller's line
+ * calls the runtime's SchemaInfo, which reads that file, says each label in the request's language and adds the
+ * keys the answer always had (DTOUtils.getMetaInfo). The file is ASCII: every other
  * character is a JSON escape, so any reader decodes it alike.
  *
  * Unset, nothing here is written and the controller says what it always said.
@@ -117,18 +118,26 @@ public final class SchemaCatalog {
         final String path;
         final String dto;
         final String searchDto;
+        final boolean paged;
 
         /**
          * @param entity    the controller's entity
          * @param path      the controller's path (apiPath/domain/entity)
          * @param dto       the DTO the endpoint describes, by its class name
          * @param searchDto the search DTO POST /search takes, by its class name
+         * @param paged     whether POST /search answers a page (the controller's Page), not a list
          */
-        public Served(EntitySpec entity, String path, String dto, String searchDto) {
+        public Served(EntitySpec entity, String path, String dto, String searchDto, boolean paged) {
             this.entity = entity;
             this.path = path;
             this.dto = dto;
             this.searchDto = searchDto;
+            this.paged = paged;
+        }
+
+        /** A controller whose search answers a page. */
+        public Served(EntitySpec entity, String path, String dto, String searchDto) {
+            this(entity, path, dto, searchDto, true);
         }
 
         public EntitySpec entity() {
@@ -165,6 +174,15 @@ public final class SchemaCatalog {
 
         /** Whether the entity's controller serves POST /search. */
         boolean searches(EntitySpec entity);
+
+        /** A search DTO this run wrote, by its class name; null when it wrote none. */
+        SchemaSearch.Dto searchDto(String className);
+
+        /**
+         * What the entity's MyBatis or MongoDB query applies; null for JPA, whose mapper applies the search DTO's
+         * own decision.
+         */
+        SchemaSearch.Query query(EntitySpec entity);
     }
 
     /** The file's text: one entry per entity, in the order given. */
@@ -190,6 +208,9 @@ public final class SchemaCatalog {
             for (FieldSpec f : dto.fields) fields.put(f.name(), field(f, s.entity, dto.fields, model));
         }
         out.put("fields", fields);
+        // What POST /search takes, where the controller serves it and the run wrote its search DTO.
+        SchemaSearch.Dto search = model.searches(s.entity) ? model.searchDto(s.searchDto) : null;
+        if (search != null) out.put("search", SchemaSearch.of(search, s.paged, model.query(s.entity)));
         return out;
     }
 
