@@ -272,6 +272,12 @@ input OrderSrchInput {
   orderDateTo: DateTime
   status: OrderStatus
   paymentMethod: PaymentMethod
+  createdBy: String
+  createDateFrom: DateTime
+  createDateTo: DateTime
+  lastModifiedBy: String
+  lastModifiedDateFrom: DateTime
+  lastModifiedDateTo: DateTime
   sortCode: String
   pageNumber: Int
   pageSize: Int
@@ -314,6 +320,12 @@ input ProductSrchInput {
   active: Boolean
   launchDateFrom: Date
   launchDateTo: Date
+  createdBy: String
+  createDateFrom: DateTime
+  createDateTo: DateTime
+  lastModifiedBy: String
+  lastModifiedDateFrom: DateTime
+  lastModifiedDateTo: DateTime
   sortCode: String
   pageNumber: Int
   pageSize: Int

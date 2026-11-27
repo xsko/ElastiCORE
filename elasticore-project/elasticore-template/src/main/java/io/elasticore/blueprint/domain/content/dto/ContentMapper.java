@@ -1,4 +1,4 @@
-//ecd:-122017607H20261103120735_V3.0
+//ecd:-466593690H20261127190213_V3.1
 package io.elasticore.blueprint.domain.content.dto;
 
 import org.springframework.dao.PermissionDeniedDataAccessException;
@@ -1326,6 +1326,30 @@ public class ContentMapper {
         ArticleStatus articleStatus = searchDTO.getArticleStatus();
         if(hasValue(articleStatus)){
             sp = sp.and((r, q, c) -> r.get("articleStatus").in(articleStatus));
+        }
+        sp=setSpec(sp, "createdBy", searchDTO.getCreatedBy());
+        java.time.LocalDateTime createDateFrom = searchDTO.getCreateDateFrom();
+        java.time.LocalDateTime createDateTo = searchDTO.getCreateDateTo();
+        if(hasValue(createDateFrom) && hasValue(createDateTo)){
+            sp = sp.and((r,q,c) -> c.between(r.get("createDate"),createDateFrom,createDateTo));
+        }
+        else if(hasValue(createDateFrom)){
+            sp = sp.and((r,q,c) -> c.greaterThanOrEqualTo(r.get("createDate"),createDateFrom));
+        }
+        else if(hasValue(createDateTo)){
+            sp = sp.and((r,q,c) -> c.lessThanOrEqualTo(r.get("createDate"),createDateTo));
+        }
+        sp=setSpec(sp, "lastModifiedBy", searchDTO.getLastModifiedBy());
+        java.time.LocalDateTime lastModifiedDateFrom = searchDTO.getLastModifiedDateFrom();
+        java.time.LocalDateTime lastModifiedDateTo = searchDTO.getLastModifiedDateTo();
+        if(hasValue(lastModifiedDateFrom) && hasValue(lastModifiedDateTo)){
+            sp = sp.and((r,q,c) -> c.between(r.get("lastModifiedDate"),lastModifiedDateFrom,lastModifiedDateTo));
+        }
+        else if(hasValue(lastModifiedDateFrom)){
+            sp = sp.and((r,q,c) -> c.greaterThanOrEqualTo(r.get("lastModifiedDate"),lastModifiedDateFrom));
+        }
+        else if(hasValue(lastModifiedDateTo)){
+            sp = sp.and((r,q,c) -> c.lessThanOrEqualTo(r.get("lastModifiedDate"),lastModifiedDateTo));
         }
         return sp;
     }

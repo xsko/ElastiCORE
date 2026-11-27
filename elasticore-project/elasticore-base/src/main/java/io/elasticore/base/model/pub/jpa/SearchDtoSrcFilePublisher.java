@@ -255,8 +255,6 @@ public class SearchDtoSrcFilePublisher extends SrcFilePublisher {
 
         SourceShadowModel shadowModel = new SourceShadowModel(dto.getIdentity().getName());
 
-        boolean isEnableSearchDTO = dto.getMetaInfo().hasMetaAnnotation(EntityAnnotation.META_EXPOSE);
-
         for (Field f : fieldList) {
 
             if(isDisableField(f))
@@ -268,8 +266,14 @@ public class SearchDtoSrcFilePublisher extends SrcFilePublisher {
 
             boolean enableSearch = f.hasAnnotation(EntityAnnotation.SEARCH);
 
+            // eq,=,%5,in ....etc
+            String conditionCode = f.getAnnotationValue(EntityAnnotation.SEARCH);
 
-            if(f.getTypeInfo().isList() && ( enableSearch || isEnableSearchDTO) ) {
+            // auto,between,eq when the field is searched without its own @search (see MapperSrcPublisher).
+            // Decided here, not written into the field: an @extend parent's field is shared (issue 376).
+            String autoConditionCode = getAutoSearchCondition(dto, f);
+
+            if (f.getTypeInfo().isList() && (enableSearch || autoConditionCode != null)) {
                 if(f.getTypeInfo().getCoreItemBaseFieldType()==null) {
                     String coreTypeNm = f.getTypeInfo().getCoreItemType();
                     EnumModel byName = this.publisher.getECoreModelContext().findModelComponent(coreTypeNm, EnumModel.class);
@@ -295,31 +299,9 @@ public class SearchDtoSrcFilePublisher extends SrcFilePublisher {
             if(isSkipSearchField(dto, f))
                 continue;
 
-            if(!enableSearch ) {
-                // if @expose and string type
-                if(isEnableSearchDTO) {
-
-
-                    if(f.getTypeInfo().isStringType()) {
-                        enableSearch = true;
-                        f.getAnnotationMap().put("search", Annotation.create("search", "auto"));
-                    }
-                    else  if(f.getTypeInfo().getBaseFieldType()== BaseFieldType.LocalDateTime
-                            || f.getTypeInfo().getBaseFieldType()== BaseFieldType.LocalTime
-                            || f.getTypeInfo().getBaseFieldType()== BaseFieldType.LocalDate
-                            || f.getTypeInfo().getBaseFieldType()== BaseFieldType.DATETIME
-                            || f.getTypeInfo().getBaseFieldType()== BaseFieldType.DATE
-
-                    ) {
-                        // skip datetime type
-                        enableSearch = true;
-                        f.getAnnotationMap().put("search", Annotation.create("search", "between"));
-                    }
-                    else {
-                        enableSearch = true;
-                        f.getAnnotationMap().put("search", Annotation.create("search", "eq"));
-                    }
-                }
+            if (autoConditionCode != null) {
+                enableSearch = true;
+                conditionCode = autoConditionCode;
             }
 
 
@@ -338,9 +320,6 @@ public class SearchDtoSrcFilePublisher extends SrcFilePublisher {
                     continue;
             }
 
-            // eq,=,%5,in ....etc
-            String conditionCode = f.getAnnotationValue(EntityAnnotation.SEARCH);
-
             String fieldNm = f.getName();
 
             String[] conditionItems = splitConditionText(conditionCode);
@@ -348,8 +327,9 @@ public class SearchDtoSrcFilePublisher extends SrcFilePublisher {
                 fieldNm = conditionItems[1];
             }
 
-            if(fieldNmSet.contains(fieldNm))
-                return;
+            // A search name already taken (@s(like$keyword) on two fields): skip this field only.
+            // A return here ended the field loop and publishing then failed with an NPE.
+            if (fieldNmSet.contains(fieldNm)) continue;
 
             fieldNmSet.add(fieldNm);
 

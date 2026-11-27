@@ -1276,6 +1276,7 @@ dto:
 pageSize 지정시 `PageableObject` 인터페이스 구현. 자동 생성 필드: `pageNumber`(기본0), `pageSize`(설정값), `sortCode`.
 엔티티의 도메인에 선언하세요: 검색 DTO 는 그 도메인에서만 검색됩니다. `entity` 가 다른 도메인에 있는 것은 `toSpec` 을 받지 못하고,
 빌드가 그렇게 알립니다(v3): `[search] OrderSearchDTO @searchable(entity=PurchaseOrder): PurchaseOrder is declared in domain 'shop', ... Declare OrderSearchDTO in domain 'shop'.`
+검색하는 필드(`@service` 엔티티의 검색 DTO 도 같습니다): 선언한 필드, 엔티티 자신의 필드는 그 필드에 `@search` 가 있을 때만, 엔티티가 `@extend` 로 상속한 필드는 어느 도메인이든 `@expose` 엔티티의 검색 DTO 에 같은 필드가 있을 때입니다 - 그래서 같은 부모를 상속한 다른 엔티티에 `@expose` 를 붙이면 그 필드들이 더해집니다. `@expose` 엔티티의 검색 DTO 는 모든 필드를 검색합니다. 부모의 필드를 빼려면 부모의 그 필드에 `@searchBypass` 를 적습니다. 그러면 `@expose` 의 것을 포함한 모든 검색 DTO 에서 빠집니다.
 
 ### 4.2.1 @sort - 기본 정렬
 > **동작:** v3, Kotlin · **안 됨:** 2.x generator (생성 안 됨)

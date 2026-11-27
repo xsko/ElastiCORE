@@ -141,6 +141,44 @@ public final class FieldSpec {
         return declaredInDto;
     }
 
+    private boolean searchedAsInherited;
+
+    /**
+     * Internal - not for rule authors: set by SpecFactory where a search DTO's spec is built, and
+     * public only because that package is not this one. A rule reads {@link #searchedAsInherited()}.
+     *
+     * True when a search DTO that is not @expose searches this field without a @search of its
+     * own: its entity inherits it through @extend and an @expose search DTO has the same field
+     * (see AutoSearch, issue 376).
+     */
+    public FieldSpec searchedAsInherited(boolean searched) {
+        this.searchedAsInherited = searched;
+        return this;
+    }
+
+    public boolean searchedAsInherited() {
+        return searchedAsInherited;
+    }
+
+    private String derivedSearch;
+
+    /**
+     * Internal - not for rule authors: set by the search DTO rule (SearchDtoBaseRules), and public
+     * only because that package is not this one. A rule reads {@link #derivedSearch()}.
+     *
+     * The condition the search DTO rule derived for a field without a @search of its own, kept
+     * here for the mapper's toSpec and MyBatis's search - not written into the field, whose
+     * annotation map other entities share. Null when nothing was derived.
+     */
+    public FieldSpec derivedSearch(String condition) {
+        this.derivedSearch = condition;
+        return this;
+    }
+
+    public String derivedSearch() {
+        return derivedSearch;
+    }
+
     /** Aliases of the DTO type override: @dtotype / @dtype / @dto. */
     private static final String[] DTO_TYPE = {"dtotype", "dtype", "dto"};
 

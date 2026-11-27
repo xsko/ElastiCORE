@@ -799,6 +799,24 @@ public final class SpecFactory {
             fs.declaredInDto(dto.getItems().findByName(fs.name()) != null);
         }
 
+        // A search DTO that is not @expose still searches the fields its entity
+        // inherits when an @expose search DTO has them - decided in AutoSearch,
+        // as the 2.x publisher decides it, with the entity found the same way
+        // (@searchable(entity=X) or @searchable(X), in any domain). Issue 376.
+        if (searchable && !dto.getMetaInfo().hasMetaAnnotation(EntityAnnotation.META_EXPOSE)) {
+            io.elasticore.base.ECoreModelContext ctx = io.elasticore.base.model.core.BaseECoreModelContext.getContext();
+            Entity searched = io.elasticore.base.model.pub.jpa.AutoSearch.searchedEntity(ctx, dto.getMetaInfo());
+            java.util.Set<java.util.Map<String, io.elasticore.base.model.core.Annotation>> exposed = null;
+            if (searched != null) {
+                for (io.elasticore.base.model.pub.rules.FieldSpec fs : spec.fields()) {
+                    if (fs.hasSearch() || !io.elasticore.base.model.pub.jpa.AutoSearch.isInherited(searched, fs.raw()))
+                        continue;
+                    if (exposed == null) exposed = exposedSearchAnnotationMaps(ctx);
+                    fs.searchedAsInherited(exposed.contains(fs.raw().getAnnotationMap()));
+                }
+            }
+        }
+
         java.util.Map<String, io.elasticore.base.model.core.Annotation> metaMap =
                 dto.getMetaInfo().getMetaAnnotationMap();
         if (metaMap != null) {
@@ -1027,7 +1045,7 @@ public final class SpecFactory {
             if (searchable) {
                 // Only the fields the search DTO will emit reach its shadow:
                 // conditioned ones, and the ones its own body declares.
-                if (!fs.hasSearch() && !expose && !fs.declaredInDto()) continue;
+                if (!fs.hasSearch() && !expose && !fs.declaredInDto() && !fs.searchedAsInherited()) continue;
                 // A relation is searched by its flattened id and a collection
                 // of them not at all, so neither names a package here - the
                 // same two the search rule drops.
@@ -2967,6 +2985,43 @@ public final class SpecFactory {
 
     public static boolean commandOnlyRoots() {
         return commandOnlyRoots;
+    }
+
+    /**
+     * Whether the fields of the @expose search DTOs are collected once per generation run (issue 376):
+     * on only between RulesGenRunner.run's start and its end, which forgets them, so nothing collected
+     * outlives the run. Off, every call collects them again - a direct use of fromDto outside a run.
+     */
+    private static boolean exposedSearchPerRun;
+
+    /** The run's collection, and the model context it was collected from; null until asked. */
+    private static java.util.Set<java.util.Map<String, io.elasticore.base.model.core.Annotation>> exposedSearch;
+
+    private static io.elasticore.base.ECoreModelContext exposedSearchOf;
+
+    /** Starts (true) or ends (false) a generation run's collection of the @expose search DTOs' fields. */
+    static void exposedSearchPerRun(boolean on) {
+        exposedSearchPerRun = on;
+        exposedSearch = null;
+        exposedSearchOf = null;
+    }
+
+    /**
+     * The annotation maps of every @expose search DTO's fields (AutoSearch): collected once per run,
+     * again when the context is another one. A contract test builds a search DTO's spec once per field,
+     * which walked every DTO of every domain each time.
+     */
+    // Identity, not equality: each model load is a new context object, and only that very object's
+    // collection may be reused.
+    @SuppressWarnings("ReferenceEquality")
+    private static java.util.Set<java.util.Map<String, io.elasticore.base.model.core.Annotation>>
+            exposedSearchAnnotationMaps(io.elasticore.base.ECoreModelContext ctx) {
+        if (!exposedSearchPerRun) return io.elasticore.base.model.pub.jpa.AutoSearch.exposedSearchAnnotationMaps(ctx);
+        if (exposedSearch == null || exposedSearchOf != ctx) {
+            exposedSearch = io.elasticore.base.model.pub.jpa.AutoSearch.exposedSearchAnnotationMaps(ctx);
+            exposedSearchOf = ctx;
+        }
+        return exposedSearch;
     }
 
     /** Whether a TypeScript run's server renders the 2.x-compatible skeletons (no v3, no Kotlin). */

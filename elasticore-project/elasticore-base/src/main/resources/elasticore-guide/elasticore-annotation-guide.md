@@ -1276,6 +1276,7 @@ dto:
 With pageSize set, it implements the `PageableObject` interface. Generated fields: `pageNumber` (default 0), `pageSize` (the set value), `sortCode`.
 Declare it in the domain of its entity: a search DTO is searched only there. One whose `entity` is in another domain gets no `toSpec`, and
 the build says so (v3): `[search] OrderSearchDTO @searchable(entity=PurchaseOrder): PurchaseOrder is declared in domain 'shop', ... Declare OrderSearchDTO in domain 'shop'.`
+Which fields it searches (as the search DTO of a `@service` entity does): the fields it declares, its entity's own fields only when they have a `@search` of their own, and the fields the entity inherits through `@extend` when the search DTO of some `@expose` entity, in any domain, has the same field - so `@expose` on another entity with the same parent adds them; the search DTO of an `@expose` entity searches every field. To keep a parent's field out, mark it `@searchBypass` on the parent: it then leaves every search DTO, the `@expose` one's too.
 
 ### 4.2.1 @sort - default order
 > **Works in:** v3, Kotlin · **Not in:** 2.x generator (not generated)
