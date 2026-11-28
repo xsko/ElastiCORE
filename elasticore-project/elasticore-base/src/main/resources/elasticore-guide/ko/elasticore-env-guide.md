@@ -1069,9 +1069,37 @@ config:
 - MyBatis 와 MongoDB 에서 다음은 `null` 입니다(빌드가 이유를 말합니다): `@search(words: ...)`, 목록의 한 요소(`xItem`),
   `@formula`, 그리고 (MyBatis) 텍스트 외의 조건으로 검색하는 큰 값. MongoDB 는 숫자나 enum 을 `like` 라도
   `eq` 로 비교합니다.
-- 로그인한 사용자가 할 수 있는 일은 아직 답에 없습니다.
+- `actions` - 이 요청을 한 사람이 할 수 있는 일: `read`, `create`, `update`, `delete` 와 각 명령(ddd, hexagonal;
+  layered 에는 명령이 없습니다) 가운데 컨트롤러가 제공하는 것 - 제공하지 않는 것(`@expose(methods)`, `@readonly`,
+  `@editable` 필드가 없는 루트의 update)은 빠집니다. 펫스토어의 PurchaseOrder(`read=owner|MANAGER, create=user, cancel=owner,
+  delete=MANAGER&owner`, `ship` 은 관리자의 것; 생명주기가 `ship` 과 `cancel` 을 옮기고 `delete: CANCELLED` 라고 말함):
+
+```json
+"actions": {"read": ["owner"], "create": true, "delete": false, "ship": false, "cancel": ["owner", "state"]}
+```
+
+| 호출한 사람 | `read` | `create` | `delete` | `ship` | `cancel` |
+|---|---|---|---|---|---|
+| 방문자 | `false` | `false` | `false` | `false` | `false` |
+| 고객(USER) - 위의 답 | `["owner"]` | `true` | `false` | `false` | `["owner", "state"]` |
+| MANAGER | `true` | `true` | `["owner", "state"]` | `false` | `["owner", "state"]` |
+| 관리자 | `true` | `true` | `["state"]` | `["state"]` | `["state"]` |
+
+- 값은 `true`(허용), `false`(거부: 방문자는 401, 그 밖은 403 - 소유자 수준 동작에 비교할 `@owner` 가 없으면 404 나 403), 또는 행이 갖춰야 할 것입니다: `["owner"]` -
+  호출한 사람 자신의 행만(`@owner`; 남의 행은 404 이거나 검색에서 빠짐); `["state"]` - 생명주기가 허용하는
+  상태에서만(`states:` 가 그 명령을 옮기거나 `delete:` 를 말함; 아니면 409); 둘 다면 `["owner", "state"]`. 한
+  행에 대해서는 그 행 자체(`customerId`, `status`)나 TypeScript 클라이언트의 `canX(dto)` 가 알려 줍니다.
+- 요청마다 서비스가 하는 바로 그 검사로 정합니다: 서비스 자신의 `AccessPolicy`(생성기가 쓴 인자, `adminRole`
+  포함)를 서비스가 쓰는 `CurrentUser` 로 - 여러분의 빈(예: Spring Security 의 것), 없으면
+  세션의 사용자. 아무것도 검사하지 않는 서비스(`@access`, `@owner`, `@password`, `@access(admin)` 필드 없음)는 상태를
+  빼면 모두 `true`; `@access` 없이 `@owner` 만 있으면 서비스가 하듯 모두 public 입니다. 요청이 주는 키에 붙은 `@owner`
+  (`@owner(login)`, 생성되지 않는 키): 방문자의 `create` 는 `false`. `DELETE /{key}` 는 먼저 행을 읽으므로 `read` 도
+  필요합니다: 그것만 있으면 `delete` 가 둘 다를, `POST .../delete` 가 함께 있으면 `delete` 만 말합니다. 관리자만 쓰는 필드(`@access(admin)`)는 동작이
+  아니므로 여기서 말하지 않습니다.
+- 따로 설정은 없고, 엔드포인트의 접근도 여전히 그대로입니다: 답은 묻는 사람 누구에게나 그 사람의 것입니다(방문자는 401 이 아니라 `false`).
 - 예제: 펫스토어의 `SchemaInfoTest`(두 언어의 라벨, enum, 참조와 그 표시, 읽기 전용
-  필드, 필수와 길이, 검색의 속성과 그 속성 하나로 하는 검색을 HTTP 로).
+  필드, 필수와 길이, 검색의 속성과 그 속성 하나로 하는 검색, 그리고 사람마다의 `actions` 와 그것이 허용하는 호출 하나와
+  거부하는 호출 하나를 HTTP 로).
 
 ## 7. apiPath 설정
 

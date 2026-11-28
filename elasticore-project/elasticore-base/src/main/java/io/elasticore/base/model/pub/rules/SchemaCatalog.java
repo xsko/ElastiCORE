@@ -13,7 +13,8 @@ import java.util.Map;
  * controller serves the endpoint, the entity (its label, path, key, DTO and search DTO) and each field of the
  * DTO the endpoint describes, with the facts the TypeScript client is written from (FieldFacts): kind, label,
  * labels, required, lengths, bounds, read-only, html, the enumeration's values and what a reference points at -
- * and, where the controller serves POST /search, what the search takes (SchemaSearch). The controller's line
+ * and, where the controller serves POST /search, what the search takes (SchemaSearch), and what the caller's
+ * actions are decided from (SchemaActions). The controller's line
  * calls the runtime's SchemaInfo, which reads that file, says each label in the request's language and adds the
  * keys the answer always had (DTOUtils.getMetaInfo). The file is ASCII: every other
  * character is a JSON escape, so any reader decodes it alike.
@@ -119,6 +120,7 @@ public final class SchemaCatalog {
         final String dto;
         final String searchDto;
         final boolean paged;
+        final SchemaActions.Facts actions;
 
         /**
          * @param entity    the controller's entity
@@ -126,13 +128,26 @@ public final class SchemaCatalog {
          * @param dto       the DTO the endpoint describes, by its class name
          * @param searchDto the search DTO POST /search takes, by its class name
          * @param paged     whether POST /search answers a page (the controller's Page), not a list
+         * @param actions   what the caller's actions are decided from; null for none
          */
-        public Served(EntitySpec entity, String path, String dto, String searchDto, boolean paged) {
+        public Served(
+                EntitySpec entity,
+                String path,
+                String dto,
+                String searchDto,
+                boolean paged,
+                SchemaActions.Facts actions) {
             this.entity = entity;
             this.path = path;
             this.dto = dto;
             this.searchDto = searchDto;
             this.paged = paged;
+            this.actions = actions;
+        }
+
+        /** A controller whose actions are not recorded. */
+        public Served(EntitySpec entity, String path, String dto, String searchDto, boolean paged) {
+            this(entity, path, dto, searchDto, paged, null);
         }
 
         /** A controller whose search answers a page. */
@@ -211,6 +226,8 @@ public final class SchemaCatalog {
         // What POST /search takes, where the controller serves it and the run wrote its search DTO.
         SchemaSearch.Dto search = model.searches(s.entity) ? model.searchDto(s.searchDto) : null;
         if (search != null) out.put("search", SchemaSearch.of(search, s.paged, model.query(s.entity)));
+        // What the caller's actions are decided from, at run time, by the service's own check.
+        if (s.actions != null) out.put("actions", SchemaActions.json(s.actions));
         return out;
     }
 

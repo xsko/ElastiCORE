@@ -121,6 +121,26 @@
             "end": "from"
           }
         }
+      },
+      "actions": {
+        "policy": {
+          "declaration": "read=public, create=user, update=owner, delete=MANAGER&owner, approve=BOSS|AUDITOR, archive=none",
+          "adminRole": "BOSS"
+        },
+        "owner": "ownerId",
+        "createNeedsSignIn": false,
+        "operations": {
+          "read": [],
+          "create": [],
+          "update": [],
+          "delete": [
+            "state"
+          ],
+          "approve": [
+            "state"
+          ],
+          "archive": []
+        }
       }
     },
     "Gone": {
@@ -143,6 +163,17 @@
           "required": false,
           "readOnly": false,
           "html": false
+        }
+      },
+      "actions": {
+        "policy": null,
+        "owner": null,
+        "createNeedsSignIn": false,
+        "operations": {
+          "read": [],
+          "delete": [
+            "state"
+          ]
         }
       }
     },

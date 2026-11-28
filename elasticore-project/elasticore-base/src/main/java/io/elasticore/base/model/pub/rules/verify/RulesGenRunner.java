@@ -5245,6 +5245,13 @@ public final class RulesGenRunner {
     private final Map<String, io.elasticore.base.model.pub.rules.SchemaSearch.Query> schemaQueries =
             new java.util.HashMap<String, io.elasticore.base.model.pub.rules.SchemaSearch.Query>();
 
+    /** The operations a row's state decides, by entity name, as each entity's rules wrote them. */
+    private final Map<String, java.util.Set<String>> schemaStateBound =
+            new java.util.HashMap<String, java.util.Set<String>>();
+
+    /** Whether each entity's service checks anything, by entity name, as the service was written. */
+    private final Map<String, Boolean> schemaChecked = new java.util.HashMap<String, Boolean>();
+
     /** The module the domain's controllers are written to: the schema file goes beside them. */
     private String schemaRoot;
 
@@ -5309,7 +5316,14 @@ public final class RulesGenRunner {
                     new io.elasticore.base.model.pub.rules.SchemaSearch.Query(
                             io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.searched(spec),
                             io.elasticore.base.model.pub.rules.mongo.MongoRepositoryRules.sortable(spec)));
+        } else if ("entity".equals(target)) {
+            // What the lifecycle decides: the moves and the delete guard the entity's rules wrote.
+            schemaStateBound.put(
+                    spec.getName(), io.elasticore.base.model.pub.rules.SchemaActions.stateBound(spec, code));
+        } else if ("service".equals(target)) {
+            schemaChecked.put(spec.getName(), io.elasticore.base.model.pub.rules.SchemaActions.checked(spec, code));
         } else if ("control".equals(target) && !code.isMethodExcluded("schemaInfo")) {
+            java.util.Set<String> stateBound = schemaStateBound.get(spec.getName());
             schemaServed.add(new io.elasticore.base.model.pub.rules.SchemaCatalog.Served(
                     spec,
                     String.format(
@@ -5317,7 +5331,13 @@ public final class RulesGenRunner {
                             code.varValue("apiPath"), code.varValue("domainName"), code.varValue("entityName")),
                     code.varValue("dtoClassName"),
                     code.varValue("searchDTOClassName"),
-                    "Page".equals(code.varValue("searchReturnType"))));
+                    "Page".equals(code.varValue("searchReturnType")),
+                    io.elasticore.base.model.pub.rules.SchemaActions.of(
+                            spec,
+                            io.elasticore.base.model.pub.rules.SchemaActions.served(spec, code),
+                            stateBound == null ? java.util.Collections.<String>emptySet() : stateBound,
+                            io.elasticore.base.model.pub.rules.SchemaActions.deleteReadsFirst(code),
+                            Boolean.TRUE.equals(schemaChecked.get(spec.getName())))));
             if (!code.isMethodExcluded("search")) schemaSearched.add(spec.getName());
             if (schemaRoot == null) schemaRoot = rootFor(out);
             // A preview writes nothing: the file on disk is not yet what this run would leave.
@@ -5427,6 +5447,8 @@ public final class RulesGenRunner {
             schemaSearched.clear();
             schemaSearchDtos.clear();
             schemaQueries.clear();
+            schemaStateBound.clear();
+            schemaChecked.clear();
             schemaRoot = null;
         }
     }

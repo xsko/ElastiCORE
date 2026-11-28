@@ -7,7 +7,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -16,6 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -165,6 +169,150 @@ class SchemaInfoTest {
         List<String> found =
                 search("product", "{\"pageSize\":500,\"keyword\":\"fish japan\"}", "$.content[*].name");
         assertThat(found).containsExactly("Koi");
+    }
+
+    // ---- actions: what this caller may do, decided by the service's own check --------------------------------
+
+    private static final String CARD =
+            "\"creditCard\":{\"creditCardNumber\":\"4111111111111111\",\"creditCardType\":\"VISA\",\"creditCardExpDate\":\"12/30\"}";
+
+    private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String body) {
+        return request.contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+
+    private static MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, MockHttpSession session) {
+        return session == null ? request : request.session(session);
+    }
+
+    /** The actions of an entity's GET .../schema/info, for the caller of this session (null: a visitor). */
+    private Map<String, Object> actions(String entity, MockHttpSession session) throws Exception {
+        MockHttpServletResponse response = mvc.perform(as(get("/api/petstore/" + entity + "/schema/info"), session))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse();
+        // The answer is this caller's: no shared cache may keep it for another.
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("private");
+        response.setCharacterEncoding("UTF-8");
+        return JsonPath.read(response.getContentAsString(), "$.actions");
+    }
+
+    private MockHttpSession signIn(String login, String password) throws Exception {
+        MvcResult r = mvc.perform(json(post("/api/petstore/customer/signin"),
+                        "{\"login\":\"" + login + "\",\"password\":\"" + password + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        return (MockHttpSession) r.getRequest().getSession(false);
+    }
+
+    /** POST /customer - sign-up, create=public - answered with the new customer's key. */
+    private long signUp(String login, MockHttpSession session) throws Exception {
+        String body = "{\"login\":\"" + login + "\",\"password\":\"force-1234\",\"firstName\":\"F\",\"lastName\":\"L\","
+                + "\"homeAddress\":{\"street1\":\"1 Main St\",\"city\":\"Mos Eisley\",\"zipcode\":\"12345\","
+                + "\"countryCode\":\"US\"}}";
+        String created = mvc.perform(as(json(post("/api/petstore/customer"), body), session))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return ((Number) JsonPath.read(created, "$.customerId")).longValue();
+    }
+
+    private String placeOrder(MockHttpSession session, int itemId) throws Exception {
+        String placed = mvc.perform(as(
+                                json(post("/api/petstore/purchaseOrder"),
+                                        "{\"lines\":[{\"itemId\":" + itemId + ",\"quantity\":1}]," + CARD + "}"),
+                                session))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return JsonPath.read(placed, "$.orderId");
+    }
+
+    private static Map<String, Object> expected(Object... keysAndValues) {
+        Map<String, Object> out = new java.util.LinkedHashMap<String, Object>();
+        for (int i = 0; i < keysAndValues.length; i += 2) out.put((String) keysAndValues[i], keysAndValues[i + 1]);
+        return out;
+    }
+
+    /**
+     * PurchaseOrder: {@code @owner(customerId) @access(read=owner|MANAGER, create=user, cancel=owner,
+     * delete=MANAGER&owner)}, its lifecycle moving ship and cancel and allowing delete when CANCELLED; ship and
+     * update are not declared, so they are the administrator's - and no update is served (nothing @editable).
+     * Customer: {@code @owner(customerId) @access(read=owner, create=public, update=owner)}, delete the
+     * administrator's. Each caller is told something else, and the service agrees with each answer.
+     */
+    @Test
+    void eachCallerIsToldWhatTheServiceLetsThemDo() throws Exception {
+        // A visitor: no order at all; a customer may be created (sign-up) and nothing else.
+        assertThat(actions("purchaseOrder", null))
+                .isEqualTo(expected(
+                        "read", false, "create", false, "delete", false, "ship", false, "cancel", false));
+        assertThat(actions("customer", null))
+                .isEqualTo(expected("read", false, "create", true, "update", false, "delete", false));
+        // false: placing an order asks a visitor to sign in (401); true: signing up works.
+        mvc.perform(json(post("/api/petstore/purchaseOrder"), "{\"lines\":[{\"itemId\":1001,\"quantity\":1}]," + CARD + "}"))
+                .andExpect(status().isUnauthorized());
+        String stamp = String.valueOf(System.nanoTime() % 100000000L);
+        long managerId = signUp("m" + stamp, null);
+
+        // A plain customer (USER): their own orders, and their own record.
+        MockHttpSession user = signIn("user", "user");
+        assertThat(actions("purchaseOrder", user))
+                .isEqualTo(expected(
+                        "read", List.of("owner"),
+                        "create", true,
+                        "delete", false,
+                        "ship", false,
+                        "cancel", List.of("owner", "state")));
+        assertThat(actions("customer", user))
+                .isEqualTo(expected(
+                        "read", List.of("owner"), "create", true, "update", List.of("owner"), "delete", false));
+        // true: an order is placed; false: shipping it is the shop's (403).
+        String usersOrder = placeOrder(user, 1001);
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/ship").session(user))
+                .andExpect(status().isForbidden());
+        // ["owner", "state"]: their own order, while it is PLACED - then no more (409).
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/cancel").session(user))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/cancel").session(user))
+                .andExpect(status().isConflict());
+
+        // The administrator: every operation; the lifecycle still decides the moves and the delete.
+        MockHttpSession admin = signIn("admin", "admin");
+        assertThat(actions("purchaseOrder", admin))
+                .isEqualTo(expected(
+                        "read", true,
+                        "create", true,
+                        "delete", List.of("state"),
+                        "ship", List.of("state"),
+                        "cancel", List.of("state")));
+        assertThat(actions("customer", admin))
+                .isEqualTo(expected("read", true, "create", true, "update", true, "delete", true));
+        // No false for the administrator here: they pass every level but none, which no entity of the pet store says.
+        // true: every customer is searched; ["state"]: a cancelled order is not shipped (409), a placed one is.
+        mvc.perform(json(post("/api/petstore/customer/search"), "{}").session(admin)).andExpect(status().isOk());
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/ship").session(admin))
+                .andExpect(status().isConflict());
+        String placed = placeOrder(user, 1002);
+        mvc.perform(post("/api/petstore/purchaseOrder/" + placed + "/ship").session(admin)).andExpect(status().isOk());
+
+        // A MANAGER: every order is read; deleting is theirs on their own cancelled ones.
+        mvc.perform(json(put("/api/petstore/customer"), "{\"customerId\":" + managerId + ",\"role\":\"M\"}")
+                        .session(admin))
+                .andExpect(status().isOk());
+        MockHttpSession manager = signIn("m" + stamp, "force-1234");
+        assertThat(actions("purchaseOrder", manager))
+                .isEqualTo(expected(
+                        "read", true,
+                        "create", true,
+                        "delete", List.of("owner", "state"),
+                        "ship", false,
+                        "cancel", List.of("owner", "state")));
+        // true: the user's order is read, though it is not theirs; false: shipping it is the shop's (403).
+        mvc.perform(get("/api/petstore/purchaseOrder/" + usersOrder).session(manager)).andExpect(status().isOk());
+        mvc.perform(post("/api/petstore/purchaseOrder/" + usersOrder + "/ship").session(manager))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -83,6 +83,9 @@ public class DddStateRules implements CodeRules {
         return why == null;
     }
 
+    /** The rule that writes the lifecycle's moves. */
+    public static final String MOVES_RULE = "ddd-state-moves";
+
     /**
      * One method per command, and the checks they share. A command that
      * moves one lifecycle is checked and moved by that lifecycle's mover; one
@@ -90,7 +93,7 @@ public class DddStateRules implements CodeRules {
      * REFUNDED) is checked against every lifecycle before any of them moves,
      * so a refusal leaves the row as it was. After the command promises (97).
      */
-    @Rule(value = "ddd-state-moves", target = "entity", order = 98, phase = Rule.Phase.TAIL)
+    @Rule(value = MOVES_RULE, target = "entity", order = 98, phase = Rule.Phase.TAIL)
     void moves(EntitySpec e) {
         if (!DddBehaviorRules.splits(e)) {
             warnUnmoved(e);

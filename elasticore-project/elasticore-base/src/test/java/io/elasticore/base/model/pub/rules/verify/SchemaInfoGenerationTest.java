@@ -192,6 +192,127 @@ public class SchemaInfoGenerationTest {
         }
     }
 
+    /** A booking its customer owns, with a lifecycle; and a note keyed by its writer, without @access. */
+    private static final String ACTIONS_MODEL = MODEL.replace(
+                    "enumeration:\n",
+                    String.join(
+                            "\n",
+                            "  Booking:",
+                            "    meta: entity @root @expose(20) @owner(customerId)",
+                            "          @access(read=owner|MANAGER, create=user, cancel=owner)",
+                            "    fields:",
+                            "      bookingId:  long @id @sequence",
+                            "      customerId: long",
+                            "      status:     BookingStatus",
+                            "    states:",
+                            "      status:",
+                            "        initial: PLACED",
+                            "        cancel:  PLACED -> CANCELLED",
+                            "        delete:  CANCELLED",
+                            "  Note:",
+                            "    meta: entity @root @expose(methods=\"read,search,create,deleteOne\") @owner(writer)",
+                            "    fields:",
+                            "      writer: string(20) @id",
+                            "      text:   string(200)",
+                            "enumeration:",
+                            ""))
+            .replace(
+                    "\ndto:\n",
+                    String.join(
+                            "\n",
+                            "",
+                            "  BookingStatus:",
+                            "    meta: enum @json(code)",
+                            "    fields:",
+                            "      code:  string(3) @code",
+                            "    enum:",
+                            "      PLACED:    PLC",
+                            "      CANCELLED: CAN",
+                            "dto:",
+                            ""));
+
+    /** The file's text without white space, for comparing a part of it. */
+    private static String squeezed(String json) {
+        return json.replaceAll("\\s+", "");
+    }
+
+    /**
+     * The actions part: what the caller's actions are decided from, as each mode writes it - the service's
+     * AccessPolicy arguments, the owner it compares, the operations the controller serves and those the row's
+     * state decides. Commands and a lifecycle are written for a split root (ddd, hexagonal), not in layered.
+     */
+    @Test
+    public void theActionsFactsAsEachModeWritesThem() throws Exception {
+        String[][] runs = {
+            {"jpa", "layered", "java", "layered"},
+            {"jpa", "layered", "kotlin", "layered"},
+            {"mybatis", "layered", "java", "layered"},
+            {"mongo", "layered", "java", "layered"},
+            {"mongo", "layered", "kotlin", "layered"},
+            {"jpa", "hexagonal", "java", "split"},
+            {"jpa", "ddd", "java", "split"},
+            {"jpa", "ddd", "kotlin", "split"},
+            {"mybatis", "hexagonal", "java", "split"},
+            {"mybatis", "ddd", "java", "split"},
+        };
+        String policy = "\"actions\":{\"policy\":{\"declaration\":\"cancel=owner,create=user,read=owner|MANAGER\","
+                + "\"adminRole\":\"ADMIN\"},\"owner\":\"customerId\",\"createNeedsSignIn\":false,"
+                + "\"deleteReadsFirst\":false,";
+        for (String[] run : runs) {
+            String what = String.join("/", run);
+            String model =
+                    run[0].equals("mongo") ? ACTIONS_MODEL.replace("long @id @sequence", "string @id") : ACTIONS_MODEL;
+            File project = Files.createTempDirectory("elcore-schema").toFile();
+            try {
+                generate(project, model, run[0], run[1], run[2], SETTING, false);
+                String json = squeezed(read(find(project, "desk-schema.json")));
+                String operations = "split".equals(run[3])
+                        // Nothing @editable on a split root: no update; its lifecycle moves cancel and guards delete.
+                        ? "\"operations\":{\"read\":[],\"create\":[],\"delete\":[\"state\"],\"cancel\":[\"state\"]}}"
+                        : "\"operations\":{\"read\":[],\"create\":[],\"update\":[],\"delete\":[]}}";
+                assertTrue(json.contains(policy + operations), what + "\n" + json);
+                // No @access, no @owner, no @password: the service checks nothing.
+                assertTrue(
+                        json.contains("\"actions\":{\"policy\":null,\"owner\":null,\"createNeedsSignIn\":false,"),
+                        what + "\n" + json);
+                // @owner on a key the request gives, without @access: public, but a visitor cannot key a note.
+                assertTrue(
+                        json.contains("\"actions\":{\"policy\":{\"declaration\":null,\"adminRole\":\"ADMIN\"},"
+                                + "\"owner\":\"writer\",\"createNeedsSignIn\":true,\"deleteReadsFirst\":true,"
+                                + "\"operations\":{\"read\":[],\"create\":[],\"delete\":[]}}"),
+                        what + "\n" + json);
+                if ("split".equals(run[3])) {
+                    String controller = read(
+                            find(project, "kotlin".equals(run[2]) ? "BookingController.kt" : "BookingController.java"));
+                    assertTrue(controller.contains("@PostMapping(\"/{bookingId}/cancel\")"), what + "\n" + controller);
+                }
+            } finally {
+                delete(project);
+            }
+        }
+    }
+
+    /** An adminRole of the domain's: the policy's, as the service's. */
+    @Test
+    public void theDomainsAdminRoleIsThePolicys() throws Exception {
+        File project = Files.createTempDirectory("elcore-schema").toFile();
+        try {
+            generate(project, ACTIONS_MODEL, "jpa", "layered", "java", SETTING + "    adminRole: BOSS\n", false);
+            String json = squeezed(read(find(project, "desk-schema.json")));
+            assertTrue(
+                    json.contains(
+                            "\"declaration\":\"cancel=owner,create=user,read=owner|MANAGER\",\"adminRole\":\"BOSS\""),
+                    json);
+            String service = read(find(project, "BookingCoreService.java"));
+            assertTrue(
+                    service.contains(
+                            "AccessPolicy.parse(\"Booking\", \"cancel=owner, create=user, read=owner|MANAGER\", \"BOSS\")"),
+                    service);
+        } finally {
+            delete(project);
+        }
+    }
+
     /** The JPA hexagon in Java: the file, the line, and no DTOUtils left in the controller. */
     @Test
     public void theControllerAnswersFromTheFileBesideIt() throws Exception {

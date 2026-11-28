@@ -377,7 +377,10 @@ public class ServiceAccessRules implements CodeRules {
         ctx(e).field(f).noInitial().removeAnnotation("lombok.Builder");
     }
 
-    @Rule(value = "service-access", target = "service", order = 40)
+    /** The rule that writes the service's checks. */
+    public static final String SERVICE_RULE = "service-access";
+
+    @Rule(value = SERVICE_RULE, target = "service", order = 40)
     void access(EntitySpec e) {
         if (!guarded(e)) return;
         SourceCode c = ctx(e);
@@ -1572,6 +1575,26 @@ public class ServiceAccessRules implements CodeRules {
                 e.getName(),
                 declared == null ? null : declared.trim().replace("\"", "'"),
                 orDefault(e.config("adminRole"), "ADMIN"));
+    }
+
+    /**
+     * The @owner identity the service compares a row's owner by (ACCESS.owns, ownerFilter): the field @owner
+     * names, when it is a long, int, string or UUID identity. Null otherwise - the service then compares nothing,
+     * and owner-level operations are the administrator's alone (access() says so).
+     */
+    public static FieldSpec comparedOwner(EntitySpec e) {
+        FieldSpec owner = ownerField(e);
+        return owner != null && idType(owner.typeName()) != null ? owner : null;
+    }
+
+    /**
+     * Whether create refuses a visitor who is not the administrator: the row is keyed by its owner, by a key the
+     * request gives (@owner on a key that is not generated) - a visitor has no identity to key it by.
+     */
+    public static boolean createNeedsSignIn(EntitySpec e) {
+        FieldSpec owner = comparedOwner(e);
+        FieldSpec pk = e.pkField();
+        return owner != null && pk != null && owner.name().equals(pk.name()) && !keyGenerated(pk);
     }
 
     /** The three arguments of AccessPolicy.parse, as the policy receives them. */

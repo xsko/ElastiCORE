@@ -62,7 +62,7 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
     /** Whether the entity's commands can be generated at all. */
     private static boolean applies(EntitySpec e) {
         if (e.commands().isEmpty()) return false;
-        if (!DddBehaviorRules.splits(e) || e.pkFields().size() != 1) {
+        if (!serves(e)) {
             if (WARNED.add(e.domainName() + "." + e.getName())) {
                 io.elasticore.base.util.ConsoleLog.storeLog("DSL_WARN", String.format(
                         "[%s] %s declares commands, but it has no behaviour class to write them in"
@@ -72,6 +72,17 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
             return false;
         }
         return true;
+    }
+
+    /**
+     * Whether the entity's commands are written - an endpoint, a service method each - where these rules run:
+     * it declares some, and it is a root the behaviour rules split, with a single key. Said nothing about; the
+     * rules below warn where they are ignored.
+     */
+    public static boolean serves(EntitySpec e) {
+        return !e.commands().isEmpty()
+                && DddBehaviorRules.splits(e)
+                && e.pkFields().size() == 1;
     }
 
     // ---- the aggregate ----------------------------------------------------
@@ -251,8 +262,11 @@ public class DddCommandRules implements CodeRules, io.elasticore.base.model.pub.
         return lines.replace("\n        ", "\n" + in);
     }
 
+    /** The rule that writes the command endpoints. */
+    public static final String CONTROL_RULE = "ddd-command-control";
+
     /** One endpoint per command: POST /{id}/ship. After the method filter (20). */
-    @Rule(value = "ddd-command-control", target = "control", order = 30)
+    @Rule(value = CONTROL_RULE, target = "control", order = 30)
     void control(EntitySpec e) {
         if (!applies(e)) return;
         SourceCode c = ctx(e);
