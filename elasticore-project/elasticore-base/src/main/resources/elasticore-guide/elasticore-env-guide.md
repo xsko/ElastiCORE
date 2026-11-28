@@ -1384,6 +1384,7 @@ declare one, the event classes are placed in the `entity` package.
 application service)** - a domain service belongs to the domain and an application service is a layer above it, so putting
 them in the same place breaks the dependency direction.
 The `domainService:` and `processManager:` sections are no longer read since 3.1 (`elasticore-dsl-guide.md` 8).
+Nor is `namespace.processManager`: a leftover one gets a notice (not a `DSL_WARN`, so `-Pstrict` passes); remove it.
 
 It is used in the `package` declaration and the `import` statements of each generated class.
 

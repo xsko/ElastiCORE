@@ -144,7 +144,10 @@ task elcore3clean(type: Delete) {
 				'**/shop/domain/model/OrderRules.java', '**/shop/application/LoyaltyListener.java',
 				'**/billing/application/ReceiptingListener.java'
 	},
-		fileTree('src/test/java/io') { exclude '**/forum/ForumContractSupport.java' }
+		// ... and the class in domain.service the architecture test must refuse (DomainServiceArchitectureTest).
+		fileTree('src/test/java/io') {
+			exclude '**/forum/ForumContractSupport.java', '**/shop/domain/service/WebAwarePricing.java'
+		}
 }
 
 // The plugin registers elcore3 and gives it the classpath, the project path,

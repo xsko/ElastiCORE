@@ -11,9 +11,10 @@ import java.util.Set;
 
 /**
  * The DSL 3.1 no longer reads (issue 370): domainService:, processManager:
- * and @specification, and the two rule sets that generated them when a
- * selection still names one. Each is said once per declaration, with the
- * domain, the name and the code to write instead.
+ * and @specification, the namespace.processManager setting, and the two rule
+ * sets that generated them when a selection still names one. Each is said
+ * once per declaration, with the domain, the name and the code to write
+ * instead.
  *
  * A notice, not a DSL warning. A warning (DSL_WARN) is counted by
  * elcoreValidate -Pstrict, so a project that built yesterday would fail its
@@ -35,7 +36,11 @@ final class RemovedDsl {
 
     private RemovedDsl() {}
 
-    /** The notices of a model: its removed sections' entries and its entities' @specification. */
+    /**
+     * The notices of a model: its removed sections' entries, a namespace.processManager it still sets, and
+     * its entities' @specification. namespace.domainService is not one: the architecture test still reads it
+     * as a domain package.
+     */
     static List<String> of(String domain, ECoreModel model, List<EntitySpec> specs) {
         List<String> out = new ArrayList<String>();
         if (model != null && model.getRemovedDeclarations() != null) {
@@ -45,6 +50,10 @@ final class RemovedDsl {
                                 ? processManager(domain, r.name(), r.names())
                                 : domainService(domain, r.name(), r.names()));
             }
+        }
+        String pmPackage = model == null ? null : model.getNamespace("processManager");
+        if (pmPackage != null && !pmPackage.trim().isEmpty()) {
+            out.add(processManagerNamespace(domain, pmPackage.trim()));
         }
         if (specs != null) {
             for (EntitySpec e : specs) {
@@ -98,6 +107,14 @@ final class RemovedDsl {
                         + " @Transactional(propagation = REQUIRES_NEW), or a plain @EventListener when it must run in"
                         + " the caller's transaction.",
                 domain, name == null ? ":" : " " + name, NO_LONGER_READ, events);
+    }
+
+    /** namespace.processManager: where processManager: put its classes; nothing reads it since 3.1. */
+    static String processManagerNamespace(String domain, String pkg) {
+        return String.format(
+                "[%s] namespace.processManager (%s) %s nothing is generated into it since processManager: was"
+                        + " removed; put the listeners you write in the package of your choice.",
+                domain, pkg, NO_LONGER_READ);
     }
 
     static String specification(String domain, String entity, String declared) {

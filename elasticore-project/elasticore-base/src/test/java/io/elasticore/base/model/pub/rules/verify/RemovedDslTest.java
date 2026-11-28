@@ -215,6 +215,40 @@ public class RemovedDslTest {
         assertFalse(report(project).contains("no longer read"), report(project));
     }
 
+    /**
+     * namespace.processManager placed what processManager: generated, and nothing reads it now: it is a
+     * notice, which -Pstrict does not count. namespace.domainService stays - the architecture test reads it as
+     * a domain package - and is read without a word.
+     */
+    @Test
+    public void namespaceProcessManagerIsSaidAndNamespaceDomainServiceIsNot() throws Exception {
+        File project = project("elcore-removed-namespace", PLAIN_ENTITIES, null);
+        write(
+                new File(project, "src/main/resources/blueprint/shop/env.yml"),
+                ENV + "    domainService: io.acme.shop.domain.service\n"
+                        + "    processManager: io.acme.shop.application.process\n");
+        String[] log = new String[1];
+        assertEquals(0, run(project, Run.JAVA, log), log[0]);
+        String notice = RemovedDsl.processManagerNamespace("shop", "io.acme.shop.application.process");
+        assertEquals(
+                "[shop] namespace.processManager (io.acme.shop.application.process) is no longer read since 3.1 -"
+                        + " remove it; nothing is generated into it since processManager: was removed; put the"
+                        + " listeners you write in the package of your choice.",
+                notice);
+        assertEquals(1, count(log[0], RemovedDsl.HEADER), log[0]);
+        assertEquals(1, count(log[0], notice), log[0]);
+        assertEquals(1, count(log[0], RemovedDsl.NO_LONGER_READ), log[0]);
+        assertFalse(log[0].contains("namespace.domainService"), log[0]);
+        assertFalse(log[0].contains("[elcore3] DSL validation warnings:"), log[0]);
+
+        String[] validated = new String[1];
+        assertEquals(0, run(project, Run.STRICT_VALIDATE, validated), validated[0]);
+        String report = report(project);
+        assertTrue(report.contains("**Passed.**"), report);
+        assertTrue(report.contains("- " + notice), report);
+        assertFalse(report.contains("namespace.domainService"), report);
+    }
+
     // ---- what 3.0 generated for them, in a project that upgrades -----------------------------------
 
     private static final String SERVICE_PKG = "io.acme.shop.domain.service";
@@ -464,6 +498,33 @@ public class RemovedDslTest {
         assertEquals(0, run(project, Run.TS, log), log[0]);
         assertTrue(rules.isFile(), log[0]);
         assertFalse(log[0].contains("OrderSpecifications.ts"), log[0]);
+    }
+
+    /**
+     * A generated DTO with nothing to import starts with an empty line (KeyDTO, SrchDTO, a DTO of plain
+     * fields). When one stops being generated, the stale-file pass read its empty first line as a stamp and
+     * the run stopped on a StringIndexOutOfBoundsException - the browser copy of a specification was then
+     * never handed over, and the client never updated. The file goes, and the run goes on.
+     */
+    @Test
+    public void aStaleTypeScriptFileThatStartsWithAnEmptyLineDoesNotStopTheRun() throws Exception {
+        File project = project("elcore-removed-ts-empty-line", PLAIN_ENTITIES, null);
+        String[] log = new String[1];
+        assertEquals(0, run(project, Run.TS, log), log[0]);
+        File dto = find(project, "OrderDTO.ts");
+        assertNotNull(dto, log[0]);
+
+        File rules = new File(dto.getParentFile(), "OrderSpecifications.ts");
+        File gone = new File(dto.getParentFile(), "GoneKeyDTO.ts");
+        GeneratedCache cache = GeneratedCache.load(project);
+        generated(project, cache, rules, specificationsTs());
+        generated(project, cache, gone, "\nexport interface GoneKeyDTO {\n    goneId?: number;\n}\n");
+        cache.save();
+
+        assertEquals(0, run(project, Run.TS, log), log[0]);
+        assertFalse(gone.exists(), "the stale file goes: " + log[0]);
+        assertTrue(log[0].contains(rel(project, gone) + "  REMOVED(the DSL no longer produces it)"), log[0]);
+        assertEquals(specificationsTs(), read(rules).replace("\r\n", "\n"), "handed over as it is: " + log[0]);
     }
 
     @Test

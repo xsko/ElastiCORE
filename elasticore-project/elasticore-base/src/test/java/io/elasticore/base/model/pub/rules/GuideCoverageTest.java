@@ -168,6 +168,9 @@ public class GuideCoverageTest {
                 read(DSL_GUIDE).contains("`processManager:` sections are no longer read since 3.1")
                         || read(DSL_GUIDE).contains("`processManager:` 섹션은 3.1 부터 읽지 않습니다"),
                 "the DSL guide's chapter 8");
+        // The setting that placed the process managers is said too; namespace.domainService stays documented.
+        assertTrue(read(ENV_GUIDE).contains("`namespace.processManager`"), "the env guide's namespace.processManager");
+        assertTrue(read(ENV_GUIDE).contains("domainService: "), "the env guide's namespace.domainService");
     }
 
     @Test
