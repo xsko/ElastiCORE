@@ -1069,9 +1069,37 @@ config:
 - Under MyBatis and MongoDB these say `null` (the build says why): `@search(words: ...)`, one element of a list (`xItem`),
   a `@formula`, and (MyBatis) a large value searched by anything but text. MongoDB compares a number or an enum by `eq`,
   even for a `like`.
-- What the signed-in user may do is not in the answer yet.
+- `actions` - what the caller of this request may do: `read`, `create`, `update`, `delete` and each command (ddd, hexagonal;
+  layered has none), those the controller serves - one it does not serve (`@expose(methods)`, `@readonly`, the update of a
+  root with nothing `@editable`) is left out. The pet store's PurchaseOrder (`read=owner|MANAGER, create=user, cancel=owner,
+  delete=MANAGER&owner`, `ship` the administrator's; its lifecycle moves `ship` and `cancel`, and says `delete: CANCELLED`):
+
+```json
+"actions": {"read": ["owner"], "create": true, "delete": false, "ship": false, "cancel": ["owner", "state"]}
+```
+
+| Caller | `read` | `create` | `delete` | `ship` | `cancel` |
+|---|---|---|---|---|---|
+| A visitor | `false` | `false` | `false` | `false` | `false` |
+| A customer (USER) - the answer above | `["owner"]` | `true` | `false` | `false` | `["owner", "state"]` |
+| A MANAGER | `true` | `true` | `["owner", "state"]` | `false` | `["owner", "state"]` |
+| The administrator | `true` | `true` | `["state"]` | `["state"]` | `["state"]` |
+
+- A value is `true` (allowed), `false` (refused: 401 for a visitor, 403 otherwise - 404 or 403 where an owner-level operation has no `@owner` to compare), or what the row must be: `["owner"]` -
+  a row of the caller's own only (`@owner`; another's is 404, or left out of the search); `["state"]` - only in a state
+  the lifecycle allows (`states:` moves the command, or says `delete:`; otherwise 409); both, `["owner", "state"]`. For
+  one row, the row itself (`customerId`, `status`) or the TypeScript client's `canX(dto)` tells.
+- It is decided per request by the check the service applies: the service's own `AccessPolicy` (the arguments the
+  generator wrote, `adminRole` included) for the `CurrentUser` the service takes - your bean (Spring Security's, say), else
+  the session's. A service that checks nothing (no `@access`, `@owner`, `@password` or `@access(admin)` field) says `true`
+  but for the state; with `@owner` and no `@access` everything is public, as the service applies it. `@owner` on a key the
+  request gives (`@owner(login)`, not generated): `create` is `false` for a visitor. `DELETE /{key}` reads the row first, so
+  it needs `read` too: served alone, `delete` says both; beside `POST .../delete`, it says `delete` alone. A field only the administrator writes
+  (`@access(admin)`) is not an operation, and is not said here.
+- No setting of its own, and still no access on the endpoint: the answer is for whoever asks (a visitor gets `false`, not 401).
 - Example: `SchemaInfoTest` of the pet store (a label in two languages, an enum, a reference and its display, a read-only
-  field, required and lengths, the search's properties and a search by one, over HTTP).
+  field, required and lengths, the search's properties and a search by one, and each caller's `actions` with a call it
+  allows and one it refuses, over HTTP).
 
 ## 7. apiPath setting
 

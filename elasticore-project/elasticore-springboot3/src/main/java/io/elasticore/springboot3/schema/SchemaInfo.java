@@ -3,10 +3,19 @@ package io.elasticore.springboot3.schema;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.elasticore.runtime.utils.DTOUtils;
+import io.elasticore.springboot3.security.AccessPolicy;
+import io.elasticore.springboot3.security.CurrentUser;
+import io.elasticore.springboot3.security.ForbiddenException;
+import io.elasticore.springboot3.security.NotSignedInException;
+import io.elasticore.springboot3.security.SessionCurrentUser;
 import io.elasticore.springboot3.validation.ErrorMessages;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.ClassUtils;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,7 +45,12 @@ import java.util.concurrent.ConcurrentHashMap;
  *       options and what a reference points at (ref);</li>
  *   <li>{@code search}, where the controller serves POST /search: {@code pageSize}, {@code sortable} and
  *       {@code fields} - each property of the search DTO with the entity {@code field} it searches, its
- *       {@code op}, the {@code end} of a range and {@code in} for a list - as the generator wrote them.</li>
+ *       {@code op}, the {@code end} of a range and {@code in} for a list - as the generator wrote them;</li>
+ *   <li>{@code actions}: what the caller of this request may do - {@code read}, {@code create}, {@code update},
+ *       {@code delete} and each command, those the controller serves - decided now by the check the service
+ *       applies: its AccessPolicy (the generator wrote its arguments) for the CurrentUser it takes (the
+ *       application's bean, else the session's). {@code true}, {@code false}, or the conditions a row must
+ *       meet: {@code ["owner"]}, {@code ["state"]}, {@code ["owner", "state"]}.</li>
  * </ul>
  * A label is said in the request's language: the domain's label bundle ({@code i18n/<domain>-labels}) for that
  * language, else its default file, else the DSL's "--" text. {@code labels} is the label in every other language
@@ -56,6 +70,9 @@ public final class SchemaInfo {
     private static final Map<ClassLoader, Map<String, Map<String, Object>>> FILES =
             Collections.synchronizedMap(new WeakHashMap<ClassLoader, Map<String, Map<String, Object>>>());
 
+    /** The name the generated service's setter gives the bean it takes: setCurrentUser(CurrentUser currentUser). */
+    private static final String BEAN = "currentUser";
+
     /** The domains' labels, as an export reads them. */
     private static final Map<String, ErrorMessages> LABELS = new ConcurrentHashMap<String, ErrorMessages>();
 
@@ -66,9 +83,44 @@ public final class SchemaInfo {
                 .body(of(domain, entity));
     }
 
-    /** The answer's body. */
+    /** The answer's body, for the caller of this request. */
     public static Map<String, Object> of(String domain, String entity) {
-        return answer(file(domain), domain, entity);
+        return of(domain, entity, currentUser());
+    }
+
+    /** The answer's body, for this caller. */
+    static Map<String, Object> of(String domain, String entity, CurrentUser user) {
+        return answer(file(domain), domain, entity, user);
+    }
+
+    /**
+     * Who is asking, as the generated service takes it (@Autowired(required = false) setCurrentUser): the
+     * application's CurrentUser bean - Spring Security's, say - the only one, the primary one, or among several
+     * the one named currentUser; else the user the session holds (SessionCurrentUser).
+     */
+    static CurrentUser currentUser() {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (attributes instanceof ServletRequestAttributes servlet) {
+            try {
+                ApplicationContext context =
+                        org.springframework.web.servlet.support.RequestContextUtils.findWebApplicationContext(
+                                servlet.getRequest());
+                CurrentUser bean = context == null
+                        ? null
+                        : context.getBeanProvider(CurrentUser.class).getIfUnique();
+                // Among several, none primary, @Autowired takes the one named as its parameter: currentUser.
+                if (bean == null
+                        && context != null
+                        && context.containsBean(BEAN)
+                        && context.isTypeMatch(BEAN, CurrentUser.class)) {
+                    bean = context.getBean(BEAN, CurrentUser.class);
+                }
+                if (bean != null) return bean;
+            } catch (RuntimeException | LinkageError none) {
+                // No web application context to ask: the service's default.
+            }
+        }
+        return new SessionCurrentUser();
     }
 
     /** A domain's labels: its label bundle beside its message bundle. */
@@ -125,7 +177,7 @@ public final class SchemaInfo {
 
     /** The answer for an entity of the file, its labels said by the domain's label bundle. */
     @SuppressWarnings("unchecked")
-    static Map<String, Object> answer(Map<String, Object> file, String domain, String entity) {
+    static Map<String, Object> answer(Map<String, Object> file, String domain, String entity, CurrentUser user) {
         ErrorMessages labels = labels(domain);
         Map<String, Object> entities = (Map<String, Object>) file.get("entities");
         Map<String, Object> one = entities == null ? null : (Map<String, Object>) entities.get(entity);
@@ -163,7 +215,88 @@ public final class SchemaInfo {
         // What POST /search takes, as the generator wrote it; absent where the controller serves no search.
         Object search = one.get("search");
         if (search != null) out.put("search", search);
+        // What this caller may do, decided now by the service's own check; absent from a file without it.
+        Object actions = one.get("actions");
+        if (actions instanceof Map) out.put("actions", actions((Map<String, Object>) actions, name, user));
         return out;
+    }
+
+    /**
+     * What the caller may do to the entity: each operation the controller serves, as the service decides it -
+     * true, false, or the conditions a row must meet: {@code ["owner"]} (only a row of the caller's own),
+     * {@code ["state"]} (only a row in a state the lifecycle allows), or both.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> actions(Map<String, Object> facts, String entity, CurrentUser user) {
+        Map<String, Object> declared = (Map<String, Object>) facts.get("policy");
+        // The service's own ACCESS, from its own arguments; no policy where the service checks nothing.
+        AccessPolicy policy = declared == null
+                ? null
+                : AccessPolicy.parse(entity, text(declared.get("declaration")), text(declared.get("adminRole")));
+        boolean owned = facts.get("owner") != null;
+        boolean keyedByOwner = Boolean.TRUE.equals(facts.get("createNeedsSignIn"));
+        boolean deleteReadsFirst = Boolean.TRUE.equals(facts.get("deleteReadsFirst"));
+        Map<String, Object> out = new LinkedHashMap<String, Object>();
+        Object operations = facts.get("operations");
+        if (!(operations instanceof Map)) return out;
+        for (Map.Entry<String, Object> en : ((Map<String, Object>) operations).entrySet()) {
+            List<Object> row = en.getValue() instanceof List ? (List<Object>) en.getValue() : null;
+            Object said = action(policy, user, en.getKey(), owned, keyedByOwner, row);
+            // DELETE /{key} alone: the controller reads the row (read) before the service deletes it (delete).
+            if (deleteReadsFirst && "delete".equals(en.getKey())) {
+                said = both(action(policy, user, "read", owned, keyedByOwner, null), said);
+            }
+            out.put(en.getKey(), said);
+        }
+        return out;
+    }
+
+    /** What two checks made one after the other say: false if either refuses, else every condition of both. */
+    @SuppressWarnings("unchecked")
+    static Object both(Object first, Object then) {
+        if (Boolean.FALSE.equals(first) || Boolean.FALSE.equals(then)) return false;
+        java.util.Set<Object> conditions = new java.util.LinkedHashSet<Object>();
+        if (first instanceof List) conditions.addAll((List<Object>) first);
+        if (then instanceof List) conditions.addAll((List<Object>) then);
+        if (conditions.isEmpty()) return true;
+        return Collections.unmodifiableList(new ArrayList<Object>(conditions));
+    }
+
+    /** One operation: the service's checks in the order it makes them, then what the row's state decides. */
+    static Object action(
+            AccessPolicy policy,
+            CurrentUser user,
+            String operation,
+            boolean owned,
+            boolean keyedByOwner,
+            List<Object> rowConditions) {
+        List<Object> conditions = new ArrayList<Object>();
+        if (policy != null) {
+            // 401 or 403 before anything is read (ACCESS.require).
+            if (!passes(policy, user, operation)) return false;
+            if ("create".equals(operation)) {
+                // A row keyed by its owner: a visitor has no identity to key it by.
+                if (keyedByOwner && !policy.isAdmin(user) && !user.signedIn()) return false;
+            } else if (!policy.owns(user, operation, null)) {
+                // Not on a row of someone else's (ACCESS.owns): on the caller's own, where the service compares one.
+                Object id = user.id();
+                if (!owned || id == null || !policy.owns(user, operation, id)) return false;
+                conditions.add("owner");
+            }
+        }
+        if (rowConditions != null) conditions.addAll(rowConditions);
+        if (conditions.isEmpty()) return true;
+        return Collections.unmodifiableList(conditions);
+    }
+
+    /** Whether the caller passes ACCESS.require: the check the service makes first. */
+    private static boolean passes(AccessPolicy policy, CurrentUser user, String operation) {
+        try {
+            policy.require(user, operation);
+            return true;
+        } catch (NotSignedInException | ForbiddenException refused) {
+            return false;
+        }
     }
 
     /** What the model says of a field, its labels said in the request's language. */
