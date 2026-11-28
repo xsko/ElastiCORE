@@ -1,7 +1,7 @@
 # ElastiCORE Environment Setup Guide (env.yml)
 
 `env.yml` is the per-domain environment file of ElastiCORE. It defines the code generation mode, the framework, namespaces, annotations and more.
-It lives in each domain directory (`src/main/resources/blueprint/{domain}/`). You describe the environment in it before you model with the DSL.
+It lives in each domain directory (`src/main/resources/blueprint/{domain}/`). You describe the environment in it before you model with the DSL. What every domain shares can be written once in `blueprint/env.yml` (section 1-1, 3.1).
 A section marked **Works in:** works only there; **Not in:** says what happens elsewhere - the build stops, a warning, or nothing is generated.
 
 ---
@@ -29,6 +29,115 @@ elasticore:
 - `framework`: the target framework (`springboot3`)
 - `mode`: the code generation mode
 - `j2ee`: the Jakarta EE version (`17` or higher; javax is deprecated)
+
+---
+
+## 1-1. Settings every domain shares: `blueprint/env.yml` (3.1)
+
+An `env.yml` directly in `blueprint/` holds what the domains share, and each domain's `env.yml` writes only what differs.
+Only a project that has this file is affected: without it, every domain is read as before.
+
+```
+src/main/resources/blueprint/
+  env.yml              <- every domain inherits it
+  shop/env.yml         <- domainName and what differs
+  catalog/env.yml
+```
+
+```yaml
+# blueprint/env.yml
+elasticore:
+  config:
+    framework: springboot
+    mode: jpa
+    j2ee: jakarta
+    apiPath: "/api/v1"
+    annotations:
+      genid: "genid(io.elasticore.springboot3.util.IdUtils.newId)"
+  namespace:                       # patterns: on their own they generate nothing
+    base: com.acme
+    entity:      "{base}.domain.{domain}.entity"
+    dto:         "{base}.domain.{domain}.dto"
+    enumeration: "{base}.domain.{domain}.enums"
+    repository:  "{base}.domain.{domain}.repository"
+    service:     "{base}.domain.{domain}.service"
+    control:     "{base}.domain.{domain}.control"
+    port:        "{base}.domain.{domain}.port"
+```
+
+```yaml
+# blueprint/catalog/env.yml: a domain of DTOs, enumerations and ports only
+elasticore:
+  enable: true
+  config:
+    domainName: catalog
+    table:
+      prefix: cat_
+  namespace:
+    dto:
+    enumeration:
+    port:
+```
+
+**Namespaces: the domain decides what is generated, the root decides the packages.**
+
+| In the domain's `env.yml` | Result |
+|---|---|
+| no key (`port` not written) | not generated, as without the root file |
+| the key with no value (`port:`) | generated, in the root's pattern: `{base}` is the root's `namespace.base`, `{domain}` the domain's `domainName` (its folder name when it has none) |
+| the key with a value (`port: com.x.port`) | that value |
+| the key with no value and no pattern for it in the root | a warning (`namespace.port has no value, and blueprint/env.yml has no pattern for it ...`); not generated |
+| no `namespace:` section | nothing generated |
+
+- A root value without `{domain}` is allowed: a package every domain shares. A pattern may start with a `module://` prefix (section 8.2).
+- `namespace: base: ...` written in a domain keeps its meaning (section 8.0): its thirteen keys under that base. Written with no value (`base:`), it takes the root's `base`.
+- **A domain whose package differs from the pattern** (`...enumeration` where the pattern says `...enums`) moves its classes to the pattern's package once it writes the key with no value; the compiler finds the hand-written imports. To keep the package, keep the value written in that domain's file.
+
+**Every other key**
+- A map merges key by key, and the domain wins: `config:`, `annotations:`, `interface:`, `table:`, ... A domain adds an annotation entry, or replaces one by its name.
+- A list (`publisher.rules`, `publisher.suppress`, `context.uses`, ...) is replaced as a whole by the domain's list, never appended to: a domain that writes its own list states all of it.
+- A key a domain writes with no value takes the root's. There is no syntax for removing an inherited key: a domain writes its own value instead. An inherited `annotations:` entry generates nothing unless the model uses it.
+- `domainName` and `enable` are one per domain. In the root file they get a warning and are ignored; the build goes on.
+
+**Order** - the root file is a lower layer of `env.yml`:
+
+```
+1. the domain's env.yml
+2. blueprint/env.yml
+3. the build (elasticore { }, -Delasticore.*)
+4. the defaults
+```
+
+A key whose build setting wins over a domain's `env.yml` (`springBoot`, section 3-1) wins over the root file too.
+
+**Seeing the result.** The build says when it reads the file, and how much it gives - for the two files above and a `shop` domain:
+
+```text
+[ElastiCORE] blueprint/env.yml: 13 settings inherited by 2 domains
+```
+
+`./gradlew elcore3 -PlistRules` lists each domain's settings as they are read, `*` marking those from the root file (`catalog` above, a layered Java build):
+
+```text
+[rules] catalog: jpa-springboot-v3
+  settings (* from blueprint/env.yml):
+    * config.framework = springboot
+    * config.mode = jpa
+    * config.j2ee = jakarta
+    * config.apiPath = /api/v1
+    * config.annotations.genid = genid(io.elasticore.springboot3.util.IdUtils.newId)
+      config.domainName = catalog
+      config.table.prefix = cat_
+    * namespace.dto = com.acme.domain.catalog.dto
+    * namespace.enumeration = com.acme.domain.catalog.enums
+    * namespace.port = com.acme.domain.catalog.port
+```
+
+Every reader takes the file the same way: `elcore3` (the rule engine), `elcore` and `output = 'v2'` (the 2.x generator), the `@ElastiCore`
+annotation processor, the build's GraphQL wiring (`graphql:` in the root file turns it on), and the TypeScript client's check (a changed root
+file makes a generated client older). A multi-module build (`-Delasticore.modules`) reads one root file per module, in that module's `blueprint/`.
+
+**Before 3.1** a `blueprint/env.yml` was not read. A project that has one left over sees it applied from 3.1: the line above shows it on the first build.
 
 ---
 
@@ -1170,8 +1279,9 @@ A bundle is a list of names of individual rule sets, so you can also combine the
 
 ```
 1. Domain    publisher.rules of this env.yml       <- when only this domain is an exception
-2. Project   -Delasticore.publisher.rules=...      <- usually set once here
-3. Built-in default by architecture and language   <- if you write nothing (layered Java: jpa-springboot-v3)
+2. Root      publisher.rules of blueprint/env.yml  <- for every domain (3.1, section 1-1)
+3. Project   -Delasticore.publisher.rules=...      <- usually set once here
+4. Built-in default by architecture and language   <- if you write nothing (layered Java: jpa-springboot-v3)
 ```
 
 A domain declares it only when it departs from the project default. Even with 20 domains,
@@ -1291,7 +1401,7 @@ namespace:
   base: com.acme.erp
 ```
 
-It fills in the hexagonal layout below under `com.acme.erp`. A key written together with it takes priority.
+It fills in the hexagonal layout below under `com.acme.erp`. A key written together with it takes priority. With `blueprint/env.yml`, a key written with no value takes the root's pattern instead (section 1-1).
 
 | Key | Package |
 |---|---|

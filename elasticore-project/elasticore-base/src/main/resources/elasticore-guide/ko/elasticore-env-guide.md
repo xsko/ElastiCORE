@@ -1,7 +1,7 @@
 # ElastiCORE 환경 설정 가이드 (env.yml)
 
 `env.yml`은 ElastiCORE 도메인별 환경 설정 파일로, 코드 생성 모드, 프레임워크, 네임스페이스, 어노테이션 등을 정의한다.
-각 도메인 디렉토리(`src/main/resources/blueprint/{domain}/`)에 위치하며, DSL 기반 모델링 전에 환경 정보를 기술한다.
+각 도메인 디렉토리(`src/main/resources/blueprint/{domain}/`)에 위치하며, DSL 기반 모델링 전에 환경 정보를 기술한다. 모든 도메인이 함께 쓰는 설정은 `blueprint/env.yml` 에 한 번만 적을 수 있다 (1-1절, 3.1).
 **동작:** 표시가 있는 절은 거기서만 동작합니다. **안 됨:** 은 그 밖에서 무엇이 되는지 적습니다 - 빌드 중단, 경고, 또는 생성 안 됨.
 
 ---
@@ -29,6 +29,115 @@ elasticore:
 - `framework`: 대상 프레임워크 (`springboot3`)
 - `mode`: 코드 생성 모드
 - `j2ee`: Jakarta EE 버전 (`17` 이상, javax는 deprecated)
+
+---
+
+## 1-1. 모든 도메인이 함께 쓰는 설정: `blueprint/env.yml` (3.1)
+
+`blueprint/` 바로 아래의 `env.yml` 에 도메인들이 함께 쓰는 설정을 두면, 각 도메인의 `env.yml` 은 다른 것만 적습니다.
+이 파일이 있는 프로젝트만 영향을 받습니다: 없으면 모든 도메인을 지금까지처럼 읽습니다.
+
+```
+src/main/resources/blueprint/
+  env.yml              <- 모든 도메인이 상속
+  shop/env.yml         <- domainName 과 다른 것
+  catalog/env.yml
+```
+
+```yaml
+# blueprint/env.yml
+elasticore:
+  config:
+    framework: springboot
+    mode: jpa
+    j2ee: jakarta
+    apiPath: "/api/v1"
+    annotations:
+      genid: "genid(io.elasticore.springboot3.util.IdUtils.newId)"
+  namespace:                       # 패턴: 이것만으로는 아무것도 생성하지 않음
+    base: com.acme
+    entity:      "{base}.domain.{domain}.entity"
+    dto:         "{base}.domain.{domain}.dto"
+    enumeration: "{base}.domain.{domain}.enums"
+    repository:  "{base}.domain.{domain}.repository"
+    service:     "{base}.domain.{domain}.service"
+    control:     "{base}.domain.{domain}.control"
+    port:        "{base}.domain.{domain}.port"
+```
+
+```yaml
+# blueprint/catalog/env.yml: DTO·열거형·포트만 있는 도메인
+elasticore:
+  enable: true
+  config:
+    domainName: catalog
+    table:
+      prefix: cat_
+  namespace:
+    dto:
+    enumeration:
+    port:
+```
+
+**네임스페이스: 무엇을 생성할지는 도메인이, 패키지는 루트가 정합니다.**
+
+| 도메인 `env.yml` 에 | 결과 |
+|---|---|
+| 키가 없음 (`port` 를 안 적음) | 생성 안 됨, 루트 파일이 없을 때와 같음 |
+| 값 없는 키 (`port:`) | 생성, 루트의 패턴으로: `{base}` 는 루트의 `namespace.base`, `{domain}` 은 도메인의 `domainName` (없으면 폴더 이름) |
+| 값 있는 키 (`port: com.x.port`) | 그 값 |
+| 값 없는 키인데 루트에 그 패턴이 없음 | 경고 (`namespace.port has no value, and blueprint/env.yml has no pattern for it ...`); 생성 안 됨 |
+| `namespace:` 절이 없음 | 아무것도 생성 안 됨 |
+
+- `{domain}` 없는 루트 값도 됩니다: 모든 도메인이 함께 쓰는 패키지. 패턴은 `module://` 접두어로 시작할 수 있습니다 (8.2절).
+- 도메인에 적은 `namespace: base: ...` 는 뜻이 그대로입니다 (8.0절): 그 base 아래 13개 키. 값 없이 (`base:`) 적으면 루트의 `base` 를 씁니다.
+- **패키지가 패턴과 다른 도메인** (패턴은 `...enums` 인데 `...enumeration` 을 쓰는 도메인) 은 그 키를 값 없이 적는 순간 클래스가 패턴의 패키지로 옮겨집니다; 손으로 쓴 import 는 컴파일러가 찾아 줍니다. 패키지를 그대로 두려면 그 도메인 파일에 값을 적어 둔 채로 두세요.
+
+**그 밖의 모든 키**
+- 맵은 키 단위로 합쳐지고 도메인이 이깁니다: `config:`, `annotations:`, `interface:`, `table:`, ... 도메인은 어노테이션 항목을 더하거나, 이름으로 바꿉니다.
+- 리스트 (`publisher.rules`, `publisher.suppress`, `context.uses`, ...) 는 도메인의 리스트로 통째로 바뀌고, 이어 붙지 않습니다: 자기 리스트를 적는 도메인은 전부를 적습니다.
+- 도메인이 값 없이 적은 키는 루트의 값을 씁니다. 상속된 키를 지우는 문법은 없습니다: 도메인이 자기 값을 적습니다. 상속된 `annotations:` 항목은 모델이 쓰지 않으면 아무것도 생성하지 않습니다.
+- `domainName` 과 `enable` 은 도메인마다 하나입니다. 루트 파일에 있으면 경고하고 무시합니다; 빌드는 계속됩니다.
+
+**순서** - 루트 파일은 `env.yml` 의 아래 층입니다:
+
+```
+1. 도메인의 env.yml
+2. blueprint/env.yml
+3. 빌드 (elasticore { }, -Delasticore.*)
+4. 기본값
+```
+
+빌드 설정이 도메인 `env.yml` 보다 이기는 키 (`springBoot`, 3-1절) 는 루트 파일보다도 이깁니다.
+
+**결과 보기.** 빌드는 파일을 읽을 때 그것이 주는 양을 한 줄로 말합니다 - 위의 두 파일과 `shop` 도메인이면:
+
+```text
+[ElastiCORE] blueprint/env.yml: 13 settings inherited by 2 domains
+```
+
+`./gradlew elcore3 -PlistRules` 는 도메인마다 읽힌 설정을 나열하고, 루트 파일에서 온 것에 `*` 를 붙입니다 (위의 `catalog`, layered Java 빌드):
+
+```text
+[rules] catalog: jpa-springboot-v3
+  settings (* from blueprint/env.yml):
+    * config.framework = springboot
+    * config.mode = jpa
+    * config.j2ee = jakarta
+    * config.apiPath = /api/v1
+    * config.annotations.genid = genid(io.elasticore.springboot3.util.IdUtils.newId)
+      config.domainName = catalog
+      config.table.prefix = cat_
+    * namespace.dto = com.acme.domain.catalog.dto
+    * namespace.enumeration = com.acme.domain.catalog.enums
+    * namespace.port = com.acme.domain.catalog.port
+```
+
+모든 읽는 곳이 이 파일을 같게 읽습니다: `elcore3` (룰 엔진), `elcore` 와 `output = 'v2'` (2.x 생성기), `@ElastiCore`
+어노테이션 프로세서, 빌드의 GraphQL 연결 (루트 파일의 `graphql:` 이 켬), TypeScript 클라이언트 검사 (루트 파일이 바뀌면 생성된
+클라이언트가 옛 모델의 것이 됨). 멀티 모듈 빌드 (`-Delasticore.modules`) 는 모듈마다 그 모듈의 `blueprint/` 에서 루트 파일 하나를 읽습니다.
+
+**3.1 이전에는** `blueprint/env.yml` 을 읽지 않았습니다. 그런 파일이 남아 있는 프로젝트는 3.1부터 그것이 적용됩니다: 첫 빌드에 위의 줄이 보입니다.
 
 ---
 
@@ -1170,8 +1279,9 @@ elasticore:
 
 ```
 1. 도메인    이 env.yml 의 publisher.rules        <- 이 도메인만 예외일 때
-2. 프로젝트  -Delasticore.publisher.rules=...      <- 보통 여기서 한 번
-3. 내장 기본 architecture·language 에 따라          <- 아무것도 안 적으면 여기 (layered Java: jpa-springboot-v3)
+2. 루트      blueprint/env.yml 의 publisher.rules  <- 모든 도메인에 (3.1, 1-1절)
+3. 프로젝트  -Delasticore.publisher.rules=...      <- 보통 여기서 한 번
+4. 내장 기본 architecture·language 에 따라          <- 아무것도 안 적으면 여기 (layered Java: jpa-springboot-v3)
 ```
 
 도메인은 프로젝트 기본값에서 벗어날 때만 선언합니다. 도메인이 20개여도
@@ -1291,7 +1401,7 @@ namespace:
   base: com.acme.erp
 ```
 
-아래 헥사고날 배치를 `com.acme.erp` 아래에 채웁니다. 함께 적은 키는 그 값이 우선합니다.
+아래 헥사고날 배치를 `com.acme.erp` 아래에 채웁니다. 함께 적은 키는 그 값이 우선합니다. `blueprint/env.yml` 이 있으면 값 없이 적은 키는 대신 루트의 패턴을 씁니다 (1-1절).
 
 | 키 | 패키지 |
 |---|---|

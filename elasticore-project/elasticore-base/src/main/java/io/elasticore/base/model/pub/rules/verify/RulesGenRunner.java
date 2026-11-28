@@ -78,6 +78,9 @@ public final class RulesGenRunner {
     /** Where the domain being generated writes, when the project has modules. */
     private String domainRoot;
 
+    /** The folder of the domain being generated, for -PlistRules to show its settings. */
+    private File domainDir;
+
     /** Package prefix -> module alias, as the domain's env.yml declares it. */
     private Map<String, String> packageModuleMap;
 
@@ -1097,6 +1100,7 @@ public final class RulesGenRunner {
             String domainDirName = loader.domainDirNameOf(en.getKey());
             if (domainFilter != null && !domainFilter.contains(domainDirName)) continue;
             runner.domainRoot = loader.moduleRootOf(en.getKey());
+            runner.domainDir = loader.domainDirOf(en.getKey());
             // A domain that still sets the removed supportAI is told so by the
             // run that writes its Java or Kotlin services, not by the
             // TypeScript one or a listing beside it.
@@ -1314,9 +1318,9 @@ public final class RulesGenRunner {
 
     /**
      * A digest of the model the client is made from: every .yml of every
-     * domain folder under the blueprint, by path and content (line endings
-     * aside). The files at the blueprint root - schema.yml and the guides -
-     * are written by the generator and are left out.
+     * domain folder under the blueprint, and blueprint/env.yml, by path and
+     * content (line endings aside). The other files at the blueprint root -
+     * schema.yml and the guides - are written by the generator and are left out.
      */
     static String modelDigest(String root) {
         File blueprint = new File(root, "src/main/resources/blueprint");
@@ -1324,6 +1328,11 @@ public final class RulesGenRunner {
         File[] domains = blueprint.listFiles();
         if (domains != null) {
             for (File d : domains) if (d.isDirectory()) collectYaml(d, d.getName(), paths);
+        }
+        // blueprint/env.yml is the domains' settings too (issue 248): that one
+        // file of the root, not the others the generator writes there.
+        if (io.elasticore.base.model.loader.RootEnv.fileIn(blueprint) != null) {
+            paths.add(io.elasticore.base.model.loader.RootEnv.FILE_NAME);
         }
         java.util.Collections.sort(paths);
         try {
@@ -3478,6 +3487,8 @@ public final class RulesGenRunner {
         // The listing ends before the warnings are shown: an unread key is said with it.
         String unread = RulesConfig.unreadRulesKeys(currentModel);
         if (unread != null) System.out.println("  " + unread);
+        // With blueprint/env.yml, the settings the domain runs with, the inherited ones marked.
+        for (String line : io.elasticore.base.model.loader.RootEnv.listing(domainDir)) System.out.println(line);
         java.util.Map<String, java.util.List<String[]>> byTarget = new java.util.TreeMap<String, java.util.List<String[]>>();
         java.util.Set<String> seen = new java.util.HashSet<String>();
         for (String name : names) {

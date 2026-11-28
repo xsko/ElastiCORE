@@ -133,8 +133,8 @@ public class ElastiCorePlugin implements Plugin<Project> {
 
         // The GraphQL schema, written from the compiled controllers and the
         // classes they take and answer - so after compiling, before the
-        // resources are copied. Wired only where a domain's env.yml names
-        // graphql, or a schema it wrote is still there to be removed.
+        // resources are copied. Wired only where a domain's env.yml (or
+        // blueprint/env.yml) names graphql, or a schema it wrote is still there to be removed.
         TaskProvider<JavaExec> elcoreGraphQl = project.getTasks().register("elcoreGraphQl", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Writes and checks the GraphQL schema (src/main/resources/graphql) of the generated"
@@ -623,11 +623,14 @@ public class ElastiCorePlugin implements Plugin<Project> {
     }
 
     /**
-     * Whether a domain's env.yml says graphql, or the resources still hold a
-     * schema file the writer made - which it removes when no domain asks.
+     * Whether a domain's env.yml says graphql, or blueprint/env.yml, which every
+     * domain inherits, or the resources still hold a schema file the writer
+     * made - which it removes when no domain asks.
      */
     static boolean usesGraphQl(Project project) {
         File blueprint = new File(project.getProjectDir(), BLUEPRINT);
+        File root = new File(blueprint, "env.yml");
+        if (root.isFile() && read(root).matches("(?s).*\\n\\s*graphql\\s*:.*")) return true;
         File[] domains = blueprint.listFiles(File::isDirectory);
         if (domains != null) {
             for (File domain : domains) {
