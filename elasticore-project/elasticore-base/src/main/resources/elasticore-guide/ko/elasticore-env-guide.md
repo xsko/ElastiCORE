@@ -1384,6 +1384,7 @@ namespace:
 마세요** — 도메인 서비스는 도메인의 것이고 응용 서비스는 그 위 계층이라, 같은 자리에
 두면 의존 방향이 무너집니다.
 `domainService:` 와 `processManager:` 섹션은 3.1 부터 읽지 않습니다(`elasticore-dsl-guide.md` 8장).
+`namespace.processManager` 도 읽지 않습니다: 남아 있으면 알림이 나오니(`DSL_WARN` 이 아니라 `-Pstrict` 는 통과) 지우세요.
 
 각 생성 클래스의 `package` 선언과 `import` 문에 사용된다.
 

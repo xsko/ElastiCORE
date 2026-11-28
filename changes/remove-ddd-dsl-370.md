@@ -42,7 +42,8 @@
     DSL - so a change to the DSL does not reach it. Make it extend XxxBase (Kotlin: ': XxxBase()'), or delete the file to have
     it generated anew.`
   - `namespace.domainService` stays: the architecture test reads it as a domain-layer package, so a hand-written class in
-    `domain.service` is checked as domain code. `namespace.processManager` is read by nothing now and is ignored silently.
+    `domain.service` is checked as domain code. `namespace.processManager` is read by nothing now and gets a notice
+    (the entry on `namespace.processManager` below).
   - The context map no longer draws or checks an event crossing (it came only from `processManager:`); a context may still
     publish its events.
 - The samples use plain Spring code: `elasticore-template-ddd` and `elasticore-template-ddd-mybatis` have `PricingService`

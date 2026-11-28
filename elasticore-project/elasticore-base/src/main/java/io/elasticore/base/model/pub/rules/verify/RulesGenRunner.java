@@ -5731,7 +5731,15 @@ public final class RulesGenRunner {
                 // A merging run asks removeUnused instead, which lets a base go
                 // with a class that is going too.
                 if (cache == null && stillExtended(f)) continue;
-                HashUtils.Response st = readStatus(f);
+                HashUtils.Response st;
+                try {
+                    st = readStatus(f);
+                } catch (RuntimeException e) {
+                    // A first line that is no stamp at all - empty, as a generated TypeScript DTO with
+                    // nothing to import starts - which HashUtils fails on: not a stamped file, so not this
+                    // pass's. A merged one is removeStaleMerged's.
+                    continue;
+                }
                 // An edited browser copy of a specification, still under its 3.0 stamp: handed over as an
                 // unedited one is (an edited stamped file is otherwise passed over below).
                 if (st != null

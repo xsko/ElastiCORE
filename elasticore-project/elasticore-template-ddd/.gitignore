@@ -14,6 +14,8 @@ src/test/java/io/**
 # ... but the forum's contract support class, which the sample wrote newSignInRow in.
 !src/test/java/io/**/
 !src/test/java/io/**/forum/ForumContractSupport.java
+# ... and the class in domain.service the architecture test must refuse (DomainServiceArchitectureTest).
+!src/test/java/io/**/shop/domain/service/WebAwarePricing.java
 
 # The message bundle the generator writes beside the error handler; a
 # translation next to it (..._ko.properties) is the developer's and is kept.
