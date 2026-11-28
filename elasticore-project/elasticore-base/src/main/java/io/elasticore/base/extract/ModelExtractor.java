@@ -539,6 +539,7 @@ public class ModelExtractor {
         List<ECoreModelContext> allContexts = new ArrayList<>();
         List<String> srcPaths = new ArrayList<>();
         List<String> domainNamesForContexts = new ArrayList<>();
+        Map<String, Integer> loadedPerModule = new LinkedHashMap<>();
 
         for (Map.Entry<String, String> entry : domainSrcPathMap.entrySet()) {
             // Set base.path per domain so template paths resolve correctly
@@ -552,7 +553,18 @@ public class ModelExtractor {
                 allContexts.add(ctx);
                 srcPaths.add(entry.getValue());
                 domainNamesForContexts.add(new File(entry.getKey()).getName());
+                Integer n = loadedPerModule.get(entry.getValue());
+                loadedPerModule.put(entry.getValue(), n == null ? 1 : n + 1);
             }
+        }
+        // One root file per blueprint folder: each module's domains take their own.
+        for (String modulePath : modules) {
+            modulePath = modulePath.trim();
+            Integer n = loadedPerModule.get(modulePath);
+            io.elasticore.base.model.loader.RootEnv.announce(
+                    new File(modulePath + "/" + ConstantParam.PROPERTY_ELCORE_HOME),
+                    new File(modulePath).getName() + "/blueprint/env.yml",
+                    n == null ? 0 : n);
         }
 
         // Phase 1.5: Validate type references and detect duplicates across all loaded domains
@@ -664,6 +676,8 @@ public class ModelExtractor {
                 contextDomainNames.add(new File(path).getName());
             }
         }
+        io.elasticore.base.model.loader.RootEnv.announce(
+                new File(this.modelResourcePath), "blueprint/env.yml", contextList.size());
 
         // Validate type references and detect duplicates across all loaded domains
         validateGlobalTypeReferences(contextList);

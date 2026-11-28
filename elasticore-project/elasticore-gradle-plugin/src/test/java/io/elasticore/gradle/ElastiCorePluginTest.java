@@ -549,6 +549,33 @@ public class ElastiCorePluginTest {
     }
 
     @Test
+    @DisplayName("graphql: in blueprint/env.yml wires the schema writer as it does in a domain's env.yml")
+    public void theRootEnvTurnsTheGraphQlWriterOn() throws IOException {
+        writeSettings("single");
+        writeBuild("plugins { id 'java'; id 'io.elasticore' }");
+        write(
+                "src/main/resources/blueprint/shop/env.yml",
+                "elasticore:\n  config:\n    domainName: shop\n  namespace:\n    dto:\n");
+        String none = run("processResources", "--dry-run").getOutput();
+        assertTrue(!none.contains(":elcoreGraphQl"), none);
+
+        // Every domain inherits blueprint/env.yml (issue 248), so graphql: there is graphql: in each.
+        write(
+                "src/main/resources/blueprint/env.yml",
+                "elasticore:\n  config:\n    mode: jpa\n    graphql:\n      enable: true\n      path: /graphql\n");
+        String root = run("processResources", "--dry-run").getOutput();
+        assertTrue(root.contains(":elcoreGraphQl SKIPPED"), root);
+
+        // As in the domain's own file, which it did before.
+        write("src/main/resources/blueprint/env.yml", "elasticore:\n  config:\n    mode: jpa\n");
+        write(
+                "src/main/resources/blueprint/shop/env.yml",
+                "elasticore:\n  config:\n    domainName: shop\n    graphql:\n      enable: true\n");
+        String domain = run("processResources", "--dry-run").getOutput();
+        assertTrue(domain.contains(":elcoreGraphQl SKIPPED"), domain);
+    }
+
+    @Test
     @DisplayName("2.x's code cannot be asked of a hexagon, and an unknown output is refused")
     public void outputV2RefusesWhatOnlyTheRuleEngineReads() throws IOException {
         writeSettings("single");

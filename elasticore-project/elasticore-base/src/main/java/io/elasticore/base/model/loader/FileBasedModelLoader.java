@@ -176,6 +176,7 @@ public class FileBasedModelLoader implements ModelLoader, ConstantParam {
             return null;
         }
 
+        envMap = withRootEnv(envMap, domainName);
 
         Map<String, Object> configMap = (Map) envMap.get("config");
         Map<String, String> nsMap = (Map) envMap.get("namespace");
@@ -214,6 +215,25 @@ public class FileBasedModelLoader implements ModelLoader, ConstantParam {
 
         return context;
     }
+    /**
+     * The domain's section with blueprint/env.yml under it, when the blueprint
+     * folder has one (RootEnv); the section as written otherwise. Every reader
+     * of a domain's settings comes through here, so all take the root the same way.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Map withRootEnv(Map envMap, String folderName) {
+        File rootFile = RootEnv.fileFor(new File(templateFileDirPath));
+        if (rootFile == null) return envMap;
+        Object config = envMap.get("config");
+        Object named = config instanceof Map ? ((Map) config).get("domainName") : null;
+        String domainName = named == null ? folderName : String.valueOf(named);
+        RootEnv.Merged merged = RootEnv.apply(RootEnv.read(rootFile).settings(), envMap, domainName);
+        for (String warning : merged.warnings()) {
+            ConsoleLog.printWarn("[" + domainName + "] " + warning);
+        }
+        return merged.env();
+    }
+
     /**
      * "namespace: { base: com.acme.erp }" - the hexagonal package layout under
      * one base package, so a project does not list thirteen keys to say the

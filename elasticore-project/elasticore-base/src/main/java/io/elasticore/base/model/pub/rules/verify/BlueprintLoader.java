@@ -5,6 +5,7 @@ import io.elasticore.base.ModelDomain;
 import io.elasticore.base.model.ECoreModel;
 import io.elasticore.base.model.core.BaseECoreModelContext;
 import io.elasticore.base.model.loader.FileBasedModelLoader;
+import io.elasticore.base.model.loader.RootEnv;
 import io.elasticore.base.util.FileOrder;
 
 import java.io.File;
@@ -43,9 +44,20 @@ public final class BlueprintLoader {
             if (ctx != null) {
                 loader.contexts.put(dir.getName(), ctx);
                 loader.captureModels(dir.getName(), ctx);
+                loader.domainDirs.put(dir.getName(), dir.getAbsolutePath());
             }
         }
+        RootEnv.announce(new File(blueprintRoot), "blueprint/env.yml", loader.contexts.size());
         return loader;
+    }
+
+    /** Context key -> the domain folder it was loaded from. */
+    private final Map<String, String> domainDirs = new LinkedHashMap<String, String>();
+
+    /** The domain folder a context key was loaded from, or null. */
+    public File domainDirOf(String key) {
+        String path = domainDirs.get(key);
+        return path == null ? null : new File(path);
     }
 
     /**
@@ -109,6 +121,7 @@ public final class BlueprintLoader {
             File[] dirs = FileOrder.list(blueprintDir);
             if (dirs == null) continue;
 
+            int loaded = 0;
             for (File dir : dirs) {
                 if (!dir.isDirectory()) continue;
                 if (!new File(dir, "env.yml").isFile()) continue;
@@ -128,7 +141,11 @@ public final class BlueprintLoader {
                 loader.captureModels(key, ctx);
                 loader.domainDirName.put(key, dir.getName());
                 loader.domainModuleRoot.put(key, absolute(moduleDir));
+                loader.domainDirs.put(key, dir.getAbsolutePath());
+                loaded++;
             }
+            // One root file per blueprint folder: each module's domains take their own.
+            RootEnv.announce(blueprintDir, moduleDir.getName() + "/blueprint/env.yml", loaded);
         }
         return loader;
     }
